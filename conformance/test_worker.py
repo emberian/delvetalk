@@ -114,7 +114,8 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(len(self.w.run(max_attempts=1)['blocked']), 1)
         self.w.retry(uri)
         self.w.receiver = self.clerk.receive
-        self.assertEqual(self.w.run(max_attempts=1)['processed'][0]['phase'], 'prepared')
+        retried = self.w.run(max_attempts=1)
+        self.assertEqual(retried['processed'][0]['phase'], 'prepared', retried)
         second = self.request('two', root=self.clerk.snapshot('counter')['root'])
         self.w.enqueue(*second)
         ticks = iter([0.0, 2.0, 2.0])
@@ -154,6 +155,53 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(result['cpu'], [4, 4])
         if sys.platform.startswith('linux'):
             self.assertEqual(result['memory'], [128 * 1024 * 1024] * 2)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX lock deadline')
+    def test_waiting_for_another_worker_lock_obeys_deadline(self):
+        self.w.state.mkdir(parents=True, exist_ok=True)
+        lock_path = self.w.state / '.worker.lock'
+        code = ('import fcntl,time; f=open(' + repr(str(lock_path)) + ',"a"); '
+                'fcntl.flock(f,fcntl.LOCK_EX); print("locked",flush=True); time.sleep(60)')
+        child = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), 'locked')
+            started = time.monotonic()
+            report = self.w.run(deadline_seconds=0.15)
+            self.assertLess(time.monotonic() - started, 0.8)
+            self.assertTrue(report['deadlineReached'])
+            self.assertTrue(report['lockTimedOut'])
+            self.assertEqual(report['processed'], [])
+        finally:
+            child.kill()
+            child.wait()
+            child.stdout.close()
+
+    def test_transaction_prepares_immutable_roots_and_head_without_publishing(self):
+        import manage
+        protocol = clerk.loads((ROOT / 'protocols/counter/protocol.json').read_text())
+        manage.Management(self.clerk.state).add_object('other', delve.DID, 'worker-other', 'protocol-json@1',
+            clerk.canonical(protocol), [delve.DID])
+        other = self.clerk.snapshot('other')['root']
+        payload = {'op': 'transaction', 'reads': {'counter': {'expected': self.initial}, 'other': {'expected': other}},
+                   'calls': [{'object': 'counter', 'command': 'add', 'input': {'amount': 2}},
+                             {'object': 'other', 'command': 'add', 'input': {'amount': 4}}]}
+        publication = self.publisher.publish('request', clerk.world.wire_dumps(payload), 'worker-transaction')
+        self.w.enqueue(publication['uri'], publication['cid'])
+        puts = self.pds.puts
+        self.assertEqual(self.w.run()['processed'][0]['phase'], 'prepared')
+        self.assertEqual(self.pds.puts, puts)
+        entry = clerk.loads(self.w.path(publication['uri']).read_text())
+        artifacts = entry['publicationArtifacts']
+        self.assertEqual([item['kind'] for item in artifacts], ['root-snapshot', 'root-snapshot', 'admission-head'])
+        self.assertEqual([item['record']['version'] for item in artifacts[:2]], ['1', '1'])
+        head = clerk.loads(artifacts[2]['record']['headJson'])
+        self.assertEqual(head['receiptId'], entry['receipt']['id'])
+        self.assertEqual(set(head['roots']), {'counter', 'other'})
+        for item in artifacts[:2]:
+            object_id = item['record']['object']
+            self.assertEqual(head['roots'][object_id]['recordSha256'], clerk.digest(item['record']))
+        self.assertEqual(self.restart().run()['processed'], [])
+        self.assertEqual(clerk.loads(self.w.path(publication['uri']).read_text())['publicationArtifacts'], artifacts)
 
     def test_stale_semantic_refusal_prepares_a_terminal_receipt(self):
         first, second = self.request('one'), self.request('two')

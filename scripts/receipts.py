@@ -14,6 +14,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from delve import Delve, Failure, XRPCError, DID, locked, save
+import transaction_intake
 
 REQUEST = 'org.delvetalk.request'
 RECEIPT = 'org.delvetalk.receipt'
@@ -49,6 +50,12 @@ def encode(kind, text):
     if kind == 'request':
         expected_key = 'expectedRootRef' if isinstance(value, dict) and 'expectedRootRef' in value else 'expected'
         operation = value.get('op', 'invoke') if isinstance(value, dict) else None
+        if operation == 'transaction':
+            try:
+                transaction_intake.validate(value)
+            except ValueError as error:
+                raise Failure(str(error)) from error
+            return {'$type': REQUEST, 'profile': 'delvetalk-live-v1', 'requestJson': text}
         if operation == 'invoke':
             fields = ['object', 'command', 'input', expected_key]
             if 'op' in value:
@@ -84,15 +91,22 @@ def encode(kind, text):
         request = value['request']
         if not all(isinstance(source[k], str) and source[k] for k in ('uri', 'cid', 'author')):
             raise Failure('Receipt source identity fields must be nonempty strings')
-        if not isinstance(request['object'], str) or not request['object']:
-            raise Failure('Receipt object must be a nonempty string')
+        if request.get('op') == 'transaction':
+            reads = request.get('reads')
+            if not isinstance(reads, dict) or not reads or not all(isinstance(key, str) and key for key in reads):
+                raise Failure('Transaction receipt requires read object identities')
+            discovery = {'objects': sorted(reads)}
+        else:
+            if not isinstance(request.get('object'), str) or not request['object']:
+                raise Failure('Receipt object must be a nonempty string')
+            discovery = {'object': request['object']}
         if request['principal'] != source['author']:
             raise Failure('Receipt principal does not match source author')
         if not isinstance(value.get('reply'), dict) or not isinstance(value.get('profile'), dict):
             raise Failure('Receipt requires reply and profile pins')
         return {'$type': RECEIPT, 'profile': 'delvetalk-live-v1',
                 'requestRef': {'uri': source['uri'], 'cid': source['cid']},
-                'author': source['author'], 'object': request['object'],
+                'author': source['author'], **discovery,
                 'receiptJson': text, 'sha256': digest(text)}
     if kind == 'root':
         if not isinstance(value, dict) or value.get('format') != 'delvetalk-clerk-root-v1':

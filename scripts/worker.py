@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Bounded local receiving queue; ordinary runs prepare receipts without publishing."""
 import argparse
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import math
@@ -55,6 +57,55 @@ def command(arguments, remaining, memory_mib=1024):
     if process.returncode:
         raise RuntimeError((errors or output or f'worker subprocess exited {process.returncode}').strip()[:2000])
     return clerk.loads(output)
+
+
+@contextmanager
+def bounded_lock(path, deadline, now):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, 'a') as stream:
+        while True:
+            remaining = deadline - now()
+            if remaining <= 0:
+                yield False
+                return
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(min(0.02, remaining))
+        try:
+            yield True
+        finally:
+            fcntl.flock(stream, fcntl.LOCK_UN)
+
+
+def publication_artifacts(receipt):
+    """Prepare immutable records at this admission boundary, never current pointers."""
+    if receipt['reply']['kind'] != 'committed':
+        return []
+    data, request = receipt['reply']['data'], receipt['request']
+    roots = data['roots'] if request['op'] == 'transaction' else {request['object']: data['root']}
+    artifacts, references = [], {}
+    for object_id, root in sorted(roots.items()):
+        snapshot = {'format': 'delvetalk-clerk-root-v1', 'object': object_id,
+                    'root': root, 'profile': receipt['profile']}
+        snapshot['id'] = clerk.digest(snapshot)
+        raw = clerk.canonical(snapshot).decode('utf-8')
+        record = {'$type': 'org.delvetalk.rootSnapshot', 'profile': 'delvetalk-live-v1',
+                  'object': object_id, 'version': str(root['version']), 'snapshotJson': raw,
+                  'sha256': hashlib.sha256(raw.encode()).hexdigest()}
+        references[object_id] = {'snapshotId': snapshot['id'], 'recordSha256': clerk.digest(record)}
+        artifacts.append({'kind': 'root-snapshot', 'id': snapshot['id'], 'record': record,
+                          'intent': 'worker-root:' + snapshot['id']})
+    head = {'format': 'delvetalk-admission-head-v1', 'receiptId': receipt['id'],
+            'source': receipt['source'], 'roots': references, 'profile': receipt['profile']}
+    head['id'] = clerk.digest(head)
+    raw = clerk.canonical(head).decode('utf-8')
+    artifacts.append({'kind': 'admission-head', 'id': head['id'], 'intent': 'worker-head:' + head['id'],
+                      'record': {'$type': 'org.delvetalk.admissionHead', 'profile': 'delvetalk-live-v1',
+                                 'headJson': raw, 'sha256': hashlib.sha256(raw.encode()).hexdigest()}})
+    return artifacts
 
 
 class Worker:
@@ -162,7 +213,10 @@ class Worker:
                                       'cpu': 'per-process inherited ceil(remaining seconds)',
                                       'memory': f'per-process RLIMIT_AS {self.memory_mib} MiB'
                                       if sys.platform.startswith('linux') else 'no memory limit on this platform'}}
-        with clerk.delve.locked(self.state / '.worker.lock'):
+        with bounded_lock(self.state / '.worker.lock', started + deadline_seconds, self.now) as acquired:
+            if not acquired:
+                report.update(deadlineReached=True, lockTimedOut=True, elapsedSeconds=self.now() - started)
+                return report
             self.bind()
             for path in sorted((self.state / 'queue').glob('*.json')):
                 if self.now() - started >= deadline_seconds:
@@ -191,7 +245,7 @@ class Worker:
                                 or receipt['source']['uri'] != entry['uri'] or receipt['source']['cid'] != entry['cid']):
                             raise ValueError('receiving result does not match queued source')
                         text = clerk.canonical(receipt).decode('utf-8') + '\n'
-                        entry.update(phase='prepared', receipt=receipt,
+                        entry.update(phase='prepared', receipt=receipt, publicationArtifacts=publication_artifacts(receipt),
                                      outbox={'kind': 'receipt', 'intent': 'worker-receipt:' + key(entry['uri']), 'text': text})
                     else:
                         entry.update(phase='published', publication=self.publish(entry, remaining))

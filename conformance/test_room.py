@@ -158,10 +158,76 @@ class RoomTests(unittest.TestCase):
     def test_malformed_migrated_state_degrades_to_raw(self):
         self.enter()
         for field, value in [("choices", {"length": -1, "items": {}}),
+                             ("choices", {"length": 1 << 80, "items": {}}),
                              ("requirements", "yes"), ("vars", {"bad": {"kind": "int", "value": -1}})]:
             root = copy.deepcopy(self.root)
             root["state"]["session"][field] = value
             self.assertEqual(self.view(root=root)["mode"], "raw")
+
+    def test_inspect_source_choose_retains_the_saved_scene(self):
+        self.enter()
+        view = room.inspect_object(self.root, "cafe", self.artifact)
+        self.assertEqual(view, self.view())
+        source = room.source_document(view)
+        self.assertEqual(source["source"], self.source)
+        self.assertEqual(source["root"], view["root"])
+        saved = Path(self.tmp.name) / "saved.json"
+        saved.write_text(room.world.wire_dumps(view))
+        # Another transition occurs before the participant submits their saved
+        # choice; source/choose must retain that observed version throughout.
+        self.assertEqual(self.send(room.choice_request(view, 0, "other", "earlier"))["kind"], "committed")
+        source_run = subprocess.run([sys.executable, str(ROOT / "scene/room.py"), "source", str(saved), "--raw"],
+                                    capture_output=True, check=True)
+        self.assertEqual(source_run.stdout, self.source.encode("utf-8"))
+        request_run = subprocess.run([sys.executable, str(ROOT / "scene/room.py"), "choose", str(saved),
+                                     "visitor", "saved-choice", "--action", "choose:0:1"],
+                                    text=True, capture_output=True, check=True)
+        request = json.loads(request_run.stdout)
+        self.assertEqual(request["expected"], view["root"])
+        self.assertEqual(self.send(request)["data"], "stale read root")
+        forged = copy.deepcopy(view)
+        forged["source"] += "\nSubstituted source"
+        with self.assertRaises(room.ArtifactError): room.source_document(forged)
+
+    def test_pure_projection_join_and_shared_panels(self):
+        protocol = json.loads((ROOT / "scene/projections/sign-v1.json").read_text())
+        created = room.world.exchange(self.db, {"op": "create", "object": "sign", "principal": "owner",
+                    "intent": "create-sign", "protocol": protocol, "law": ["visitor"]})
+        root = created["data"]["root"]
+        before = self.db.read_bytes()
+        main = room.inspect_object(root, "sign")
+        details = room.inspect_object(root, "sign", panel="details")
+        self.assertEqual(main["mode"], "projection", main)
+        self.assertEqual(main["root"], details["root"])
+        self.assertNotEqual(main["data"]["title"], details["data"]["title"])
+        self.assertEqual(self.db.read_bytes(), before)
+        self.assertEqual(room.source_document(main)["program"], root["protocol"]["viewProgram"])
+        self.assertIn("Exact view program", room.html_view(main))
+        request = room.view_request(details, "light", "visitor", "light-from-panel")
+        self.assertEqual(request["object"], "sign")
+        self.assertEqual(request["expected"], root)
+        receipt = room.world.exchange(self.db, request)
+        self.assertEqual(receipt["kind"], "committed", receipt)
+        changed = room.inspect_object(receipt["data"]["root"], "sign")
+        self.assertEqual(changed["data"]["prose"], "The lamp is lit.")
+        stale = room.view_request(main, "light", "visitor", "stale-panel")
+        self.assertEqual(room.world.exchange(self.db, stale)["data"], "stale read root")
+        command = [sys.executable, str(ROOT / "scene/room.py"), "inspect", str(self.db), "sign", "--panel", "details"]
+        output = subprocess.run(command, text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(output.stdout)["mode"], "projection")
+
+    def test_projection_failure_and_unsupported_object_keep_raw_source(self):
+        protocol = json.loads((ROOT / "scene/projections/sign-v1.json").read_text())
+        root = {"protocol": protocol, "state": protocol["initial"], "law": ["visitor"], "version": 0}
+        root["protocol"]["viewProgram"]["term"] = ["lam", ["lam", ["perform", ["label", "forbidden"]]]]
+        view = room.inspect_object(root, "bad-sign")
+        self.assertEqual(view["mode"], "raw")
+        self.assertIn("Pure view projection unavailable", view["reason"])
+        self.assertEqual(room.source_document(view)["program"], root["protocol"]["viewProgram"])
+        del root["protocol"]["viewProgram"]
+        raw = room.inspect_object(root, "plain-sign")
+        self.assertEqual(room.source_document(raw)["program"], root["protocol"])
+        with self.assertRaises(room.ArtifactError): room.view_request(raw, "light", "visitor", "no-view")
 
 
 if __name__ == "__main__": unittest.main()

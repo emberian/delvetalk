@@ -27,33 +27,50 @@
 - Explicit quiescent custody upgrades preserve world bytes and historical
   receipts; operator management separates repository enrollment from current law.
 
-## Outstanding implementation work
+## Inhabited buildout
 
-The next inhabited-world increment is specified in [LIVE-BOOTSTRAP](docs/LIVE-BOOTSTRAP.md):
-a source-visible Spween room, endogenous proposal/adoption, separately scoped
-playing/programming authority, and publicly replayable admission history. Qualify
-the existing two-player Automatafl package's actual receiving path and simultaneous
-move protocol before announcing its table. These are implementation obligations,
-not capabilities established by the current local fixtures.
+The [six-cycle record](BUILDOUT.md) tracks the joined implementation and its
+scoped evidence. Shared rooms, source desks, scoped policies, pure Bend views,
+actual Mini package execution, the two-player table and bounded receiving are
+implemented. Local proposal/adoption and independent agent participation run
+through the same Lean admission paths. Public publication remains paused.
 
-- Operator-run clerk processing is not an unattended receiving service. Add a
-  supervised queue only with an explicit deployment/operating policy, delivery
-  bounds and operating policy. Enrollment and law management are implemented;
-  remote requests cannot install new law.
+The Automatafl corpus has 353 exact historical Bend matches and the same ten
+historical Rust differences. Game table tests exercise cryptographic openings,
+actual receiving-object identity, simultaneous phases, real game resolution,
+retained replies and rollback. Neither core fixture agreement nor game corpus
+agreement is a universal equivalence theorem.
+
+## Outstanding boundaries
+
+- The public clerk remains an operator-owned bridge. The new bounded worker is
+  runnable; an unattended public service has not been deployed or announced.
+  Existing live custody needs an explicit quiescent upgrade before new receiving
+  against changed implementation pins. Monitoring remains read-only.
 - PDS identity assurance trusts one named HTTPS custodian. Independent DID/CAR/MST
-  verification and federation are not implemented.
+  verification and federation remain absent.
 - Quiescent upgrades refuse pending work. Concurrent runtime versions and routing
   pending attempts to their original executables remain unimplemented.
-- Outbox entries need specific effect adapters and reconciliation contracts.
-  Existing receipt publication is not exactly-once external effect delivery.
-- Local reduction fuel does not bound every host memory/arithmetic cost. A public
-  receiver needs process/resource isolation in addition to semantic admission.
+- Prepared root snapshots and admission heads are local artifacts. Publishing
+  them and delivering arbitrary protocol outbox effects need explicit effect
+  adapters and reconciliation; receipt publication is not exactly-once delivery.
+- Local reduction/demand fuel does not meter source compilation, every arithmetic
+  cost or total process-tree memory. The worker adds process-group wall/CPU
+  custody and Linux per-process address-space limits; it is not an OS sandbox.
 - Complete core inspection, parser/runner refinement and compiler equivalence
-  remain proof obligations; fixture agreement is scoped executable evidence.
-- Spween floats, arbitrary stateful external handlers and transactional comparison
-  with upstream error paths need separate explicit profiles.
-- Two-player Automatafl remains the separately pinned Mini example. Preserve its
-  documented implementation differences; do not add unstable n-player variants.
+  remain proof obligations distinct from executable agreement.
+- Spween floats, dynamic inventories, scheduling and arbitrary stateful external
+  handlers require explicit profiles. Shared scenes currently have one session;
+  personal presentation panels do not create separate authority or session state.
+- New syntaxes need explicit parser/lowering implementations and review. Exact
+  source artifacts can retain any text; ordinary prose does not become code by
+  implication. The pure compiled package interface can host new interpreters
+  without adding language-specific host admission rules.
+- Simultaneous-game commitments hide openings until participants publish them;
+  revealing early in a public request discloses the opening even if refused.
+  A participant can stall by withholding a reveal; timeout/forfeit policy is not
+  silently invented by the table. The supplied table deliberately has no
+  management grants. Different management rules require an explicit initial law.
 
 ## Latest resolved boundaries
 

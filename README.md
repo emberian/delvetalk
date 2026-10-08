@@ -42,6 +42,42 @@ The same JSONL input works with `python3 impl/python/evaluator.py`,
 `node impl/js/evaluator.mjs`, and `impl/c/evaluator`.
 [The wire contract](conformance/AST.md) defines terms, fuel and responses.
 
+## Inhabit and change a world
+
+```sh
+python3 scripts/bootstrap.py run /tmp/my-delvetalk-cafe --profile compiled
+python3 scripts/bootstrap.py view /tmp/my-delvetalk-cafe --html > /tmp/cafe.html
+python3 scripts/bootstrap.py table /tmp/my-delvetalk-cafe
+```
+
+The [inhabited bootstrap](examples/inhabited-bootstrap/README.md) connects a
+shared Spween café, a source desk and a programmable Bend sign. Two local
+participants repair a moth, propose a room extension, compile it, adopt it
+atomically, and use its new action. They also replace the sign's view program.
+Saved views carry their exact roots; stale actions refuse instead of silently
+acting on a different world.
+
+The [Constellation Commons](protocols/constellation-commons/README.md) is a
+reusable microprotocol developed through independent agent authorship, review,
+adoption and play. It demonstrates changing the environment through its own
+source desk and authority rules.
+
+[Scoped laws](profiles/AUTHORITY.md) separate named actions, programming and law
+revision. Optional pure Bend predicates restrict grants under the shared budget.
+The [source desk](profiles/DESK.md) retains source, diagnostics and an explicit
+migration; its compiler receives no installation authority.
+
+The [compiled host](profiles/COMPILED.md) admits source packages through Mini's
+actual parser, typechecker and demand machine. The [two-player table](game/table/README.md)
+uses that host for Automatafl resolution and domain-bound commit/reveal moves.
+The `table` command installs it in the same café world and plays a complete
+five-round example match; the café retains its shared state throughout.
+The [history bundle](profiles/HISTORY.md) reconstructs ordered admissions using
+a matching trusted local engine, including source artifacts and atomic edits.
+The [bounded worker](profiles/WORKER.md) prepares receiving receipts locally;
+external publication is disabled unless explicitly selected by its operator.
+These are local runnable paths, not a newly deployed public service.
+
 ## Choose a capsule
 
 Limits are strict decimal UTF-8 bytes, including all text. The game or protocol
@@ -60,7 +96,8 @@ The executable core currently accepts raw terms, including terms Mini's typed
 front end would refuse. These are conformance machines, not the Mini runtime.
 The separate [typed-core profile](profiles/TYPED.md) checks explicit type,
 quantity and bound annotations using Mini's pinned checker. It grants no host
-authority and does not yet parse Mini's complete surface language.
+authority. The separate [package interface](game/automatafl/README.md) uses
+Mini's actual surface frontend for sealed, explicitly supplied source modules.
 The [manifest](capsules/manifest.json) gives exact byte counts and identities.
 
 For the full object-model discussion, read [specification and target](docs/FOUNDATIONS.md),
@@ -211,8 +248,10 @@ The [compact-input trial](experiments/capsule-only/README.md) is retained as a
 separate experiment, including its failed machine reconstruction.
 
 [Two-player Automatafl](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83/world/automatafl)
-remains a separate example package in Mini, including its source-pinned
-cross-validation evidence. No n-player variants belong to this project.
+now executes locally through the actual compiled package and governed table.
+All 353 cases match the historical Bend results; the ten known Rust differences
+remain explicit in [qualification](game/automatafl/README.md). No n-player
+variants belong to this project.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for a protocol proposal. Source copied
 from Mini retains its provenance in [spec/upstream.json](spec/upstream.json).

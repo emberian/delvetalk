@@ -1,0 +1,135 @@
+{
+  "profile": "delvetalk-local-v1",
+  "name": "projection-sign",
+  "initial": {
+    "title": "The workshop sign",
+    "message": "The lamp is dark."
+  },
+  "commands": {
+    "light": {
+      "require": [],
+      "set": {
+        "message": [
+          "literal",
+          "The lamp is lit."
+        ]
+      },
+      "result": [
+        "literal",
+        "lit"
+      ],
+      "outbox": []
+    }
+  },
+  "viewProgram": {
+    "profile": "delvetalk-bend-view-v1",
+    "term": [
+      "lam",
+      [
+        "lam",
+        [
+          "record",
+          [
+            [
+              "title",
+              [
+                "ifBool",
+                [
+                  "binary",
+                  "labelEqual",
+                  [
+                    "bound",
+                    0
+                  ],
+                  [
+                    "label",
+                    "main"
+                  ]
+                ],
+                [
+                  "get",
+                  [
+                    "bound",
+                    1
+                  ],
+                  "title"
+                ],
+                [
+                  "label",
+                  "Sign details"
+                ]
+              ]
+            ],
+            [
+              "prose",
+              [
+                "ifBool",
+                [
+                  "binary",
+                  "labelEqual",
+                  [
+                    "bound",
+                    0
+                  ],
+                  [
+                    "label",
+                    "main"
+                  ]
+                ],
+                [
+                  "label",
+                  "This sign now teaches visitors to light the shared lamp."
+                ],
+                [
+                  "get",
+                  [
+                    "bound",
+                    1
+                  ],
+                  "message"
+                ]
+              ]
+            ],
+            [
+              "actions",
+              [
+                "record",
+                [
+                  [
+                    "light",
+                    [
+                      "record",
+                      [
+                        [
+                          "text",
+                          [
+                            "label",
+                            "Light the shared lamp"
+                          ]
+                        ],
+                        [
+                          "command",
+                          [
+                            "label",
+                            "light"
+                          ]
+                        ],
+                        [
+                          "input",
+                          [
+                            "record",
+                            []
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  }
+}

@@ -78,6 +78,25 @@ class PackageAdversarial(unittest.TestCase):
                 self.assertEqual(self.run_package(artifact, [argument])['status'], 'error')
         self.assertEqual(self.run_package(artifact, [])['status'], 'error')
 
+    def test_duplicate_data_fields_cannot_escape_into_plain_json(self):
+        # Source literals reject duplicates, but the ordered typed-data wire can
+        # carry them. The upstream extractor must refuse to publish an ambiguous
+        # record before the compiled host's Data-to-JSON conversion is reached.
+        text = ('edition ObjectiveBend 1\nrecord R:\n  x: Nat\n'
+                'def main(value: R) -> R:\n  value\n'
+                'def first(value: R) -> Nat:\n  value.x\n')
+        duplicate = {'tag': 'record', 'fields': [
+            {'name': 'x', 'value': N(1)}, {'name': 'x', 'value': N(2)}]}
+        identity = self.compile(text)
+        result = self.run_package(identity, [duplicate])
+        self.assertEqual(result['status'], 'refused', result)
+        self.assertIn('duplicateField', result['failure'])
+        self.assertNotIn('value', result)
+        # Lookup still means first matching field; refusing output must not
+        # retroactively reinterpret source lookup as JSON's last-key-wins.
+        projection = self.compile(text, entry='first')
+        self.assertEqual(self.run_package(projection, [duplicate])['value'], N(1))
+
     def test_execution_limits_are_enforced_independently_of_compile_limits(self):
         artifact = self.compile('edition ObjectiveBend 1\ndef main(x: Nat) -> Nat:\n  x + 1n\n')
         for limits in [{'ticks': '0'}, {'nodes': '0'}, {'heap': '0'}, {'bytes': '0'}]:

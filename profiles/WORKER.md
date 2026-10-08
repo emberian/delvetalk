@@ -76,8 +76,11 @@ python3 scripts/worker.py --state /private/worker --clerk-state /private/clerk \
   retry at://AUTHOR/org.delvetalk.request/KEY
 ```
 
-The worker lock serializes runs, enqueue and retry operations. The deadline also
-includes time spent waiting for that lock. Discovery has its separate item bound.
+The worker lock serializes runs, enqueue and retry operations. Run uses nonblocking
+lock acquisition with short bounded retries: waiting for another process cannot
+extend the declared deadline indefinitely. A lock timeout reports
+`deadlineReached` and `lockTimedOut` without processing an entry. Discovery has
+its separate item bound.
 Resource exhaustion or transport errors do not alter Lean authority or the
 meaning of a request.
 
@@ -89,8 +92,18 @@ reconciled against the same prepared record key and exact bytes. A restart betwe
 remote publication and local confirmation therefore cannot silently create a
 second receipt. No credentials are needed or loaded during discovery/preparation.
 
-This worker publishes immutable receipts only. Mutable current-root pointers and
-protocol outbox effects remain separate explicit operations; it neither delivers
+The future publication mode writes immutable receipts only. In addition, every
+committed entry prepares `publicationArtifacts`: one immutable
+`org.delvetalk.rootSnapshot` record for each resulting root and an
+`org.delvetalk.admissionHead` record linking snapshot IDs/record digests to the
+receipt ID and source. A transaction produces one snapshot per read-set root;
+a single-object operation produces one. Refusals produce no root/head artifacts.
+All records are prepared atomically with the worker receipt; restart cannot
+substitute newer roots. `snapshotJson`/`headJson` retain exact JSON as strings.
+These heads describe an admission boundary, not a globally ordered replay chain
+or a latest-root assertion. Root/head artifacts have no enabled publication
+path in this cycle. Mutable current-root pointers and protocol outbox effects
+remain separate explicit operations; it neither delivers
 arbitrary outbox values nor infers exactly-once external effects. Prepared receipts
 can reveal request input and world state, so enabling publication presupposes an
 operator-selected public world and renewed authorization for external writes.
@@ -106,3 +119,7 @@ binding, retry/deadline/batch bounds and terminal stale-root refusal. A POSIX
 process test launches an actual grandchild heartbeat writer, times out its parent,
 and verifies the descendant stops executing; another inspects the limits installed
 in a real subprocess.
+
+Remote multiobject calls use the same queue and source identity; see
+[TRANSACTION-INTAKE.md](TRANSACTION-INTAKE.md). The worker does not split an atomic
+request into separately admitted calls.

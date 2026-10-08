@@ -151,12 +151,12 @@ class ManagementTests(unittest.TestCase):
         entered, release, started = threading.Event(), threading.Event(), threading.Event()
         original = clerk.world.exchange
         output, failures = {}, []
-        def blocked(database, request):
+        def blocked(database, request, **kwargs):
             if request['op'] == 'invoke':
                 entered.set()
                 if not release.wait(5):
                     raise RuntimeError('test synchronization timeout')
-            return original(database, request)
+            return original(database, request, **kwargs)
         def run(key, operation):
             try:
                 output[key] = operation()
@@ -288,6 +288,80 @@ class ManagementTests(unittest.TestCase):
             self.program('oversized', state=b'{"padding":"' + b'x' * 65000 + b'"}')
         self.assertFalse(self.m.path(A, 'oversized').exists())
         self.assertEqual(self.c.snapshot('counter')['root'], self.root)
+
+    def scoped(self):
+        return {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'add': [B]},
+                'reprogram': [A], 'law': [A]}
+
+    def test_scoped_law_transport_and_command_authority(self):
+        self.m.enrollment(B, True)
+        receipt = self.revise('scoped', self.scoped())
+        self.assertEqual(receipt['reply']['kind'], 'committed')
+        root = receipt['reply']['data']['root']
+        self.assertEqual(root['law'], self.scoped())
+        self.assertEqual(self.c.receive(*self.record(B, 'scoped-add', root))['reply']['kind'], 'committed')
+        self.assertEqual(self.revise('no-management', [B], principal=B)['reply']['data'], 'unauthorized')
+        malformed = self.revise('malformed-law', {'profile': 'delvetalk-scoped-law-v1'})
+        self.assertEqual(malformed['reply']['kind'], 'refused')
+        self.assertEqual(self.m.resume(A, 'malformed-law'), malformed)
+
+    def add(self, object_id='desk', intent='create-desk', law=None):
+        return self.m.add_object(object_id, A, intent, 'protocol-json@1',
+                                 (ROOT / 'protocols/counter/protocol.json').read_bytes(),
+                                 self.scoped() if law is None else law)
+
+    def test_add_object_registers_only_after_success_and_keeps_existing_state(self):
+        before = self.c.config()
+        created = self.add()
+        self.assertEqual(created['reply']['kind'], 'committed')
+        self.assertEqual(created['registration'], {'object': 'desk', 'registered': True})
+        after = self.c.config()
+        self.assertEqual(after, {**before, 'objects': ['counter', 'desk']})
+        self.assertEqual(self.c.snapshot('counter')['root'], self.root)
+        self.assertEqual(self.c.snapshot('desk')['root']['law'], self.scoped())
+        with patch.object(manage.translation, 'translate', side_effect=AssertionError('no retranslation')):
+            self.assertEqual(self.add(), created)
+        refused = self.add('invalid', 'invalid', law={'bogus': True})
+        self.assertEqual(refused['reply']['kind'], 'refused')
+        self.assertNotIn('invalid', self.c.config()['objects'])
+        duplicate = self.add('desk', 'duplicate')
+        self.assertEqual(duplicate['reply']['data'], 'object exists')
+        self.assertFalse(duplicate['registration']['registered'])
+
+    def test_add_object_recovers_world_config_and_receipt_boundaries(self):
+        save = clerk.save
+        for boundary in ('config', 'receipt'):
+            with self.subTest(boundary=boundary):
+                def fail(path, value):
+                    if ((boundary == 'config' and path.name == 'clerk.json') or
+                            (boundary == 'receipt' and 'receipt' in value)):
+                        raise OSError('registration interruption')
+                    save(path, value)
+                with patch.object(clerk, 'save', fail):
+                    with self.assertRaisesRegex(OSError, 'registration interruption'):
+                        self.add(boundary, boundary)
+                with self.assertRaisesRegex(ValueError, 'pending request'):
+                    self.c.upgrade(self.c.profile()['sha256'])
+                receipt = self.m.resume(A, boundary)
+                self.assertTrue(receipt['registration']['registered'])
+                self.assertEqual(self.c.snapshot(boundary)['root']['version'], 0)
+                self.assertEqual(self.m.resume(A, boundary), receipt)
+
+    def test_scoped_bootstrap_and_add_object_law_file_cli(self):
+        law_path = self.state / 'law.json'
+        law_path.write_text(clerk.world.wire_dumps(self.scoped()))
+        custody = self.state / 'scoped-clerk'
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/clerk.py'), '--state', str(custody),
+            'bootstrap', '--object', 'first', '--protocol', str(ROOT / 'protocols/counter/protocol.json'),
+            '--repository', B, '--law-file', str(law_path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['data']['root']['law'], self.scoped())
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/manage.py'), '--state', str(custody),
+            'add-object', '--object', 'second', '--principal', A, '--intent', 'cli-second',
+            '--source', str(ROOT / 'protocols/counter/protocol.json'), '--syntax', 'protocol-json@1',
+            '--law-file', str(law_path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertTrue(json.loads(result.stdout)['registration']['registered'])
 
 
 if __name__ == '__main__':

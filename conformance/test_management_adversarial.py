@@ -1,7 +1,11 @@
 """Independent management identity and recovery checks; no external operations."""
 import importlib.util
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +16,7 @@ spec.loader.exec_module(manage)
 clerk = manage.clerk
 A = 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa'
 B = 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb'
+desk = clerk.module('desk_adversarial', 'scripts/desk.py')
 
 
 class ManagementAdversarial(unittest.TestCase):
@@ -97,6 +102,81 @@ class ManagementAdversarial(unittest.TestCase):
         self.assertEqual(accepted['reply']['kind'], 'committed')
         with patch.object(manage, 'translation_current', side_effect=ValueError('now upgraded')):
             self.assertEqual(self.m.resume(A, 'program'), accepted)
+
+    def desk_candidate(self):
+        worker = desk.Desk(self.c.database, self.state / 'builds')
+        empty = worker.create('candidate', A, 'create-candidate', [A])['data']['root']
+        source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
+        pending = worker.submit('candidate', A, 'submit-candidate', empty, 'protocol-json@1',
+                                source, b'[]', {'count': 3}, 'counter')['data']['root']
+        build = {'format': 'delvetalk-desk-build-v1', 'passed': True,
+                 'candidateRootSha256': desk.digest(pending), 'protocol': clerk.loads(source)}
+        return worker, pending, build
+
+    def test_pending_desk_admission_cannot_cross_runtime_change(self):
+        worker, pending, build = self.desk_candidate()
+        with patch.object(desk, 'bounded_compile', return_value=build), patch.object(
+                worker, 'exchange', side_effect=OSError('uncertain before admission')):
+            with self.assertRaises(OSError):
+                worker.check('candidate', A, 'compile', pending)
+        before = self.c.database.read_bytes()
+        with patch.object(desk, 'execution_profile', return_value={'different': True}):
+            with self.assertRaisesRegex(ValueError, 'runtime pins changed'):
+                worker.check('candidate', A, 'compile', pending)
+        self.assertEqual(self.c.database.read_bytes(), before)
+        with patch.object(desk, 'bounded_compile', side_effect=AssertionError('recompiled')):
+            self.assertEqual(worker.check('candidate', A, 'compile', pending)['kind'], 'committed')
+
+    def test_uncertain_committed_desk_reply_survives_runtime_change_without_execution(self):
+        worker, pending, build = self.desk_candidate()
+        exchange = worker.exchange
+        committed = []
+        def lose_reply(request):
+            committed.append(exchange(request))
+            raise OSError('lost committed reply')
+        with patch.object(desk, 'bounded_compile', return_value=build), patch.object(worker, 'exchange', lose_reply):
+            with self.assertRaises(OSError):
+                worker.check('candidate', A, 'compile', pending)
+        with patch.object(desk, 'execution_profile', return_value={'different': True}), patch.object(
+                worker, 'exchange', side_effect=AssertionError('must not execute new engine')), patch.object(
+                desk, 'load_artifact', side_effect=AssertionError('historical receipt needs no artifact')):
+            self.assertEqual(worker.check('candidate', A, 'compile', pending), committed[0])
+
+    @unittest.skipUnless(os.name == 'posix', 'process group custody')
+    def test_desk_cancellation_kills_compiler_descendants(self):
+        marker = self.state / 'child-pid'
+        code = ('import subprocess,sys,time,pathlib; '
+                'child=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
+                f'pathlib.Path({str(marker)!r}).write_text(str(child.pid)); time.sleep(30)')
+        popen = subprocess.Popen
+        processes = []
+        def start(_arguments, **kwargs):
+            process = popen([sys.executable, '-c', code], **kwargs)
+            processes.append(process)
+            def interrupt(*args, **kwargs):
+                deadline = time.monotonic() + 3
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                if not marker.exists():
+                    raise RuntimeError('test child did not start')
+                raise KeyboardInterrupt()
+            process.communicate = interrupt
+            return process
+        try:
+            with patch.object(desk.subprocess, 'Popen', start):
+                with self.assertRaises(KeyboardInterrupt):
+                    desk.bounded_compile(self.root)
+            self.assertIsNotNone(processes[0].poll())
+            child = int(marker.read_text())
+            status = subprocess.run(['ps', '-o', 'stat=', '-p', str(child)], capture_output=True, text=True).stdout.strip()
+            self.assertTrue(not status or status.startswith('Z'), 'compiler descendant survived cancellation')
+        finally:
+            for process in processes:
+                try:
+                    os.killpg(process.pid, 9)
+                except ProcessLookupError:
+                    pass
+                process.wait()
 
 
 if __name__ == '__main__':

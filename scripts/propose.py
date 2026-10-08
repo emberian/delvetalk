@@ -23,6 +23,7 @@ def module(name, relative):
 
 translation = module('proposal_translation', 'scripts/translate.py')
 world = module('proposal_world', 'scripts/world.py')
+runtime_profile = module('proposal_runtime_profile', 'scripts/runtime_profile.py')
 
 
 def digest(raw):
@@ -94,18 +95,21 @@ def json_equal(left, right):
     return left == right
 
 
-def run_scenarios(protocol, scenarios):
+def run_scenarios(protocol, scenarios, *, profile='world'):
     """Return deterministic receipts and assertion failures; use fresh worlds only."""
     validate_scenarios(scenarios)
-    if not (ROOT / '.lake/build/bin/delvetalk-world').is_file():
-        raise ValueError('build delvetalk-world before checking proposals')
+    if profile not in world.PROFILES:
+        raise ValueError('unknown local host profile: ' + str(profile))
+    binary = world.PROFILES[profile][0]
+    if not (ROOT / '.lake/build/bin' / binary).is_file():
+        raise ValueError('build ' + binary + ' before checking proposals')
     results = []
     with tempfile.TemporaryDirectory(prefix='delvetalk-proposal-') as temporary:
         for index, scenario in enumerate(scenarios):
             database = Path(temporary) / f'{index}.json'
             installation = world.exchange(database, {
                 'op': 'create', 'object': 'candidate', 'principal': 'proposal-fixture',
-                'intent': 'install', 'protocol': protocol, 'law': scenario['law']})
+                'intent': 'install', 'protocol': protocol, 'law': scenario['law']}, profile=profile)
             result = {'name': scenario['name'], 'installation': installation, 'steps': [], 'failures': []}
             results.append(result)
             if installation.get('kind') != 'committed':
@@ -115,11 +119,11 @@ def run_scenarios(protocol, scenarios):
             initial = installation['data']['root']
             for step_index, step in enumerate(scenario['steps']):
                 root = initial if step['root'] == 'initial' else world.exchange(database, {
-                    'op': 'inspect', 'object': 'candidate', 'principal': 'proposal-fixture'})
+                    'op': 'inspect', 'object': 'candidate', 'principal': 'proposal-fixture'}, profile=profile)
                 receipt = world.exchange(database, {
                     'op': 'invoke', 'object': 'candidate', 'principal': step['principal'],
                     'intent': f'step-{step_index}', 'expected': root,
-                    'command': step['command'], 'input': step['input']})
+                    'command': step['command'], 'input': step['input']}, profile=profile)
                 result['steps'].append({'index': step_index, 'receipt': receipt})
                 observed = {'kind': receipt.get('kind'), 'error': receipt.get('data')}
                 if receipt.get('kind') == 'committed':
@@ -132,19 +136,20 @@ def run_scenarios(protocol, scenarios):
     return results
 
 
-def execution_pin():
+def execution_pin(profile='world'):
     # Byte identity is provenance, not a proof that a binary was built from these sources.
-    paths = ['scripts/propose.py', 'scripts/world.py', 'profiles/World.lean', 'profiles/WorldCore.lean',
-             'spec/Delvetalk/Core.lean', 'spec/upstream/Theory/ObjectiveBendOpenRecursion.lean',
-             'spec/upstream/Theory/AxiomPin.lean', 'lean-toolchain',
-             '.lake/build/bin/delvetalk-world']
-    files = {path: digest((ROOT / path).read_bytes()) for path in paths}
-    identity = {'profile': 'delvetalk-local-v1', 'files': files,
+    if profile not in world.PROFILES:
+        raise ValueError('unknown local host profile: ' + str(profile))
+    files = {**runtime_profile.file_hashes(profile),
+             'scripts/propose.py': digest(Path(__file__).read_bytes())}
+    identity = {'profile': 'delvetalk-local-v1', 'admissionProfile': profile, 'files': files,
                 'python': list(sys.version_info[:3])}
     return {**identity, 'sha256': digest(translation.canonical(identity))}
 
 
-def propose(syntax, source, scenario_source):
+def propose(syntax, source, scenario_source, *, profile='world'):
+    if profile not in world.PROFILES:
+        raise ValueError('unknown local host profile: ' + str(profile))
     if len(source) > 512 * 1024 or len(scenario_source) > 1024 * 1024:
         raise ValueError('proposal source exceeds 512 KiB or scenarios exceed 1 MiB')
     artifact = translation.translate(syntax, source)
@@ -157,15 +162,15 @@ def propose(syntax, source, scenario_source):
     scenarios = translation.load_json(scenario_source.decode('utf-8'))
     validate_scenarios(scenarios)
     candidate = {'format': 'delvetalk-proposal-v1', 'artifact': artifact,
-                 'host': {'target': 'local-protocol-v1', 'selection': selection,
+                 'host': {'target': 'local-protocol-v1', 'selection': selection, 'admissionProfile': profile,
                           'protocol_sha256': digest(translation.canonical(protocol))},
                  'scenarios': {'source': scenario_source.decode('utf-8'),
                                'source_sha256': digest(scenario_source), 'value': scenarios,
                                'sha256': digest(translation.canonical(scenarios))}}
     candidate['id'] = digest(translation.canonical(candidate))
-    execution = execution_pin()
-    outcomes = run_scenarios(protocol, scenarios)
-    if execution_pin() != execution:
+    execution = execution_pin(profile)
+    outcomes = run_scenarios(protocol, scenarios, profile=profile)
+    if execution_pin(profile) != execution:
         raise ValueError('host or proposal runner bytes changed during execution; rerun in a stable checkout')
     report = {'format': 'delvetalk-proposal-report-v1', 'candidate': candidate,
               'execution': execution, 'outcomes': outcomes,
@@ -178,6 +183,7 @@ def propose(syntax, source, scenario_source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--syntax', required=True, help='explicit reviewed syntax ID/version')
+    parser.add_argument('--profile', choices=world.PROFILES, default='world', help='operator-selected host for every scenario')
     parser.add_argument('source', type=Path)
     parser.add_argument('scenarios', type=Path)
     parser.add_argument('-o', '--output', type=Path, help='new report file; existing paths are refused')
@@ -186,7 +192,7 @@ def main():
         # Never replace a source, live world, or prior report, including through a symlink.
         if args.output and (args.output.exists() or args.output.is_symlink()):
             raise ValueError('output already exists; select a new report path')
-        report = propose(args.syntax, args.source.read_bytes(), args.scenarios.read_bytes())
+        report = propose(args.syntax, args.source.read_bytes(), args.scenarios.read_bytes(), profile=args.profile)
         output = translation.canonical(report) + b'\n'
         if args.output:
             with args.output.open('xb') as stream:

@@ -79,20 +79,36 @@ class Management:
     def finish(self, path, entry):
         if 'receipt' in entry:
             return entry['receipt']
-        if entry['profile']['pins'] != clerk.pins():
+        config = self.clerk.config()
+        selected = self.clerk.execution_profile(entry['request'], config)
+        if entry.get('admissionProfile', 'world') != selected:
+            raise ValueError('pending management admission profile changed')
+        if entry['profile']['pins'] != clerk.pins(config.get('runtimeProfile', 'world')):
             raise ValueError('pending management clerk implementation pins changed')
         if entry['managementProfile'] != management_profile():
             raise ValueError('pending management implementation pins changed')
         if 'artifact' in entry:
             translation_current(entry['artifact'])
         # Never take world.lock first or hold it across exchange (which acquires it).
-        reply = clerk.world.exchange(self.clerk.database, entry['request'])
+        reply = clerk.world.exchange(self.clerk.database, entry['request'], profile=selected)
         receipt = {'format': 'delvetalk-management-receipt-v1',
                    'request': entry['request'], 'reply': reply, 'profile': entry['profile'],
                    'managementProfile': entry['managementProfile'],
+                   'admissionProfile': selected,
                    'principalSource': 'local-operator-assertion'}
         if 'artifact' in entry:
-            receipt['program'] = {'artifact': entry['artifact'], 'stateSource': entry['inputs']['stateSource']}
+            receipt['program'] = {'artifact': entry['artifact']}
+            if 'stateSource' in entry['inputs']:
+                receipt['program']['stateSource'] = entry['inputs']['stateSource']
+        if entry['request']['op'] == 'create':
+            registered = reply['kind'] == 'committed'
+            if registered:
+                config = self.clerk.config()
+                config['objects'] = sorted(set(config['objects']) | {entry['request']['object']})
+                # Before terminal journal receipt: interruption remains pending,
+                # and replay of Lean's create receipt can complete registration.
+                clerk.save(self.state / 'clerk.json', config)
+            receipt['registration'] = {'object': entry['request']['object'], 'registered': registered}
         receipt['id'] = clerk.digest(receipt)
         entry['receipt'] = receipt
         clerk.save(path, entry)
@@ -106,25 +122,22 @@ class Management:
             if clerk.canonical(entry['request']) != clerk.canonical(request):
                 raise ValueError('management intent already bound to a different request')
         else:
-            if request['object'] not in config['objects']:
+            if request['op'] != 'create' and request['object'] not in config['objects']:
                 raise ValueError('object is not configured for this clerk')
-            if config['profile']['pins'] != clerk.pins():
+            if config['profile']['pins'] != clerk.pins(config.get('runtimeProfile', 'world')):
                 raise ValueError('clerk implementation pins changed')
             # Reject oversized transport before reserving an intent: the host's
             # request envelope errors have no retained semantic receipt to recover.
             if len(clerk.canonical(request)) > 65536:
                 raise ValueError('management request exceeds 64 KiB')
             entry = {'request': request, 'profile': config['profile'],
+                     'admissionProfile': self.clerk.execution_profile(request, config),
                      'managementProfile': management_profile(), **(extra or {})}
             clerk.save(path, entry)
         return self.finish(path, entry)
 
     def law(self, object_id, principal, intent, expected, law):
         path = self.path(principal, intent)
-        if not isinstance(law, list):
-            raise ValueError('law must be an explicit DID array (possibly empty)')
-        for member in law:
-            did(member)
         request = {'op': 'law', 'object': object_id, 'principal': principal,
                    'intent': 'operator-law:' + intent,
                    'expected': expected_root(expected, object_id), 'law': law}
@@ -141,6 +154,18 @@ class Management:
         request = {'op': 'reprogram', 'object': object_id, 'principal': principal,
                    'intent': 'operator-reprogram:' + intent,
                    'expected': expected_root(expected, object_id)}
+        return self.translated(path, request, inputs, source, state_source)
+
+    def add_object(self, object_id, principal, intent, syntax, source, law):
+        path = self.path(principal, intent)
+        if len(source) > 512 * 1024:
+            raise ValueError('program source exceeds 512 KiB')
+        request = {'op': 'create', 'object': object_id, 'principal': principal,
+                   'intent': 'operator-create:' + intent, 'law': law}
+        inputs = {'syntax': syntax, 'source': source.decode('utf-8')}
+        return self.translated(path, request, inputs, source)
+
+    def translated(self, path, request, inputs, source, state_source=None):
         with clerk.delve.locked(self.state / 'clerk.lock'):
             self.clerk.config()
             if path.exists():
@@ -150,15 +175,17 @@ class Management:
                         or clerk.canonical(entry.get('inputs')) != clerk.canonical(inputs)):
                     raise ValueError('management intent already bound to a different request or source')
                 return self.finish(path, entry)
-            artifact = translation.translate(syntax, source)
+            artifact = translation.translate(inputs['syntax'], source)
             if artifact['target'] == 'local-protocol-v1':
                 protocol = artifact['lowered']
             elif artifact['target'] == 'spween-protocol-bundle-v1':
                 protocol = artifact['lowered']['protocol']
             else:
-                raise ValueError('reprogram syntax must target a local protocol or Spween protocol bundle')
+                raise ValueError('program syntax must target a local protocol or Spween protocol bundle')
             translation_current(artifact)
-            request.update(protocol=protocol, state=clerk.loads(state_source))
+            request['protocol'] = protocol
+            if state_source is not None:
+                request['state'] = clerk.loads(state_source)
             return self.submit(path, request, {'inputs': inputs, 'artifact': artifact})
 
     def resume(self, principal, intent):
@@ -202,6 +229,17 @@ def main():
     authority = revise.add_mutually_exclusive_group(required=True)
     authority.add_argument('--allow', action='append', help='complete new law; repeat for every allowed DID')
     authority.add_argument('--empty-law', action='store_true', help='deliberately remove all authority, including management')
+    authority.add_argument('--law-file', type=Path, help='complete law JSON; Lean validates its structure and authority')
+    create = commands.add_parser('add-object', help='create a local object and recoverably register clerk custody')
+    create.add_argument('--object', required=True)
+    create.add_argument('--principal', required=True)
+    create.add_argument('--intent', required=True)
+    create.add_argument('--source', required=True, type=Path)
+    create.add_argument('--syntax', required=True)
+    initial_law = create.add_mutually_exclusive_group(required=True)
+    initial_law.add_argument('--allow', action='append')
+    initial_law.add_argument('--empty-law', action='store_true')
+    initial_law.add_argument('--law-file', type=Path)
     program = commands.add_parser('reprogram', help='submit a translated program and complete state to Lean')
     program.add_argument('--object', required=True)
     program.add_argument('--principal', required=True)
@@ -222,13 +260,18 @@ def main():
             result = manager.enrollment(args.repository, args.command == 'register')
         elif args.command == 'resume':
             result = manager.resume(args.principal, args.intent)
+        elif args.command == 'add-object':
+            result = manager.add_object(args.object, args.principal, args.intent, args.syntax,
+                                        args.source.read_bytes(),
+                                        clerk.loads(args.law_file.read_bytes()) if args.law_file else args.allow or [])
         elif args.command == 'reprogram':
             result = manager.reprogram(args.object, args.principal, args.intent,
                                        clerk.loads(args.expected_root.read_text()), args.syntax,
                                        args.source.read_bytes(), args.program_state.read_bytes())
         else:
             result = manager.law(args.object, args.principal, args.intent,
-                                 clerk.loads(args.expected_root.read_text()), args.allow or [])
+                                 clerk.loads(args.expected_root.read_text()),
+                                 clerk.loads(args.law_file.read_bytes()) if args.law_file else args.allow or [])
         print(clerk.world.wire_dumps(result))
     except (ValueError, RuntimeError, OSError) as exc:
         print(clerk.world.wire_dumps({'management_error': str(exc)}), file=sys.stderr)

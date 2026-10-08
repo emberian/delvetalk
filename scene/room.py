@@ -181,7 +181,7 @@ def _raw(root, object_id, reason):
 def _sequence(value):
     if not isinstance(value, dict) or set(value) != {"length", "items"} or type(value["length"]) is not int or value["length"] < 0:
         raise ArtifactError("invalid committed sequence")
-    if not isinstance(value["items"], dict) or set(value["items"]) != {str(i) for i in range(value["length"])}:
+    if not isinstance(value["items"], dict) or len(value["items"]) != value["length"] or set(value["items"]) != {str(i) for i in range(value["length"])}:
         raise ArtifactError("invalid committed sequence items")
     return lower.decode_sequence(value)
 

@@ -20,16 +20,16 @@ The local operator asserts `--principal`; this CLI does not authenticate that
 identity. The trusted state directory already allows direct `world.py` custody.
 The clerk's remote receiving path instead derives the principal from its pinned
 HTTPS PDS repository observation. Neither enrolling a DID nor naming it as a
-local principal overrides Lean's current-law check. V1 operator identities and
-law members use `did:plc` identifiers. An authority principal need not itself be
+local principal overrides Lean's current-law check. Operator identities use
+`did:plc` identifiers; law JSON validation belongs to Lean. An authority principal need not itself be
 enrolled for remote observation.
 
 ## Enroll, then grant authority
 
 Use your clerk state path and actual DID values below. `--allow` lists the
 **entire** replacement law, so retain each principal that should remain allowed.
-The same law controls invocations and future management; there is no separate
-owner role or rescue bypass.
+Legacy law arrays grant invocation and management together; scoped law can
+separate them. Neither form has an owner rescue bypass.
 
 ```sh
 STATE="$HOME/claude_state/delvetalk-clerk"
@@ -59,6 +59,48 @@ For revocation, replace law without the author, then independently unregister
 its repository if desired. A law commit can succeed even if a later enrollment
 change fails. `status` reports current enrollment and retained law-attempt
 outcomes; use `clerk.py snapshot` to inspect current law.
+
+## Scoped authority and additional objects
+
+`law --law-file FILE` passes a complete JSON law to Lean instead of building
+the legacy array with `--allow` or `--empty-law`. These options are mutually
+exclusive. Lean supports legacy arrays and this exact scoped form:
+
+```json
+{"profile":"delvetalk-scoped-law-v1","invoke":{"add":["did:plc:bbbbbbbbbbbbbbbbbbbbbbbb"]},"reprogram":["did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"],"law":["did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"]}
+```
+
+The example grants B only the `add` command and A programming/law management.
+Missing command grants deny invocation. Lean validates the entire law and checks
+the current operation's scope; naming a grant in the proposed replacement does
+not authorize that replacement. Malformed law gets a retained Lean refusal.
+Removing all `law` principals deliberately locks out future law revisions.
+
+Bootstrap also accepts `--law-file` instead of repeated `--law`. To host another
+room, source desk or game table in an existing clerk, use local management:
+
+```sh
+python3 scripts/manage.py --state "$STATE" add-object \
+  --object desk:source --principal "$OPERATOR" --intent create-desk-001 \
+  --source protocols/counter/protocol.json --syntax protocol-json@1 \
+  --law-file /tmp/desk-law.json
+```
+
+Choose the actual reviewed protocol source and initial law for that object.
+Creation uses the protocol's explicit `initial` state. It is a trusted local
+custody operation, not a grant of remote object creation. Lean owns create
+validation and refuses an existing object; this command cannot adopt or
+overwrite another object by name. Repository enrollment remains separate.
+
+The exact create request and translation artifact are journaled first. After
+Lean commits, the clerk atomically adds the object to `clerk.json`'s `objects`,
+then saves the terminal receipt. This is a recoverable sequence, not an atomic
+transaction across both files. If either later write fails, use `resume` with
+the original principal/intent: Lean replays the original create receipt and
+registration finishes. Pending journals block implementation upgrade. Refused
+creates never register an object. Existing objects, repository configuration,
+bootstrap history and prior receipts remain intact. No remote create/law path
+is introduced.
 
 ## Install an explicitly selected program
 
@@ -114,10 +156,10 @@ receipts remain readable even when those implementations later change.
 
 ## Recovery, refusal and deliberate lockout
 
-Every law or reprogram command requires an explicit stable `--intent`. Its Lean
-intent is `operator-law:` or `operator-reprogram:` followed by that value; local
+Every law, reprogram or add-object command requires an explicit stable `--intent`.
+Its Lean intent is `operator-law:`, `operator-reprogram:` or `operator-create:` followed by that value; local
 management reserves the pair of asserted principal and supplied intent across
-both operations. Reusing that pair with a different operation, object, preimage,
+all three operations. Reusing that pair with a different operation, object, preimage,
 law or program input is rejected. A refusal is terminal just like a success: fix the
 request with a fresh intent rather than changing the retained attempt.
 

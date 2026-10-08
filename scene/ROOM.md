@@ -69,6 +69,43 @@ The view is descriptive data: falsifying its availability label does not grant
 authority or bypass the compiled guard. Local principal strings remain trusted
 caller assertions, as documented by the world profile.
 
+## Inspect, read source, choose
+
+The same inspector also displays objects with an admitted pure Bend view program:
+
+```sh
+python3 scene/room.py inspect /tmp/repair-cafe-world.json cafe --store /tmp/room-artifacts --artifact-id ARTIFACT_ID > /tmp/observed.json
+python3 scene/room.py source /tmp/observed.json --raw > /tmp/observed.scene
+python3 scene/room.py choose /tmp/observed.json visitor align-wing --choice 0 > /tmp/request.json
+```
+
+`inspect_object(root, object_id, artifact=None, panel='main')` selects the
+source-bound scene renderer when the protocol declares `roomArtifact`, an actual
+Lean-evaluated pure projection when it declares `viewProgram`, or raw state
+otherwise. A scene with a missing artifact stays raw; the inspector does not
+silently substitute a different renderer for it. Projection evaluation failures
+also retain a raw view and the admitted program for inspection.
+
+For a projected object, `inspect ... --panel details` supplies presentation input
+to its pinned pure program. Panels share the same object and root; they do not
+create participant-local copies or confer authority. `choose ... --action light`
+uses the displayed action ID. Scene actions can likewise be named by their exact
+displayed command, such as `--action choose:0:0`. `view_request(...)` is the common
+Python entry point, and `html_view(...)` delegates to the matching escaped
+renderer. See [VIEW.md](../profiles/VIEW.md) for the pure projection contract.
+
+`source_document(view)` and the `source` CLI read the **saved observation**, never
+a newer object. For a scene they verify its retained source digest and expose the
+exact text; for a projection they expose the exact admitted `viewProgram`; for a
+raw object they expose the protocol JSON. Without `--raw`, the source result also
+retains object identity and the whole observed root. This makes a source/action
+exchange reviewable even after another participant advances the shared object.
+
+The inhabited bootstrap can use this inspector with its current artifact from
+the source desk's immutable room store. Successful adoption changes the artifact
+binding explicitly. Old saved views retain their old roots and remain stale until
+the participant inspects again; dispatch never silently refreshes them.
+
 ## Artifact binding and API
 
 `compile_artifact(source, initial_vars=None, has=None)` runs the pinned parser and
@@ -126,4 +163,6 @@ do not rerun initial entry effects or infer a dynamic inventory from prose.
 receipts, stale competing views, current authority and guard refusal, retained
 receipt replay, renderer purity, exact source spans, HTML escaping, byte-digest
 storage, missing/substituted artifacts, CLI requests, and raw fallback after an
-incompatible state migration.
+incompatible state migration. It also exercises the pure projection join through
+Lean, alternate panels over one shared state, source inspection of a saved view,
+and stale actions prepared after a different participant has already committed.

@@ -4,7 +4,8 @@
 repository record or explicit social post to a durable Lean world. It runs no daemon and sends no network
 writes. A local operator installs a reviewed protocol and chooses repositories
 and object authority. Authorized remote authors may invoke or reprogram the
-object through Lean admission; they cannot create objects, change law, load
+object, or submit bounded atomic transactions, through Lean admission; they
+cannot create objects, change law, load
 adapters, or submit Python/shell programs.
 
 ## Bootstrap and read
@@ -23,9 +24,16 @@ python3 scripts/clerk.py --state "$HOME/claude_state/delvetalk-clerk" \
 `--repository` is a transport allowlist; `--law` is the initial Lean authority
 list. Repeat either flag for more identities. An allowlisted repository has no
 authority unless current Lean law grants it. The operator may deliberately
-choose an empty law. Bootstrap creates only one object in this profile. Repeating
+choose an empty law. Bootstrap creates the clerk's first object. Repeating
 the exact bootstrap recovers its retained create receipt. A different bootstrap
 cannot overwrite the configured clerk.
+
+For scoped command/programming/management authority, bootstrap accepts
+`--law-file FILE` containing the complete law JSON instead of repeated `--law`.
+Lean validates both scoped laws and legacy arrays. A local operator can add
+further reviewed objects with `manage.py add-object`; its retained create request
+and recoverable custody registration are described in [MANAGEMENT.md](MANAGEMENT.md).
+Remote records remain invocation-only and can target only registered objects.
 
 ## Submit and receive
 
@@ -48,8 +56,9 @@ arbitrary JSON decimal precision and unbounded integer preimages across ATproto'
 more restricted record data model. Duplicate JSON members, unknown fields and
 nonfinite numbers are rejected. The request has no caller-selected `principal` or `intent`. Those fields cannot
 override the receiving path. An absent `op` means `invoke`; explicit
-`"op":"invoke"` is also accepted. The only other remote operation is
-`reprogram`, described below.
+`"op":"invoke"` is also accepted. Other remote operations are `reprogram`,
+described below, and bounded multiobject `transaction`, described in
+[TRANSACTION-INTAKE.md](TRANSACTION-INTAKE.md).
 
 `scripts/receipts.py request` publishes this envelope with durable account
 custody; see [RECEIPTS.md](RECEIPTS.md). Authors can instead use their own
@@ -214,3 +223,45 @@ match, even if later admissions have advanced the world. A mismatched prior
 profile cannot overwrite configuration. This is an operator-approved custody
 transition with a recorded boundary, not a proof that two implementations are
 semantically equivalent; cross-version conformance remains a separate check.
+
+## Operator-selected compiled runtime
+
+The standard default keeps the established single-object `world` and atomic
+`transactions` hosts. A new clerk can explicitly opt into the compiled host:
+
+```sh
+python3 scripts/clerk.py --state /private/compiled-clerk bootstrap \
+  --runtime-profile compiled --object calculator --protocol /path/to/protocol.json \
+  --repository AUTHOR_DID --law AUTHOR_DID
+```
+
+The operator's `runtimeProfile` configuration selects `compiled` consistently for
+bootstrap, local management, inspection, single invocation and multiobject
+transactions. It enables the named compiled host's source-package expressions
+and fixed budget. Incoming requests cannot select or override the runtime. A
+standard clerk does not gain compiled primitives by receiving a package-bearing
+protocol. Source compilation and execution remain inside the selected Lean host.
+
+`runtime_profile.py` supplies the reviewed source/binary closure for each host,
+including transitive compiler/demand dependencies for compiled execution. The
+clerk adds its transport files. New request journals retain the actual selected
+admission profile; an uncertain attempt cannot be recovered under a different
+machine. Completed receipts retain their original pins and remain replayable.
+
+An existing clerk changes runtime only through the explicit quiescent upgrade:
+
+```sh
+python3 scripts/clerk.py --state /private/clerk upgrade \
+  --from-profile EXACT_OLD_PROFILE_SHA256 --runtime-profile compiled
+```
+
+Omitting `--runtime-profile` preserves the configured runtime. The transition
+records old/new runtime names and pins, refuses pending journals and leaves world
+bytes and object law unchanged. Returning to `world` is also explicit; installed
+compiled expressions will then refuse when invoked through the standard host.
+No private live configuration is migrated by adding this implementation.
+
+`conformance/test_clerk_compiled.py` uses mock PDS records with actual Lean source
+compilation: a remote arbitrary-precision sum, two-object atomic sums, management
+installation, default-host refusal, forbidden wire overrides and pending/profile
+upgrade boundaries. Publication remains paused.

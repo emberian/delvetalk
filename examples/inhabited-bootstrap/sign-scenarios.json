@@ -1,0 +1,6 @@
+[
+  {"name":"shared-lamp-command","law":["iris","moss"],"steps":[
+    {"principal":"iris","command":"light","input":{},"root":"initial","kind":"committed","state":{"title":"The workshop sign","message":"The lamp is lit."},"result":"lit","outbox":[]},
+    {"principal":"stranger","command":"light","input":{},"root":"current","kind":"refused","error":"unauthorized"}
+  ]}
+]
