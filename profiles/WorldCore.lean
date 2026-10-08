@@ -127,8 +127,61 @@ def law (j : Json) : Except String (Array String) := do
   let xs ← j.getArr?
   xs.mapM Json.getStr?
 
-def authorized (o : Json) (principal : String) : Except String Unit := do
-  if !(← law (← field o "law")).contains principal then throw "unauthorized"
+-- Legacy principal arrays keep their original all-operation meaning. The
+-- opt-in scoped profile names each invocation and management grant explicitly.
+def validateLaw (j : Json) : Except String Unit := do
+  match j with
+  | .arr _ => discard (law j)
+  | _ =>
+    for (key, _) in (← pairs j) do
+      if !(["profile", "invoke", "reprogram", "law", "predicate"].contains key) then
+        throw "unsupported scoped law field"
+    if (← str j "profile") != "delvetalk-scoped-law-v1" then
+      throw "unknown law profile"
+    for (_, principals) in (← pairs (← field j "invoke")) do
+      discard (law principals)
+    discard (law (← field j "reprogram"))
+    discard (law (← field j "law"))
+    match (field j "predicate").toOption with
+    | some predicate => discard (Delvetalk.decode predicate)
+    | none => pure ()
+
+def policyContext (o request : Json) (principal : String) : Except String Json := do
+  let op ← str request "op"
+  let command ← if op == "invoke" then str request "command" else pure ""
+  let input ← if op == "invoke" then field request "input" else pure (obj [])
+  discard (pairs input)
+  return obj [("principal", .str principal), ("op", .str op), ("command", .str command),
+    ("state", ← field o "state"), ("input", input)]
+
+def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit := do
+  let authority ← field o "law"
+  let principals ← match authority with
+    | .arr _ => law authority
+    | _ => do
+      validateLaw authority
+      match (← str request "op") with
+      | "invoke" =>
+        let commands ← field authority "invoke"
+        let command ← str request "command"
+        match (field commands command).toOption with
+        | some grant => law grant
+        | none => pure #[]
+      | "reprogram" => law (← field authority "reprogram")
+      | "law" => law (← field authority "law")
+      | _ => throw "unknown operation"
+  if !principals.contains principal then throw "unauthorized"
+  -- A predicate only restricts an existing grant. Context conversion and every
+  -- reduction consume the same budget as the operation it guards.
+  match (field authority "predicate").toOption with
+  | none => pure ()
+  | some predicate =>
+    let term ← Delvetalk.decode predicate
+    let context ← toTerm 64 (← policyContext o request principal)
+    match (← normalize (.app term context)) with
+    | .boolean true => pure ()
+    | .boolean false => throw "authority predicate refused"
+    | _ => throw "authority predicate must return Bool"
 
 def rootCheck (o request : Json) : Except String Unit := do
   if o != (← field request "expected") then throw "stale read root"
@@ -155,7 +208,15 @@ def executeCommand (o request : Json) (principal : String) : Evaluation (Json ×
   let outbox ← (← (← field command "outbox").getArr?).mapM eval
   return (nextState, result, outbox)
 
-def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
+-- Both standalone and transaction admission install exactly this replacement.
+-- Authorization belongs to the caller's current-law check, never the candidate.
+def reprogramObject (o protocol state : Json) : Except String Json := do
+  validateProtocol protocol
+  discard (pairs state)
+  let n ← (← field o "version").getNat?
+  put (← put (← put o "protocol" protocol) "state" state) "version" (toJson (n+1))
+
+def transitionEvaluation (world request : Json) (principal : String) : Evaluation (Json × Json) := do
   let objects ← field world "objects"
   let id ← str request "object"
   if id.isEmpty then throw "empty object id"
@@ -165,18 +226,18 @@ def transition (world request : Json) (principal : String) : Except String (Json
     let protocol ← field request "protocol"
     validateProtocol protocol
     let authority ← field request "law"
-    discard (law authority)
+    validateLaw authority
     let o := obj [("protocol", protocol), ("law", authority), ("version", toJson (0 : Nat)),
       ("state", ← field protocol "initial")]
     let next ← put world "objects" (← put objects id o)
     return (next, receipt request "committed" (obj [("root",o), ("result",.null), ("outbox", .arr #[])]))
   let o ← field objects id
-  authorized o principal
+  authorizeRequest o request principal
   rootCheck o request
   let n ← (← field o "version").getNat?
   if op == "law" then
     let authority ← field request "law"
-    discard (law authority)
+    validateLaw authority
     let nextObj ← put (← put o "law" authority) "version" (toJson (n+1))
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
@@ -185,20 +246,21 @@ def transition (world request : Json) (principal : String) : Except String (Json
       if !(["op", "object", "principal", "intent", "expected", "protocol", "state"].contains key) then
         throw "unsupported reprogram field"
     let protocol ← field request "protocol"
-    validateProtocol protocol
     -- Migration is an explicit complete record, never an implicit reset or
     -- an expression executed with extra authority. Law and identity stay put.
     let state ← field request "state"
-    discard (pairs state)
-    let nextObj ← put (← put (← put o "protocol" protocol) "state" state)
-      "version" (toJson (n+1))
+    let nextObj ← reprogramObject o protocol state
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
   if op != "invoke" then throw "unknown operation"
-  let ((nextState, result, outbox), _) ← (executeCommand o request principal).run 10000
+  let (nextState, result, outbox) ← executeCommand o request principal
   let nextObj ← put (← put o "state" nextState) "version" (toJson (n+1))
   let next ← put world "objects" (← put objects id nextObj)
   return (next, receipt request "committed" (obj [("root",nextObj), ("result",result), ("outbox", .arr outbox)]))
+
+def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
+  let (result, _) ← (transitionEvaluation world request principal).run 10000
+  return result
 
 def handleWith
     (admit : Json → Json → String → Except String (Json × Json))

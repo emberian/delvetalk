@@ -71,16 +71,18 @@ preimage and in any earlier receipts that already contained that root.
 
 Changing the program invalidates old object roots, including transaction read
 sets. Subsequent invocations and transactions use the new program under the
-same current law. `reprogram` is a standalone management operation; ordered
-transaction calls remain invocations only.
+same current law. `reprogram` is also available inside ordered transactions. A prior candidate
+call can supply the exact `{protocol,state}` result to a later reprogram call
+through `inputFrom`; all calls share authorization, read roots and rollback.
+See [TRANSACTIONS.md](TRANSACTIONS.md).
 
 Protocol validation checks the local expression format, not migration
 correctness, termination, application invariants, or compatibility with existing
 clients. A valid new program may fail when invoked if the explicit replacement
-state omits a field its commands need. The current host has one authority set
-for invocation, law changes, and reprogramming; command preconditions do not
-veto management operations. Separating programming rights from invocation
-rights would require an additional authority profile.
+state omits a field its commands need. Legacy array laws use one authority set for all operations. The
+[scoped authority profile](AUTHORITY.md) separates named-command invocation,
+programming and law revision. Command preconditions do not veto management
+operations.
 As with other local operations, principal strings are assertions by the local
 caller, and committed outbox data is not proof of external delivery.
 

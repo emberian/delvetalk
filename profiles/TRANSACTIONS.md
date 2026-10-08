@@ -41,12 +41,38 @@ as read-only commit guards. Lean compares **all** roots against the initial
 world before executing a call, including read-only guards.
 
 Calls run in array order. Each call checks the global principal against its
-target's current law. There is no caller impersonation, automatic delegation,
-object creation, or law change inside a transaction. Call fields are restricted
-to `object`, `command`, and exactly one of `input` or `inputFrom`; unsupported
-fields are refused. `input` is a JSON record. `inputFrom` is a zero-based index
+target's current law, including the actual command or programming operation
+under [scoped authority](AUTHORITY.md). There is no caller impersonation,
+automatic delegation, object creation, or law change inside a transaction.
+Invocation call fields are restricted to `object`, `command`, exactly one of
+`input` or `inputFrom`, and an optional `op` whose value must be `invoke`;
+unsupported fields are refused. Omitting `op` preserves the original invocation
+wire. `input` is a JSON record. `inputFrom` is a zero-based index
 of an earlier call whose entire result becomes this call's input, and therefore
 must also be a record. This transfers pure data without transferring authority.
+
+Programming is an explicit second call form:
+
+```json
+{"op":"reprogram","object":"target","protocol":{},"state":{}}
+```
+
+Replace the protocol placeholder with a validated `delvetalk-local-v1` protocol.
+Alternatively, use the exact result of an earlier call:
+
+```json
+{"op":"reprogram","object":"target","inputFrom":0}
+```
+
+That result must be a record with exactly `protocol` and `state`. The reference
+cannot be combined with direct candidate fields, and no field overrides are
+accepted. Both forms use the shared `World.reprogramObject` replacement helper:
+validate the protocol, require explicit complete record state, preserve law and
+object identity, and increment version once. Current target programming rights
+are checked for the global principal. A source desk's `adopt` result therefore
+can be installed atomically without a transport-side assertion that the adopted
+and installed candidates are equal. Reprogramming contributes `null` to the
+ordered results and emits no outbox. Later calls see the staged new program.
 
 Repeated calls to an object see the state staged by earlier calls, and each
 successful call increments its version once. Within a single call, all require,
@@ -54,7 +80,7 @@ set, result, and outbox expressions still read that call's original state,
 preserving the default host's simultaneous field-write semantics. Results and
 outboxes therefore do not implicitly read that call's newly written state.
 
-Successful receipt data has this shape:
+Successful invocation-only receipt data has this shape:
 
 ```json
 {

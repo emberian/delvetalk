@@ -5,24 +5,45 @@ open Lean World
 
 namespace Transactions
 
+def priorResult (index : Json) (results : Array Json) : Except String Json := do
+  let index ← index.getNat?
+  match results[index]? with
+  | some result => pure result
+  | none => throw "inputFrom must name an earlier call"
+
 -- Inputs are either explicit pure records or a complete earlier pure result.
 -- The latter conveys data, never the earlier object's authority.
 def callInput (call : Json) (results : Array Json) : Except String Json := do
   for (key, _) in (← pairs call) do
-    if key != "object" && key != "command" && key != "input" && key != "inputFrom" then
+    if !(["op", "object", "command", "input", "inputFrom"].contains key) then
       throw "unsupported transaction call field"
   let input? := (field call "input").toOption
   let from? := (field call "inputFrom").toOption
   let input ← match input?, from? with
     | some input, none => pure input
-    | none, some index => do
-      let index ← index.getNat?
-      match results[index]? with
-      | some result => pure result
-      | none => throw "inputFrom must name an earlier call"
+    | none, some index => priorResult index results
     | _, _ => throw "call requires exactly one of input or inputFrom"
   discard (pairs input)
   return input
+
+def reprogramCandidate (call : Json) (results : Array Json) : Except String Json := do
+  let candidate ← match (field call "inputFrom").toOption with
+    | some index => do
+      for (key, _) in (← pairs call) do
+        if !(["op", "object", "inputFrom"].contains key) then
+          throw "unsupported transaction reprogram field"
+      priorResult index results
+    | none => do
+      for (key, _) in (← pairs call) do
+        if !(["op", "object", "protocol", "state"].contains key) then
+          throw "unsupported transaction reprogram field"
+      pure (obj [("protocol", ← field call "protocol"), ("state", ← field call "state")])
+  for (key, _) in (← pairs candidate) do
+    if !(["protocol", "state"].contains key) then
+      throw "reprogram result requires exactly protocol and state"
+  discard (field candidate "protocol")
+  discard (field candidate "state")
+  return candidate
 
 def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
   if (← str request "op") != "transaction" then
@@ -46,12 +67,26 @@ def transition (world request : Json) (principal : String) : Except String (Json
       if !(reads.any (fun entry => entry.1 == id)) then
         throw "transaction target missing from read set"
       let o ← field staged id
-      authorized o principal
-      let input ← callInput call results
-      let invocation ← put call "input" input
-      let (nextState, result, emitted) ← executeCommand o invocation principal
-      let n ← (← field o "version").getNat?
-      let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
+      let op ← match (field call "op").toOption with
+        | some value => value.getStr?
+        | none => pure "invoke"
+      if op != "invoke" && op != "reprogram" then
+        throw "unsupported transaction operation"
+      -- The operation is explicit; the principal remains the global caller.
+      -- Both profiles use one authority engine.
+      let (nextObj, result, emitted) ← if op == "reprogram" then do
+        authorizeRequest o (← put call "op" (.str op)) principal
+        let candidate ← reprogramCandidate call results
+        let nextObj ← reprogramObject o (← field candidate "protocol") (← field candidate "state")
+        pure (nextObj, Json.null, (#[] : Array Json))
+      else do
+        let input ← callInput call results
+        let invocation ← put (← put call "input" input) "op" (.str op)
+        authorizeRequest o invocation principal
+        let (nextState, result, emitted) ← executeCommand o invocation principal
+        let n ← (← field o "version").getNat?
+        let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
+        pure (nextObj, result, emitted)
       staged ← put staged id nextObj
       for payload in emitted do
         outbox := outbox.push (obj [("object", .str id),
