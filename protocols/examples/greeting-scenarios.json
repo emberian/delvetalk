@@ -1,0 +1,12 @@
+[
+  {
+    "name": "one-greeting-is-a-state-condition",
+    "law": ["host", "guest"],
+    "steps": [
+      {"principal":"host","command":"greet","input":{"message":"Welcome"},"root":"initial","kind":"committed","state":{"greeting":"Welcome"},"result":"greeted","outbox":[]},
+      {"principal":"guest","command":"greet","input":{"message":"Again"},"root":"initial","kind":"refused","error":"stale read root"},
+      {"principal":"guest","command":"greet","input":{"message":"Again"},"root":"current","kind":"refused","error":"precondition failed"},
+      {"principal":"stranger","command":"greet","input":{"message":"Hello"},"root":"current","kind":"refused","error":"unauthorized"}
+    ]
+  }
+]

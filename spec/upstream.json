@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/emberian/minidregg",
+  "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+  "files": {
+    "Theory/AxiomPin.lean": {
+      "sha256": "85544c12394d2ea951c610d383e7786b7d871042699cb92f4b61efd0ee81b4da"
+    },
+    "Theory/ObjectiveBendOpenRecursion.lean": {
+      "sha256": "6e0d410ca4d9a0d1e139448cbd290519596ea159a0c5b531e6df43341fd97808"
+    }
+  }
+}

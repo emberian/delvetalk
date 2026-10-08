@@ -1,0 +1,16 @@
+OBJECTIVE BEND: coroutine sketch, not runnable code; core projection.
+W(t) returns weak-head values; all calls propagate yields, saving their stack.
+Substitution t[u/x] avoids capture; binders fresh; application left-associative.
+W(\x.t)=\x.t; W({fs})={fs}; scalar literals return themselves.
+W(f a): f=W(f); if f=\x.t return W(t[a/x]); else stuck.
+W(mix(a,b))=\s.\p.b s (a s p)
+W(fix(e,p))=W(e (fix(e,p)) p)
+W(t.k)=W(first(W(t),k))
+W(extend(t,gs))={gs++[f in W(t).fields | key(f) not in keys(gs)]}
+W(done(t))=W(t); W(perform(p))=W(yield(p))
+Records are ordered string-keyed lists. Missing/wrong shapes: stuck.
+One final self; super is the lower computation. Nothing else is forced. W may diverge.
+Host object=(id,code-pin,versioned-state,law). References confer no authority.
+Commit effects atomically iff read roots match and current law/authority admit.
+Sponsorship is host policy. Pure evaluation grants nothing.
+Omitted: other constructors/primitives, typing, messaging, wire, metering.

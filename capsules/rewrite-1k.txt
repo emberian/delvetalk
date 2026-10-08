@@ -1,0 +1,17 @@
+Emergent Smalltalk / rewrite kernel (partial).
+Assume lambda calculus, alpha-equivalence, capture-free substitution,
+left-associative application; \ binds. Only weak-head call-by-name steps:
+(\x.b) a -> b[a/x]
+mix(l,u) -> \s.\p.u s (l s p)
+fix(e,p) -> e (fix(e,p)) p
+{fs}.k -> first(fs,k)
+extend({fs},gs) -> {gs ++ filter(fs,key not in keys(gs))}
+No reduction inside lambdas/fields. Every layer sees the same final self;
+super is the complete inherited computation. perform(P) in evaluation
+context E yields (P,E); reply r resumes E[r]. Pure reduction has no authority.
+Object=(id,code-pin,versioned-state,law). Reference != permission. Current
+law governs reads/writes and old grants; revision != revocation. Commit a
+turn atomically iff exact read roots still match and effects are admitted.
+Sponsorship belongs to host policy, not identity.
+Omitted: full contexts, scalars/sums/reflection, typing, async protocol,
+admission predicates and wire format; this is not a standalone full spec.

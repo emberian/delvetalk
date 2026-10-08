@@ -1,0 +1,21 @@
+name = "delvetalk"
+version = "0.1.0"
+defaultTargets = ["delvetalk"]
+
+[[lean_lib]]
+name = "Theory"
+srcDir = "spec/upstream"
+
+[[lean_lib]]
+name = "Delvetalk"
+srcDir = "spec"
+
+[[lean_exe]]
+name = "delvetalk"
+root = "Main"
+srcDir = "spec"
+
+[[lean_exe]]
+name = "delvetalk-world"
+root = "World"
+srcDir = "profiles"

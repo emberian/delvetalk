@@ -1,0 +1,87 @@
+{
+  "format": "delvetalk-syntax-registry-v1",
+  "syntaxes": {
+    "core-json@1": {
+      "reviewed": true,
+      "module": "syntaxes/adapters.py",
+      "entry": "json_value",
+      "target": "core-term-v1"
+    },
+    "core-sexpr@1": {
+      "reviewed": true,
+      "module": "syntaxes/adapters.py",
+      "entry": "sexpr",
+      "target": "core-term-v1"
+    },
+    "protocol-markdown@1": {
+      "reviewed": true,
+      "module": "syntaxes/adapters.py",
+      "entry": "protocol_markdown",
+      "target": "local-protocol-v1"
+    },
+    "protocol-json@1": {
+      "reviewed": true,
+      "module": "syntaxes/adapters.py",
+      "entry": "json_value",
+      "target": "local-protocol-v1"
+    },
+    "spween-source@1": {
+      "reviewed": true,
+      "module": "syntaxes/spween.py",
+      "entry": "parse",
+      "target": "spween-source-v1",
+      "upstream": {
+        "repository": "https://github.com/spwplace/spween",
+        "revision": "95980f7d1e109138496849a444f28c4b9076a4e2"
+      },
+      "closure": [
+        "syntaxes/spween.py",
+        "scene/spween-bridge/src/main.rs",
+        "scene/spween-bridge/Cargo.toml",
+        "scene/spween-bridge/Cargo.lock",
+        "scene/UPSTREAM.md"
+      ]
+    },
+    "spween-scene-i64@1": {
+      "reviewed": true,
+      "module": "syntaxes/spween.py",
+      "entry": "lower",
+      "target": "spween-protocol-bundle-v1",
+      "upstream": {
+        "repository": "https://github.com/spwplace/spween",
+        "revision": "95980f7d1e109138496849a444f28c4b9076a4e2"
+      },
+      "closure": [
+        "syntaxes/spween.py",
+        "scene/spween-bridge/src/main.rs",
+        "scene/spween-bridge/Cargo.toml",
+        "scene/spween-bridge/Cargo.lock",
+        "scene/UPSTREAM.md",
+        "scene/lower.py"
+      ],
+      "lowering_profile": "spween-scene-i64-v1"
+    }
+  },
+  "targets": {
+    "core-term-v1": {
+      "module": "impl/python/evaluator.py",
+      "entry": "validate"
+    },
+    "local-protocol-v1": {
+      "module": "syntaxes/adapters.py",
+      "entry": "protocol_shape"
+    },
+    "spween-source-v1": {
+      "module": "syntaxes/spween.py",
+      "entry": "source_shape"
+    },
+    "spween-protocol-bundle-v1": {
+      "module": "syntaxes/spween.py",
+      "entry": "protocol_shape"
+    }
+  },
+  "closure": [
+    "syntaxes/adapters.py",
+    "impl/python/evaluator.py"
+  ]
+}

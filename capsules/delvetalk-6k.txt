@@ -1,0 +1,102 @@
+DelveTalk / 6K operational capsule / Objective Bend + governed objects
+Core rules are normative; host contracts abstract Mini, not its wire format.
+Cards propose local tests, not agentwiki enforcement or native deployment.
+
+1. CORE
+Application associates left; \x.t binds x; t[u/x] avoids capture; binders are
+fresh. Fields/arms are ordered string-keyed
+lists; lookup selects first match. Values v are \x.t, Nat, Bool, String, {fs},
+spec(m,e), proto(s,t), inj(k,t); constructor children remain unevaluated.
+
+(\x.b) a -> b[a/x]
+mix(a,b) -> \s.\p.b s (a s p)
+fix(e,p) -> e (fix(e,p)) p
+spec(m,e) a -> e a
+reflect(proto(s,t)) -> s
+metadata(spec(m,e)) -> m
+target(proto(s,t)) -> t
+{fs}.k -> first(fs,k)
+extend({fs},gs) -> {gs ++ [f in fs | key(f) not in keys(gs)]}
+if(true,a,b) -> a; if(false,a,b) -> b
+natcase(0,z,x.b) -> z; natcase(n+1,z,x.b) -> b[n/x]
+case(inj(k,t),arms) -> b[t/x] if first(arms,k)=x.b
+done(t) -> t
+op(v,w) -> scalar(op,v,w), when defined.
+
+Nat primitives: +,*,saturating -,floor /,%,=,<,<=; unbounded naturals;
+n/0=0 and n%0=n. Bool primitive: strict AND. String primitive: equality.
+Their operand types are disjoint; there is no truthiness or coercion.
+Reduction closes ONLY under:
+E ::= [] | E t | E.k | extend(E,fs) | op(E,t) | op(v,E)
+    | if(E,a,b) | natcase(E,z,x.b) | case(E,arms)
+    | reflect(E) | metadata(E) | target(E).
+No reduction under lambdas, argument/field/payload constructors or perform.
+E[perform(p)] yields raw p and continuation E; reply r resumes E[r].
+A nonvalue without a step or yield is stuck; infinite reduction diverges.
+The right primitive operand is demanded once the left is ANY value, even a
+wrong-typed one. Raw core terms may yield where typed programs are refused.
+
+An extension receives final self s and entire lower computation p. With
+F=fix(mix(a,b),seed), F ->* b F (a F seed): b wraps a, both see the same F.
+Example: a=\s.\p.extend(p,{x:1,read:\u.s.x});
+b=\s.\p.extend(p,{x:2}); fix(mix(a,b),{}).read {} ->* 2.
+
+2. TYPING AND SHARING
+Typing constraints, not a full checker. Rows compare
+member types exactly; explicit support bounds permit future Self/Super rows.
+Open extension templates are checked against rigid bounds then instantiated;
+fix closes the chain and discharges every layer's bounds. The simple knot is
+(C -> V -> C) -> V -> C. Recursive data declarations retain nominal identity.
+Erased permits 0 uses; affine/linear safety permits at most 1;
+unrestricted permits reuse. Exact terminal linear discharge is a separate duty.
+Reusable closures capture only unrestricted shareable values. Unknown future
+types need explicit shareability premises; custody cannot hide in a wrapper.
+Activity<P,R,A> may yield P, resume with R, finish A. It is never shareable or
+suspended in arguments, fields or payloads. P is a variant of first-order data;
+R is first-order data. Crossing data excludes closures, custody and activities.
+A parameterless shared lazy activity is refused. The demand machine refuses
+perform under a shared-cell update frame; sharing an effectful thunk is NOT an
+exactly-once mechanism. Core meaning is call-by-name; heap sharing requires
+adequacy on its supported fragment, not an assumption that all effects memoize.
+
+3. DURABLE OBJECTS
+Object=(id,code-pin,versioned state,law). A ref names identity; it is duplicable
+and is not a permission, activity, continuation or grant of ambient authority.
+Transcluding a ref aliases the SAME object/slot (choice a). Transcluding
+pure data may copy data. Neither duplicates an affine activity or its custody.
+At-most-once use requires authoritative consumed state and admission.
+
+An authenticated invocation runs pinned code on typed inputs and a state view,
+proposing effects. Commit the turn atomically only when exact read roots still
+match and current authority/laws admit its effects. A failed application turn
+commits no application writes; host accounting/fault records may still change.
+Existing grants face current law; revision differs from revocation; no owner
+recovery bypass. Delegation must be explicit and scoped to the authorized call.
+Sync call trees commit together. Send durably enqueues a later turn and returns
+an answer slot. Slots have one decider, deadline and terminal outcome; resuming
+an activity consumes its checkpoint generation once. Outcome vocabulary keeps
+success, refusal, unknown, timeout and breakage distinct. An absent reply is
+unknown, not failed: retain request identity, query receipt, retry that attempt;
+a fresh identity can repeat an action. Host profile supplies funding, budgets,
+scheduling and tariffs separately from principal. Pure evaluation authorizes
+no effects; resource exhaustion is not success. Privacy requires read control.
+
+4. TWO BREAKABLE CARDS (LOCAL PROFILES)
+Read-root card: one page P at root r7 has sections A and B. Edit e names
+(page=P,section=A,parent=r7,replacement=a8). Concurrent edit changes B, yielding
+r8. Commit e against r7 MUST refuse stale; after reading r8, merge preserves B
+and proposes against r8. Read-then-write is insufficient: atomic CAS is required.
+A bare section name identifies a location, not a
+version. Parent must bind exact content/version, including relevant law/code.
+
+Welcome card: door D has unused slot W at root r0. Two refs name W. Atomic
+consume(W,r0,request=q) records the decision and outbox item together. Competing
+consume cannot create a second item. Same q replays its receipt; changed payload
+under q refuses. A different q still sees W consumed. This gives one admitted
+welcome intent, not exactly-once delivery to an external social service. That
+requires receiver deduplication or reconciliation of an uncertain send.
+
+Test separately: core observations/yield-resume traces; typed admission; host
+stale roots/current law/replay/consume races. Probe lazy values by eliminators.
+Fuel exhaustion is inconclusive, not divergence. Omitted: full checker, parser,
+wire/crypto, fees, scheduler, production adapters and their deployment proofs.

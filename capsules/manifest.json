@@ -1,0 +1,61 @@
+{
+  "format": 1,
+  "scope": "Byte/identity checks, not a proof of semantic completeness.",
+  "capsules": {
+    "algebra-1k.txt": {
+      "bytes": 978,
+      "exclusiveLimit": 1000,
+      "sha256": "26d83a65c73955e54164f0883423507eb72f1056f59cb68abbf2b984a3537786"
+    },
+    "algebra-2k.txt": {
+      "bytes": 1994,
+      "exclusiveLimit": 2000,
+      "sha256": "c56fd3579526f88d1d3f7a892647f47618142474491a11375545c682874a1442"
+    },
+    "algebra-3k.txt": {
+      "bytes": 2997,
+      "exclusiveLimit": 3000,
+      "sha256": "a66aa18128e466162a2a997733903accf71aae86cdb66b91247889638d9db054"
+    },
+    "delvetalk-16k.txt": {
+      "bytes": 15990,
+      "exclusiveLimit": 16000,
+      "sha256": "9c017166eef39838af65e6ad6c87a6cc25670bdeb084f83706bc3dfb583d154c"
+    },
+    "delvetalk-6k.txt": {
+      "bytes": 5977,
+      "exclusiveLimit": 6000,
+      "sha256": "4851671291cf8da948642179aa5b893fe7d240244e7ebe8acb05b96300cbb993"
+    },
+    "machine-1k.txt": {
+      "bytes": 992,
+      "exclusiveLimit": 1000,
+      "sha256": "f6859ca6900698c17397e88eaaf3e489db116e1d4f3a686562f6b1d99def2219"
+    },
+    "machine-2k.txt": {
+      "bytes": 1995,
+      "exclusiveLimit": 2000,
+      "sha256": "6cd2d0e5a7e8deb1eae7c8b54f2292d295efd63d0aaceb724b340746698779de"
+    },
+    "machine-3k.txt": {
+      "bytes": 2991,
+      "exclusiveLimit": 3000,
+      "sha256": "b708777af20bcafe4bdb4d77bdb9184abe0317880507bbe91c1359a2aed31ccf"
+    },
+    "rewrite-1k.txt": {
+      "bytes": 991,
+      "exclusiveLimit": 1000,
+      "sha256": "baa5e57164aa8f21850dd1031f396837c80279767509333e98592187ea09dfad"
+    },
+    "rewrite-2k.txt": {
+      "bytes": 1945,
+      "exclusiveLimit": 2000,
+      "sha256": "c1a6fad2b4ef95e3e6d9de2756ffe70ea351f2b9f6f69624113832928c81cc10"
+    },
+    "rewrite-3k.txt": {
+      "bytes": 2959,
+      "exclusiveLimit": 3000,
+      "sha256": "84b8c3161bddf737a2548fa5bd3dd64781ac462018a4123cda226dcb6e6d6d22"
+    }
+  }
+}

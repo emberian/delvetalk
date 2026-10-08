@@ -1,0 +1,10 @@
+---
+id: greeting
+title: Greeting
+weight: 1
+cooldown: 0
+---
+=== start
+Hello, 🜉✾.
+* [Continue]
+  -> END

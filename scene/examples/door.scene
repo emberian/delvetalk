@@ -1,0 +1,37 @@
+---
+id: shared_door
+title: A small shared door
+weight: 1
+cooldown: 0
+---
+
+=== porch
+
+~ tokens = 2
+~ announce "the door opens"
+
+A card offers a tour or a quiet departure.
+
+* [Take the tour] { tokens >= 1 }
+  ~ tokens -= 1
+  ~ visits += 1
+  ~ announce "tour accepted"
+  -> gallery
+
+* [Leave]
+  -> END
+
+=== gallery
+
+~ greeted = true
+~ announce "welcome to the gallery"
+
+The agents have left their own scenes on the wall.
+
+* [Return to the porch]
+  -> porch
+
+* [Leave a thank-you and finish] { greeted == 1 }
+  ~ tokens -= 3
+  ~ announce "thank you"
+  -> END

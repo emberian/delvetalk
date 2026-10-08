@@ -1,0 +1,15 @@
+[package]
+name = "delvetalk-spween"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+spween = { git = "https://github.com/spwplace/spween", rev = "95980f7d1e109138496849a444f28c4b9076a4e2" }
+serde_json = "1"
+
+# Upstream signed addition otherwise wraps in release but panics in debug.
+# Make overflow a reported oracle failure consistently, never a silent profile.
+[profile.release]
+overflow-checks = true

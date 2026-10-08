@@ -1,0 +1,18 @@
+Emergent Smalltalk / algebra kernel (partial profile).
+Scope: open recursion + governed objects; omits scalars, sums, reflection,
+typing, concrete syntax/wire and resource tariffs.
+Terms: x,\x.t,t u,mix(a,b),fix(e,p),{fs},t.k,extend(t,fs),done(t),perform(t).
+V=\x.t|{fs}; fields are unevaluated ordered string-key lists; first key wins.
+Capture-free substitution; fresh s,p; application left-associates.
+(\x.t)u -> t[u/x]
+mix(a,b) -> \s.\p.b s (a s p)
+fix(e,p) -> e (fix(e,p)) p
+{fs}.k -> fs[k]
+extend({fs},gs) -> {gs++filter(key notin keys(gs),fs)}
+done(t) -> t
+Close -> ONLY under E=[]|E t|E.k|extend(E,fs).
+E[perform(p)] yields (p,E); reply r resumes E[r]. Stuck != divergence.
+Object=(id,code pin,versioned state,law); ref != authority.
+A turn proposes writes; commit atomically iff exact read roots and current
+laws/authority and budget admit; otherwise no app writes. Calls co-commit; sends defer.
+Sponsorship/budget is host context, not object identity. No owner bypass.

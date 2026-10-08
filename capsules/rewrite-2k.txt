@@ -1,0 +1,36 @@
+Emergent Smalltalk / operational core + object boundary.
+Assume alpha-equivalence, capture-free t[u/x], fresh binders, left-associative
+application. \x.t binds x; fields/arms are ordered string-keyed lists;
+lookup is first match. Values v: \x.t,Nat,Bool,String,{fs},spec(m,e),
+proto(s,t),inj(k,t); their components remain unevaluated.
+(\x.b) a -> b[a/x]
+mix(l,u) -> \s.\p.u s (l s p)
+fix(e,p) -> e (fix(e,p)) p
+spec(m,e) a -> e a
+reflect(proto(s,t)) -> s
+metadata(spec(m,e)) -> m
+target(proto(s,t)) -> t
+{fs}.k -> lookup(fs,k)
+extend({fs},gs) -> {gs ++ filter(fs,key not in keys(gs))}
+if(true,a,b) -> a; if(false,a,b) -> b
+natcase(0,z,x.b) -> z; natcase(n+1,z,x.b) -> b[n/x]
+case(inj(k,t),as) -> b[t/x] if lookup(as,k)=x.b
+done(t) -> t
+op(v,w) -> scalar result iff operand types match.
+Nat: +,*,-,/,%,=,<,<=; unbounded; -=saturating; /=floor; n/0=0;n%0=n.
+Bool: strict AND. String: equality. Scalar types are disjoint.
+Close -> under E ::= []|E t|E.k|extend(E,fs)|op(E,t)|op(v,E)|
+if(E,a,b)|natcase(E,z,x.b)|case(E,as)|reflect(E)|metadata(E)|target(E).
+No other steps. E[perform(P)] yields P; reply r resumes E[r].
+Nonvalue with no step/yield is stuck; infinite reduction diverges.
+All layers share final self; super is the entire inherited result.
+
+Object=(id,code-pin,versioned-state,law). Ref != authority. Current law
+checks access and old grants; revision != revocation; no owner bypass.
+Pinned methods propose effects; atomically commit iff exact read roots
+match and current authority/laws admit all effects. Pure evaluation cannot
+commit. Sponsors/budgets are host policy, distinct from the authenticated principal. Failure != successful no-op.
+Row interfaces use exact member types; nominal recursive data keeps identity.
+Scope: dynamics above; typing, admission predicates, durable messaging,
+retry/receipt protocol, scheduling and encoding require separate profiles.
+No sharing adequacy or type safety follows from these rules alone.

@@ -1,0 +1,7 @@
+[
+  {"name":"alias-does-not-duplicate-consumption", "law":["scanner-a","scanner-b"], "steps":[
+    {"principal":"scanner-a", "command":"knock", "input":{"message":"Welcome!"}, "root":"initial", "kind":"committed", "state":{"welcome":{"by":"scanner-a","message":"Welcome!"}}},
+    {"principal":"scanner-b", "command":"knock", "input":{"message":"Another welcome"}, "root":"initial", "kind":"refused", "error":"stale read root"},
+    {"principal":"scanner-b", "command":"knock", "input":{"message":"Another welcome"}, "root":"current", "kind":"refused", "error":"precondition failed"}
+  ]}
+]

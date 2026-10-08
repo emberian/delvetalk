@@ -1,0 +1,32 @@
+OBJECTIVE BEND: coroutine pseudocode, not a tested interpreter.
+W(t) returns weak-head values. Nested calls propagate yields, retaining stack;
+yield(p) hands raw p to host; a supplied response becomes its return value.
+Capture-avoiding t[u/x]; fresh binders; left-associated application.
+Values: \x.t, Nat, Bool, String, {fs}, spec(m,e), proto(s,t), inj(k,t).
+W(v)=v: constructor children stay unevaluated; scalar types are disjoint.
+W(f a): match W(f): \x.t=>W(t[a/x]); spec(m,e)=>W(e a)
+W(mix(a,b))=\s.\p.b s (a s p)
+W(fix(e,p))=W(e (fix(e,p)) p)
+W(reflect(t)): proto(s,u)=W(t); return W(s)
+W(metadata(t)): spec(m,e)=W(t); return W(m)
+W(target(t)): proto(s,u)=W(t); return W(u)
+W(t.k): {fs}=W(t); return W(first(fs,k))
+W(extend(t,gs)): {fs}=W(t); return {gs++[f in fs | key(f) not in keys(gs)]}
+W(if(c,a,b)): match W(c): true=>W(a); false=>W(b)
+W(natcase(c,z,x.b)): match W(c): 0=>W(z); n+1=>W(b[n/x])
+W(case(c,arms)): inj(k,u)=W(c); x.b=first(arms,k); return W(b[u/x])
+W(done(t))=W(t); W(perform(p))=W(yield(p))
+W(op(a,b)): v=W(a); w=W(b); return primitive(op,v,w)
+Nat: +,*,-,/,%,=,<,<=; unbounded; subtraction saturates; floor division;
+n/0=0; n%0=n. Bool: strict AND. String: equality. Other operands: stuck.
+Fields/arms: ordered string-keyed lists; first match wins. Every missing
+case/field or shape mismatch is stuck. Infinite recursion diverges.
+Every layer shares final self s; p is the whole lower computation.
+Host: object=(id,code-pin,versioned-state,law). Reference != authority.
+An authenticated turn evaluates pinned code; effects commit atomically only
+if exact read roots match and current law/authority admit all writes.
+Pure computation grants no effects. Failed turns make no application writes.
+Sponsorship is host policy; caller principal remains semantically relevant.
+Sends return durable answer slots; delivery is a later turn. An absent reply
+is unknown: query the receipt and retry the identical request identity.
+Omitted: typing, full async protocol, wire, tariffs.

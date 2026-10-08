@@ -1,0 +1,39 @@
+Emergent Smalltalk / transition algebra.
+Scope: core dynamics + host skeleton; not typing, surface/wire syntax or tariffs.
+Application associates left; \x.t binds x; substitution avoids capture.
+fs/arms: ordered string-key lists, first match wins. N,B,S: disjoint Nat,
+Bool,String. Values v=\x.t|N|B|S|{fs}|spec(m,e)|proto(s,t)|inj(k,t);
+value components stay unevaluated. Fresh binders below.
+(\x.t)u -> t[u/x]
+mix(a,b) -> \s.\p.b s (a s p)
+fix(e,p) -> e (fix(e,p)) p
+spec(m,e)u -> e u
+reflect(proto(s,t)) -> s
+metadata(spec(m,e)) -> m
+target(proto(s,t)) -> t
+{fs}.k -> fs[k]
+extend({fs},gs) -> {gs++filter(key notin keys(gs),fs)}
+if(true,a,b) -> a; if(false,a,b) -> b
+natcase(0,z,x.b) -> z; natcase(n+1,z,x.b) -> b[n/x]
+case(inj(k,t),arms) -> b[t/x] if arms[k]=x.b
+done(t) -> t
+op(v,w) -> scalar result iff correctly typed:
+Nat +,*,-,/,%,=,<,<=; unbounded; -=truncated subtraction;
+/=floor; n/0=0; n%0=n. Bool AND (strict). String equality.
+-> is closed ONLY under
+E=[]|E t|E.k|extend(E,fs)|op(E,t)|op(v,E)|if(E,t,u)
+ |natcase(E,z,x.b)|case(E,arms)|reflect(E)|metadata(E)|target(E).
+E[perform(p)] yields (p,E); response r resumes E[r].
+No step/yield/value=stuck; infinite ->=divergence. Pure -> has no effects.
+Every layer sees identical final self; super is the whole lower result.
+
+Host: O=(id,code pin,versioned state,law). Ref != authority.
+Invoke pinned code on typed args/current view; effects propose a turn.
+Commit atomically iff exact read roots still match, every write passes current
+law/authority and host budget admits. Failure: no app writes; fees may apply.
+Sponsorship is host context, not object identity or authenticated principal.
+Calls co-commit; sends queue durable later turns with slots.
+Grants face current law; revision != revocation. No owner bypass.
+Slot=(one decider,deadline,one terminal outcome). Resume consumes a generation.
+No reply != failure: query receipt/retry SAME signed attempt. New identity
+may repeat effects. Private state requires protected reads.
