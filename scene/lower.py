@@ -306,7 +306,15 @@ class Compiler:
 
 
 def lower_document(document, initial_vars=None, has=None):
-    return Compiler(document, initial_vars or {}, has or {}).build()
+    if initial_vars is None:
+        initial_vars = {}
+    if has is None:
+        has = {}
+    if not isinstance(initial_vars, dict):
+        raise LoweringError("initial_vars must be an object mapping names to tagged values")
+    if not isinstance(has, dict):
+        raise LoweringError("has must be an object mapping categories to string arrays")
+    return Compiler(document, initial_vars, has).build()
 
 
 def bridge(request):

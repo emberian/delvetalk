@@ -60,7 +60,7 @@ class RecoveryTest(unittest.TestCase):
 
     def test_conflicting_record_after_uncertainty_is_never_replaced(self):
         self.pending_post()
-        key = self.client.key('post', 'pending')
+        key = json.loads(next(self.client.state.glob('*.json')).read_text())['rkey']
         self.http.records[key] = {'uri': 'other', 'cid': 'other', 'value': {'text': 'different'}}
         with self.assertRaisesRegex(d.Failure, 'different record'):
             self.client.post('hello', 'pending')

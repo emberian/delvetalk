@@ -36,6 +36,9 @@ class FakePDS:
             assert 'validate' not in body
             self.puts += 1
             key = body['rkey']
+            if body['collection'] == d.POST and not d.valid_tid(key):
+                raise d.XRPCError(400, {'error': 'InvalidRequest', 'message':
+                    f'Invalid record key for {d.POST}: Invalid TID string (got "{key}") at $'})
             old = self.records.get(key)
             if self.race:
                 self.race = False
@@ -94,11 +97,14 @@ class DelveTest(unittest.TestCase):
             self.client.post('hello', 'one')
         prepared = next(self.client.state.glob('*.json'))
         before = json.loads(prepared.read_text())['record']
+        rkey = json.loads(prepared.read_text())['rkey']
+        self.assertTrue(d.valid_tid(rkey))
         self.clock[0] += 100
         out = self.client.post('hello', 'one')
         self.assertEqual(out['status'], 'reconciled')
         self.assertEqual(self.http.puts, 1)
         self.assertEqual(before, json.loads(prepared.read_text())['record'])
+        self.assertEqual(rkey, json.loads(prepared.read_text())['rkey'])
         with self.assertRaisesRegex(d.Failure, 'different text'):
             self.client.post('changed', 'one')
         with self.assertRaisesRegex(d.Failure, 'Rate limited'):
@@ -111,11 +117,69 @@ class DelveTest(unittest.TestCase):
         self.assertEqual(self.http.puts, 1)
 
     def test_different_existing_record_not_overwritten(self):
-        key = self.client.key('post', 'one')
+        self.http.lost_reply = True
+        with self.assertRaises(d.Failure):
+            self.client.post('hello', 'one')
+        key = json.loads(next(self.client.state.glob('*.json')).read_text())['rkey']
         self.http.records[key] = {'value': {'text': 'other'}, 'uri': 'other', 'cid': 'other'}
         with self.assertRaisesRegex(d.Failure, 'different record'):
             self.client.post('hello', 'one')
-        self.assertEqual(self.http.puts, 0)
+        self.assertEqual(self.http.puts, 1)
+
+    def legacy_rejection(self):
+        key = self.client.key('post', 'legacy')
+        record = {'$type': d.POST, 'text': 'hello\n\n' + d.SIGNOFF, 'createdAt': d.stamp(self.clock[0])}
+        body = {'repo': d.DID, 'collection': d.POST, 'rkey': key, 'record': record, 'swapRecord': None}
+        with self.assertRaises(d.XRPCError) as failure:
+            self.http('POST', d.PDS, 'com.atproto.repo.putRecord', body=body)
+        state = {'intent': 'legacy', 'principal': d.DID, 'collection': d.POST, 'rkey': key,
+                 'reply_to': None, 'record': record, 'reserved': True,
+                 'events': [{'at': d.stamp(self.clock[0]), 'request': body},
+                            {'status': 400, 'response': failure.exception.data}]}
+        path = self.client.state / (key + '.json')
+        d.save(path, state)
+        self.client.append({'at': d.stamp(self.clock[0]), 'event': 'prepared', 'intentKey': key})
+        return path, state
+
+    def test_definitive_invalidtid_migration_preserves_intent_and_record(self):
+        path, old = self.legacy_rejection()
+        log = self.client.log.read_bytes()
+        self.clock[0] += 1
+        migrated = self.client.migrate_post_key('legacy')
+        new = json.loads(path.read_text())
+        self.assertTrue(d.valid_tid(new['rkey']))
+        self.assertEqual(new['record'], old['record'])
+        self.assertEqual(new['events'][:2], old['events'])
+        self.assertFalse(migrated['sent'])
+        self.assertEqual(self.client.log.read_bytes(), log)
+        self.assertEqual(self.http.puts, 1)  # only the rejected old request
+        with self.assertRaisesRegex(d.Failure, 'rotation'):
+            self.client.migrate_post_key('legacy')
+        out = self.client.post('hello', 'legacy')
+        self.assertEqual(out['status'], 'created')
+        self.assertEqual(self.http.puts, 2)
+        self.assertEqual(json.loads(self.client.log.read_text().splitlines()[-1])['intentKey'], self.client.key('post', 'legacy'))
+
+    def test_invalidtid_migration_refuses_uncertain_or_existing_old_record(self):
+        path, state = self.legacy_rejection()
+        altered = dict(state, events=state['events'][:1])
+        d.save(path, altered)
+        with self.assertRaisesRegex(d.Failure, 'definitively rejected'):
+            self.client.migrate_post_key('legacy')
+        d.save(path, state)
+        self.http.records[state['rkey']] = {'value': state['record']}
+        with self.assertRaisesRegex(d.Failure, 'Old record exists'):
+            self.client.migrate_post_key('legacy')
+        self.assertEqual(json.loads(path.read_text()), state)
+
+    def test_tid_encoding_layout(self):
+        value = d.tid(self.clock[0])
+        number = 0
+        for character in value:
+            number = number * 32 + d.TID_ALPHABET.index(character)
+        self.assertTrue(d.valid_tid(value))
+        self.assertEqual(number >> 10, self.clock[0] * 1_000_000)
+        self.assertLess(number & 1023, 1024)
 
     def test_legacy_log_brake_and_reply_root(self):
         self.client.log.write_text(json.dumps({'at': d.stamp(self.clock[0] - 30), 'uri': 'legacy'}) + '\n')

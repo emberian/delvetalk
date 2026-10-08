@@ -26,8 +26,12 @@ delve:
 	python3 conformance/test_delve.py
 	python3 conformance/test_delve_adversarial.py
 	python3 conformance/test_intake.py
+	python3 conformance/test_clerk.py
+	python3 conformance/test_receipts.py
+	python3 conformance/test_live_path.py
 proposals:
 	python3 conformance/test_propose.py
 scene:
 	python3 conformance/test_scene.py
+	python3 conformance/test_scene_adversarial.py
 check: build scene-build capsules core world wiki syntax delve proposals scene

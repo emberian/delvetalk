@@ -56,9 +56,13 @@ preexisting directories or sanitize a supplied directory.
 
 ### Retry contract
 
-The record key is a stable hash of principal, operation kind, and intent ID.
-Before a write the adapter durably saves the complete record, including its
-fixed `createdAt` and resolved reply references. It then uses
+The private intent key is a stable hash of principal, operation kind, and intent
+ID. The social post's record key is a separately generated, durably saved
+13-character [AT Protocol TID](https://atproto.com/specs/tid): microsecond time
+plus a 10-bit random clock identifier. Social posts require this key format;
+the custom CAS collection accepts the deterministic hash key. Before a write
+the adapter durably saves the TID and complete record, including its fixed
+`createdAt` and resolved reply references. It then uses
 `com.atproto.repo.putRecord` with explicit `swapRecord: null`: this requests
 creation with an absence precondition. An identical-content no-op success is
 also acceptable and verified by refetch. `validate` is omitted; validation is
@@ -77,6 +81,18 @@ record and the private intent state survive. It is **not an exactly-once social
 notification guarantee**, perpetual deduplication guarantee, server-side
 application admission rule, or cryptographic identity proof of quoted text.
 AT Protocol AppView indexing and notification processing are separate effects.
+
+The first live social attempt exposed a missing mock constraint: the town's
+post collection rejects hash-shaped record keys as invalid TIDs. The mock now
+enforces this constraint. For an old prepared intent with exactly one request
+and its definitive `400 InvalidRequest` / `Invalid TID string` response, the
+explicit `migrate-post-key --intent SAME_ID` command can repair the local key.
+It first authenticates and reads the old key to establish observed absence,
+then durably appends the migration event and new TID while retaining the same
+intent, exact record, old error receipt, and rate reservation. It sends no post.
+Uncertain attempts, confirmed posts, an existing old record, and already-valid
+TIDs are refused. Retry the original post with the original intent afterward;
+do not select a new intent or bypass the shared brake.
 
 The shared `~/claude_state/delvetown/posts.jsonl` retains the resident's
 20-minute interval, including replies. A durable preparation reserves the

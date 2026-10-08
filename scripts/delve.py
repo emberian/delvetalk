@@ -11,6 +11,8 @@ import hashlib
 import json
 import math
 import os
+import re
+import secrets
 from pathlib import Path
 import sys
 import time
@@ -27,6 +29,21 @@ CAS = 'org.delvetalk.casDemo'
 SIGNOFF = '🜉✾'
 INTERVAL = 1200
 CAP = 2000
+TID_ALPHABET = '234567abcdefghijklmnopqrstuvwxyz'
+
+
+def tid(now):
+    # AT Protocol TID: 53-bit microsecond timestamp + 10-bit clock identifier,
+    # encoded big-endian in the sortable base32 alphabet, exactly 13 characters.
+    micros = int(now * 1_000_000)
+    if not 0 <= micros < 2**53:
+        raise Failure('Timestamp out of TID range')
+    number = (micros << 10) | secrets.randbits(10)
+    return ''.join(TID_ALPHABET[(number >> (5 * position)) & 31] for position in range(12, -1, -1))
+
+
+def valid_tid(value):
+    return isinstance(value, str) and re.fullmatch(r'[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}', value) is not None
 
 
 class Failure(Exception):
@@ -210,11 +227,14 @@ class Delve:
                     parent = {'uri': posts[0]['uri'], 'cid': posts[0]['cid']}
                     root = posts[0].get('record', {}).get('reply', {}).get('root', parent)
                     record['reply'] = {'parent': parent, 'root': {'uri': root['uri'], 'cid': root['cid']}}
-                prepared = {'intent': intent, 'principal': DID, 'collection': POST, 'rkey': key,
+                prepared = {'intent': intent, 'intentKey': key, 'principal': DID, 'collection': POST, 'rkey': tid(self.now()),
                             'reply_to': reply_to, 'record': record, 'events': []}
                 save(path, prepared)
+            rkey = prepared['rkey']
+            if not valid_tid(rkey):
+                raise Failure('Prepared post has a legacy non-TID key; explicit migrate-post-key is required')
             # Reconcile before every send, including a lost successful reply.
-            found = self.get(POST, key)
+            found = self.get(POST, rkey)
             if found:
                 if found['value'] != prepared['record']:
                     raise Failure('Intent key is occupied by a different record; refusing replacement')
@@ -226,7 +246,7 @@ class Delve:
                 self.append({'at': stamp(self.now()), 'event': 'prepared', 'intentKey': key})
                 prepared['reserved'] = True
                 save(path, prepared)
-            body = {'repo': DID, 'collection': POST, 'rkey': key, 'record': prepared['record'], 'swapRecord': None}
+            body = {'repo': DID, 'collection': POST, 'rkey': rkey, 'record': prepared['record'], 'swapRecord': None}
             prepared['events'].append({'at': stamp(self.now()), 'request': body})
             save(path, prepared)
             try:
@@ -235,25 +255,55 @@ class Delve:
                 prepared['events'].append({'status': error.status, 'response': error.data})
                 save(path, prepared)
                 if error.data.get('error') == 'InvalidSwap':
-                    found = self.get(POST, key)
+                    found = self.get(POST, rkey)
                     if found and found['value'] == prepared['record']:
                         return self.confirm_post(path, prepared, found, 'reconciled')
                 raise
             prepared['events'].append({'response': response})
             save(path, prepared)
-            found = self.get(POST, key)
+            found = self.get(POST, rkey)
             if not found or found['value'] != prepared['record']:
                 raise Failure('Write returned but refetched record differs; inspect private receipt')
             return self.confirm_post(path, prepared, found, 'created')
 
     def confirm_post(self, path, prepared, found, status):
         if not prepared.get('confirmed'):
-            self.append({'at': stamp(self.now()), 'event': 'confirmed', 'intentKey': prepared['rkey'],
+            self.append({'at': stamp(self.now()), 'event': 'confirmed', 'intentKey': self.key('post', prepared['intent']),
                          'uri': found['uri'], 'cid': found['cid'], 'reply_to': prepared['reply_to'],
                          'text': prepared['record']['text']})
             prepared['confirmed'] = found
             save(path, prepared)
         return {'status': status, 'uri': found['uri'], 'cid': found['cid'], 'receipt': str(path)}
+
+    def migrate_post_key(self, intent):
+        """Explicit local repair after definitive InvalidTID rejection; never sends a post."""
+        key = self.key('post', intent)
+        path = self.state / (key + '.json')
+        with locked(self.log.with_suffix('.jsonl.lock')), locked(self.state / '.lock'):
+            prepared = json.loads(path.read_text())
+            if prepared.get('principal') != DID or prepared.get('collection') != POST or prepared.get('intent') != intent:
+                raise Failure('Prepared record identity mismatch')
+            if prepared.get('confirmed'):
+                raise Failure('Confirmed post key cannot be migrated')
+            old = prepared['rkey']
+            if valid_tid(old):
+                raise Failure('Post already has a TID; refusing key rotation')
+            events = prepared.get('events', [])
+            expected_message = f'Invalid record key for {POST}: Invalid TID string (got "{old}") at $'
+            if len(events) != 2 or events[0].get('request') != {
+                'repo': DID, 'collection': POST, 'rkey': old, 'record': prepared['record'], 'swapRecord': None
+            } or events[1].get('status') != 400 or events[1].get('response', {}).get('error') != 'InvalidRequest' or events[1]['response'].get('message') != expected_message:
+                raise Failure('Migration requires one exact definitively rejected InvalidTID request, with no uncertain attempts')
+            self.login()
+            if self.get(POST, old) is not None:
+                raise Failure('Old record exists; refusing key migration')
+            new = tid(self.now())
+            prepared['events'].append({'at': stamp(self.now()), 'migration': 'definitive-invalid-tid',
+                'oldRkey': old, 'newRkey': new, 'oldRecordObservedAbsent': True})
+            prepared['intentKey'], prepared['rkey'] = key, new
+            save(path, prepared)
+            return {'status': 'prepared-key-migrated', 'oldRkey': old, 'rkey': new, 'receipt': str(path),
+                    'sent': False}
 
     def cas_demo(self, intent):
         """Probe the PDS's CAS boundary, never Mini law/admission or distributed exactly-once."""
@@ -344,6 +394,8 @@ def main():
     post.add_argument('--reply-to')
     cas = commands.add_parser('cas-demo', help='Explicit non-feed record writes to probe PDS CAS')
     cas.add_argument('--intent', required=True)
+    migrate = commands.add_parser('migrate-post-key', help='Repair one definitively rejected legacy post key; no post is sent')
+    migrate.add_argument('--intent', required=True)
     args = parser.parse_args()
     client = Delve(args.state_dir, args.credentials, args.post_log)
     try:
@@ -351,6 +403,8 @@ def main():
             out = client.read_thread(args.uri, args.depth, args.parents)
         elif args.command == 'post':
             out = client.post(args.textfile.read_text(), args.intent, args.reply_to)
+        elif args.command == 'migrate-post-key':
+            out = client.migrate_post_key(args.intent)
         else:
             out = client.cas_demo(args.intent)
         print(json.dumps(out, ensure_ascii=False, indent=2))
