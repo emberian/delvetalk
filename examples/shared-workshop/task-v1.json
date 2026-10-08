@@ -1,0 +1,197 @@
+{
+  "profile": "delvetalk-local-v1",
+  "name": "shared-workshop-task",
+  "edition": 1,
+  "initial": {
+    "task": "workshop:benches",
+    "description": "Prepare six benches at seven boards each",
+    "units": 6,
+    "unitCost": 7,
+    "phase": "open",
+    "worker": null,
+    "quote": null,
+    "answer": null
+  },
+  "commands": {
+    "assign": {
+      "require": [
+        [
+          [
+            "principal"
+          ],
+          [
+            "literal",
+            "iris"
+          ]
+        ],
+        [
+          [
+            "state",
+            "phase"
+          ],
+          [
+            "literal",
+            "open"
+          ]
+        ],
+        [
+          [
+            "input",
+            "task"
+          ],
+          [
+            "state",
+            "task"
+          ]
+        ],
+        [
+          [
+            "input",
+            "total"
+          ],
+          [
+            "bend",
+            [
+              "lam",
+              [
+                "lam",
+                [
+                  "binary",
+                  "multiply",
+                  [
+                    "bound",
+                    1
+                  ],
+                  [
+                    "bound",
+                    0
+                  ]
+                ]
+              ]
+            ],
+            [
+              [
+                "state",
+                "units"
+              ],
+              [
+                "state",
+                "unitCost"
+              ]
+            ]
+          ]
+        ]
+      ],
+      "set": {
+        "phase": [
+          "literal",
+          "assigned"
+        ],
+        "worker": [
+          "input",
+          "worker"
+        ],
+        "quote": [
+          "input",
+          "total"
+        ]
+      },
+      "result": [
+        "record",
+        {
+          "task": [
+            "state",
+            "task"
+          ],
+          "worker": [
+            "input",
+            "worker"
+          ],
+          "total": [
+            "input",
+            "total"
+          ]
+        }
+      ],
+      "outbox": []
+    },
+    "complete": {
+      "require": [
+        [
+          [
+            "state",
+            "phase"
+          ],
+          [
+            "literal",
+            "assigned"
+          ]
+        ],
+        [
+          [
+            "input",
+            "answer"
+          ],
+          [
+            "bend",
+            [
+              "lam",
+              [
+                "lam",
+                [
+                  "binary",
+                  "multiply",
+                  [
+                    "bound",
+                    1
+                  ],
+                  [
+                    "bound",
+                    0
+                  ]
+                ]
+              ]
+            ],
+            [
+              [
+                "state",
+                "units"
+              ],
+              [
+                "state",
+                "unitCost"
+              ]
+            ]
+          ]
+        ]
+      ],
+      "set": {
+        "phase": [
+          "literal",
+          "done"
+        ],
+        "answer": [
+          "input",
+          "answer"
+        ]
+      },
+      "result": [
+        "record",
+        {
+          "task": [
+            "state",
+            "task"
+          ],
+          "answer": [
+            "input",
+            "answer"
+          ],
+          "by": [
+            "principal"
+          ]
+        }
+      ],
+      "outbox": []
+    }
+  }
+}

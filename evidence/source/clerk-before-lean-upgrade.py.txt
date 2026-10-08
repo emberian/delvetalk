@@ -27,9 +27,8 @@ COLLECTION = 'org.delvetalk.request'
 FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
-PIN_PATHS = ['profiles/World.lean', 'profiles/WorldCore.lean', 'spec/Delvetalk/Core.lean',
+PIN_PATHS = ['profiles/World.lean', 'spec/Delvetalk/Core.lean',
              'spec/upstream/Theory/ObjectiveBendOpenRecursion.lean',
-             'spec/upstream/Theory/AxiomPin.lean', 'lean-toolchain',
              'scripts/world.py', 'scripts/delve.py', 'scripts/clerk.py', '.lake/build/bin/delvetalk-world']
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
@@ -247,28 +246,17 @@ class Clerk:
             raise ValueError('requestJson must be a string of at most 64 KiB')
         payload = loads(raw)
         expected_key = 'expectedRootRef' if isinstance(payload, dict) and 'expectedRootRef' in payload else 'expected'
-        operation = payload.get('op', 'invoke') if isinstance(payload, dict) else None
-        if operation == 'invoke':
-            fields = ['object', 'command', 'input', expected_key]
-            if 'op' in payload:
-                fields.append('op')
-            exact(payload, fields, 'requestJson')
-            if not isinstance(payload['command'], str) or not isinstance(payload['input'], dict):
-                raise ValueError('command must be a string and input an object')
-        elif operation == 'reprogram':
-            exact(payload, ['op', 'object', 'protocol', 'state', expected_key], 'requestJson')
-            if not isinstance(payload['protocol'], dict) or not isinstance(payload['state'], dict):
-                raise ValueError('reprogram protocol and state must be objects')
-        else:
-            raise ValueError('unsupported remote operation; only invoke and reprogram are allowed')
-        if not isinstance(payload['object'], str) or payload['object'] not in config['objects']:
-            raise ValueError('object is not configured for remote requests')
+        exact(payload, ['object', 'command', 'input', expected_key], 'requestJson')
+        if payload['object'] not in config['objects'] or not isinstance(payload['object'], str):
+            raise ValueError('object is not configured for remote invocation')
+        if not isinstance(payload['command'], str) or not isinstance(payload['input'], dict):
+            raise ValueError('command must be a string and input an object')
         resolved = None
         if expected_key == 'expectedRootRef':
             expected, resolved = self.resolve_root(payload['expectedRootRef'], payload['object'])
             payload = {key: value for key, value in payload.items() if key != 'expectedRootRef'}
             payload['expected'] = expected
-        request = {'op': operation, 'principal': author, 'intent': 'delve:' + uri, **payload}
+        request = {'op': 'invoke', 'principal': author, 'intent': 'delve:' + uri, **payload}
         entry = {'source': {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS},
                  'record': value, 'request': request, 'profile': config['profile']}
         if resolved is not None:
@@ -306,49 +294,6 @@ class Clerk:
                 raise ValueError('pending request implementation pins changed')
             return self.finish(path, entry)
 
-    def profile(self):
-        with delve.locked(self.state / 'clerk.lock'):
-            profile = self.config()['profile']
-            return {'profile': profile, 'sha256': digest(profile)}
-
-    def upgrade(self, from_profile):
-        """Explicit local custody transition; never changes or reinterprets a world."""
-        if not isinstance(from_profile, str) or not re.fullmatch('[0-9a-f]{64}', from_profile):
-            raise ValueError('from-profile must be the exact prior profile SHA256')
-        with delve.locked(self.state / 'clerk.lock'):
-            # Also exclude direct world.py writers across the snapshot/config commit.
-            with delve.locked(Path(str(self.database) + '.lock')):
-                config = self.config()
-                old = config['profile']
-                new = {'name': PROFILE, 'pins': pins()}
-                history = config.get('upgrades', [])
-                if not isinstance(history, list):
-                    raise ValueError('malformed upgrade history')
-                if digest(old) != from_profile:
-                    last = history[-1] if history else None
-                    if (isinstance(last, dict) and last.get('fromSha256') == from_profile
-                            and canonical(last.get('to')) == canonical(old)
-                            and canonical(old) == canonical(new)):
-                        return {'format': 'delvetalk-clerk-upgrade-v1',
-                                'status': 'already-upgraded', 'upgrade': last}
-                    raise ValueError('prior profile SHA256 mismatch')
-                for path in sorted((self.state / 'requests').glob('*.json')):
-                    entry = loads(path.read_text())
-                    if not isinstance(entry, dict) or not isinstance(entry.get('receipt'), dict):
-                        raise ValueError('pending request journal prevents upgrade: ' + path.name)
-                if canonical(old) == canonical(new):
-                    return {'format': 'delvetalk-clerk-upgrade-v1',
-                            'status': 'unchanged', 'profileSha256': digest(old)}
-                world_sha = hashlib.sha256(self.database.read_bytes()).hexdigest()
-                transition = {'from': old, 'to': new, 'fromSha256': from_profile,
-                              'toSha256': digest(new), 'worldSha256': world_sha}
-                transition['id'] = digest(transition)
-                config['profile'] = new
-                config['upgrades'] = history + [transition]
-                save(self.state / 'clerk.json', config)
-                return {'format': 'delvetalk-clerk-upgrade-v1',
-                        'status': 'upgraded', 'upgrade': transition}
-
     def snapshot(self, object_id):
         with delve.locked(self.state / 'clerk.lock'):
             config = self.config()
@@ -378,9 +323,6 @@ def main():
     receive.add_argument('--cid', required=True)
     snapshot = commands.add_parser('snapshot')
     snapshot.add_argument('object')
-    commands.add_parser('profile')
-    upgrade = commands.add_parser('upgrade')
-    upgrade.add_argument('--from-profile', required=True)
     args = parser.parse_args()
     try:
         clerk = Clerk(args.state)
@@ -388,10 +330,6 @@ def main():
             result = clerk.bootstrap(args.object, loads(args.protocol.read_text()), args.law, args.repository)
         elif args.op == 'receive':
             result = clerk.receive(args.uri, args.cid)
-        elif args.op == 'profile':
-            result = clerk.profile()
-        elif args.op == 'upgrade':
-            result = clerk.upgrade(args.from_profile)
         else:
             result = clerk.snapshot(args.object)
         print(world.wire_dumps(result))

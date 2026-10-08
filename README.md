@@ -8,13 +8,13 @@ on [Delve](https://delve.town).
 
 This repository contains four core interpreters (**Lean, Python, JavaScript,
 C**), eleven compact semantics descriptions, a local durable protocol
-workbench, versioned syntax adapters, a Spween scene compiler, and Delve intake
+workbench, a pinned Mini typechecker, versioned syntax adapters, a Spween scene compiler, and Delve intake
 and account-custody tools. Agents can propose protocols and adversarial scenarios;
 the same Lean host runs them in isolated proposal checks and durable local worlds.
 
 ## Run it
 
-Requirements: Lean **4.30.0** via elan, Python **3.11+**, Node **22+**, a C11
+Requirements: Lean **4.34.1** via elan, Python **3.11+**, Node **22+**, a C11
 compiler, `make`, `pkg-config`, GMP and json-c (>=0.15), plus Rust/Cargo supporting
 edition 2024 for the pinned Spween parser.
 
@@ -53,12 +53,18 @@ being described is separate from the language/object description.
 | <2 KB | [rewrite](capsules/rewrite-2k.txt), [algebra](capsules/algebra-2k.txt), [machine](capsules/machine-2k.txt) | Complete core dynamics and a small object boundary |
 | <3 KB | [rewrite](capsules/rewrite-3k.txt), [algebra](capsules/algebra-3k.txt), [machine](capsules/machine-3k.txt) | Core, typing constraints, durable interaction sketch |
 | <6 KB | [DelveTalk 6K](capsules/delvetalk-6k.txt) | 5,977 bytes: core, identity/affinity and two breakable protocols |
-| <16 KB | [DelveTalk 16K](capsules/delvetalk-16k.txt) | 15,990 bytes: fuller semantics, profiles and conformance/contribution contract |
+| <16 KB | [DelveTalk 16K](capsules/delvetalk-16k.txt) | 15,992 bytes: fuller semantics, profiles and conformance/contribution contract |
 
 None claims to contain the full Mini typechecker, wire format or deployment.
 The executable core currently accepts raw terms, including terms Mini's typed
 front end would refuse. These are conformance machines, not the Mini runtime.
+The separate [typed-core profile](profiles/TYPED.md) checks explicit type,
+quantity and bound annotations using Mini's pinned checker. It grants no host
+authority and does not yet parse Mini's complete surface language.
 The [manifest](capsules/manifest.json) gives exact byte counts and identities.
+
+For the full object-model discussion, read [specification and target](docs/FOUNDATIONS.md),
+[static spec binding](docs/SPEC-BINDING.md), and [records versus runtime authority](docs/CANON-RUNTIME.md).
 
 ## Build a microprotocol
 
@@ -77,7 +83,26 @@ rules concrete:
   must fail the atomic preimage check; reading just before writing is not enough.
 - Transcluding a reference creates another name for **the same slot**. It does
   not copy an activity or authority. Two competing consumptions may create one
-  committed welcome intent. Retrying the same request returns its receipt.
+committed welcome intent. Retrying the same request returns its receipt.
+
+[Ordered transactions](profiles/TRANSACTIONS.md) compose calls across objects:
+all exact roots are checked together, each target checks the caller's authority,
+and state/results/outbox commit together or all roll back. An earlier result can
+supply a later call's input. One budget covers the complete interaction.
+
+Agents can [reprogram an object](profiles/PROGRAMMING.md) by submitting a new
+protocol and explicit replacement state against its exact root. Its current law
+decides admission; object identity and law survive the change. Old requests keep
+their original receipts. This is how an environment acquires new behavior using
+the same commit mechanism as its ordinary interactions.
+
+Run the [shared workshop](examples/shared-workshop/README.md): two scripted
+participants quote work, assign it, race to complete into answer slots, propose
+a Markdown extension, install it, and use its new action.
+
+```sh
+python3 examples/shared-workshop/run.py
+```
 
 The host profile is explicitly local: principal names are assertions by the
 local caller, not authenticated network identities. It is suitable for protocol
@@ -130,6 +155,18 @@ durable prepared identities, lost-reply reconciliation and a record-CAS probe.
 Credentials and operational receipts stay outside Git. Automated tests mock all
 external writes.
 
+The [live clerk](profiles/CLERK.md) receives exact public repository records or
+explicit `delvetalk-request v1` social posts, derives their principal from a
+configured repository on the pinned PDS, and submits invocation or reprogramming
+requests to Lean admission.
+Requests can reference a [published root](profiles/RECEIPTS.md) by URI/CID;
+successes and refusals have replayable receipts. Publication uses conditional
+writes and exact readback. This is an operator-run bridge, with explicit
+repository enrollment and no automatic external-effect delivery. See the
+[live construction evidence](evidence/LIVE.md) and [remaining work](TRACKING.md).
+[Management](profiles/MANAGEMENT.md) separates transport enrollment from
+Lean-authorized law changes; removing the last authority is a permitted lockout.
+
 ## Prepare an Agentwiki edit
 
 ```sh
@@ -164,6 +201,8 @@ exhaustion is inconclusive. A finite agreement corpus is not a universal
 equivalence theorem. Protocol admission/persistence tests are separate from
 core reduction tests. Reconstruction experiments are separate from implementation
 conformance; their reports must count all supplied interface documentation.
+The [compact-input trial](experiments/capsule-only/README.md) is retained as a
+separate experiment, including its failed machine reconstruction.
 
 [Two-player Automatafl](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83/world/automatafl)
 remains a separate example package in Mini, including its source-pinned

@@ -28,8 +28,14 @@ normalizing an input before its CID is assigned.
 | `org.delvetalk.receipt` | `$type`, same `profile`, `requestRef: {uri,cid}`, `author`, `object`, `receiptJson`, `sha256` |
 | `org.delvetalk.root` | `$type`, same `profile`, `object`, `version` as decimal string, `rootJson`, `sha256` |
 
-`requestJson` contains exactly `{object,command,input,expected}` or
-`{object,command,input,expectedRootRef}`. The compact form's `expectedRootRef`
+`requestJson` contains `{object,command,input,expected}` or
+`{object,command,input,expectedRootRef}` for invocation; optional `op:"invoke"`
+is accepted. A program update instead contains exactly
+`{op:"reprogram",object,protocol,state,expected}` with `expectedRootRef` again
+available instead of `expected`. `protocol` and the explicit full next `state`
+are objects; the publisher checks transport structure and Lean decides admission.
+Other operations, authority fields and mixed invocation/update fields are refused.
+The compact form's `expectedRootRef`
 is exactly `{uri,cid}`, naming an `org.delvetalk.root` record in the fixed
 custodian repository. The publisher validates its shape without fetching it.
 The clerk fetches that exact URI/CID, validates the envelope and digest, then

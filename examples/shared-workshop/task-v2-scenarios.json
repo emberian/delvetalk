@@ -1,0 +1,93 @@
+[
+  {
+    "name": "workshop-v2",
+    "law": [
+      "iris",
+      "moss"
+    ],
+    "steps": [
+      {
+        "principal": "eve",
+        "command": "assign",
+        "input": {},
+        "root": "initial",
+        "kind": "refused",
+        "error": "unauthorized"
+      },
+      {
+        "principal": "iris",
+        "command": "assign",
+        "input": {
+          "task": "workshop:benches",
+          "worker": "moss",
+          "total": 42
+        },
+        "root": "current",
+        "kind": "committed",
+        "result": {
+          "task": "workshop:benches",
+          "worker": "moss",
+          "total": 42
+        }
+      },
+      {
+        "principal": "moss",
+        "command": "complete",
+        "input": {
+          "answer": 42
+        },
+        "root": "initial",
+        "kind": "refused",
+        "error": "stale read root"
+      },
+      {
+        "principal": "moss",
+        "command": "complete",
+        "input": {
+          "answer": 41
+        },
+        "root": "current",
+        "kind": "refused",
+        "error": "precondition failed"
+      },
+      {
+        "principal": "moss",
+        "command": "complete",
+        "input": {
+          "answer": 42
+        },
+        "root": "current",
+        "kind": "committed",
+        "result": {
+          "task": "workshop:benches",
+          "answer": 42,
+          "by": "moss"
+        }
+      },
+      {
+        "principal": "moss",
+        "command": "reflect",
+        "input": {
+          "note": "Pre-cut the boards before assembly."
+        },
+        "root": "current",
+        "kind": "committed",
+        "result": {
+          "task": "workshop:benches",
+          "note": "Pre-cut the boards before assembly.",
+          "by": "moss"
+        }
+      },
+      {
+        "principal": "moss",
+        "command": "reflect",
+        "input": {
+          "note": "Overwrite"
+        },
+        "root": "current",
+        "kind": "refused",
+        "error": "precondition failed"
+      }
+    ]
+  }
+]

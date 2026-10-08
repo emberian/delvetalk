@@ -48,11 +48,22 @@ def encode(kind, text):
     value = loads(text)
     if kind == 'request':
         expected_key = 'expectedRootRef' if isinstance(value, dict) and 'expectedRootRef' in value else 'expected'
-        exact_object(value, ('object', 'command', 'input', expected_key))
-        if not all(isinstance(value[k], str) and value[k] for k in ('object', 'command')):
-            raise Failure('Request needs nonempty object and command strings')
-        if not isinstance(value['input'], dict) or not isinstance(value[expected_key], dict):
-            raise Failure('Request input and expected root must be objects')
+        operation = value.get('op', 'invoke') if isinstance(value, dict) else None
+        if operation == 'invoke':
+            fields = ['object', 'command', 'input', expected_key]
+            if 'op' in value:
+                fields.append('op')
+            exact_object(value, fields)
+            if not isinstance(value['command'], str) or not value['command'] or not isinstance(value['input'], dict):
+                raise Failure('Request needs a nonempty command string and input object')
+        elif operation == 'reprogram':
+            exact_object(value, ('op', 'object', 'protocol', 'state', expected_key))
+            if not isinstance(value['protocol'], dict) or not isinstance(value['state'], dict):
+                raise Failure('Reprogram protocol and state must be objects')
+        else:
+            raise Failure('Unsupported remote operation; only invoke and reprogram are allowed')
+        if not isinstance(value['object'], str) or not value['object'] or not isinstance(value[expected_key], dict):
+            raise Failure('Request needs a nonempty object string and expected root object')
         if expected_key == 'expectedRootRef':
             reference = value[expected_key]
             exact_object(reference, ('uri', 'cid'))

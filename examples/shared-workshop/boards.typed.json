@@ -1,0 +1,60 @@
+{
+  "schema": "delvetalk.typed-core.v1",
+  "name": "workshop-boards",
+  "term": [
+    "lam",
+    [
+      "lam",
+      [
+        "binary",
+        "multiply",
+        [
+          "bound",
+          1
+        ],
+        [
+          "bound",
+          0
+        ]
+      ]
+    ]
+  ],
+  "types": [],
+  "annotations": [
+    {
+      "path": [],
+      "domain": {
+        "tag": "natural"
+      },
+      "codomain": {
+        "tag": "arrow",
+        "reuse": "reusable",
+        "parameter": "unrestricted",
+        "domain": {
+          "tag": "natural"
+        },
+        "codomain": {
+          "tag": "natural"
+        }
+      },
+      "parameter": "unrestricted",
+      "reuse": "reusable"
+    },
+    {
+      "path": [
+        0
+      ],
+      "domain": {
+        "tag": "natural"
+      },
+      "codomain": {
+        "tag": "natural"
+      },
+      "parameter": "unrestricted",
+      "reuse": "reusable"
+    }
+  ],
+  "bounds": [],
+  "shareableVariables": [],
+  "rigidVariables": []
+}

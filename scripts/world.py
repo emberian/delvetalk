@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local durable transport; profiles/World.lean owns all semantic decisions.
+"""Local durable transport; the selected Lean profile owns semantic decisions.
 
 Input: one request JSON file, or '-' for stdin. Output: Lean's reply JSON.
 Principal strings are assertions by the local caller, NOT authenticated identities.
@@ -21,6 +21,10 @@ if hasattr(sys, "set_int_max_str_digits"):
     sys.set_int_max_str_digits(0)
 
 ROOT = Path(__file__).resolve().parents[1]
+PROFILES = {
+    'world': ('delvetalk-world', 'World.lean'),
+    'transactions': ('delvetalk-transactions', 'Transactions.lean'),
+}
 
 
 def wire_loads(text):
@@ -45,7 +49,11 @@ def wire_dumps(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False)
 
 
-def exchange(database, request):
+def exchange(database, request, *, profile='world'):
+    try:
+        binary, source = PROFILES[profile]
+    except KeyError:
+        raise ValueError('unknown local host profile: ' + str(profile)) from None
     database = Path(database).resolve()
     database.parent.mkdir(parents=True, exist_ok=True)
     # The lock has stable identity across replacing the database file.
@@ -53,9 +61,9 @@ def exchange(database, request):
         fcntl.flock(lock, fcntl.LOCK_EX)
         world = wire_loads(database.read_text()) if database.exists() else {
             'objects': {}, 'receipts': []}
-        executable = ROOT / '.lake/build/bin/delvetalk-world'
+        executable = ROOT / '.lake/build/bin' / binary
         command = ([str(executable)] if executable.exists() else
-                   ['lake', 'env', 'lean', '--run', 'profiles/World.lean'])
+                   ['lake', 'env', 'lean', '--run', 'profiles/' + source])
         proc = subprocess.run(command, cwd=ROOT,
                               input=wire_dumps({'world': world, 'request': request}) + '\n',
                               text=True, capture_output=True,
@@ -91,12 +99,14 @@ def exchange(database, request):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--profile', choices=PROFILES, default='world',
+                        help='opt-in Lean host admission profile (default: world)')
     parser.add_argument('database', type=Path)
     parser.add_argument('request', help="request JSON path, or '-' for stdin")
     args = parser.parse_args()
     request = wire_loads(sys.stdin.read() if args.request == '-' else Path(args.request).read_text())
     try:
-        print(wire_dumps(exchange(args.database, request)))
+        print(wire_dumps(exchange(args.database, request, profile=args.profile)))
     except (ValueError, RuntimeError) as exc:
         print(json.dumps({'transport_error': str(exc)}), file=sys.stderr)
         raise SystemExit(1)

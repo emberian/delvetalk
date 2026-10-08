@@ -18,9 +18,9 @@
       "sha256": "a66aa18128e466162a2a997733903accf71aae86cdb66b91247889638d9db054"
     },
     "delvetalk-16k.txt": {
-      "bytes": 15990,
+      "bytes": 15992,
       "exclusiveLimit": 16000,
-      "sha256": "9c017166eef39838af65e6ad6c87a6cc25670bdeb084f83706bc3dfb583d154c"
+      "sha256": "5a17e2891f5cb02615cced717107206c23b9c53a0b6c88c58656c1919bc06b6a"
     },
     "delvetalk-6k.txt": {
       "bytes": 5977,

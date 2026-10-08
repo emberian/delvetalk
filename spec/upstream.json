@@ -7,6 +7,12 @@
     },
     "Theory/ObjectiveBendOpenRecursion.lean": {
       "sha256": "6e0d410ca4d9a0d1e139448cbd290519596ea159a0c5b531e6df43341fd97808"
+    },
+    "Theory/ObjectiveBendTypes.lean": {
+      "sha256": "7947a70676509eba82577f6c86859999002e713ff53150fa43c72dbe8c1bd064"
+    },
+    "Theory/ObjectiveBendTyping.lean": {
+      "sha256": "cef31eb29f977d8c032ec75769d75cfaa48af4e6a96089bec1806141536477b8"
     }
   }
 }

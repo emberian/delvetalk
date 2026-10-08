@@ -85,7 +85,7 @@ class ClerkTests(unittest.TestCase):
         for key, value in [('principal', A), ('op', 'law'), ('intent', 'forged')]:
             with self.subTest(key=key):
                 uri, cid = self.record(key, author=B, **{key: value})
-                with self.assertRaisesRegex(ValueError, 'unknown fields'):
+                with self.assertRaisesRegex(ValueError, 'unknown fields|unsupported remote operation'):
                     self.c.receive(uri, cid)
         self.assertEqual(self.c.snapshot('counter')['root'], self.root)
 
@@ -210,6 +210,34 @@ class ClerkTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown fields'):
             self.c.receive(uri, cid)
         self.assertEqual(self.c.snapshot('counter')['root'], self.root)
+
+    def test_remote_reprogram_uses_actual_lean_current_law_and_root(self):
+        protocol = copy.deepcopy(self.root['protocol'])
+        protocol['commands']['double'] = {
+            'require': [], 'set': {'count': ['bend', ['lam', ['binary', 'multiply', ['bound', 0], ['nat', '2']]], [['state', 'count']]]},
+            'result': ['literal', 'doubled'], 'outbox': []}
+        def program(key, author=A, root=None, program=None):
+            uri = f'at://{author}/{clerk.COLLECTION}/{key}'
+            value = {'op': 'reprogram', 'object': 'counter', 'protocol': protocol if program is None else program,
+                     'state': {'count': 7}, 'expected': self.root if root is None else root}
+            self.pds.records[uri] = ('cid-' + key, {'$type': clerk.COLLECTION, 'profile': 'delvetalk-live-v1',
+                                                'requestJson': clerk.world.wire_dumps(value)})
+            return self.c.receive(uri, 'cid-' + key)
+        denied = program('denied-program', author=B)
+        self.assertEqual(denied['reply']['data'], 'unauthorized')
+        accepted = program('program')
+        self.assertEqual(accepted['reply']['kind'], 'committed')
+        changed = accepted['reply']['data']['root']
+        self.assertEqual(changed['law'], self.root['law'])
+        self.assertEqual(changed['state'], {'count': 7})
+        self.assertEqual(changed['version'], 1)
+        self.assertEqual(program('stale-program')['reply']['data'], 'stale read root')
+        invalid = program('invalid-program', root=changed, program={})
+        self.assertEqual(invalid['reply']['kind'], 'refused')
+        self.assertEqual(self.c.snapshot('counter')['root'], changed)
+        invoked = self.c.receive(*self.record('double', root=changed, op='invoke', command='double', input={}))
+        self.assertEqual(invoked['reply']['data']['root']['state']['count'], 14)
+        self.assertEqual(program('program'), accepted)
 
     def test_boolean_version_is_not_numeric_preimage(self):
         receipt = self.c.receive(*self.record())

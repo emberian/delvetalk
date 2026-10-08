@@ -141,6 +141,28 @@ class Publications(unittest.TestCase):
             with self.subTest(value=bad), self.assertRaises(Failure):
                 r.encode('request', json.dumps(bad))
 
+    def test_explicit_remote_reprogram_and_discriminator(self):
+        value = {'op': 'reprogram', 'object': 'counter', 'protocol': {'commands': {}},
+                 'state': {'count': 9}, 'expected': {'version': 0}}
+        text = json.dumps(value)
+        self.assertEqual(r.encode('request', text)['requestJson'], text)
+        self.pub.publish('request', text, 'program')
+        compact = copy.deepcopy(value)
+        del compact['expected']
+        compact['expectedRootRef'] = {'uri': 'at://' + DID + '/' + r.ROOT + '/root', 'cid': 'root-cid'}
+        self.assertEqual(r.encode('request', json.dumps(compact))['requestJson'], json.dumps(compact))
+        invoked = json.loads(self.request())
+        invoked['op'] = 'invoke'
+        self.assertEqual(r.encode('request', json.dumps(invoked))['requestJson'], json.dumps(invoked))
+        for mutation in (lambda x: x.update(op='law'), lambda x: x.update(op='create'),
+                         lambda x: x.update(principal=DID), lambda x: x.update(law=[DID]),
+                         lambda x: x.update(command='add'), lambda x: x.update(state=[]),
+                         lambda x: x.pop('state'), lambda x: x.update(protocol='code')):
+            bad = copy.deepcopy(value)
+            mutation(bad)
+            with self.subTest(request=bad), self.assertRaises(Failure):
+                r.encode('request', json.dumps(bad))
+
     def test_ambiguous_or_malformed_snapshots_rejected_before_write(self):
         with self.assertRaisesRegex(Failure, 'Duplicate JSON'):
             self.pub.publish('request', self.request().replace('"input":{}', '"input":{},"input":{}'), 'duplicate')

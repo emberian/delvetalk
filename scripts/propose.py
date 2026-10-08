@@ -134,7 +134,7 @@ def run_scenarios(protocol, scenarios):
 
 def execution_pin():
     # Byte identity is provenance, not a proof that a binary was built from these sources.
-    paths = ['scripts/propose.py', 'scripts/world.py', 'profiles/World.lean',
+    paths = ['scripts/propose.py', 'scripts/world.py', 'profiles/World.lean', 'profiles/WorldCore.lean',
              'spec/Delvetalk/Core.lean', 'spec/upstream/Theory/ObjectiveBendOpenRecursion.lean',
              'spec/upstream/Theory/AxiomPin.lean', 'lean-toolchain',
              '.lake/build/bin/delvetalk-world']

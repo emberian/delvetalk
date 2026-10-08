@@ -19,3 +19,17 @@ srcDir = "spec"
 name = "delvetalk-world"
 root = "World"
 srcDir = "profiles"
+
+[[lean_lib]]
+name = "WorldCore"
+srcDir = "profiles"
+
+[[lean_exe]]
+name = "delvetalk-typed"
+root = "TypedMain"
+srcDir = "spec"
+
+[[lean_exe]]
+name = "delvetalk-transactions"
+root = "Transactions"
+srcDir = "profiles"

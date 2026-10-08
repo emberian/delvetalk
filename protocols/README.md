@@ -40,8 +40,11 @@ The version also prevents accepting a stale state after it changes back.
 `law` operations contain `expected`, `law` (a string array), `principal`, `intent`,
 and `object`. A currently admitted principal may change the law. Empty laws are
 allowed and there is no recovery bypass. A law revision increments the version.
-Creation is open to the local operator with a fresh object ID; no protocol upgrade
-operation exists. Propose a new object/program for a new protocol.
+Creation is open to the local operator with a fresh object ID.
+[Reprogramming](../profiles/PROGRAMMING.md) replaces an existing object's protocol
+and explicit state under its current law and exact root, preserving its identity
+and law. The [shared workshop](../examples/shared-workshop/README.md) exercises
+proposal, replacement and use by another participant.
 
 ## Definition language
 

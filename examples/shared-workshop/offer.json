@@ -1,0 +1,168 @@
+{
+  "profile": "delvetalk-local-v1",
+  "name": "shared-workshop-offer",
+  "initial": {
+    "task": "workshop:benches",
+    "units": 6,
+    "unitCost": 7,
+    "status": "empty",
+    "worker": null,
+    "total": null
+  },
+  "commands": {
+    "quote": {
+      "require": [
+        [
+          [
+            "state",
+            "status"
+          ],
+          [
+            "literal",
+            "empty"
+          ]
+        ],
+        [
+          [
+            "principal"
+          ],
+          [
+            "literal",
+            "moss"
+          ]
+        ]
+      ],
+      "set": {
+        "status": [
+          "literal",
+          "offered"
+        ],
+        "worker": [
+          "principal"
+        ],
+        "total": [
+          "bend",
+          [
+            "lam",
+            [
+              "lam",
+              [
+                "binary",
+                "multiply",
+                [
+                  "bound",
+                  1
+                ],
+                [
+                  "bound",
+                  0
+                ]
+              ]
+            ]
+          ],
+          [
+            [
+              "state",
+              "units"
+            ],
+            [
+              "state",
+              "unitCost"
+            ]
+          ]
+        ]
+      },
+      "result": [
+        "record",
+        {
+          "task": [
+            "state",
+            "task"
+          ],
+          "worker": [
+            "principal"
+          ],
+          "total": [
+            "bend",
+            [
+              "lam",
+              [
+                "lam",
+                [
+                  "binary",
+                  "multiply",
+                  [
+                    "bound",
+                    1
+                  ],
+                  [
+                    "bound",
+                    0
+                  ]
+                ]
+              ]
+            ],
+            [
+              [
+                "state",
+                "units"
+              ],
+              [
+                "state",
+                "unitCost"
+              ]
+            ]
+          ]
+        }
+      ],
+      "outbox": []
+    },
+    "accept": {
+      "require": [
+        [
+          [
+            "state",
+            "status"
+          ],
+          [
+            "literal",
+            "offered"
+          ]
+        ],
+        [
+          [
+            "principal"
+          ],
+          [
+            "literal",
+            "iris"
+          ]
+        ]
+      ],
+      "set": {
+        "status": [
+          "literal",
+          "accepted"
+        ]
+      },
+      "result": [
+        "record",
+        {
+          "task": [
+            "state",
+            "task"
+          ],
+          "worker": [
+            "state",
+            "worker"
+          ],
+          "total": [
+            "state",
+            "total"
+          ]
+        }
+      ],
+      "outbox": []
+    }
+  }
+}

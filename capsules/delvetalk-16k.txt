@@ -103,7 +103,7 @@ bounds, then instantiate at closed uses. For L1,...,Ln, target T and seed I0,
 layer k substitutes Self=T,Super=I(k-1), discharges bounds and produces Ik;
 In must equal T. Substitute Self in both argument/result of a binary method.
 Simple fix: (C->V->C)->V->C. Heterogeneous mix: (C->V->M),(C->M->W) give C->V->W.
-Contracts distinguish add, same-type override and declared replacement.
+Contracts allow additions and same-type overrides, refusing type changes.
 Recursive nominal Node differs from arbitrary Self.
 
 Activity<P,R,A> yields P, resumes R, finishes A. P is a variant of first-order

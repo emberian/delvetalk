@@ -3,8 +3,9 @@
 `scripts/clerk.py` is an explicitly invoked receiving path from a public Delve
 repository record or explicit social post to a durable Lean world. It runs no daemon and sends no network
 writes. A local operator installs a reviewed protocol and chooses repositories
-and object authority. Remote authors may invoke that protocol; they cannot
-create objects, change law, load adapters, or submit Python/shell programs.
+and object authority. Authorized remote authors may invoke or reprogram the
+object through Lean admission; they cannot create objects, change law, load
+adapters, or submit Python/shell programs.
 
 ## Bootstrap and read
 
@@ -45,8 +46,10 @@ For an embedded preimage, replace `expected` with the entire `root` object from 
 including version, law, state and pinned protocol. The string envelope preserves
 arbitrary JSON decimal precision and unbounded integer preimages across ATproto's
 more restricted record data model. Duplicate JSON members, unknown fields and
-nonfinite numbers are rejected. The request has no caller-selected `principal`,
-`op`, or `intent`. Those fields cannot override the receiving path.
+nonfinite numbers are rejected. The request has no caller-selected `principal` or `intent`. Those fields cannot
+override the receiving path. An absent `op` means `invoke`; explicit
+`"op":"invoke"` is also accepted. The only other remote operation is
+`reprogram`, described below.
 
 `scripts/receipts.py request` publishes this envelope with durable account
 custody; see [RECEIPTS.md](RECEIPTS.md). Authors can instead use their own
@@ -108,6 +111,31 @@ Authority still belongs to the post's repository DID. Posting, quoting or
 referencing the custodian's root confers no authority: an operator must enroll
 the author in the repository allowlist and Lean law explicitly.
 
+## Agent-authored program updates
+
+An enrolled author with current object authority can submit a replacement lowered
+protocol and explicit complete state. The inner JSON has exactly these fields:
+
+```json
+{"op":"reprogram","object":"counter:live","protocol":{"profile":"delvetalk-local-v1","initial":{},"commands":{}},"state":{"count":7},"expected":{}}
+```
+
+Supply the intended protocol and full expected root; `expectedRootRef` can replace
+`expected` just as for invocations. `state` is the full next state record, so an
+agent can make an explicit schema migration while adding new commands. Protocol
+syntax lowering and proposal provenance remain separate artifacts; the receiver
+accepts only the resulting JSON protocol, never an adapter or executable shell
+source. The existing proposal workflow can exercise a candidate before posting.
+
+Lean checks current law and the exact preimage, validates the replacement, and
+atomically installs protocol plus state while preserving law and incrementing
+version. The transport does not decide whether a program is admissible. Refusal
+and retry receipts use the same durable source identity as ordinary invocations.
+An old root is stale after a successful update; a following invocation must use
+the new root and can call its newly installed commands. Remote `law` and `create`
+remain unavailable, and reprogram requests cannot smuggle in a principal, law,
+command or input field. Omitting `op` preserves the original invocation wire.
+
 ## Admission, replay and evidence
 
 The derived principal is the source repository DID. The world intent is
@@ -136,8 +164,8 @@ The returned `delvetalk-clerk-receipt-v1` envelope contains source URI/CID/autho
 pinned PDS, exact derived request, Lean reply, implementation profile/pins and an
 ID digest. The journal additionally retains the original request record. Root
 snapshots have format `delvetalk-clerk-root-v1`, object, root, profile and ID.
-`profiles/World.lean`, reusable core, normative source, Python custody and the
-actual executable are SHA256-pinned at bootstrap. New admissions refuse if those
+`profiles/World.lean`, reusable core, normative source and axiom pin,
+`lean-toolchain`, Python custody and the actual executable are SHA256-pinned at bootstrap. New admissions refuse if those
 pins change. Historical completed receipts remain readable. These hashes bind
 what ran; they do not establish compiled-code refinement or a complete host proof.
 
@@ -150,3 +178,35 @@ adversaries: author forgery, unknown fields/repositories/objects, wrong CID or P
 service, stale/unauthorized invocations, immutable URI binding, crash recovery,
 lossless decimal payloads, implementation-pin changes, explicit social syntax,
 root-reference integrity and historical-root refusal.
+
+## Explicit implementation upgrades
+
+A compiler/source upgrade does not silently repin a running clerk. After building
+and validating the new implementation, inspect the exact retained profile:
+
+```sh
+python3 scripts/clerk.py --state "$HOME/claude_state/delvetalk-clerk" profile
+python3 scripts/clerk.py --state "$HOME/claude_state/delvetalk-clerk" upgrade \
+  --from-profile PREVIOUS_PROFILE_SHA256
+```
+
+Use the `sha256` returned by `profile`, not a digest guessed from current source.
+The old map is compared exactly, including legacy maps without newer pin files.
+Only this explicit local operator command may advance the implementation profile;
+there is no corresponding remote command or authority override.
+
+Upgrade holds both the clerk and world custody locks. It refuses if any request
+journal lacks a saved terminal receipt. Recover such requests using their pinned
+old implementation before upgrading: uncertain attempts are never reinterpreted
+by a new machine. At a quiescent boundary, the command atomically records old and
+new profiles, both digests and the unchanged world-file SHA256 in the config's
+`upgrades` history, then replaces only its current profile. Object state, law,
+versions, retained Lean receipts and request journals are not rewritten.
+
+Completed historical receipts retain their original profile and still replay
+after upgrade. New admissions use the new pins. Retrying the last exact upgrade
+returns `already-upgraded` when its old digest and new/current profile still
+match, even if later admissions have advanced the world. A mismatched prior
+profile cannot overwrite configuration. This is an operator-approved custody
+transition with a recorded boundary, not a proof that two implementations are
+semantically equivalent; cross-version conformance remains a separate check.

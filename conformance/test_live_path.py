@@ -107,6 +107,30 @@ class LivePath(unittest.TestCase):
         self.assertEqual(len(self.http.calls), calls)
         self.assertEqual(self.clerk.snapshot('counter')['root']['version'], 1)
 
+    def test_remote_program_addition_then_invocation(self):
+        initial = self.clerk.snapshot('counter')
+        pointer = self.publish('root', initial, 'before-reprogram')
+        protocol = copy.deepcopy(initial['root']['protocol'])
+        protocol['commands']['double'] = {
+            'require': [], 'set': {'count': ['bend', ['lam', ['binary', 'multiply', ['bound', 0], ['nat', '2']]], [['state', 'count']]]},
+            'result': ['literal', 'doubled'], 'outbox': []}
+        replacement = {'op': 'reprogram', 'object': 'counter', 'protocol': protocol,
+                       'state': {'count': 6}, 'expectedRootRef': {key: pointer[key] for key in ('uri', 'cid')}}
+        published = self.publish('request', replacement, 'add-double-program')
+        receipt = self.receive(published)
+        self.assertEqual(receipt['request']['principal'], delve.DID)
+        self.assertEqual(receipt['reply']['kind'], 'committed')
+        self.assertEqual(receipt['reply']['data']['root']['law'], initial['root']['law'])
+        self.publish('receipt', receipt, 'program-receipt')
+        next_pointer = self.publish('root', self.clerk.snapshot('counter'), 'program-root', pointer['cid'])
+        invoke = {'object': 'counter', 'command': 'double', 'input': {},
+                  'expectedRootRef': {key: next_pointer[key] for key in ('uri', 'cid')}}
+        text = 'delvetalk-request v1\n```delvetalk-request\n' + json.dumps(invoke) + '\n```'
+        called = self.receive(self.client.post(text, 'call-new-double'))
+        self.assertEqual(called['reply']['data']['root']['state']['count'], 12)
+        self.assertEqual(called['reply']['data']['root']['version'], 2)
+        self.assertEqual(self.receive(published), receipt)
+
     def test_current_law_refuses_published_request_and_retains_refusal(self):
         pending = self.publish('request', self.request(), 'before-revocation')
         root = self.clerk.snapshot('counter')['root']
