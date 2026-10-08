@@ -156,5 +156,13 @@
     "worldSha256": "536b9a583544833435895e4a6f22437a741c63512e50fdff80bfe70bb2cc36c4",
     "worldUnchanged": true,
     "retry": "already-upgraded"
+  },
+  "receiverGuardUpgrade": {
+    "fromProfile": "7884e628f140c769400856a567892038d745d54a3cd26d94ac00f95253f624c8",
+    "toProfile": "d6badff9e6b79fa7ad58c955fd47d876fd80cba305fd640966ce705cbc0d7c54",
+    "worldSha256": "c923b355ace4c0eda3697d66286a251262ac2f65cf2c2d8be66a87ea3469ac80",
+    "worldUnchanged": true,
+    "historicalReceiptUnchanged": true,
+    "retry": "already-upgraded"
   }
 }

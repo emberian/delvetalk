@@ -269,6 +269,10 @@ class Clerk:
             payload = {key: value for key, value in payload.items() if key != 'expectedRootRef'}
             payload['expected'] = expected
         request = {'op': operation, 'principal': author, 'intent': 'delve:' + uri, **payload}
+        # Root references and derived identity can expand a small source envelope.
+        # Host transport-envelope errors have no retained terminal receipt.
+        if len(canonical(request)) > 65536:
+            raise ValueError('derived request exceeds 64 KiB')
         entry = {'source': {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS},
                  'record': value, 'request': request, 'profile': config['profile']}
         if resolved is not None:

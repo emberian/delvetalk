@@ -188,6 +188,21 @@ class ClerkTests(unittest.TestCase):
         self.assertEqual(stale['reply']['data'], 'stale read root')
         self.assertEqual(self.c.snapshot('counter')['root']['state']['count'], 2)
 
+    def test_oversized_resolved_request_never_reserves_journal_or_blocks_upgrade(self):
+        oversized = copy.deepcopy(self.root)
+        oversized['state']['large'] = 'x' * 65536
+        reference = self.root_record(root=oversized)
+        uri, cid = self.feed_record('oversized-ref', reference)
+        self.assertLess(len(self.pds.records[uri][1]['text'].encode()), 1024)
+        before = self.c.database.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'derived request exceeds 64 KiB'):
+            self.c.receive(uri, cid)
+        self.assertEqual(list((self.state / 'requests').glob('*.json')), [])
+        self.assertEqual(self.c.database.read_bytes(), before)
+        old = self.c.profile()
+        with patch.object(clerk, 'pins', return_value={**old['profile']['pins'], 'test-new': 'a' * 64}):
+            self.assertEqual(self.c.upgrade(old['sha256'])['status'], 'upgraded')
+
     def test_social_syntax_is_explicit_and_unambiguous(self):
         for index, text in enumerate(['ordinary prose', 'hello\ndelvetalk-request v1\n```delvetalk-request\n{}\n```',
                 'delvetalk-request v1\nplease run this\n```delvetalk-request\n{}\n```',

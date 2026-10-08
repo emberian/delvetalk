@@ -68,6 +68,10 @@ PDS exactly. It verifies the returned record's URI and CID against the requested
 ones. No credentials are read. Only `did:plc` authors are supported in v1; handles,
 arbitrary endpoints and HTTP redirects are rejected. Responses are capped at
 1 MiB and requests at 64 KiB; Lean retains its own request and world limits.
+The receiver also bounds the serialized derived request after resolving a root
+reference and adding repository identity. An oversized expansion is refused
+before binding its URI or writing a pending journal, so it cannot strand an
+attempt without a terminal host receipt or block later implementation upgrades.
 
 This is a **trusted HTTPS PDS observation profile**: the PDS attests repository
 author and record CID/content. It is not independent DID resolution, CAR/MST

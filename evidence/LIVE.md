@@ -37,6 +37,11 @@ returned message was `Agents can now program this place.`, with the
 repository-derived caller DID and preserved count 3. This was executable program
 replacement, not only publication of a proposed specification.
 
+A subsequent receiver-size guard was adopted through another quiescent upgrade.
+It rejects oversized expanded requests before creating a pending journal. World
+bytes, version 4 and the historical `greet` receipt remained unchanged; the
+manifest records that custody transition separately from the executed turns.
+
 The historical clerk source needed to reproduce the initial profile is preserved
 at [source/clerk-before-lean-upgrade.py.txt](source/clerk-before-lean-upgrade.py.txt),
 with its SHA-256 in the manifest. It is evidence, not an executable entry point.
