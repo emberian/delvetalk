@@ -1,0 +1,353 @@
+{"id":"empty","result":{"a":12}}
+{"id":"attractor","result":{"a":13}}
+{"id":"repulsor","result":{"a":11}}
+{"id":"column-tie","result":{"a":17}}
+{"id":"blocked-attractor","result":{"a":12}}
+{"id":"opposing-pair","result":{"a":13}}
+{"id":"pair-repulsor-tiebreak","result":{"a":17}}
+{"id":"repulsion-before-attraction","result":{"a":11}}
+{"id":"balanced-repulsors","result":{"a":12}}
+{"id":"edge-cannot-flee","result":{"a":10}}
+{"id":"independent","result":{"a":12,"cells":[0,0,0,0,0,1,0,0,0,2,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 4, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"identical","result":{"a":12,"cells":[0,0,0,0,0,1,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"fork","result":{"a":12,"cells":[1,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"Conflict(ConflictStatus { conflicted_moves: [Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 1, y: 0 } }], locked_players: [] })","marks":[0],"status":1,"winner":0}}
+{"id":"vacuum-fork","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"Conflict(ConflictStatus { conflicted_moves: [Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 1, y: 0 } }], locked_players: [] })","marks":[0],"status":1,"winner":0}}
+{"id":"collision","result":{"a":12,"cells":[1,0,0,0,2,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"Conflict(ConflictStatus { conflicted_moves: [Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 2, y: 0 } }, Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 2, y: 0 } }], locked_players: [] })","marks":[2],"status":1,"winner":0}}
+{"id":"vacuum-convergence","result":{"a":7,"cells":[0,0,1,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 2, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"vacuum-chain","result":{"a":11,"cells":[0,0,0,0,0,0,0,0,0,0,1,3,0,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"occupied-chain","result":{"a":13,"cells":[0,0,0,0,0,1,0,0,0,0,2,0,0,3,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 2 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"two-cycle-one-piece","result":{"a":12,"cells":[1,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"two-cycle-two-pieces","result":{"a":12,"cells":[1,0,0,0,0,2,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"two-cycle-empty","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"stationary-path-blocker","result":{"a":12,"cells":[1,2,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 4, y: 0 } }, OccupiedAt(Coord { x: 1, y: 0 })), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 1, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"stationary-destination","result":{"a":12,"cells":[0,0,0,0,0,1,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 1, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"failed-source-still-blocks","result":{"a":12,"cells":[0,0,2,0,1,0,0,1,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 2, y: 4 } }, OccupiedAt(Coord { x: 2, y: 1 })), (Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 4, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"moving-source-unblocks","result":{"a":17,"cells":[0,0,0,0,1,0,0,2,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 4, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 2, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"conflict-mark-refused","result":{"proposals":["Rejected(SeeCoords(CoordsFeedback { data: [(Coord { x: 0, y: 0 }, Conflict), (Coord { x: 0, y: 1 }, Ok)] }))"],"rejected":true}}
+{"id":"diagonal-refused","result":{"proposals":["Rejected(AxisAlignedOnly)"],"rejected":true}}
+{"id":"automaton-refused","result":{"proposals":["Rejected(SeeCoords(CoordsFeedback { data: [(Coord { x: 2, y: 2 }, Automaton), (Coord { x: 2, y: 3 }, Ok)] }))"],"rejected":true}}
+{"id":"zero-move-refused","result":{"proposals":["Rejected(MustMove)"],"rejected":true}}
+{"id":"win-top","result":{"a":0,"cells":[3,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 4 }, to: Coord { x: 1, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":1}}
+{"id":"win-bottom","result":{"a":24,"cells":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,3],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 3, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":2}}
+{"id":"rays-0-1","result":{"a":12}}
+{"id":"rays-0-2","result":{"a":12}}
+{"id":"rays-1-1","result":{"a":12}}
+{"id":"rays-1-2","result":{"a":13}}
+{"id":"rays-2-1","result":{"a":11}}
+{"id":"rays-2-2","result":{"a":11}}
+{"id":"rays-3-1","result":{"a":12}}
+{"id":"rays-3-2","result":{"a":11}}
+{"id":"rays-4-1","result":{"a":12}}
+{"id":"rays-4-2","result":{"a":12}}
+{"id":"rays-5-1","result":{"a":12}}
+{"id":"rays-5-2","result":{"a":11}}
+{"id":"rays-6-1","result":{"a":13}}
+{"id":"rays-6-2","result":{"a":13}}
+{"id":"rays-7-1","result":{"a":12}}
+{"id":"rays-7-2","result":{"a":13}}
+{"id":"rays-8-1","result":{"a":12}}
+{"id":"rays-8-2","result":{"a":12}}
+{"id":"rays-9-1","result":{"a":12}}
+{"id":"rays-9-2","result":{"a":17}}
+{"id":"rays-10-1","result":{"a":12}}
+{"id":"rays-10-2","result":{"a":17}}
+{"id":"rays-11-1","result":{"a":11}}
+{"id":"rays-11-2","result":{"a":11}}
+{"id":"rays-12-1","result":{"a":12}}
+{"id":"rays-12-2","result":{"a":17}}
+{"id":"rays-13-1","result":{"a":12}}
+{"id":"rays-13-2","result":{"a":17}}
+{"id":"rays-14-1","result":{"a":12}}
+{"id":"rays-14-2","result":{"a":11}}
+{"id":"rays-15-1","result":{"a":13}}
+{"id":"rays-15-2","result":{"a":13}}
+{"id":"rays-16-1","result":{"a":12}}
+{"id":"rays-16-2","result":{"a":13}}
+{"id":"rays-17-1","result":{"a":12}}
+{"id":"rays-17-2","result":{"a":17}}
+{"id":"rays-18-1","result":{"a":7}}
+{"id":"rays-18-2","result":{"a":7}}
+{"id":"rays-19-1","result":{"a":7}}
+{"id":"rays-19-2","result":{"a":7}}
+{"id":"rays-20-1","result":{"a":7}}
+{"id":"rays-20-2","result":{"a":7}}
+{"id":"rays-21-1","result":{"a":7}}
+{"id":"rays-21-2","result":{"a":7}}
+{"id":"rays-22-1","result":{"a":7}}
+{"id":"rays-22-2","result":{"a":7}}
+{"id":"rays-23-1","result":{"a":7}}
+{"id":"rays-23-2","result":{"a":11}}
+{"id":"rays-24-1","result":{"a":7}}
+{"id":"rays-24-2","result":{"a":7}}
+{"id":"rays-25-1","result":{"a":7}}
+{"id":"rays-25-2","result":{"a":13}}
+{"id":"rays-26-1","result":{"a":7}}
+{"id":"rays-26-2","result":{"a":7}}
+{"id":"rays-27-1","result":{"a":12}}
+{"id":"rays-27-2","result":{"a":7}}
+{"id":"rays-28-1","result":{"a":12}}
+{"id":"rays-28-2","result":{"a":7}}
+{"id":"rays-29-1","result":{"a":11}}
+{"id":"rays-29-2","result":{"a":11}}
+{"id":"rays-30-1","result":{"a":12}}
+{"id":"rays-30-2","result":{"a":7}}
+{"id":"rays-31-1","result":{"a":12}}
+{"id":"rays-31-2","result":{"a":7}}
+{"id":"rays-32-1","result":{"a":12}}
+{"id":"rays-32-2","result":{"a":11}}
+{"id":"rays-33-1","result":{"a":13}}
+{"id":"rays-33-2","result":{"a":13}}
+{"id":"rays-34-1","result":{"a":12}}
+{"id":"rays-34-2","result":{"a":13}}
+{"id":"rays-35-1","result":{"a":12}}
+{"id":"rays-35-2","result":{"a":7}}
+{"id":"rays-36-1","result":{"a":12}}
+{"id":"rays-36-2","result":{"a":12}}
+{"id":"rays-37-1","result":{"a":12}}
+{"id":"rays-37-2","result":{"a":13}}
+{"id":"rays-38-1","result":{"a":11}}
+{"id":"rays-38-2","result":{"a":11}}
+{"id":"rays-39-1","result":{"a":12}}
+{"id":"rays-39-2","result":{"a":11}}
+{"id":"rays-40-1","result":{"a":12}}
+{"id":"rays-40-2","result":{"a":12}}
+{"id":"rays-41-1","result":{"a":12}}
+{"id":"rays-41-2","result":{"a":11}}
+{"id":"rays-42-1","result":{"a":13}}
+{"id":"rays-42-2","result":{"a":13}}
+{"id":"rays-43-1","result":{"a":12}}
+{"id":"rays-43-2","result":{"a":13}}
+{"id":"rays-44-1","result":{"a":12}}
+{"id":"rays-44-2","result":{"a":12}}
+{"id":"rays-45-1","result":{"a":12}}
+{"id":"rays-45-2","result":{"a":7}}
+{"id":"rays-46-1","result":{"a":12}}
+{"id":"rays-46-2","result":{"a":7}}
+{"id":"rays-47-1","result":{"a":11}}
+{"id":"rays-47-2","result":{"a":7}}
+{"id":"rays-48-1","result":{"a":12}}
+{"id":"rays-48-2","result":{"a":7}}
+{"id":"rays-49-1","result":{"a":12}}
+{"id":"rays-49-2","result":{"a":7}}
+{"id":"rays-50-1","result":{"a":12}}
+{"id":"rays-50-2","result":{"a":7}}
+{"id":"rays-51-1","result":{"a":13}}
+{"id":"rays-51-2","result":{"a":7}}
+{"id":"rays-52-1","result":{"a":12}}
+{"id":"rays-52-2","result":{"a":7}}
+{"id":"rays-53-1","result":{"a":12}}
+{"id":"rays-53-2","result":{"a":7}}
+{"id":"rays-54-1","result":{"a":17}}
+{"id":"rays-54-2","result":{"a":17}}
+{"id":"rays-55-1","result":{"a":17}}
+{"id":"rays-55-2","result":{"a":17}}
+{"id":"rays-56-1","result":{"a":17}}
+{"id":"rays-56-2","result":{"a":17}}
+{"id":"rays-57-1","result":{"a":17}}
+{"id":"rays-57-2","result":{"a":17}}
+{"id":"rays-58-1","result":{"a":17}}
+{"id":"rays-58-2","result":{"a":17}}
+{"id":"rays-59-1","result":{"a":17}}
+{"id":"rays-59-2","result":{"a":11}}
+{"id":"rays-60-1","result":{"a":17}}
+{"id":"rays-60-2","result":{"a":17}}
+{"id":"rays-61-1","result":{"a":17}}
+{"id":"rays-61-2","result":{"a":13}}
+{"id":"rays-62-1","result":{"a":17}}
+{"id":"rays-62-2","result":{"a":17}}
+{"id":"rays-63-1","result":{"a":12}}
+{"id":"rays-63-2","result":{"a":17}}
+{"id":"rays-64-1","result":{"a":12}}
+{"id":"rays-64-2","result":{"a":17}}
+{"id":"rays-65-1","result":{"a":11}}
+{"id":"rays-65-2","result":{"a":17}}
+{"id":"rays-66-1","result":{"a":12}}
+{"id":"rays-66-2","result":{"a":17}}
+{"id":"rays-67-1","result":{"a":12}}
+{"id":"rays-67-2","result":{"a":17}}
+{"id":"rays-68-1","result":{"a":12}}
+{"id":"rays-68-2","result":{"a":17}}
+{"id":"rays-69-1","result":{"a":13}}
+{"id":"rays-69-2","result":{"a":17}}
+{"id":"rays-70-1","result":{"a":12}}
+{"id":"rays-70-2","result":{"a":17}}
+{"id":"rays-71-1","result":{"a":12}}
+{"id":"rays-71-2","result":{"a":17}}
+{"id":"rays-72-1","result":{"a":12}}
+{"id":"rays-72-2","result":{"a":12}}
+{"id":"rays-73-1","result":{"a":12}}
+{"id":"rays-73-2","result":{"a":13}}
+{"id":"rays-74-1","result":{"a":11}}
+{"id":"rays-74-2","result":{"a":11}}
+{"id":"rays-75-1","result":{"a":12}}
+{"id":"rays-75-2","result":{"a":11}}
+{"id":"rays-76-1","result":{"a":12}}
+{"id":"rays-76-2","result":{"a":12}}
+{"id":"rays-77-1","result":{"a":12}}
+{"id":"rays-77-2","result":{"a":11}}
+{"id":"rays-78-1","result":{"a":13}}
+{"id":"rays-78-2","result":{"a":13}}
+{"id":"rays-79-1","result":{"a":12}}
+{"id":"rays-79-2","result":{"a":13}}
+{"id":"rays-80-1","result":{"a":12}}
+{"id":"rays-80-2","result":{"a":12}}
+{"id":"random-0","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,0,0,2,0,0,3,0,0,2,0,0,0,0,2,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 4 } }, OccupiedAt(Coord { x: 0, y: 2 })), (Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 0, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-0-swapped","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,0,0,2,0,0,3,0,0,2,0,0,0,0,2,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 4 } }, OccupiedAt(Coord { x: 0, y: 2 })), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 0, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-1","result":{"a":7,"cells":[0,1,1,0,0,1,0,3,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 3, y: 3 } }, OccupiedAt(Coord { x: 2, y: 3 })), (Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 4 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-1-swapped","result":{"a":7,"cells":[0,1,1,0,0,1,0,3,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 3, y: 3 } }, OccupiedAt(Coord { x: 2, y: 3 })), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 4 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-2","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,0,1,0,0,3,0,0,0,0,0,0,0,0,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 2 }, to: Coord { x: 0, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-2-swapped","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,0,1,0,0,3,0,0,0,0,0,0,0,0,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 2 }, to: Coord { x: 0, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-3","result":{"a":12,"cells":[2,0,0,0,0,0,1,0,2,0,0,0,3,0,0,0,2,0,0,0,2,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 3 } }, Applied), (Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-3-swapped","result":{"a":12,"cells":[2,0,0,0,0,0,1,0,2,0,0,0,3,0,0,0,2,0,0,0,2,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-4","result":{"a":11,"cells":[2,0,0,0,0,0,0,0,0,0,1,3,0,2,0,2,0,0,0,0,0,2,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 0, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-4-swapped","result":{"a":11,"cells":[2,0,0,0,0,0,0,0,0,0,1,3,0,2,0,2,0,0,0,0,0,2,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 0, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-5","result":{"a":7,"cells":[2,1,0,0,0,1,0,3,1,0,0,0,0,0,0,0,0,2,0,1,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 2 }, to: Coord { x: 0, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-5-swapped","result":{"a":7,"cells":[2,1,0,0,0,1,0,3,1,0,0,0,0,0,0,0,0,2,0,1,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 2 }, to: Coord { x: 0, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 0, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-6","result":{"a":13,"cells":[0,0,0,0,2,0,0,0,2,0,0,2,0,3,0,2,0,0,2,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 2, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-6-swapped","result":{"a":13,"cells":[0,0,0,0,2,0,0,0,2,0,0,2,0,3,0,2,0,0,2,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-7","result":{"a":7,"cells":[0,0,1,0,2,0,0,3,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-7-swapped","result":{"a":7,"cells":[0,0,1,0,2,0,0,3,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-8","result":{"a":12,"cells":[0,0,0,0,0,0,2,2,2,0,0,0,3,0,0,0,0,1,0,0,0,0,1,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 0, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-8-swapped","result":{"a":12,"cells":[0,0,0,0,0,0,2,2,2,0,0,0,3,0,0,0,0,1,0,0,0,0,1,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 0, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-9","result":{"a":12,"cells":[0,2,0,1,0,0,0,0,1,0,0,1,3,0,0,0,0,1,0,0,0,0,1,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 3, y: 0 } }, OccupiedAt(Coord { x: 1, y: 0 })), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 0 } }, OccupiedAt(Coord { x: 1, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-9-swapped","result":{"a":12,"cells":[0,2,0,1,0,0,0,0,1,0,0,1,3,0,0,0,0,1,0,0,0,0,1,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 0 } }, OccupiedAt(Coord { x: 1, y: 2 })), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 3, y: 0 } }, OccupiedAt(Coord { x: 1, y: 0 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-10","result":{"a":17,"cells":[0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,2,2,3,0,0,0,0,1,1,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 0 } }, OccupiedAt(Coord { x: 1, y: 3 })), (Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-10-swapped","result":{"a":17,"cells":[0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,2,2,3,0,0,0,0,1,1,1],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 0 } }, OccupiedAt(Coord { x: 1, y: 3 })), (Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-11","result":{"a":7,"cells":[0,0,1,0,2,0,0,3,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 0 } }, OccupiedAt(Coord { x: 3, y: 3 })), (Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 3, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-11-swapped","result":{"a":7,"cells":[0,0,1,0,2,0,0,3,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 0 } }, OccupiedAt(Coord { x: 3, y: 3 })), (Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 3, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-12","result":{"a":7,"cells":[2,0,1,0,2,0,0,3,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 1, y: 0 } }, OccupiedAt(Coord { x: 2, y: 0 })), (Move { who: Pid(0), from: Coord { x: 3, y: 2 }, to: Coord { x: 3, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-12-swapped","result":{"a":7,"cells":[2,0,1,0,2,0,0,3,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 1, y: 0 } }, OccupiedAt(Coord { x: 2, y: 0 })), (Move { who: Pid(1), from: Coord { x: 3, y: 2 }, to: Coord { x: 3, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-13","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 3, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-13-swapped","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 3, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-14","result":{"a":13,"cells":[2,0,1,1,0,2,0,1,0,0,0,2,0,3,1,0,0,0,0,0,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 4, y: 0 } }, OccupiedAt(Coord { x: 3, y: 0 })), (Move { who: Pid(0), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-14-swapped","result":{"a":13,"cells":[2,0,1,1,0,2,0,1,0,0,0,2,0,3,1,0,0,0,0,0,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 0 }, to: Coord { x: 4, y: 0 } }, OccupiedAt(Coord { x: 3, y: 0 })), (Move { who: Pid(1), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-15","result":{"a":7,"cells":[1,0,0,1,0,0,0,3,1,0,0,0,0,0,0,0,2,2,2,0,1,1,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 1, y: 0 }, to: Coord { x: 0, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-15-swapped","result":{"a":7,"cells":[1,0,0,1,0,0,0,3,1,0,0,0,0,0,0,0,2,2,2,0,1,1,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 0 }, to: Coord { x: 0, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-16","result":{"a":17,"cells":[0,0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,3,0,1,0,0,1,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 4, y: 4 } }, OccupiedAt(Coord { x: 4, y: 3 })), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 0, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-16-swapped","result":{"a":17,"cells":[0,0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,3,0,1,0,0,1,1,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 4, y: 4 } }, OccupiedAt(Coord { x: 4, y: 3 })), (Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 0, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-17","result":{"a":11,"cells":[2,0,0,0,0,0,1,0,2,0,1,3,0,0,0,0,0,0,1,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 1, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-17-swapped","result":{"a":11,"cells":[2,0,0,0,0,0,1,0,2,0,1,3,0,0,0,0,0,0,1,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 1, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-18","result":{"a":12,"cells":[0,2,0,1,0,0,0,0,0,0,0,0,3,1,0,2,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 1 }, to: Coord { x: 2, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-18-swapped","result":{"a":12,"cells":[0,2,0,1,0,0,0,0,0,0,0,0,3,1,0,2,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 2, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-19","result":{"a":7,"cells":[0,0,0,2,2,0,1,3,0,0,0,2,0,2,0,1,0,2,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, Applied), (Move { who: Pid(1), from: Coord { x: 4, y: 1 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-19-swapped","result":{"a":7,"cells":[0,0,0,2,2,0,1,3,0,0,0,2,0,2,0,1,0,2,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 1 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-20","result":{"a":11,"cells":[0,0,0,0,0,2,0,0,0,1,1,3,0,0,0,0,0,0,1,0,0,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-20-swapped","result":{"a":11,"cells":[0,0,0,0,0,2,0,0,0,1,1,3,0,0,0,0,0,0,1,0,0,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-21","result":{"a":7,"cells":[0,0,0,0,0,0,2,3,0,0,1,0,0,0,0,0,0,2,1,0,2,2,2,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 2, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-21-swapped","result":{"a":7,"cells":[0,0,0,0,0,0,2,3,0,0,1,0,0,0,0,0,0,2,1,0,2,2,2,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 2, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-22","result":{"a":11,"cells":[2,0,0,0,0,0,0,0,1,1,1,3,0,0,0,0,0,0,0,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 2, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-22-swapped","result":{"a":11,"cells":[2,0,0,0,0,0,0,0,1,1,1,3,0,0,0,0,0,0,0,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 2, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-23","result":{"a":12,"cells":[0,0,0,0,0,2,0,0,0,0,0,1,3,1,1,0,2,0,0,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 4 }, to: Coord { x: 4, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 1 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-23-swapped","result":{"a":12,"cells":[0,0,0,0,0,2,0,0,0,0,0,1,3,1,1,0,2,0,0,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 1 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 4 }, to: Coord { x: 4, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-24","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,1,0,2,0,0,3,0,1,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-24-swapped","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,1,0,2,0,0,3,0,1,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-25","result":{"a":7,"cells":[0,0,2,0,0,0,0,3,1,0,0,0,0,0,0,0,0,2,2,0,1,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 2 }, to: Coord { x: 3, y: 4 } }, OccupiedAt(Coord { x: 3, y: 3 })), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-25-swapped","result":{"a":7,"cells":[0,0,2,0,0,0,0,3,1,0,0,0,0,0,0,0,0,2,2,0,1,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 3, y: 2 }, to: Coord { x: 3, y: 4 } }, OccupiedAt(Coord { x: 3, y: 3 })), (Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-26","result":{"a":12,"cells":[0,0,0,0,0,1,0,0,0,0,0,0,3,0,0,0,0,0,2,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 0, y: 1 })), (Move { who: Pid(1), from: Coord { x: 3, y: 1 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-26-swapped","result":{"a":12,"cells":[0,0,0,0,0,1,0,0,0,0,0,0,3,0,0,0,0,0,2,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 0, y: 1 })), (Move { who: Pid(0), from: Coord { x: 3, y: 1 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-27","result":{"a":12,"cells":[0,0,0,0,1,0,2,0,0,0,0,0,3,0,0,0,0,1,0,0,0,2,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 0 }, to: Coord { x: 4, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-27-swapped","result":{"a":12,"cells":[0,0,0,0,1,0,2,0,0,0,0,0,3,0,0,0,0,1,0,0,0,2,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 4, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-28","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,0,0,0,2,0,3,0,2,0,0,0,0,2,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 1 } }, OccupiedAt(Coord { x: 0, y: 3 })), (Move { who: Pid(1), from: Coord { x: 0, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 1, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-28-swapped","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,0,0,0,2,0,3,0,2,0,0,0,0,2,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 1, y: 2 })), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 1 } }, OccupiedAt(Coord { x: 0, y: 3 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-29","result":{"a":12,"cells":[0,0,0,0,2,0,0,0,0,1,0,1,3,0,0,0,0,0,0,0,0,0,0,1,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 4, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 1 }, to: Coord { x: 4, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-29-swapped","result":{"a":12,"cells":[0,0,0,0,2,0,0,0,0,1,0,1,3,0,0,0,0,0,0,0,0,0,0,1,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 1 }, to: Coord { x: 4, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 4, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-30","result":{"a":13,"cells":[1,0,0,1,1,0,0,0,0,0,2,0,0,3,0,1,0,0,0,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 4 } }, OccupiedAt(Coord { x: 0, y: 2 })), (Move { who: Pid(1), from: Coord { x: 2, y: 3 }, to: Coord { x: 2, y: 0 } }, OccupiedAt(Coord { x: 2, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-30-swapped","result":{"a":13,"cells":[1,0,0,1,1,0,0,0,0,0,2,0,0,3,0,1,0,0,0,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 3 }, to: Coord { x: 2, y: 0 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 4 } }, OccupiedAt(Coord { x: 0, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-31","result":{"a":17,"cells":[0,0,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,3,2,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 3 }, to: Coord { x: 2, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-31-swapped","result":{"a":17,"cells":[0,0,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,3,2,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 3 }, to: Coord { x: 2, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 0, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-32","result":{"a":12,"cells":[1,0,0,0,0,0,0,1,0,0,0,0,3,0,0,0,2,0,0,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-32-swapped","result":{"a":12,"cells":[1,0,0,0,0,0,0,1,0,0,0,0,3,0,0,0,2,0,0,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-33","result":{"a":7,"cells":[0,0,0,0,0,0,0,3,0,0,0,2,0,0,0,0,0,2,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 4 }, to: Coord { x: 2, y: 1 } }, OccupiedAt(Coord { x: 2, y: 3 })), (Move { who: Pid(1), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-33-swapped","result":{"a":7,"cells":[0,0,0,0,0,0,0,3,0,0,0,2,0,0,0,0,0,2,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 2, y: 4 }, to: Coord { x: 2, y: 1 } }, OccupiedAt(Coord { x: 2, y: 3 })), (Move { who: Pid(0), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-34","result":{"a":12,"cells":[0,0,0,0,2,0,0,0,0,0,0,0,3,1,0,0,0,0,0,2,0,1,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-34-swapped","result":{"a":12,"cells":[0,0,0,0,2,0,0,0,0,0,0,0,3,1,0,0,0,0,0,2,0,1,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-35","result":{"a":12,"cells":[0,0,0,0,0,0,1,1,1,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 2, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 4 }, to: Coord { x: 1, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-35-swapped","result":{"a":12,"cells":[0,0,0,0,0,0,1,1,1,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 4 }, to: Coord { x: 1, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 2, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-36","result":{"a":12,"cells":[0,0,0,0,2,2,1,1,0,0,0,2,3,2,0,0,2,2,0,0,0,2,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-36-swapped","result":{"a":12,"cells":[0,0,0,0,2,2,1,1,0,0,0,2,3,2,0,0,2,2,0,0,0,2,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-37","result":{"a":7,"cells":[0,0,0,0,0,0,0,3,2,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 3, y: 3 } }, OccupiedAt(Coord { x: 2, y: 3 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-37-swapped","result":{"a":7,"cells":[0,0,0,0,0,0,0,3,2,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 3, y: 3 } }, OccupiedAt(Coord { x: 2, y: 3 })), (Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-38","result":{"a":12,"cells":[2,0,0,0,0,2,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-38-swapped","result":{"a":12,"cells":[2,0,0,0,0,2,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-39","result":{"a":17,"cells":[0,1,0,2,0,1,0,2,2,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-39-swapped","result":{"a":17,"cells":[0,1,0,2,0,1,0,2,2,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-40","result":{"a":7,"cells":[1,0,0,0,0,0,0,3,0,0,0,1,0,1,0,0,0,0,0,0,1,0,2,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 2, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-40-swapped","result":{"a":7,"cells":[1,0,0,0,0,0,0,3,0,0,0,1,0,1,0,0,0,0,0,0,1,0,2,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 2, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-41","result":{"a":7,"cells":[0,0,1,0,0,1,0,3,0,0,0,0,0,0,0,0,2,2,2,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 4 }, to: Coord { x: 4, y: 1 } }, OccupiedAt(Coord { x: 4, y: 3 })), (Move { who: Pid(1), from: Coord { x: 2, y: 1 }, to: Coord { x: 2, y: 3 } }, OccupiedAt(Coord { x: 2, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-41-swapped","result":{"a":7,"cells":[0,0,1,0,0,1,0,3,0,0,0,0,0,0,0,0,2,2,2,2,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 1 }, to: Coord { x: 2, y: 3 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 4, y: 4 }, to: Coord { x: 4, y: 1 } }, OccupiedAt(Coord { x: 4, y: 3 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-42","result":{"a":11,"cells":[0,0,1,0,0,1,0,2,0,1,1,3,0,2,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-42-swapped","result":{"a":11,"cells":[0,0,1,0,0,1,0,2,0,1,1,3,0,2,0,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-43","result":{"a":12,"cells":[0,0,1,0,0,0,0,0,0,0,0,0,3,0,0,0,1,0,0,0,0,1,1,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 0, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-43-swapped","result":{"a":12,"cells":[0,0,1,0,0,0,0,0,0,0,0,0,3,0,0,0,1,0,0,0,0,1,1,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 0, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-44","result":{"a":11,"cells":[0,0,0,0,0,1,0,0,0,0,0,3,0,0,2,2,2,0,0,0,0,0,0,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 1 }, to: Coord { x: 1, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-44-swapped","result":{"a":11,"cells":[0,0,0,0,0,1,0,0,0,0,0,3,0,0,2,2,2,0,0,0,0,0,0,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 1 }, to: Coord { x: 1, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-45","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,0,0,2,0,0,3,0,1,0,0,0,2,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 4, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-45-swapped","result":{"a":13,"cells":[0,0,0,0,0,0,0,0,0,0,2,0,0,3,0,1,0,0,0,2,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 4, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-46","result":{"a":11,"cells":[2,0,0,0,0,0,0,0,0,0,1,3,0,0,0,2,0,0,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 3 }, to: Coord { x: 1, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-46-swapped","result":{"a":11,"cells":[2,0,0,0,0,0,0,0,0,0,1,3,0,0,0,2,0,0,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 3 }, to: Coord { x: 1, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-47","result":{"a":7,"cells":[0,1,1,0,0,0,0,3,0,0,0,0,0,0,0,0,0,2,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 4, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-47-swapped","result":{"a":7,"cells":[0,1,1,0,0,0,0,3,0,0,0,0,0,0,0,0,0,2,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 1, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 4, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-48","result":{"a":17,"cells":[0,0,0,0,1,0,0,2,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 1 }, to: Coord { x: 0, y: 1 } }, OccupiedAt(Coord { x: 2, y: 1 })), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-48-swapped","result":{"a":17,"cells":[0,0,0,0,1,0,0,2,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 1 }, to: Coord { x: 0, y: 1 } }, OccupiedAt(Coord { x: 2, y: 1 })), (Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-49","result":{"a":11,"cells":[0,2,0,0,2,0,0,0,0,0,1,3,0,0,2,0,0,0,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 2 }, to: Coord { x: 4, y: 2 } }, Applied), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 3, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-49-swapped","result":{"a":11,"cells":[0,2,0,0,2,0,0,0,0,0,1,3,0,0,2,0,0,0,2,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 3, y: 3 } }, Applied), (Move { who: Pid(1), from: Coord { x: 3, y: 2 }, to: Coord { x: 4, y: 2 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-50","result":{"a":7,"cells":[0,0,0,1,0,0,0,3,0,0,1,0,0,0,0,0,0,2,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-50-swapped","result":{"a":7,"cells":[0,0,0,1,0,0,0,3,0,0,1,0,0,0,0,0,0,2,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-51","result":{"a":17,"cells":[0,0,0,0,2,0,0,2,0,0,0,1,0,0,0,0,0,3,0,0,0,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 4 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-51-swapped","result":{"a":17,"cells":[0,0,0,0,2,0,0,2,0,0,0,1,0,0,0,0,0,3,0,0,0,0,0,1,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 4 } }, Applied), (Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-52","result":{"a":7,"cells":[0,0,0,0,0,0,0,3,0,0,2,0,0,0,2,0,2,0,0,0,0,2,2,2,2],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-52-swapped","result":{"a":7,"cells":[0,0,0,0,0,0,0,3,0,0,2,0,0,0,2,0,2,0,0,0,0,2,2,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 1, y: 0 }, to: Coord { x: 1, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-53","result":{"a":12,"cells":[2,0,0,0,0,0,0,2,0,0,2,0,3,0,0,0,2,0,1,0,2,0,0,0,0],"feedback":"Conflict(ConflictStatus { conflicted_moves: [Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 2, y: 3 } }, Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 1, y: 3 } }], locked_players: [] })","marks":[15],"status":1,"winner":0}}
+{"id":"random-53-swapped","result":{"a":12,"cells":[2,0,0,0,0,0,0,2,0,0,2,0,3,0,0,0,2,0,1,0,2,0,0,0,0],"feedback":"Conflict(ConflictStatus { conflicted_moves: [Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 1, y: 3 } }, Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 2, y: 3 } }], locked_players: [] })","marks":[15],"status":1,"winner":0}}
+{"id":"random-54","result":{"a":7,"cells":[2,0,0,0,0,2,2,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-54-swapped","result":{"a":7,"cells":[2,0,0,0,0,2,2,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-55","result":{"a":12,"cells":[0,0,2,0,1,0,0,1,0,0,1,0,3,0,1,1,0,1,0,0,0,1,1,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 3, y: 0 } }, OccupiedAt(Coord { x: 2, y: 0 })), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 4 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-55-swapped","result":{"a":12,"cells":[0,0,2,0,1,0,0,1,0,0,1,0,3,0,1,1,0,1,0,0,0,1,1,0,2],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 3, y: 0 } }, OccupiedAt(Coord { x: 2, y: 0 })), (Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 4 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-56","result":{"a":11,"cells":[0,0,0,0,0,0,2,0,0,0,0,3,0,0,2,2,0,0,0,0,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 2 }, to: Coord { x: 0, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-56-swapped","result":{"a":11,"cells":[0,0,0,0,0,0,2,0,0,0,0,3,0,0,2,2,0,0,0,0,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 2 }, to: Coord { x: 0, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 0 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-57","result":{"a":17,"cells":[2,0,0,0,0,0,0,2,2,2,0,0,0,0,0,0,0,3,0,2,2,2,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 0, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-57-swapped","result":{"a":17,"cells":[2,0,0,0,0,0,0,2,2,2,0,0,0,0,0,0,0,3,0,2,2,2,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 0, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-58","result":{"a":11,"cells":[0,2,0,1,1,1,0,2,0,0,0,3,0,2,0,0,0,1,0,0,0,0,1,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 2, y: 0 } }, OccupiedAt(Coord { x: 1, y: 0 })), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-58-swapped","result":{"a":11,"cells":[0,2,0,1,1,1,0,2,0,0,0,3,0,2,0,0,0,1,0,0,0,0,1,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 2, y: 0 } }, OccupiedAt(Coord { x: 1, y: 0 })), (Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-59","result":{"a":12,"cells":[0,0,0,0,0,0,0,2,0,0,0,0,3,0,0,2,0,1,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 3, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-59-swapped","result":{"a":12,"cells":[0,0,0,0,0,0,0,2,0,0,0,0,3,0,0,2,0,1,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 3, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 3, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-60","result":{"a":17,"cells":[0,0,2,0,0,0,0,0,1,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-60-swapped","result":{"a":17,"cells":[0,0,2,0,0,0,0,0,1,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 4 }, to: Coord { x: 0, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-61","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,2,0,0,0,3,0,0,0,0,0,2,2,2,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 1 }, to: Coord { x: 3, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 2, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-61-swapped","result":{"a":12,"cells":[0,0,0,0,0,0,0,0,2,0,0,0,3,0,0,0,0,0,2,2,2,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 1 }, to: Coord { x: 2, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 1 }, to: Coord { x: 3, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-62","result":{"a":17,"cells":[0,1,0,0,0,0,0,2,0,0,2,0,0,0,0,0,2,3,0,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 2, y: 4 }, to: Coord { x: 2, y: 1 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 4, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-62-swapped","result":{"a":17,"cells":[0,1,0,0,0,0,0,2,0,0,2,0,0,0,0,0,2,3,0,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 4 }, to: Coord { x: 2, y: 1 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 4, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-63","result":{"a":11,"cells":[1,0,0,0,0,0,0,0,2,0,1,3,0,0,0,0,1,0,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 3 }, to: Coord { x: 3, y: 3 } }, OccupiedAt(Coord { x: 1, y: 3 })), (Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-63-swapped","result":{"a":11,"cells":[1,0,0,0,0,0,0,0,2,0,1,3,0,0,0,0,1,0,0,1,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 3 }, to: Coord { x: 3, y: 3 } }, OccupiedAt(Coord { x: 1, y: 3 })), (Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 4, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-64","result":{"a":12,"cells":[2,0,0,0,0,0,1,0,0,0,0,1,3,0,0,0,2,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-64-swapped","result":{"a":12,"cells":[2,0,0,0,0,0,1,0,0,0,0,1,3,0,0,0,2,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 3, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-65","result":{"a":13,"cells":[0,1,0,0,0,0,0,0,0,0,2,0,0,3,1,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 2 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-65-swapped","result":{"a":13,"cells":[0,1,0,0,0,0,0,0,0,0,2,0,0,3,1,0,0,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 1 }, to: Coord { x: 0, y: 2 } }, Applied), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-66","result":{"a":17,"cells":[0,0,1,0,0,0,0,2,0,0,0,2,0,0,0,0,1,3,0,0,0,0,2,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 2, y: 1 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-66-swapped","result":{"a":17,"cells":[0,0,1,0,0,0,0,2,0,0,0,2,0,0,0,0,1,3,0,0,0,0,2,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 2, y: 1 } }, Applied), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-67","result":{"a":12,"cells":[0,0,2,0,1,0,0,0,0,1,0,0,3,0,0,0,0,0,0,0,0,0,2,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 4, y: 3 } }, Applied), (Move { who: Pid(1), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 1 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-67-swapped","result":{"a":12,"cells":[0,0,2,0,1,0,0,0,0,1,0,0,3,0,0,0,0,0,0,0,0,0,2,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 3 }, to: Coord { x: 4, y: 1 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 4, y: 3 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-68","result":{"a":7,"cells":[0,0,1,0,0,2,2,3,0,2,2,0,0,1,0,0,1,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, Applied), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-68-swapped","result":{"a":7,"cells":[0,0,1,0,0,2,2,3,0,2,2,0,0,1,0,0,1,0,0,0,0,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 2, y: 0 } }, Applied)])","marks":[],"status":0,"winner":0}}
+{"id":"random-69","result":{"a":12,"cells":[0,0,0,2,2,2,0,1,0,2,0,0,3,0,0,0,0,2,0,0,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 2 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-69-swapped","result":{"a":12,"cells":[0,0,0,2,2,2,0,1,0,2,0,0,3,0,0,0,0,2,0,0,0,1,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 2 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 4 }, to: Coord { x: 0, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-70","result":{"a":12,"cells":[0,0,0,1,0,0,0,0,0,0,0,0,3,0,0,1,0,0,0,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 4, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 0, y: 0 }, to: Coord { x: 3, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-70-swapped","result":{"a":12,"cells":[0,0,0,1,0,0,0,0,0,0,0,0,3,0,0,1,0,0,0,0,0,0,0,0,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 0 }, to: Coord { x: 3, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 4, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-71","result":{"a":12,"cells":[0,0,0,0,1,0,0,1,0,0,0,0,3,1,0,0,0,0,0,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 1, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 2, y: 3 }, to: Coord { x: 1, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-71-swapped","result":{"a":12,"cells":[0,0,0,0,1,0,0,1,0,0,0,0,3,1,0,0,0,0,0,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 2 }, to: Coord { x: 3, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 2, y: 3 }, to: Coord { x: 1, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-72","result":{"a":12,"cells":[0,0,0,2,0,0,2,0,0,0,0,0,3,0,0,0,0,1,1,0,0,0,2,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 4 } }, OccupiedAt(Coord { x: 3, y: 3 })), (Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-72-swapped","result":{"a":12,"cells":[0,0,0,2,0,0,2,0,0,0,0,0,3,0,0,0,0,1,1,0,0,0,2,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 1 }, to: Coord { x: 3, y: 4 } }, OccupiedAt(Coord { x: 3, y: 3 })), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-73","result":{"a":13,"cells":[2,2,0,0,0,0,0,0,0,1,0,2,0,3,0,0,0,0,0,0,1,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 4 } }, OccupiedAt(Coord { x: 1, y: 2 })), (Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 2, y: 3 } }, OccupiedAt(Coord { x: 2, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-73-swapped","result":{"a":13,"cells":[2,2,0,0,0,0,0,0,0,1,0,2,0,3,0,0,0,0,0,0,1,0,0,0,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 0 }, to: Coord { x: 2, y: 3 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 4 } }, OccupiedAt(Coord { x: 1, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-74","result":{"a":11,"cells":[2,0,0,0,1,0,2,0,0,0,1,3,0,0,0,0,0,0,0,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-74-swapped","result":{"a":11,"cells":[2,0,0,0,1,0,2,0,0,0,1,3,0,0,0,0,0,0,0,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 4 }, to: Coord { x: 2, y: 4 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-75","result":{"a":12,"cells":[0,0,0,2,0,0,0,0,2,0,1,0,3,0,1,0,2,0,0,0,0,0,0,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 0 }, to: Coord { x: 2, y: 4 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 2, y: 1 }, to: Coord { x: 2, y: 4 } }, OccupiedAt(Coord { x: 2, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-75-swapped","result":{"a":12,"cells":[0,0,0,2,0,0,0,0,2,0,1,0,3,0,1,0,2,0,0,0,0,0,0,2,2],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 2, y: 1 }, to: Coord { x: 2, y: 4 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 2, y: 0 }, to: Coord { x: 2, y: 4 } }, OccupiedAt(Coord { x: 2, y: 2 }))])","marks":[],"status":0,"winner":0}}
+{"id":"random-76","result":{"a":17,"cells":[2,0,0,0,0,0,0,2,0,0,0,1,0,0,2,2,0,3,0,1,0,2,2,2,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 0, y: 2 }, to: Coord { x: 4, y: 2 } }, OccupiedAt(Coord { x: 1, y: 2 })), (Move { who: Pid(0), from: Coord { x: 4, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-76-swapped","result":{"a":17,"cells":[2,0,0,0,0,0,0,2,0,0,0,1,0,0,2,2,0,3,0,1,0,2,2,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 0, y: 2 }, to: Coord { x: 4, y: 2 } }, OccupiedAt(Coord { x: 1, y: 2 })), (Move { who: Pid(1), from: Coord { x: 4, y: 4 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-77","result":{"a":7,"cells":[1,0,0,0,0,1,0,3,0,0,0,0,0,1,0,0,0,2,2,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-77-swapped","result":{"a":7,"cells":[1,0,0,0,0,1,0,3,0,0,0,0,0,1,0,0,0,2,2,0,0,0,0,2,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 3, y: 0 }, to: Coord { x: 4, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 1 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-78","result":{"a":13,"cells":[1,0,0,0,0,0,0,0,0,0,2,0,0,3,0,0,0,1,0,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 2 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(1), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-78-swapped","result":{"a":13,"cells":[1,0,0,0,0,0,0,0,0,0,2,0,0,3,0,0,0,1,0,0,1,0,0,0,0],"feedback":"CompletedMoves([(Move { who: Pid(1), from: Coord { x: 4, y: 2 }, to: Coord { x: 0, y: 2 } }, OccupiedAt(Coord { x: 2, y: 2 })), (Move { who: Pid(0), from: Coord { x: 3, y: 3 }, to: Coord { x: 3, y: 4 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-79","result":{"a":17,"cells":[0,2,0,0,0,1,0,2,0,0,2,0,0,1,0,0,0,3,0,0,0,0,1,1,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 4, y: 3 }, to: Coord { x: 3, y: 3 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 0 } }, NoSource)])","marks":[],"status":0,"winner":0}}
+{"id":"random-79-swapped","result":{"a":17,"cells":[0,2,0,0,0,1,0,2,0,0,2,0,0,1,0,0,0,3,0,0,0,0,1,1,1],"feedback":"CompletedMoves([(Move { who: Pid(0), from: Coord { x: 1, y: 3 }, to: Coord { x: 1, y: 0 } }, NoSource), (Move { who: Pid(1), from: Coord { x: 4, y: 3 }, to: Coord { x: 3, y: 3 } }, NoSource)])","marks":[],"status":0,"winner":0}}

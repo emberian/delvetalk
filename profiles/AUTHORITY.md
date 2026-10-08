@@ -126,7 +126,9 @@ therefore deliberately or accidentally prevent future policy-guarded operations;
 there is no recovery bypass.
 
 `World.authorizeRequest` runs in `Evaluation`. Single-object policy and body
-execution share one 10,000-tick budget, including management operations.
+execution share the executable profile's fixed budget, including management
+operations: 10,000 ticks for the default hosts, 100,000 for the opt-in
+[compiled host](COMPILED.md).
 Transactions use one budget across every call, policy, context conversion, body,
 result, and outbox. A repeated-object policy reads the state staged by previous
 calls. Each transaction step still costs its existing tick. A predicate never
@@ -134,12 +136,11 @@ gets a fresh private budget. Definition validation and finite grant membership
 remain structural checks bounded by the existing request/frame envelopes, not
 a wall-clock or complete memory tariff.
 
-Future package execution must consume this same `Evaluation` budget: pass the
-remaining ticks into demand evaluation and subtract its actual execution plus
-materialization cost. Its wire and verification boundary need separate
-qualification; this profile currently imports no unfinished package evaluator.
-Read protection, candidate-aware policies, and additional JSON data encodings
-are separate future interfaces.
+The compiled host passes remaining ticks into package demand evaluation and
+charges its actual execution, materialization, and conversion cost against this
+same `Evaluation` budget. The default hosts do not import that frontend or
+enable its expression tags. Read protection, candidate-aware policies, and
+additional JSON data encodings remain separate future interfaces.
 
 `python3 conformance/test_authority.py` exercises separation of playing,
 programming, and law changes; exact command names; old-law admission; lockout;

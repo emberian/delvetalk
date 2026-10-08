@@ -1,0 +1,134 @@
+{
+  "schema": "delvetalk.automatafl-qualification.v1",
+  "upstreamCommit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+  "lean": "4.34.1",
+  "caseCount": 353,
+  "finished": 353,
+  "exactHistoricalBendMatches": 353,
+  "historicalRustMatches": 343,
+  "historicalRustDifferences": 10,
+  "historicalRustDifferenceIds": [
+    "stationary-destination",
+    "failed-source-still-blocks",
+    "random-5",
+    "random-5-swapped",
+    "random-21",
+    "random-21-swapped",
+    "random-51",
+    "random-51-swapped",
+    "random-68",
+    "random-68-swapped"
+  ],
+  "maximumRawTicks": 15628,
+  "maximumRawHeapCells": 1168,
+  "maximumRawMaterializedNodes": 6,
+  "validatedNineByNine": {
+    "arguments": [
+      9,
+      9,
+      3626777458843887524249601,
+      40,
+      0,
+      0,
+      9,
+      8,
+      17
+    ],
+    "result": {
+      "heapCells": 1724,
+      "nodesUsed": 6,
+      "status": "finished",
+      "ticksUsed": 25188,
+      "type": {
+        "member": {
+          "tag": "natural"
+        },
+        "name": "board",
+        "tag": "field",
+        "tail": {
+          "member": {
+            "tag": "natural"
+          },
+          "name": "automaton",
+          "tag": "field",
+          "tail": {
+            "member": {
+              "tag": "natural"
+            },
+            "name": "marks",
+            "tag": "field",
+            "tail": {
+              "member": {
+                "tag": "natural"
+              },
+              "name": "status",
+              "tag": "field",
+              "tail": {
+                "member": {
+                  "tag": "natural"
+                },
+                "name": "winner",
+                "tag": "field",
+                "tail": {
+                  "tag": "emptyRow"
+                }
+              }
+            }
+          }
+        }
+      },
+      "value": {
+        "fields": [
+          {
+            "name": "board",
+            "value": {
+              "tag": "natural",
+              "value": "3626777458843921884119040"
+            }
+          },
+          {
+            "name": "automaton",
+            "value": {
+              "tag": "natural",
+              "value": "40"
+            }
+          },
+          {
+            "name": "marks",
+            "value": {
+              "tag": "natural",
+              "value": "0"
+            }
+          },
+          {
+            "name": "status",
+            "value": {
+              "tag": "natural",
+              "value": "0"
+            }
+          },
+          {
+            "name": "winner",
+            "value": {
+              "tag": "natural",
+              "value": "0"
+            }
+          }
+        ],
+        "tag": "record"
+      }
+    }
+  },
+  "sha256": {
+    "Automatafl.obend": "288fd4424ffc06c59d4695b03f44876b30e6e9674872f871ee42d1f250335efb",
+    "Validated.obend": "67a7c130fd36e4531f01de84e60fb62c3208412cc2e28c64f5b69f48a9f25366",
+    "cases.json": "fadd720a3a63ead9c96b99d7a6bcaca9a2551833f80372e77f9336cda1548c83",
+    "jobs.json": "d0880ac6c86ce17ef9283482d51549f8c950ecdad5d773776811bd9b9d1e18d7",
+    "execution.jsonl": "a46bbe7a696b1f815f661d5f123c8d22f33d3ba7b19be3e72db3075f04e8351d",
+    "play.package.json": "71e2710c2fc936e46c01d0d89b4b62d9f97e6c07222ebdea384e29ebfe538f0f",
+    "raw-play.package.json": "bd352cdea012da3de16e2b47ca2bea9503227fa20771a288bb2da1bac8451885",
+    "automaton.package.json": "16f48ea88b38bd6202c35dff51f5a19aaf3096972c98315a22ae30bcc093b99d",
+    "board-valid.package.json": "b01b75ae03f79b99b977ed526f50861610449987b23993f4e7ac931023b08106"
+  },
+  "scope": "Measured corpus and one validated 9x9 legal round, not exhaustive budget bound or whole-game termination proof. Historical Rust oracle evidence was copied, not freshly executed."
+}

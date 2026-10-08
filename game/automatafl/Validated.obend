@@ -1,0 +1,11 @@
+edition ObjectiveBend 1
+import ./Automatafl.obend as Game
+
+# Host profile: 2..9 per dimension, at most 81 cells. This validates the
+# representation before calling the byte-exact revealed-move game package.
+def digitsValid(board: Nat, cells: Nat, automaton: Nat, index: Nat) -> Bool:
+  if cells == 0n then board == 0n else (if index == automaton then board % 4n == 3n else board % 4n != 3n) && digitsValid(board / 4n, cells - 1n, automaton, index + 1n)
+def boardValid(w: Nat, h: Nat, board: Nat, automaton: Nat, marks: Nat) -> Bool:
+  w >= 2n && h >= 2n && w <= 9n && h <= 9n && automaton < w * h && marks < Game.power(2n, w * h) && digitsValid(board, w * h, automaton, 0n)
+def play(w: Nat, h: Nat, board: Nat, automaton: Nat, marks: Nat, s0: Nat, t0: Nat, s1: Nat, t1: Nat) -> Game.Result:
+  if boardValid(w, h, board, automaton, marks) then Game.play(w, h, board, automaton, marks, s0, t0, s1, t1) else Game.result(board, automaton, marks, 2n, 0n)

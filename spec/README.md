@@ -26,8 +26,13 @@ fuel check, so a zero-budget value/stuck/yield can still be reported accurately.
 Resource exhaustion means a next source step exists but has no remaining fuel.
 
 Build with Lean 4.34.1 as pinned in `lean-toolchain` (narrow dependency chain,
-no Mathlib). The upstream Mini files remain byte-identical to their source
-pin; the newer compiler requires no semantic or proof compatibility edits:
+no Mathlib). The normative core and demand semantics remain byte-identical to their source
+pin. The broader package compiler closure has two explicit compatibility
+projections: the axiom audit helper imports `Lean` instead of Mathlib, and two
+TermWire proof tactics accommodate Lean 4.34.1. Runtime definitions and theorem
+statements are unchanged. Original files are retained under `original/`;
+`upstream.json` records original hashes, built hashes and exact replacements.
+The identity checker reconstructs every projected file and rejects other edits.
 
 ```sh
 LEAN_NUM_THREADS=1 lake build

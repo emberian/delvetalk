@@ -33,3 +33,25 @@ srcDir = "spec"
 name = "delvetalk-transactions"
 root = "Transactions"
 srcDir = "profiles"
+
+[[lean_lib]]
+name = "Compiler"
+srcDir = "spec/upstream"
+
+[[lean_lib]]
+name = "Pred"
+srcDir = "spec/upstream"
+
+[[lean_exe]]
+name = "delvetalk-obend"
+root = "PackageMain"
+srcDir = "spec"
+
+[[lean_exe]]
+name = "delvetalk-compiled"
+root = "Compiled"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "TransactionsCore"
+srcDir = "profiles"

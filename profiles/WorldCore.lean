@@ -25,6 +25,18 @@ def empty : Json := obj [("objects", obj []), ("receipts", .arr #[])]
 abbrev BendTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term
 abbrev Evaluation := StateT Nat (Except String)
 
+-- Host-bound identity for one actual receiving call, separate from user data.
+structure CallContext where
+  object : String
+
+-- Executable-selected extensions; requests and protocols cannot choose a budget.
+structure Runtime where
+  budget : Nat := 10000
+  validateExtra : Json → (Json → Except String Unit) → Except String Unit :=
+    fun _ _ => throw "unknown expression"
+  evaluateExtra : CallContext → Json → (Json → Evaluation Json) → Evaluation Json :=
+    fun _ _ _ => throw "unknown expression"
+
 def tick : Evaluation Unit := do
   let remaining ← get
   if remaining == 0 then throw "invocation budget exhausted"
@@ -63,7 +75,7 @@ def materialize (depth : Nat) (term : BendTerm) : Evaluation Json := do
       return obj (← fs.mapM fun (k,v) => do return (k, ← materialize depth v))
     | _ => throw "Bend result must be Nat, Bool, String or record"
 
-def evaluate (depth : Nat) (state input : Json) (principal : String) (expr : Json) : Evaluation Json := do
+def evaluateWith (runtime : Runtime) (context : CallContext) (depth : Nat) (state input : Json) (principal : String) (expr : Json) : Evaluation Json := do
   tick
   match depth with
   | 0 => throw "expression depth exceeded"
@@ -75,9 +87,11 @@ def evaluate (depth : Nat) (state input : Json) (principal : String) (expr : Jso
       if a.size != 3 then throw "Bend expression arity"
       let mut term ← Delvetalk.decode a[1]!
       for arg in (← a[2]!.getArr?) do
-        let value ← evaluate depth state input principal arg
+        let value ← evaluateWith runtime context depth state input principal arg
         term := .app term (← toTerm 64 value)
       return ← materialize 64 term
+    if !(["literal", "state", "input", "record", "array"].contains tag) then
+      return ← runtime.evaluateExtra context expr (evaluateWith runtime context depth state input principal)
     if a.size != 2 then throw "expression arity"
     let arg := a[1]!
     match tag with
@@ -85,12 +99,15 @@ def evaluate (depth : Nat) (state input : Json) (principal : String) (expr : Jso
     | "state" => field state (← arg.getStr?)
     | "input" => field input (← arg.getStr?)
     | "record" => return obj (← (← pairs arg).mapM fun (k,v) => do
-        return (k, ← evaluate depth state input principal v))
-    | "array" => return .arr (← (← arg.getArr?).mapM (evaluate depth state input principal))
+        return (k, ← evaluateWith runtime context depth state input principal v))
+    | "array" => return .arr (← (← arg.getArr?).mapM (evaluateWith runtime context depth state input principal))
     | _ => throw "unknown expression"
 
+def evaluate (depth : Nat) (state input : Json) (principal : String) (expr : Json) : Evaluation Json :=
+  evaluateWith {} ⟨""⟩ depth state input principal expr
+
 -- Reject malformed definitions at installation, including branches not yet used.
-def validateExpr (fuel : Nat) (expr : Json) : Except String Unit := do
+def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except String Unit := do
   match fuel with
   | 0 => throw "expression depth exceeded"
   | fuel + 1 =>
@@ -100,28 +117,36 @@ def validateExpr (fuel : Nat) (expr : Json) : Except String Unit := do
     if tag == "bend" then
       if a.size != 3 then throw "Bend expression arity"
       discard (Delvetalk.decode a[1]!)
-      for e in (← a[2]!.getArr?) do validateExpr fuel e
+      for e in (← a[2]!.getArr?) do validateExprWith runtime fuel e
       return
+    if !(["literal", "state", "input", "record", "array"].contains tag) then
+      return ← runtime.validateExtra expr (validateExprWith runtime fuel)
     if a.size != 2 then throw "expression arity"
     match tag with
     | "literal" => pure ()
     | "state" | "input" => discard a[1]!.getStr?
-    | "record" => for (_,v) in (← pairs a[1]!) do validateExpr fuel v
-    | "array" => for v in (← a[1]!.getArr?) do validateExpr fuel v
+    | "record" => for (_,v) in (← pairs a[1]!) do validateExprWith runtime fuel v
+    | "array" => for v in (← a[1]!.getArr?) do validateExprWith runtime fuel v
     | _ => throw "unknown expression"
 
-def validateProtocol (p : Json) : Except String Unit := do
+def validateProtocolWith (runtime : Runtime) (p : Json) : Except String Unit := do
   if (← str p "profile") != "delvetalk-local-v1" then throw "unknown profile"
   discard (pairs (← field p "initial"))
   for (_,c) in (← pairs (← field p "commands")) do
     for requirement in (← (← field c "require").getArr?) do
       let r ← requirement.getArr?
       if r.size != 2 then throw "require expects two expressions"
-      validateExpr 64 r[0]!
-      validateExpr 64 r[1]!
-    for (_,e) in (← pairs (← field c "set")) do validateExpr 64 e
-    validateExpr 64 (← field c "result")
-    for e in (← (← field c "outbox").getArr?) do validateExpr 64 e
+      validateExprWith runtime 64 r[0]!
+      validateExprWith runtime 64 r[1]!
+    for (_,e) in (← pairs (← field c "set")) do validateExprWith runtime 64 e
+    validateExprWith runtime 64 (← field c "result")
+    for e in (← (← field c "outbox").getArr?) do validateExprWith runtime 64 e
+
+def validateExpr (fuel : Nat) (expr : Json) : Except String Unit :=
+  validateExprWith {} fuel expr
+
+def validateProtocol (protocol : Json) : Except String Unit :=
+  validateProtocolWith {} protocol
 
 def law (j : Json) : Except String (Array String) := do
   let xs ← j.getArr?
@@ -191,13 +216,14 @@ def receipt (request : Json) (kind : String) (data : Json) : Json :=
        ("object", (field request "object").toOption.getD .null),
        ("kind", .str kind), ("data", data)]
 
-def executeCommand (o request : Json) (principal : String) : Evaluation (Json × Json × Array Json) := do
+def executeCommandWith (runtime : Runtime) (o request : Json) (principal : String) : Evaluation (Json × Json × Array Json) := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   let state ← field o "state"
   let input ← field request "input"
   discard (pairs input)
-  let eval := evaluate 64 state input principal
+  let context : CallContext := ⟨← str request "object"⟩
+  let eval := evaluateWith runtime context 64 state input principal
   for requirement in (← (← field command "require").getArr?) do
     let r ← requirement.getArr?
     if (← eval r[0]!) != (← eval r[1]!) then throw "precondition failed"
@@ -210,13 +236,13 @@ def executeCommand (o request : Json) (principal : String) : Evaluation (Json ×
 
 -- Both standalone and transaction admission install exactly this replacement.
 -- Authorization belongs to the caller's current-law check, never the candidate.
-def reprogramObject (o protocol state : Json) : Except String Json := do
-  validateProtocol protocol
+def reprogramObjectWith (runtime : Runtime) (o protocol state : Json) : Except String Json := do
+  validateProtocolWith runtime protocol
   discard (pairs state)
   let n ← (← field o "version").getNat?
   put (← put (← put o "protocol" protocol) "state" state) "version" (toJson (n+1))
 
-def transitionEvaluation (world request : Json) (principal : String) : Evaluation (Json × Json) := do
+def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String) : Evaluation (Json × Json) := do
   let objects ← field world "objects"
   let id ← str request "object"
   if id.isEmpty then throw "empty object id"
@@ -224,7 +250,7 @@ def transitionEvaluation (world request : Json) (principal : String) : Evaluatio
   if op == "create" then
     if (field objects id).isOk then throw "object exists"
     let protocol ← field request "protocol"
-    validateProtocol protocol
+    validateProtocolWith runtime protocol
     let authority ← field request "law"
     validateLaw authority
     let o := obj [("protocol", protocol), ("law", authority), ("version", toJson (0 : Nat)),
@@ -249,18 +275,30 @@ def transitionEvaluation (world request : Json) (principal : String) : Evaluatio
     -- Migration is an explicit complete record, never an implicit reset or
     -- an expression executed with extra authority. Law and identity stay put.
     let state ← field request "state"
-    let nextObj ← reprogramObject o protocol state
+    let nextObj ← reprogramObjectWith runtime o protocol state
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
   if op != "invoke" then throw "unknown operation"
-  let (nextState, result, outbox) ← executeCommand o request principal
+  let (nextState, result, outbox) ← executeCommandWith runtime o request principal
   let nextObj ← put (← put o "state" nextState) "version" (toJson (n+1))
   let next ← put world "objects" (← put objects id nextObj)
   return (next, receipt request "committed" (obj [("root",nextObj), ("result",result), ("outbox", .arr outbox)]))
 
-def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
-  let (result, _) ← (transitionEvaluation world request principal).run 10000
+def transitionWith (runtime : Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
+  let (result, _) ← (transitionEvaluationWith runtime world request principal).run runtime.budget
   return result
+
+def executeCommand (o request : Json) (principal : String) : Evaluation (Json × Json × Array Json) :=
+  executeCommandWith {} o request principal
+
+def reprogramObject (o protocol state : Json) : Except String Json :=
+  reprogramObjectWith {} o protocol state
+
+def transitionEvaluation (world request : Json) (principal : String) : Evaluation (Json × Json) :=
+  transitionEvaluationWith {} world request principal
+
+def transition (world request : Json) (principal : String) : Except String (Json × Json) :=
+  transitionWith {} world request principal
 
 def handleWith
     (admit : Json → Json → String → Except String (Json × Json))

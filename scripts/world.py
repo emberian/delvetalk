@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROFILES = {
     'world': ('delvetalk-world', 'World.lean'),
     'transactions': ('delvetalk-transactions', 'Transactions.lean'),
+    'compiled': ('delvetalk-compiled', 'Compiled.lean'),
 }
 
 

@@ -7,7 +7,9 @@ can be reproduced.
 - Lean owns the pinned source relation and local host admission. Python, JS and
   C are independent core evaluators. Python world code handles custody of a
   local file and process transport, not admission decisions.
-- `spec/upstream/` is a byte-exact Mini source pin. Change its provenance and
+- `spec/upstream/` pins Mini; normative semantics are byte-exact. Explicit
+  audit/proof compatibility projections retain originals and exact edits in
+  `spec/upstream.json`. Change its provenance and
   hashes deliberately when updating it. Do not silently fork normative rules.
 - Reference dynamics, typed Mini execution, local host fixtures and deployment
   are different claims. Report the one actually checked.
