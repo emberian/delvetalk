@@ -14,7 +14,7 @@ custody must not become parallel semantic implementations.
 | 3 — game table | Stabilized two-player Automatafl admitted through the same environment; simultaneous moves and scoped seats | Integrated; complete five-round match in the café and through mocked PDS receiving |
 | 4 — recovery and canon | Restartable receiving/publication preparation and independently replayable world history | Integrated; reconstruction, append continuity and explicit replay policies |
 | 5 — programming within | Participants extend libraries/scenes/views through governed world artifacts and use the results | Integrated; independent authorship, review, adoption and completed play |
-| 6 — convergence | Adversarial composed journeys, resource qualification, usability and simplification; runnable bootstrap package | Integrated; full local check and final join tests passed, final Linux CI pending |
+| 6 — convergence | Adversarial composed journeys, resource qualification, usability and simplification; runnable bootstrap package | Complete; full local check, final join tests and Linux CI passed |
 
 Each cycle ends with integration, a narrow acceptance journey, named remaining
 gaps and a source checkpoint. A lane finishing its files is not a completed
@@ -146,3 +146,12 @@ was included in the exchange bundle. The default transactions profile and
 explicit compiled profile remain distinct; the journey refuses implicit runtime
 migration. The final source checkpoint includes all six cycles and the reusable
 bootstrap commands in the README.
+
+
+Final Linux conformance passed at implementation checkpoint `1f359c4`:
+[GitHub Actions run 37805801640](https://github.com/emberian/delvetalk/actions/runs/37805801640).
+All 42 Python test groups (356 methods), the independent core comparisons,
+JavaScript checks, Rust bridge tests, package/game qualification and source-pin
+checks passed. The following documentation-only checkpoint records this result;
+it changes no executable or semantic source. Six construction cycles are complete.
+Public receiving deployment and external message publication remain suspended.
