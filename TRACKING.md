@@ -29,6 +29,13 @@
 
 ## Outstanding implementation work
 
+The next inhabited-world increment is specified in [LIVE-BOOTSTRAP](docs/LIVE-BOOTSTRAP.md):
+a source-visible Spween room, endogenous proposal/adoption, separately scoped
+playing/programming authority, and publicly replayable admission history. Qualify
+the existing two-player Automatafl package's actual receiving path and simultaneous
+move protocol before announcing its table. These are implementation obligations,
+not capabilities established by the current local fixtures.
+
 - Operator-run clerk processing is not an unattended receiving service. Add a
   supervised queue only with an explicit deployment/operating policy, delivery
   bounds and operating policy. Enrollment and law management are implemented;

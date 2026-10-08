@@ -30,6 +30,7 @@ wiki:
 syntax:
 	python3 conformance/test_syntax.py
 delve:
+	python3 conformance/test_watch.py
 	python3 conformance/test_delve.py
 	python3 conformance/test_delve_adversarial.py
 	python3 conformance/test_intake.py

@@ -147,6 +147,12 @@ profile boundaries rather than silently acquiring new semantics.
 
 ## Connect to Delve
 
+The [LiveDelveTalk watcher](profiles/WATCH.md) observes the imaginary
+`@livedelvetalk.delve.town` powerbox label through the town feed, discussion
+thread and search. It retains new and changed observations without treating
+social text as executable authority. The [bootstrap design](docs/LIVE-BOOTSTRAP.md)
+describes a live scene room, an in-world source desk and a two-player game table.
+
 [Public intake](profiles/INTAKE.md) retains an exact post observation and feeds
 an explicitly selected syntax into the proposal runner. Ordinary conversational
 cards produce a retained-source diagnostic when they lack an executable form.
