@@ -73,7 +73,7 @@ def run(manager, identity, realm, payload):
             result = {'status': status, 'via': 'source', 'original': payload['text'],
                 'providerReceipt': memo['providerReceipt'],
                 'message': str(error) if isinstance(error, interpret.ProviderReplyError) else 'No confirmed interpretation is available. Recover this saved contribution before retrying.'}
-            if status in ('pending', 'uncertain', 'provider-error'):
+            if status in ('pending', 'uncertain', 'rejected', 'provider-error'):
                 memo['result'] = result
             manager._save_encounter(path, memo)
             return {**result, 'interpretation': token}
@@ -104,4 +104,3 @@ def run(manager, identity, realm, payload):
     memo['result'] = result
     manager._save_encounter(path, memo)
     return {**result, 'interpretation': token}
-
