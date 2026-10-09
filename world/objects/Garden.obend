@@ -13,7 +13,9 @@ sum Seed:
   bell: Bell.Seed
   cistern: Cistern.Seed
 type Plan = Plans.Plan<Edits, Seed>
-type Response = Plans.Response<{}, {}>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {planted: 0n}
 sum Made:
   made: {object: Plans.Reference}
   refused: {clause: String}

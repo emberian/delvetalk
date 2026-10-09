@@ -15,7 +15,9 @@ record State:
 record Edits:
   proposals: Plans.Entries<Proposal, Status>
 type Plan = Plans.Plan<Edits, {}>
-type Response = Plans.Response<{}, {}>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {proposals: Lists.List::<Proposal>.nil()}
 # Submission only proposes; admission is the receiver's law, not the author's.
 def submit(state: State, input: {author: String, line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Proposal>(state.proposals)

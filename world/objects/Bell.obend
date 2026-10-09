@@ -21,15 +21,13 @@ record Seed:
   planter: String
   colour: Colour
   seed: String
-# A view returns this non-recursive summary, not the list-bearing state.
-record Summary:
-  rung: Bool
-  rains: Nat
 record Edits:
   rains: Plans.Entries<Rain, {}>
   rung: Plans.Edit<Bool, {}>
 type Plan = Plans.Plan<Edits, {}>
-type Response = Plans.Response<Summary, {}>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {planter: "", colour: Colour.amber({}), seed: "", rains: Lists.List::<Rain>.nil(), rung: false}
 def keep() -> Edits:
   {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({})}
 def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
