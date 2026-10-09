@@ -156,11 +156,12 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             let quota ← match request.getObjVal? "postQuota" with
               | .ok q => some <$> natOf q
               | .error _ => pure none
-            return ((request.getObjValAs? String "clock").toOption, quota) : Except String _) with
+            return ((request.getObjValAs? String "clock").toOption, quota,
+              (request.getObjValAs? String "opener").toOption) : Except String _) with
           | .error e => return (session, .error e)
-          | .ok (none, none) => pure o
-          | .ok (clock, quota) =>
-            let (s', r) ← durable o (fun w => settingsOp w clock quota)
+          | .ok (none, none, none) => pure o
+          | .ok (clock, quota, opener) =>
+            let (s', r) ← durable o (fun w => settingsOp w clock quota opener)
             match r, s' with
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)

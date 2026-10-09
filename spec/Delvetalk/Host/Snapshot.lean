@@ -171,8 +171,8 @@ def body (w : World) (binary : String) : Except String Json := do
     ("library", toJson ((w.library.map (·.pin)).getD "")), ("libraryLaw", toJson w.libraryLaw),
     ("libraries", Json.arr (libraries.toArray.map fun (pin, l) =>
       Json.mkObj [("pin", toJson pin), ("modules", modulesJson l.modules)])),
-    ("settings", Json.mkObj [("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
-      ("postQuota", toJson w.postQuota)]),
+    ("settings", Json.mkObj ([("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
+      ("postQuota", toJson w.postQuota)] ++ (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
     ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
@@ -272,7 +272,8 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
   w := { w with libraries, library, libraryLaw := ← b.getObjValAs? String "libraryLaw",
                 settled := ← settings.getObjValAs? Bool "settled",
                 clockPrincipal := ← settings.getObjValAs? String "clock",
-                postQuota := ← natField settings "postQuota" }
+                postQuota := ← natField settings "postQuota",
+                opener := (settings.getObjValAs? String "opener").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}
   for t in ← (← b.getObjVal? "types").getArr? do
     types := types.insert (← t.getObjValAs? String "pin") (← tyOf (← t.getObjVal? "stateType"),
@@ -372,7 +373,8 @@ def resume (b : Json) (entries : Array Json) : Except String World := do
   let w ← install b booked.modules
   let w := { booked with library := w.library, libraries := w.libraries, libraryLaw := w.libraryLaw,
                          objects := w.objects, grants := w.grants, posts := w.posts,
-                         clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, settled := w.settled }
+                         clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, opener := w.opener,
+                         settled := w.settled }
   for (k, v) in derived w do
     unless (b.getObjVal? k).toOption == some v do throw s!"its {k} is not the journal's"
   let expected := expectedObjects early

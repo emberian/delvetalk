@@ -314,7 +314,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
-    (fun e => (if e == noAmendmentClause then "law"
+    (fun e => (if isAmendmentRefusal e then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return ({ object, sources, seed := dataJson state }, built)
 

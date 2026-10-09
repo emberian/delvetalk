@@ -158,7 +158,7 @@ class Law(Reprogram):
         self.make(source=with_law(COUNTER, EMBER_ONLY))
         r = self.amend('law counter: request.subject == "nobody"')
         out = r["receipt"]["outcome"]
-        self.assertEqual((out["class"], out["clause"]), ("lawRefused", "law has no amendment clause"))
+        self.assertEqual((out["class"], out["clause"]), ("lawRefused", 'law does not admit an amendment by its proposer ember: counter: request.subject == "nobody"'))
         self.assertEqual(self.amend(BOTH)["status"], "admitted")
 
     def test_an_amendment_that_does_not_parse_is_refused_by_name(self):
@@ -169,7 +169,7 @@ class Law(Reprogram):
     def test_a_law_with_no_amendment_clause_is_refused_at_creation(self):
         r = self.make(source=with_law(COUNTER, 'law sealed: request.subject == "nobody"'))
         self.assertEqual(r["status"], "error")
-        self.assertIn("law has no amendment clause", r["message"])
+        self.assertIn('law does not admit an amendment by its proposer ember: sealed: request.subject == "nobody"', r["message"])
 
     def test_the_law_can_be_read_on_the_pin_of_the_new_package(self):
         self.make(source=with_law(COUNTER, EMBER_ONLY))
@@ -213,7 +213,7 @@ class DefaultLaw(Reprogram):
     def test_an_explicit_law_still_goes_through_the_amendment_clause_rule(self):
         r = self.make(source=with_law(COUNTER, 'law sealed: request.kind == 0 and request.subject == "nobody"'))
         self.assertEqual(r["status"], "error")
-        self.assertIn("amendment clause", r["message"])
+        self.assertIn("law does not admit an amendment by its proposer ember: sealed: ", r["message"])
 
     def test_the_law_can_tell_an_amend_from_a_reprogram(self):
         law = 'law split: request.kind == 0 or request.kind == 2'

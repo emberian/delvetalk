@@ -71,7 +71,8 @@ class Laws(LawWorld):
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label(OWNER), doors=nil()))
-        self.assertEqual(r, {"status": "error", "message": "law has no amendment clause"})
+        self.assertEqual(r["status"], "error", r)
+        self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
     def test_anyone_submits_and_only_the_owner_admits(self):
         self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=nil()))

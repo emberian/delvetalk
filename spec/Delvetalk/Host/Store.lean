@@ -300,6 +300,9 @@ structure World where
       hourly posting cap; both set by the `settings` entry of the first open that names them. -/
   clockPrincipal : String := ""
   postQuota : Nat := 16
+  /-- The principal that opened the world (`world-open {opener}`, in the settings entry; ""
+      when none was named): it alone may create an object for a named owner. -/
+  opener : String := ""
   settled : Bool := false
   /-- The principal registry: display handle by principal, from `principal` entries. -/
   handles : Std.HashMap String String := {}

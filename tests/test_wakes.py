@@ -106,10 +106,32 @@ class Wakes(Chain):
         self.assertEqual(out["value"], label("env/" + OWNER), out)
         self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
 
+    def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
+        """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
+        self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")
+        seed = record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil())
+        create = lambda by, ident: self.host.send(op="world-create", principal=by, identity=ident, object="env/" + OWNER,
+                                                  modules=closure("Env"), entry="initial", seed=seed, owner=OWNER)
+        stranger = create("mallory", "mk-m")
+        self.assertEqual(stranger, {"status": "error", "message": "only the opener of the world may name an owner; that is ember"})
+        made = create("ember", "mk-env")
+        self.assertEqual(made["status"], "created", made)
+        self.assertEqual((made["receipt"]["identity"]["principal"], made["receipt"]["outcome"]["owner"]), ("ember", OWNER))
+        law = self.host.send(op="world-inspect", principal=OWNER, object="env/" + OWNER)["law"]
+        amend = lambda by, ident: self.host.send(op="world-amend", principal=by, identity=ident, object="env/" + OWNER,
+                                                 version=self.version("env/" + OWNER), law=law)
+        refused = amend(OTHER, "am-other")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "owner"), refused)
+        self.assertEqual(amend("ember", "am-ember")["status"], "refused")
+        self.assertEqual(amend(OWNER, "am-owner")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(self.version("env/" + OWNER), 1)
+        self.assertEqual(self.host.send(op="world-open", path=self.path, opener="glm")["status"], "error")
+
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
                            entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))
-        self.assertEqual(r, {"status": "error", "message": "law has no amendment clause"})
+        self.assertEqual(r, {"status": "error", "message": "law does not admit an amendment by its proposer ember: owner: new.owner == request.subject"})
 
     def test_env_law_refuses_a_strangers_write_proposed_directly(self):
         env = self.env()

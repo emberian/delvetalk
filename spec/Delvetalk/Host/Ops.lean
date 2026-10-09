@@ -524,7 +524,13 @@ def checkSource (w : World) (source : String) : List String :=
         -- The kernel's dialect hint, when it has one, is the next line at the same place.
         [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
 
-def noAmendmentClause : String := "law has no amendment clause"
+/-- The metarule's refusal, naming the proposer it was checked against and the clause that
+    refused (a law must admit an amendment by its own proposer). -/
+def amendmentRefusal (proposer clause : String) : String :=
+  s!"law does not admit an amendment by its proposer {proposer}: {clause}"
+
+def isAmendmentRefusal (message : String) : Bool :=
+  message.startsWith "law does not admit an amendment by its proposer "
 
 def renderLaw (law : Law) : String :=
   "\n".intercalate (law.map fun (name, clause) => s!"law {name}: {clause.render}")
@@ -546,9 +552,11 @@ def parseLawText (text : String) : Except String Law := do
   return law
 
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
-    amendment (the state unchanged) by the principal who proposes it. -/
-def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Bool :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, ""⟩ (some state) state).isNone
+    amendment (the state unchanged) by the principal who proposes it. None when it does,
+    else the refusal naming that principal and the clause (`name: expression`) that refused. -/
+def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Option String :=
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, ""⟩ (some state) state).map fun name =>
+    amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
   match inputs.getObjVal? "modules" with
@@ -1031,7 +1039,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok law => pure law
         | .error _ => throw (refuse "law syntax")
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
-      unless amendable law p.principal amender height p.turn next.pin state do throw (refuse noAmendmentClause)
+      if let some message := amendable law p.principal amender height p.turn next.pin state then throw (refuse message)
       next := { next with law, lawText := text }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
     out := out ++ [(id, { next with version := o.version + 1, state })]
@@ -1310,7 +1318,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
   let laws ← match lawText with
     | some text => parseLawText text
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
-  unless amendable laws creator "" height 0 pin state do throw noAmendmentClause
+  if let some message := amendable laws creator "" height 0 pin state then throw message
   let (methods, predicate, predicateReads) := artifactShape b.artifact
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
@@ -1345,17 +1353,27 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if let some r := retained w principal intent digest then return (w, r)
   if id == "self" then throw "object id self is reserved for the running object"
   if ownCards.contains id then throw s!"object id {id} is reserved: it names each principal's own {id}/<principal>"
+  -- The opener of the world may create an object for its owner: the law (the default law
+  -- names the owner) and the metarule are the owner's, the creator is the opener.
+  let owner ← optText j "owner"
+  if let some o := owner then
+    discard <| boundedText "owner" Limits.maxPrincipalBytes o
+    if w.opener.isEmpty || principal != w.opener then
+      throw s!"only the opener of the world may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
   if w.objects.contains id then throw s!"object {id} already exists"
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
   let seed ← j.getObjVal? "seed"
-  let (o, sources, w) ← buildObjectIn w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
+  let (o, sources, w) ← buildObjectIn w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
   let supervisor := (← optText j "supervisor").getD ""
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
   let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   let outcome := createOutcome id o sources (compactInputs inputs) seed
   let outcome := if supervisor.isEmpty then outcome else outcome.setObjVal! "supervisor" (toJson supervisor)
+  let outcome := match owner with
+    | some o => outcome.setObjVal! "owner" (toJson o)
+    | none => outcome
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
@@ -1415,21 +1433,28 @@ The first open that names a clock principal or a posting quota journals a `setti
 after that both are fixed. `posted` entries record what transport published for an object,
 so a reply to that post can be routed back (`world-addressee`). -/
 
-def settingsOp (w : World) (clock : Option String) (quota : Option Nat) : Except String (World × Json) := do
-  if clock.isNone && quota.isNone then return (w, Json.null)
+def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none) :
+    Except String (World × Json) := do
+  if clock.isNone && quota.isNone && opener.isNone then return (w, Json.null)
   let clockP := clock.getD ""
+  let openerP := opener.getD ""
   if w.settled then
-    if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) then
-      throw s!"the journal records clock {w.clockPrincipal} and postQuota {w.postQuota}; the settings differ"
+    if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) ||
+        (opener.isSome && openerP != w.opener) then
+      throw s!"the journal records clock {w.clockPrincipal}, postQuota {w.postQuota} and opener {w.opener}; the settings differ"
     return (w, Json.null)
   if let some c := clock then discard <| boundedText "clock principal" Limits.maxPrincipalBytes c
+  if let some o := opener then discard <| boundedText "opener" Limits.maxPrincipalBytes o
   let q := quota.getD 16
   let intent := "settings"
-  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, settled := true }
+  -- The opener is recorded only when named, so earlier settings entries keep their bytes.
+  let fields := [("clock", toJson clockP), ("postQuota", toJson q)] ++
+    (if openerP.isEmpty then [] else [("opener", toJson openerP)])
+  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, opener := openerP, settled := true }
     (identityKey "world" intent)
     [("identity", identityJson "world" intent), ("roots", rootsJson []), ("turn", toJson 0),
-     ("request", toJson (Journal.bodyHash (Json.mkObj [("clock", toJson clockP), ("postQuota", toJson q)]))),
-     ("outcome", Json.mkObj [("tag", toJson "settings"), ("clock", toJson clockP), ("postQuota", toJson q)])] []
+     ("request", toJson (Journal.bodyHash (Json.mkObj fields))),
+     ("outcome", Json.mkObj ([("tag", toJson "settings")] ++ fields))] []
   return (w', reply entry)
 
 def parseSlot (j : Json) : Except String Json := do
@@ -1624,7 +1649,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "settings" =>
     if w.settled then throw "settings recorded twice"
     return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
-                           postQuota := ← natField outcome "postQuota", settled := true } entry key []
+                           postQuota := ← natField outcome "postQuota", settled := true,
+                           opener := (outcome.getObjValAs? String "opener").toOption.getD "" } entry key []
   | "principal" =>
     discard <| outcome.getObjValAs? String "did"
     discard <| outcome.getObjValAs? String "handle"
@@ -1679,7 +1705,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
     let inputs ← expandInputs w (← outcome.getObjVal? "compile")
-    let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
+    let owner := (outcome.getObjValAs? String "owner").toOption
+    if owner.isSome && (w.opener.isEmpty || principal != w.opener) then throw "an owner named by another than the opener"
+    let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
