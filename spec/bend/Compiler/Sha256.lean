@@ -73,12 +73,14 @@ def digest (message : ByteArray) : Array UInt32 := Id.run do
   for block in [0:tail.size / 64] do state := compress state tail (64 * block)
   return state
 
-def hexDigit (n : Nat) : Char := "0123456789abcdef".toList[n % 16]!
+def hexDigits : Array Char := "0123456789abcdef".toList.toArray
+
+def hexDigit (n : Nat) : Char := hexDigits[n % 16]!
 
 /-- Lowercase hexadecimal, 64 characters. -/
 def hex (message : ByteArray) : String :=
-  String.ofList ((digest message).toList.flatMap fun w =>
-    (List.range 8).map fun i => hexDigit ((w.toNat >>> (4 * (7 - i))) % 16))
+  (digest message).foldl (fun out w =>
+    (List.range 8).foldl (fun out i => out.push (hexDigit ((w.toNat >>> (4 * (7 - i))) % 16))) out) ""
 
 def hexString (text : String) : String := hex text.toUTF8
 

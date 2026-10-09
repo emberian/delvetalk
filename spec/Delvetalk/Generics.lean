@@ -69,6 +69,11 @@ structure State where
   names : Std.TreeSet String
   nextName : Nat := 0
   instances : Array Instance := #[]
+  /-- The instance of each (declaration key, argument identity) met so far. -/
+  instanceOf : Std.HashMap (String × String) Nat := {}
+  /-- Declaration keys, by (origin, name). -/
+  declarationKeys : Std.HashMap (Nat × String) String := {}
+  /-- Instances being rewritten: (declaration key, argument identity). -/
   active : List (String × String) := []
   remaining : Nat := maxExpansionNodes
   remainingStringBytes : Nat := maxExpansionStringBytes
@@ -108,9 +113,12 @@ def originModule (origin : Nat) : M SourceModule := do
   return source.module
 
 def declarationKey (d : Declaration) : M String := do
+  if let some key := (← get).declarationKeys[(d.origin, d.name)]? then return key
   let m ← originModule d.origin
   let some sealedIdentity := (← get).sealedIdentities[d.origin]? | throw "generic sealed module identity missing"
-  return (toJson [m.name, m.sha256, sealedIdentity, d.name]).compress
+  let key := (toJson [m.name, m.sha256, sealedIdentity, d.name]).compress
+  modify fun s => { s with declarationKeys := s.declarationKeys.insert (d.origin, d.name) key }
+  return key
 
 def resolve (origin : Nat) (name : String) : M (Option Declaration) := do
   let m ← originModule origin
@@ -238,11 +246,16 @@ def instantiate : Nat → Declaration → List GType → M GType
       throw ("generic specialization cannot lift open Self/Super type arguments: " ++ declaration.name)
     let argumentIdentity := (toJson (arguments.map GType.identity)).compress
     spendString argumentIdentity
+    let state ← get
+    if state.active.any (fun p => p.1 == declarationId && p.2 != argumentIdentity) then
+      throw ("generic recursion changes type arguments: " ++ declaration.name)
+    -- The instance key is a function of (declaration key, argument identity): an instance met
+    -- before is found by that pair, without hashing again.
+    if let some prior := state.instanceOf[(declarationId, argumentIdentity)]? then
+      if let some priorInstance := state.instances[prior]? then
+        return .named state.generatedModule priorInstance.name priorInstance.key
     let argumentId := Minidregg.Compiler.Sha256.hexString argumentIdentity
     let key := Minidregg.Compiler.Sha256.hexString (toJson [declarationId, argumentId]).compress
-    let state ← get
-    if state.active.any (fun p => p.1 == declarationId && p.2 != argumentId) then
-      throw ("generic recursion changes type arguments: " ++ declaration.name)
     if let some priorInstance := state.instances.find? (·.key == key) then return .named state.generatedModule priorInstance.name priorInstance.key
     if state.instances.size >= maxInstances then throw "generic specialization exceeds instance budget"
     let name ← fresh
@@ -254,7 +267,8 @@ def instantiate : Nat → Declaration → List GType → M GType
         name := name
         origin := declaration.origin
         arguments := arguments }
-      active := (declarationId, argumentId) :: s.active }
+      instanceOf := s.instanceOf.insert (declarationId, argumentIdentity) index
+      active := (declarationId, argumentIdentity) :: s.active }
     let generated := (← get).generatedModule
     let site : Site := ⟨declaration.origin, generated, binders.zip arguments, true⟩
     let ast ← match ← rewriteDecl fuel site [] declaration.ast with

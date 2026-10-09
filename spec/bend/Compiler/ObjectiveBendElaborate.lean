@@ -420,9 +420,19 @@ structure Ctx where
   decls : List (String × Decl × Module)
   records : List (String × Decl)
   sums : List (String × Decl)
+  /-- `decls`, `records` and `sums` by key (keys are distinct: `context` refuses duplicates). -/
+  declIndex : Std.HashMap String (Decl × Module) := {}
+  recordIndex : Std.HashMap String Decl := {}
+  sumIndex : Std.HashMap String Decl := {}
+
+/-- The record declared under `key`, as `records.find?` would return it. -/
+def Ctx.record? (c : Ctx) (key : String) : Option (String × Decl) := (c.recordIndex[key]?).map (key, ·)
+/-- The sum declared under `key`, as `sums.find?` would return it. -/
+def Ctx.sum? (c : Ctx) (key : String) : Option (String × Decl) := (c.sumIndex[key]?).map (key, ·)
 
 structure St where
-  globalTypes : List (String × Option PTy) := []
+  /-- Declaration types by knot key (the first recorded for a key stands). -/
+  globalTypes : Std.HashMap String (Option PTy) := {}
   /-- Resolved source types, keyed by (module, text), for resolutions made outside any
   recursive unfolding (`seen = []`) and outside a template's `Self`/`Super` bindings. Once a
   recursive type is registered its variable is stable, so such a resolution is a function of
@@ -529,9 +539,9 @@ def builtinSource : String :=
 
 def lookupGlobal (c : Ctx) (name : String) (m : Module) : Option String :=
   let key := m.name ++ "." ++ name
-  if (c.decls.find? (·.1 == key)).isSome then some key else none
+  if c.declIndex.contains key then some key else none
 
-def declOf (c : Ctx) (key : String) : Option (Decl × Module) := (c.decls.find? (·.1 == key)).map (·.2)
+def declOf (c : Ctx) (key : String) : Option (Decl × Module) := c.declIndex[key]?
 
 inductive ResultSpec where
   | source (text : String)
@@ -582,7 +592,7 @@ def sumCase (c : Ctx) (callee : Expr) (env : List Binding) (m : Module) : Option
         | none => if builtinTypeNames.contains typeName then some (builtinModuleName ++ "." ++ typeName, builtinModuleName)
             else some (m.name ++ "." ++ typeName, m.name)
       resolved.bind fun (key, moduleName) =>
-        match c.sums.find? (·.1 == key) with
+        match c.sum? key with
         | some (_, .sum sumName _) => some (caseLabel, moduleName, sumName)
         | _ => none
   | _ => none
@@ -762,7 +772,7 @@ def sourceTypeUncached (c : Ctx) : Nat → String → String → List String →
       return ← sourceType c fuel typeName importedModule seen
     let moduleName := if builtinTypeNames.contains name then builtinModuleName else moduleName
     let key := moduleName ++ "." ++ name
-    if let some (_, .sum _ cases) := c.sums.find? (·.1 == key) then
+    if let some (_, .sum _ cases) := c.sum? key then
       let s ← get
       if seen.contains key then
         let index ← match s.sumVariables.lookup key with
@@ -798,7 +808,7 @@ def sourceTypeUncached (c : Ctx) : Nat → String → String → List String →
           modify fun s => { s with sumVariables := s.sumVariables ++ [(key, k)] }
           pure k
       return some (.variable index)
-    let some (_, .record _ recordFields methods) := c.records.find? (·.1 == key)
+    let some (_, .record _ recordFields methods) := c.record? key
       | do typeError ("unsupported source type " ++ name); return none
     if let some k := (← get).sumVariables.lookup key then
       if ((← get).sumBounds.lookup k).isSome then return some (.variable k)
@@ -838,7 +848,7 @@ def signatureTy (c : Ctx) : Nat → List Param → ResultSpec → String → Lis
 def globalType (c : Ctx) : Nat → String → M (Option PTy)
   | 0, _ => fail "type resolution fuel"
   | fuel + 1, key => do
-    if let some t := (← get).globalTypes.lookup key then return t
+    if let some t := (← get).globalTypes[key]? then return t
     if (← get).inferring.contains key then
       typeError ("result inference cycle through " ++ key ++ "; annotate its result type"); return none
     let some (d, m) := declOf c key | return none
@@ -875,7 +885,7 @@ def globalType (c : Ctx) : Nat → String → M (Option PTy)
             | some target, some metaTy => some (.specification metaTy (extensionTy target))
             | _, _ => none)
       | _ => pure none
-    modify fun s => { s with inferring := s.inferring.erase key, globalTypes := s.globalTypes ++ [(key, t)] }
+    modify fun s => { s with inferring := s.inferring.erase key, globalTypes := s.globalTypes.insertIfNew key t }
     return t
 
 /-- An open declaration's `Self` (a bounded variable whose bound is the Self row, its
@@ -939,7 +949,7 @@ have row lower bounds, not record aliases, and must retain their abstract tails.
 def recursiveRecordRow (c : Ctx) (st : St) (ty : PTy) : Option PTy := do
   let .variable k := ty | none
   let (key, _) ← st.sumVariables.find? (fun (_, index) => index == k)
-  if !c.records.any (fun (name, _) => name == key) then none
+  if !c.recordIndex.contains key then none
   else
     let row ← st.sumBounds.lookup k
     if isRowTy row then some row else none
@@ -1532,7 +1542,7 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         | _ => fail "perform takes exactly one Plan"
       if let some (caseLabel, moduleName, sumName) := sumCase c callee env m then
         let key := moduleName ++ "." ++ sumName
-        let hasCase := match c.sums.find? (·.1 == key) with
+        let hasCase := match c.sum? key with
           | some (_, .sum _ cases) => cases.any (·.1 == caseLabel)
           | _ => false
         if !hasCase then fail ("sum " ++ key ++ " has no case " ++ caseLabel)
@@ -2074,7 +2084,7 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
   let mut fields := fields ++ [(key, value)]
   for (name, value, type) in (← get).hidden do
     fields := fields ++ [(name, value)]
-    modify fun st => { st with globalTypes := st.globalTypes ++ [(name, type)] }
+    modify fun st => { st with globalTypes := st.globalTypes.insertIfNew name type }
   modify fun st => { st with hidden := #[] }
   return fields
 
@@ -2229,7 +2239,10 @@ def context (modules : List Module) : Except String Ctx := do
         | .record .. => records := records ++ [(key, d)]
         | _ => sums := sums ++ [(key, d)]
       | _ => pure ()
-  return ⟨modules, decls, records, sums⟩
+  let index := fun {α : Type} (entries : List (String × α)) =>
+    entries.foldl (fun (map : Std.HashMap String α) (key, value) =>
+      if map.contains key then map else map.insert key value) {}
+  return { modules, decls, records, sums, declIndex := index decls, recordIndex := index records, sumIndex := index sums }
 
 /-- Elaborate every declaration of a closure once. -/
 def elaboratePackage (modules : List Module) : Except String Elaborated := do
@@ -2332,6 +2345,12 @@ def InternKey.json : InternKey → Json
 structure Interner where
   table : Array Json := #[]
   seen : Std.HashMap InternKey Nat := {}
+  /-- The slot of each composite type object already walked, by its address: read and written
+  only by the compiled `PTy.internSlot` (`internSlotShared`); the definition never touches it.
+  Sound because one interning walks objects that all exist before it starts (it allocates no
+  `PTy`), so an address names one object for the whole walk. An `Interner` is never reused
+  across walks. -/
+  shared : Std.HashMap USize Slot := {}
 
 abbrev InternM := StateM Interner
 
@@ -2340,9 +2359,29 @@ def internNode (key : InternKey) : InternM Slot := do
   match s.seen[key]? with
   | some i => return .ref i
   | none =>
-    set ({ table := s.table.push key.json, seen := s.seen.insert key s.table.size } : Interner)
+    set ({ s with table := s.table.push key.json, seen := s.seen.insert key s.table.size } : Interner)
     return .ref s.table.size
 
+/-- `PTy.internSlot`, walking each shared subtree once: the elaborator builds a type once and
+refers to it from many annotations, so a type object met again has its slot already. -/
+unsafe def PTy.internSlotShared (t : PTy) : InternM Slot := do
+  match t with
+  | .natural | .boolean | .label | .emptyRow | .variable _ | .data => return .leaf t
+  | _ =>
+    let address := ptrAddrUnsafe t
+    if let some slot := (← get).shared[address]? then return slot
+    let slot ← match t with
+      | .arrow r q d c => do internNode (.arrow r q (← d.internSlotShared) (← c.internSlotShared))
+      | .field n m t => do internNode (.field n (← m.internSlotShared) (← t.internSlotShared))
+      | .specification m e => do internNode (.specification (← m.internSlotShared) (← e.internSlotShared))
+      | .prototype s t => do internNode (.prototype (← s.internSlotShared) (← t.internSlotShared))
+      | .variant r => do internNode (.variant (← r.internSlotShared))
+      | .computation p r a => do internNode (.computation (← p.internSlotShared) (← r.internSlotShared) (← a.internSlotShared))
+      | _ => return .leaf t
+    modify fun s => { s with shared := s.shared.insert address slot }
+    return slot
+
+@[implemented_by PTy.internSlotShared]
 def PTy.internSlot (t : PTy) : InternM Slot := do
   match t with
   | .natural | .boolean | .label | .emptyRow | .variable _ | .data => return .leaf t
@@ -2372,8 +2411,14 @@ def internProposal (annotations : List Annotation) (row : PTy) (bounds : List (N
     return Json.mkObj [("index", toString k), ("type", type)]
   return (annotationJson, Json.mkObj [("index", "0"), ("type", globalType)] :: sumJson)
 
-/-- The typing-proposal fields that translation validation compares. -/
-def proposalJson (out : Output) : Except String Json := do
+/-- The typing proposal as Lean data: the annotations, the knot row and the sum bounds
+(sorted by index), or why there is none. -/
+structure Proposed where
+  annotations : List Annotation
+  row : PTy
+  bounds : List (Nat × PTy)
+
+def propose (out : Output) : Except String Proposed := do
   let bounds := out.sumBounds.mergeSort (fun a b => a.1 ≤ b.1)
   -- A lambda whose type did not resolve names the downstream symptom; the type error the
   -- resolver recorded first is the cause, so the refusal leads with it.
@@ -2383,6 +2428,11 @@ def proposalJson (out : Output) : Except String Json := do
       | some cause => cause ++ " (" ++ e ++ ")"
       | none => e)
   let some row := out.knotRow | throw (out.typeErrors[0]?.getD "global row unresolved")
+  return ⟨annotations, row, bounds⟩
+
+/-- The typing-proposal fields that translation validation compares. -/
+def proposalJson (out : Output) : Except String Json := do
+  let ⟨annotations, row, bounds⟩ ← propose out
   let ((annotationJson, boundJson), interner) := (internProposal annotations row bounds).run {}
   return Json.mkObj [("types", Json.arr interner.table),
     ("annotations", Json.arr annotationJson.toArray),
