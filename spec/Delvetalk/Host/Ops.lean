@@ -718,6 +718,14 @@ def tagOf (entry : Json) : String :=
   | .ok tag => tag
   | .error _ => "unknown"
 
+/-- Refusals a retry may outrun: a root moved, a machine budget ran out, an evaluation
+    failed. They are journaled but do not bind the identity's outcome. -/
+def transientClasses : List String := ["staleRoot", "budget", "evaluation"]
+
+def isTransient (entry : Json) : Bool :=
+  tagOf entry == "refused" &&
+    ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)).any transientClasses.contains
+
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.entries.size
@@ -748,10 +756,12 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
     suspended := (match (entry.getObjValAs? String "resumes").toOption with
         | some h => w.suspended.filter fun s => (s.getObjValAs? String "hash").toOption != some h
         | none => w.suspended) ++ (if tagOf entry == "suspended" then #[entry] else #[])
-    -- A suspended identity is not settled: its final entry takes over the receipt.
+    -- A suspended identity is not settled, nor one refused transiently: its next entry takes
+    -- over the receipt.
     receipts := match w.receipts[key]? with
       | none => w.receipts.insert key index
-      | some i => if tagOf w.entries[i]! == "suspended" then w.receipts.insert key index else w.receipts
+      | some i => if tagOf w.entries[i]! == "suspended" || isTransient w.entries[i]! then w.receipts.insert key index
+          else w.receipts
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched }
 
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
@@ -780,8 +790,11 @@ def retained (w : World) (principal intent digest : String) : Option Json :=
   | none => none
   | some index =>
     let entry := w.entries[index]!
+    let same := (entry.getObjValAs? String "request").toOption == some digest
     if tagOf entry == "suspended" then none
-    else if (entry.getObjValAs? String "request").toOption == some digest then some (reply entry)
+    -- A transient refusal does not bind the identity: the retry runs (and is judged) again.
+    else if isTransient entry then none
+    else if same then some (reply entry)
     else some (duplicate principal intent entry)
 
 /-- The commit rule. Pure: the turn loop calls this with the roots it recorded and

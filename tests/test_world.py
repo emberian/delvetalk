@@ -285,9 +285,25 @@ class Retry(WorldCase):
         self.assertEqual(self.view()["version"], 1)
         self.assertEqual(len(self.lines()), height)
 
-    def test_retry_of_a_refusal_returns_the_same_refusal(self):
+    def test_retry_of_a_law_refusal_returns_the_same_refusal_and_no_entry(self):
+        self.create("b", source=BOUNDED)
+        first = self.propose("p1", [root("b", 0)], [write("b", add("count", 6))])
+        self.assertEqual(first["receipt"]["outcome"]["class"], "lawRefused")
+        height = self.host.send(op="world-status")["height"]
+        self.assertEqual(self.propose("p1", [root("b", 0)], [write("b", add("count", 6))]), first)
+        self.assertEqual(self.host.send(op="world-status")["height"], height)
+
+    def test_a_stale_refusal_does_not_bind_the_identity_and_the_reread_retry_commits(self):
         first = self.propose("p1", [root("c1", 9)], [write("c1", add("count", 1))])
-        self.assertEqual(self.propose("p1", [root("c1", 9)], [write("c1", add("count", 1))]), first)
+        self.assertEqual(first["receipt"]["outcome"]["class"], "staleRoot")
+        again = self.propose("p1", [root("c1", 9)], [write("c1", add("count", 1))])
+        self.assertEqual(again["receipt"]["outcome"]["class"], "staleRoot")
+        self.assertNotEqual(again["receipt"]["hash"], first["receipt"]["hash"])   # judged again, journaled again
+        reread = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
+        self.assertEqual(reread["status"], "admitted", reread)
+        self.assertEqual(self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))]), reread)
+        receipt = self.host.send(op="world-receipt", principal="ember", identity="p1")
+        self.assertEqual(receipt["receipt"]["hash"], reread["receipt"]["hash"])
 
     def test_same_identity_with_a_different_request_is_duplicate_identity_and_writes_nothing(self):
         first = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])

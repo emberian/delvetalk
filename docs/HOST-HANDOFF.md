@@ -85,8 +85,10 @@ Request errors (`Except.error`) journal nothing; refusals are receipts.
 One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`,
 `roots [{object, version}]`, `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
 compressed entry without `hash`. Genesis `previous` is 64 zeros. `identityKey` = compressed
-`[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except a suspension is
-replaced by the identity's final entry).
+`[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except that a suspension or a
+transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`: staleRoot,
+budget, evaluation) are journaled but do not bind: `retained`/`retainedTurn` let a retry with the same identity run
+and be judged again (whatever its request); admitted outcomes and every other refusal bind.
 
 Sources by CID: compile inputs in `created.compile`, `creates[].compile` and suspended activities name each
 module as `{name, cid}` (`sourceCid` for a bare source); the first entry that needs a source carries it in a

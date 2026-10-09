@@ -327,6 +327,47 @@ class Projection(Reflection):
         self.assertEqual(self.host.send(op="world-history", object="lamp")["status"], "error")
 
 
+class Transient(Reflection):
+    """staleRoot, budget and evaluation refusals are journaled but do not bind the identity."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("teller", TELLER, record(note=label("")))
+
+    def test_a_stale_root_refusal_retried_succeeds_once_the_root_is_reread(self):
+        waiting = self.turn("teller", "waitAndTell", principal="kim", identity="w")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        # The teller moves while kim waits; the resumed turn read the old version.
+        self.turn("teller", "tell", record(to=label("x"), text=label("moved")), principal="ann")
+        settler = self.turn("teller", "tell", record(to=label("x"), text=label("x")), principal="glm", identity="x")
+        [stale] = settler["resumed"]
+        self.assertEqual(stale["receipt"]["outcome"]["class"], "staleRoot", stale)
+        again = self.turn("teller", "waitAndTell", principal="kim", identity="w")
+        self.assertEqual((again["status"], again["result"]), ("admitted", label("told")), again)
+        self.assertEqual(self.offers(), ["woken"])
+        receipt = self.host.send(op="world-receipt", principal="kim", identity="w")
+        self.assertEqual(receipt["receipt"]["hash"], again["receipt"]["hash"])
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-receipt", principal="kim", identity="w"), receipt)
+        retry = self.turn("teller", "waitAndTell", principal="kim", identity="w")
+        self.assertEqual(retry["receipt"], again["receipt"])
+
+    def test_a_budget_refusal_is_retried_under_the_same_identity_and_then_commits(self):
+        tight = self.host.send(op="world-turn", principal="kim", object="teller", method="tell", identity="b",
+                               argument=record(to=label(""), text=label("t")), limits={"ticks": "5"})
+        self.assertEqual(tight["receipt"]["outcome"]["class"], "budget", tight)
+        again = self.host.send(op="world-turn", principal="kim", object="teller", method="tell", identity="b",
+                               argument=record(to=label(""), text=label("t")), limits={"ticks": "5"})
+        self.assertNotEqual(again["receipt"]["hash"], tight["receipt"]["hash"])
+        roomy = self.host.send(op="world-turn", principal="kim", object="teller", method="tell", identity="b",
+                               argument=record(to=label(""), text=label("t")))
+        self.assertEqual(roomy["status"], "admitted", roomy)
+
+    def offers(self):
+        return [o["text"] for o in self.host.send(op="world-offers", principal="kim")["offers"]]
+
+
 class Settings(Reflection):
     def test_a_named_clock_alone_moves_the_clock_and_confirms_posts(self):
         r = self.host.send(op="world-open", path=self.path, library=self.library(), principal="ember", clock="transport")

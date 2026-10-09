@@ -661,7 +661,9 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
   | none => none
   | some index =>
     let entry := w.entries[index]!
-    if (entry.getObjValAs? String "turnRequest").toOption == some r.digest then some (turnReply (reply entry))
+    let same := (entry.getObjValAs? String "turnRequest").toOption == some r.digest
+    if isTransient entry then none
+    else if same then some (turnReply (reply entry))
     else some (duplicate r.principal r.intent entry)
 
 /-- What a turn knows about how it began: the ledger it runs under and, for a
