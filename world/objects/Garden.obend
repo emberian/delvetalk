@@ -124,6 +124,7 @@ sum Reply:
   shown: {}
   merged: {post: String}
   changed: {}
+  silent: {}
 # A colour by name, or none: a name outside the three is refused, never defaulted.
 def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
   if name == "amber" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.amber({})}) else if name == "violet" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.violet({})}) else if name == "silver" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.silver({})}) else Lists.Maybe::<Bell.Colour>.none({})
@@ -205,9 +206,42 @@ def understand(state: State, input: Card.Heard, context: Abi.Context, found: Hel
 def interpreted(state: State, input: Card.Heard, context: Abi.Context, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.interpret({utterance: input.text, offers: Lists.List::<Form.Form>.cons({head: plantForm(context), tail: Lists.List::<Form.Form>.nil()}), policy: state.policy})):
     case proposal(p): named(state, context, found, confirm, p.argument.colour, p.argument.seed)
-    case unclear(u): told(found, context, Reply.unclear({needs: u.needs}), needsCard(u.needs))
+    case unclear(u): if notAddressed(u.needs) then silent(found, context) else told(found, context, Reply.unclear({needs: u.needs}), needsCard(u.needs))
+    case replied(r): readBack(state, context, heardBack(r.text), confirm, found)
     case denied(_): told(found, context, Reply.refused({reason: "The garden's policy is not visible to you."}), refusedCard("The garden's policy is not visible to you."))
     case _: told(found, context, Reply.refused({reason: "I could not make sense of that."}), refusedCard("I could not make sense of that."))
+# The model's own words, when the host hands them back as text (`replied {text}`): a
+# spell is fitted to the plant form here, in Bend, as a typed one is; `unclear: <need>`
+# names what is missing; `unclear: not addressed` (prose that names no card) and
+# anything else end the turn with no card at all.
+sum Back:
+  spell: {parsed: Spell.Parsed}
+  unclear: {need: String}
+  silent: {}
+def heardBack(text: String) -> Back:
+  backOf(Spell.parse(text), textDrop(text, textSpan(text, " \n\t\r")))
+def backOf(parsed: Spell.Parsed, text: String) -> Back:
+  match parsed:
+    case spell(_): Back.spell({parsed: parsed})
+    case notASpell(_): if textTake(text, 8n) == "unclear:" then needOf(Spell.trimEnd(Spell.trimStart(textTake(textDrop(text, 8n), textBreak(textDrop(text, 8n), "\n"))))) else Back.silent({})
+def needOf(need: String) -> Back:
+  if need == "" || need == "not addressed" then Back.silent({}) else Back.unclear({need: need})
+def notAddressed(needs: Form.Names) -> Bool:
+  Lists.any::<String>(needs, fn(need: String) -> Bool: need == "not addressed")
+def readBack(state: State, context: Abi.Context, back: Back, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
+  match back:
+    case spell(s): judged(state, context, s.parsed, confirm, found)
+    case unclear(u): told(found, context, Reply.unclear({needs: Form.Names.cons({head: u.need, tail: Form.Names.nil()})}), needsCard(Form.Names.cons({head: u.need, tail: Form.Names.nil()})))
+    case silent(_): silent(found, context)
+# Not addressed to the garden: no card. A proposal the principal had waiting is dropped
+# (this prose replaced it), still without a card.
+def silent(found: Held, context: Abi.Context) -> Activity<Plan, Response, Reply>:
+  match found:
+    case none(_): Reply.silent({})
+    case some(_): quietly(context, forget(found))
+def quietly(context: Abi.Context, edit: Plans.Entries<Pending, Pending>) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})})):
+    case _: Reply.silent({})
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text(textConcat("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: ", textConcat(Spell.joined(needs), ".\n")))
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
