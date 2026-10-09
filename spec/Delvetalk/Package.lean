@@ -7,6 +7,7 @@ import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
 import Delvetalk.PackageData
 import Delvetalk.Reflection
+import Delvetalk.Turn
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -81,21 +82,7 @@ def argumentFields : List (String × Data) → Except String (List (String × Te
   | (k,v) :: rest => do return (k, ← argumentTerm v) :: (← argumentFields rest)
 end
 
-/-- Re-address the original annotation table when application wraps its term.
-The argument subtree is annotation-free first-order data, never raw code. -/
-def applyArgument (source : AnnotatedTerm) (argument : Term) : AnnotatedTerm :=
-  { source with
-    term := .app source.term argument
-    annotations := fun position => match position with
-      | 0 :: rest => source.annotations rest
-      | _ => none }
-
-def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat := do
-  let value ← match j.getObjVal? key with
-    | .error _ => pure fallback
-    | .ok x => jsonNat x
-  if value > cap then throw (key ++ " exceeds package capacity")
-  return value
+open Delvetalk.Turn (applyArgument bounded)
 
 /-- One global demand/extraction budget. No game rule or host authority lives here. -/
 def executePacket (packet arguments limits : Json) : Except String Json := do
@@ -417,6 +404,17 @@ def allocationDataTypes (j : Json) : Except String Json := do
   return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
     ("conversionNodes", toJson (work - remaining))]
 
+def turnStart (j : Json) : Except String Json := do
+  let artifact ← j.getObjVal? "artifact"
+  verifyArtifact artifact
+  Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
+
+def turnResume (j : Json) : Except String Json := do
+  let artifact ← j.getObjVal? "artifact"
+  verifyArtifact artifact
+  Delvetalk.Turn.resumeTurn (← artifact.getObjVal? "packet") (← j.getObjVal? "checkpoint")
+    (← j.getObjVal? "response") (getLimits j)
+
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
   | "source-imports-v1" =>
@@ -445,6 +443,8 @@ def job (j : Json) : Except String Json := do
       ("schema", toJson "delvetalk.document-template-expansion.v1")]
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
+  | "turn-start" => turnStart j
+  | "turn-resume" => turnResume j
   | "run-data-v1" => runData j
   | "run-compact" => runCompactData j
   | "encode-compact" => compactCodec j true

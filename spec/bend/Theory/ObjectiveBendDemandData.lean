@@ -289,6 +289,7 @@ of the sum's labels and its payload conforms. -/
 def Data.conforms : Data → Ty → Bool
   | .natural _, .natural | .boolean _, .boolean | .label _, .label => true
   | .record fields, row =>
+      (match row with | .field .. | .emptyRow => true | _ => false) &&
       fields.length == (rowNames row).length &&
       (fields.map Prod.fst).eraseDups.length == fields.length && fieldsConform fields row
   | .variant label payload, .variant row => match rowMember row label with
