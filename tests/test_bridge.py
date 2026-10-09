@@ -130,7 +130,8 @@ class Bridging(BridgeCase):
         self.observe([spell_post(1, 'stern', '2026-10-09T10:00:00Z')])
         self.run_bridge()
         (d,) = self.drafts()
-        self.assertEqual(d['text'], f"proposal observed, not committed\nreason: lawRefused\nreceipt: {d['receipt']['hash']}\n")
+        self.assertTrue(d['text'].startswith("proposal observed, not committed\nreason: lawRefused\n"), d['text'])
+        self.assertNotIn('seen', d['text'])  # no state field
 
     def test_unknown_card_yields_unknownObject_draft(self):
         self.observe([spell_post(1, 'nowhere', '2026-10-09T10:00:00Z')])
@@ -332,6 +333,33 @@ class RealOffers(test_outbound.Offers):
             (draft,) = list((Path(d) / "outbox").glob("*.json"))
             self.assertEqual(json.loads(draft.read_text())["text"], "hello")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
+
+
+class Projection(unittest.TestCase):
+    def test_a_refusal_draft_is_the_hosts_public_projection_verbatim_and_nothing_else(self):
+        reply = {'status': 'refused', 'receipt': {'hash': 'h', 'outcome': {'tag': 'refused', 'class': 'unknownObject', 'reason': 'SECRET state'}},
+                 'public': {'status': 'refused', 'class': 'unknownObject', 'root': {'object': 'nope'}, 'object': 'nope', 'hint': 'try garden'}}
+        text = bridge.draft_text(reply)
+        self.assertEqual(text, 'proposal observed, not committed\nreason: unknownObject\nroot: {"object":"nope"}\nobject: nope\nhint: try garden\n')
+        self.assertNotIn('SECRET', text)
+        reply['public'] = {'status': 'refused', 'class': 'lawRefused', 'root': {'object': 'm', 'version': 2}}
+        self.assertEqual(bridge.draft_text(reply), 'proposal observed, not committed\nreason: lawRefused\nroot: {"object":"m","version":2}\n')
+
+
+class Principals(BridgeCase):
+    def test_each_author_is_registered_once_by_the_clock_principal_at_their_first_post(self):
+        stub = Stub()
+        a, b = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')
+        b['author'] = {'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}
+        self.observe([a, b, spell_post(3, 'garden-1', '2026-10-09T10:00:02Z')])
+        bridge.run(self.state, stub)
+        regs = [o for o in stub.ops if o['op'] == 'world-principal']
+        self.assertEqual(regs, [{'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'},
+                                {'op': 'world-principal', 'principal': 'transport', 'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}])
+        first_turn = next(i for i, o in enumerate(stub.ops) if o['op'] == 'world-turn')
+        self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-principal')
+        bridge.run(self.state, stub)
+        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-principal']), 2)
 
 
 class Daemon(unittest.TestCase):
