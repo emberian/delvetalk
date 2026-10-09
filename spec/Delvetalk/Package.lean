@@ -8,6 +8,7 @@ import Theory.ObjectiveBendDemandData
 import Delvetalk.PackageData
 import Delvetalk.Reflection
 import Delvetalk.Turn
+import Delvetalk.Document
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -457,6 +458,7 @@ def job (j : Json) : Except String Json := do
       ("schema", toJson "delvetalk.document-template-expansion.v1")]
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
+  | "render-document" => Delvetalk.Document.renderOp j
   | "turn-start" => turnStart j
   | "turn-resume" => turnResume j
   | "run-data-v1" => runData j
