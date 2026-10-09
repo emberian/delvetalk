@@ -13,7 +13,7 @@ record Proposal:
 record State:
   proposals: Lists.List<Proposal>
 record Edits:
-  proposals: Plans.Entries<Proposal, Status>
+  proposals: Plans.Entries<Proposal, Proposal>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
@@ -21,11 +21,24 @@ def initial() -> State:
 # Submission only proposes; admission is the receiver's law, not the author's.
 def submit(state: State, input: {author: String, line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Proposal>(state.proposals)
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Status>.append({item: {author: input.author, line: input.line, status: Status.proposed({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.append({item: {author: input.author, line: input.line, status: Status.proposed({})}})}})):
     case written(_): count + 1n
     case _: count
+sum Found:
+  none: {}
+  some: {proposal: Proposal}
+def at(items: Lists.List<Proposal>, index: Nat) -> Found:
+  match items:
+    case nil(_): Found.none({})
+    case cons(c): if index == 0n then Found.some({proposal: c.head}) else at(c.tail, index - 1n)
+# The host replaces the item at the index by the change, so admission rewrites
+# the proposal with its status flipped.
 def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Status>.amend({index: input.index, change: Status.admitted({})})}})):
+  match at(state.proposals, input.index):
+    case none(_): false
+    case some(s): admitted(context, input.index, s.proposal)
+def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amend({index: index, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
     case written(_): true
     case _: false
 def statusName(status: Status) -> String:

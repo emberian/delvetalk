@@ -4,6 +4,7 @@
 This consumes the conformance JSON AST, not surface syntax. It implements no
 typechecker or host admission. A stuck untyped term is a legitimate result.
 """
+import hashlib
 import json
 import re
 import sys
@@ -13,7 +14,9 @@ if hasattr(sys, "set_int_max_str_digits"):
     sys.set_int_max_str_digits(0)
 
 PRIMITIVES = {"add", "multiply", "equal", "conjunction", "labelEqual",
-              "subtract", "divide", "less", "lessEqual", "modulo"}
+              "subtract", "divide", "less", "lessEqual", "modulo",
+              "textConcat", "textTake", "textDrop", "textSpan", "textBreak"}
+UNARY = {"natText", "textLength", "sha256Text"}
 VALUES = {"lam", "nat", "boolean", "label", "record", "specification",
           "prototype", "inject"}
 MAX_WIRE_INTEGER = 2**53 - 1
@@ -21,7 +24,7 @@ ARITIES = {"bound": 2, "lam": 2, "app": 3, "mix": 3, "fix": 3,
            "specification": 3, "prototype": 3, "reflect": 2, "metadata": 2,
            "project": 2, "nat": 2, "boolean": 2, "label": 2, "binary": 4,
            "extend": 3, "record": 2, "get": 3, "ifZero": 4, "inject": 3,
-           "case": 3, "ifBool": 4, "perform": 2, "done": 2}
+           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "unary": 3}
 
 
 def valid_string(value):
@@ -67,6 +70,10 @@ def validate(term):
             raise ValueError("unknown primitive")
         validate(term[2])
         validate(term[3])
+    elif tag == "unary":
+        if not isinstance(term[1], str) or term[1] not in UNARY:
+            raise ValueError("unknown unary primitive")
+        validate(term[2])
     else:
         for child in term[1:]:
             validate(child)
@@ -89,7 +96,7 @@ def walk(term, variable, depth=0):
         fields = [[key, walk(body, variable, depth + (tag == "case"))]
                   for key, body in term[-1]]
         return [tag, fields] if tag == "record" else [tag, walk(term[1], variable, depth), fields]
-    if tag in {"binary", "inject"}:
+    if tag in {"binary", "inject", "unary"}:
         return [tag, term[1], *[walk(child, variable, depth) for child in term[2:]]]
     if tag == "get":
         return [tag, walk(term[1], variable, depth), term[2]]
@@ -110,11 +117,34 @@ def instantiate(body, argument):
     return walk(body, variable)
 
 
+def prefix_length(text, alphabet, member):
+    count = 0
+    for c in text:
+        if (c in alphabet) != member:
+            break
+        count += 1
+    return count
+
+
 def primitive(name, left, right):
-    if name == "conjunction" and left[0] == right[0] == "boolean":
-        return ["boolean", left[1] and right[1]]
-    if name == "labelEqual" and left[0] == right[0] == "label":
-        return ["boolean", left[1] == right[1]]
+    if name == "conjunction":
+        return ["boolean", left[1] and right[1]] if left[0] == right[0] == "boolean" else None
+    if name == "labelEqual":
+        return ["boolean", left[1] == right[1]] if left[0] == right[0] == "label" else None
+    if name in {"textConcat", "textSpan", "textBreak"}:
+        if left[0] != "label" or right[0] != "label":
+            return None
+        if name == "textConcat":
+            return ["label", left[1] + right[1]]
+        return ["nat", str(prefix_length(left[1], right[1], name == "textSpan"))]
+    if name in {"textTake", "textDrop"}:
+        if left[0] != "label" or right[0] != "nat":
+            return None
+        text, n = left[1], int(right[1])
+        size = len(text.encode("utf-8"))
+        if name == "textTake":
+            return ["label", "" if n == 0 else text if n >= size else text[:n]]
+        return ["label", text if n == 0 else "" if n >= size else text[n:]]
     if left[0] != "nat" or right[0] != "nat":
         return None
     a, b = int(left[1]), int(right[1])
@@ -139,6 +169,16 @@ def primitive(name, left, right):
     return ["nat", str(n)]
 
 
+def unary(name, argument):
+    if name == "natText" and argument[0] == "nat":
+        return ["label", argument[1]]
+    if name == "textLength" and argument[0] == "label":
+        return ["nat", str(len(argument[1]))]
+    if name == "sha256Text" and argument[0] == "label":
+        return ["label", hashlib.sha256(argument[1].encode("utf-8")).hexdigest()]
+    return None
+
+
 def focus(term):
     """Return the unique evaluation-position redex and its outer context.
 
@@ -152,6 +192,8 @@ def focus(term):
         if tag in {"app", "get", "extend", "reflect", "metadata", "project",
                    "ifZero", "ifBool", "case"} and term[1][0] not in VALUES:
             index = 1
+        elif tag == "unary" and term[2][0] not in VALUES:
+            index = 2
         elif tag == "binary":
             if term[2][0] not in VALUES:
                 index = 2
@@ -196,6 +238,8 @@ def contract(term):
         return ["record", term[2] + [field for field in term[1][1] if field[0] not in keys]]
     elif tag == "binary":
         return primitive(*term[1:])
+    elif tag == "unary":
+        return unary(*term[1:])
     elif tag == "ifZero" and term[1][0] == "nat":
         n = int(term[1][1])
         return term[2] if n == 0 else instantiate(term[3], ["nat", str(n - 1)])
@@ -225,8 +269,9 @@ def reducible(term):
     if tag == "get":
         return term[1][0] == "record" and any(key == term[2] for key, _ in term[1][1])
     if tag == "binary":
-        scalar = {"conjunction": "boolean", "labelEqual": "label"}.get(term[1], "nat")
-        return term[2][0] == term[3][0] == scalar
+        return primitive(*term[1:]) is not None
+    if tag == "unary":
+        return unary(*term[1:]) is not None
     if tag == "ifZero":
         return term[1][0] == "nat"
     if tag == "ifBool":
