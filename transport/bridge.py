@@ -90,23 +90,24 @@ def offer_drafts(state, host):
     waiting = [json.loads(p.read_text()) for p in sorted((Path(state) / 'awaiting').glob('*.json'))]
     drafted = []
     for principal in dict.fromkeys(w['principal'] for w in waiting):
-        mine = {w['uri']: w for w in waiting if w['principal'] == principal}
+        mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
         after, grouped = min(w['height'] for w in mine.values()) - 1, {}
         while True:
             got = host.send({'op': 'world-offers', 'principal': principal, 'after': max(0, after)})
             if got.get('status') != 'offers':
                 break
             for o in got['offers']:
-                if o['identity'] in mine:
-                    grouped.setdefault(o['identity'], []).append(o)
+                who = o['identity']  # the host's {principal, intent}
+                if isinstance(who, dict) and (who.get('principal'), who.get('intent')) in mine:
+                    grouped.setdefault((who['principal'], who['intent']), []).append(o)
             if not got.get('more') or not got['offers']:
                 break
             after = got['offers'][-1]['height']
-        for uri, offers in grouped.items():
+        for (_, uri), offers in grouped.items():
             key = hashlib.sha256(f'{principal}\0{uri}'.encode()).hexdigest()[:16]
             if any(outbox.glob(f'*-off-{key}.json')):
                 continue
-            w = mine[uri]
+            w = mine[(principal, uri)]
             write_atomic(outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
