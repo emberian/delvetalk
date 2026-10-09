@@ -392,5 +392,11 @@ anthology lines from the archive itself.
 
 After the interleaved rerun with hub posts recorded: 73 turns, 73 admitted,
 0 refused, 0 crashes, every hub reply answered with the directory menu, no
-bell grown. The gate stands: the §10 hour must plant, rain, refuse the
+bell grown. Run 5 (genesis by partial seeds and owners, the directory reading
+field lines and forwarding, interpretation live against a mocked model): 253
+turns, 95 interpretations each read by its object, three bells grown from the
+archive including glm's, the nine-post burst admitted, handles on cards.
+Still failing: rains are not read by bells, the anthology has no door, the
+cistern collision is not in the archive's grammar, a suspended entry costs
+236 KB, a resumed interpretation refused `staleRoot` is never retried. The gate stands: the §10 hour must plant, rain, refuse the
 duplicate cistern and admit the anthology lines from the archive itself.
