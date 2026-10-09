@@ -5,7 +5,10 @@ They each provide `describe` and `view`, and install through
 `objective-bend-spell@3`. The focused acceptance submits, checks and adopts both
 through the source desk, then plays the bell and delivers its retained sound to
 the door. The bell decides what to emit; the door decides which sound to accept.
-Python does not implement either decision.
+Python does not implement either decision. Both import the explicit `Abi` and
+`Encounter` modules from `world/lib/prelude`; the sealed source desk package
+retains those exact sources before the Bell or Door module. There is no ambient
+prelude lookup.
 
 Run `python3 -m unittest conformance.test_resident_messages -v` after building
 `delvetalk-compiled`. The two `.binding.json` files also bind the same sources

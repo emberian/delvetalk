@@ -1,0 +1,14 @@
+edition ObjectiveBend 1
+import ./Encounter.obend as E
+record Shelf:
+  children: E.Children
+extension Door(self: Shelf, super: Shelf) -> Shelf:
+  {children: E.childrenOffer(super.children, {key: "door", label: "Listening door", object: "door", panel: "main"}, 2n)}
+extension Bell(self: Shelf, super: Shelf) -> Shelf:
+  {children: E.childrenOffer(super.children, {key: "bell", label: "Courtyard bell", object: "bell", panel: "main"}, 2n)}
+def count() -> Nat:
+  let shelf: Shelf = fix(compose(Door, Bell), {children: E.Children.nil()}) in E.childrenLength(shelf.children)
+def bounded() -> Nat:
+  let shelf: Shelf = fix(compose(Door, Bell), {children: E.Children.nil()}) in E.childrenLength(E.childrenOffer(shelf.children, {key: "third", label: "Third", object: "third", panel: "main"}, 2n))
+def revised() -> Nat:
+  let shelf: Shelf = fix(compose(Door, Bell), {children: E.Children.nil()}) in E.childrenLength(E.childrenRemove(shelf.children, "door"))

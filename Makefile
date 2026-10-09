@@ -32,6 +32,7 @@ packages:
 	python3 conformance/test_package_collections.py
 	python3 conformance/test_reflection.py
 	python3 conformance/test_frontend_abstractions.py
+	python3 conformance/test_source_prelude.py
 	python3 conformance/test_automatafl.py
 	python3 conformance/test_automatafl_audit.py
 world:

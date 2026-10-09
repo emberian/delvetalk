@@ -27,7 +27,7 @@ history = module('resident_messages_history', 'scripts/history.py')
 
 
 def source_protocol(name):
-    return bundle.load(FIXTURES / (name.lower() + '.binding.json'), [(name, FIXTURES / (name + '.obend'))])
+    return bundle.load(FIXTURES / (name.lower() + '.binding.json'), [(n, ROOT / 'world/lib/prelude' / (n + '.obend')) for n in ('Abi', 'Encounter')] + [(name, FIXTURES / (name + '.obend'))])
 
 
 def law(command, actors):
@@ -286,12 +286,17 @@ class ResidentMessages(unittest.TestCase):
         for name in ('Door', 'Bell'):
             identity = name.lower()
             candidate = identity + '-source'
-            source = (FIXTURES / (name + '.obend')).read_bytes()
-            authored = translate.translate('objective-bend-spell@3', source)['lowered']
+            store = module('resident_messages_store', 'scripts/source_store.py')
+            paths = [(n, ROOT / 'world/lib/prelude' / (n + '.obend')) for n in ('Abi', 'Encounter')] + [(name, FIXTURES / (name + '.obend'))]
+            entries = [{'name': n, 'sourceRef': store.store_bytes(worker.artifact_store, p.read_bytes(), kind='source')} for n, p in paths]
+            manifest = store.seal_modules(entries)
+            material = store.resolve_modules(worker.artifact_store, manifest)
+            authored = translate.translate_modules('objective-bend-spell@3', material)['lowered']
+            proposal = store.prepare_module_proposal(worker.artifact_store, manifest,
+                (FIXTURES / (identity + '.scenarios.json')).read_bytes(), syntax='objective-bend-spell@3')
             root = worker.create(candidate, 'builder', 'create-' + candidate, ['builder'])['data']['root']
-            pending = worker.submit(candidate, 'builder', 'submit-' + candidate, root,
-                'objective-bend-spell@3', source, (FIXTURES / (identity + '.scenarios.json')).read_bytes(),
-                authored['initial'], identity)['data']['root']
+            pending = worker.submit_refs(candidate, 'builder', 'submit-' + candidate, root,
+                proposal, authored['initial'], identity)['data']['root']
             checked = worker.check(candidate, 'builder', 'check-' + candidate, pending)
             self.assertEqual(checked['kind'], 'committed', checked)
             ready = checked['data']['root']

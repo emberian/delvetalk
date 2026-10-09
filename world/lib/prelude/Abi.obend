@@ -1,0 +1,23 @@
+edition ObjectiveBend 1
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Event:
+  id: String
+  source: String
+  sourceProgram: String
+  originatingPrincipal: String
+record StringField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record NatField:
+  type: String
+  minimum: Nat
+  maximum: Nat

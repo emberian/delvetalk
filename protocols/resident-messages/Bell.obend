@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
 record State:
   notes: Nat
   lastBy: String
@@ -7,15 +9,6 @@ record Input:
   recipientProgram: String
   chord: String
   voices: Nat
-record Origin:
-  kind: String
-  object: String
-  command: String
-  immediatelyPrevious: Bool
-record Context:
-  object: String
-  principal: String
-  inputOrigin: Origin
 record Payload:
   chord: String
 record Emission:
@@ -40,19 +33,11 @@ record Decision:
   emissions: Slots
 def voice(input: Input, enabled: Bool) -> Emission:
   {enabled: enabled, to: input.to, command: "hear", recipientProgram: input.recipientProgram, payload: {chord: input.chord}}
-def play(state: State, input: Input, context: Context) -> Decision:
+def play(state: State, input: Input, context: Abi.Context) -> Decision:
   {accepted: input.voices <= 4n, reason: if input.voices <= 4n then "" else "The bell has four voices.", state: {notes: state.notes + 1n, lastBy: context.principal}, result: {playedBy: context.principal, notes: state.notes + 1n}, emissions: {a: voice(input, input.voices >= 1n), b: voice(input, input.voices >= 2n), c: voice(input, input.voices >= 3n), d: voice(input, input.voices >= 4n)}}
-record StringField:
-  type: String
-  minLength: Nat
-  maxLength: Nat
-record NatField:
-  type: String
-  minimum: Nat
-  maximum: Nat
 record Form:
   label: String
-  fields: {to: StringField, recipientProgram: StringField, chord: StringField, voices: NatField}
+  fields: {to: Abi.StringField, recipientProgram: Abi.StringField, chord: Abi.StringField, voices: Abi.NatField}
 record Description:
   name: String
   initial: State
@@ -60,18 +45,10 @@ record Description:
   panels: {}
 def describe() -> Description:
   {name: "Courtyard play", initial: {notes: 0, lastBy: ""}, methods: {play: {label: "play", fields: {to: {type: "string", minLength: 1, maxLength: 128}, recipientProgram: {type: "string", minLength: 1, maxLength: 128}, chord: {type: "string", minLength: 1, maxLength: 128}, voices: {type: "nat", minimum: 0, maximum: 4}}}}, panels: {}}
-record Child:
-  key: String
-  label: String
-  object: String
-  panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
   actions: {}
-  children: Children
+  children: Encounter.Children
 def view(state: State, panel: String) -> View:
-  {title: "The courtyard bell", prose: "A chord travels across the courtyard even after its player leaves.", actions: {}, children: Children.nil()}
+  {title: "The courtyard bell", prose: "A chord travels across the courtyard even after its player leaves.", actions: {}, children: Encounter.Children.nil()}

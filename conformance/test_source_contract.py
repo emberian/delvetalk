@@ -299,7 +299,7 @@ class SourceContract(unittest.TestCase):
         door_root = made['data']['root']
         source = (ROOT / 'protocols/resident-messages/Bell.obend').read_text()
         bell = json.loads((ROOT / 'protocols/resident-messages/bell.binding.json').read_text())
-        bell['commands']['play']['transition']['package']['modules'] = [{'name': 'Bell', 'source': source}]
+        bell['commands']['play']['transition']['package']['modules'] = [{'name': n, 'source': (ROOT / 'world/lib/prelude' / (n + '.obend')).read_text()} for n in ('Abi', 'Encounter')] + [{'name': 'Bell', 'source': source}]
         bell_root = self.create(bell, ['visitor'], 'bell')['data']['root']
         hasher = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'hash': {
             'require': [], 'set': {}, 'outbox': [], 'result': ['program-digest', ['input', 'program']]}}}
