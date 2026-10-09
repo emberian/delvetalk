@@ -44,9 +44,9 @@ def initial() -> State:
 def keep() -> Edits:
   {model: Plans.Edit::<String, {}>.keep({}), escalate: Plans.Edit::<String, {}>.keep({}), system: Plans.Edit::<String, {}>.keep({}), lexicon: Plans.Entries::<Term, {}>.keep({}), examples: Plans.Entries::<Example, {}>.keep({})}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
-# stranger by name before writing. With the host's `request.method` the law becomes
-#   owner: request.kind == 0 and request.method == "describe" or request.subject == new.owner
-law owner: new.owner == request.subject
+# stranger by name before writing. `describe` is the one method open to everyone: it
+# writes nothing today, and a describe that ever wrote would be the package's to answer.
+law owner: (request.kind == 0 and request.method == "describe") or request.subject == new.owner
 sum Taught:
   taught: {count: Nat}
   refused: {reason: String}

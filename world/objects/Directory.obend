@@ -9,9 +9,12 @@ record Door:
   description: String
   to: Plans.Reference
 record State:
+  owner: String
   doors: Lists.List<Door>
-# A creator supplies a Seed; seeded makes the child's State from it.
-type Seed = {}
+# A creator supplies a Seed; seeded makes the child's State from it. The owner is the
+# DID (or principal) who curates the doors.
+record Seed:
+  owner: String
 record Edits:
   doors: Plans.Entries<Door, {}>
 type Plan = Plans.Plan<Edits>
@@ -19,10 +22,14 @@ type Response = Plans.Response<State, {}>
 sum Answer:
   done: {}
   refused: {reason: String}
+# Only the owner adds or removes a door: the law judges every write (a stranger's add is
+# refused with clause owner), and a law in source means a Directory is made with
+# world-create, never by a creator that imports it.
+law owner: request.subject == new.owner
 def defaultSeed() -> Seed:
-  {}
+  {owner: ""}
 def seeded(seed: Seed) -> State:
-  {doors: Lists.List::<Door>.nil()}
+  {owner: seed.owner, doors: Lists.List::<Door>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Nat>:

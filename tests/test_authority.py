@@ -199,20 +199,17 @@ class DefaultLaw(Authority):
 
 
 class LawsOnWho(Authority):
-    def test_directory_remove_by_a_stranger_is_admitted_only_if_the_directorys_law_allows_it(self):
-        law = 'law curator: request.kind == 0 implies request.subject == "ember"\n'
-        with open("world/objects/Directory.obend") as handle:
-            directory = handle.read().replace("def initial", law + "def initial", 1)
+    def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
         door = record(label=label("garden"), description=label("a garden"), to=reference("garden"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="dir",
-                           modules=closure("Directory", override={"Directory": directory}), entry="initial",
-                           seed=record(doors=nil()))
+                           modules=closure("Directory"), entry="initial",
+                           seed=record(owner=label("ember"), doors=nil()))
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("dir", "add", record(door=door))["status"], "admitted")
         version = self.version("dir")
         stranger = self.turn("dir", "remove", record(label=label("garden")), principal="kim")
         self.assertEqual((stranger["status"], self.outcome(stranger)["class"], self.outcome(stranger)["clause"]),
-                         ("refused", "lawRefused", "curator"))
+                         ("refused", "lawRefused", "owner"))
         self.assertEqual(self.version("dir"), version)
         owner = self.turn("dir", "remove", record(label=label("garden")))
         self.assertEqual(owner["status"], "admitted", owner)
