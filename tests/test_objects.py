@@ -116,7 +116,7 @@ def bells(n: Nat) -> Lists.List<Plans.Reference>:
     case 0: Lists.List::<Plans.Reference>.nil()
     case 1+p: Lists.append::<Plans.Reference>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n))})
 def shown(n: Nat) -> String:
-  Document.plain(O.render({planted: n, policy: Plans.nobody(), confirm: true, pending: Lists.List::<O.Pending>.nil(), children: bells(n)}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirm: true, pending: Lists.List::<O.Pending>.nil(), children: bells(n), pageCheckpoint: ""}, Card.stranger()))
 """
 
 DOC_PROBE = """edition ObjectiveBend 1

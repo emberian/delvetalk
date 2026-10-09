@@ -15,19 +15,26 @@ record Pending:
 # children: the bells planted here, oldest first, written on each create.
 # confirm: whether a proposal understood from prose waits for "yes" (the garden's
 # stance; the policy only interprets).
+# owner: the human who owns the garden's wiki page (its `merge` checkpoints it, and only
+# the owner changes confirm). pageCheckpoint: the post the last merge answered.
 record State:
+  owner: String
   planted: Nat
   policy: Plans.Reference
   confirm: Bool
   pending: Lists.List<Pending>
   children: Lists.List<Plans.Reference>
+  pageCheckpoint: String
 record Edits:
   planted: Plans.Edit<Nat, Nat>
+  confirm: Plans.Edit<Bool, {}>
   pending: Plans.Entries<Pending, Pending>
   children: Plans.Entries<Plans.Reference, {}>
+  pageCheckpoint: Plans.Edit<String, {}>
 # A creator supplies a Seed; the host lays it over initial(). The garden's own creates
 # carry Data: a Bell.Seed, and nothing for a cistern.
 record Seed:
+  owner: String
   policy: Plans.Reference
   confirm: Bool
   pending: Lists.List<Pending>
@@ -40,14 +47,18 @@ record Planting:
   seed: String
 # The garden views nothing; interpret names the policy by reference.
 type Response = Plans.Response<State, Planting>
+# Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
+# policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
+# first, by name; this law refuses the same write proposed any other way).
+law owner: request.subject == new.owner or (unchanged(owner) and unchanged(confirm) and unchanged(policy) and unchanged(pageCheckpoint))
 def defaultSeed() -> Seed:
-  {policy: Plans.nobody(), confirm: true, pending: Lists.List::<Pending>.nil()}
+  {owner: "", policy: Plans.nobody(), confirm: true, pending: Lists.List::<Pending>.nil()}
 def seeded(seed: Seed) -> State:
-  {planted: 0n, policy: seed.policy, confirm: seed.confirm, pending: seed.pending, children: Lists.List::<Plans.Reference>.nil()}
+  {owner: seed.owner, planted: 0n, policy: seed.policy, confirm: seed.confirm, pending: seed.pending, children: Lists.List::<Plans.Reference>.nil(), pageCheckpoint: ""}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {planted: Plans.Edit::<Nat, Nat>.keep({}), pending: Plans.Entries::<Pending, Pending>.keep({}), children: Plans.Entries::<Plans.Reference, {}>.keep({})}
+  {planted: Plans.Edit::<Nat, Nat>.keep({}), confirm: Plans.Edit::<Bool, {}>.keep({}), pageCheckpoint: Plans.Edit::<String, {}>.keep({}), pending: Plans.Entries::<Pending, Pending>.keep({}), children: Plans.Entries::<Plans.Reference, {}>.keep({})}
 sum Made:
   made: {object: Plans.Reference}
   refused: {clause: String}
@@ -83,7 +94,7 @@ def childLine(reference: Plans.Reference) -> Document.Document:
 # bells, newest first, eight of them and a count of the rest.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let head = Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(waiting(state, context), textConcat("To plant, reply:\n\n    delvetalk ", textConcat(if context.object == "" then "garden" else context.object, textConcat(" plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n", textConcat(natText(state.planted), " planted, newest first:\n")))))))
+  let head = Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(waiting(state, context), textConcat("To plant, reply:\n\n    delvetalk ", textConcat(if context.object == "" then "garden" else context.object, textConcat(" plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n", textConcat(Card.checkpointLine(state.pageCheckpoint), textConcat(natText(state.planted), " planted, newest first:\n"))))))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map::<Plans.Reference, Document.Document>(Lists.reverse::<Plans.Reference>(state.children), childLine), 8n)})})
 # The garden's page: its card, how to reply, then one section per bell, newest first,
 # sixteen of them; the card section counts the rest.
@@ -111,6 +122,7 @@ sum Reply:
   confirming: {spell: String}
   cleared: {}
   shown: {}
+  merged: {post: String}
 # A colour by name, or none: a name outside the three is refused, never defaulted.
 def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
   if name == "amber" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.amber({})}) else if name == "violet" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.violet({})}) else if name == "silver" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.silver({})}) else Lists.Maybe::<Bell.Colour>.none({})
@@ -154,7 +166,7 @@ def classed(core: String) -> Word:
 # heard as answering it; otherwise the text parses, fits the plant form, plants on a
 # proposal and writes nothing; it always ends by offering a reply card.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Reply>:
-  heard(state, input, context, heldBy(state.pending, context.principal, 0n))
+  if Card.isMerge(input.text) then Card.merge::<Edits, State, Planting, Reply>(input.post, state.owner, context, fn(post: String) -> Edits: extend(keep(), {pageCheckpoint: Plans.Edit::<String, {}>.set({value: post})}), Reply.merged({post: input.post}), fn(reason: String) -> Reply: Reply.refused({reason: reason})) else heard(state, input, context, heldBy(state.pending, context.principal, 0n))
 def heard(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match found:
     case none(_): hear(state, input, context, Spell.parse(input.text), found)
