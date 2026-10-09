@@ -344,6 +344,13 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
   | done {context : Context} {value : Term} {planType response result : Ty} {uses : Uses} :
       PartialTyping assumptions context value result uses → result.isComputation = false →
       PartialTyping assumptions context (.done value) (.computation planType response result) uses
+  /-- Hosted extension: refuse the turn, naming why. Only an activity refuses, at any
+  activity type over a Plan sum and a data response; it uses nothing. -/
+  | refuse {context : Context} {reason : String} {planType response result : Ty} :
+      planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
+      response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
+      result.isComputation = false →
+      PartialTyping assumptions context (.refuse reason) (.computation planType response result) (zeroUses context)
   /-- Sequencing: the activity's result selects an arm; every arm is an activity
   over the same plan/response types. This is the only `bind`. -/
   | effectCase {context : Context} {scrutinee : Term} {arms : List (String × Term)}
@@ -651,6 +658,20 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         some ⟨.computation annotation.domain annotation.codomain value.type, value.uses,
           .done value.derivation hn⟩
       else none
+  | _ + 1, .refuse _ => do
+      -- The annotation at `refuse` names the activity type it stands in for, as its
+      -- codomain.
+      let annotation ← annotations position
+      match annotation.codomain with
+      | .computation planType response result =>
+        if hp : planType.isPlanUnder assumptions.bounds assumptions.rigid = true then
+          if hr : response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
+            if hn : result.isComputation = false then
+              some ⟨.computation planType response result, zeroUses context, .refuse hp hr hn⟩
+            else none
+          else none
+        else none
+      | _ => none
 
 def inferFields (assumptions : Assumptions) (annotations : Annotations) (context : Context)
     (position : List Nat) (index : Nat) : Nat → (fields : List (String × Term)) → Option (InferredFields assumptions context fields)
@@ -1298,6 +1319,7 @@ def decodeTerm : Nat → Json → Except String Term
     | "done" => return .done (← sub "value")
     | "toData" => return .toData (← sub "value")
     | "textJoin" => return .textJoin (← sub "list") (← sub "separator")
+    | "refuse" => return .refuse (← value.getObjValAs? String "reason")
     | _ => .error "unknown Objective runtime constructor"
 
 def decodeLambda (table : Array (Ty × Nat)) (value : Json) : Except String LambdaAnnotation := do
@@ -1583,7 +1605,26 @@ theorem data_not_eliminated :
     (check ⟨.binary .add (.toData (.nat 1)) (.nat 1),fun _ => none,{}⟩ [] 32).isNone = true ∧
     (check ⟨.get (.toData (.record [("a",.nat 1)])) "a",fun _ => none,{}⟩ [] 32).isNone = true := by decide
 
+/-- Rule refuse: a refusal arm stands for the activity type its annotation names, beside
+an arm that continues, so `let written(_) = perform(p)` types as its match... -/
+theorem refusal_arm_accepted :
+    (check ⟨writeActivity (.done (.nat 1)) (.refuse "unexpected response refused"),
+      performAt [0] (fun position => if position = [1,0] then some effectSignature
+        else if position = [1,1] then some ⟨.computation planType responseType .natural,
+          .computation planType responseType .natural,.unrestricted,.reusable⟩ else none),{}⟩ [] 32).map
+      (fun checked => checked.type) = some (.computation planType responseType .natural) := by decide
+/-- ...a refusal is never a pure value... -/
+theorem pure_refusal_refused :
+    (check ⟨.refuse "no",fun position => if position = [] then
+      some ⟨.natural,.natural,.unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
+/-- ...and never sits in a shared position (here a record field). -/
+theorem refusal_in_field_refused :
+    (check ⟨.record [("next",.refuse "no")],fun position => if position = [0] then
+      some ⟨.computation planType responseType .natural,.computation planType responseType .natural,
+        .unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
+
 #assert_axioms record_to_data_accepted closure_to_data_refused data_not_eliminated
+#assert_axioms refusal_arm_accepted pure_refusal_refused refusal_in_field_refused
 #assert_axioms exhaustive_case_accepted reordered_arms_accepted missing_arm_refused
   extra_arm_refused undeclared_injection_refused unannotated_injection_refused
   arm_results_must_agree equality_branch_accepted label_condition_refused label_equality_accepted

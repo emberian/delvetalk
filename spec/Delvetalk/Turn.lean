@@ -97,6 +97,13 @@ def failureName : Failure → String
   | .refused => "machine refused the program"
   | .yielded => "yielded"
 
+/-- What a refused turn says: the program's own reason when it refused by name
+(`Term.refuse`), else the failure's name. -/
+def refusalText (failure : Failure) (state : State) : String :=
+  match failure, state.control with
+  | .refused, .refused (.program reason) => reason
+  | _, _ => failureName failure
+
 /-- The activity shape a turn requires of a checked type. -/
 def activityShape (assumptions : Assumptions) (type : Ty) : Except String (Ty × Ty × Ty) :=
   let bounds := assumptions.bounds
@@ -265,7 +272,7 @@ def conclude (pin : String) (binding : Binding) (bounds : DataBounds) (plan resp
             | _ => exhaustedResource limits failure st rem
           match resource? with
           | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
-          | none => .error ("turn refused: " ++ failureName failure)
+          | none => .error ("turn refused: " ++ refusalText failure st)
       | .ok extracted =>
           if !extracted.value.conformsUnder bounds plan then .error "turn refused: Plan does not conform to its type"
           else .ok (.yielded extracted.value plan response
@@ -274,7 +281,7 @@ def conclude (pin : String) (binding : Binding) (bounds : DataBounds) (plan resp
   | .error (failure, st, rem) =>
       match exhaustedResource limits failure st rem with
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
-      | none => .error ("turn refused: " ++ failureName failure)
+      | none => .error ("turn refused: " ++ refusalText failure st)
 
 /-- `packet` belongs to an artifact the caller has already verified. The checked, applied entry of an activity and its Plan/response/result types. -/
 def prepareStart (packet : Json) (arguments : List Data) :

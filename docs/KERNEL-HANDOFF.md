@@ -501,3 +501,37 @@ fixture recorded by the foundation binary).
   type-argument lists in world/ (548 `::<` outside comments, 11 of them `Data.of`) are
   unnecessary: stripped (both forms), every one of the 717 entries compiles to the same
   packet minus source hashes. Pins test 8.3-8.9 s with either binary.
+- `let label(x) = perform(P)` then the rest of the block: performs, binds the payload of
+  the one named response, continues; any other response refuses the turn by name. The
+  parser (`letCaseRe`) lowers it to `match perform(P): case label(x): <rest>` plus one
+  `Pattern.unexpected` branch; the elaborator expands that branch, like a wildcard, into
+  one arm per label the match does not name, in row order, each exactly
+  `case l(_): refuse("unexpected response l")` (`tests/test_sugar.py` compares the
+  packets). The scrutinee must be a `perform` ("refused (let-response)"). Typing of the
+  form is the match's; the refusal arms need the new core term:
+- `Term.refuse (reason : String)` (hosted extension, not upstream). Surface
+  `refuse("why")` (one string literal) stands only where an activity finishes (a tail,
+  both branches of a tail `if`, a match arm): "refused (refuse-outside-tail)" elsewhere,
+  "refused (refuse-outside-activity)" in a pure definition. Typing rule
+  `PartialTyping.refuse`: any `.computation P R A` with P a Plan sum, R data, A not a
+  computation, using nothing; the checker reads that type from the annotation at the
+  term's position (its codomain; `ATerm.refuse` carries it, `annotate` emits domain =
+  codomain = the activity type). No `Step` rule: the reference relation is stuck there.
+  Machine: `evaluate (.refuse r)` -> `control := .refused (.program r)` (new `Refusal`
+  constructor, one tick); `Turn.refusalText` turns it into "turn refused: <reason>"
+  (`evaluate-term` reports it as `stuck`, as every refusal). Checkpoint term tag 26
+  `[26, text]`; a refusal is now encoded `encodeRefusal` (`[8, text]` for `program`), and
+  `refusal_roundTrip` is stated on token lists. Proofs touched: CheckpointRoundTrip (term
+  and refusal cases), CollectProofs (`related_stepRaw` case), Fast (`sizesAfter`),
+  TermWire (`decode_json` case); every other proof stood unchanged. Checkpoints taken
+  before this change decode unchanged (only additions); one holding a `refuse` term does
+  not decode on an older binary. Not proved: that an activity typed by the new rule
+  refuses only through `refuse` (there is no progress theorem here to extend).
+- Hints: `halt(` now suggests the statement form (both the line and the parsed-declaration
+  hint); the list-literal hint spells lists without `::<T>`.
+- Evaluators: `["refuse", text]` is a stuck leaf in all three (arity 2, string argument);
+  the generator emits it bare, as an operand, in taken and untaken `ifBool` arms, under a
+  lambda and in a `case` arm, and now keeps `textJoin` separators well formed (a
+  malformed separator inside a separator was an old divergence the shifted stream
+  exposed). 1500-case report: 1445/1500 agree per evaluator, 55 known shared-effect,
+  0 unexpected (120 cases hold a `refuse`).

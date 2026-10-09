@@ -68,6 +68,7 @@ def encodeTerm : Term → Tokens
   | .unary primitive argument => .nat 23 :: .nat (unaryCode primitive) :: encodeTerm argument
   | .toData value => .nat 24 :: encodeTerm value
   | .textJoin list separator => .nat 25 :: (encodeTerm list ++ encodeTerm separator)
+  | .refuse reason => [.nat 26, .text reason]
 def encodeFields : List (String × Term) → Tokens
   | [] => [.nat 0]
   | (name,body) :: rest => .nat 1 :: .text name :: (encodeTerm body ++ encodeFields rest)
@@ -122,6 +123,7 @@ def decodeTerm : Nat → Tokens → Option (Term × Tokens)
         pure (.unary primitive argument, rest)
     | 24, _ => one .toData
     | 25, _ => two .textJoin
+    | 26, .text reason :: rest => some (.refuse reason, rest)
     | _, _ => none
   | _ + 1, _ => none
 def decodeFields : Nat → Tokens → Option (List (String × Term) × Tokens)
@@ -305,12 +307,16 @@ def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
       some (.joinHead separator accumulated true tail, rest)
   | _ => none
 
-def refusalCode : Refusal → Nat
-  | .unbound => 0 | .missingCell => 1 | .missingField => 2 | .wrongValue => 3
-  | .invalidUpdate => 4 | .capacity => 5 | .missingArm => 6 | .sharedEffect => 7
-def refusalOf : Nat → Option Refusal
-  | 0 => some .unbound | 1 => some .missingCell | 2 => some .missingField | 3 => some .wrongValue
-  | 4 => some .invalidUpdate | 5 => some .capacity | 6 => some .missingArm | 7 => some .sharedEffect
+def encodeRefusal : Refusal → Tokens
+  | .unbound => [.nat 0] | .missingCell => [.nat 1] | .missingField => [.nat 2] | .wrongValue => [.nat 3]
+  | .invalidUpdate => [.nat 4] | .capacity => [.nat 5] | .missingArm => [.nat 6] | .sharedEffect => [.nat 7]
+  | .program reason => [.nat 8, .text reason]
+def decodeRefusal : Tokens → Option (Refusal × Tokens)
+  | .nat 0 :: rest => some (.unbound, rest) | .nat 1 :: rest => some (.missingCell, rest)
+  | .nat 2 :: rest => some (.missingField, rest) | .nat 3 :: rest => some (.wrongValue, rest)
+  | .nat 4 :: rest => some (.invalidUpdate, rest) | .nat 5 :: rest => some (.capacity, rest)
+  | .nat 6 :: rest => some (.missingArm, rest) | .nat 7 :: rest => some (.sharedEffect, rest)
+  | .nat 8 :: .text reason :: rest => some (.program reason, rest)
   | _ => none
 
 def decodeMany {α : Type} (item : Tokens → Option (α × Tokens)) : Nat → Tokens → Option (List α × Tokens)
@@ -325,7 +331,7 @@ def encodeControl : Control → Tokens
   | .blackhole address => [.nat 2, .nat address]
   | .returned value => .nat 3 :: encodeValue value
   | .complete value => .nat 4 :: encodeValue value
-  | .refused reason => [.nat 5, .nat (refusalCode reason)]
+  | .refused reason => .nat 5 :: encodeRefusal reason
   | .yielded plan => [.nat 6, .nat plan]
   | .nativeApplication function argument remaining =>
       .nat 7 :: (encodeTerm function ++ encodeData argument ++ [.nat remaining.length] ++
@@ -338,7 +344,7 @@ def decodeControl (fuel : Nat) : Tokens → Option (Control × Tokens)
   | .nat 2 :: .nat address :: rest => some (.blackhole address, rest)
   | .nat 3 :: rest => do let (value, rest) ← decodeValue fuel rest; pure (.returned value, rest)
   | .nat 4 :: rest => do let (value, rest) ← decodeValue fuel rest; pure (.complete value, rest)
-  | .nat 5 :: .nat code :: rest => do pure (.refused (← refusalOf code), rest)
+  | .nat 5 :: rest => do let (reason, rest) ← decodeRefusal rest; pure (.refused reason, rest)
   | .nat 6 :: .nat plan :: rest => some (.yielded plan, rest)
   | .nat 7 :: rest => do
       let (function, rest) ← decodeTerm fuel rest; let (argument, rest) ← decodeData fuel rest

@@ -717,6 +717,7 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
     | ifBool condition whenTrue whenFalse => exact ⟨hr, envIn, rfl, frames_cons envIn stackIn, rfl⟩
     | done value => exact ⟨hr, envIn, rfl, stackIn, rfl⟩
     | toData value => exact ⟨hr, envIn, rfl, stackIn, rfl⟩
+    | refuse reason => exact ⟨hr, allIn_nil D, rfl, stackIn, rfl⟩
     | unary primitive argument => exact ⟨hr, envIn, rfl, frames_cons (allIn_nil D) stackIn, rfl⟩
     | textJoin list separator => exact ⟨hr, envIn, rfl, frames_cons envIn stackIn, rfl⟩
     | perform plan =>

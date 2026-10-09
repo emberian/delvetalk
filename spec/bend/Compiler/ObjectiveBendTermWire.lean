@@ -23,7 +23,7 @@ set_option autoImplicit false
 mutual
 /-- The nesting depth of an elaborated term: what `decodeTerm`'s fuel must cover. -/
 def depth : ATerm → Nat
-  | .bound _ | .nat _ | .boolean _ | .label _ => 1
+  | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ => 1
   | .unary _ b | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b | .toData _ b => depth b + 1
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b =>
       max (depth a) (depth b) + 1
@@ -141,6 +141,9 @@ theorem decode_json : (t : ATerm) → (n : Nat) → (e : CoreTerm) → depth t �
     have dp := unary_primitive_round hp
     simp at he; subst he
     rw [decodeTerm]; simp [ATerm.json, da, dp]
+
+  | .refuse _ r, n+1, e, _, he => by
+    simp [ATerm.erase] at he; subst he; rw [decodeTerm]; simp [ATerm.json]
 
   | .textJoin f a, n+1, e, hd, he => by
     simp only [ATerm.erase, bind_ok] at he

@@ -313,6 +313,8 @@ inductive ATerm where
   | toData (type : PTy) (value : ATerm)
   /-- `textJoin(list, separator)`. -/
   | textJoin (list separator : ATerm)
+  /-- Refuse the turn, naming why; `type` is the activity type it stands in for. -/
+  | refuse (type : PTy) (reason : String)
   deriving Inhabited
 
 mutual
@@ -343,6 +345,7 @@ def ATerm.json : ATerm → Json
   | .done _ _ v => Json.mkObj [("tag", "done"), ("value", v.json)]
   | .toData _ v => Json.mkObj [("tag", "toData"), ("value", v.json)]
   | .textJoin l s => Json.mkObj [("tag", "textJoin"), ("list", l.json), ("separator", s.json)]
+  | .refuse _ r => Json.mkObj [("tag", "refuse"), ("reason", r)]
 def fieldsJson : List (String × ATerm) → Json
   | fs => Json.arr (fieldsArray fs).toArray
 def fieldsArray : List (String × ATerm) → List Json
@@ -400,6 +403,7 @@ def ATerm.erase : ATerm → Except String CoreTerm
   | .done _ _ v => return .done (← v.erase)
   | .toData _ v => return .toData (← v.erase)
   | .textJoin l s => return .textJoin (← l.erase) (← s.erase)
+  | .refuse _ r => return .refuse r
 def eraseFields : List (String × ATerm) → Except String (List (String × CoreTerm))
   | [] => .ok []
   | (n, v) :: rest => return (n, ← v.erase) :: (← eraseFields rest)
@@ -687,6 +691,22 @@ def withTypes {α : Type} (bindings : List (String × PTy)) (k : M α) : M α :=
   let r ← k
   modify fun st => { st with typeBindings := saved }
   return r
+
+/-- `refuse("why")` (unshadowed): its reason, or a refusal when it is not one string literal. -/
+def refuseCall (c : Ctx) (e : Expr) (env : List Binding) (m : Module) : Option (M String) :=
+  match e with
+  | .call (.var "refuse") args =>
+    if env.any (·.name == "refuse") || (lookupGlobal c "refuse" m).isSome then none
+    else some (match args with
+      | [.str reason] => pure reason
+      | _ => fail "refuse takes one string literal: refuse(\"why\")")
+  | _ => none
+
+/-- A turn refusal at the activity type being lowered. -/
+def refusal (reason : String) : M ATerm := do
+  match (← get).resultType with
+  | some (.computation p r a) => return .refuse (.computation p r a) reason
+  | _ => fail "refused (refuse-outside-activity): refuse ends a turn, so it stands only in an Activity"
 
 mutual
 def sourceType (c : Ctx) : Nat → String → String → List String → M (Option PTy)
@@ -1063,6 +1083,10 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
           if ["textTake", "textDrop"].contains name && args.length == 2 then return some .label
           if name == "textSlice" && args.length == 3 then return some .label
           if name == "textJoin" && args.length == 2 then return some .label
+          if name == "refuse" && args.length == 1 then
+            return match (← get).resultType with
+              | some (.computation p r a) => some (.computation p r a)
+              | _ => none
         if ["reflect", "metadata", "targetOf", "prototype"].contains name &&
             !env.any (·.name == name) && (lookupGlobal c name m).isNone then
           match name, args with
@@ -1099,11 +1123,12 @@ def synthBody (c : Ctx) : Nat → Body → List Binding → Module → M (Option
     let ty ← if type == "_" then synth c fuel value env m else sourceType c fuel type m.name []
     synthBody c fuel rest (⟨name, ty, "unrestricted"⟩ :: env) m
   | fuel + 1, .cases scrutinee branches, env, m => do
-    if branches.any (fun b => match b.1 with | .ctor .. | .bool _ | .wildcard => true | _ => false) then
+    if branches.any (fun b => match b.1 with | .ctor .. | .bool _ | .wildcard | .unexpected => true | _ => false) then
       let scrutineeTy ← synth c fuel scrutinee env m
       let row := variantRowOf (← get) scrutineeTy
       let mut types : List (Option PTy) := []
       for (pattern, b) in branches do
+        if pattern == .unexpected then continue
         let env' := match pattern with
           | .ctor l binder => ⟨binder, lookupRow row l, "unrestricted"⟩ :: env
           | _ => env
@@ -1221,6 +1246,7 @@ def ATerm.mapTypes (f : PTy → PTy) : ATerm → ATerm
   | .done p r x => .done (f p) (f r) (x.mapTypes f)
   | .toData t x => .toData (f t) (x.mapTypes f)
   | .textJoin l s => .textJoin (l.mapTypes f) (s.mapTypes f)
+  | .refuse t r => .refuse (f t) r
 def ATerm.mapFieldTypes (f : PTy → PTy) : List (String × ATerm) → List (String × ATerm)
   | [] => []
   | (n, x) :: rest => (n, x.mapTypes f) :: ATerm.mapFieldTypes f rest
@@ -1713,6 +1739,9 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
             | "textSlice", [a,start,count] =>
               return .binary "textTake" (.binary "textDrop" (← expression c fuel a env m) (← expression c fuel start env m)) (← expression c fuel count env m)
             | _, _ => fail (name ++ " has wrong arity")
+          if name == "refuse" then
+            if (← get).effect.isNone then discard <| refusal ""
+            fail "refused (refuse-outside-tail): refuse(\"why\") ends the turn, so it stands only where an activity finishes"
           if ["reflect", "metadata", "targetOf"].contains name then
             match args with
             | [a] =>
@@ -1741,6 +1770,7 @@ def tail (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
     if let .fix .. := e then modify fun st => { st with fixTarget := st.resultType }
     let some (p, r) := (← get).effect | do
       coerceAt c fuel (← get).resultType e (← expression c fuel e env m) env m
+    if let some reason := refuseCall c e env m then return ← refusal (← reason)
     if let .letE name type value bodyE := e then
       return ← lowerLet c fuel name type value env m true (expression c fuel value env m)
         (fun inner => tail c fuel bodyE inner m) (fun inner => synth c fuel bodyE inner m)
@@ -1972,14 +2002,16 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
         let ft ← body c fuel fb env m
         return .ifBool ct tt ft
       | _, _ => fail "Bool match requires exactly true and false branches"
-    if branches.any (fun b => match b.1 with | .ctor .. | .wildcard => true | _ => false) then
-      if !branches.all (fun b => match b.1 with | .ctor .. | .wildcard => true | _ => false) then
+    if branches.any (fun b => match b.1 with | .ctor .. | .wildcard | .unexpected => true | _ => false) then
+      if !branches.all (fun b => match b.1 with | .ctor .. | .wildcard | .unexpected => true | _ => false) then
         fail "a sum match takes label(binder) cases and an optional final wildcard"
       let labels := branches.filterMap (fun b => match b.1 with | .ctor l _ => some l | _ => none)
       if duplicate labels then fail "duplicate sum case"
-      let defaults := branches.filter (fun b => b.1 == .wildcard)
+      if branches.any (·.1 == .unexpected) && !isPerform c scrutinee env m then
+        fail "refused (let-response): `let label(x) = ...` takes a perform(...): it continues with one response and refuses the turn on any other"
+      let defaults := branches.filter (fun b => b.1 == .wildcard || b.1 == .unexpected)
       if defaults.length > 1 then fail "duplicate sum wildcard"
-      if !defaults.isEmpty && !(branches.getLast?.map (·.1 == .wildcard)).getD false then
+      if !defaults.isEmpty && !(branches.getLast?.map (fun b => b.1 == .wildcard || b.1 == .unexpected)).getD false then
         fail "sum wildcard must be the final case"
       let row := variantRowOf (← get) (← synth c fuel scrutinee env m)
       let some r := row | fail "sum match needs a resolved variant type"
@@ -1998,6 +2030,10 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
             -- A core arm always binds one payload. Use an inaccessible name so
             -- source scope is preserved while outer de Bruijn references shift.
             arms := arms ++ [(l, ← body c fuel b (⟨"", lookupRow row l, "unrestricted"⟩ :: env) m)]
+        | .unexpected =>
+          -- Exactly the arms `case l(_): refuse("unexpected response l")`, in row order.
+          for l in missing do
+            arms := arms ++ [(l, ← refusal ("unexpected response " ++ l))]
         | _ => pure ()
       return .case st arms
     let zero := branches.find? (fun b => b.1 == .zero)
@@ -2247,7 +2283,7 @@ knot by key, so these are exactly the declarations the term can reach (every oth
 partial def knotNames (t : ATerm) (acc : Array String) : Array String :=
   match t with
   | .get target name => knotNames target (acc.push name)
-  | .bound _ | .nat _ | .boolean _ | .label _ => acc
+  | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ => acc
   | .lam _ b | .reflect b | .metadata b | .project b | .unary _ b | .inject _ _ _ b | .perform _ _ b
   | .done _ _ b | .toData _ b => knotNames b acc
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b =>
@@ -2436,6 +2472,7 @@ def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String
   | .perform p r v, path | .done p r v, path => do
     return ⟨path, p, r, "unrestricted", "reusable"⟩ :: (← annotate bounds v (path ++ [0]))
   | .toData _ v, path => annotate bounds v (path ++ [0])
+  | .refuse t _, path => return [⟨path, t, t, "unrestricted", "reusable"⟩]
   | .textJoin l s, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds s (path ++ [1]))
   | .app f a, path => return (← annotate bounds f (path ++ [0])) ++ (← annotate bounds a (path ++ [1]))
   | .fix s i, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds i (path ++ [1]))

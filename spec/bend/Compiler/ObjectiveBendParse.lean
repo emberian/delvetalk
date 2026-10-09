@@ -615,6 +615,11 @@ def caseRe : Re := seqs [str "case", many1 space,
 def letRe : Re := seqs [str "let", many1 space, group 1 ident, many space,
   opt (seqs [chr ':', many space, group 2 (lazy1 dot)]), many space, chr '=', many space, group 3 (many1 dot), .done]
 
+/-- `^let\s+([A-Za-z_]\w*)\(\s*([A-Za-z_]\w*)?\s*\)\s*=\s*(.+)$`: a statement that
+performs and continues with one response. -/
+def letCaseRe : Re := seqs [str "let", many1 space, group 1 ident, many space, chr '(', many space,
+  opt (group 2 ident), many space, chr ')', many space, chr '=', many space, group 3 (many1 dot), .done]
+
 def startsWith (s : List Char) (p : String) : Bool := p.toList.isPrefixOf s
 def endsWith (s : List Char) (p : String) : Bool := p.toList.reverse.isPrefixOf s.reverse
 
@@ -653,6 +658,19 @@ def body (lines : Array Line) : Nat → Nat → PS Body
         branches := branches.push (pattern, branchBody, branch.span)
       if branches.isEmpty then fail line "empty match"
       return .cases scrutinee branches.toList line.span
+    -- `let label(x) = E` then the rest of the block: `match E:` with `case label(x):` the
+    -- rest and every other label refusing the turn by name (`Pattern.unexpected`).
+    if let some (_, caps) ← matchAt line letCaseRe line.text then
+      let label := String.ofList ((capture line.text caps 1).getD [])
+      let binder := String.ofList ((capture line.text caps 2).getD ['_'])
+      let valueText := (capture line.text caps 3).getD []
+      let value ← lineExpr line valueText
+      match lines[i + 1]? with
+      | some next => if next.indent != line.indent then fail line "a let must be followed by its body at the same indent"
+      | none => fail line "a let must be followed by its body at the same indent"
+      let rest ← body lines fuel (line.indent - 1)
+      return .cases value [(.ctor label binder, rest, line.span),
+        (.unexpected, .expr (.str ("unexpected response") line.span) line.span, line.span)] line.span
     if let some (_, caps) ← matchAt line letRe line.text then
       let name := (capture line.text caps 1).getD []
       if name != "in".toList then

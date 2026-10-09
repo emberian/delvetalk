@@ -47,8 +47,12 @@ verdict, ticks and Data as resuming `s`). A package closure has no size cap:
 an entry's packet carries only what it reaches, and the whole closure is
 checked once per package. The runtime data check agrees with a declarative typing
 (`Theory/ObjectiveBendDataConformance.lean`). A universal first-order type
-`Data`, produced only by `Data.of::<T>(v)` and never taken apart in Bend, lets
-a Plan carry any payload the host checks at the callee.
+`Data`, produced only by `Data.of::<T>(v)` (which the elaborator inserts itself
+where `Data` is expected) and never taken apart in Bend, lets a Plan carry any
+payload the host checks at the callee. An activity may end its turn with a
+named refusal (`refuse("why")`, a hosted core term with no reduction); the
+statement `let written(_) = perform(p)` continues with the one response it
+names and refuses the turn, by the response's label, on any other.
 
 Everything an object does to the world is a Plan. There is no second effect
 language.

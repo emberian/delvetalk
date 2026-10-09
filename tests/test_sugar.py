@@ -9,7 +9,7 @@ import hashlib
 import json
 import unittest
 
-from tests.test_turn import Host, library_modules
+from tests.test_turn import BINDING, Host, library_modules, nat, variant
 
 HEAD = "edition ObjectiveBend 1\n"
 
@@ -133,6 +133,50 @@ GENERIC_PAIRS = [
 ]
 
 
+TURN_HEAD = HEAD + """record Edit:
+  field: Nat
+  after: Nat
+sum Plan:
+  write: Edit
+sum Reply:
+  written: {}
+  refused: {clause: String}
+  later: {}
+"""
+
+BUMP_SUGARED = TURN_HEAD + """def bump(count: Nat) -> Activity<Plan, Reply, Nat>:
+  let written(_) = perform(Plan.write({field: 0n, after: count + 1n}))
+  let next = count + 1n
+  next
+"""
+# The match the statement lowers to: one refusal arm per label it does not name.
+BUMP_EXPLICIT = TURN_HEAD + """def bump(count: Nat) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.write({field: 0n, after: count + 1n})):
+    case written(_):
+      let next = count + 1n
+      next
+    case refused(_): refuse("unexpected response refused")
+    case later(_): refuse("unexpected response later")
+"""
+
+# Two statements in a row, the second binding its payload.
+TWICE_SUGARED = TURN_HEAD + """def twice(count: Nat) -> Activity<Plan, Reply, String>:
+  let written(_) = perform(Plan.write({field: 0n, after: count}))
+  let refused(r) = perform(Plan.write({field: 1n, after: count}))
+  r.clause
+"""
+TWICE_EXPLICIT = TURN_HEAD + """def twice(count: Nat) -> Activity<Plan, Reply, String>:
+  match perform(Plan.write({field: 0n, after: count})):
+    case written(_):
+      match perform(Plan.write({field: 1n, after: count})):
+        case refused(r): r.clause
+        case written(_): refuse("unexpected response written")
+        case later(_): refuse("unexpected response later")
+    case refused(_): refuse("unexpected response refused")
+    case later(_): refuse("unexpected response later")
+"""
+
+
 class SugarTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -203,6 +247,65 @@ class SugarTests(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("cannot infer the type argument T of Lists.kept", reply["diagnostic"]["message"])
         self.assertIn("write Lists.kept::<T, Rain>(...) naming T", reply["diagnostic"]["message"])
+    # 3. The statement form for one expected response.
+    def test_let_response_is_its_match(self):
+        self.same(BUMP_EXPLICIT, BUMP_SUGARED, "bump")
+        self.same(TWICE_EXPLICIT, TWICE_SUGARED, "twice")
+
+    def test_the_named_response_continues_the_block(self):
+        artifact = self.compile(BUMP_SUGARED, "bump")
+        started = self.h.start(artifact, [nat(4)])
+        self.assertEqual(started["status"], "yielded", started)
+        done = self.h.resume(artifact, started["checkpoint"], variant("written"))
+        self.assertEqual(done["status"], "finished", done)
+        self.assertEqual(done["value"], nat(5))
+
+    def test_any_other_response_refuses_the_turn_by_name(self):
+        artifact = self.compile(BUMP_SUGARED, "bump")
+        for label, payload in (("refused", {"tag": "record", "fields": [
+                {"name": "clause", "value": {"tag": "label", "value": "owner"}}]}), ("later", None)):
+            with self.subTest(response=label):
+                started = self.h.start(artifact, [nat(4)])
+                self.assertEqual(started["status"], "yielded", started)
+                reply = self.h.resume(artifact, started["checkpoint"], variant(label, payload))
+                self.assertEqual(reply, {"status": "error", "message": "turn refused: unexpected response " + label})
+
+    def test_the_second_statement_refuses_after_the_first_continues(self):
+        artifact = self.compile(TWICE_SUGARED, "twice")
+        started = self.h.start(artifact, [nat(1)])
+        second = self.h.resume(artifact, started["checkpoint"], variant("written"))
+        self.assertEqual(second["status"], "yielded", second)
+        reply = self.h.resume(artifact, second["checkpoint"], variant("written"))
+        self.assertEqual(reply["message"], "turn refused: unexpected response written")
+
+    def test_let_response_takes_a_perform(self):
+        source = TURN_HEAD + ("def pick(reply: Reply) -> Activity<Plan, Reply, Nat>:\n"
+                              "  let written(_) = reply\n  1n\n")
+        reply = self.check(source, "pick")
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (let-response)", reply["diagnostic"]["message"])
+
+    def test_refuse_stands_only_where_an_activity_finishes(self):
+        pure = TURN_HEAD + "def f(n: Nat) -> Nat:\n  refuse(\"no\")\n"
+        reply = self.check(pure, "f")
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (refuse-outside-activity)", reply["diagnostic"]["message"])
+        nested = TURN_HEAD + ("def g(n: Nat) -> Activity<Plan, Reply, Nat>:\n"
+                              "  if refuse(\"no\") then n else 0n\n")
+        reply = self.check(nested, "g")
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (refuse-outside-tail)", reply["diagnostic"]["message"])
+        # In both branches of a tail `if`, it is where the activity finishes.
+        branches = TURN_HEAD + ("def h(n: Nat) -> Activity<Plan, Reply, Nat>:\n"
+                                "  if n == 0n then refuse(\"zero\") else n\n")
+        artifact = self.compile(branches, "h")
+        self.assertEqual(self.h.start(artifact, [nat(0)])["message"], "turn refused: zero")
+        self.assertEqual(self.h.start(artifact, [nat(3)])["value"], nat(3))
+
+    def test_halt_suggests_the_statement(self):
+        reply = self.check(HEAD + "def stop(n: Nat) -> Nat:\n  halt(\"no\")\n", "stop")
+        self.assertIn("let written(_) = perform(Plan.write({...}))", reply["diagnostic"]["hint"])
+
 
 if __name__ == "__main__":
     unittest.main()

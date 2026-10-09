@@ -68,6 +68,9 @@ inductive Pattern where
   | wildcard
   | bool (value : Bool)
   | ctor (label binder : String)
+  /-- Every label no other arm names, each arm refusing the turn by name
+  (`refuse("unexpected response <label>")`). Written by `let label(x) = perform(...)`. -/
+  | unexpected
   deriving Inhabited, Repr, BEq
 
 /-- The binder a pattern names, `""` when it names none (as the AST's absent `binder`). -/
@@ -210,6 +213,7 @@ def Pattern.json : Pattern → Json
   | .ctor l b => Json.mkObj [("kind", toJson "constructor"), ("label", toJson l), ("binder", toJson b)]
   | .succ b => Json.mkObj [("kind", toJson "succ"), ("binder", toJson b)]
   | .zero => Json.mkObj [("kind", toJson "zero")]
+  | .unexpected => Json.mkObj [("kind", toJson "unexpected")]
 
 mutual
 def Body.json : Body → Json

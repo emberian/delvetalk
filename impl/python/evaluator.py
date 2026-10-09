@@ -22,7 +22,7 @@ VALUES = {"lam", "nat", "boolean", "label", "record", "specification",
 MAX_WIRE_INTEGER = 2**53 - 1
 ARITIES = {"bound": 2, "lam": 2, "app": 3, "mix": 3, "fix": 3,
            "specification": 3, "prototype": 3, "reflect": 2, "metadata": 2,
-           "project": 2, "nat": 2, "boolean": 2, "label": 2, "binary": 4,
+           "project": 2, "nat": 2, "boolean": 2, "label": 2, "refuse": 2, "binary": 4,
            "extend": 3, "record": 2, "get": 3, "ifZero": 4, "inject": 3,
            "case": 3, "ifBool": 4, "perform": 2, "done": 2, "toData": 2, "textJoin": 3, "unary": 3}
 
@@ -47,9 +47,9 @@ def validate(term):
     elif tag == "boolean":
         if type(term[1]) is not bool:
             raise ValueError("boolean literal must be a JSON Boolean")
-    elif tag == "label":
+    elif tag in {"label", "refuse"}:
         if not valid_string(term[1]):
-            raise ValueError("label must be a Unicode scalar string")
+            raise ValueError(f"{tag} must be a Unicode scalar string")
     elif tag in {"get", "inject"}:
         key, value = (term[2], term[1]) if tag == "get" else (term[1], term[2])
         if not valid_string(key):
@@ -85,7 +85,7 @@ def walk(term, variable, depth=0):
     tag = term[0]
     if tag == "bound":
         return variable(term[1], depth)
-    if tag in {"nat", "boolean", "label"}:
+    if tag in {"nat", "boolean", "label", "refuse"}:
         return term
     if tag == "lam":
         return [tag, walk(term[1], variable, depth + 1)]

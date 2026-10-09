@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 
 const arities = new Map(Object.entries({
   bound: 2, lam: 2, app: 3, mix: 3, fix: 3, specification: 3, prototype: 3,
-  reflect: 2, metadata: 2, project: 2, nat: 2, boolean: 2, label: 2,
+  reflect: 2, metadata: 2, project: 2, nat: 2, boolean: 2, label: 2, refuse: 2,
   binary: 4, unary: 3, extend: 3, record: 2, get: 3, ifZero: 4, inject: 3,
   case: 3, ifBool: 4, perform: 2, done: 2, toData: 2, textJoin: 3,
 }));
@@ -34,7 +34,7 @@ export function validate(term) {
     else if (tag === 'nat') requireThat(typeof a === 'string' && /^(0|[1-9][0-9]*)$/.test(a),
       'Nat must be a canonical unsigned decimal string');
     else if (tag === 'boolean') requireThat(typeof a === 'boolean', 'Boolean must be a JSON Boolean');
-    else if (tag === 'label') requireThat(scalarString(a), 'label must be a Unicode scalar string');
+    else if (tag === 'label' || tag === 'refuse') requireThat(scalarString(a), `${tag} must be a Unicode scalar string`);
     else if (tag === 'get' || tag === 'inject') {
       requireThat(scalarString(tag === 'get' ? b : a), 'key must be a Unicode scalar string');
       pending.push(tag === 'get' ? a : b);
@@ -65,7 +65,7 @@ function substitute(t, env) {
   const sub = child => substitute(child, env);
   switch (t[0]) {
     case 'bound': return env(t[1]);
-    case 'nat': case 'boolean': case 'label': return t;
+    case 'nat': case 'boolean': case 'label': case 'refuse': return t;
     case 'lam': return ['lam', substitute(t[1], under)];
     case 'ifZero': return ['ifZero', sub(t[1]), sub(t[2]), substitute(t[3], under)];
     case 'record': return ['record', t[1].map(([key, body]) => [key, sub(body)])];

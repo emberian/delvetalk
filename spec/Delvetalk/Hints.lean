@@ -73,13 +73,13 @@ def lineHint (source line : String) : Option String :=
   else if ((parenthesized trimmed "fn(").map untypedParameters).getD false then
     some "closures are `fn(x: T) -> U: body`; parameter and result types are required"
   else if has line "halt(" then
-    some "there is no halt; a refusal is a sum arm you return (declare it in your result sum and return `Result.refused({...})`)"
+    some "there is no halt; to go on only with the response you expect, write `let written(_) = perform(Plan.write({...}))` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)"
   else if has line "Some(" || has line "None" then
     some "there is no Some/None; a sum value is `Sum.label({fields})`, for example `Maybe.some({value: v})` with `sum Maybe<T>:` declared"
   else if (has line "Maybe<" || has line "Option<") && !has source "sum Maybe" && !has source "sum Option" then
     some "there is no Maybe builtin; declare `sum Maybe<T>:` with arms `none: {}` and `some: {value: T}`"
   else if !trimmed.startsWith "#" && bracketOutsideString line then
-    some "there are no list literals; build a list as `Lists.List::<T>.cons({head: x, tail: rest})` ending in `Lists.List::<T>.nil()`"
+    some "there are no list literals; build a list as `Lists.List.cons({head: x, tail: rest})` ending in `Lists.List.nil({})`"
   else if arrowArm trimmed then
     some "match arms are `case label(x): body` (`case _: body` for the rest); there is no `Pattern -> body`"
   else none
@@ -168,7 +168,7 @@ def declHint (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (d : Decl) : O
   else if f.untypedClosure then
     some (d.name, "closures are `fn(x: T) -> U: body`; parameter and result types are required")
   else if f.vars.contains "halt" then
-    some ("halt", "there is no halt; a refusal is a sum arm you return (declare it in your result sum and return `Result.refused({...})`)")
+    some ("halt", "there is no halt; to go on only with the response you expect, write `let written(_) = perform(Plan.write({...}))` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)")
   else if f.vars.contains "Some" || f.vars.contains "None" then
     some ((if f.vars.contains "Some" then "Some" else "None"),
       "there is no Some/None; a sum value is `Sum.label({fields})`, for example `Maybe.some({value: v})` with `sum Maybe<T>:` declared")
