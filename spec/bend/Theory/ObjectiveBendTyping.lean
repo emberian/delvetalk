@@ -110,6 +110,23 @@ theorem sameType_isComputation {assumptions : Assumptions} {actual expected : Ty
   · cases expected <;> simp at aliasExpected
     simp_all [Ty.isComputation]
 
+theorem sameType_refl (assumptions : Assumptions) (type : Ty) : sameType assumptions type type = true := by
+  simp [sameType]
+
+/-- `sameType`, deciding at once when both sides are the same object in memory (a type the
+packet's table shares, or one an inference passed through unchanged) or are equal as trees,
+before canonicalizing both: its value is `sameType`'s (`sameTypeShared_eq`). -/
+def sameTypeShared (assumptions : Assumptions) (actual expected : Ty) : Bool :=
+  withPtrEq actual expected (fun _ => actual == expected || sameType assumptions actual expected)
+    (fun same => by subst same; simp)
+
+@[simp] theorem sameTypeShared_eq (assumptions : Assumptions) (actual expected : Ty) :
+    sameTypeShared assumptions actual expected = sameType assumptions actual expected := by
+  unfold sameTypeShared withPtrEq
+  by_cases same : actual = expected
+  · subst same; simp [sameType_refl]
+  · simp [same]
+
 /-- The checker converts an inferred type to a declared one only when the two
 agree AND the conversion does not manufacture shareability. `Ty.canonical`
 forgets a shadowed member (first-field shadowing), so a row hiding a custody or
@@ -119,14 +136,14 @@ unrestricted and duplicated. Every conversion the checker inserts goes through
 this; the relation `PartialTyping.conversion` keeps plain `sameType` because the
 machine proofs rebuild conversions from canonical equality alone. -/
 def agree (assumptions : Assumptions) (actual expected : Ty) : Bool :=
-  sameType assumptions actual expected &&
+  sameTypeShared assumptions actual expected &&
     (!expected.shareableUnder assumptions.shareableVariables ||
       actual.shareableUnder assumptions.shareableVariables)
 
 theorem agree_sameType {assumptions : Assumptions} {actual expected : Ty}
     (agreement : agree assumptions actual expected = true) :
     sameType assumptions actual expected = true :=
-  (Bool.and_eq_true_iff.mp agreement).1
+  sameTypeShared_eq assumptions actual expected ▸ (Bool.and_eq_true_iff.mp agreement).1
 
 /-- A checked conversion never turns a non-shareable type into a shareable one. -/
 theorem agree_shareable {assumptions : Assumptions} {actual expected : Ty}

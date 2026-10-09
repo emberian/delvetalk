@@ -61,9 +61,24 @@ def front (cache : Cache) (j : Json) : Cache × Except Minidregg.Compiler.Object
       ({ cache with fronts := ⟨modules, limits, request, bytes⟩ :: fronts,
                     frontBytes := bytes + fronts.foldl (· + ·.bytes) 0 }, .ok request)
 
+/-- The UTF-8 size of `j.compress`, without rendering it. -/
+partial def compressedSize : Json → Nat
+  | .null => 4
+  | .bool b => if b then 4 else 5
+  | .num n => n.toString.utf8ByteSize
+  | .str s => stringSize s
+  | .arr items => 2 + (if items.isEmpty then 0 else items.size - 1) + items.foldl (· + compressedSize ·) 0
+  | .obj fields =>
+    let (n, total) := fields.foldl (fun (n, total) key value => (n + 1, total + stringSize key + 1 + compressedSize value)) (0, 0)
+    2 + (if n == 0 then 0 else n - 1) + total
+where
+  stringSize (s : String) : Nat :=
+    2 + s.foldl (fun n c =>
+      n + if c == '"' || c == '\\' || c == '\n' || c == '\r' then 2 else if c.val < 0x20 then 6 else c.utf8Size) 0
+
 /-- Hold a compiled entry under its pin; the oldest leave when the bound would be exceeded. -/
 def hold (cache : Cache) (artifact : Json) (entry : Delvetalk.CheckedEntry) : Cache := Id.run do
-  let bytes := artifact.compress.utf8ByteSize
+  let bytes := compressedSize artifact
   if bytes > Bounds.entryCacheBytes then return cache
   let mut cache := cache
   if let some old := cache.held[entry.pin]? then

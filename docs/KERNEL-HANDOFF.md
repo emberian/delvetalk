@@ -1,4 +1,4 @@
-# Kernel handoff (lane/turn, lane/kernel2)
+# Kernel handoff (lane/turn, lane/kernel2, lane/kernel3)
 
 For the next agent changing the language, the turn machinery or the wire. Paths are relative to
 the repository root; line numbers are for foundation 62b7dfd and drift. Everything below was read
@@ -36,14 +36,18 @@ from source or measured; "unproved" means I left it so, and says what would prov
 
 ## 1. Map of the language (spec/bend, spec/Delvetalk)
 
-Pipeline for `compile`: source text -> `FrontEnd.parseSource` -> (generics, document templates)
--> `ObjectiveBendElaborate` -> typed packet JSON -> `Typing.check` (the checker) -> artifact.
+Pipeline for `compile`: source text -> (document templates, text) -> `ObjectiveBendParse` ->
+`Surface.Module` -> generics (on Surface) -> `ObjectiveBendElaborate.ofSurface` -> elaboration
+-> `ATerm` + typing proposal (`propose`, Lean data) -> closure check on the direct source
+(once per package) -> per entry: packet JSON -> `decodePacket` -> `Typing.check` -> artifact.
+JSON exists only at the process boundary and in the entry packet (see §10).
 
 | Stage | Where | Notes |
 |---|---|---|
-| Surface parser | `spec/bend/Compiler/ObjectiveBendParse.lean` (884) | AST = JSON, `kind` + `span {start,end,line}` on every expression node. `Diagnostic{message,span}`. Strings use JSON escapes (`json.dumps` is a valid literal). Declarations: `record`, `sum`, `type`, `def` (kind `function`; `signature.name`, `body.span`), `law`, generics `<T>`. |
-| Hosted front end | `spec/Delvetalk/FrontEnd.lean`, `Generics.lean` (398), `DocumentTemplate.lean` (218) | `parseSource name src` = parse + template expansion; `lowerWithInstances` runs `Generics.run` (rank-1 specialization: generic *sums* and *defs*; generic *records* do not parse), then imports/lowering. Doc literals need an explicit `import ./Document.obend as X`. |
-| Elaborator | `spec/bend/Compiler/ObjectiveBendElaborate.lean` (2340) | Source -> annotated core (`ATerm`). Errors are bare strings in `StateT St (Except String)` (`fail`, `typeError`): NO position. That is why `Package.localize` exists. `Activity<P,R,A>` is parsed at ~l.756; `perform`/effect-mode lowering l.1137, 1537; `noActivity` (l.1234) is the "effect in shared position" refusal. Recursive record/sum = `Ty.variable i` + a bound. |
+| Surface AST | `spec/bend/Compiler/ObjectiveBendSurface.lean` | Typed AST with a `Span` on every node; `Module.json` renders the old `dregg.objective-bend.module.v1` JSON byte for byte (only `source-imports-v1`, import transcripts, interface labels and diagnostics use it). Type annotations are still source TEXT (the elaborator and generics parse type text with their own refusals). |
+| Surface parser | `spec/bend/Compiler/ObjectiveBendParse.lean` (884) | Produces `Surface.Module`. `Diagnostic{message,span}`. Strings use JSON escapes (`json.dumps` is a valid literal). Declarations: `record`, `sum`, `type`, `def` (kind `function`; `signature.name`, `body.span`), `law`, generics `<T>`. |
+| Hosted front end | `spec/Delvetalk/FrontEnd.lean`, `Generics.lean` (398), `DocumentTemplate.lean` (218) | `parseSource name src` = template expansion (a text pass) + parse, spans mapped back by `Expansion.remap` (`Surface.Module.mapSpans`); `lowerWithInstances` runs `Generics.run` (rank-1 specialization: generic *sums* and *defs*; generic *records* do not parse), then imports/lowering. Doc literals need an explicit `import ./Document.obend as X`. |
+| Elaborator | `spec/bend/Compiler/ObjectiveBendElaborate.lean` (2340) | `ofSurface` reads a `Surface.Module` into the elaborator's span-free core AST (`Expr`/`Body`/`Decl`; `Param` and `Pattern` are the Surface types). Source -> annotated core (`ATerm`). Errors are bare strings in `StateT St (Except String)` (`fail`, `typeError`): NO position. That is why `Package.localize` exists. `Activity<P,R,A>` is parsed at ~l.756; `perform`/effect-mode lowering l.1137, 1537; `noActivity` (l.1234) is the "effect in shared position" refusal. Recursive record/sum = `Ty.variable i` + a bound. |
 | Front-end driver / `accept` | `spec/bend/Compiler/ObjectiveBendFrontEnd.lean` (336) | `Diagnostic{stage,message,span,sourceModule}`; stages: `objective-source-parse`, `objective-core-elaboration`, `objective-typed-check` ("the checker refused the front end's typed packet": no detail), `document-template`. `accept` (l.~300-329) decodes the packet and calls `check`. |
 | Term wire | `spec/bend/Compiler/ObjectiveBendTermWire.lean` | `ATerm.json` <-> `Typing.decodeTerm` (object form `{tag,...}`). The evaluators' array form is different (see 6). |
 | Core terms & reference relation | `spec/bend/Theory/ObjectiveBendOpenRecursion.lean` (660) | `Term` (23 constructors incl. `unary`, `inject`, `case`, `ifBool`, `perform`, `done`), `Primitive` (15), `UnaryPrimitive` (3: natText textLength sha256Text), `primitiveResult`, `unaryResult`, `inductive Step`/`Steps`/`Yields`, `Value`. The DelveTalk-only parts (text prims, `unary`) are marked "hosted extension, not upstream". |
@@ -57,8 +61,12 @@ Pipeline for `compile`: source text -> `FrontEnd.parseSource` -> (generics, docu
 | Package / session / main | `spec/Delvetalk/Package.lean` (552), `PackageSession.lean`, `spec/PackageMain.lean` | JSON-lines driver; see 2. |
 | Source evaluator (executable relation) | `spec/Delvetalk/Core.lean`, `Typed.lean` | Older step-by-step evaluator with evidence; not on the turn path. |
 
-Proof guards. `lake build` passes only if every theorem still checks; there is no `sorry` in
-`spec/` (the AxiomPin files pin axiom sets in Fast/Cshake files). What each change must keep:
+Proof guards. `lake build` builds the default target, which is ONLY what `PackageMain`
+imports: `Delvetalk.PackageDataAdmission`, `PackageDataNormalization`,
+`PackageDataSchemaProofs`, `Delvetalk.Typed` and `Theory.ObjectiveBendNativeDataSimulation` are
+not built by it; name them (`lake build delvetalk-obend Delvetalk.PackageDataAdmission ...`)
+after touching anything they import. There is no `sorry` in `spec/` (the AxiomPin files pin
+axiom sets in Fast/Cshake files). What each change must keep:
 - Changing `Term`/`Primitive`/`Step` (OpenRecursion): `Step` lemmas there (`lazy_fixed_function`,
   `case_selects_injected_arm`, the primitive-exactness lemmas) and the `Value` ones; then Typing's
   `PartialTyping` mirrors every constructor.
@@ -360,3 +368,91 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
   the legacy chain" and the `relist` note; §8 "`PackageData` schema certificates do not support
   `.data`" and "Turn arguments at Data are injected at their own shape" (now type-directed at every
   depth); §7's `test_http` failures (the suite passes); the test counts in §0.
+
+## 10. Kernel lane 4 (lane/kernel3, 2026-10-09): a typed IR, measured
+
+Every artifact is byte-identical to before (see "Checks" below); only compile time moved.
+
+- Surface (`Compiler/ObjectiveBendSurface.lean`): the parser's output, rewritten by the
+  generics pass and read by `ObjectiveBendElaborate.ofSurface`. The generics pass visits
+  children in the order of the old JSON's SORTED KEYS (`args` before `callee`, `inherited`
+  before `specification`, `whenFalse` before `whenTrue`, a method's `body` before its
+  signature, a spec's claims, methods, requirements, then target): instances are numbered in
+  first-encounter order and the numbers are in packets. Change that order and every pin with
+  a generic instance moves. Its node budget now counts Surface nodes, not JSON nodes.
+  Fresh `__generic_N` names avoid identifier runs of every AST string as JSON prints it
+  (`Generics.moduleNames`), exactly the old rule.
+- Typing proposal as data: `ObjectiveBendElaborate.propose : Output -> Except String Proposed`
+  (annotations, knot row, sorted sum bounds). `proposalJson` renders it for an entry packet.
+  The whole-closure check (`ObjectiveBendFrontEnd.checkClosure`, and every template) never
+  renders a packet: `directSource` builds the `AnnotatedTerm` from `Proposed` with types
+  hash-consed by the packet table's node keys, `checkDirect` refuses in `accept`'s order and
+  messages. Not repeated there: the packet decoder's type-nesting (256) and row-width
+  capacities, which bind only entry packets. An entry still goes JSON -> `decodePacket` ->
+  `check` under `accept`'s theorems, since its packet leaves the process.
+- Interning: `PTy.internSlot` keys a node by constructor, strings and child slots
+  (`InternKey`, constant-time hash). The derived `Hashable PTy` the brief suggested is what was
+  slow: it rehashes the whole subtree per lookup, quadratic along a row. Both
+  `PTy.internSlot` and `tyOf` are `@[implemented_by]` a version that memoizes by object
+  address (`ptrAddrUnsafe`) within one walk: a walk allocates no `PTy`, so an address names
+  one object throughout. The definitions are the plain walks.
+- Checker: `agree` decides through `sameTypeShared` = `withPtrEq` + tree equality before
+  canonicalizing; `sameTypeShared_eq` proves it is `sameType`, so derivations and the decided
+  examples are untouched. Canonicalization (insertion sort of rows) was half of checking.
+- Elaborator: context lookups by HashMap (`Ctx.declIndex/recordIndex/sumIndex`,
+  `St.globalTypes`); `splitTop`/`trimStr` scan bytes; `knotNames` walks `ATerm`.
+- Parser: `tokenLength` replaces the `tokenRe` matcher (`compile-profile self-check` compares
+  them, and `splitTop` with its List definition, on 300,000 random strings); regex matches
+  take their subject length instead of measuring it per token. The line regexes remain; parse
+  is now the largest front-end stage (13 ms for Garden's 78 KB) and the next target: a
+  direct scanner per line regex, checked the same way against the `Re` values.
+- SHA-256 (`Compiler/Sha256.lean`): rounds as a recursive function over unboxed words, blocks
+  compressed in place: 17 -> 10 ms/MiB. Canonical `keyLess` no longer copies keys.
+- Wire: `scalarEscapesText` scans the request's bytes (was 1 ms per 78 KB line as a List),
+  `PreparedRequest.sourcesCid` is computed once per package, held-entry size is
+  `PackageSession.compressedSize` (= `compress` length, not rendered).
+- Hints (`Delvetalk/Hints.lean`) fire only where the refusal points: the named line for a
+  parse refusal (text), the Surface declaration holding the named line otherwise (or, without
+  a line, declarations the message names, else a trigger word the message contains); never
+  for a typed-packet checker refusal. `tests/test_hints.py` covers a typed-packet refusal, a
+  multi-line `if` and an unbalanced `(` beside a qualified `Lists.Maybe<T>`.
+- `compile-profile` (`spec/CompileProfile.lean`, `lake build compile-profile`): stage timings
+  of a compile request, a loop mode for `perf record`, `self-check`, `sha`. On hbox,
+  `perf` needs `kernel.perf_event_paranoid` <= 1 (it was 4; this lane set it to 1 with
+  `sudo sysctl`, not persistent).
+
+Checks. `tests/test_artifact_pins.py` compiles all 578+ non-generic entries of every world
+closure and compares status, `packetSha256` and an artifact digest with
+`tests/fixtures/pins/artifacts.json` (recorded with the foundation binary BEFORE any compiler
+change; re-record it from a foundation binary when world sources change, never from a lane's
+own binary). Beyond it, this lane captured every request/reply of a full suite run of the
+foundation binary (a `tee` shim as `DELVETALK_OBEND`) and replayed the 2,464 non-world requests
+against each build: byte-identical, except one reply whose hint misfire was removed.
+
+Measured on hbox (load 9-17 from other tenants; same requests, foundation 7d90f1b binary vs
+this lane):
+
+| | before | after | target |
+|---|---|---|---|
+| Garden (11 modules, 78 KB) first entry `compile`, fresh process | 235 ms | 48 ms | < 60 |
+| further entries, median (render, page, door / plant / receive, heard) | 15.8 ms (7-11 / 33 / 135, 56) | 8.6 ms (4.6-6 / 10.5 / 20, 18) | < 5 |
+| `check-package` Garden | 227 ms | 45 ms | < 60 |
+| `tests.run test_objects test_spell test_policy test_workshop` | 16.6 s | 6.1 s | < 15 s |
+| `make check` (whole suite, 696 tests) | 58.6 s | 29.9 s | < 40 s |
+
+Stages now (Garden, warm): parse 13 ms, generics 6.7, elaboration 7.5, closure check 12
+(direct source 1.9, checker 9), entry `initial` 0.8 ms in Lean; entry `receive` 11 ms
+(selection and packet 1.8, packet render 2.4, decode 1.2, check 3.6, CID 4.3 = CBOR 2.2 +
+SHA 2.3). Further entries miss 5 ms for two reasons: a request carries the whole 78 KB
+package (reading the line and parsing it, rendering a reply that repeats it, and the client's
+own JSON work cost about 4 ms with no compilation at all), and an activity entry's packet is
+200-250 KB that must be rendered, hashed, decoded and checked. Removing the first needs a
+protocol change (name a prepared package by its sources CID instead of resending it); the
+second is the artifact itself.
+
+Wrong in this file before lane 4: §0/§1 "`lake build` passes only if every theorem still
+checks" (five modules are outside the default target); §1 "AST = JSON"; §9's 285 ms first
+compile (173 ms on hbox at 81ea9ec; the cost was the whole-closure proposal, 77 ms, and
+generics, 60 ms, not packet decoding: the closure's packet decoded in 3.6 ms and an entry's in
+under 1.5 ms).
+

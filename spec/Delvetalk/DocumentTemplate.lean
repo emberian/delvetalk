@@ -2,6 +2,7 @@
 the explicitly imported Document module and ordinary checked Bend expressions. -/
 import Lean
 import Std.Data.TreeSet
+import Compiler.ObjectiveBendSurface
 namespace Delvetalk.DocumentTemplate
 open Lean
 set_option autoImplicit false
@@ -197,22 +198,16 @@ def lower (source : String) : Except String Expansion := do
 def Expansion.position (e : Expansion) (byte : Nat) : Position :=
   (e.origins[byte]?).getD ((e.origins.back?).getD ⟨byte, 1⟩)
 
-def remap (e : Expansion) : Nat → Json → Json
-  | 0, value => value
-  | fuel + 1, .arr values => .arr (values.map (remap e fuel))
-  | fuel + 1, .obj fields =>
-    let entries := fields.toList
-    match ((Json.obj fields).getObjValAs? Nat "start").toOption,
-        ((Json.obj fields).getObjValAs? Nat "end").toOption,
-        ((Json.obj fields).getObjValAs? Nat "line").toOption with
-    | some start, some stop, some _ =>
-      let a := e.position start
-      let b := e.position stop
-      Json.mkObj [("start", toJson a.byte), ("end", toJson b.byte), ("line", toJson a.line)]
-    | _, _, _ => Json.mkObj (entries.map fun (key, value) => (key, remap e fuel value))
-  | _, value => value
+/-- A span of the expanded source, as a span of the original source. -/
+def Expansion.span (e : Expansion) (span : Minidregg.Compiler.ObjectiveBendSurface.Span) :
+    Minidregg.Compiler.ObjectiveBendSurface.Span :=
+  let a := e.position span.start
+  let b := e.position span.stop
+  ⟨a.byte, b.byte, a.line⟩
 
-def Expansion.remap (e : Expansion) (value : Json) : Json :=
-  if e.origins.isEmpty then value else Delvetalk.DocumentTemplate.remap e (e.source.length + 1) value
+/-- Every span of a module parsed from the expanded source, mapped back to the original. -/
+def Expansion.remap (e : Expansion) (m : Minidregg.Compiler.ObjectiveBendSurface.Module) :
+    Minidregg.Compiler.ObjectiveBendSurface.Module :=
+  if e.origins.isEmpty then m else m.mapSpans e.span
 
 end Delvetalk.DocumentTemplate

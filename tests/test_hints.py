@@ -7,6 +7,7 @@ never changes what is accepted.
 import json
 import unittest
 
+from tests.test_objects import closure
 from tests.test_turn import Host
 
 HEAD = "edition ObjectiveBend 1\n"
@@ -46,6 +47,18 @@ def flip(l: Light) -> Nat:
 """
 
 
+# A module that uses the library's declared `Lists.Maybe<T>` beside an unrelated mistake.
+QUALIFIED_MAYBE = HEAD + """import ./List.obend as Lists
+def pick(n: Nat) -> Lists.Maybe<Nat>:
+  Lists.Maybe::<Nat>.none({})
+"""
+UNRELATED = {
+    "typed-packet refusal": QUALIFIED_MAYBE + "def bad(n: Nat) -> Bool:\n  n + 1n\n",
+    "multi-line if": QUALIFIED_MAYBE + "def bad(n: Nat) -> Nat:\n  if n == 0n\n    then 1n else 2n\n",
+    "unbalanced parenthesis": QUALIFIED_MAYBE + "def bad(n: Nat) -> Nat:\n  (n + 1n\n",
+}
+
+
 class HintTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -82,6 +95,19 @@ class HintTests(unittest.TestCase):
         reply = self.check(HEAD + "def one(n: Nat) -> Bool:\n  n\n", "one")
         self.assertEqual(reply["status"], "refused", reply)
         self.assertNotIn("hint", reply["diagnostic"])
+
+    def test_a_hint_fires_only_where_its_trigger_is(self):
+        for name, source in UNRELATED.items():
+            with self.subTest(refusal=name):
+                reply = self.h.send({"op": "check-package", "entry": "bad",
+                                     "modules": closure("List") + [{"name": "Probe", "source": source}]})
+                self.assertEqual(reply["status"], "refused", reply)
+                self.assertNotIn("hint", reply["diagnostic"], reply)
+                if name == "unbalanced parenthesis":
+                    self.assertEqual(reply["diagnostic"]["stage"], "objective-source-parse", reply)
+        reply = self.h.send({"op": "check-package", "entry": "bad",
+                             "modules": closure("List") + [{"name": "Probe", "source": UNRELATED["typed-packet refusal"]}]})
+        self.assertEqual(reply["diagnostic"]["stage"], "objective-typed-check", reply)
 
 
 if __name__ == "__main__":

@@ -90,12 +90,13 @@ def observation(post):
     if len(text.encode()) > MAX_TEXT:
         raise Failure('post_body_too_large', uri)
     parent = ((record.get('reply') or {}).get('parent') or {}).get('uri')
+    root = ((record.get('reply') or {}).get('root') or {}).get('uri')
     mentions = mentions_of(text, record)
     text = text.strip()
     tags = list(dict.fromkeys(TAG.findall(text)))
     kind, wiki, spell = classify(text, parent, mentions, tags)
     return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created,
-            'text': text, 'replyTo': parent, 'mentions': mentions, 'tags': tags, 'kind': kind,
+            'text': text, 'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': kind,
             'wiki': wiki, 'spell': spell}
 
 

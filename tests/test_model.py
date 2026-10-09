@@ -150,9 +150,42 @@ class Interpret(unittest.TestCase):
         self.assertEqual([s['id'] for s in self.settled()], ['i1', 'i2'])
         self.assertEqual(self.settled()[0]['reply']['json']['n'], 1)
 
-    def test_a_failed_model_call_is_settled_as_the_failure_reply(self):
-        interpret.run(self.state, self.host, lambda req: model.failed('rate'))
-        self.assertEqual(self.settled()[0]['reply'], {'status': 'failed', 'reason': 'rate', 'detail': ''})
+    def test_a_refused_model_call_is_settled_as_the_failure_reply(self):
+        interpret.run(self.state, self.host, lambda req: model.failed('refused'))
+        self.assertEqual(self.settled()[0]['reply'], {'status': 'failed', 'reason': 'refused', 'detail': ''})
+
+    def test_transient_failures_retry_with_backoff_and_settle_failed_after_eight(self):
+        clock = [1000.0]
+        flaky = lambda req: model.failed('transport')
+        r = interpret.run(self.state, self.host, flaky, lambda: clock[0])
+        self.assertEqual((r['settled'], r['retrying']), ([], ['i1', 'i2']))
+        self.assertEqual(self.settled(), [])
+        saved = json.loads(interpret.receipt_path(self.state, 'i1').read_text())
+        self.assertEqual((saved['attempts'], saved['next']), (1, 1060.0))
+        calls = []
+        interpret.run(self.state, self.host, lambda req: calls.append(1) or model.failed('rate'), lambda: clock[0])
+        self.assertEqual(calls, [])  # still backing off
+        for n in range(2, 8):
+            clock[0] += 10 ** 5
+            interpret.run(self.state, self.host, flaky, lambda: clock[0])
+        self.assertEqual(self.settled(), [])
+        clock[0] += 10 ** 5
+        r = interpret.run(self.state, self.host, flaky, lambda: clock[0])
+        self.assertEqual(r['settled'], ['i1', 'i2'])
+        self.assertEqual(self.settled()[0]['reply']['reason'], 'transport')
+        self.assertEqual(json.loads(interpret.receipt_path(self.state, 'i1').read_text())['attempts'], 8)
+
+    def test_a_retry_that_replies_settles_with_the_reply(self):
+        clock = [1000.0]
+        interpret.run(self.state, self.host, lambda req: model.failed('rate'), lambda: clock[0])
+        clock[0] += 10 ** 5
+        r = interpret.run(self.state, self.host, self.ask, lambda: clock[0])
+        self.assertEqual(r['settled'], ['i1', 'i2'])
+        self.assertEqual(self.settled()[0]['reply']['status'], 'replied')
+
+    def test_malformed_settles_without_retry(self):
+        r = interpret.run(self.state, self.host, lambda req: model.failed('malformed'))
+        self.assertEqual((r['settled'], r.get('retrying')), (['i1', 'i2'], None))
 
     def test_end_to_end_against_the_real_host(self):
         from tests.host import Host as RealHost, binary

@@ -144,6 +144,7 @@ def main(argv=None, out=None, client=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('post')
     p.add_argument('--text-file')
+    p.add_argument('--draft', metavar='FILE', help='a bridge outbox draft: its text, reply-to, object and slot')
     p.add_argument('--wiki-page', metavar='TITLE')
     p.add_argument('--wiki-edit', metavar='"TITLE > SECTION"')
     p.add_argument('--body-file')
@@ -152,14 +153,21 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--credentials', default=CREDENTIALS)
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--host-socket', metavar='PATH', help='hostd socket: read the posting quota and record posts')
-    p.add_argument('--record', metavar='OBJECT', help='after a confirmed post, call world-posted for this object (needs --host-socket)')
+    p.add_argument('--object', '--record', dest='record', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted is called for it (needs --host-socket)')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
     a = ap.parse_args(argv)
     try:
-        if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) != 1 or (not a.text_file and not a.body_file):
+        if a.draft:
+            d = json.loads(Path(a.draft).read_text())
+            if d.get('posted'):
+                raise Failure('draft_already_posted')
+            a.reply_to, a.record, a.slot = a.reply_to or d.get('replyTo'), a.record or d.get('object'), a.slot or d.get('slot')
+        if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) + bool(a.draft) != 1 or (not (a.text_file or a.draft) and not a.body_file):
             raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
-        if a.text_file:
+        if a.draft:
+            text = d['text']
+        elif a.text_file:
             text = Path(a.text_file).read_text()
         else:
             text = wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
