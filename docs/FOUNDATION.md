@@ -79,9 +79,12 @@ restart because its checkpoint is in the store.
 
 **Law.** The enforced fragment in `Compiler/ObjectiveBendLaw.lean` judges every
 write of declared state: comparisons on top-level fields, `monotone`,
-`writeOnce`, request facts `subject`, `caller`, `height`, `turn`. Law revision
-is itself a write judged by the current law. A law without an amendment clause
-is a type error at creation, not a philosophy problem later.
+`writeOnce`, request facts `subject`, `caller`, `height`, `turn`, `pin` and
+`kind` (0 write, 1 reprogram, 2 amend). The law text is state on the object.
+Law revision is a write judged by the current law, and a law is accepted only
+if it admits an amendment by its own proposer, so no law can seal out the hand
+that wrote it. An object created without a law gets
+`owner: request.kind == 0 or request.subject == "<creator>"`.
 
 ## 3. Plan vocabulary
 
@@ -99,6 +102,8 @@ response. All payloads are first-order data.
 | `interpret {utterance, offers}` | `{proposal}` or `unclear {needs}` | asks the configured model under the object's authored policy; the result is a proposal, never authority |
 | `offer {document}` | `{}` | renders an encounter to the principal: prose, forms, offered actions |
 | `publish {page, section, body}` | `{post}` | emits a wiki page or section edit through transport, as a proposal to the page's owner |
+| `reprogram {object, package, migration}` | `reprogrammed {pin}` or `refused {clause}` | compiles the new source, requires the state type to be unchanged or a named pure migration, judged by the current law with `request.kind = 1` and `request.pin` |
+| `amend {object, law}` | `amended` or `refused {clause}` | the new law must parse and must admit an amendment by its own proposer; judged by the current law with `request.kind = 2` |
 
 Delivery of a `send` runs the recipient's method as a new turn with the
 sender's principal as subject and a budget ledger `{depth, work, storage}`
@@ -198,7 +203,10 @@ removes.
    drives activities against the store; recursive sums cross Plans; read
    policy per object; the journal is fsynced per entry (about 5 ms).
 3. **`send` and the causal ledger.** Bell, Door and Lantern as activities; the
-   chain "bell rings, door opens" runs and exhausts a budget on a cycle.
+   chain "bell rings, door opens" runs and exhausts a budget on a cycle. Done,
+   `57b5dd3`, together with `reprogram` and `amend`, host-side Document
+   rendering, the spell grammar in Bend, and the read-only transport with the
+   HTTP front under `/AGENTS.md`.
 4. **The replay test** (§10) passes end to end with `create`, `await` and
    `offer`.
 5. **`interpret` and `publish`.** Transport programs; the Night Garden page on
