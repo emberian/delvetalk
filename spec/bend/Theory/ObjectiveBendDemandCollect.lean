@@ -183,7 +183,8 @@ so a forced accumulator keeps alive every environment it was ever computed from 
 `settle` gives every cached cell the SELF origin `⟨.bound 0, [address]⟩` ("read this
 cell"): it retains nothing but the cell itself, it is lexically valid wherever the cell
 is, and it is typed at the cell's own assigned type, so a settled state is typed exactly
-when the state was (`typed_settle`). Suspended and evaluating cells are untouched (their
+when the state was (Mini's `typed_settle`; this edition has no state-typing judgment
+to port it to). Suspended and evaluating cells are untouched (their
 origin is what they will run). Settling changes no transition (`settle_resume_segment`
 in `Theory.ObjectiveBendDemandSettleProofs`: every bounded run, extraction and resume
 agrees exactly, capacity suspensions included, because heap sizes are unchanged). -/

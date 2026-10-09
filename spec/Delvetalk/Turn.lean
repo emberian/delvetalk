@@ -9,6 +9,7 @@ import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendCheckpointRoundTrip
 import Theory.ObjectiveBendDemandCollect
+import Theory.ObjectiveBendDemandSettleProofs
 import Delvetalk.Limits
 import Delvetalk.Canonical
 
