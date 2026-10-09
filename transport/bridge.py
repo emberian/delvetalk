@@ -75,7 +75,7 @@ def draft_text(reply):
         return '\n'.join(offers)
     if receipt.get('offers'):
         return f"reply card offered but not retained by the host; receipt: {receipt['hash']}\n"
-    return f"turn committed; no reply card offered\nreceipt: {receipt['hash']}\n"
+    return ''  # no offer, no draft
 
 
 def awaiting_path(state, uri):
@@ -227,7 +227,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})
+            'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})  # offerless: text '', hidden from outbox
         done.append(obs['uri'])
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
@@ -292,11 +292,14 @@ def main(argv=None, out=None):
     r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
     o.add_argument('--state', required=True)
+    o.add_argument('--all', action='store_true', help='also list turns that offered nothing (debugging)')
     m = sub.add_parser('mark-posted')
     m.add_argument('file')
     a = ap.parse_args(argv)
     if a.cmd == 'outbox':
         for path, d in unposted(a.state):
+            if not d['text'] and not a.all:
+                continue  # the receipt is journaled; an offerless turn has nothing to post
             if 'publication' in d:
                 p = d['publication']
                 where = f"--reply-to {d['replyTo']} " if d['replyTo'] else ''
