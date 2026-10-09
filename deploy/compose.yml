@@ -48,6 +48,8 @@ services:
   delvetalk-hostd:
     <<: *service
     command: ["python3", "-m", "transport.hostd", "--state", "/data/state", "--journal", "/data/world.journal", "--lock", "/data/journal.lock"]
+    environment:
+      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}  # the world's opener: ember
     # Replay on start recompiles every created object (~0.2 to 1 s each), and up
     # to 8 private heaps run as their own host processes. The old systemd unit's
     # measured need was a 4 GiB address space and about 62 MiB RSS for a tiny world.

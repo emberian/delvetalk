@@ -14,6 +14,10 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
 
+The world's opener is ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, set as
+`DELVETALK_OPENER` on the hostd service; only the opener may create objects with
+a named owner at genesis.
+
 ## One writer
 
 Two host processes on one journal write two entries at the same height and break
