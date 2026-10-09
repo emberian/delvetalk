@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 import unittest
 
+from tests.wire import relist
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FOUNDATION = "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend"
 _copy = None
@@ -49,7 +51,7 @@ class Host:
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
         assert line, "host closed its output"
-        return json.loads(line)
+        return relist(json.loads(line))
 
     def alive(self):
         return self.proc.poll() is None

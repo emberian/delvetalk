@@ -228,8 +228,7 @@ class Suspend(Await):
     def test_a_tampered_checkpoint_digest_in_the_journal_breaks_open(self):
         self.bell()
         self.strike()
-        self.host.close()
-        self.hosts.remove(self.host)
+        self.release()
         with open(self.path) as f:
             text = f.read()
         i = text.index('"tokens"')
