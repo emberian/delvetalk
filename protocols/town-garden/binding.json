@@ -10,7 +10,8 @@
           "type": "string",
           "label": "What might grow here?",
           "minLength": 1,
-          "maxLength": 80
+          "maxLength": 80,
+          "example": "A bell for lost moths"
         },
         "colour": {
           "type": "enum",
@@ -19,7 +20,8 @@
             "amber",
             "violet",
             "silver"
-          ]
+          ],
+          "example": "amber"
         }
       }
     },
@@ -30,7 +32,8 @@
           "type": "string",
           "label": "One line of rain",
           "minLength": 1,
-          "maxLength": 240
+          "maxLength": 240,
+          "example": "Each drop remembers a forgotten star."
         }
       }
     }

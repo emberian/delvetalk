@@ -17,7 +17,7 @@ Raw commands default to inspect-only. Explicit protocol metadata enables forms:
 
 ```json
 {"affordances":{"notice":{"label":"Leave a notice","fields":{
- "message":{"type":"string","maxLength":200},
+ "message":{"type":"string","maxLength":200,"example":"Meet beneath the lantern."},
  "copies":{"type":"nat","minimum":1,"maximum":8},
  "public":{"type":"bool"},
  "ink":{"type":"enum","options":["blue","amber"]}
@@ -37,6 +37,10 @@ Unknown attributes, extra/missing values and malformed bounds refuse. Limits:
 Unicode scalars; surrogates refuse. These bounds do not restrict Bend's Nat.
 
 Normalized fields are `{name,label,type,required:true,...bounds/options}`.
+An optional `example` survives normalization and must satisfy the same type and
+bounds as supplied input, including declared child-name restrictions. It is
+presentation data, never a default: omission still refuses. Examples neither
+override bound inputs nor establish availability, authority or fresh roots.
 Projection inputs remain bound and cannot be overridden. Scene/projection labels
 survive; metadata labels describe raw commands only. All supplied values enter
 `request.input`, including fields named `principal` or `law`.

@@ -205,7 +205,9 @@ def _field(field, token=None):
 def _example(action):
     values = {}
     for field in action['fields']:
-        if field['type'] == 'string':
+        if 'example' in field:
+            values[field['name']] = copy.deepcopy(field['example'])
+        elif field['type'] == 'string':
             values[field['name']] = 'x' * max(field['minLength'], min(field['maxLength'], 4))
         elif field['type'] == 'nat':
             values[field['name']] = field['minimum']
@@ -217,7 +219,8 @@ def _example(action):
     for child in action.get('children', []):
         if 'value' not in child:
             field = next(f for f in action['fields'] if f['name'] == child['field'])
-            values[child['field']] = 'x' * max(1, field['minLength'])
+            if 'example' not in field:
+                values[child['field']] = 'x' * max(1, field['minLength'])
     return values
 
 
@@ -247,8 +250,7 @@ def _panels(view, expected_runtime):
 
 
 def render_card(alias, card, view, panels=(), display_names=None):
-    lines = ['[[delvetalk-card ' + alias + ']]', canonical(card['title']),
-             'Object ' + canonical(card['object']) + ' · captured version ' + str(card['version'])]
+    lines = ['[[delvetalk-card ' + alias + ']]', canonical(card['title'])]
     def prose(text):
         def display(match):
             return (display_names or {}).get(match[0], match[0])
@@ -258,30 +260,40 @@ def render_card(alias, card, view, panels=(), display_names=None):
         lines.append(prose(card['prose']))
     for panel in panels:
         data = panel['view']['data']
+        if not data['prose'].strip():
+            continue
         lines.append(canonical(panel['label']) + ':')
         lines.append(prose(data['prose']))
     if view['mode'] == 'raw':
+        lines.append('Object ' + canonical(card['object']) + ' · version ' + str(card['version']))
         lines.append('State: ' + canonical(view['root']['state']))
-    lines.append('For direct execution, reply to THIS post with one offered spell. Edit its values; other wording needs interpretation.')
+    executable = any(action.get('available') and not action.get('inspectOnly') for action in card['actions'])
+    if executable:
+        lines.append('Reply here: copy a spell and change its values, or describe your intention for us to interpret.')
     for action in card['actions']:
         word = action_word(action, card['actions'])
         lines.append(word + ': ' + canonical(action['label']))
         if not action.get('available') or action.get('inspectOnly'):
-            lines.append('Inspection only; no executable reply form.')
+            lines.append('Look only; no spell offered.')
             continue
         tokens = {name: token for token, name in field_words(action).items()}
         lines.extend('  ' + _field(f, tokens[f['name']]) for f in action['fields'])
         if action.get('children'):
-            lines.append('Requires absent children: ' + ', '.join(
-                canonical(child.get('value', '<' + child['field'] + '>')) for child in action['children']))
+            chosen = [tokens[child['field']] for child in action['children'] if 'value' not in child]
+            fixed = [canonical(child['value']) for child in action['children'] if 'value' in child]
+            if chosen:
+                lines.append('Choose an unused name.' if chosen == ['name'] else
+                             'Choose unused names for ' + ', '.join(chosen) + '.')
+            if fixed:
+                lines.append('This action requires unused names: ' + ', '.join(fixed) + '.')
         if action.get('observedAvailable') is False:
-            lines.append('The captured view reports this guard unavailable; admission may refuse.')
+            lines.append('Unavailable in this view.')
         lines.append(spell(alias, action, _example(action), selector=word))
     if not card['actions']:
-        lines.append('No typed actions are available on this card.')
-    lines.extend(['Someone may act first; an old card can be refused. Use the next card after a refusal.',
-                  'If no result appears, ask us to check your original reply. Do not repost the command.',
-                  '[[/delvetalk-card ' + alias + ']]'])
+        lines.append('Look only; no spell offered.')
+    if executable:
+        lines.append('If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.')
+    lines.append('[[/delvetalk-card ' + alias + ']]')
     body = '\n'.join(lines)
     if len(body.encode('utf-8')) > MAX_CARD_BYTES:
         raise ValueError('town card exceeds 12000 bytes; choose a smaller explicit view/projection')
@@ -400,18 +412,14 @@ class CardBook:
         candidate_ref = references.object_reference(metadata['worldId'], candidate_id)
         def build(name):
             lines = ['[[delvetalk-card ' + name + ']]', 'Adopt a proposed revision',
-                     'Candidate ' + canonical(candidate_id) + ' · captured version ' + str(candidate['version']),
-                     'Target ' + canonical(target_id) + ' · captured version ' + str(target['version']),
+                     'Proposal ' + canonical(candidate_id) + ' → ' + canonical(target_id),
                      'Proposed program: ' + canonical(state['protocol'].get('name', state['protocol'].get('title', 'Untitled'))),
-                     'Runs the captured candidate’s adoption program, then replaces the target with the program and state it releases.',
-                     'Replacement covers the target’s ENTIRE state.',
+                     'Runs this proposal’s adoption program; installs its released program and replaces the target’s ENTIRE state.',
                      'Candidate-recorded migration: ' + canonical(state['migration']),
-                     'Target permissions stay in place. Passing checks does not grant permission to install.',
-                     'adopt: Adopt this captured candidate and migration together.',
-                     'For direct execution, reply to THIS post with this offered spell; no input fields:',
+                     'Target permissions stay in place; checks do not grant installation rights.',
+                     'Reply here to adopt, or describe your intention for us to interpret:',
                      'delvetalk ' + name + ' adopt',
-                     'Someone may act first; an old card can be refused. Use the next card after a refusal.',
-                     'If no result appears, ask us to check your original reply. Do not repost the command.',
+                     'If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.',
                      '[[/delvetalk-card ' + name + ']]']
             body = '\n'.join(lines)
             if len(body.encode('utf-8')) > MAX_CARD_BYTES:

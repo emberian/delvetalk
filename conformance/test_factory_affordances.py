@@ -110,6 +110,32 @@ class FactoryAffordanceTests(unittest.TestCase):
         self.assertEqual(self.call(request)['kind'], 'committed')
         with self.assertRaises(a.AffordanceError): self.prepare(view, 'override')
 
+    def test_child_examples_obey_names_but_never_establish_absence_or_override_bindings(self):
+        protocol = factory()
+        protocol['affordances']['make']['fields']['name']['example'] = 'lantern'
+        view = self.seed(protocol)
+        action = a.card(view)['actions'][0]
+        self.assertEqual(action['fields'][0]['example'], 'lantern')
+        with self.assertRaises(a.AffordanceError): a.request(view, 'a1', 'maker', 'missing')
+        self.assertEqual(self.prepare(view, 'chosen')['absent'], ['workshop/chosen'])
+        for bad in ('a/b', '..', 'a b', 'é'):
+            with self.subTest(example=bad):
+                changed = copy.deepcopy(view)
+                changed['root']['protocol']['affordances']['make']['fields']['name']['example'] = bad
+                with self.assertRaises(a.AffordanceError): a.card(changed)
+                fields = copy.deepcopy(action['fields']); fields[0]['example'] = bad
+                # Valid strings need the action-level child restriction too.
+                a.validate_fields_schema(fields)
+                with self.assertRaises(a.AffordanceError): a.validate_children_schema(action['children'], fields)
+                with self.assertRaises(a.AffordanceError): a.validate_fields({**action, 'fields': fields}, {'name': 'valid'})
+        view.update(format='delvetalk-projection-view-v1', mode='projection', data={
+            'title': 'Workshop', 'prose': '', 'actions': {'fixed': {
+                'text': 'Make a lamp', 'command': 'make', 'input': {'name': 'fixed'}}}})
+        self.assertEqual(a.card(view)['actions'][0]['fields'], [])
+        self.assertEqual(a.request(view, 'a1', 'maker', 'fixed')['absent'], ['workshop/fixed'])
+        view['root']['protocol']['affordances']['make']['fields']['name']['example'] = '../bad'
+        with self.assertRaises(a.AffordanceError): a.card(view)
+
     def test_stale_absence_quota_current_law_and_exact_restart_retry(self):
         protocol = factory(); protocol['allocation']['limit'] = 1
         view = self.seed(protocol)

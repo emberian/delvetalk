@@ -25,8 +25,10 @@ receipts remain the execution boundary.
    saved roots or confer roles.
 
 [Transactions](../profiles/TransactionsCore.lean) accept explicit input or earlier
-results. `inputFrom` supplies data, not authenticated call provenance or authority.
-Atomicity covers the submitted batch, not an assumed complete workflow.
+results. `inputFrom` supplies data with host-authenticated origin from an earlier admitted
+invocation; it grants no authority. A protocol can require a particular immediately
+preceding producer. Atomicity covers the submitted batch, not an assumed complete
+workflow; retained-event delivery remains separate.
 
 Precedents inspected 2026-10-08:
 [LambdaMOO movement](https://www.hayseed.net/MOO/manuals/ProgrammersManual.html)

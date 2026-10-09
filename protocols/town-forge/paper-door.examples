@@ -2,6 +2,12 @@ examples DelveTalk 1
 
 case visitors open the paper door
 law maker visitor
+observe main
+  title: The paper door
+  prose: A paper door with a brass knocker. Whisper please.
+  offer knock -> knock: Whisper to the door
+expect view
+
 as visitor
 at initial
 send knock

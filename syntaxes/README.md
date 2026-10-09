@@ -37,6 +37,26 @@ the transport envelope. `examples DelveTalk 1` opts into literal fixture notatio
 legacy JSON fixtures still work. Examples are observations, not proofs. Operators
 can also interpret ordinary prose into explicit source, examples or actions.
 
+Source-view examples check what a visitor can read and do, through the same
+compiled projection used by the portal:
+
+```text
+observe main
+  title: The paper door
+  prose: A paper door with a brass knocker. Whisper please.
+  offer knock -> knock: Whisper to the door
+expect view
+```
+
+Place this between completed steps, after `law`. It reads the current candidate
+without a principal, invocation or write. `title`, `prose` and the complete
+offered-action map must match exactly, including labels, commands and bound
+inputs. Four-space fields beneath an offer specify its input; omitted input is
+empty. `(Nat)`, `(Bool)` and multiline strings use the existing literal syntax.
+No offers means no actions. A refused, exhausted or malformed view fails the
+example; the source desk cannot mark that proposal ready. These observations
+require `--profile compiled`; ordinary invoke-only cases keep their meaning.
+
 ## Artifacts and pins
 
 `delvetalk-lowered-v1` retains exact UTF-8 source, source/lowered hashes, syntax,

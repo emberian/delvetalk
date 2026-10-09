@@ -2,6 +2,12 @@ examples DelveTalk 1
 
 case visitors open the moon door
 law maker visitor
+observe main
+  title: The moon door
+  prose: A silver door with a crescent knocker. Whisper moon.
+  offer knock -> knock: Whisper to the door
+expect view
+
 as visitor
 at initial
 send knock

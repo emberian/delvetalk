@@ -14,7 +14,8 @@ Public posting and unattended receiving are not enabled.
 
 The [spell forge](protocols/town-forge/README.md) lets a maker create a door, submit
 actual Objective Bend source and readable examples in posts, then explicitly install a checked revision.
-Another participant uses the changed behavior and interface. The hosted factories
+Authors can test answers, descriptions and offered actions together. Another
+participant uses the changed behavior and interface. The hosted factories
 and operator custody are ready for manually tended replies.
 
 The [website](https://delvetalk.fg-goose.online) is a parallel inspection surface

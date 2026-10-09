@@ -13,6 +13,7 @@ def parse(source):
     if not lines or lines[0] != MAGIC:
         raise ValueError('expected ' + MAGIC)
     cases, case, step, principal, root = [], None, None, None, 'current'
+    offer = None
     offset = 1
 
     def token(value):
@@ -84,6 +85,11 @@ def parse(source):
                 raise ValueError('as requires a completed previous step and a law')
             principal = token(line[3:])
             root = 'current'
+        elif line.startswith('observe '):
+            if 'law' not in case or step is not None or principal is not None:
+                raise ValueError('observe requires a law and a completed previous step')
+            step = {'observe': token(line[8:]), 'view': {'actions': {}}}
+            offer = None
         elif line.startswith('at '):
             if principal is None or step is not None or line[3:] not in ('initial', 'current'):
                 raise ValueError('at initial|current belongs between as and send')
@@ -95,6 +101,27 @@ def parse(source):
         elif line.startswith('  '):
             if step is None:
                 raise ValueError('input fields belong after send')
+            if 'observe' in step:
+                if line.startswith('    '):
+                    if offer is None:
+                        raise ValueError('view action input requires offer')
+                    name, item = literal(line[4:])
+                    if name in offer['input']:
+                        raise ValueError('duplicate action input field')
+                    offer['input'][name] = item
+                elif line.startswith('  offer '):
+                    match = re.fullmatch(r'  offer ([^\s:]+) -> ([^\s:]+):(?: (.*))?', line)
+                    if not match or match[1] in step['view']['actions']:
+                        raise ValueError('expected unique offer NAME -> COMMAND: TEXT')
+                    offer = {'text': value(match[3] or '', 'String'), 'command': match[2], 'input': {}}
+                    step['view']['actions'][match[1]] = offer
+                else:
+                    name, item = literal(line[2:])
+                    if name not in ('title', 'prose') or name in step['view'] or not isinstance(item, str):
+                        raise ValueError('view requires one String title and prose')
+                    step['view'][name] = item
+                    offer = None
+                continue
             name, item = literal(line[2:])
             if name in step['input']:
                 raise ValueError('duplicate input field')
@@ -102,7 +129,10 @@ def parse(source):
         elif line.startswith('expect '):
             if step is None:
                 raise ValueError('expect requires send')
-            if line == 'expect committed':
+            if 'observe' in step:
+                if line != 'expect view' or set(step['view']) != {'title', 'prose', 'actions'}:
+                    raise ValueError('observe requires title, prose and expect view')
+            elif line == 'expect committed':
                 step['kind'] = 'committed'
             else:
                 name, item = literal(line[7:])

@@ -194,6 +194,15 @@ function fieldInput(field, actionId, index) {
   input.dataset.fieldType = field.type;
   if (field.type === 'bool') label.append(input, caption);
   else label.append(caption, input);
+  if (Object.hasOwn(field, 'example')) {
+    // An authored example is guidance, never a default or a bound input.
+    const example = field.example === '' ? '""' : text(field.example);
+    if (field.type === 'string' || field.type === 'nat') input.placeholder = example;
+    const hint = element('span', 'help', `Example: ${example}`);
+    hint.id = `${id}-example`;
+    input.setAttribute('aria-describedby', hint.id);
+    label.append(hint);
+  }
   return { label, input, field };
 }
 function readFields(controls) {

@@ -24,6 +24,7 @@ def module(name, relative):
 translation = module('proposal_translation', 'scripts/translate.py')
 world = module('proposal_world', 'scripts/world.py')
 runtime_profile = module('proposal_runtime_profile', 'scripts/runtime_profile.py')
+projection = module('proposal_projection', 'scene/projection.py')
 
 
 def digest(raw):
@@ -60,6 +61,17 @@ def validate_scenarios(scenarios):
         if total > 256:
             raise ValueError('scenarios exceed 256 total steps')
         for step in scenario['steps']:
+            if isinstance(step, dict) and 'observe' in step:
+                exact_keys(step, {'observe', 'view'}, set(), 'observation')
+                nonempty_string(step['observe'], 'observation.observe')
+                # Reuse the renderer's ViewData contract. Command existence is
+                # checked against the actual installed root when projecting.
+                view = step['view']
+                actions = view.get('actions', {}) if isinstance(view, dict) else {}
+                commands = [action.get('command') for action in actions.values()
+                            if isinstance(action, dict)] if isinstance(actions, dict) else []
+                projection._validate(view, {'protocol': {'commands': commands}})
+                continue
             exact_keys(step, {'principal', 'command', 'input', 'root', 'kind'},
                        {'state', 'error', 'result', 'outbox'}, 'step')
             nonempty_string(step['principal'], 'step.principal')
@@ -103,6 +115,10 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
     binary = world.PROFILES[profile][0]
     if not (ROOT / '.lake/build/bin' / binary).is_file():
         raise ValueError('build ' + binary + ' before checking proposals')
+    observing = any('observe' in step for scenario in scenarios for step in scenario['steps'])
+    if observing and profile != 'compiled':
+        raise ValueError('source view observations require the compiled profile')
+    expected_runtime = {'name': profile, 'files': runtime_profile.file_hashes(profile)} if observing else None
     results = []
     with tempfile.TemporaryDirectory(prefix='delvetalk-proposal-') as temporary:
         for index, scenario in enumerate(scenarios):
@@ -118,6 +134,23 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
                 continue
             initial = installation['data']['root']
             for step_index, step in enumerate(scenario['steps']):
+                if 'observe' in step:
+                    root = world.exchange(database, {
+                        'op': 'inspect', 'object': 'candidate', 'principal': 'proposal-fixture'}, profile=profile)
+                    try:
+                        program = root['protocol'].get('viewProgram')
+                        if not isinstance(program, dict) or program.get('profile') != projection.SOURCE_PROFILE:
+                            raise projection.ProjectionError('observation requires a source view')
+                        view = projection.project(root, 'candidate', step['observe'], expected_runtime=expected_runtime)
+                        result['steps'].append({'index': step_index, 'view': view})
+                        if not json_equal(step['view'], view['data']):
+                            result['failures'].append({'at': step_index, 'field': 'view',
+                                                      'expected': step['view'], 'actual': view['data']})
+                    except projection.ProjectionError as error:
+                        result['steps'].append({'index': step_index, 'viewError': str(error)})
+                        result['failures'].append({'at': step_index, 'field': 'view',
+                                                  'expected': step['view'], 'error': str(error)})
+                    continue
                 root = initial if step['root'] == 'initial' else world.exchange(database, {
                     'op': 'inspect', 'object': 'candidate', 'principal': 'proposal-fixture'}, profile=profile)
                 receipt = world.exchange(database, {
@@ -141,6 +174,7 @@ def execution_pin(profile='world'):
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
     files = {**runtime_profile.file_hashes(profile),
+             'scene/projection.py': digest((ROOT / 'scene/projection.py').read_bytes()),
              'syntaxes/spell_examples.py': digest((ROOT / 'syntaxes/spell_examples.py').read_bytes()),
              'scripts/propose.py': digest(Path(__file__).read_bytes())}
     identity = {'profile': 'delvetalk-local-v1', 'admissionProfile': profile, 'files': files,

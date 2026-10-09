@@ -81,6 +81,7 @@ delve:
 	python3 conformance/test_clerk_compiled.py
 	python3 conformance/test_clerk_attach.py
 	python3 conformance/test_town_cards.py
+	python3 conformance/test_authored_interfaces.py
 	python3 conformance/test_town_receiving.py
 	python3 conformance/test_town_journey.py
 	python3 conformance/test_town_operator.py
@@ -117,4 +118,5 @@ portal:
 	python3 conformance/test_submission.py
 	python3 conformance/test_portal_public.py
 	node --check portal/static/app.js
+	node conformance/test_portal_forms.mjs
 check: build worker-resources scene-build capsules core typed packages world wiki syntax delve proposals scene portal

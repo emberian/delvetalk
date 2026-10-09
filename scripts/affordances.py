@@ -41,7 +41,7 @@ def _normalize_field(name, specification):
     _string(name, "field name", 128, nonempty=True)
     if not isinstance(specification, dict): raise AffordanceError("field specification must be an object")
     kind = specification.get("type")
-    common = {"type", "label"}
+    common = {"type", "label", "example"}
     allowed = {"string": {"minLength", "maxLength"}, "nat": {"minimum", "maximum"},
                "bool": set(), "enum": {"options"}}
     if not isinstance(kind, str) or kind not in allowed or set(specification) - common - allowed[kind]:
@@ -61,6 +61,8 @@ def _normalize_field(name, specification):
         for value in options: _string(value, "enum option", 256)
         if len(set(options)) != len(options): raise AffordanceError("enum options must be distinct")
         field["options"] = list(options)
+    if "example" in specification:
+        field["example"] = _validate_values([field], {name: specification["example"]})[name]
     return field
 
 
@@ -152,6 +154,7 @@ def validate_children_schema(children, fields):
             field = schema.get(name)
             if field is None or field["type"] != "string" or not 1 <= field["minLength"] <= field["maxLength"] <= 64:
                 raise AffordanceError("child field must declare string bounds within 1..64")
+            if "example" in field: _child_name(field["example"])
     return copy.deepcopy(children)
 
 

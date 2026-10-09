@@ -98,6 +98,40 @@ class TownCardsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'parent'):
             self.resolve(bad)
 
+    def test_authored_examples_render_literal_fields_without_becoming_defaults(self):
+        protocol = typed_protocol()
+        examples = {'message': 'A lamp for lost moths\n雪', 'count': 3, 'open': True, 'color': 'amber'}
+        for name, value in examples.items():
+            protocol['affordances']['write a notice']['fields'][name]['example'] = value
+        root = self.exchange({'op': 'create', 'object': 'examples', 'principal': 'owner',
+            'intent': 'examples', 'protocol': protocol, 'law': [ACTOR]})['data']['root']
+        self.view = {'mode': 'raw', 'object': 'examples', 'root': root}
+        card = self.bind()
+        action = card['card']['actions'][0]
+        text = town.spell('notice', action, examples)
+        self.assertIn(text, card['body'])
+        wire, _ = self.resolve({**self.reply(), 'text': text})
+        self.assertEqual(wire['input'], examples)
+        self.assertEqual(self.exchange({**wire, 'principal': ACTOR, 'intent': 'authored-example'})['kind'], 'committed')
+        with self.assertRaisesRegex(ValueError, 'exactly'):
+            self.resolve({**self.reply(), 'text': 'delvetalk notice a1'})
+
+    def test_factory_example_keeps_authored_name_and_absence_requirement(self):
+        protocol = town.loads((ROOT / 'protocols/factories/object.json').read_bytes())
+        protocol['affordances']['make']['fields']['name']['example'] = 'moth-lamp'
+        root = self.exchange({'op': 'create', 'object': 'forge', 'principal': 'owner',
+            'intent': 'forge', 'protocol': protocol, 'law': [ACTOR]})['data']['root']
+        self.view = {'mode': 'raw', 'object': 'forge', 'root': root}
+        card = self.bind('forge')
+        self.assertIn('Choose an unused name.', card['body'])
+        self.assertIn('delvetalk forge make\nname: moth-lamp', card['body'])
+        self.assertNotIn('Requires absent children', card['body'])
+        wire, _ = self.resolve({**self.reply('forge'), 'text': 'delvetalk forge make\nname: moth-lamp'})
+        self.assertEqual(wire['absent'], ['forge/moth-lamp'])
+        receipt = self.exchange({**wire, 'principal': ACTOR, 'intent': 'make-lamp'})
+        self.assertEqual(receipt['kind'], 'committed', receipt)
+        self.assertIn('forge/moth-lamp', receipt['data']['allocated'])
+
     def test_literal_blocks_roundtrip_without_escape_or_unicode_normalization(self):
         self.bind()
         action = self.book.card('notice')['card']['actions'][0]
@@ -176,6 +210,27 @@ class TownCardsTests(unittest.TestCase):
         record['text'] += '\n' + first['body']
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             self.resolve(self.reply('first'))
+
+    def test_rendering_upgrade_keeps_existing_bytes_binding_and_request(self):
+        from unittest.mock import patch
+        previous = '[[delvetalk-card previous]]\nAn older presentation.\n[[/delvetalk-card previous]]'
+        with patch.object(town, 'render_card', return_value=previous):
+            old = self.book.capture(self.view, 'previous')
+        reopened = town.CardBook(self.path / 'book')
+        self.assertEqual(reopened.card('previous'), old)
+        self.records[PUBLICATION['uri']] = {'cid': PUBLICATION['cid'],
+            'value': {'$type': town.FEED, 'text': previous}}
+        reopened.bind('previous', PUBLICATION, self.fetch)
+        wire, _ = reopened.resolve(self.reply('previous'), ACTOR, SOURCE, self.fetch, [ISSUER])
+        self.assertEqual(wire['expected'], self.root)
+        with self.assertRaisesRegex(ValueError, 'already bound'):
+            reopened.capture(self.view, 'previous')
+        self.assertEqual(reopened.card('previous'), old)
+        fresh = reopened.capture(self.view, 'fresh')
+        self.assertNotEqual(fresh['body'], previous)
+        self.assertIn('describe your intention', fresh['body'])
+        self.assertIn('If refused because the world changed', fresh['body'])
+        self.assertIn('check your original reply; do not repeat it', fresh['body'])
 
     def test_bound_issuer_parent_cid_edit_and_copy_are_not_interchangeable(self):
         card = self.bind()
@@ -260,8 +315,16 @@ class TownCardsTests(unittest.TestCase):
         self.assertEqual(len(card['panels']), 6)
         self.assertTrue(all(p['view']['root'] == root for p in card['panels']))
         self.assertIn('"Garden":', card['body'])
-        self.assertIn('"Planted by":', card['body'])
+        self.assertNotIn('"Planted by":', card['body'])
+        self.assertNotIn('captured version', card['body'])
+        self.assertNotIn('Object "garden"', card['body'])
         self.assertEqual(card['objectRef']['object'], 'garden')
+        planted = self.exchange({'op': 'invoke', 'object': 'garden', 'principal': ACTOR,
+            'intent': 'plant', 'expected': root, 'command': 'plant',
+            'input': {'seed': 'a bell for lost moths', 'colour': 'amber'}})['data']['root']
+        planted_card = book.capture(room.inspect_object(planted, 'garden'), 'planted')
+        self.assertIn('"Planted by":\n| @gardener', planted_card['body'])
+        self.assertIn('a bell for lost moths', planted_card['body'])
         invalid = copy.deepcopy(view)
         invalid['root']['protocol']['viewPanels'] *= 2
         with self.assertRaises(ValueError): book.capture(invalid)

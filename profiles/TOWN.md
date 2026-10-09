@@ -10,6 +10,10 @@ colour: silver
 
 Reply **to its published post**. `METHOD` in `delvetalk CARD METHOD` names a unique captured command; `aN` remains a fallback. Fields use `field: literal`: remove one separator space, preserve other spaces/Unicode. Naturals require canonical ASCII decimal; Booleans require `true`/`false`. Multiline strings use `field: <<END`, literal lines, then standalone `END`; choose an absent delimiter. Framing linefeeds disappear; a blank final content line preserves a final linefeed. Unknown/duplicate fields refuse. Legacy `delvetalk CARD aN {JSON fields}` still works. Surrounding prose needs interpretation. [Field bounds](AFFORDANCES.md) apply.
 
+New cards use authored field examples when provided; examples remain editable
+guidance. Empty panels and internal version headers stay out of projected cards;
+raw inspection retains state details. Existing captures keep their original bytes.
+
 Cards retain exact readings; they never refresh during admission. After refusal, use a fresh card. After uncertainty, link the **original reply** for recovery. Do not repost or edit: a new record is a new attempt.
 
 ## Operator reference

@@ -163,6 +163,61 @@ class AffordanceTests(unittest.TestCase):
             changed["root"]["protocol"]["affordances"]["write a notice"]["fields"]["extra"] = bad
             with self.assertRaises(a.AffordanceError): a.card(changed)
 
+    def test_authored_examples_survive_raw_and_projected_cards_without_becoming_defaults(self):
+        protocol = typed_protocol()
+        examples = {"message": "Meet under the lantern.", "count": 2, "open": False, "color": "amber"}
+        for name, value in examples.items():
+            protocol["affordances"]["write a notice"]["fields"][name]["example"] = value
+        root = self.create(protocol)
+        view = room.inspect_object(root, "object")
+        action = a.card(view)["actions"][0]
+        self.assertEqual({f["name"]: f["example"] for f in action["fields"]}, examples)
+        self.assertEqual(a.validate_fields_schema(action["fields"]), action["fields"])
+        with self.assertRaises(a.AffordanceError): a.request(view, "a1", "actor", "missing")
+        with self.assertRaises(a.AffordanceError): a.validate_fields({**action, "available": False}, examples)
+        with self.assertRaises(a.AffordanceError): a.validate_fields({**action, "inspectOnly": True}, examples)
+        actual = {**examples, "message": "My own words."}
+        denied = a.request(view, "a1", "stranger", "denied", actual)
+        self.assertEqual(world.exchange(self.db, denied)["data"], "unauthorized")
+        first = a.request(view, "a1", "actor", "first", actual)
+        self.assertEqual(first["input"], actual)
+        committed = world.exchange(self.db, first)
+        self.assertEqual(committed["kind"], "committed", committed)
+        stale = a.request(view, "a1", "actor", "stale", examples)
+        self.assertEqual(stale["expected"], root)
+        self.assertEqual(world.exchange(self.db, stale)["data"], "stale read root")
+        self.assertEqual(world.exchange(self.db, first), committed)
+
+        view.update(format="delvetalk-projection-view-v1", mode="projection", data={
+            "title": "Blue notice", "prose": "", "actions": {"write": {
+                "text": "Write in blue", "command": "write a notice", "input": {"color": "blue"}}}})
+        projected = a.card(view)["actions"][0]
+        self.assertNotIn("color", [f["name"] for f in projected["fields"]])
+        self.assertEqual({f["name"]: f["example"] for f in projected["fields"]},
+                         {k: v for k, v in examples.items() if k != "color"})
+        supplied = {k: v for k, v in actual.items() if k != "color"}
+        self.assertEqual(a.request(view, "a1", "actor", "projected", supplied)["input"],
+                         {**supplied, "color": "blue"})
+        with self.assertRaises(a.AffordanceError): a.request(view, "a1", "actor", "override", actual)
+        view["root"]["protocol"]["affordances"]["write a notice"]["fields"]["color"]["example"] = "green"
+        with self.assertRaises(a.AffordanceError): a.card(view)
+
+    def test_examples_use_the_same_strict_value_validation_on_both_schema_paths(self):
+        view = room.inspect_object(self.create(typed_protocol()), "object")
+        action = a.card(view)["actions"][0]
+        bad_examples = [("message", ""), ("message", "x" * 81), ("message", "\ud800"),
+                        ("message", {}), ("message", None), ("count", True), ("count", 0),
+                        ("count", 11), ("count", 1.0), ("count", "1"), ("open", 0),
+                        ("open", "false"), ("color", "green"), ("color", ["blue"])]
+        for name, example in bad_examples:
+            with self.subTest(name=name, example=repr(example)):
+                changed = copy.deepcopy(view)
+                changed["root"]["protocol"]["affordances"]["write a notice"]["fields"][name]["example"] = example
+                with self.assertRaises(a.AffordanceError): a.card(changed)
+                fields = copy.deepcopy(action["fields"])
+                next(f for f in fields if f["name"] == name)["example"] = example
+                with self.assertRaises(a.AffordanceError): a.validate_fields_schema(fields)
+
     def test_markup_is_data_and_no_input_is_invented(self):
         protocol = typed_protocol()
         protocol["name"] = '<img src=x onerror="bad()">'

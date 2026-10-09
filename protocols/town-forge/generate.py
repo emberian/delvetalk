@@ -135,7 +135,8 @@ def factory(kind, child, law):
         'viewProgram': view(label(title), prose, action('make', make_label)),
         'viewPanels': [{'id': 'last', 'label': 'Last made'}],
         'affordances': {'make': {'label': make_label,
-            'fields': {'name': form_string('A short name', 64)}, 'children': ['name']}},
+            'fields': {'name': {**form_string('A short name', 64),
+                'example': 'moon-door' if making_doors else 'moon-workshop'}}, 'children': ['name']}},
         'commands': {'make': {'require': [], 'set': {'last': I('name')},
             'result': ['record', {'name': I('name'), 'maker': P}], 'outbox': [],
             'allocate': [{'name': I('name'), 'protocol': L(child), 'law': law}]}}}

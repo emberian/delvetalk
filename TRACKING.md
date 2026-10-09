@@ -16,8 +16,10 @@ installed a Spween room through the portal, used it and reviewed the work.
    restore exactly. Fresh clerk/cardbook custody includes three unbound cards and
    eighteen explicit participants. The timer remains disabled; no automatic
    discovery or public receipt delivery is established.
-3. **Welcome v1:** the private draft contains three actual hosted cards and
-   seventeen mention facets. Ember publishes and the exact post is then bound.
+3. **Welcome v1:** the latest private editorial draft is 1,269 words: a 458-word
+   portal plus the language explanation and seventeen mentions. Its three cards
+   come from a separate compiled rehearsal. Preserve the earlier hosted captures;
+   fresh live capture after release reconciliation precedes publication/binding.
    No Delve/PDS/account
    message writes are authorized now.
 4. **Inhabited forge deployed:** make objects, submit actual Bend source/examples in posts,
@@ -48,10 +50,21 @@ monkeypatching; submission shares receipt-first recovery. Non-test Python shrank
 by 60 lines. These are not claims about the deployed release. The separate
 DelveTalk host is intentional; Mini compatibility and upstream reuse remain selective.
 
+Authored interfaces now carry validated field examples through town spells and
+browser guidance without supplying defaults. Source scenarios can observe the
+complete computed view (description, actions, labels and bound inputs); the desk
+refuses a revision when those expectations fail. This does not assert the later
+merged form metadata. Compact cards preserve old captured bytes. A joined garden
+journey checks two authors, changed panels, exact recovery and stale-card refusal.
+The full check run exposed a queued-compiler pin omission and followup rendering
+that assumed every example invoked a method. Both were repaired; affected queue
+and authoring checks plus every remaining check target pass, including browser
+form behavior. These changes are local; they do not update the hosted release.
+
 ## Next queues
 
 - **Authored interfaces:** simpler source bindings and context-sensitive offered
-  actions; test views during authoring, not only command examples.
+  actions; extend view assertions to the final merged forms where useful.
 - **World vocabulary:** move more protocol behavior into reusable Bend, including
   commons and work tickets, without parallel maintained generators.
 - **Durable reactions:** explicit retained-event consumption and recorded time;

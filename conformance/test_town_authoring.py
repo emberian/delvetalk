@@ -22,6 +22,46 @@ history = clerk.module('town_authoring_history', 'scripts/history.py')
 A, B = fixture.A, fixture.B
 ISSUER = 'did:plc:cccccccccccccccccccccccc'
 
+VIEW_SOURCE = '''edition ObjectiveBend 1
+record State:
+  count: Nat
+record Input:
+  amount: Nat
+record Action:
+  text: String
+  command: String
+  input: Input
+record Actions:
+  add: Action
+record View:
+  title: String
+  prose: String
+  actions: Actions
+def view(state: State, panel: String) -> View:
+  {title: "Our counter", prose: if state.count == 0n then "Waiting." else "Growing.", actions: {add: {text: "Add one", command: "add", input: {amount: 1n}}}}
+'''
+
+VIEW_EXAMPLES = '''examples DelveTalk 1
+case visitors read and add
+law builder
+observe main
+  title: Our counter
+  prose: Waiting.
+  offer add -> add: Add one
+    amount (Nat): 1
+expect view
+as builder
+send add
+  amount (Nat): 3
+expect committed
+observe main
+  title: Our counter
+  prose: Growing.
+  offer add -> add: Add one
+    amount (Nat): 1
+expect view
+'''
+
 
 class TownAuthoringTests(unittest.TestCase):
     def setUp(self):
@@ -146,6 +186,71 @@ expect refusal: unauthorized
         expected = clerk.hashlib.sha256((ROOT / 'syntaxes/spell_examples.py').read_bytes()).hexdigest()
         self.assertEqual(binding['implementation']['syntaxes/spell_examples.py'], expected)
         self.assertEqual(self.original_path.read_bytes(), self.original)
+
+    def view_proposal(self, source=VIEW_SOURCE, examples=VIEW_EXAMPLES):
+        protocol = clerk.loads(self.source)
+        protocol['viewProgram'] = {'profile': 'delvetalk-obend-view-v1', 'package': {
+            'modules': [{'name': 'Counter', 'source': source}], 'entry': 'view'}}
+        self.submit(source=clerk.world.wire_dumps(protocol), scenarios=examples)
+        self.run_queue()
+        return self.prepare()
+
+    def test_queued_view_examples_reach_readable_followup_and_retained_recovery(self):
+        result = self.view_proposal()
+        self.assertEqual(result['status'], 'ready', result)
+        self.assertEqual(len(result['fixtures']), 3)
+        before, invocation, after = result['fixtures']
+        self.assertEqual(before['observe'], 'main')
+        self.assertEqual(before['expected'], before['observed'])
+        self.assertEqual(before['observed']['view']['prose'], 'Waiting.')
+        self.assertEqual(after['observed']['view']['prose'], 'Growing.')
+        self.assertEqual(after['observed']['view']['actions']['add'], {
+            'text': 'Add one', 'command': 'add', 'input': {'amount': 1}})
+        self.assertEqual(invocation['observed']['kind'], 'committed')
+        self.assertIn('observe view "main"', result['body'])
+        self.assertNotIn('observe view "main" with input', result['body'])
+        self.assertEqual(self.client.inspect('target'), self.target)
+        self.assertEqual(self.original_path.read_bytes(), self.original)
+        job = compiler_queue.load_job(self.queue.job_path(self.job))
+        build = desk.load_artifact(self.artifacts, self.queue.inspect(self.job)['artifact'])
+        for name, sha in build['report']['execution']['files'].items():
+            self.assertEqual(job['runtime']['files'][name], sha)
+        self.assertIn('scene/projection.py', job['runtime']['files'])
+        # Completed custody remains recoverable after a later implementation
+        # changes. Neither queued execution nor published follow-up is rerun.
+        with patch.object(compiler_queue, 'compiler_pins', side_effect=AssertionError('current compiler')):
+            recovered = compiler_queue.execute_job(self.queue.job_path(self.job))
+            self.assertEqual(recovered['receipt'], self.queue.inspect(self.job)['receipt'])
+        with patch.object(self.town, '_configuration', side_effect=AssertionError('current cards')):
+            self.assertEqual(self.prepare(), result)
+
+    def test_wrong_interface_fails_even_when_queued_behavior_passes(self):
+        result = self.view_proposal(examples=VIEW_EXAMPLES.replace('  title: Our counter', '  title: Other', 1))
+        self.assertEqual(result['status'], 'failed', result)
+        before, invocation, after = result['fixtures']
+        self.assertEqual(before['expected']['view']['title'], 'Other')
+        self.assertEqual(before['observed']['view']['title'], 'Our counter')
+        self.assertEqual(before['failures'][0]['field'], 'view')
+        self.assertEqual(invocation['observed']['kind'], 'committed')
+        self.assertEqual(invocation['failures'], [])
+        self.assertEqual(after['failures'], [])
+        self.assertIn('observe view "main"', result['body'])
+        self.assertEqual(result['cards'], [])
+        self.assertEqual(self.client.inspect('target'), self.target)
+
+    def test_view_projection_error_is_a_retained_failed_example(self):
+        result = self.view_proposal(source=VIEW_SOURCE.replace('command: "add"', 'command: "absent"'))
+        self.assertEqual(result['status'], 'failed', result)
+        before, invocation, after = result['fixtures']
+        for observation in (before, after):
+            self.assertEqual(observation['observe'], 'main')
+            self.assertIn('absent command', observation['observed']['error'])
+            self.assertNotIn('view', observation['observed'])
+            self.assertEqual(observation['failures'][0]['field'], 'view')
+        self.assertEqual(invocation['observed']['kind'], 'committed')
+        self.assertEqual(result['diagnostics'][0]['kind'], 'scenario-failure')
+        self.assertIn('absent command', result['body'])
+        self.assertEqual(result['cards'], [])
 
     def test_assertion_mismatch_and_compile_error_are_different_from_timeout(self):
         scenarios = clerk.loads(self.scenarios)

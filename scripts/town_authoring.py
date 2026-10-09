@@ -56,6 +56,12 @@ def fixture_results(report):
             raise ValueError('compiler report step count mismatch')
         for index, (step, turn) in enumerate(zip(fixture['steps'], outcome['steps'])):
             same(turn['index'], index, 'compiler fixture step')
+            if 'observe' in step:
+                actual = {'error': turn['viewError']} if 'viewError' in turn else {'view': turn['view']['data']}
+                result.append({'name': fixture['name'], 'step': index + 1, 'observe': step['observe'],
+                               'expected': {'view': step['view']}, 'observed': actual,
+                               'failures': [failure for failure in outcome['failures'] if failure['at'] == index]})
+                continue
             receipt = turn['receipt']
             actual = {'kind': receipt['kind'], 'error': receipt['data']}
             if receipt['kind'] == 'committed':
@@ -82,8 +88,10 @@ def describe(result):
             text = canonical(value).decode()
             raw = text.encode('utf-8')
             return text if len(raw) <= 650 else raw[:650].decode('utf-8', errors='ignore') + '… (full value retained)'
-        lines.append('Example ' + shown(item['name']) + ', step ' + str(item['step']) + ' ' + shown(item['command'])
-                     + ' with input ' + shown(item['input']) + ': expected ' + shown(item['expected']) + '; observed ' + shown(item['observed']) + '.')
+        action = ('observe view ' + shown(item['observe']) if 'observe' in item else
+                  shown(item['command']) + ' with input ' + shown(item['input']))
+        lines.append('Example ' + shown(item['name']) + ', step ' + str(item['step']) + ' ' + action
+                     + ': expected ' + shown(item['expected']) + '; observed ' + shown(item['observed']) + '.')
     if len(result.get('fixtures', [])) > 8:
         lines.append('Further examples are retained in the complete local report.')
     for notice in result.get('notices', []):

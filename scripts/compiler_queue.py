@@ -19,12 +19,13 @@ save = worker.clerk.save
 
 def compiler_pins(profile, expected):
     """Reviewed runtime plus the selected registered compiler dependency closure."""
-    files = desk.execution_profile(profile)['files']
+    proposal = desk.module('queue_proposal', 'scripts/propose.py')
+    files = {**desk.execution_profile(profile)['files'], **proposal.execution_pin(profile)['files']}
     registry = loads((ROOT / 'syntaxes/registry.json').read_bytes())
     adapter = registry['syntaxes'].get(expected['state']['proposal']['syntax'], {})
     validator = registry['targets'].get(adapter.get('target'), {})
     paths = {'scripts/compiler_queue.py', 'scripts/worker.py', 'scripts/clerk.py',
-             'scripts/propose.py', 'scripts/translate.py', 'syntaxes/registry.json', 'syntaxes/spell_examples.py',
+             'scripts/translate.py', 'syntaxes/registry.json',
              *registry['closure'], *adapter.get('closure', []), *validator.get('closure', [])}
     if adapter.get('module') == 'syntaxes/spween.py':
         paths.add('scene/spween-bridge/target/debug/delvetalk-spween')
