@@ -108,7 +108,7 @@ def finish(context: Abi.Context, result: Nat) -> Activity<Plan, Response, Nat>:
     case written(_): result
     case _: 996n
 def shout(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: {}})):
+  match perform(Plan.await({slot: {principal: "x", intent: "y"}, patience: 1n})):
     case _: 0n
 def grow(state: State, input: {by: Nat}, context: Abi.Context) -> State:
   {count: state.count + input.by}
@@ -320,11 +320,11 @@ class Plans(TurnWorld):
         self.assertEqual(r["receipt"]["outcome"]["clause"], "counter")
         self.assertEqual((self.count("a"), self.count("m")), ((0, "1"), (0, "5")))
 
-    def test_send_refuses_the_turn_by_name_and_admits_nothing(self):
+    def test_an_unsupported_plan_refuses_the_turn_by_name_and_admits_nothing(self):
         r = self.turn("a", "shout", self.target("b"))
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"], out["reason"]),
-                         ("refused", "evaluation", "plan not supported: send"))
+                         ("refused", "evaluation", "plan not supported: await"))
         self.assertEqual((self.count("a"), self.count("b")), ((0, "1"), (0, "7")))
 
     def test_a_pure_method_commits_its_result_as_a_set_of_every_field(self):

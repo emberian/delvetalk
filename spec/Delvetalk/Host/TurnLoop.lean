@@ -55,6 +55,9 @@ structure TurnState where
   roots : List (String × Nat) := []
   writes : List (String × List Step) := []
   principal : String
+  intent : String
+  /-- Sends in order: target object, method, argument. They leave with the commit. -/
+  sends : List (String × String × Data) := []
   ticks : Nat
   plans : Nat := 0
   limits : Json
@@ -228,6 +231,20 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
       else
         let result ← runMethod (depth + 1) id method argument self
         respond bounds responseType "returned" [.record [("result", result)]]
+  | .variant "send" (.record f) =>
+    let some target := f.lookup "object" | evaluation "malformed send plan"
+    let some method := (f.lookup "method").bind labelOf | evaluation "malformed send plan"
+    let some argument := f.lookup "argument" | evaluation "malformed send plan"
+    match referenceId target with
+    | none => refusedWith bounds responseType "foreignWorld"
+    | some id =>
+      let s ← get
+      if s.sends.length ≥ Limits.sendsPerTurn then evaluation "turn exceeds the send capacity"
+      if s.world.pending.size + s.sends.length ≥ Limits.maxPending then
+        evaluation "world exceeds the pending delivery capacity"
+      let delivery := deliveryId s.principal s.intent s.sends.length
+      set { s with sends := s.sends ++ [(id, method, argument)] }
+      respond bounds responseType "delivery" [.record [("id", .label delivery)]]
   | .variant label _ => evaluation s!"plan not supported: {label}"
   | _ => evaluation "plan is not a variant"
 end
@@ -249,28 +266,102 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
     if (entry.getObjValAs? String "turnRequest").toOption == some r.digest then some (turnReply (reply entry))
     else some (duplicate r.principal r.intent entry)
 
+/-- What a turn knows about how it began: the ledger it runs under and, for a
+    delivery, the id and the sender's identity. -/
+structure TurnMeta where
+  ledger : Option Ledger := none
+  delivery : Option (String × Json) := none
+
+def ledgerJson (l : Ledger) : Json := l.json
+
+/-- The sends of an admitted turn, each with the ledger it inherits: depth - 1,
+    work - the ticks this turn used, storage - the bytes its writes added. -/
+def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)
+    (sends : List (String × String × Data)) (updates : List (String × Object)) : List (String × Json) :=
+  if sends.isEmpty then [] else
+  let added := updates.foldl (fun n (id, o) =>
+    let before := ((w.objects[id]?).map fun p => (dataJson p.state).compress.utf8ByteSize).getD 0
+    n + ((dataJson o.state).compress.utf8ByteSize - before)) 0
+  let child : Ledger := ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
+  [("sends", Json.arr (sends.zipIdx.toArray.map fun ((to, method, argument), i) => Json.mkObj
+    [("id", toJson (deliveryId principal intent i)), ("to", toJson to), ("method", toJson method),
+     ("argument", dataJson argument), ("ledger", child.json)]))]
+
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
-    wrong arity) journal nothing; every other end is a receipt. -/
-def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) := do
+    wrong arity) journal nothing, except for a delivery, which must be consumed. -/
+def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String (World × Json) := do
   if let some r := retainedTurn w req then return (w, r)
-  let init : TurnState := { world := w, principal := req.principal, ticks := 1000000, limits := req.limits }
-  let ticks ← match Delvetalk.Turn.budgets req.limits with
+  let ledger := how.ledger.getD ((w.objects[req.object]?).map (·.chain) |>.getD Ledger.start)
+  let requested ← match Delvetalk.Turn.budgets req.limits with
     | .ok b => pure b.ticks
     | .error e => throw e
+  let ticks := requested
+  let init : TurnState := { world := w, principal := req.principal, intent := req.intent, ticks := 1000000, limits := req.limits }
   let (result, st) := (runMethod 0 req.object req.method req.argument "" |>.run).run { init with ticks }
   let w := { w with compiled := st.world.compiled }
   let used := ticks - st.ticks
   let proposal : Proposal := ⟨req.principal, req.intent, st.roots, st.writes, w.height + 1⟩
-  let base := [("turnRequest", toJson req.digest), ("ticksUsed", toJson used)]
-  match result with
-  | .error (.request message) => throw message
-  | .error (.evaluation reason) =>
+  let base := [("turnRequest", toJson req.digest), ("ticksUsed", toJson used), ("ledger", ledger.json)] ++
+    (how.delivery.map fun (id, sender) => [("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]).getD []
+  let refuse := fun (reason : String) =>
     let cls := if st.roots.isEmpty && !w.objects.contains req.object then "unknownObject" else "evaluation"
     let (w', r) := commit w { proposal with writes := [] } base
       (some { cls, reason := some reason, object := if cls == "unknownObject" then some req.object else none })
-    return (w', turnReply r)
+    (w', turnReply r)
+  match result with
+  | .error (.request message) => if how.delivery.isSome then return refuse message else throw message
+  | .error (.evaluation reason) => return refuse reason
   | .ok value =>
-    let (w', r) := commit w proposal (base ++ [("result", dataJson value)])
+    let (w', r) := commit w proposal (base ++ [("result", dataJson value)]) none
+      (sendsJson w req.principal req.intent ledger used st.sends)
     return (w', turnReply r)
+
+def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+  runTurnWith w req {}
+
+/-- Run the oldest pending delivery as a turn of its sender's principal. -/
+def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
+  let id ← d.getObjValAs? String "id"
+  let principal ← d.getObjValAs? String "principal"
+  let sender ← d.getObjVal? "from"
+  let ledger ← ledgerOf (← d.getObjVal? "ledger")
+  let how : TurnMeta := { ledger := some ledger, delivery := some (id, sender) }
+  match ledger.exhausted with
+  | some field =>
+    let p : Proposal := ⟨principal, id, [], [], w.height + 1⟩
+    let (w', r) := commit w p
+      [("ledger", ledger.json), ("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]
+      (some { cls := "budgetExhausted", reason := some field })
+    return (w', r)
+  | none =>
+    let argument ← decodeData Limits.dataDepth (← d.getObjVal? "argument")
+    let object ← d.getObjValAs? String "to"
+    let method ← d.getObjValAs? String "method"
+    let req : TurnRequest :=
+      { principal := principal
+        object := object
+        method := method
+        argument := argument
+        intent := id
+        limits := Json.mkObj []
+        digest := Journal.bodyHash d }
+    runTurnWith w req how
+
+/-- Up to `limit` deliveries, oldest first; sends of a delivery join the queue. -/
+def deliver (w : World) (limit : Nat) : Except String (World × Json) := do
+  let mut w := w
+  let mut receipts : Array Json := #[]
+  for _ in [0:min limit Limits.deliveriesPerCall] do
+    let some d := w.pending[0]? | break
+    let (w', r) ← deliverOne w d
+    w := w'
+    receipts := receipts.push r
+  return (w, Json.mkObj [("status", toJson "delivered"), ("receipts", Json.arr receipts),
+    ("pending", toJson w.pending.size)])
+
+def pendingReply (w : World) : Json :=
+  Json.mkObj [("status", toJson "pending"), ("count", toJson w.pending.size),
+    ("ids", Json.arr ((w.pending.extract 0 Limits.maxHistoryLimit).map fun p =>
+      (p.getObjVal? "id").toOption.getD Json.null))]
 
 end Delvetalk.Host

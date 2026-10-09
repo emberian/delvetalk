@@ -37,6 +37,17 @@ def maxCompiledPackets : Nat := 256
 def maxMethodBytes : Nat := 128
 /-- Principals named in one object's read policy. -/
 def maxReaders : Nat := 256
+/-- The causal ledger a principal's turn starts with; a delivery inherits its
+    sender's, decremented. Creation may lower these per object, never raise them. -/
+def maxDepth : Nat := 100
+/-- Machine ticks across a whole chain of deliveries. -/
+def chainWork : Nat := 10000000
+/-- Bytes of state a chain may add. -/
+def chainStorage : Nat := 1048576
+def deliveriesPerCall : Nat := 16
+def sendsPerTurn : Nat := 32
+/-- Undelivered sends held by the world. -/
+def maxPending : Nat := 4096
 def genesis : String := "".pushn '0' 64
 end Limits
 
@@ -51,6 +62,22 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
+
+/-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
+structure Ledger where
+  depth : Nat
+  work : Nat
+  storage : Nat
+
+def Ledger.start : Ledger := ⟨Limits.maxDepth, Limits.chainWork, Limits.chainStorage⟩
+
+def Ledger.json (l : Ledger) : Json :=
+  Json.mkObj [("depth", toJson l.depth), ("work", toJson l.work), ("storage", toJson l.storage)]
+
+/-- The first exhausted field, in the order depth, work, storage. -/
+def Ledger.exhausted (l : Ledger) : Option String :=
+  if l.depth == 0 then some "depth" else if l.work == 0 then some "work"
+  else if l.storage == 0 then some "storage" else none
 
 /-- Who may `view` an object; fixed at creation and journaled with it. -/
 inductive ReadPolicy where
@@ -75,6 +102,8 @@ structure Object where
   stateType : Ty
   bounds : DataBounds := []
   read : ReadPolicy := .«public»
+  /-- Ledger of turns started on this object (creation may only lower it). -/
+  chain : Ledger := Ledger.start
   /-- The journaled compile inputs (modules, limits); a method is one more `entry`. -/
   inputs : Json := Json.null
   /-- Digest of `inputs`, the key of this object's compiled methods. -/
@@ -93,6 +122,8 @@ structure World where
   touched : Std.HashMap String (Array Nat) := {}
   /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
   compiled : Std.HashMap String Compiled := {}
+  /-- Undelivered sends in journal order, derived from the journal. -/
+  pending : Array Json := #[]
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress
