@@ -153,9 +153,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-create" => durable s (fun w => create w request)
       | "world-turn" => durable s (fun w => do runTurn w (← parseTurn request))
       | "world-deliver" => durable s (fun w => do
-          let limit := match request.getObjVal? "limit" with
-            | .ok l => (natOf l).toOption.getD Limits.deliveriesPerCall
-            | .error _ => Limits.deliveriesPerCall
+          let limit := (← optNat request "limit").getD Limits.deliveriesPerCall
+          if limit == 0 || limit > Limits.deliveriesPerCall then
+            throw s!"limit must be 1..{Limits.deliveriesPerCall}"
           deliver w limit)
       | "world-pending" => return (session, .ok (pendingReply s.world))
       | "world-library" => do

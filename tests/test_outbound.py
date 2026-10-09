@@ -368,6 +368,58 @@ class Transient(Reflection):
         return [o["text"] for o in self.host.send(op="world-offers", principal="kim")["offers"]]
 
 
+def nested(depth, leaf):
+    return "Lists.List<" * depth + leaf + ">" * depth
+
+
+DEEP = """edition ObjectiveBend 1
+import ./List.obend as Lists
+record State:
+  deep: %s
+def initial() -> State:
+  {deep: %s.nil({})}
+"""
+
+
+class Malformed(Reflection):
+    """Silent defaults refuse by name."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("teller", TELLER, record(note=label("")))
+
+    def test_malformed_turn_limits_are_refused_by_name_not_defaulted(self):
+        base = dict(op="world-turn", principal="kim", object="teller", method="tell",
+                    argument=record(to=label(""), text=label("t")))
+        for limits, word in (({"ticks": "many"}, "ticks"), ({"ticks": -3}, "ticks"), ("fast", "limits")):
+            r = self.host.send(identity=f"l-{word}-{limits}", limits=limits, **base)
+            self.assertEqual(r["status"], "error", (limits, r))
+            self.assertIn(word, r["message"])
+
+    def test_a_malformed_or_out_of_range_deliver_limit_is_refused(self):
+        for bad in ("x", 0, 10 ** 6):
+            r = self.host.send(op="world-deliver", limit=bad)
+            self.assertEqual(r["status"], "error", (bad, r))
+            self.assertIn("limit", r["message"])
+        self.assertEqual(self.host.send(op="world-deliver", limit=4)["status"], "delivered")
+
+    def test_a_malformed_migration_is_refused_not_read_as_none(self):
+        r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="teller", version=0,
+                           package=TELLER, migration=7)
+        self.assertEqual(r["status"], "error", r)
+        self.assertIn("migration", r["message"])
+
+    def test_a_state_type_differing_below_eight_rounds_of_bounds_is_not_the_same(self):
+        depth = 12
+        old = DEEP % (nested(depth, "Nat"), nested(depth - 1, "Nat").replace("Lists.List<", "Lists.List::<", 1) if False else "Lists.List::<" + nested(depth - 1, "Nat") + ">")
+        new = DEEP % (nested(depth, "Bool"), "Lists.List::<" + nested(depth - 1, "Bool") + ">")
+        self.make("deep", old, record(deep={"tag": "variant", "label": "nil", "payload": record()}))
+        r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="deep", version=0, package=new)
+        self.assertEqual(r["status"], "refused", r)
+        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]), ("programRefused", "stateType"))
+
+
 class Settings(Reflection):
     def test_a_named_clock_alone_moves_the_clock_and_confirms_posts(self):
         r = self.host.send(op="world-open", path=self.path, library=self.library(), principal="ember", clock="transport")

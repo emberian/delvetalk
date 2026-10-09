@@ -24,6 +24,21 @@ def natOf (j : Json) : Except String Nat :=
 
 def natField (j : Json) (key : String) : Except String Nat := do natOf (← j.getObjVal? key)
 
+/-- A request's optional text field, refused by name when present and not text. -/
+def optText (j : Json) (key : String) : Except String (Option String) :=
+  match j.getObjVal? key with
+  | .ok (.str s) => pure (some s)
+  | .ok _ => throw s!"{key} must be text"
+  | .error _ => pure none
+
+/-- A request's optional natural field, refused by name when present and malformed. -/
+def optNat (j : Json) (key : String) : Except String (Option Nat) :=
+  match j.getObjVal? key with
+  | .ok v => match natOf v with
+    | .ok n => pure (some n)
+    | .error _ => throw s!"{key} must be a natural number"
+  | .error _ => pure none
+
 def boundedText (what : String) (cap : Nat) (s : String) : Except String String := do
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
@@ -314,10 +329,19 @@ def tyVariables : Minidregg.Theory.ObjectiveBendTypes.Ty → List Nat
 
 /-- The bounds a type actually uses (transitively): what makes two state types
     the same, ignoring the rest of a package's bounds table. -/
-def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : DataBounds :=
-  let used := (List.range 8).foldl (fun used _ =>
-    (used ++ used.flatMap fun i => ((bounds.lookup i).map tyVariables).getD []).eraseDups) (tyVariables ty).eraseDups
-  bounds.filter fun (i, _) => used.contains i
+def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String DataBounds := do
+  -- The closure of the variables `ty` reaches through the table; each round adds one or stops,
+  -- so `bounds.length + 1` rounds reach the fixpoint. Not reaching it refuses by name.
+  let mut used := (tyVariables ty).eraseDups
+  let mut closed := false
+  for _ in [0:bounds.length + 2] do
+    let next := (used ++ used.flatMap fun i => ((bounds.lookup i).map tyVariables).getD []).eraseDups
+    if next.length == used.length then
+      closed := true
+      break
+    used := next
+  unless closed do throw "type too deep to compare"
+  return bounds.filter fun (i, _) => used.contains i
 
 def inputsKeyOf (inputs : Json) : String :=
   Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
@@ -494,7 +518,9 @@ def prepareProgram (w : World) (o : Object) (source migration : String) : Except
   unless stateTypeOk assumptions ty do
     throw ("compile", "initial() must return a closed record of first-order data")
   let pin ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
-  let same := ty == o.stateType && relevantBounds assumptions.bounds ty == relevantBounds o.bounds o.stateType
+  let same := ty == o.stateType &&
+    (← (relevantBounds assumptions.bounds ty).mapError (("stateType", ·))) ==
+      (← (relevantBounds o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
@@ -1289,7 +1315,7 @@ def replay (content : String) : Except String World := do
 def advance (w : World) (j : Json) : Except String (World × Json) := do
   let to ← natField j "height"
   if !w.clockPrincipal.isEmpty then
-    let who := (j.getObjValAs? String "principal").toOption.getD ""
+    let who := (← optText j "principal").getD ""
     if who != w.clockPrincipal then throw s!"the clock is moved only by {w.clockPrincipal}"
   if to ≤ w.clock then
     return (w, Json.mkObj [("status", toJson "advanced"), ("clock", toJson w.clock)])
@@ -1370,21 +1396,6 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
        ("outcome", Json.mkObj ([("tag", toJson (tagOf entry))] ++
          (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
        ("elided", toJson elided)])
-
-/-- A request's optional text field, refused by name when present and not text. -/
-def optText (j : Json) (key : String) : Except String (Option String) :=
-  match j.getObjVal? key with
-  | .ok (.str s) => pure (some s)
-  | .ok _ => throw s!"{key} must be text"
-  | .error _ => pure none
-
-/-- A request's optional natural field, refused by name when present and malformed. -/
-def optNat (j : Json) (key : String) : Except String (Option Nat) :=
-  match j.getObjVal? key with
-  | .ok v => match natOf v with
-    | .ok n => pure (some n)
-    | .error _ => throw s!"{key} must be a natural number"
-  | .error _ => pure none
 
 /-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
 def readerOf (j : Json) : Except String String := do

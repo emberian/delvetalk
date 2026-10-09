@@ -40,10 +40,13 @@ def parseTurn (j : Json) : Except String TurnRequest := do
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
   unless Minidregg.Compiler.ObjectiveBendParse.isIdent method.toList do throw "invalid method name"
   let argument ← decodeData Limits.dataDepth (← j.getObjVal? "argument")
-  let given := (j.getObjVal? "limits").toOption.getD (Json.mkObj [])
+  let given ← match j.getObjVal? "limits" with
+    | .ok l@(.obj _) => pure l
+    | .ok _ => throw "limits must be an object"
+    | .error _ => pure (Json.mkObj [])
   let limits := if (given.getObjVal? "ticks").toOption.isSome then given
     else given.setObjVal! "ticks" (toJson (toString Limits.maxTurnTicks))
-  if let .ok asked := (given.getObjVal? "ticks").bind natOf then
+  if let some asked := ← optNat given "ticks" then
     if asked > Limits.maxTurnTicks then throw "ticks exceeds the turn ceiling"
   let digest := Journal.bodyHash (Json.mkObj [("principal", toJson principal), ("object", toJson object),
     ("method", toJson method), ("argument", dataJson argument), ("limits", limits)])
@@ -1079,7 +1082,7 @@ def reprogramOp (w : World) (j : Json) : Except String (World × Json) := do
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
   let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
   let source ← j.getObjValAs? String "package"
-  let migration := (j.getObjValAs? String "migration").toOption.getD ""
+  let migration := (← optText j "migration").getD ""
   let version ← natField j "version"
   if (j.getObjVal? "turn").toOption.isSome then throw "turn is assigned by the host and cannot be supplied"
   let p : Proposal :=

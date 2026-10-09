@@ -270,7 +270,12 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   the entry's arrow domain and the packet bounds. If you add a new argument that is a sum, it goes
   through this too. Responses resumed via `resumeActivity` are not re-annotated (checked by
   `conformsUnder`).
-- **relevantBounds** (Ops): a package's `bounds` table includes entries for its own method row, so
+- **No silent defaults** (§11 row 11): optional request fields go through `optText`/`optNat`, which refuse a
+  present but malformed value by name (turn `limits` and `limits.ticks`, `world-deliver.limit` 1..16,
+  `world-history` `after`/`limit` 1..100, `world-offers.after`, `world-objects` `prefix`/`after`,
+  `world-reprogram.migration`, the clock principal of `world-advance`).
+- **relevantBounds** (Ops): closes the variables a type reaches to a fixpoint (at most `bounds.length + 1`
+  rounds; "type too deep to compare" if not reached; it used to stop after eight rounds and answer "same"). a package's `bounds` table includes entries for its own method row, so
   comparing whole tables says two identical state types differ as soon as any def is added. Compare
   `ty` plus only the bounds that `ty` transitively uses (`relevantBounds`). Reprogram depends on it.
 - **conformsUnder bounds**: every conformance and `isDataUnder` call needs the packet's bounds
