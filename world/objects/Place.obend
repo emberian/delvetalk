@@ -3,11 +3,16 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Form.obend as Form
 import ./Card.obend as Card
 record Exit:
   label: String
   to: Plans.Reference
+# owner: who may rename and redescribe the room (by its name and description lenses).
+# A Place is imported by Thing and Avatar for its State and Done, so it cannot declare a
+# law ("a law belongs to the package's entry module"): the guard is the code's.
 record State:
+  owner: String
   name: String
   description: String
   exits: Lists.List<Exit>
@@ -19,25 +24,28 @@ sum Done:
   refused: {reason: String}
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
+  owner: String
   name: String
   description: String
   exits: Lists.List<Exit>
   present: Lists.List<Plans.Reference>
   things: Lists.List<Plans.Reference>
 record Edits:
+  name: Plans.Edit<String, {}>
+  description: Plans.Edit<String, {}>
   present: Plans.Entries<Plans.Reference, {}>
   things: Plans.Entries<Plans.Reference, {}>
 # No call carries an argument: who is acting is the context's business.
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {name: "", description: "", exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
+  {owner: "", name: "", description: "", exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
 def seeded(seed: Seed) -> State:
-  {name: seed.name, description: seed.description, exits: seed.exits, present: seed.present, things: seed.things}
+  {owner: seed.owner, name: seed.name, description: seed.description, exits: seed.exits, present: seed.present, things: seed.things}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {present: Plans.Entries::<Plans.Reference, {}>.keep({}), things: Plans.Entries::<Plans.Reference, {}>.keep({})}
+  {name: Plans.Edit::<String, {}>.keep({}), description: Plans.Edit::<String, {}>.keep({}), present: Plans.Entries::<Plans.Reference, {}>.keep({}), things: Plans.Entries::<Plans.Reference, {}>.keep({})}
 def written(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Done>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Done.done({})
@@ -102,4 +110,6 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answerLensed::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else textConcat("Only the room's owner changes it; that is ", Card.handle(state.owner)), render(state, context))
+def lenses() -> Lists.List<Form.Lens<Edits>>:
+  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})

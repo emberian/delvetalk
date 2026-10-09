@@ -146,24 +146,30 @@ def lensField<E>(lens: Form.Lens<E>) -> String:
   match lens:
     case lens(l): l.field
 def answerLensed<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, guard: String, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+  answerLensedAs::<E, S, R, Reply>(routed, context, forms, lenses, guard, card, fn(reply: Reply) -> Reply: reply)
+# The same for an object whose receive finishes with its own result type: `as` maps the
+# protocol's Reply to it.
+def answerLensedAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, guard: String, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match routed:
-    case set(s): putting::<E, S, R>(s.field, s.value, lensNamed::<E>(lenses, s.field), guard, context, forms, lenses, card)
-    case help(_): tell::<E, S, R, Reply>(Reply.usage({}), help::<E>(context.object, forms, lenses))
-    case _: answer::<E, S, R>(routed, context, forms, card)
-def putting<E, S, R>(field: String, value: String, found: Lists.Maybe<Form.Lens<E>>, guard: String, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case set(s): putting::<E, S, R, T>(s.field, s.value, lensNamed::<E>(lenses, s.field), guard, context, forms, card, as)
+    case help(_): tell::<E, S, R, T>(as(Reply.usage({})), help::<E>(context.object, forms, lenses))
+    case _: answerAs::<E, S, R, T>(routed, context, forms, card, as(replyOf(routed)))
+def refusing<E, S, R, T>(reason: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  answerAs::<E, S, R, T>(Routed.refused({reason: reason}), context, forms, card, as(Reply.refused({reason: reason})))
+def putting<E, S, R, T>(field: String, value: String, found: Lists.Maybe<Form.Lens<E>>, guard: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match found:
-    case none(_): answer::<E, S, R>(Routed.refused({reason: textConcat("No field called ", textConcat(field, " can be set here."))}), context, forms, card)
-    case some(f): if guard != "" then answer::<E, S, R>(Routed.refused({reason: guard}), context, forms, card) else judgedPut::<E, S, R>(f.value, value, context, forms, card)
-def judgedPut<E, S, R>(lens: Form.Lens<E>, value: String, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case none(_): refusing::<E, S, R, T>(textConcat("No field called ", textConcat(field, " can be set here.")), context, forms, card, as)
+    case some(f): if guard != "" then refusing::<E, S, R, T>(guard, context, forms, card, as) else judgedPut::<E, S, R, T>(f.value, value, context, forms, card, as)
+def judgedPut<E, S, R, T>(lens: Form.Lens<E>, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match lens:
-    case lens(l): verdictPut::<E, S, R>(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card)
-def verdictPut<E, S, R>(verdict: Spell.Verdict, edits: E, field: String, value: String, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case lens(l): verdictPut::<E, S, R, T>(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card, as)
+def verdictPut<E, S, R, T>(verdict: Spell.Verdict, edits: E, field: String, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match verdict:
-    case wrong(w): answer::<E, S, R>(Routed.refused({reason: w.reason}), context, forms, card)
-    case fine(_): put::<E, S, R>(edits, field, value, context)
-def put<E, S, R>(edits: E, field: String, value: String, context: Abi.Context) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case wrong(w): refusing::<E, S, R, T>(w.reason, context, forms, card, as)
+    case fine(_): put::<E, S, R, T>(edits, field, value, context, as)
+def put<E, S, R, T>(edits: E, field: String, value: String, context: Abi.Context, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match perform(Plans.Plan::<E>.write({object: Plans.self(context), edits: edits})):
-    case _: tell::<E, S, R, Reply>(Reply.done({action: "set"}), Document.text(textConcat("Set ", textConcat(field, textConcat(" to ", textConcat(value, ".\n"))))))
+    case _: tell::<E, S, R, T>(as(Reply.done({action: "set"})), Document.text(textConcat("Set ", textConcat(field, textConcat(" to ", textConcat(value, ".\n"))))))
 # A lens's value as text or as a natural (0 when the kind is not a number).
 def valueText(value: Form.Value) -> String:
   match value:

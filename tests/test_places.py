@@ -18,15 +18,15 @@ def listing(items):
     return {"tag": "list", "items": list(items)}
 
 
-def place_seed(name, exits=(), present=(), things=()):
-    return record(name=label(name), description=label("about " + name),
+def place_seed(name, exits=(), present=(), things=(), owner="ember"):
+    return record(owner=label(owner), name=label(name), description=label("about " + name),
                   exits=listing([record(label=label(l), to=reference(t)) for l, t in exits]),
                   present=listing([reference(p) for p in present]),
                   things=listing([reference(t) for t in things]))
 
 
-def thing_seed(name, holder="", location=""):
-    return record(name=label(name), description=label("a " + name), holder=reference(holder), location=reference(location))
+def thing_seed(name, holder="", location="", owner="ember"):
+    return record(owner=label(owner), name=label(name), description=label("a " + name), holder=reference(holder), location=reference(location))
 
 
 def avatar_seed(handle, at="", holding=()):

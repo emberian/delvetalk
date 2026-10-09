@@ -123,6 +123,7 @@ sum Reply:
   cleared: {}
   shown: {}
   merged: {post: String}
+  changed: {}
 # A colour by name, or none: a name outside the three is refused, never defaulted.
 def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
   if name == "amber" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.amber({})}) else if name == "violet" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.violet({})}) else if name == "silver" then Lists.Maybe::<Bell.Colour>.some({value: Bell.Colour.silver({})}) else Lists.Maybe::<Bell.Colour>.none({})
@@ -185,7 +186,19 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
     case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else understand(state, input, context, found)
-    case spell(_): judged(state, context, parsed, false, found)
+    case spell(s): if s.action == "set" || s.action == "?" then Card.answerLensedAs::<Edits, State, Planting, Reply>(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else judged(state, context, parsed, false, found)
+# Whether understood prose waits for "yes" is the owner's to set: `delvetalk garden set`
+# with `confirm: yes` or `confirm: no`.
+def lenses() -> Lists.List<Form.Lens<Edits>>:
+  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "confirm", form: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "yes"), "no")}), put: fn(v: Form.Value) -> Edits: extend(keep(), {confirm: Plans.Edit::<Bool, {}>.set({value: Card.valueText(v) == "yes"})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})
+def guard(state: State, context: Abi.Context) -> String:
+  if context.principal == state.owner then "" else textConcat("Only the garden's owner sets it; that is ", Card.handle(state.owner))
+def fromCard(reply: Card.Reply) -> Reply:
+  match reply:
+    case done(_): Reply.changed({})
+    case usage(_): Reply.shown({})
+    case unclear(u): Reply.unclear({needs: u.needs})
+    case refused(r): Reply.refused({reason: r.reason})
 # What is not a spell is given to the policy's model, which can only propose.
 def understand(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   if Plans.isNobody(state.policy) then told(found, context, Reply.refused({reason: "The garden has no interpretation policy."}), refusedCard("The garden has no interpretation policy.")) else interpreted(state, input, context, state.confirm, found)
