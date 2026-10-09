@@ -1,5 +1,6 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
+import ./Form.obend as Form
 # The spell grammar of a card reply (docs/FOUNDATION.md section 4).
 #
 #   delvetalk <card> <action>
@@ -26,7 +27,6 @@ import ./List.obend as Lists
 # size, so only short names are checked against the identifier alphabet; lines
 # are found with a one-scalar alphabet, and the only whole-text operations are
 # one break, one take and one drop per line.
-type Names = Lists.List<String>
 record Binding:
   name: String
   value: String
@@ -34,18 +34,6 @@ type Bindings = Lists.List<Binding>
 sum Parsed:
   spell: {card: String, action: String, fields: Bindings}
   notASpell: {reason: String}
-sum Kind:
-  text: {min: Nat, max: Nat}
-  natural: {min: Nat, max: Nat}
-  choice: {options: Names}
-record Field:
-  name: String
-  kind: Kind
-type Fields = Lists.List<Field>
-record Form:
-  card: String
-  action: String
-  fields: Fields
 sum Value:
   text: {value: String}
   natural: {value: Nat}
@@ -56,7 +44,7 @@ record Entry:
 type Entries = Lists.List<Entry>
 sum Fit:
   proposal: {card: String, action: String, bindings: Entries}
-  unclear: {needs: Names}
+  unclear: {needs: Form.Names}
   refused: {reason: String}
 def identifier() -> String:
   "abcdefghijklmnopqrstuvwxyz0123456789-"
@@ -145,8 +133,8 @@ sum Verdict:
   wrong: {reason: String}
 sum Looked:
   none: {}
-  some: {field: Field}
-def lookup(fields: Fields, name: String) -> Looked:
+  some: {field: Form.Field}
+def lookup(fields: Form.Fields, name: String) -> Looked:
   match fields:
     case nil(_): Looked.none({})
     case cons(c): if c.head.name == name then Looked.some({field: c.head}) else lookup(c.tail, name)
@@ -160,9 +148,9 @@ def number(value: String) -> Number:
   if size == 0n || size > 18n || textSpan(value, "0123456789") != size then Number.no({}) else if size > 1n && textTake(value, 1n) == "0" then Number.no({}) else Number.yes({value: digits(value, 0n)})
 def digits(rest: String, total: Nat) -> Nat:
   if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + digit(textTake(rest, 1n)))
-def joined(options: Names) -> String:
+def joined(options: Form.Names) -> String:
   Lists.fold::<String, String>(options, "", fn(option: String) -> String -> String: fn(rest: String) -> String: if rest == "" then option else textConcat(option, textConcat(", ", rest)))
-def judge(field: Field, value: String) -> Verdict:
+def judge(field: Form.Field, value: String) -> Verdict:
   match field.kind:
     case text(t): if textLength(value) < t.min || textLength(value) > t.max then Verdict.wrong({reason: textConcat(field.name, textConcat(" takes ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters.")))))}) else Verdict.fine({})
     case natural(n): judgeNumber(field.name, n.min, n.max, number(value))
@@ -173,14 +161,14 @@ def judgeNumber(name: String, min: Nat, max: Nat, parsed: Number) -> Verdict:
     case yes(y): if y.value < min || y.value > max then Verdict.wrong({reason: textConcat(name, textConcat(" takes ", textConcat(natText(min), textConcat(" to ", natText(max)))))}) else Verdict.fine({})
 def named(name: String) -> Binding -> Bool:
   fn(binding: Binding) -> Bool: binding.name == name
-def audit(bindings: Bindings, fields: Fields) -> Verdict:
+def audit(bindings: Bindings, fields: Form.Fields) -> Verdict:
   match bindings:
     case nil(_): Verdict.fine({})
     case cons(c):
       match lookup(fields, c.head.name):
         case none(_): Verdict.wrong({reason: textConcat("Unknown field ", c.head.name)})
         case some(s): if Lists.any::<Binding>(c.tail, named(c.head.name)) then Verdict.wrong({reason: textConcat("Duplicate field ", c.head.name)}) else next(judge(s.field, c.head.value), c.tail, fields)
-def next(verdict: Verdict, rest: Bindings, fields: Fields) -> Verdict:
+def next(verdict: Verdict, rest: Bindings, fields: Form.Fields) -> Verdict:
   match verdict:
     case fine(_): audit(rest, fields)
     case wrong(_): verdict
@@ -188,7 +176,7 @@ def valueOf(bindings: Bindings, name: String) -> String:
   match bindings:
     case nil(_): ""
     case cons(c): if c.head.name == name then c.head.value else valueOf(c.tail, name)
-def typed(kind: Kind, value: String) -> Value:
+def typed(kind: Form.Kind, value: String) -> Value:
   match kind:
     case text(_): Value.text({value: value})
     case natural(_): natural(number(value))
@@ -197,19 +185,19 @@ def natural(parsed: Number) -> Value:
   match parsed:
     case no(_): Value.natural({value: 0n})
     case yes(y): Value.natural({value: y.value})
-def entry(bindings: Bindings) -> Field -> Entry:
-  fn(field: Field) -> Entry: {name: field.name, value: typed(field.kind, valueOf(bindings, field.name))}
-def missing(bindings: Bindings, fields: Fields) -> Names:
-  Lists.map::<Field, String>(Lists.filter::<Field>(fields, fn(field: Field) -> Bool: Lists.any::<Binding>(bindings, named(field.name)) == false), fn(field: Field) -> String: field.name)
-def fit(parsed: Parsed, form: Form) -> Fit:
+def entry(bindings: Bindings) -> Form.Field -> Entry:
+  fn(field: Form.Field) -> Entry: {name: field.name, value: typed(field.kind, valueOf(bindings, field.name))}
+def missing(bindings: Bindings, fields: Form.Fields) -> Form.Names:
+  Lists.map::<Form.Field, String>(Lists.filter::<Form.Field>(fields, fn(field: Form.Field) -> Bool: Lists.any::<Binding>(bindings, named(field.name)) == false), fn(field: Form.Field) -> String: field.name)
+def fit(parsed: Parsed, form: Form.Form) -> Fit:
   match parsed:
     case notASpell(n): Fit.refused({reason: n.reason})
     case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: textConcat("This card offers ", textConcat(form.card, textConcat(" ", form.action)))}) else decide(s.fields, form, audit(s.fields, form.fields))
-def decide(bindings: Bindings, form: Form, verdict: Verdict) -> Fit:
+def decide(bindings: Bindings, form: Form.Form, verdict: Verdict) -> Fit:
   match verdict:
     case wrong(w): Fit.refused({reason: w.reason})
     case fine(_): complete(bindings, form, missing(bindings, form.fields))
-def complete(bindings: Bindings, form: Form, needs: Names) -> Fit:
+def complete(bindings: Bindings, form: Form.Form, needs: Form.Names) -> Fit:
   match needs:
-    case nil(_): Fit.proposal({card: form.card, action: form.action, bindings: Lists.map::<Field, Entry>(form.fields, entry(bindings))})
+    case nil(_): Fit.proposal({card: form.card, action: form.action, bindings: Lists.map::<Form.Field, Entry>(form.fields, entry(bindings))})
     case cons(_): Fit.unclear({needs: needs})

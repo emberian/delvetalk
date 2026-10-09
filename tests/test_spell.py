@@ -10,8 +10,9 @@ PROBE = """edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Spell.obend as Spell
+import ./Form.obend as Form
 import ./Garden.obend as Garden
-def bar(items: Spell.Names) -> String:
+def bar(items: Form.Names) -> String:
   Lists.fold::<String, String>(items, "", fn(head: String) -> String -> String: fn(rest: String) -> String: textConcat(head, textConcat("|", rest)))
 def value(v: Spell.Value) -> String:
   match v:
@@ -160,8 +161,8 @@ class Fit(unittest.TestCase):
         self.assertEqual(propose("delvetalk garden-1 prune\nseed: a\ncolour: amber"), "refused This card offers garden-1 plant")
 
     def test_naturals_are_parsed_by_hand_within_bounds(self):
-        form = PROBE + """def form() -> Spell.Form:
-  {card: "c", action: "a", fields: Spell.Fields.cons({head: {name: "n", kind: Spell.Kind.natural({min: 2n, max: 300n})}, tail: Spell.Fields.nil()})}
+        form = PROBE + """def form() -> Form.Form:
+  {card: "c", action: "a", fields: Form.Fields.cons({head: {name: "n", kind: Form.Kind.natural({min: 2n, max: 300n})}, tail: Form.Fields.nil()})}
 def natural(text: String) -> String:
   show(Spell.fit(Spell.parse(text), form()))
 """

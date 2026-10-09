@@ -8,7 +8,7 @@ from unittest import mock
 
 from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
-from tests.test_turn_world import closure, nat, record
+from tests.test_turn_world import closure, label, nat, record
 from transport import bridge, delve, observe
 from transport.http import Host
 
@@ -28,7 +28,7 @@ def initial() -> State:
 def receive(state: State, input: {text: String, who: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
 """
-OFFERING = """  match perform(Plan.offer({document: Document.text(textConcat("hello ", input.who))})):
+OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", input.who))})):
     case offered(_): 1n
     case _: 0n"""
 REFUSING = """  match perform(Plan.write({object: Plans.self(context), edits: {seen: Plans.Edit::<Nat, Nat>.set({value: 0n})}})):
@@ -158,7 +158,7 @@ class Bridging(BridgeCase):
 
     def test_real_garden_receive_end_to_end(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0), policy=record(world=label(""), object=label("")))})
         self.assertEqual(r['status'], 'created', r)
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])

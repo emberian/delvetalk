@@ -54,7 +54,7 @@ def render(state: State) -> Document.Document:
 def card(state: State) -> String:
   Document.plain(render(state))
 def show(state: State) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.offer({document: render(state)})):
+  match perform(Plan.offer({to: "", document: render(state)})):
     case offered(_): Lists.length::<Door>(state.doors)
     case _: 0n
 # A summon: whatever was said, the menu is the answer.

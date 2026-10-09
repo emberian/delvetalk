@@ -217,7 +217,7 @@ class Objects(unittest.TestCase):
     def test_render_cards(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))
         self.assertEqual(counter["value"]["value"], "Count: 3")
-        garden = run_pure("Garden", "card", record(planted=nat(2)))
+        garden = run_pure("Garden", "card", record(planted=nat(2), policy=record(world={"tag": "label", "value": ""}, object={"tag": "label", "value": ""})))
         self.assertEqual(garden["status"], "finished", garden)
         for name, probe, entry in (("Bell", BELL_PROBE, "two"), ("Cistern", CISTERN_PROBE, "one"), ("Anthology", ANTHOLOGY_PROBE, "one")):
             with self.subTest(object=name):

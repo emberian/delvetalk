@@ -81,7 +81,7 @@ def render(state: State) -> Document.Document:
 # The room card: description, who is here, what lies here, exits. The host takes
 # a pure method to return the state record, so a card is shown by offering it.
 def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({document: render(state)})):
+  match perform(Plan.offer({to: "", document: render(state)})):
     case offered(_): true
     case _: false
 def card(state: State) -> String:

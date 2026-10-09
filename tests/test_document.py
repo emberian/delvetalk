@@ -221,7 +221,7 @@ class RenderTests(unittest.TestCase):
 class OfferTests(HostCase):
     def test_an_offer_turn_on_garden_returns_the_card_and_journals_only_the_count(self):
         made = self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
-                              modules=closure("Garden"), entry="initial", seed=record(planted=nat(2)))
+                              modules=closure("Garden"), entry="initial", seed=record(planted=nat(2), policy=record(world=label(""), object=label(""))))
         self.assertEqual(made["status"], "created", made)
         turn = self.host.send(op="world-turn", principal="glm", object="garden", method="present",
                               argument=record(), identity="look-1")
@@ -246,7 +246,7 @@ class OfferTests(HostCase):
 
     def test_a_turn_without_an_offer_carries_no_offers_field(self):
         self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
-                       modules=closure("Garden"), entry="initial", seed=record(planted=nat(0)))
+                       modules=closure("Garden"), entry="initial", seed=record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         turn = self.host.send(op="world-turn", principal="glm", object="garden", method="cistern",
                               argument=record(), identity="c1")
         self.assertNotIn("offers", turn)

@@ -1,0 +1,135 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+import ./Spell.obend as Spell
+import ./Form.obend as Form
+record State:
+  title: String
+# A creator supplies a Seed; seeded makes the child's State from it.
+record Seed:
+  title: String
+record Edits:
+  title: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, {}>
+# What the workshop did, as data: nothing is a silent default.
+sum Verdict:
+  clean: {}
+  flawed: {diagnostics: Form.Names}
+  reprogrammed: {pin: String}
+  refused: {reason: String}
+record Heard:
+  text: String
+  who: String
+  post: String
+sum Block:
+  none: {}
+  some: {source: String}
+def defaultSeed() -> Seed:
+  {title: "Workshop"}
+def seeded(seed: Seed) -> State:
+  {title: seed.title}
+def initial() -> State:
+  seeded(defaultSeed())
+# The first ```obend fenced block of a reply: from the line after the opening
+# fence to the next ```. Positions are found with break and span, and the text is
+# taken once, so the cost is linear in the block.
+def fenced(text: String) -> Block:
+  let at = textBreak(text, "`")
+  let rest = textDrop(text, at)
+  if rest == "" then Block.none({}) else if textTake(rest, 8n) == "```obend" then opened(textDrop(rest, 8n)) else fenced(textDrop(rest, textSpan(rest, "`")))
+def opened(after: String) -> Block:
+  closing(textDrop(after, textBreak(after, "\n") + 1n), "")
+def closing(body: String, before: String) -> Block:
+  if body == "" then Block.none({}) else closed(body, before, textBreak(body, "`"))
+def closed(body: String, before: String, at: Nat) -> Block:
+  let rest = textDrop(body, at)
+  if rest == "" then Block.none({}) else if textTake(rest, 3n) == "```" then Block.some({source: textConcat(before, textTake(body, at))}) else closing(textDrop(rest, 1n), textConcat(before, textConcat(textTake(body, at), "`")))
+def cat(left: String, right: String) -> String:
+  textConcat(left, right)
+def problem(diagnostic: String) -> Document.Document:
+  Document.text(cat("- ", cat(diagnostic, "\n")))
+def checkedCard(diagnostics: Form.Names) -> Document.Document:
+  match diagnostics:
+    case nil(_): Document.text("✾ WORKSHOP\n\nChecked: it compiles.\n")
+    case cons(_): Document.Document.sequence({items: Document.Documents.cons({head: Document.text(cat("✾ WORKSHOP\n\nChecked: ", cat(natText(Lists.length::<String>(diagnostics)), " problems.\n\n"))), tail: Lists.map::<String, Document.Document>(diagnostics, problem)})})
+def reprogrammedCard(target: String, was: String, pin: String) -> Document.Document:
+  Document.text(cat("✾ WORKSHOP\n\nReprogrammed ", cat(target, cat(".\nWas: ", cat(was, cat("\nNow: ", cat(pin, "\n")))))))
+def refusedCard(reason: String) -> Document.Document:
+  Document.text(cat("Not done: ", cat(reason, "\n")))
+def usage() -> Document.Document:
+  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n")
+def tell(verdict: Verdict, card: Document.Document) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.offer({to: "", document: card})):
+    case _: verdict
+def verdictOf(diagnostics: Form.Names) -> Verdict:
+  match diagnostics:
+    case nil(_): Verdict.clean({})
+    case cons(_): Verdict.flawed({diagnostics: diagnostics})
+def runCheck(package: String) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.check({package: package})):
+    case checked(c): tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
+    case _: tell(Verdict.refused({reason: "The workshop could not check it."}), refusedCard("The workshop could not check it."))
+# Check a package of Bend and offer the diagnostics card.
+def check(state: State, input: {package: String}, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  runCheck(input.package)
+# Check what an object runs now: inspect it, then check its source.
+def checkTarget(target: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.inspect({object: {world: context.world, object: target}})):
+    case inspected(i): runCheck(i.source)
+    case _: tell(Verdict.refused({reason: cat("No object called ", target)}), refusedCard(cat("No object called ", target)))
+# Inspect the target, check the new package, and reprogram only if it is clean.
+def runPropose(target: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.inspect({object: {world: context.world, object: target}})):
+    case inspected(i): vetted(target, i.pin, package, migration, context)
+    case _: tell(Verdict.refused({reason: cat("No object called ", target)}), refusedCard(cat("No object called ", target)))
+def vetted(target: String, was: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.check({package: package})):
+    case checked(c): adopted(target, was, package, migration, context, c.diagnostics)
+    case _: tell(Verdict.refused({reason: "The workshop could not check it."}), refusedCard("The workshop could not check it."))
+def adopted(target: String, was: String, package: String, migration: String, context: Abi.Context, diagnostics: Form.Names) -> Activity<Plan, Response, Verdict>:
+  match diagnostics:
+    case cons(_): tell(Verdict.flawed({diagnostics: diagnostics}), checkedCard(diagnostics))
+    case nil(_): reprogram(target, was, package, migration, context)
+def reprogram(target: String, was: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.reprogram({object: {world: context.world, object: target}, package: package, migration: migration})):
+    case reprogrammed(r): tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was, r.pin))
+    case refused(r): tell(Verdict.refused({reason: r.clause}), refusedCard(r.clause))
+    case _: tell(Verdict.refused({reason: "The reprogram was not answered."}), refusedCard("The reprogram was not answered."))
+def propose(state: State, input: {target: String, package: String, migration: String}, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  runPropose(input.target, input.package, input.migration, context)
+# A reply from the town: a fenced block with `delvetalk workshop check`, a check
+# of a target, or `delvetalk workshop propose` with a target and a block.
+# The spell is read from the text before the first backtick, so a long block after
+# it is not scanned as field lines; a spell placed after the block is found by
+# parsing the whole reply, which costs a second pass over the block.
+def spellOf(text: String) -> Spell.Parsed:
+  askedFirst(Spell.parse(textTake(text, textBreak(text, "`"))), text)
+def askedFirst(parsed: Spell.Parsed, text: String) -> Spell.Parsed:
+  match parsed:
+    case spell(_): parsed
+    case notASpell(_): Spell.parse(text)
+def receive(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match spellOf(input.text):
+    case notASpell(_): tell(Verdict.refused({reason: "Reply with a workshop spell."}), usage())
+    case spell(s): routed(input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"))
+def routed(input: Heard, context: Abi.Context, card: String, action: String, target: String, migration: String) -> Activity<Plan, Response, Verdict>:
+  if card != context.object then tell(Verdict.refused({reason: cat("This card is ", context.object)}), refusedCard(cat("This card is ", context.object))) else acted(action, target, migration, fenced(input.text), context)
+def acted(action: String, target: String, migration: String, block: Block, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match block:
+    case some(b): withBlock(action, target, migration, b.source, context)
+    case none(_): withoutBlock(action, target, context)
+def withBlock(action: String, target: String, migration: String, source: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  if action == "check" then runCheck(source) else if action == "propose" && target != "" then runPropose(target, source, migration, context) else tell(Verdict.refused({reason: "Name a target to propose to."}), usage())
+def withoutBlock(action: String, target: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  if action == "check" && target != "" then checkTarget(target, context) else tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
+def render(state: State) -> Document.Document:
+  usage()
+def card(state: State) -> String:
+  Document.plain(render(state))
+def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.offer({to: "", document: render(state)})):
+    case offered(_): true
+    case _: false
