@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests import test_outbound
 from tests.test_chain import garden_state
 from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
@@ -315,33 +316,22 @@ class Silence(BridgeCase):
         self.assertIn('=== reply to:', out.getvalue())
 
 
-def _real_offer_case():
-    from tests.test_outbound import Offers, label, record as rec
-
-    class Real(Offers):
-        def test_offer_drafts_match_the_hosts_real_identity_shape(self):
-            self.turn("teller", "tell", rec(to=label(""), text=label("hello")), principal="ann", identity="t-1")
-            self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
-            with tempfile.TemporaryDirectory() as d:
-                write = bridge.write_atomic
-                write(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
-                                                       "object": "teller", "slot": None, "height": 0})
-                self.assertEqual(bridge.offer_drafts(d, self.host_adapter()), ["t-1"])
-                (draft,) = list((Path(d) / "outbox").glob("*.json"))
-                self.assertEqual(json.loads(draft.read_text())["text"], "hello")
-                self.assertEqual(bridge.offer_drafts(d, self.host_adapter()), [])
-
-        def host_adapter(self):
+class RealOffers(test_outbound.Offers):
+    def test_offer_drafts_match_the_hosts_real_identity_shape(self):
+        self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+        self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
+        with tempfile.TemporaryDirectory() as d:
+            bridge.write_atomic(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
+                                                                 "object": "teller", "slot": None, "height": 0})
             outer = self
 
             class H:
                 def send(self, req):
                     return outer.host.send(**req)
-            return H()
-    return Real
-
-
-RealOffers = _real_offer_case()
+            self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
+            (draft,) = list((Path(d) / "outbox").glob("*.json"))
+            self.assertEqual(json.loads(draft.read_text())["text"], "hello")
+            self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
 class Daemon(unittest.TestCase):

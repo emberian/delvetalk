@@ -28,14 +28,26 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 '''
 
 
+WORD = re.compile(r'[\w-]+\Z')
+
+
 def spell_card(text):
-    """The card named by the first line that begins `delvetalk `: its second word. Bend parses the rest."""
+    """The card of the post's spell, following Spell.obend: the second word of the LAST unquoted line that
+    begins `delvetalk`. A `>` line and a fence line are never spell lines; a line indented four spaces or a
+    tab is quotation, used only when nothing else matches; a line without a well-formed card and action
+    is no spell line. Fields (same line after ` / `, or on later lines) are Bend's to parse."""
+    unquoted = quoted = None
     for line in text.split('\n'):
-        line = line.strip()
-        if line.startswith('delvetalk '):
-            words = line.split()
-            return words[1] if len(words) > 1 else None
-    return None
+        body = line.lstrip(' \t')
+        words = body.split()
+        if (len(words) < 3 or words[0] != 'delvetalk' or not body.startswith(('delvetalk ', 'delvetalk\t'))
+                or not WORD.match(words[1]) or not WORD.match(words[2])):
+            continue
+        if line.startswith(('    ', '\t')):
+            quoted = words[1]
+        else:
+            unquoted = words[1]
+    return unquoted or quoted
 
 
 def classify(text, reply_to, mentions, tags):
