@@ -22,4 +22,16 @@ def fieldsTerm : List (String × Data) → List (String × Minidregg.Theory.Obje
   | [] => []
   | (name,value) :: rest => (name,value.term) :: fieldsTerm rest
 end
+
+mutual
+/-- Well-formed finite data: every record's field names are distinct, at every
+depth. Exactly the values the universal type `Data` admits. -/
+def Data.wellFormed : Data → Bool
+  | .natural _ | .boolean _ | .label _ => true
+  | .record fields => (fields.map Prod.fst).eraseDups.length == fields.length && Data.fieldsWellFormed fields
+  | .variant _ payload => payload.wellFormed
+def Data.fieldsWellFormed : List (String × Data) → Bool
+  | [] => true
+  | (_, value) :: rest => value.wellFormed && Data.fieldsWellFormed rest
+end
 end Minidregg.Theory.ObjectiveBendDemandData

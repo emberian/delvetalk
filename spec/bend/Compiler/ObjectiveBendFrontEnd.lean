@@ -176,6 +176,13 @@ def checkTemplates (output : Output) (sourceEntry : String) (modules : List Sour
     Except Diagnostic Unit :=
   output.templates.forM fun (key, rigidVariables, field) => checkTemplate output sourceEntry modules typeFuel key rigidVariables field
 
+/-- The packet of a lowering: its typing proposal's packet, or why there is none. -/
+def packetOf (proposal : Except String Json) (term : ATerm) (sourceEntry : String) (modules : List SourceModule)
+    (typeFuel : Nat) : Json :=
+  match proposal with
+  | .error message => Json.mkObj [("status", toJson "unsupported"), ("message", toJson message)]
+  | .ok proposal => packetJson proposal term sourceEntry modules typeFuel
+
 structure Lowering where
   output : Output
   /-- The selected term after projections: what the core and the packet carry. -/
@@ -190,6 +197,21 @@ structure Lowering where
   other module refuses). The artifact commits them; the kernel installs them on every object
   pinned to the artifact. -/
   laws : List (String × ObjectiveBendLaw.LawExpr)
+  /-- The typing proposal for the selected term, or why there is none: built once. -/
+  proposal : Except String Json
+  /-- `dregg.objective-bend.typed-core.v3`: exactly the packet the checker reads (an
+  unsupported proposal is `{status: "unsupported", message}`), built once. -/
+  packet : Json
+  proposalIs : proposal = ObjectiveBendElaborate.proposalJson { output with term := term }
+  packetIs : packet = packetOf proposal term sourceEntry modules typeFuel
+
+/-- Assemble a lowering, building its proposal and packet once. -/
+def Lowering.make (output : Output) (term : ATerm) (sourceEntry argumentCodec mode : String)
+    (modules : List SourceModule) (limits : Json) (typeFuel : Nat)
+    (laws : List (String × ObjectiveBendLaw.LawExpr)) : Lowering :=
+  let proposal := ObjectiveBendElaborate.proposalJson { output with term := term }
+  ⟨output, term, sourceEntry, argumentCodec, mode, modules, limits, typeFuel, laws, proposal,
+    packetOf proposal term sourceEntry modules typeFuel, rfl, rfl⟩
 
 def project (term : ATerm) (projections : List Json) : Except Diagnostic ATerm :=
   projections.foldlM (init := term) fun t p => do
@@ -224,13 +246,15 @@ def options (projections limits : Json) (mode : String) : Except Diagnostic (Lis
       | none => throw (elaborationRefusal "typeFuel must be a canonical positive decimal string ≤16384")
   return (projectionList, typeFuel)
 
-/-- The front end on parsed, checked modules: elaborate the selected declaration and project. -/
-def lowerDecoded (modules : List SourceModule) (decoded : List ObjectiveBendElaborate.Module)
+/-- The front end on an elaborated closure: select the entry and project. Templates are
+checked here unless the caller already checked every template of the closure. -/
+def lowerElaborated (modules : List SourceModule) (decoded : List ObjectiveBendElaborate.Module)
+    (elaborated : ObjectiveBendElaborate.Elaborated) (templatesChecked : Bool)
     (entryModule : Nat) (entryDefinition : String) (args projections limits : Json) (mode : String) :
     Except Diagnostic Lowering := do
   let (projectionList, typeFuel) ← options projections limits mode
   if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
-  let output ← match ObjectiveBendElaborate.elaborate decoded entryModule entryDefinition args mode with
+  let output ← match elaborated.select entryModule entryDefinition args mode with
     | .ok o => pure o
     | .error e => throw (elaborationRefusal e)
   let term ← project output.term projectionList
@@ -239,13 +263,22 @@ def lowerDecoded (modules : List SourceModule) (decoded : List ObjectiveBendElab
     else match args with
       | .arr _ => "legacy-canonical-nat-bool-record"
       | _ => "dregg.objective-bend.argument-values.v1"
-  checkTemplates output (entry.name ++ "." ++ entryDefinition) modules typeFuel
+  unless templatesChecked do checkTemplates output (entry.name ++ "." ++ entryDefinition) modules typeFuel
   for (m, index) in decoded.zipIdx do
     if index != entryModule && !m.laws.isEmpty then
       throw (elaborationRefusal ("a law belongs to the package's entry module; " ++ m.name ++
         " is imported and declares " ++ toString m.laws.length ++ " law(s)"))
   let laws := (decoded[entryModule]?.map (·.laws)).getD []
-  return ⟨output, term, entry.name ++ "." ++ entryDefinition, argumentCodec, mode, modules, limits, typeFuel, laws⟩
+  return Lowering.make output term (entry.name ++ "." ++ entryDefinition) argumentCodec mode modules limits typeFuel laws
+
+/-- The front end on parsed, checked modules: elaborate the selected declaration and project. -/
+def lowerDecoded (modules : List SourceModule) (decoded : List ObjectiveBendElaborate.Module)
+    (entryModule : Nat) (entryDefinition : String) (args projections limits : Json) (mode : String) :
+    Except Diagnostic Lowering := do
+  discard <| options projections limits mode
+  if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
+  let elaborated ← (ObjectiveBendElaborate.elaboratePackage decoded).mapError elaborationRefusal
+  lowerElaborated modules decoded elaborated false entryModule entryDefinition args projections limits mode
 
 /-- The whole front end on read modules: options, parse and check every module, elaborate,
 project. -/
@@ -262,25 +295,14 @@ def Lowering.core (l : Lowering) : Json :=
     ("status", toJson "elaborated executable term; typing is checked by the actual checker, adequacy in ObjectiveBendFrontEndAdequacy"),
     ("limits", l.limits)]
 
-/-- The typing proposal for the selected term, or why there is none. -/
-def Lowering.proposal (l : Lowering) : Except String Json :=
-  ObjectiveBendElaborate.proposalJson { l.output with term := l.term }
-
-/-- `dregg.objective-bend.typed-core.v3`: exactly the packet the checker reads. An unsupported
-proposal is `{status: "unsupported", message}`. -/
-def Lowering.packet (l : Lowering) : Json :=
-  match l.proposal with
-  | .error message => Json.mkObj [("status", toJson "unsupported"), ("message", toJson message)]
-  | .ok proposal => packetJson proposal l.term l.sourceEntry l.modules l.typeFuel
 
 /-! ## Acceptance: the checker on the front end's own packet -/
 
 /-- With a typing proposal, the packet's `term` field is the rendering of the selected term. -/
 theorem Lowering.packet_term (l : Lowering) {proposal : Json} (proposed : l.proposal = .ok proposal) :
     l.packet.getObjVal? "term" = .ok l.term.json := by
-  unfold Lowering.packet
-  rw [proposed]
-  unfold packetJson
+  rw [l.packetIs, proposed]
+  unfold packetOf packetJson
   exact ObjectiveBendTermWire.getObjVal_mkObj (by simp) (by simp)
 
 /-- The front end's packet, decoded by the checker's decoder: its annotations and assumptions
@@ -333,6 +355,16 @@ def accept (l : Lowering) : Except Diagnostic (Accepted l) := do
             | none => throw { stage := "objective-typed-check", message := "the checker refused the front end's typed packet" }
           else throw (elaborationRefusal "typed packet context must be closed")
       else throw (elaborationRefusal "core term nesting exceeds the checker's decoding capacity")
+
+/-- Check a whole elaborated closure once: every template, and the knot of every
+declaration as one closed term. An entry's packet then carries only what it reaches
+(`Elaborated.select`) without any declaration going unchecked. -/
+def checkClosure (modules : List SourceModule) (elaborated : ObjectiveBendElaborate.Elaborated)
+    (limits : Json) : Except Diagnostic Unit := do
+  let (_, typeFuel) ← options (.arr #[]) limits "definition"
+  let whole := elaborated.whole
+  checkTemplates whole "" modules typeFuel
+  discard <| accept (Lowering.make whole whole.term "" "unapplied-definition" "definition" modules limits typeFuel [])
 
 #assert_axioms Lowering.packet_term
 #assert_axioms Accepted.source_eq_packet

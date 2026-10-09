@@ -134,6 +134,16 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
       (1 + bits * bits, bits)
   | _,_ => (1,0)
 
+/-- The ticks left after a step `forceHostedFrom` could not afford: a failed prefix
+preflight (`textSpan`/`textBreak`) already spent its bounded allowance and may not
+return that work to a caller as unused execution credit; any other refusal spends
+nothing. -/
+def preflightRemaining (control : Control) (stack : List Frame) (ticks : Nat) : Nat :=
+  match control, stack with
+  | .returned (.label _), .binaryRight .textSpan (.label _) :: _
+  | .returned (.label _), .binaryRight .textBreak (.label _) :: _ => 0
+  | _, _ => ticks
+
 /-- Explicit hosted extension of forcing. No primitive is entered before its
 whole work/allocation allowance is admitted. Insufficient work retains the
 pre-step graph. The pinned unit-cost `forceWith` and its fast proof stay intact. -/
@@ -149,13 +159,7 @@ def forceHostedFrom (policy : State → Bool) (limits : Limits) (bytes : Nat)
       let cost := textStepCost state ticks
       if !policy state || cost.2 > bytes then (.suspended .capacity state,ticks)
       else if cost.1 > ticks then
-        -- A failed prefix preflight already spent its bounded allowance; it may
-        -- not return that work to a caller as unused execution credit.
-        let remaining := match state.control, state.stack with
-          | .returned (.label _), .binaryRight .textSpan (.label _) :: _
-          | .returned (.label _), .binaryRight .textBreak (.label _) :: _ => 0
-          | _, _ => ticks
-        (.suspended .ticks state, remaining)
+        (.suspended .ticks state, preflightRemaining state.control state.stack ticks)
       else
         let sizes := ObjectiveBendDemandMachineFast.sizesAfter state depth
         if sizes.1 ≤ limits.heap && sizes.2 ≤ limits.stack then
@@ -311,17 +315,6 @@ def rowNames : Ty → List String
   | .field name _ tail => name :: rowNames tail
   | _ => []
 
-mutual
-/-- Well-formed finite data: every record's field names are distinct, at every
-depth. Exactly the values the universal type `Data` admits. -/
-def Data.wellFormed : Data → Bool
-  | .natural _ | .boolean _ | .label _ => true
-  | .record fields => (fields.map Prod.fst).eraseDups.length == fields.length && Data.fieldsWellFormed fields
-  | .variant _ payload => payload.wellFormed
-def Data.fieldsWellFormed : List (String × Data) → Bool
-  | [] => true
-  | (_, value) :: rest => value.wellFormed && Data.fieldsWellFormed rest
-end
 
 open Minidregg.Theory.ObjectiveBendTypes in
 mutual

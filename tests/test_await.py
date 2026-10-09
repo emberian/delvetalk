@@ -242,9 +242,7 @@ class Suspend(Await):
 class Seeds(TurnWorld):
     def test_a_thousand_element_seed_is_created_viewed_and_replayed(self):
         from tests.test_turn_world import NAMES_SOURCE, names_modules
-        seed = {"tag": "variant", "label": "nil", "payload": record()}
-        for i in range(1000):
-            seed = {"tag": "variant", "label": "cons", "payload": record(head=label("x"), tail=seed)}
+        seed = {"tag": "list", "items": [label("x") for _ in range(1000)]}
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="n",
                            modules=names_modules(), entry="initial", seed=record(names=seed))
         self.assertEqual(r["status"], "created", r)

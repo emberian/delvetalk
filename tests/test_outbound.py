@@ -461,7 +461,7 @@ class Malformed(Reflection):
         depth = 12
         old = DEEP % (nested(depth, "Nat"), nested(depth - 1, "Nat").replace("Lists.List<", "Lists.List::<", 1) if False else "Lists.List::<" + nested(depth - 1, "Nat") + ">")
         new = DEEP % (nested(depth, "Bool"), "Lists.List::<" + nested(depth - 1, "Bool") + ">")
-        self.make("deep", old, record(deep={"tag": "variant", "label": "nil", "payload": record()}))
+        self.make("deep", old, record(deep={"tag": "list", "items": []}))
         r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="deep", version=0, package=new)
         self.assertEqual(r["status"], "refused", r)
         self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]), ("programRefused", "stateType"))

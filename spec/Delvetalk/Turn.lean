@@ -6,14 +6,17 @@
 import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
+import Theory.ObjectiveBendFiniteDataTyping
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendCheckpointRoundTrip
 import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandSettleProofs
+import Theory.ObjectiveBendDemandCollectProofs
 import Theory.ObjectiveBendDataConformance
 import Delvetalk.Limits
 import Delvetalk.Canonical
 import Delvetalk.Profile
+import Delvetalk.Entry
 
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTyping
@@ -43,26 +46,19 @@ def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat :
   if value > cap then throw (key ++ " exceeds package capacity")
   return value
 
-/- Closed first-order data as a term. Unlike `run` arguments, variants are
-admitted: a response to a Plan is usually a sum. -/
-mutual
-def dataTerm : Data → Term
-  | .natural n => .nat n
-  | .boolean b => .boolean b
-  | .label s => .label s
-  | .record fields => .record (dataFields fields)
-  | .variant label payload => .inject label (dataTerm payload)
-def dataFields : List (String × Data) → List (String × Term)
-  | [] => []
-  | (k,v) :: rest => (k, dataTerm v) :: dataFields rest
-end
+private instance : Inhabited Term := ⟨.nat 0⟩
 
-/-- A variant argument is injected at its declared sum, never guessed from one
-label: give each injection of closed data the annotation its declared type
-fixes (payload type, sum or recursive variable). Positions follow the checker:
-an injection's payload is child 0, a record's field `i` is child `i`. -/
-partial def annotateData (bounds : DataBounds) (expected : Ty) (data : Data) (path : List Nat) :
-    List (List Nat × LambdaAnnotation) :=
+/-- An argument as a term with its injection annotations, directed by its declared
+type: a variant is injected at its declared sum, never guessed from one label (the
+annotation names its payload type and its sum or recursive variable), and a value
+at a universal position (`Data`) is wrapped in `toData` and checked at its own shape
+(`Data.shapeType`), the host having already decided its conformance. Positions follow
+the checker: an injection's payload is child 0, a record's field `i` is child `i`,
+the operand of `toData` child 0. The term itself is `Data.term` up to those `toData`
+wrappers. -/
+partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) (path : List Nat) :
+    Term × List (List Nat × LambdaAnnotation) :=
+  if expected == .data then (.toData data.term, shapeAnnotations data (path ++ [0])) else
   match data with
   | .variant tag payload =>
     let row? := match expected with
@@ -71,41 +67,25 @@ partial def annotateData (bounds : DataBounds) (expected : Ty) (data : Data) (pa
           | some (.variant row) => some row
           | _ => none
       | _ => none
-    match row? with
-    | none => []
-    | some row => match row.lookup bounds Ty.dataFuel tag with
-      | none => []
-      | some member =>
-        (path, ⟨member, expected, .unrestricted, .reusable⟩) :: annotateData bounds member payload (path ++ [0])
+    match row? >>= fun row => row.lookup bounds Ty.dataFuel tag with
+    | none => (data.term, [])
+    | some member =>
+      let (payloadTerm, annotations) := quoteAt bounds member payload (path ++ [0])
+      (.inject tag payloadTerm, (path, ⟨member, expected, .unrestricted, .reusable⟩) :: annotations)
   | .record fields =>
     let rec memberOf : Ty → String → Option Ty
       | .field n m tail, name => if n == name then some m else memberOf tail name
       | _, _ => none
-    (fields.zipIdx.map fun ((name, value), i) => match memberOf expected name with
-      | some member => annotateData bounds member value (path ++ [i])
-      | none => []).flatten
-  | _ => []
+    let quoted := fields.zipIdx.map fun ((name, value), i) => match memberOf expected name with
+      | some member => (name, quoteAt bounds member value (path ++ [i]))
+      | none => (name, (value.term, []))
+    (.record (quoted.map fun (name, term, _) => (name, term)), (quoted.map (·.2.2)).flatten)
+  | other => (other.term, [])
 
-/-- The singleton type of closed data: the type an argument of the universal type
-`Data` is checked at inside its `toData` injection. Every injection is annotated
-at a one-label sum naming exactly its own label. -/
-instance : Inhabited Ty := ⟨.natural⟩
-partial def shapeType : Data → Ty
-  | .natural _ => .natural
-  | .boolean _ => .boolean
-  | .label _ => .label
-  | .record fields => fields.foldr (fun (name, value) tail => .field name (shapeType value) tail) .emptyRow
-  | .variant tag payload => .variant (.field tag (shapeType payload) .emptyRow)
-
-/-- An argument as a term with its injection annotations. At the universal type the
-host has already decided conformance (well-formed data), so the value is injected
-at its own shape. -/
 def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
     Except String (Term × List (List Nat × LambdaAnnotation)) :=
-  if domain == .data then
-    if !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
-    else .ok (.toData (dataTerm v), annotateData bounds (shapeType v) v [0])
-  else .ok (dataTerm v, annotateData bounds domain v [])
+  if domain == .data && !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
+  else .ok (quoteAt bounds domain v [])
 
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
@@ -214,11 +194,14 @@ def checkpointDigest (packetSha256 object principal intent rootsDigest : String)
     ("object", Lean.toJson object), ("principal", Lean.toJson principal), ("intent", Lean.toJson intent),
     ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)])
 
+def Checkpoint.makeFor (pin : String) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
+    Checkpoint :=
+  ⟨pin, binding.object, binding.principal, binding.intent, binding.rootsDigest, tokens,
+    checkpointDigest pin binding.object binding.principal binding.intent binding.rootsDigest tokens⟩
+
 def Checkpoint.make (packet : Json) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
     Checkpoint :=
-  let p := packetDigest packet
-  ⟨p, binding.object, binding.principal, binding.intent, binding.rootsDigest, tokens,
-    checkpointDigest p binding.object binding.principal binding.intent binding.rootsDigest tokens⟩
+  Checkpoint.makeFor (packetDigest packet) binding tokens
 
 def Checkpoint.toJson (c : Checkpoint) : Json :=
   Json.mkObj [("packetSha256", Lean.toJson c.packetSha256), ("object", Lean.toJson c.object),
@@ -265,7 +248,7 @@ def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (rem
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed outcome. -/
-def conclude (packet : Json) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
+def conclude (pin : String) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
     (outcome : Except (Failure × State × Budget) (Data × Budget)) : Except String Delvetalk.Turn.Outcome :=
   match outcome with
   | .ok (value, remaining) =>
@@ -286,7 +269,7 @@ def conclude (packet : Json) (binding : Binding) (bounds : DataBounds) (plan res
       | .ok extracted =>
           if !extracted.value.conformsUnder bounds plan then .error "turn refused: Plan does not conform to its type"
           else .ok (.yielded extracted.value plan response
-            (Checkpoint.make packet binding (encodeState (checkpoint extracted.state)))
+            (Checkpoint.makeFor pin binding (encodeState (checkpoint extracted.state)))
             (b.ticks - extracted.remaining.ticks))
   | .error (failure, st, rem) =>
       match exhaustedResource limits failure st rem with
@@ -320,7 +303,7 @@ def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude packet binding source.assumptions.bounds plan response result b capacities outcome
+  conclude (packetDigest packet) binding source.assumptions.bounds plan response result b capacities outcome
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) :
@@ -338,7 +321,7 @@ def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) 
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   let some state := decodeState checkpoint.tokens | throw "checkpoint does not decode"
   unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
-  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume (dataTerm value) state
+  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
     | throw "turn refused: checkpoint is not a yielded state"
   return (decoded.source.assumptions.bounds, plan, response, result, state, resumed)
 
@@ -349,7 +332,63 @@ def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding)
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude packet binding bounds plan response result b capacities outcome
+  conclude (packetDigest packet) binding bounds plan response result b capacities outcome
+
+/-! ## A decoded, checked entry: no packet decoding or re-checking per turn -/
+
+/-- The checked application of a held entry to turn arguments, and its activity shape:
+each argument is checked alone and composed with the entry's own derivation. -/
+def prepareStartEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) :
+    Except String (Delvetalk.CheckedEntry × Ty × Ty × Ty) := do
+  let bounds := entry.source.assumptions.bounds
+  let mut current := entry
+  for v in arguments do
+    let domain := match callable current.type with
+      | .arrow _ _ d _ => d
+      | other => other
+    if domain.isDataUnder bounds [] Ty.dataFuel [] && !v.conformsUnder bounds domain then
+      throw "turn refused: argument does not conform to its type"
+    let (term, extras) ← argumentAt bounds domain v
+    current ← current.apply term extras
+  let (plan, response, result) ← activityShape current.source.assumptions current.type
+  return (current, plan, response, result)
+
+/-- `startActivity` on a held entry. -/
+def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding : Binding) (b : Budgets) :
+    Except String Delvetalk.Turn.Outcome := do
+  let (applied, plan, response, result) ← prepareStartEntry entry arguments
+  let capacities : Limits := ⟨b.heap, b.stack⟩
+  let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
+    fun e => (e.extraction.result.value, e.extraction.result.remaining)
+  conclude entry.pin binding applied.source.assumptions.bounds plan response result b capacities outcome
+
+open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
+def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data) :
+    Except String (DataBounds × Ty × Ty × Ty × State × State) := do
+  let assumptions := entry.source.assumptions
+  let (plan, response, result) ← activityShape assumptions (peelArrows Bounds.entryArrowDepth entry.type)
+  unless checkpoint.packetSha256 == entry.pin do throw "checkpoint belongs to another package"
+  unless checkpoint.digest == checkpointDigest checkpoint.packetSha256 checkpoint.object checkpoint.principal
+      checkpoint.intent checkpoint.rootsDigest checkpoint.tokens do throw "checkpoint digest mismatch"
+  unless checkpoint.object == binding.object do throw "checkpoint belongs to another object"
+  unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
+  unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
+  unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
+  let some state := decodeState checkpoint.tokens | throw "checkpoint does not decode"
+  unless value.conformsUnder assumptions.bounds response do throw "turn refused: response does not conform to the response type"
+  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
+    | throw "turn refused: checkpoint is not a yielded state"
+  return (assumptions.bounds, plan, response, result, state, resumed)
+
+open Minidregg.Theory.ObjectiveBendDemandCollect in
+/-- `resumeActivity` on a held entry. -/
+def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
+    (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
+  let (bounds, plan, response, result, state, resumed) ← prepareResumeEntry entry checkpoint binding value
+  let capacities := limitsPast ⟨b.heap, b.stack⟩ state
+  let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
+    fun e => (e.extraction.result.value, e.extraction.result.remaining)
+  conclude entry.pin binding bounds plan response result b capacities outcome
 
 def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
 
@@ -360,6 +399,26 @@ def start (packet arguments limits request : Json) : Except String Json := do
   if !wantsProfile request then return reply
   let (source, _) ← prepareStart packet values
   return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial source.term))
+
+def startEntryJson (entry : Delvetalk.CheckedEntry) (arguments limits request : Json) : Except String Json := do
+  let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
+  let b ← budgets limits
+  let reply := (← startEntry entry values (← Binding.ofJson request) b).toJson
+  if !wantsProfile request then return reply
+  let (applied, _) ← prepareStartEntry entry values
+  return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial applied.source.term))
+
+def resumeEntryJson (entry : Delvetalk.CheckedEntry) (checkpointJson responseJson limits request : Json) :
+    Except String Json := do
+  let checkpoint ← Checkpoint.fromJson checkpointJson
+  let value ← decodeData Bounds.dataWireDepth responseJson
+  let b ← budgets limits
+  let binding ← Binding.ofJson request
+  let reply := (← resumeEntry entry checkpoint binding value b).toJson
+  if !wantsProfile request then return reply
+  let (_, _, _, _, state, resumed) ← prepareResumeEntry entry checkpoint binding value
+  return reply.setObjVal! "profile"
+    (Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed)
 
 def resumeTurn (packet checkpointJson responseJson limits request : Json) : Except String Json := do
   let checkpoint ← Checkpoint.fromJson checkpointJson

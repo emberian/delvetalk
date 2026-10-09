@@ -40,8 +40,12 @@ quiescent and resume preserves typing. The checkpoint codec and its collector
 are ported, and this fork proves its own `state_roundTrip` for the codec with
 the native cells and `settle_resume_segment` on the runner a turn uses
 (`Theory/ObjectiveBendCheckpointRoundTrip.lean`,
-`Theory/ObjectiveBendDemandSettleProofs.lean`); the collector's simulation is
-tested, not yet proved. The runtime data check agrees with a declarative typing
+`Theory/ObjectiveBendDemandSettleProofs.lean`), and Mini's collector
+simulation is ported in full (`Theory/ObjectiveBendDemandCollectProofs.lean`:
+`checkpoint_resume_segment` says resuming `collect (settle s)` gives the same
+verdict, ticks and Data as resuming `s`). A package closure has no size cap:
+an entry's packet carries only what it reaches, and the whole closure is
+checked once per package. The runtime data check agrees with a declarative typing
 (`Theory/ObjectiveBendDataConformance.lean`). A universal first-order type
 `Data`, produced only by `Data.of::<T>(v)` and never taken apart in Bend, lets
 a Plan carry any payload the host checks at the callee.

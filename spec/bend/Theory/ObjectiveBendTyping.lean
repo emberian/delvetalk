@@ -1,6 +1,7 @@
 import Theory.ObjectiveBendTypes
 import Theory.ObjectiveBendOpenRecursion
 import Theory.AxiomPin
+import Std.Data.HashMap
 namespace Minidregg.Theory.ObjectiveBendTyping
 open ObjectiveBendTypes ObjectiveBendOpenRecursion
 set_option autoImplicit false
@@ -309,10 +310,12 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.perform plan) (.computation planType response response) uses
   /-- Hosted extension: first-order data injected into the universal `Data`
-  type. The only rule that produces `Data`; there is no elimination. -/
-  | toData {context : Context} {value : Term} {type : Ty} {uses : Uses} :
+  type. The only rule that produces `Data`; there is no elimination. The
+  declarative rule takes any walk fuel (`isDataUnder` is a greatest fixed point
+  that more fuel only confirms); the checker supplies `Ty.dataFuel`. -/
+  | toData {context : Context} {value : Term} {type : Ty} {uses : Uses} {fuel : Nat} :
       PartialTyping assumptions context value type uses →
-      type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
+      type.isDataUnder assumptions.bounds assumptions.rigid fuel [] = true →
       PartialTyping assumptions context (.toData value) .data uses
   /-- Hosted extension: join a `List<String>` with a String separator. -/
   | textJoin {context : Context} {list separator : Term} {listType : Ty} {lu su : Uses} :
@@ -687,6 +690,42 @@ def check (source : AnnotatedTerm) (context : Context) (fuel : Nat) : Option (Ch
         some ⟨result.type, result.uses, result.derivation, hs, hv, ha⟩ else none
     else none
   else none
+
+/-! ### Composing checked terms
+
+A packet is checked once; applying arguments to its entry reuses that derivation instead
+of re-inferring the packet per call. The composition builds the
+declarative derivation from the parts' own derivations by one typing rule, so a composed
+`Checked` is exactly as trustworthy as one `check` returned. -/
+
+/-- The source of `function argument`, the argument's annotations under child 1. -/
+def AnnotatedTerm.applyTo (function : AnnotatedTerm) (argument : AnnotatedTerm) : AnnotatedTerm :=
+  { function with term := .app function.term argument.term
+                  annotations := fun path => match path with
+                    | 0 :: rest => function.annotations rest
+                    | 1 :: rest => argument.annotations rest
+                    | _ => none }
+
+/-- Apply a checked closed function to a checked closed argument under the same
+assumptions: the application rule, with the argument converted to the domain exactly as
+`infer` does (`agree`), and the quantity gate. -/
+def Checked.apply {function argument : AnnotatedTerm} (fn : Checked function [])
+    (arg : Checked argument []) (same : argument.assumptions = function.assumptions) :
+    Option (Checked (function.applyTo argument) []) :=
+  match hft : callable fn.type with
+  | .arrow _ quantity domain codomain =>
+      let argDerivation : PartialTyping function.assumptions [] argument.term arg.type arg.uses :=
+        same ▸ arg.derivation
+      if hat : agree function.assumptions arg.type domain = true then
+        if hc : argumentAllowed function.assumptions quantity [] domain arg.uses = true then
+          if hs : safeUses [] (addUses fn.uses arg.uses) = true then
+            some ⟨codomain, addUses fn.uses arg.uses,
+              .application fn.derivation (.conversion argDerivation (agree_sameType hat)) hft rfl hc,
+              hs, fn.contextValid, fn.assumptionsValid⟩
+          else none
+        else none
+      else none
+  | _ => none
 
 /-- Successful checking constructs a derivation for exactly the consumed runtime
 term, together with capture/usage premises. This is not preservation/adequacy. -/
@@ -1109,16 +1148,25 @@ def decodeReuse (value : Json) : Except String Reuse := do
   | "once" => pure .once | "reusable" => pure .reusable
   | _ => .error "explicit Objective closure reuse required"
 
+/-- The fields an inline row chain may carry (a tabled row is bounded by the table). -/
+def typeRowCapacity : Nat := 65536
+
 /-- A type on the wire, with its depth. A type is an object `{tag, ...}` whose children
 are types, or `{tag:"ref", index}` naming an EARLIER entry of the packet's type table
 (`decodeTypeTable`). A ref stands for exactly the type the entry decoded to, depth
-included: `decodeTypeWith table fuel` accepts a tree iff the fully inlined JSON of that
-tree is accepted by `decodeTypeWith #[] fuel`, and decodes it to the same `Ty`. The table
-only shares storage; it changes neither which types a proposal may name nor the
-nesting capacity. -/
-def decodeTypeWith (table : Array (Ty × Nat)) : Nat → Json → Except String (Ty × Nat)
-  | 0, _ => .error "type nesting capacity"
-  | fuel + 1, value => do
+included: `decodeTypeWith table depth width` accepts a tree iff the fully inlined JSON of
+that tree is accepted by `decodeTypeWith #[] depth width`, and decodes it to the same `Ty`.
+The table only shares storage; it changes neither which types a proposal may name nor the
+nesting capacity.
+
+Depth is NESTING: a row's tail is the same row continued, not a nested type, so a field's
+tail is decoded at the same depth and costs one unit of `width` instead (the row capacity
+of an inline chain; an interned row is one table entry per field). A record or a package
+knot of many fields is therefore wide, not deep: the knot of a package of 600 definitions
+has depth of its deepest member type plus one. -/
+def decodeTypeWith (table : Array (Ty × Nat)) : Nat → Nat → Json → Except String (Ty × Nat)
+  | 0, _, _ => .error "type nesting capacity"
+  | fuel + 1, width, value => do
     match ← value.getObjValAs? String "tag" with
     | "ref" =>
         let index ← jsonNat (← value.getObjVal? "index")
@@ -1131,37 +1179,41 @@ def decodeTypeWith (table : Array (Ty × Nat)) : Nat → Json → Except String 
     | "variable" => return (.variable (← jsonNat (← value.getObjVal? "index")), 1)
     | "custody" => return (.custody (← jsonNat (← value.getObjVal? "identity")), 1)
     | "field" =>
-        let (member, dm) ← decodeTypeWith table fuel (← value.getObjVal? "member")
-        let (tail, dt) ← decodeTypeWith table fuel (← value.getObjVal? "tail")
-        return (.field (← value.getObjValAs? String "name") member tail, max dm dt + 1)
+        match width with
+        | 0 => .error "type row capacity"
+        | width + 1 =>
+          let (member, dm) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "member")
+          let (tail, dt) ← decodeTypeWith table (fuel + 1) width (← value.getObjVal? "tail")
+          return (.field (← value.getObjValAs? String "name") member tail, max (dm + 1) dt)
     | "arrow" =>
-        let (domain, dd) ← decodeTypeWith table fuel (← value.getObjVal? "domain")
-        let (codomain, dc) ← decodeTypeWith table fuel (← value.getObjVal? "codomain")
+        let (domain, dd) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "domain")
+        let (codomain, dc) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "codomain")
         return (.arrow (← decodeReuse (← value.getObjVal? "reuse"))
           (← decodeQuantity (← value.getObjVal? "parameter")) domain codomain, max dd dc + 1)
     | "specification" =>
-        let (metadata, dm) ← decodeTypeWith table fuel (← value.getObjVal? "metadata")
-        let (extension, de) ← decodeTypeWith table fuel (← value.getObjVal? "extension")
+        let (metadata, dm) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "metadata")
+        let (extension, de) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "extension")
         return (.specification metadata extension, max dm de + 1)
     | "prototype" =>
-        let (spec, ds) ← decodeTypeWith table fuel (← value.getObjVal? "spec")
-        let (target, dt) ← decodeTypeWith table fuel (← value.getObjVal? "target")
+        let (spec, ds) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "spec")
+        let (target, dt) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "target")
         return (.prototype spec target, max ds dt + 1)
     | "variant" =>
-        let (row, dr) ← decodeTypeWith table fuel (← value.getObjVal? "row")
+        let (row, dr) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "row")
         return (.variant row, dr + 1)
     | "computation" =>
-        let (plan, dp) ← decodeTypeWith table fuel (← value.getObjVal? "plan")
-        let (response, dr) ← decodeTypeWith table fuel (← value.getObjVal? "response")
-        let (result, da) ← decodeTypeWith table fuel (← value.getObjVal? "result")
+        let (plan, dp) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "plan")
+        let (response, dr) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "response")
+        let (result, da) ← decodeTypeWith table fuel typeRowCapacity (← value.getObjVal? "result")
         return (.computation plan response result, max dp (max dr da) + 1)
     | _ => .error "unknown Objective type constructor"
+termination_by fuel width => (fuel, width)
 
 /-- The type nesting capacity of every type a proposal names, tabled or inline. -/
 def typeNestingCapacity : Nat := 256
 
 def decodeType (table : Array (Ty × Nat)) (value : Json) : Except String Ty := do
-  return (← decodeTypeWith table typeNestingCapacity value).1
+  return (← decodeTypeWith table typeNestingCapacity typeRowCapacity value).1
 
 /-- The packet's type table: entry k is decoded against entries 0..k-1 only, so a ref can
 never point forward or at itself and every entry is a finite tree. -/
@@ -1169,7 +1221,7 @@ def decodeTypeTable (value : Json) : Except String (Array (Ty × Nat)) := do
   let entries ← value.getArr?
   if entries.size > 1048576 then throw "type table capacity"
   entries.foldlM (fun table entry => do
-    pure (table.push (← decodeTypeWith table typeNestingCapacity entry))) #[]
+    pure (table.push (← decodeTypeWith table typeNestingCapacity typeRowCapacity entry))) #[]
 
 def decodePrimitive (value : Json) : Except String Primitive := do
   match ← value.getStr? with
@@ -1253,10 +1305,12 @@ structure PacketParts where
 def termNestingCapacity : Nat := 4096
 
 def decodePacketParts (value : Json) (table : Array (Ty × Nat)) : Except String PacketParts := do
-  let annotations ← (← (← value.getObjVal? "annotations").getArr?).toList.mapM fun entry => do
+  -- Indexed by path: one insertion per annotation, a repeated path refused at its insertion.
+  let mut annotations : Std.HashMap (List Nat) LambdaAnnotation := {}
+  for entry in ← (← value.getObjVal? "annotations").getArr? do
     let path ← (← (← entry.getObjVal? "path").getArr?).toList.mapM jsonNat
-    return (path, ← decodeLambda table entry)
-  if !decide (annotations.map Prod.fst).Nodup then throw "duplicate lambda annotation path"
+    if annotations.contains path then throw "duplicate lambda annotation path"
+    annotations := annotations.insert path (← decodeLambda table entry)
   let bounds ← (← (← value.getObjVal? "bounds").getArr?).toList.mapM fun entry => do
     return (← jsonNat (← entry.getObjVal? "index"), ← decodeType table (← entry.getObjVal? "type"))
   if !decide (bounds.map Prod.fst).Nodup then throw "duplicate future type bound"
@@ -1271,8 +1325,7 @@ def decodePacketParts (value : Json) (table : Array (Ty × Nat)) : Except String
     | .error _ => pure 4096
     | .ok fuel => jsonNat fuel
   if fuel > 16384 then throw "checker fuel capacity"
-  return ⟨fun path => (annotations.find? (fun entry => entry.1 == path)).map Prod.snd,
-      ⟨bounds,shareable,[]⟩,context,fuel⟩
+  return ⟨fun path => annotations[path]?, ⟨bounds,shareable,[]⟩,context,fuel⟩
 
 /-- Schema, type table, term, then the rest (`decodePacketParts`), in that order. -/
 def decodePacket (value : Json) : Except String DecodedPacket := do

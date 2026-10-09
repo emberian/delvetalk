@@ -23,12 +23,7 @@ def bell_seed():
 
 
 def items(wire):
-    out = []
-    while wire["label"] == "cons":
-        fields = {f["name"]: f["value"] for f in wire["payload"]["fields"]}
-        out.append(fields["head"])
-        wire = fields["tail"]
-    return out
+    return wire["items"]
 
 
 def get(record_wire, name):

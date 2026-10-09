@@ -21,7 +21,7 @@ def empty():
 
 
 def nil():
-    return {"tag": "variant", "label": "nil", "payload": empty()}
+    return {"tag": "list", "items": []}
 
 
 def reference(name):
@@ -30,10 +30,8 @@ def reference(name):
 
 def garden_seed(policy="", pending=(), confirm=True):
     """A Garden Seed: its policy object, whether prose waits for "yes", and the proposals already waiting."""
-    wire = nil()
-    for principal, spell in reversed(pending):
-        wire = {"tag": "variant", "label": "cons", "payload": record(
-            head=record(principal=label(principal), spell=label(spell)), tail=wire)}
+    wire = {"tag": "list", "items": [record(principal=label(principal), spell=label(spell))
+                                     for principal, spell in pending]}
     return record(policy=reference(policy), confirm=boolean(confirm), pending=wire)
 
 

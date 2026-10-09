@@ -9,7 +9,7 @@ import os
 import subprocess
 import unittest
 
-from tests.wire import cid_of, relist
+from tests.wire import cid_of
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import binary
@@ -152,28 +152,19 @@ def library_modules(*names):
 
 
 def nil():
-    return variant("nil")
+    return {"tag": "list", "items": []}
 
 
 def cons(head, tail):
-    return variant("cons", {"tag": "record", "fields": [
-        {"name": "head", "value": head}, {"name": "tail", "value": tail}]})
+    return {"tag": "list", "items": [head] + tail["items"]}
 
 
 def from_list(items):
-    out = nil()
-    for item in reversed(items):
-        out = cons(item, out)
-    return out
+    return {"tag": "list", "items": list(items)}
 
 
 def to_list(data):
-    out = []
-    while data["label"] == "cons":
-        fields = {f["name"]: f["value"] for f in data["payload"]["fields"]}
-        out.append(fields["head"])
-        data = fields["tail"]
-    return out
+    return data["items"]
 
 
 def plan_field(plan, name):
@@ -193,7 +184,7 @@ class Host:
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
         assert line, "host closed its output (crash)"
-        return relist(json.loads(line))
+        return json.loads(line)
 
     def compile(self, source, entry, library=()):
         reply = self.send({"op": "compile", "entry": entry,
@@ -600,3 +591,100 @@ class TextTariffTests(TurnCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def wide_library(count):
+    """A module of `count` definitions; f0..f9 call each other in a chain, the rest are unused."""
+    lines = ["edition ObjectiveBend 1"]
+    for i in range(count):
+        body = f"f{i + 1}(n + 1n)" if i < 9 else "n + 1n"
+        lines.append(f"def f{i}(n: Nat) -> Nat:\n  {body}")
+    return "\n".join(lines) + "\n"
+
+
+class KnotTests(TurnCase):
+    """The packet's knot holds only what the entry reaches, so closure size is not capped."""
+
+    def test_a_600_definition_closure_compiles_when_the_entry_reaches_ten(self):
+        # Refuted if every closure definition still enters the knot (type nesting capacity at ~256).
+        h = self.host()
+        modules = [{"name": "Wide", "source": wide_library(590)},
+                   {"name": "Package", "source": "edition ObjectiveBend 1\nimport ./Wide.obend as Wide\n" +
+                    "".join(f"def g{i}(n: Nat) -> Nat:\n  n\n" for i in range(9)) +
+                    "def start(n: Nat) -> Nat:\n  Wide.f0(n)\n"}]
+        r = h.send({"op": "compile", "entry": "start", "modules": modules})
+        self.assertEqual(r["status"], "compiled", r)
+        knot = [k for k in json.dumps(r["artifact"]["packet"]).split('"') if k.startswith("Wide.")]
+        self.assertEqual(sorted(set(knot)), sorted(f"Wide.f{i}" for i in range(10)))
+        ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(5)]})
+        self.assertEqual((ran["status"], ran["value"]), ("finished", nat(15)), ran)
+
+    def test_an_entry_reaching_600_definitions_compiles(self):
+        # Refuted if a row's length still counts as type nesting (the old cap was 254 reached).
+        h = self.host()
+        source = "edition ObjectiveBend 1\n" + "".join(
+            f"def f{i}(n: Nat) -> Nat:\n  {'f%d(n + 1n)' % (i + 1) if i < 599 else 'n'}\n" for i in range(600))
+        r = h.send({"op": "compile", "entry": "f0", "modules": [{"name": "Package", "source": source}]})
+        self.assertEqual(r["status"], "compiled", r)
+        ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(0)]})
+        self.assertEqual((ran["status"], ran["value"]), ("finished", nat(599)), ran)
+
+    def test_an_unreached_definition_is_absent_and_a_reached_recursive_one_present(self):
+        h = self.host()
+        source = ("edition ObjectiveBend 1\ndef count(n: Nat) -> Nat:\n  match n:\n    case 0: 0n\n"
+                  "    case 1+p: 1n + count(p)\ndef unused(n: Nat) -> Nat:\n  n\ndef start(n: Nat) -> Nat:\n  count(n)\n")
+        r = h.send({"op": "compile", "entry": "start", "modules": [{"name": "Package", "source": source}]})
+        self.assertEqual(r["status"], "compiled", r)
+        packet = json.dumps(r["artifact"]["packet"])
+        self.assertIn('"Package.count"', packet)
+        self.assertNotIn('"Package.unused"', packet)
+        self.assertEqual(h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(4)]})["value"], nat(4))
+
+
+class SessionCacheTests(TurnCase):
+    """One prepared closure per package, entries held decoded and checked, runs by pin."""
+
+    SOURCE = "edition ObjectiveBend 1\ndef double(n: Nat) -> Nat:\n  n + n\ndef seven() -> Nat:\n  7n\n"
+
+    def compile(self, h, entry, source=None):
+        return h.send({"op": "compile", "entry": entry, "modules": [{"name": "Package", "source": source or self.SOURCE}]})
+
+    def test_an_unreached_ill_typed_definition_still_refuses_the_package(self):
+        # Refuted if pruning an entry's packet let an unreached declaration go unchecked.
+        h = self.host()
+        bad = self.SOURCE + "def broken(n: Nat) -> Bool:\n  n + 1n\n"
+        r = self.compile(h, "double", bad)
+        self.assertEqual(r["status"], "error", r)
+
+    def test_entries_share_one_prepared_closure_and_run_by_pin(self):
+        h = self.host()
+        double = self.compile(h, "double")["artifact"]
+        seven = self.compile(h, "seven")["artifact"]
+        status = h.send({"op": "packet-cache-status"})
+        self.assertEqual((status["fronts"], status["entries"]), (1, 2), status)
+        by_pin = h.send({"op": "run", "artifact": {"packetSha256": double["packetSha256"]}, "arguments": [nat(4)]})
+        self.assertEqual((by_pin["status"], by_pin["value"]), ("finished", nat(8)), by_pin)
+        whole = h.send({"op": "run", "artifact": seven, "arguments": []})
+        self.assertEqual(whole["value"], nat(7), whole)
+        self.assertGreaterEqual(h.send({"op": "packet-cache-status"})["hits"], 2)
+
+    def test_an_unknown_pin_and_a_tampered_artifact_are_refused_by_name(self):
+        h = self.host()
+        art = self.compile(h, "double")["artifact"]
+        unknown = h.send({"op": "run", "artifact": {"packetSha256": "bafyreinotapin"}, "arguments": [nat(1)]})
+        self.assertEqual(unknown["status"], "error")
+        self.assertIn("unknown packetSha256", unknown["message"])
+        tampered = dict(art, modules=[{"name": "Package", "source": self.SOURCE.replace("n + n", "n + n + n")}])
+        refused = h.send({"op": "run", "artifact": tampered, "arguments": [nat(1)]})
+        self.assertEqual((refused["status"], refused["message"]),
+                         ("error", "artifact does not match recompilation of its claimed source"), refused)
+
+    def test_a_fresh_process_verifies_a_known_artifact_once_then_holds_it(self):
+        art = self.compile(self.host(), "double")["artifact"]
+        h = self.host()
+        first = h.send({"op": "run", "artifact": art, "arguments": [nat(2)]})
+        self.assertEqual(first["value"], nat(4), first)
+        status = h.send({"op": "packet-cache-status"})
+        self.assertEqual((status["misses"], status["entries"]), (1, 1), status)
+        h.send({"op": "run", "artifact": art, "arguments": [nat(3)]})
+        self.assertEqual(h.send({"op": "packet-cache-status"})["hits"], 1)
