@@ -5,10 +5,9 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Spell.obend as Spell
 import ./Plan.obend as Plans
-# The uniform card protocol. Every object has a pure renderFor(state, context) ->
+# The uniform card protocol. Every object has a pure render(state, context) ->
 # Document (its card as the reader in the context sees it: a member may see more than a
-# stranger), keeps render(state) = renderFor(state, Card.stranger()) for the host's
-# `card {object}` until the host passes the reader's context, exports forms() (the
+# stranger; the host's `card {object}` passes the reader's context), exports forms() (the
 # actions its card offers, as data) and door() (its line in a directory), and takes
 # receive {text, post, slot} as the one message the town sends.
 # route reads a reply: a spell naming this object and one of its forms becomes
@@ -147,24 +146,30 @@ def lensField<E>(lens: Form.Lens<E>) -> String:
   match lens:
     case lens(l): l.field
 def answerLensed<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, guard: String, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+  answerLensedAs::<E, S, R, Reply>(routed, context, forms, lenses, guard, card, fn(reply: Reply) -> Reply: reply)
+# The same for an object whose receive finishes with its own result type: `as` maps the
+# protocol's Reply to it.
+def answerLensedAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, guard: String, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match routed:
-    case set(s): putting::<E, S, R>(s.field, s.value, lensNamed::<E>(lenses, s.field), guard, context, forms, lenses, card)
-    case help(_): tell::<E, S, R, Reply>(Reply.usage({}), help::<E>(context.object, forms, lenses))
-    case _: answer::<E, S, R>(routed, context, forms, card)
-def putting<E, S, R>(field: String, value: String, found: Lists.Maybe<Form.Lens<E>>, guard: String, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case set(s): putting::<E, S, R, T>(s.field, s.value, lensNamed::<E>(lenses, s.field), guard, context, forms, card, as)
+    case help(_): tell::<E, S, R, T>(as(Reply.usage({})), help::<E>(context.object, forms, lenses))
+    case _: answerAs::<E, S, R, T>(routed, context, forms, card, as(replyOf(routed)))
+def refusing<E, S, R, T>(reason: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  answerAs::<E, S, R, T>(Routed.refused({reason: reason}), context, forms, card, as(Reply.refused({reason: reason})))
+def putting<E, S, R, T>(field: String, value: String, found: Lists.Maybe<Form.Lens<E>>, guard: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match found:
-    case none(_): answer::<E, S, R>(Routed.refused({reason: textConcat("No field called ", textConcat(field, " can be set here."))}), context, forms, card)
-    case some(f): if guard != "" then answer::<E, S, R>(Routed.refused({reason: guard}), context, forms, card) else judgedPut::<E, S, R>(f.value, value, context, forms, card)
-def judgedPut<E, S, R>(lens: Form.Lens<E>, value: String, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case none(_): refusing::<E, S, R, T>(textConcat("No field called ", textConcat(field, " can be set here.")), context, forms, card, as)
+    case some(f): if guard != "" then refusing::<E, S, R, T>(guard, context, forms, card, as) else judgedPut::<E, S, R, T>(f.value, value, context, forms, card, as)
+def judgedPut<E, S, R, T>(lens: Form.Lens<E>, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match lens:
-    case lens(l): verdictPut::<E, S, R>(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card)
-def verdictPut<E, S, R>(verdict: Spell.Verdict, edits: E, field: String, value: String, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case lens(l): verdictPut::<E, S, R, T>(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card, as)
+def verdictPut<E, S, R, T>(verdict: Spell.Verdict, edits: E, field: String, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match verdict:
-    case wrong(w): answer::<E, S, R>(Routed.refused({reason: w.reason}), context, forms, card)
-    case fine(_): put::<E, S, R>(edits, field, value, context)
-def put<E, S, R>(edits: E, field: String, value: String, context: Abi.Context) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+    case wrong(w): refusing::<E, S, R, T>(w.reason, context, forms, card, as)
+    case fine(_): put::<E, S, R, T>(edits, field, value, context, as)
+def put<E, S, R, T>(edits: E, field: String, value: String, context: Abi.Context, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match perform(Plans.Plan::<E>.write({object: Plans.self(context), edits: edits})):
-    case _: tell::<E, S, R, Reply>(Reply.done({action: "set"}), Document.text(textConcat("Set ", textConcat(field, textConcat(" to ", textConcat(value, ".\n"))))))
+    case _: tell::<E, S, R, T>(as(Reply.done({action: "set"})), Document.text(textConcat("Set ", textConcat(field, textConcat(" to ", textConcat(value, ".\n"))))))
 # A lens's value as text or as a natural (0 when the kind is not a number).
 def valueText(value: Form.Value) -> String:
   match value:
@@ -175,7 +180,7 @@ def valueNatural(value: Form.Value) -> Nat:
   match value:
     case natural(n): n.value
     case _: 0n
-# The context of a reader nobody is: what render(state) shows, and what a card shows a
+# The context of a reader nobody is: what a card shows a
 # stranger. Mine is "(yours)" when the principal is the reader.
 def stranger() -> Abi.Context:
   {world: "", object: "", principal: "", caller: "", intent: "", height: 0n, inputOrigin: {kind: "", object: "", command: "", program: "", immediatelyPrevious: false}}
@@ -230,15 +235,37 @@ def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: 
   match perform(Plans.Plan::<E>.send({object: head.object, method: head.method, argument: argument})):
     case delivery(_): broadcast::<E, S, R, T>(tail, argument, sent + 1n, then)
     case _: broadcast::<E, S, R, T>(tail, argument, sent, then)
-# What a card shows for a principal: the last segment of the DID, until the host
-# supplies handles.
+# What a card shows for a principal, never the raw DID: the last segment of the DID,
+# and of a long one (a real did:plc is 24 characters) only its last eight after "…".
+# The host will put the observed handle in the Context; until then this is the name.
 def handle(did: String) -> String:
+  if textTake(did, 4n) == "did:" then shortened(segment(did)) else did
+def segment(did: String) -> String:
   let at = textBreak(did, ":")
-  if at == textLength(did) then did else handle(textDrop(did, at + 1n))
+  if at == textLength(did) then did else segment(textDrop(did, at + 1n))
+def shortened(fragment: String) -> String:
+  if textLength(fragment) > 8n then textConcat("…", textDrop(fragment, textLength(fragment) - 8n)) else fragment
 # The first `shown` lines, then "… and N more".
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
   let total = Lists.length::<Document.Document>(lines)
   if total > shown then Lists.concat::<Document.Document>(Lists.take::<Document.Document>(lines, shown), Document.Documents.cons({head: Document.text(textConcat("… and ", textConcat(natText(total - shown), " more\n"))), tail: Document.Documents.nil()})) else lines
+# The page's merge (FOUNDATION section 4): its human owner replies `merge` to the
+# posted page or an edit, and the object records that post as its page checkpoint. An
+# object with a page keeps `owner` and `pageCheckpoint` in state and, before routing,
+# answers isMerge(text) with merge, giving the Edits that set its checkpoint (put).
+def isMerge(text: String) -> Bool:
+  let rest = textDrop(text, textSpan(text, " \n\t\r"))
+  textTake(rest, 5n) == "merge" && textSpan(textDrop(rest, 5n), " \n\t\r") == textLength(rest) - 5n
+def merge<E, S, R, T>(post: String, owner: String, context: Abi.Context, put: String -> E, done: T, refused: String -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  if owner == "" || context.principal != owner then tell::<E, S, R, T>(refused(notOwner(owner)), Document.text(textConcat("Not merged: ", textConcat(notOwner(owner), "\n")))) else if post == "" then tell::<E, S, R, T>(refused("A merge names the post it answers."), Document.text("Not merged: a merge names the post it answers.\n")) else checkpointed::<E, S, R, T>(post, put(post), context, done)
+def notOwner(owner: String) -> String:
+  if owner == "" then "This page has no owner to merge it." else textConcat("Only the page's owner, ", textConcat(handle(owner), ", merges it."))
+def checkpointed<E, S, R, T>(post: String, edits: E, context: Abi.Context, done: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match perform(Plans.Plan::<E>.write({object: Plans.self(context), edits: edits})):
+    case _: tell::<E, S, R, T>(done, Document.text(textConcat("Page checkpointed at ", textConcat(post, ".\n"))))
+# The card's line for it: "" before the first merge.
+def checkpointLine(post: String) -> String:
+  if post == "" then "" else textConcat("page checkpointed at ", textConcat(post, "\n"))
 # The object-owned wiki page (FOUNDATION section 4): a list of sections, each a title
 # and a Document. The default is the card, then how to reply; an object overrides
 # page(state, context) to add its own sections. pageText renders the agentwiki body:

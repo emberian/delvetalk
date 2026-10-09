@@ -109,14 +109,14 @@ def run_pure(name, entry, *arguments, probe=None, limits=None):
 
 BIG = {"ticks": "1000000"}
 
-PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Garden.obend as O\n"
+PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Garden.obend as O\n"
 GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
 def bells(n: Nat) -> Lists.List<Plans.Reference>:
   match n:
     case 0: Lists.List::<Plans.Reference>.nil()
     case 1+p: Lists.append::<Plans.Reference>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n))})
 def shown(n: Nat) -> String:
-  Document.plain(O.render({planted: n, policy: Plans.nobody(), confirm: true, pending: Lists.List::<O.Pending>.nil(), children: bells(n)}))
+  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirm: true, pending: Lists.List::<O.Pending>.nil(), children: bells(n), pageCheckpoint: ""}, Card.stranger()))
 """
 
 DOC_PROBE = """edition ObjectiveBend 1
@@ -129,28 +129,26 @@ def flat(n: Nat) -> Nat:
   textLength(Document.plain(Document.Document.sequence({items: leaves(n)})))
 """
 
-PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./%s.obend as O\n"
+PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./Card.obend as Card\nimport ./%s.obend as O\n"
 
-BELL_PROBE = PROBE_HEAD % "Bell" + """import ./Card.obend as Card
-def rains(n: Nat) -> Lists.List<O.Rain>:
+BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
     case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", text: "a line of rain"}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
   {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, planting: {principal: "did:plc:glm", intent: "p"}, observers: Lists.List::<Card.Observer>.nil()}
 def many(n: Nat) -> String:
-  Document.plain(O.render(sample(rains(n))))
+  Document.plain(O.render(sample(rains(n)), Card.stranger()))
 def weight(n: Nat) -> Nat:
-  Document.size(O.render(sample(rains(n))))
+  Document.size(O.render(sample(rains(n)), Card.stranger()))
 def lineCount(n: Nat) -> Nat:
-  Lists.length::<String>(Document.lines(O.render(sample(rains(n)))))
+  Lists.length::<String>(Document.lines(O.render(sample(rains(n)), Card.stranger())))
 def two(n: Nat) -> String:
-  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", text: "first"}), {author: "gemini", text: "second"}))))
+  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", text: "first"}), {author: "gemini", text: "second"})), Card.stranger()))
 """
 
-DOOR_PROBE = PROBE_HEAD % "Door" + """import ./Card.obend as Card
-def shut(n: Nat) -> String:
-  Document.plain(O.render({open: false, openedBy: "", knocks: Lists.List::<String>.cons({head: "did:plc:glm", tail: Lists.List::<String>.nil()}), observers: Lists.List::<Card.Observer>.nil()}))
+DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
+  Document.plain(O.render({open: false, openedBy: "", knocks: Lists.List::<String>.cons({head: "did:plc:glm", tail: Lists.List::<String>.nil()}), observers: Lists.List::<Card.Observer>.nil()}, Card.stranger()))
 """
 
 LINES_PROBE = """edition ObjectiveBend 1
@@ -163,11 +161,11 @@ def joined(n: Nat) -> String:
 """
 
 CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
-  Document.plain(O.render({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})}))
+  Document.plain(O.render({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})}, Card.stranger()))
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}))
+  Document.plain(O.render({owner: "ember", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}, Card.stranger()))
 """
 
 
@@ -291,9 +289,9 @@ class Objects(unittest.TestCase):
         door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
         self.assertEqual(door["status"], "finished", door)
         self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
-        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\"}))\n")
+        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\"}, Card.stranger()))\n")
         self.assertEqual(lantern["value"]["value"], "The lantern is lit by gemini.\n")
-        loop = run_pure("Loop", "shown", nat(3), probe=PROBE_HEAD % "Loop" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({count: n}))\n")
+        loop = run_pure("Loop", "shown", nat(3), probe=PROBE_HEAD % "Loop" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({count: n}, Card.stranger()))\n")
         self.assertEqual(loop["value"]["value"], "Ticks: 3\n")
 
     def test_lines_split_the_rendered_document(self):

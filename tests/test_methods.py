@@ -48,7 +48,7 @@ class MethodTableTests(unittest.TestCase):
         self.assertTrue(methods["receive"]["activity"])
         self.assertEqual(methods["render"]["input"], {"tag": "emptyRow"})
         self.assertFalse(methods["render"]["activity"])
-        self.assertFalse(methods["render"]["context"])
+        self.assertTrue(methods["render"]["context"])  # render(state, context): the reader's card
         # sow takes four inputs beyond its state: not callable as a method
         self.assertNotIn("sow", methods)
         # helpers whose first parameter is not the state are not methods

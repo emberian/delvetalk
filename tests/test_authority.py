@@ -203,7 +203,7 @@ class LawsOnWho(Authority):
         door = record(label=label("garden"), description=label("a garden"), to=reference("garden"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="dir",
                            modules=closure("Directory"), entry="initial",
-                           seed=record(owner=label("ember"), doors=nil()))
+                           seed=record(owner=label("ember"), doors=nil(), greeted=nil()))
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("dir", "add", record(door=door))["status"], "admitted")
         version = self.version("dir")

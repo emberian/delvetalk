@@ -134,17 +134,16 @@ def acted(action: String, target: String, migration: String, block: Block, conte
     case none(_): withoutBlock(action, target, context)
 def withBlock(action: String, target: String, migration: String, source: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   if action == "check" then runCheck(source) else if action == "propose" && target != "" then runPropose(target, source, migration, context) else tell(Verdict.refused({reason: "Name a target to propose to."}), usage())
+# The workshop keeps no settings of its own (its title is its creator's), so it has no
+# lenses: `set` says so, and `?` is its usage card.
 def withoutBlock(action: String, target: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
-  if action == "check" && target != "" then checkTarget(target, context) else tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
+  if action == "?" then tell(Verdict.refused({reason: "usage"}), usage()) else if action == "set" then tell(Verdict.refused({reason: "Nothing here can be set: the workshop keeps no settings of its own."}), refusedCard("Nothing here can be set: the workshop keeps no settings of its own.")) else if action == "check" && target != "" then checkTarget(target, context) else tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
 # The workshop's actions carry a fenced block, which a form cannot describe: its
 # card is the usage text, and receive reads the block itself.
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
   usage()
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())

@@ -3,33 +3,38 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Spell.obend as Spell
 import ./Card.obend as Card
 record Door:
   label: String
   description: String
   to: Plans.Reference
+# greeted: the principals the menu has gone to once (each later summons gets one line).
 record State:
   owner: String
   doors: Lists.List<Door>
+  greeted: Lists.List<String>
 # A creator supplies a Seed; seeded makes the child's State from it. The owner is the
 # DID (or principal) who curates the doors.
 record Seed:
   owner: String
 record Edits:
   doors: Plans.Entries<Door, {}>
+  greeted: Plans.Entries<String, {}>
 type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+# A spell passed on to another card is answered with that card's own result type: Data.
+type Response = Plans.Response<State, Data>
 sum Answer:
   done: {}
   refused: {reason: String}
 # Only the owner adds or removes a door: the law judges every write (a stranger's add is
-# refused with clause owner), and a law in source means a Directory is made with
-# world-create, never by a creator that imports it.
-law owner: request.subject == new.owner
+# refused with clause owner); anyone's summons only appends to greeted. A law in source
+# means a Directory is made with world-create, never by a creator that imports it.
+law owner: request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(doors) and appendOnly(greeted))
 def defaultSeed() -> Seed:
   {owner: ""}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, doors: Lists.List::<Door>.nil()}
+  {owner: seed.owner, doors: Lists.List::<Door>.nil(), greeted: Lists.List::<String>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Door>:
@@ -42,24 +47,65 @@ def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answe
 def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
   match position(state.doors, input.door.label):
     case some(_): Answer.refused({reason: textConcat("There is already a door called ", input.door.label)})
-    case none(_): edited(context, {doors: Plans.Entries::<Door, {}>.append({item: input.door})})
+    case none(_): edited(context, {doors: Plans.Entries::<Door, {}>.append({item: input.door}), greeted: Plans.Entries::<String, {}>.keep({})})
 def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
   match position(state.doors, input.label):
     case none(_): Answer.refused({reason: textConcat("There is no door called ", input.label)})
-    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.removeItem({item: a.value})})
+    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.removeItem({item: a.value}), greeted: Plans.Entries::<String, {}>.keep({})})
 def doorLine(door: Door) -> Document.Document:
   Document.text(textConcat(door.label, textConcat("\n", textConcat(door.description, "\n\n"))))
 # Affordances first, since readers clip near 1,400 characters; then the doors.
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat::<Document.Document>(Lists.map::<Door, Document.Document>(state.doors, doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "directory", blurb: "The doors of DelveTalk."}
-# A summon: whatever was said, the menu is the answer.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  Card.tell::<Edits, State, {}, Nat>(Lists.length::<Door>(state.doors), renderFor(state, context))
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())
+# What the directory did with a reply.
+sum Heard:
+  passed: {card: String}
+  door: {object: String}
+  menu: {}
+  again: {}
+  silent: {}
+  refused: {reason: String}
+# The hub's reply. A spell naming another card goes on to that card's receive, by call,
+# as this turn (a reply to the hub post reaches the object it names). Otherwise its owner
+# is answered with silence; a door word gets that door's card; the menu goes to each
+# principal once, and later summons get one line.
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match Spell.parse(input.text):
+    case spell(s): if s.card != context.object then passOn(s.card, input, context) else summoned(state, input, context)
+    case notASpell(_): summoned(state, input, context)
+def passOn(card: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match perform(Plan.call({object: {world: context.world, object: card}, method: "receive", argument: Data.of::<Card.Heard>(input)})):
+    case returned(_): Heard.passed({card: card})
+    case denied(_): Card.tell::<Edits, State, Data, Heard>(Heard.refused({reason: textConcat("Not visible: ", card)}), Document.text(textConcat("The card ", textConcat(card, " is not visible to you.\n"))))
+    case refused(r): Card.tell::<Edits, State, Data, Heard>(Heard.refused({reason: r.clause}), Document.text(textConcat("Not passed to ", textConcat(card, textConcat(": ", textConcat(r.clause, "\n"))))))
+    case _: Card.tell::<Edits, State, Data, Heard>(Heard.refused({reason: textConcat("No answer from ", card)}), Document.text(textConcat("No answer from ", textConcat(card, ".\n"))))
+def trimmed(text: String) -> String:
+  trimTail(textDrop(text, textSpan(text, " \n\t\r")))
+def trimTail(text: String) -> String:
+  if text == "" then text else if textSpan(textDrop(text, textLength(text) - 1n), " \n\t\r") == 1n then trimTail(textTake(text, textLength(text) - 1n)) else text
+def doorFor(doors: Lists.List<Door>, word: String) -> Lists.Maybe<Door>:
+  Lists.find::<Door>(doors, fn(door: Door) -> Bool: word != "" && (door.label == word || door.to.object == word))
+def summoned(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  if context.principal == state.owner then Heard.silent({}) else worded(state, doorFor(state.doors, trimmed(input.text)), context)
+def worded(state: State, found: Lists.Maybe<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match found:
+    case some(d): doorCard(d.value.to, context)
+    case none(_): if Lists.any::<String>(state.greeted, fn(p: String) -> Bool: p == context.principal) then Card.tell::<Edits, State, Data, Heard>(Heard.again({}), Document.text(textConcat("✾ DELVETALK: reply with a door word for its card: ", textConcat(words(state), ".\n")))) else greeting(state, context)
+def words(state: State) -> String:
+  textJoin(Lists.map::<Door, String>(state.doors, fn(door: Door) -> String: door.to.object), ", ")
+def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match perform(Plan.card({object: to})):
+    case carded(c): Card.tell::<Edits, State, Data, Heard>(Heard.door({object: to.object}), c.document)
+    case _: Card.tell::<Edits, State, Data, Heard>(Heard.refused({reason: textConcat("No card at ", to.object)}), Document.text(textConcat("The door to ", textConcat(to.object, " opens on nothing yet.\n"))))
+# The menu once per principal: the greeting is remembered (at most 4,096 principals; past
+# that the menu goes out without being remembered).
+def greeting(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  if Lists.length::<String>(state.greeted) >= 4096n then Card.tell::<Edits, State, Data, Heard>(Heard.menu({}), render(state, context)) else greeted(state, context)
+def greeted(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match perform(Plan.write({object: Plans.self(context), edits: {doors: Plans.Entries::<Door, {}>.keep({}), greeted: Plans.Entries::<String, {}>.append({item: context.principal})}})):
+    case _: Card.tell::<Edits, State, Data, Heard>(Heard.menu({}), render(state, context))

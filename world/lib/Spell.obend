@@ -11,10 +11,11 @@ import ./Form.obend as Form
 # that is exactly --- is ignored. A card name is [a-z0-9:/.-]+, at most 160 bytes
 # (so `env/did:plc:…` can be named); action and field names are [a-z0-9-]+, and the
 # action `?` asks for the card's usage. A
-# value is the rest of its line, trimmed. Every line before the first delvetalk
-# line is skipped (a reply quotes the invitation it answers); a reply with no
-# delvetalk line is not a spell: prose needs interpretation, not parsing. The
-# fields may also follow the action on the same line, comma separated.
+# value is the rest of its line, trimmed. The spell is the last delvetalk line that
+# is not quotation (see parse); a reply with no delvetalk line is not a spell: prose
+# needs interpretation, not parsing. The fields may also follow the action on the
+# same line, separated by ` / ` or commas. Fence lines and `>` lines among the field
+# lines are skipped.
 #
 # parse turns text into a Parsed; fit checks a Parsed against the Form the card
 # offered. A Fit is never authority: a proposal is what the host may feed to the
@@ -67,26 +68,60 @@ def isIdentifier(value: String) -> Bool:
 sum Fields2:
   found: {bindings: Bindings}
   bad: {reason: String}
+  again: {text: String}
+  stray: {reason: String, rest: String}
+# The spell a post means is its LAST delvetalk line that is not quotation (agents quote
+# the invitation, and example spells, above their own): a line indented four spaces or
+# more, or by a tab, is quotation, taken only when the post has no other; a `>` line and a
+# fence line (```) are never a spell line; a delvetalk line whose card or action is
+# malformed is not one either. The search runs once: the first unquoted spell line is
+# parsed, and its field lines hand over to any later unquoted spell line (`again`) or,
+# at a line that is not a field, to the next spell line after it (`stray`).
+sum Candidate:
+  none: {}
+  at: {card: String, action: String, tail: String, rest: String}
 def parse(text: String) -> Parsed:
-  let stop = textBreak(text, "\n")
-  let line = trimStart(textTake(text, stop))
-  let rest = textDrop(text, stop + 1n)
-  if textTake(line, 9n) == "delvetalk" && textSpan(textDrop(line, 9n), blanks()) > 0n then header(trimEnd(textDrop(line, 9n)), rest) else skip(rest)
-# Every line before the spell is skipped: readers quote the invitation they answer.
-def skip(rest: String) -> Parsed:
-  if rest == "" then Parsed.notASpell({reason: "The reply has no delvetalk line."}) else parse(rest)
-def header(line: String, rest: String) -> Parsed:
+  seek(text, Candidate.none({}), "The reply has no delvetalk line.")
+def seek(text: String, quoted: Candidate, reason: String) -> Parsed:
+  if text == "" then fallback(quoted, reason) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), quoted, reason)
+def isSpellAt(text: String, indent: Nat) -> Bool:
+  textTake(textDrop(text, indent), 10n) == "delvetalk " || textTake(textDrop(text, indent), 10n) == "delvetalk\t"
+def isQuote(text: String) -> Bool:
+  textSpan(textTake(text, 4n), " ") == 4n || textTake(text, 1n) == "\t"
+def seekLine(text: String, indent: Nat, stop: Nat, quoted: Candidate, reason: String) -> Parsed:
+  if indent < stop && isSpellAt(text, indent) then found(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), quoted, reason) else seek(textDrop(text, stop + 1n), quoted, reason)
+def headingAt(text: String, indent: Nat, stop: Nat) -> Candidate:
+  heading(trimEnd(textDrop(textTake(text, stop), indent + 9n)), textDrop(text, stop + 1n))
+def found(candidate: Candidate, quote: Bool, rest: String, quoted: Candidate, reason: String) -> Parsed:
+  match candidate:
+    case none(_): seek(rest, quoted, reason)
+    case at(a): if quote then seek(rest, candidate, reason) else spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
+def fallback(quoted: Candidate, reason: String) -> Parsed:
+  match quoted:
+    case at(a): spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
+    case none(_): Parsed.notASpell({reason: reason})
+def heading(line: String, rest: String) -> Candidate:
   let afterBlanks = trimStart(line)
   let cardEnd = textBreak(afterBlanks, " \t")
   let card = textTake(afterBlanks, cardEnd)
   let afterCard = trimStart(textDrop(afterBlanks, cardEnd))
   let actionEnd = textBreak(afterCard, " \t")
   let action = textTake(afterCard, actionEnd)
-  if isCardName(card) == false || isAction(action) == false then skip(rest) else spelled(card, action, both(inline(trimStart(textDrop(afterCard, actionEnd))), fieldLines(rest)))
-# The one-line form: fields follow the action, separated by commas. A comma
-# continues the current value unless what follows it looks like `name:`.
+  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else Candidate.at({card: card, action: action, tail: trimStart(textDrop(afterCard, actionEnd)), rest: rest})
+# Fields on one line are separated by ` / ` (the form the town's posts teach: `delvetalk
+# tide subscribe / every: 1 / note: first light`) or by commas; a slash or comma only
+# separates when what follows it looks like `name:`, so a value may hold either. A
+# field line holds one field (its value may contain slashes and commas).
 def inline(tail: String) -> Fields2:
-  if tail == "" then Fields2.found({bindings: Bindings.nil()}) else piece(tail)
+  if tail == "" then Fields2.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then trimStart(textDrop(tail, 1n)) else tail, true)
+def slashed(before: String, rest: String, commas: Bool) -> Fields2:
+  let at = textBreak(rest, "/")
+  if at == textLength(rest) then segment(textConcat(before, rest), commas) else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n), commas)
+def slashAt(before: String, head: String, after: String, commas: Bool) -> Fields2:
+  if looksLikeField(trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), blanks()) == 1n) then both(segment(textConcat(before, head), commas), slashed("", trimStart(after), commas)) else slashed(textConcat(before, textConcat(head, "/")), after, commas)
+def segment(text: String, commas: Bool) -> Fields2:
+  if trimStart(text) == "" then Fields2.found({bindings: Bindings.nil()}) else piece(trimStart(text))
+# Commas: a comma continues the current value unless what follows it looks like `name:`.
 def piece(tail: String) -> Fields2:
   let stop = textBreak(tail, ",")
   startField(trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
@@ -104,17 +139,27 @@ def more(name: String, value: String, stop: Nat, rest: String) -> Fields2:
 def both(first: Fields2, second: Fields2) -> Fields2:
   match first:
     case found(f): sequenced(f.bindings, second)
-    case bad(_): first
+    case _: first
 def sequenced(bindings: Bindings, second: Fields2) -> Fields2:
   match second:
     case found(g): Fields2.found({bindings: Lists.concat::<Binding>(bindings, g.bindings)})
-    case bad(_): second
+    case _: second
 def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
   match parsed:
     case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
     case bad(b): Parsed.notASpell({reason: b.reason})
+    case again(a): parse(a.text)
+    case stray(r): seek(r.rest, Candidate.none({}), r.reason)
 def fieldLines(text: String) -> Fields2:
-  if text == "" then Fields2.found({bindings: Bindings.nil()}) else fieldLine(text, textBreak(text, "\n"))
+  if text == "" then Fields2.found({bindings: Bindings.nil()}) else spellLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
+# A later spell line among the fields: quoted, it is skipped; unquoted, it takes over;
+# one naming no card and action ends the fields, as --- does.
+def spellLine(text: String, indent: Nat, stop: Nat) -> Fields2:
+  if indent < stop && isSpellAt(text, indent) then laterSpell(text, isQuote(text), headingAt(text, indent, stop), textDrop(text, stop + 1n)) else fieldLine(text, stop)
+def laterSpell(text: String, quote: Bool, candidate: Candidate, rest: String) -> Fields2:
+  match candidate:
+    case at(_): if quote then fieldLines(rest) else Fields2.again({text: text})
+    case none(_): Fields2.found({bindings: Bindings.nil()})
 # A line is taken once and the rest is dropped once. The drop starts one scalar
 # early, so the line's last scalar is seen for free: only when it is blank is the
 # line trimmed at the end by the slow path.
@@ -124,16 +169,17 @@ def lineParts(line: String, tail: String) -> Fields2:
   let rest = textDrop(tail, 2n)
   let first = textTake(line, 1n)
   if textSpan(first, blanks()) == 1n then lineParts(trimStart(trimEnd(line)), tail) else classify(if textSpan(textTake(tail, 1n), blanks()) == 1n then trimEnd(line) else line, first, rest)
+# Blank, # and > lines and fence lines are skipped; --- ends the fields.
 def classify(line: String, first: String, rest: String) -> Fields2:
-  if line == "" || first == "#" then fieldLines(rest) else if first == "-" && line == "---" then Fields2.found({bindings: Bindings.nil()}) else binding(line, rest)
+  if line == "" || first == "#" || first == ">" || first == "`" && textTake(line, 3n) == "```" then fieldLines(rest) else if first == "-" && line == "---" then Fields2.found({bindings: Bindings.nil()}) else binding(line, rest)
 def binding(line: String, rest: String) -> Fields2:
   let colon = textBreak(line, ":")
   let name = textTake(line, colon)
-  if colon == 0n || name == line then Fields2.bad({reason: textConcat("Not a field line: ", textTake(line, 40n))}) else consed(name, trimStart(textDrop(line, colon + 1n)), fieldLines(rest))
+  if colon == 0n || name == line then Fields2.stray({reason: textConcat("Not a field line: ", textTake(line, 40n)), rest: rest}) else consed(name, trimStart(textDrop(line, colon + 1n)), fieldLines(rest))
 def consed(name: String, value: String, parsed: Fields2) -> Fields2:
   match parsed:
     case found(f): Fields2.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
-    case bad(b): parsed
+    case _: parsed
 sum Verdict:
   fine: {}
   wrong: {reason: String}

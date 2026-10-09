@@ -121,7 +121,7 @@ def planted(context: Abi.Context) -> String:
 
     def directory(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), doors={"tag": "list", "items": []}))
+                           entry="initial", seed=record(owner=label("ember"), doors={"tag": "list", "items": []}, greeted={"tag": "list", "items": []}))
         self.assertEqual(r["status"], "created", r)
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
@@ -135,7 +135,33 @@ def planted(context: Abi.Context) -> String:
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)
-        self.assertEqual(self.card(self.say("", obj="root")), text)
+        # The menu goes to each principal once; a later summons gets one line, the owner nothing.
+        again = self.card(self.say("", obj="root"))
+        print("--- root, again ---\n" + again)
+        self.assertEqual(again, "✾ DELVETALK: reply with a door word for its card: garden, rooms, conversations, play, workshop, studio.\n")
+        self.assertTrue(self.card(self.say("hi", obj="root", who="kimik3")).startswith("✾ DELVETALK · ROOT"))
+        owner = self.say("@livedelvetalk", obj="root", who="ember")
+        self.assertEqual((owner["status"], owner["result"]["label"], owner.get("offers", [])), ("admitted", "silent", []), owner)
+
+    def test_a_door_word_gets_that_doors_card(self):
+        self.directory()
+        self.garden()
+        card = self.card(self.say(" garden\n", obj="root"))
+        print("\n--- root, the door word garden ---\n" + card)
+        self.assertTrue(card.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"), card)
+        self.assertTrue(self.card(self.say("GARDEN", obj="root", who="kimik3")).startswith("✾ THE NIGHT GARDEN"))
+        self.assertEqual(self.card(self.say("rooms", obj="root")), "The door to rooms opens on nothing yet.\n")
+
+    def test_a_spell_naming_another_card_is_passed_to_it(self):
+        self.directory()
+        self.garden()
+        r = self.say("quoting the hub post\ndelvetalk garden plant / colour: silver / seed: a fern", obj="root")
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
+        self.assertIn("Planted for glm: a silver bell", r["offers"][0]["text"])
+        self.assertEqual(self.version("garden"), 1)
+        self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
+        ghost = self.say("delvetalk forge make / name: sentry", obj="root")
+        print("--- root, an unknown card ---\n" + str(ghost.get("offers", ghost)))
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()
@@ -143,7 +169,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(again["result"]["label"], "refused")
         gone = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
-        self.assertNotIn("PLAY\n", self.card(self.say("", obj="root")))
+        self.assertNotIn("PLAY\n", self.card(self.say("", obj="root", who="kimik3")))
         missing = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
         self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called PLAY")
 
