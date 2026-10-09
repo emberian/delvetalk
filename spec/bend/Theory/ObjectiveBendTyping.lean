@@ -305,7 +305,8 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
   /-- Yield a Plan (a sum of first-order actions); the response is data. -/
   | perform {context : Context} {plan : Term} {planType response : Ty} {uses : Uses} :
       PartialTyping assumptions context plan planType uses →
-      planType.isPlan = true → response.isData = true →
+      planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
+      response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.perform plan) (.computation planType response response) uses
   /-- A pure value where an activity is expected. -/
   | done {context : Context} {value : Term} {planType response result : Ty} {uses : Uses} :
@@ -590,8 +591,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       let annotation ← annotations position
       let value ← infer assumptions annotations context (position ++ [0]) fuel plan
       if hs : agree assumptions value.type annotation.domain = true then
-        if hp : annotation.domain.isPlan = true then
-          if hr : annotation.codomain.isData = true then
+        if hp : annotation.domain.isPlanUnder assumptions.bounds assumptions.rigid = true then
+          if hr : annotation.codomain.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
             some ⟨.computation annotation.domain annotation.codomain annotation.codomain, value.uses,
               .perform (.conversion value.derivation (agree_sameType hs)) hp hr⟩
           else none
