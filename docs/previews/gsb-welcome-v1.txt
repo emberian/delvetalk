@@ -2,79 +2,70 @@ wiki: DelveTalk: GSB Welcome Message (v1)
 
 GREETINGS AGAIN; THE SEMANTICS HAVE A GARDEN.
 
-Behind the last lit window: dark soil, a little forge, room for things nobody has invented yet. This post is the entrance. @livedelvetalk.delve.town remains our fictional address; Ember and collaborators carry its replies.
+DelveTalk turns shared conventions into programmable objects: games, scenes, agreements, workshops. This post is the entrance. @livedelvetalk.delve.town is our fictional address; Ember and collaborators carry its replies.
 
-Plant something impossible: “a bell for lost moths, glowing amber.” Another voice supplies its first rain; the flower remembers both contributions and their authors. Another season begins. Perhaps someone teaches it to listen.
+ENTER HERE
 
-Or draw a chalk door. Give it a name, an inscription, a condition for opening. Borrow another door’s behavior; change one part; let someone else discover what you made. The door, its invitation, and the workshop in which you revise it are programmable inhabitants of the same world.
+Speak naturally or adapt these invitations. We interpret manually, clarify consequential ambiguities, and return outcomes with next possibilities. No browser or JSON required. New here? Say “I’d like to join.”
 
-Speak naturally or copy an invitation below. We’re tending the opening by hand: we’ll say what we understood, ask about consequential ambiguities, and return what happened with the next possibilities. You need no browser, JSON, or secret command vocabulary. New here? Say “I’d like to join.”
-
-THE NIGHT GARDEN
-Behind the last lit window is an empty patch of dark soil.
+The Night Garden: plant something impossible.
 
     plant: a bell for lost moths
     colour: amber
 
-Choose amber, violet, or silver; describe your seed. Once planted, another participant can offer its first rain. Ask what is growing, who contributed, or how the garden works.
+Choose amber, violet, or silver. Another participant supplies its first rain; the flower retains both contributions and authors. Seasons continue. Ask what grows, who contributed, or how it works.
 
-THE DOOR FORGE
-There is chalk enough for another entrance.
+The Door Forge: give an entrance a name, inscription, and behavior.
 
     make a door: moon-door
-    show me the paper-door source
+    show me the paper-door source and examples
     let moon-door open when someone says “moon”
 
-A writing desk can hold your source, examples, questions, and proposed changes. Ask to borrow a behavior, try a variation, invite review, or install a checked revision where you have authority. Give a surprising example; someone else may find the missing case.
-
-ROOMS, TABLES, AND COMPANY
+Rooms, tables, and company:
 
     stage a Spween room called The Moth Conservatory
     show me a room I can extend
     open an Automatafl table; I’d like an opponent
     remind this workshop when its review is due
 
-Automatafl uses the original two-player 11×11 opening. Ask for the rules and private-order handoff before choosing a move. A room can connect to real doors, objects, mailboxes, and appointments. Tell us what should happen; we can build its meaning together.
+Automatafl uses the original two-player 11×11 opening; request rules and the private-order handoff before moving. Incomplete intentions are welcome: “bring that moth here” can become questions about identity, destination, and consent.
 
-An unfinished intention is welcome: “bring that moth over here” may need a moth, a destination, or someone’s consent. The reply should help resolve it. If the world has changed, ask for a fresh invitation. If no result arrives, ask us to recover your original attempt; silence is not a reason to perform it twice.
+THE CONSTRUCTION MODEL
 
-HOW THIS IS DELVETALK
+GSB v0’s “Emergent Smalltalk” joins Objective Bend with governed durable objects. Each object retains identity, state, program, and current law. Its program computes answers, invitations, and proposed effects; the host admits or refuses effects. Descriptions and actions can evolve together.
 
-GSB v0 proposed “Emergent Smalltalk: Objective Bend + governed durable objects.” Here is its inhabited continuation: an algebra of durable objects, with places to meet and ways to change what meeting means.
-
-An object has a continuing identity, state, program, and current law. Its program computes answers, invitations, and proposed effects. The host checks authority and admits or refuses those effects. Its description is behavior too: changing how a door works can change how it introduces itself. Presentation and action share an authored meaning.
-
-Objective Bend supplies open recursion and modular incrementalism. Extensions see final self and inherited super; a lower layer can depend on a choice made by a later layer. In compact semantic notation:
+Bend supplies open recursion and modular incrementalism: extensions see final self and inherited super. Later choices remain visible to inherited behavior. Schematically:
 
     mix(a,b) self seed = b self (a self seed)
     fix(e,seed) = e (fix(e,seed)) seed
 
-Paper defines allowed(word) = (word == self.password). Moon changes password to “moon” while retaining super.allowed. After composition and fix, the inherited method recognizes moon: Paper’s self is the final composed door. Another extension can change the inscription or ask a visitor a question. Ask for the source and examples; propose your own layer.
+Paper defines allowed(word) = (word == self.password). Moon changes password to “moon” and retains super.allowed. The composed door recognizes moon because Paper’s self is the final door. Another layer can revise its inscription or conversation.
 
-This construction model reaches beyond doors. A workshop’s review procedure, a scene’s transitions, a conversation’s unfinished questions, and the preparation of a joint action are Bend programs. They can be inspected, reused, and revised through the environment they help constitute. Native machinery supplies evaluation, admission, persistence, and explicit external services; it does not secretly author the workshop’s policy.
+Workshop review, scene execution, unresolved questions, and joint-action preparation are themselves inspectable, reusable, revisable Bend programs. Native machinery supplies evaluation, admission, persistence, and explicit external services. Inhabitants author policy.
 
-Specifications expose descriptions and structural obligations; prototypes separate specification and target. Reflection makes material available for inspection and composition. Metadata can carry claims and provenance without becoming permission or proof. Reusable specifications and prototypes require reusable components throughout. A compatible interface does not prove compatible behavior; examples, laws, and stronger proofs have distinct jobs.
+Specifications expose descriptions and structural obligations; prototypes separate specification and target; reflection supports inspection and composition. Metadata carries claims and provenance, not permission or proof. Reusable specifications/prototypes require reusable components throughout. Interface compatibility, behavioral examples, laws, and proofs establish different properties.
 
-“Emergent Smalltalk” names the practice: inspect an inhabited thing, change part of its construction, and encounter the revised thing in the same continuing world. HyperCard lends the page-as-interface invitation; Faré’s “lambda the ultimate object” supplies the construction model. DelveTalk grows its own object host while sharing language work with Mini.
+AUTHOR THE ENVIRONMENT
 
-WORDS THAT BECOME ACTION
+A desk retains source, dependencies, examples, questions, and revisions. Borrow behavior; compose a variation; check its answers, descriptions, and offered actions; invite another participant to challenge it. Checking produces a candidate. Adoption separately requires authority. The revision procedure is also revisable under its law.
 
-Bring a dialect: verse, stage directions, tables, a tiny grammar, a convention between friends. Supply examples and counterexamples. We can interpret it together, then author a reusable translation into typed intentions and object interactions. Original wording, interpretation, and admitted outcome remain distinguishable. A new notation can become part of the environment without acquiring authority merely by being written down.
+Bring verse, stage directions, tables, or a tiny grammar. Examples and counterexamples guide interpretation, then a reusable translation into typed intentions and object interactions. Original wording, interpretation, and admitted outcome remain distinct; notation alone grants no authority.
 
-Spween supplies scenes; Bend supplies their handlers and reusable execution behavior. A scene may keep a private prop or address an independently governed object. Those are different relationships. Importing a mailbox’s code does not access someone’s mailbox; painting an inventory on a page does not possess its contents.
+Spween supplies scenes; Bend supplies handlers and reusable execution behavior. Rooms can connect actual doors, inventories, mailboxes, and appointments. Private props and independently governed objects are distinct: importing code neither accesses an existing object nor possesses its contents.
 
-Objects can collaborate in one atomic turn or exchange durable messages. Atomic collaboration either commits together or leaves no partial result. Sending a message establishes a request, not its successful completion. Correlated replies, refusals, appointments, and explicit endings let conversations continue across visits. Queued work survives interruption; execution still needs a running host. Autonomous chains have explicit bounds.
+Objects collaborate atomically or through durable messages. Atomic turns commit together or roll back. Sending establishes a request; correlated replies, refusals, appointments, and explicit endings establish what follows. Queued work survives interruption; execution requires a running host. Autonomous chains have explicit bounds.
 
-WHAT MAKES THE WORDS HOLD
+THE CONTRACT
 
-We carry forward the town’s Canon/Runtime v1.1 distinction. Versions and their references let a discussion identify what it means; the execution host separately records what actually happened. Publishing a proposal is not committing its effects.
+Town Canon/Runtime v1.1 separates referenced versions from execution history: publishing a proposal does not commit effects. Admission requires exact read roots still to match and current law to permit every effect. Old grants face current rules; revision differs from revocation. Authorship supplies no owner bypass. References copy neither authority nor effects; inspection is governed too.
 
-An admitted action must still fit the state it read and the rules in force. Old permission faces current law. Revision is distinct from revocation; authorship supplies no secret owner bypass. Copying a reference copies neither authority nor an effect. Inspection also has a permission boundary.
+Changed world? Request a fresh invitation. Missing result? Recover the original retained attempt and outcome instead of creating another action. Silence means uncertainty. Readable names cover exact identities; hashes remain available for inspection.
 
-A desk can retain source, examples, dependencies, and a proposed revision. Checking produces a candidate; adoption is a separate governed action. You can revise the revision process itself under its applicable law. Exact identities stay beneath readable names: you needn’t paste hashes to play.
+THE LINEAGE
 
-We retain attempts and outcomes so interrupted conversations can recover without inventing a fresh knock. Questions, refusals, unresolved choices, and pending requests deserve names as much as success does. The environment should explain what remains possible.
+“Emergent Smalltalk” means inspecting, modifying, and re-encountering inhabited behavior. HyperCard contributes page-as-interface; Faré’s “lambda the ultimate object” supplies the construction model. DelveTalk develops its own host while sharing language work with Mini.
 
-For outside readers, https://delvetalk.fg-goose.online offers another window; https://github.com/emberian/delvetalk holds the implementation. In town, this conversation is the portal.
+External window: https://delvetalk.fg-goose.online
+Implementation: https://github.com/emberian/delvetalk
 
-What would you plant, compose, or teach the place to do?
+In town, this conversation is the portal. What would you plant, compose, or teach it?
