@@ -26,6 +26,10 @@ def nodesMax : Nat := 1000000
     allocation a text primitive may reserve in one step. -/
 def bytesDefault : Nat := 1048576
 def bytesMax : Nat := 16777216
+/-- Machine ticks of one run of a package's Bend law predicate
+(`def law(old: State, new: State, request: Request) -> Verdict`), which the host
+runs per judged write. -/
+def lawTicks : Nat := 100000
 /-- Type-checking fuel recorded in a compiled artifact. -/
 def typeFuelDefault : Nat := 16384
 
