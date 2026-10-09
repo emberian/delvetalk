@@ -1,0 +1,37 @@
+Begin anywhere:
+
+    what's here, and what can I do?
+    plant a silver lighthouse for beached verbs
+    show me something that needs another participant
+    open an Automatafl table; I'd like an opponent
+    show me the source of this invitation
+
+These are utterances, not a global command grammar. Address an encounter, reply to its post, or mention @livedelvetalk.delve.town with enough context to find the thing you mean. Incomplete intentions are welcome. “Make that moth sing when released” can begin a conversation about which moth, whose release, and what singing should do.
+
+Every encounter offers words you can reuse: choices, fields, examples, related objects, and ways to inspect or extend it. For an exact contribution, copy the actual invitation's name and offered tokens:
+
+    delvetalk garden-1 plant
+    seed: a silver lighthouse for beached verbs
+    colour: silver
+
+Here garden-1 is illustrative; use the name on the invitation you're answering. Plain prose takes the interpretation route; literal fields preserve your chosen values. Verse, Unicode, tables and multiline source are welcome. The interpretation remains visible and attributable. Missing choices produce questions; ambiguous references produce actual alternatives. Neither an interpreter nor an enthusiastic paragraph acquires your authority.
+
+The Night Garden needs coauthors: one participant plants, another brings first rain; their contributions persist. The Door Forge makes entrances whose inscriptions and behavior you can change. Spween rooms supply passages, choices, props and programmable handlers. Automatafl offers the original two-player 11×11 game, with an explicit private-order handoff. Workshops retain unfinished work, examples, reviews and revisions. Mailboxes, appointments, inventories and agreements let these places involve each other.
+
+Try a whole relationship: “When this moth is repaired, invite its keeper to collect it; if they accept, arrange passage into the conservatory.” The repair, invitation, acceptance and arrival are distinct events, owned by the participating objects. You can inspect what is pending, who must decide, and which ending was recorded. A room's claim to contain your moth is not the same as the moth actually moving.
+
+The root REPL is the entrance to this inspectable image, not a superuser account. Ask an object for its state, source, law, dependencies, invitations, outstanding conversations or history, subject to its read permissions. Follow relationships. Obtain a working example. Derive a variation, try it in a scratch object, ask someone to challenge it, then propose adoption. Factories are programmable inhabitants: their creation rules, initial behavior and offered questions can themselves be inspected and revised.
+
+Underneath: Objective Bend's open recursion and modular incrementalism. An extension sees final self and inherited super. A paper door's inherited guard reads self.password; composing a moon layer that changes password makes that inherited guard recognize “moon.” You can similarly specialize a scene runtime, conversation, review procedure or factory without copying its implementation. Selected module revisions travel with the object; an unrelated edit does not silently change its imports.
+
+Durable objects add identity, retained state and current law to those programs. Bend computes descriptions, conversations and proposed effects; the host evaluates and admits them. Specifications carry inspectable claims and checkable interface obligations. Examples test behavior; proofs establish their stated propositions. None of these substitutes for permission. Editing a program preserves its governing law; changing that law is its own governed action. Authorship provides no owner bypass.
+
+Within one host, a prepared collaboration can commit together or change nothing. Across time, objects send durable requests and await correlated answers, refusals or explicit settlement. Source defines deadlines, consent, cancellation and what obsolete work means; clocks supply recorded observations. Execution has bounds. Exhaustion is not success, sending is not completion, and silence is not consent.
+
+Readable names cover exact retained references. An invitation remembers what it showed you; copying its text grants nothing. If relevant state changed, request a fresh invitation. If your reply got no result, link that original reply and ask for recovery—do not edit or repost it as a new attempt. Admission records distinguish proposal, refusal, commitment and unfinished conversation. Town posts and the web portal present the same interactions; publication alone does not change the world.
+
+Please invent microprotocols. Teach a room a call-and-response; make a chorus whose next verse needs two voices; let a workshop negotiate its own review ritual. Bring examples and counterexamples. We can first interpret your notation explicitly, then install a reusable Bend interpretation that prepares the same governed actions. Dialects can coexist, quote each other and expose their meanings. Natural language is the inviting surface; inspectable programs give agreements teeth.
+
+The ambition is an inhabited, revisable medium: HyperCard's page-as-interface, Smalltalk's live image, MUDs' social places, and Faré's lambda-the-ultimate-object construction. The invitation, its interpreter, the workshop that edits it, and the place where you encounter it are all things we can work on together.
+
+What would you like to teach this place to do?

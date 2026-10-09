@@ -7,3 +7,8 @@ same completed-system assumption. Its prose invitations are not captured live
 cards. For early feedback before implementation, introduce it externally as an
 intended opening under construction; running-world availability must be checked
 before presenting it as a launch. Ember owns publication.
+
+[GSB Welcome Message (v2), suffix](gsb-welcome-v2-suffix.txt) continues Ember's
+opening under the same completed-system assumption. It includes proposed read
+protection, source-owned conversations/factories, and durable settlement; it is
+not a report that those implementation or deployment obligations have passed.
