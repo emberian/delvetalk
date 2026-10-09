@@ -10,14 +10,21 @@ record State:
   planted: Nat
 record Edits:
   planted: Plans.Edit<Nat, Nat>
-# The seeds the garden may hand to a create, one constructor per child package.
-sum Seed:
+# A creator supplies a Seed; the child's seeded makes its State. The garden
+# creates two kinds of child, so its A is a sum with one constructor per package
+# (named like the package, lower case), each holding that package's Seed.
+type Seed = {}
+sum Child:
   bell: Bell.Seed
   cistern: Cistern.Seed
-type Plan = Plans.Plan<Edits, Seed>
+type Plan = Plans.Plan<Edits, Child>
 type Response = Plans.Response<State, {}>
-def initial() -> State:
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
   {planted: 0n}
+def initial() -> State:
+  seeded(defaultSeed())
 sum Made:
   made: {object: Plans.Reference}
   refused: {clause: String}
@@ -33,13 +40,13 @@ def planted(context: Abi.Context, reference: Plans.Reference) -> Activity<Plan, 
 def plant(state: State, input: {colour: Bell.Colour, seed: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Made>:
   sow(state, input.colour, input.seed, context.principal, input.post, context)
 def sow(state: State, colour: Bell.Colour, seed: String, planter: String, post: String, context: Abi.Context) -> Activity<Plan, Response, Made>:
-  match perform(Plan.create({package: "Bell", seed: Seed.bell({planter: planter, colour: colour, seed: seed, planting: {principal: planter, intent: post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
+  match perform(Plan.create({package: "Bell", seed: Child.bell({planter: planter, colour: colour, seed: seed, planting: {principal: planter, intent: post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
     case created(c): planted(context, c.object)
     case refused(r): Made.refused({clause: r.clause})
     case _: Made.refused({clause: "no creation"})
 # One cistern per garden: the second create finds its reference occupied.
 def cistern(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, Made>:
-  match perform(Plan.create({package: "Cistern", seed: Seed.cistern({empty: true}), law: "Cistern", requireAbsent: child(context, "cistern", 1n)})):
+  match perform(Plan.create({package: "Cistern", seed: Child.cistern({}), law: "Cistern", requireAbsent: child(context, "cistern", 1n)})):
     case created(c): Made.made({object: c.object})
     case refused(r): Made.refused({clause: r.clause})
     case _: Made.refused({clause: "no creation"})
@@ -107,7 +114,7 @@ def hear(state: State, input: Heard, context: Abi.Context, parsed: Spell.Parsed)
     case unclear(u): tell(Reply.unclear({needs: u.needs}), unclearCard(context, u.needs, parsed))
     case refused(r): tell(Reply.refused({reason: r.reason}), refusedCard(r.reason))
 def grow(state: State, input: Heard, context: Abi.Context, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  match perform(Plan.create({package: "Bell", seed: Seed.bell({planter: input.who, colour: colourNamed(colour), seed: seed, planting: {principal: input.who, intent: input.post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
+  match perform(Plan.create({package: "Bell", seed: Child.bell({planter: input.who, colour: colourNamed(colour), seed: seed, planting: {principal: input.who, intent: input.post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
     case created(c): counted(state, input, context, c.object, colour, seed)
     case refused(r): tell(Reply.refused({reason: r.clause}), refusedCard(r.clause))
     case _: tell(Reply.refused({reason: "The garden could not plant it."}), refusedCard("The garden could not plant it."))

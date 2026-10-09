@@ -5,14 +5,18 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 record State:
   entries: Lists.List<Plans.Receipt>
-record Seed:
-  empty: Bool
+# A creator supplies a Seed; seeded makes the child's State from it.
+type Seed = {}
 record Edits:
   entries: Plans.Entries<Plans.Receipt, {}>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
-def initial() -> State:
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
   {entries: Lists.List::<Plans.Receipt>.nil()}
+def initial() -> State:
+  seeded(defaultSeed())
 # Retains a refusal (or any) receipt in the order it was offered.
 def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Plans.Receipt>(state.entries)

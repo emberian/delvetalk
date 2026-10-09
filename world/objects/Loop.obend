@@ -4,12 +4,18 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 record State:
   count: Nat
+# A creator supplies a Seed; seeded makes the child's State from it.
+type Seed = {}
 record Edits:
   count: Plans.Edit<Nat, Nat>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
-def initial() -> State:
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
   {count: 0n}
+def initial() -> State:
+  seeded(defaultSeed())
 # Counts and sends tick to itself: the cycle the host's causal ledger must stop.
 def tick(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):

@@ -12,12 +12,18 @@ record Proposal:
   status: Status
 record State:
   proposals: Lists.List<Proposal>
+# A creator supplies a Seed; seeded makes the child's State from it.
+type Seed = {}
 record Edits:
   proposals: Plans.Entries<Proposal, Proposal>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
-def initial() -> State:
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
   {proposals: Lists.List::<Proposal>.nil()}
+def initial() -> State:
+  seeded(defaultSeed())
 # Submission only proposes; admission is the receiver's law, not the author's.
 def submit(state: State, input: {author: String, line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Proposal>(state.proposals)

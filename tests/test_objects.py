@@ -234,12 +234,20 @@ class Objects(unittest.TestCase):
                 if name == "Anthology":
                     self.assertIn("[proposed] glm: moths", reply["value"]["value"])
 
-    def test_every_object_exports_initial(self):
-        for name in ("Counter", "Garden", "Bell", "Cistern", "Anthology"):
+    def test_every_object_exports_initial_and_a_seeded_constructor(self):
+        """The Seed rule: a creator supplies a Seed; the child's seeded makes its State."""
+        objects = ("Counter", "Garden", "Bell", "Cistern", "Anthology", "Door", "Lantern", "Loop", "Place", "Thing",
+                   "Directory", "Avatar")
+        for name in objects:
             with self.subTest(object=name):
-                self.assertIn(("initial", False), [(d[0], d[1]) for d in definitions(name)])
-                reply = compile_job(closure(name), "initial")
-                self.assertEqual(reply["status"], "compiled", reply)
+                entries = [d[0] for d in definitions(name)]
+                for required in ("defaultSeed", "seeded", "initial"):
+                    self.assertIn(required, entries)
+                    reply = compile_job(closure(name), required)
+                    self.assertEqual(reply["status"], "compiled", reply)
+                with open(MODULES[name]) as handle:
+                    source = handle.read()
+                self.assertIn("seeded(defaultSeed())", source)
 
     def test_plain_is_not_quadratic(self):
         """Document.plain flattens the leaves once and joins them in rounds of

@@ -11,6 +11,9 @@ record State:
   lastDelivery: String
 record Who:
   who: String
+# A creator supplies a Seed; seeded makes the child's State from it.
+record Seed:
+  lantern: Plans.Reference
 record Edits:
   open: Plans.Edit<Bool, {}>
   openedBy: Plans.Edit<String, {}>
@@ -19,8 +22,12 @@ record Edits:
   lantern: Plans.Edit<Plans.Reference, {}>
 type Plan = Plans.Plan<Edits, Who>
 type Response = Plans.Response<State, {}>
+def defaultSeed() -> Seed:
+  {lantern: Plans.nobody()}
+def seeded(seed: Seed) -> State:
+  {open: false, openedBy: "", knocks: Lists.List::<String>.nil(), lantern: seed.lantern, lastDelivery: ""}
 def initial() -> State:
-  {open: false, openedBy: "", knocks: Lists.List::<String>.nil(), lantern: {world: "", object: ""}, lastDelivery: ""}
+  seeded(defaultSeed())
 def keep() -> Edits:
   {open: Plans.Edit::<Bool, {}>.keep({}), openedBy: Plans.Edit::<String, {}>.keep({}), knocks: Plans.Entries::<String, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({}), lantern: Plans.Edit::<Plans.Reference, {}>.keep({})}
 def unlatched(who: String) -> Edits:
