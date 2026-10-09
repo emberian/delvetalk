@@ -76,7 +76,10 @@ def textPrefixCost (text alphabet : String) (member : Bool) (ticks : Nat) : Nat 
 /-- Hosted text work and conservative result allocation bound, checked before
 `stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.
 Unicode operations traverse scalar sequences; their UTF-8 size bounds both the
-scalar traversal and copied bytes. Decimal conversion uses a conservative
+scalar traversal and copied bytes. `textTake` and `textDrop` are charged by the
+prefix they traverse (the taken, respectively the dropped, scalars: at most four
+bytes each), not by the whole input; `textDrop` still reserves the whole input's
+size as its allocation bound. Decimal conversion uses a conservative
 quadratic bit-work allowance and bit-count allocation bound. -/
 def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   match state.control,state.stack with
@@ -91,7 +94,8 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
            (1 + 2 * bytes, bytes)
   | .returned (.natural n), .binaryRight .textDrop (.label text) :: _ =>
       if n == 0 || n >= text.utf8ByteSize then (1, 0)
-      else (1 + text.utf8ByteSize + min text.utf8ByteSize (4 * n), text.utf8ByteSize)
+      else let dropped := min text.utf8ByteSize (4 * n)
+           (1 + 2 * dropped, text.utf8ByteSize)
   | .returned (.label text), .unary .textLength :: _ => (1 + text.utf8ByteSize, 0)
   | .returned (.label text), .unary .sha256Text :: _ =>
       let bytes := text.utf8ByteSize

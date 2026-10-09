@@ -213,6 +213,14 @@ class Host:
         self.proc.wait(timeout=30)
 
 
+WALK = """edition ObjectiveBend 1
+def walk(text: String, n: Nat) -> Nat:
+  match n:
+    case 0n: 0n
+    case 1n+p: textLength(textTake(text, 1n)) + walk(textDrop(text, 1n), p)
+"""
+
+
 class TurnCase(unittest.TestCase):
     def host(self):
         h = Host()
@@ -445,6 +453,27 @@ class TurnTests(TurnCase):
         self.assertEqual(plan_field(y["plan"]["payload"], "f62"), nat(62))
         done = h.resume(art, y["checkpoint"], variant("ok"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(1)), done)
+
+
+class TextTariffTests(TurnCase):
+    def walk(self, h, art, steps, ticks=None):
+        request = {"op": "run", "artifact": art, "arguments": [label("a" * 4096), nat(steps)]}
+        if ticks:
+            request["limits"] = {"ticks": str(ticks)}
+        return h.send(request)
+
+    def test_character_walk_cost_is_linear_not_quadratic_in_the_input(self):
+        h = self.host()
+        art = h.compile(WALK, "walk")
+        # 1024 one-character steps over a 4096-byte string fit the DEFAULT budget
+        small = self.walk(h, art, 1024)
+        self.assertEqual((small["status"], small["value"]), ("finished", nat(1024)), small)
+        self.assertLess(small["ticksUsed"], 100000)
+        # the whole 4096-byte string, one character at a time, under 300,000 ticks
+        whole = self.walk(h, art, 4096, 300000)
+        self.assertEqual((whole["status"], whole["value"]), ("finished", nat(4096)), whole)
+        # 4x the steps costs about 4x the ticks (a whole-input charge would be 4x per step too)
+        self.assertLess(whole["ticksUsed"], 4.5 * small["ticksUsed"])
 
 
 if __name__ == "__main__":
