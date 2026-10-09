@@ -117,7 +117,7 @@ class TownCardsTests(unittest.TestCase):
             self.resolve({**self.reply(), 'text': 'delvetalk notice a1'})
 
     def test_factory_example_keeps_authored_name_and_absence_requirement(self):
-        protocol = town.loads((ROOT / 'protocols/factories/object.json').read_bytes())
+        protocol = town.loads((ROOT / 'conformance/fixtures/allocation-object.json').read_bytes())
         protocol['affordances']['make']['fields']['name']['example'] = 'moth-lamp'
         root = self.exchange({'op': 'create', 'object': 'forge', 'principal': 'owner',
             'intent': 'forge', 'protocol': protocol, 'law': [ACTOR]})['data']['root']

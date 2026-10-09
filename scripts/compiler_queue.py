@@ -144,6 +144,8 @@ class CompilerQueue:
                     return {'job': path.stem, 'status': 'already-queued', **self.status(path.stem)}
             if len(paths) >= 10000:
                 raise ValueError('compiler queue retention bound reached (10000 jobs)')
+            if not desk.is_source_desk_protocol(expected['protocol']):
+                raise ValueError('compiler queue requires the reviewed source Candidate body')
             if desk.candidate_state(expected)['status'] != 'pending':
                 raise ValueError('compiler queue requires an exact pending source-desk root')
             material = desk.proposal_material(desk.candidate_state(expected)['proposal'], self.artifacts)[2]

@@ -96,8 +96,10 @@ def protocol_shape(value):
                     'delvetalk-source-data-transition-v1',
                     'delvetalk-source-effects-v1', 'delvetalk-source-receive-v1',
                     'delvetalk-source-data-effects-v1', 'delvetalk-source-data-receive-v1')):
-            if set(command) != {'transition'} or set(command['transition']) != {'profile', 'package'}:
-                raise ValueError('source transition requires an exclusive profile/package descriptor')
+            fields = set(command['transition'])
+            if (set(command) != {'transition'} or not {'profile', 'package'} <= fields
+                    or not fields <= {'profile', 'package', 'inputCodec', 'resultCodec'}):
+                raise ValueError('source transition requires an exclusive profile/package descriptor with optional codecs')
             continue  # Lean validates the package, source, typed call and decision.
         if not isinstance(command, dict) or not isinstance(command.get('require'), list) or not isinstance(command.get('set'), dict) or 'result' not in command or not isinstance(command.get('outbox'), list):
             raise ValueError("command needs require array, set object, result, outbox array")

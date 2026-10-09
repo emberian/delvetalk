@@ -42,7 +42,8 @@ def validate(proposal):
             or binding['entry'] != inputs['entry']):
         raise ValueError('contract observation differs from selected source export')
     law = deepcopy(inputs['targetRoot']['law'])
-    law['profile'] = 'delvetalk-scoped-law-v3'
+    if law.get('profile') != 'delvetalk-scoped-law-v4':
+        law['profile'] = 'delvetalk-scoped-law-v3'
     law['contract'] = {'profile': 'delvetalk-source-contract-v1',
         'package': {'modules': modules, 'entry': inputs['entry']},
         'stateProfile': 'model' if syntax.endswith('@3') else 'plain', 'metadata': proposal['metadata']}
@@ -106,9 +107,10 @@ class Contracts:
                                   'limits': obend.LIMITS}, deadline)
         law = deepcopy(target_root['law'])
         if not isinstance(law, dict) or law.get('profile') not in (
-                'delvetalk-scoped-law-v1', 'delvetalk-scoped-law-v2', 'delvetalk-scoped-law-v3'):
+                'delvetalk-scoped-law-v1', 'delvetalk-scoped-law-v2', 'delvetalk-scoped-law-v3', 'delvetalk-scoped-law-v4'):
             raise ValueError('contract workshop requires an existing explicit scoped law')
-        law['profile'] = 'delvetalk-scoped-law-v3'
+        if law.get('profile') != 'delvetalk-scoped-law-v4':
+            law['profile'] = 'delvetalk-scoped-law-v3'
         law['contract'] = {'profile': 'delvetalk-source-contract-v1',
                            'package': {'modules': modules, 'entry': entry},
                            'stateProfile': 'model' if syntax.endswith('@3') else 'plain',

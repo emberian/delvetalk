@@ -40,14 +40,16 @@ def validate(invitation):
     if not isinstance(invitation['observations'], list) or len(invitation['observations']) > 16:
         raise ValueError('captured preparation has too many observations')
     for observation in invitation['observations']:
-        if not isinstance(observation, dict) or set(observation) != {'object', 'root'}:
-            raise ValueError('captured observation requires object and exact root')
+        if not isinstance(observation, dict) or set(observation) != {'object', 'root', 'inspectState', 'inspectLaw'}:
+            raise ValueError('captured observation requires object, exact root and explicit projection flags')
+        if type(observation['inspectState']) is not bool or type(observation['inspectLaw']) is not bool:
+            raise ValueError('captured observation projection flags require Bool')
     result = copy.deepcopy(invitation)
     result['fields'] = affordances.validate_fields_schema(result['fields'])
     return result
 
 
-def capture_available(view, roots, *, database=None):
+def capture_available(view, roots, *, database=None, references=None):
     from scene import projection
     invitations = projection.invitations(view)
     if roots.get(view['object']) != view['root']:
@@ -55,6 +57,10 @@ def capture_available(view, roots, *, database=None):
     offers, unavailable = {}, {}
     retained = {}
     def captured(identity):
+        if references is not None:
+            if identity not in references:
+                raise ValueError('native paired capture omitted root reference: ' + identity)
+            return copy.deepcopy(references[identity])
         if database is None:
             return copy.deepcopy(roots[identity])
         if identity not in retained:
@@ -62,22 +68,46 @@ def capture_available(view, roots, *, database=None):
                 'object': identity, 'root': roots[identity]})
         return copy.deepcopy(retained[identity])
     for key, descriptor in invitations.items():
-        missing = [identity for identity in descriptor['observations'] if identity not in roots]
+        missing = [item['object'] for item in descriptor['observations'] if item['object'] not in roots]
         if missing:
             unavailable[key] = {'command': descriptor['prepare'], 'label': descriptor['text'],
                                 'reason': 'Captured observation missing: ' + ', '.join(missing)}
             continue
         offers[key] = validate({'format': FORMAT, 'object': view['object'],
             'root': captured(view['object']), 'entry': descriptor['prepare'],
-            'observations': [{'object': identity, 'root': captured(identity)}
-                             for identity in descriptor['observations']],
+            'observations': [{**item, 'root': captured(item['object'])}
+                             for item in descriptor['observations']],
             'title': view['data']['title'], 'label': descriptor['text'],
             'fields': _fields(descriptor['fields'])})
     return {'offers': offers, 'unavailable': unavailable}
 
 
-def capture(view, roots, *, database=None):
-    return capture_available(view, roots, database=database)['offers']
+def capture(view, roots, *, database=None, references=None):
+    return capture_available(view, roots, database=database, references=references)['offers']
+
+
+def capture_observations(view, owner_capture, *, database=None, receiver=None,
+                         principal='reader', profile='compiled', timeout=30, capture_roots=None):
+    """Bind declared observation discovery to the already projected owner.
+
+    The native second read checks its original owner reference. Drift refuses;
+    an existing invitation is never refreshed here.
+    """
+    from scene import projection
+    owner = view['object']
+    pair = owner_capture['roots'].get(owner)
+    if pair is None:
+        raise ValueError('captured preparation owner is absent')
+    identities = {owner}
+    for invitation in projection.invitations(view).values():
+        identities.update(item['object'] for item in invitation['observations'])
+    expected = {owner: pair['reference']}
+    if capture_roots is not None:
+        if database is not None or receiver is not None:
+            raise ValueError('observation capture selects exactly one native transport')
+        return capture_roots(sorted(identities), expected=expected)
+    return world.capture_roots(database, sorted(identities), receiver=receiver,
+        principal=principal, profile=profile, timeout=timeout, expected=expected)
 
 
 def action(invitation):
@@ -86,7 +116,7 @@ def action(invitation):
             'available': True, 'fields': invitation['fields'], 'preparation': True}
 
 
-def prepare(invitation, principal, intent, contribution, *, binary=None, database=None):
+def prepare(invitation, principal, intent, contribution, *, binary=None, database=None, receiver=None):
     invitation = validate(invitation)
     if len(world.wire_dumps(contribution).encode('utf-8')) > 65536:
         raise ValueError('authored contribution exceeds 64 KiB')
@@ -96,10 +126,16 @@ def prepare(invitation, principal, intent, contribution, *, binary=None, databas
     request = {'op': 'prepare', 'object': invitation['object'], 'root': invitation['root'],
         'entry': invitation['entry'], 'contribution': copy.deepcopy(contribution),
         'observations': invitation['observations'], 'principal': principal, 'intent': intent}
-    if database is not None:
+    if database is not None or receiver is not None:
         if binary is not None:
             raise ValueError('retained preparation selects the database native receiver')
+        if database is not None and receiver is not None:
+            raise ValueError('retained preparation selects exactly one native transport')
         request['op'] = 'prepare-retained'
+        if receiver is not None:
+            if receiver.profile != 'compiled':
+                raise ValueError('retained preparation requires compiled native receiver')
+            return receiver.query(request)
         return world.query(database, request)
     job = {'world': {'objects': objects, 'receipts': []}, 'request': request}
     result = process_custody.run([binary or BINARY], timeout=30, cpu_seconds=30,
@@ -118,8 +154,8 @@ def prepare(invitation, principal, intent, contribution, *, binary=None, databas
     return outcome
 
 
-def request(invitation, principal, intent, contribution, *, database=None):
-    outcome = prepare(invitation, principal, intent, contribution, database=database)
+def request(invitation, principal, intent, contribution, *, database=None, receiver=None):
+    outcome = prepare(invitation, principal, intent, contribution, database=database, receiver=receiver)
     if outcome['kind'] != 'ready':
         raise PreparationOutcome(outcome)
     return outcome['request']

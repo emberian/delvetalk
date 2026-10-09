@@ -42,19 +42,19 @@ class ServiceTest(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.world = self.base / 'public'
         self.source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
-        raw = (ROOT / 'protocols/source-desk/protocol.json').read_bytes()
+        raw = workspace.bootstrap.canonical(workspace.bootstrap.desk_module.module('service_candidate_package', 'protocols/source-desk/package.py').candidate())
         law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'submit': [AUTHOR],
             'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['reviewer']},
             'law': ['owner'], 'reprogram': []}
         self.seed = workspace.initialize(self.world, [
             {'id': 'target', 'syntax': 'protocol-json@1', 'source': self.source, 'law': ['reviewer']},
             {'id': 'candidate', 'syntax': 'protocol-json@1', 'source': raw, 'law': law}],
-            entry_objects=['target'], principal='owner')
+            entry_objects=['target'], principal='owner', profile='compiled')
         self.pds = PDS()
         self.clerk = s.clerk.Clerk(self.base / 'clerk', self.pds)
         roots = self.snapshot()['objects']
         self.clerk.attach(self.world, roots, [AUTHOR], expected_genesis=self.seed['genesis'],
-                          expected_seed_head=self.seed['head'], runtime_profile='transactions')
+                          expected_seed_head=self.seed['head'], runtime_profile='compiled')
         self.root = roots['candidate']
         self.app = s.Service(self.base / 'service', receiver=self.clerk.receive)
         self.app.initialize(self.world, self.clerk.state, 'compiler', public_genesis=self.seed['genesis'])
@@ -84,7 +84,7 @@ class ServiceTest(unittest.TestCase):
         uri, cid = self.submit()
         result = self.checked_tick()
         self.assertEqual(result['status'], 'prepared-offline', result)
-        self.assertEqual(self.snapshot()['objects']['candidate']['state']['status'], 'ready')
+        self.assertEqual(workspace.bootstrap.desk_module.candidate_state(self.snapshot()['objects']['candidate'])['status'], 'ready')
         self.assertEqual(self.snapshot()['objects']['target'], self.initial_target)
         queue = self.app.compiler(self.app.config(), 2048)
         jobs = list((queue.state / 'jobs').glob('*.json'))
@@ -188,12 +188,12 @@ class ServiceTest(unittest.TestCase):
         law['invoke']['failed'] = []
         self.root = s.clerk.world.exchange(self.clerk.database, {'op': 'law', 'object': 'candidate',
             'principal': 'owner', 'intent': 'remove-compiler', 'expected': self.root, 'law': law},
-            profile='transactions')['data']['root']
+            profile='compiled')['data']['root']
         later_law = copy.deepcopy(law)
         later_law['invoke']['compiled'] = ['compiler']
         later_law['invoke']['failed'] = ['compiler']
         added = manage.Management(self.clerk.state).add_object('later', AUTHOR, 'later-desk',
-            'protocol-json@1', (ROOT / 'protocols/source-desk/protocol.json').read_bytes(), later_law)
+            'protocol-json@1', workspace.bootstrap.canonical(workspace.bootstrap.desk_module.module('service_candidate_package', 'protocols/source-desk/package.py').candidate()), later_law)
         later = added['reply']['data']['root']
         self.submit('first')
         self.submit('second', object_id='later', root=later)
@@ -204,8 +204,8 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(first['phases']['reconcile']['compiler'][0]['kind'], 'refused')
         second = s.Service(self.app.state, receiver=self.clerk.receive).tick(limit=1)
         self.assertEqual(second['errors'], [], second)
-        self.assertEqual(self.snapshot()['objects']['candidate']['state']['status'], 'pending')
-        self.assertEqual(self.snapshot()['objects']['later']['state']['status'], 'ready')
+        self.assertEqual(workspace.bootstrap.desk_module.candidate_state(self.snapshot()['objects']['candidate'])['status'], 'pending')
+        self.assertEqual(workspace.bootstrap.desk_module.candidate_state(self.snapshot()['objects']['later'])['status'], 'ready')
         self.assertEqual(self.snapshot()['objects']['target'], self.initial_target)
 
     def test_natural_language_discovery_is_not_an_authenticated_request(self):
@@ -247,7 +247,7 @@ class ServiceTest(unittest.TestCase):
         jobs = list((app.state / 'compiler/jobs').glob('*.json'))
         queue = app.compiler(app.config(), 2048)
         self.assertEqual(queue.inspect(jobs[0].stem)['receipt']['data'], 'unauthorized')
-        self.assertEqual(self.snapshot()['objects']['candidate']['state']['status'], 'pending')
+        self.assertEqual(workspace.bootstrap.desk_module.candidate_state(self.snapshot()['objects']['candidate'])['status'], 'pending')
         self.assertEqual(self.snapshot()['objects']['target'], self.initial_target)
         self.assertEqual(result['publication'], 'paused')
         self.assertEqual(result['status'], 'needs-attention')

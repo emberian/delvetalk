@@ -189,6 +189,10 @@ def _typed_menu(raw, root):
     expected = {'title', 'prose', 'actions', 'children'}
     if 'invitations' in fields:
         expected.add('invitations')
+    if 'document' in fields:
+        expected.add('document')
+    if 'interpretation' in fields:
+        expected.add('interpretation')
     if set(fields) != expected:
         raise ProjectionError('typed menu fields differ from its declared profile')
     budget = [100000]
@@ -197,6 +201,190 @@ def _typed_menu(raw, root):
     data = _menu_data(values, root)
     entries = [_plain_data(item, budget) for item in _typed_list(fields['children'], 32, 'children')]
     return data, _validate_children(entries)
+
+
+
+def _document_data(raw):
+    """Decode the declared Document algebra; no evaluation or action dispatch."""
+    budget = [4096]
+    def value(wire, depth=48):
+        budget[0] -= 1
+        if depth <= 0 or budget[0] < 0 or not isinstance(wire, dict):
+            raise ProjectionError('document data bound exceeded')
+        tag = wire.get('tag')
+        if tag == 'record':
+            return {k: value(v, depth - 1) for k, v in _wire_record(wire).items()}
+        if tag == 'natural':
+            _plain_data(wire, budget)
+            return wire['value']  # Exact decimal text, including large source Nat values.
+        return _plain_data(wire, budget, depth)
+    def variant(wire, fields):
+        if (not isinstance(wire, dict) or set(wire) != {'tag', 'label', 'payload'}
+                or wire['tag'] != 'variant' or not isinstance(wire['label'], str) or wire['label'] not in fields):
+            raise ProjectionError('unknown document alternative')
+        payload = _wire_record(wire['payload'])
+        if set(payload) != set(fields[wire['label']]):
+            raise ProjectionError('document alternative fields differ')
+        return wire['label'], payload
+    def capture(wire):
+        fields = _wire_record(wire)
+        if not isinstance(fields.get('revision'), dict) or fields['revision'].get('tag') != 'natural':
+            raise ProjectionError('document revision requires a source Nat')
+        result = value(wire)
+        if (not isinstance(result, dict) or set(result) != {'object', 'revision', 'meaning', 'entry', 'token'}
+                or any(not isinstance(result[k], str) for k in result)
+                or not re.fullmatch(r'0|[1-9][0-9]*', result['revision'])):
+            raise ProjectionError('invalid document source capture')
+        for name in ('object', 'entry', 'token'):
+            _text_bound(result[name], 512, 'document capture ' + name, identity=True)
+        return result
+    def scalar(wire, kind):
+        if not isinstance(wire, dict) or wire.get('tag') != kind:
+            raise ProjectionError('document scalar type differs')
+        return value(wire)
+    def fields(wire, depth):
+        result, seen = [], set()
+        for item in _typed_list(wire, 128, 'document fields'):
+            parts = _wire_record(item)
+            if set(parts) != {'name', 'value'}:
+                raise ProjectionError('document field requires name and value')
+            name = scalar(parts['name'], 'label')
+            if not name or name in seen:
+                raise ProjectionError('duplicate or empty document field')
+            seen.add(name)
+            result.append({'name': name, 'value': contribution(parts['value'], depth - 1)})
+        return result
+    def contribution(wire, depth):
+        budget[0] -= 1
+        if depth <= 0 or budget[0] < 0:
+            raise ProjectionError('document value bound exceeded')
+        kind, parts = variant(wire, {'none': [], 'retained': ['object', 'key'], 'text': ['value'],
+            'natural': ['value'], 'boolean': ['value'], 'number': ['encoded'],
+            'array': ['values'], 'record': ['fields']})
+        if kind == 'array':
+            result = {'values': [contribution(item, depth - 1) for item in _typed_list(parts['values'], 128, 'document values')]}
+        elif kind == 'record':
+            result = {'fields': fields(parts['fields'], depth)}
+        elif kind in ('text', 'natural', 'boolean'):
+            result = {'value': scalar(parts['value'], {'text': 'label', 'natural': 'natural', 'boolean': 'boolean'}[kind])}
+        else:
+            result = {k: scalar(v, 'label') for k, v in parts.items()}
+        return {'kind': kind, **result}
+    def node(wire, depth=32):
+        budget[0] -= 1
+        if depth <= 0 or budget[0] < 0:
+            raise ProjectionError('document tree bound exceeded')
+        kind, parts = variant(wire, {'text': ['value'], 'sequence': ['items'], 'quote': ['attribution', 'body'],
+            'reference': ['key', 'label', 'object', 'panel'], 'offer': ['label', 'capture'],
+            'fields': ['capture', 'values', 'needs'], 'source': ['language', 'code', 'revision'],
+            'result': ['status', 'body'], 'continuation': ['key', 'after', 'limit', 'label']})
+        if kind == 'sequence':
+            result = {'items': [node(item, depth - 1) for item in _typed_list(parts['items'], 256, 'document items')]}
+        elif kind in ('quote', 'result'):
+            name = 'attribution' if kind == 'quote' else 'status'
+            result = {name: scalar(parts[name], 'label'), 'body': node(parts['body'], depth - 1)}
+        elif kind in ('offer', 'fields'):
+            result = {'capture': capture(parts['capture'])}
+            if kind == 'offer':
+                result['label'] = scalar(parts['label'], 'label')
+            else:
+                result['values'] = fields(parts['values'], depth)
+                result['needs'] = [scalar(item, 'label') for item in _typed_list(parts['needs'], 128, 'document needs')]
+        else:
+            result = {k: scalar(v, 'natural' if kind == 'continuation' and k in ('after', 'limit') else 'label')
+                      for k, v in parts.items()}
+            if kind == 'reference':
+                _validate_children([result])
+        return {'kind': kind, **result}
+    result = node(raw)
+    if len(world.wire_dumps(result).encode('utf-8')) > 512 * 1024:
+        raise ProjectionError('document exceeds 512 KiB')
+    return result
+
+
+def document(view):
+    """Return only source-authored structure, checking retained raw evidence."""
+    if view.get('mode') == 'raw':
+        return None
+    profile = view.get('root', {}).get('protocol', {}).get('viewProgram', {}).get('profile')
+    if profile not in DATA_PROFILES:
+        if 'document' in view:
+            raise ProjectionError('document requires a typed source view')
+        return None
+    children(view)
+    raw = _wire_record(view['rawData'])
+    if 'document' not in raw:
+        if 'document' in view:
+            raise ProjectionError('retained document has no source result')
+        return None
+    checked = _document_data(raw['document'])
+    if _canonical(view.get('document')) != _canonical(checked):
+        raise ProjectionError('retained document differs from its raw source result')
+    return copy.deepcopy(checked)
+
+
+def _typed_interpretation(raw):
+    fields = _wire_record(_wire_record(raw)['interpretation'])
+    if set(fields) != {'request', 'prepare'}:
+        raise ProjectionError('interpretation requires request and prepare exports')
+    result = {key: _plain_data(value, [1000]) for key, value in fields.items()}
+    for entry in result.values():
+        if not isinstance(entry, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,127}', entry):
+            raise ProjectionError('interpretation requires source export names')
+    return result
+
+
+def interpretation(view):
+    """Retain source-selected entry names; native compilation validates exports."""
+    if view.get('mode') == 'raw':
+        return None
+    profile = view.get('root', {}).get('protocol', {}).get('viewProgram', {}).get('profile')
+    if profile not in DATA_PROFILES:
+        if 'interpretation' in view:
+            raise ProjectionError('interpretation requires a typed source view')
+        return None
+    children(view)
+    raw = _wire_record(view['rawData'])
+    if 'interpretation' not in raw:
+        if 'interpretation' in view:
+            raise ProjectionError('retained interpretation has no source result')
+        return None
+    checked = _typed_interpretation(view['rawData'])
+    if _canonical(view.get('interpretation')) != _canonical(checked):
+        raise ProjectionError('retained interpretation differs from its source result')
+    return copy.deepcopy(checked)
+
+
+def bound_document(view, actions, offers):
+    """Attach only existing captured invitation/child identities to source nodes."""
+    result = document(view)
+    if result is None:
+        return None
+    declared, catalogue = invitations(view), children(view)
+    bindings = {}
+    for action in actions:
+        key, identity = action.get('offer'), action.get('id')
+        offer = offers.get(identity)
+        if (key in declared and offer is not None and action.get('available')
+                and offer['object'] == view['object'] and offer['entry'] == declared[key]['prepare']):
+            bindings[(view['object'], key, offer['entry'])] = identity
+    def bind(node):
+        if node['kind'] in ('offer', 'fields'):
+            capture = node['capture']
+            identity = bindings.get((capture['object'], capture['token'], capture['entry']))
+            if identity is not None:
+                node['actionId'] = identity
+        elif node['kind'] == 'reference':
+            descriptor = {k: node[k] for k in ('key', 'label', 'object', 'panel')}
+            if descriptor in catalogue:
+                node['childKey'] = descriptor['key']
+        elif node['kind'] == 'sequence':
+            for child in node['items']:
+                bind(child)
+        elif node['kind'] in ('quote', 'result'):
+            bind(node['body'])
+    bind(result)
+    return result
 
 
 def action_order(view):
@@ -267,12 +455,16 @@ def _typed_invitations(raw):
             if isinstance(value, dict) and value.get('type') == 'enum' and isinstance(value.get('options'), dict):
                 value['options'] = [value['options'][key] for key in sorted(value['options'])]
             forms._normalize_field(name, value)
-        names = [_plain_data(value, budget) for value in _typed_list(fields['observations'], 8, 'observations')]
-        for name in names:
-            _text_bound(name, 512, 'observed object', identity=True)
+        observations = [_plain_data(value, budget) for value in _typed_list(fields['observations'], 16, 'observations')]
+        names = []
+        for observation in observations:
+            if (not isinstance(observation, dict) or set(observation) != {'object', 'inspectState', 'inspectLaw'}
+                    or type(observation['inspectState']) is not bool or type(observation['inspectLaw']) is not bool):
+                raise ProjectionError('observation requires object and explicit inspection booleans')
+            names.append(_text_bound(observation['object'], 512, 'observed object', identity=True))
         if len(set(names)) != len(names):
             raise ProjectionError('duplicate observation identity')
-        item['observations'] = names
+        item['observations'] = observations
         if item['visible']:
             result[key] = item
     return result
@@ -458,6 +650,10 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
             view['children'] = copy.deepcopy(descriptors)
         if data_menu and 'invitations' in _wire_record(raw):
             view['invitations'] = _typed_invitations(raw)
+        if data_menu and 'document' in _wire_record(raw):
+            view['document'] = _document_data(_wire_record(raw)['document'])
+        if data_menu and 'interpretation' in _wire_record(raw):
+            view['interpretation'] = _typed_interpretation(raw)
         return view
     except ProjectionError:
         raise

@@ -2,6 +2,7 @@ edition ObjectiveBend 1
 # JSON is data. Source functions choose effects; this codec has no substitutions.
 sum Value:
   none: {}
+  retained: {object: String, key: String}
   boolean: {value: Bool}
   natural: {value: Nat}
   number: {encoded: String}
@@ -20,11 +21,19 @@ sum Fields:
 sum Names:
   nil: {}
   cons: {head: String, tail: Names}
+record ObservationRequest:
+  object: String
+  inspectState: Bool
+  inspectLaw: Bool
+sum Requests:
+  nil: {}
+  cons: {head: ObservationRequest, tail: Requests}
 record Observation:
   object: String
   version: Nat
   program: String
   state: Value
+  law: Value
 sum Observations:
   nil: {}
   cons: {head: Observation, tail: Observations}
@@ -62,6 +71,7 @@ def field(fields: Fields, name: String) -> Value:
 def get(value: Value, name: String) -> Value:
   match value:
     case record(r): field(r.fields, name)
+    case retained(_): Value.none()
     case none(_): Value.none()
     case boolean(_): Value.none()
     case natural(_): Value.none()
@@ -71,6 +81,7 @@ def get(value: Value, name: String) -> Value:
 def text(value: Value) -> String:
   match value:
     case text(t): t.value
+    case retained(_): ""
     case none(_): ""
     case boolean(_): ""
     case natural(_): ""
@@ -80,6 +91,7 @@ def text(value: Value) -> String:
 def natural(value: Value) -> Nat:
   match value:
     case natural(n): n.value
+    case retained(_): 0n
     case none(_): 0n
     case boolean(_): 0n
     case number(_): 0n
@@ -88,7 +100,7 @@ def natural(value: Value) -> Nat:
     case record(_): 0n
 def observation(xs: Observations, object: String) -> Observation:
   match xs:
-    case nil(_): {object: "", version: 0n, program: "", state: Value.none()}
+    case nil(_): {object: "", version: 0n, program: "", state: Value.none(), law: Value.none()}
     case cons(c): if c.head.object == object then c.head else observation(c.tail, object)
 def oneField(name: String, value: Value) -> Value:
   Value.record({fields: Fields.cons({head: {name: name, value: value}, tail: Fields.nil()})})

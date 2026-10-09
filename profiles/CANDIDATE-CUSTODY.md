@@ -1,11 +1,12 @@
 # Source Candidate custody
 
-For the explicit `compiled` profile, `Desk.create` loads the ordinary
+`Desk` and its CLI select the `compiled` profile by default. `Desk.create` loads the ordinary
 `protocols/editor/Candidate.obend` through its source `ordinary()` constructor. Editor
 factories use the same source with editor approval enabled. The object owns
 submission, compiler-report acceptance and release; custody code does not decide
-these transitions. Historical plain Candidate roots remain readable, and the
-`transactions` profile retains its earlier body for compatibility.
+these transitions. Historical plain Candidate roots remain structurally readable. Creation requires
+the compiled profile; the general transactions host does not install a second
+Candidate implementation.
 
 `desk.candidate_state(root)` is a structural projection for compiler custody.
 It reads the typed model's scalar fields and asks the native shared Preparation
@@ -24,11 +25,16 @@ write a world, resolve source imports or choose workflow policy.
 Successful typed Candidate compiler completion includes the native digest of
 the actual checked protocol. This is the same FileCustody representation used
 by the host's program identity; Python's JSON hashing does not substitute for it.
-The reviewed-service recognizer compares the complete source package and method
-body with the reviewed Candidate, allowing its explicit initial configuration.
+The reviewed-service recognizer compares the complete native-checked source
+package and method body with the reviewed Candidate, allowing its explicit
+initial configuration.
 This selection grants no authority; every actual operation faces current law.
 
 Numeric conversion follows the native JSON representation. Decimal value and
 scale are retained without Python floats; native integer mantissas normalize
 negative zero to zero. Original request custody still retains its original
 framing. This codec does not claim preservation of the sign of zero.
+
+Configured loading retains the constructor entry and the exact evaluated initial
+value. Original constructor arguments are not duplicated in the executable
+protocol and cannot be reconstructed unless the caller separately retained them.

@@ -1,0 +1,78 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Allocation.obend as A
+import ./Encounter.obend as E
+import ./Factory.obend as F
+import ./Creation.obend as C
+
+record State:
+  child: P.Value
+  visitors: P.Value
+  methods: P.Value
+  managers: P.Value
+  last: String
+def initial(config: P.Value) -> State:
+  {child: P.get(config, "child"), visitors: P.get(config, "visitors"), methods: P.get(config, "methods"), managers: P.get(config, "managers"), last: ""}
+def visitors(value: P.Value) -> P.Values:
+  match value:
+    case array(a): a.values
+    case none(_): P.Values.nil()
+    case retained(_): P.Values.nil()
+    case boolean(_): P.Values.nil()
+    case natural(_): P.Values.nil()
+    case number(_): P.Values.nil()
+    case text(_): P.Values.nil()
+    case record(_): P.Values.nil()
+def grants(methods: P.Values, people: P.Value) -> P.Fields:
+  match methods:
+    case nil(_): P.Fields.nil()
+    case cons(c): F.pair(P.text(c.head), people, grants(c.tail, people))
+def authority(state: State, maker: String) -> P.Value:
+  let people: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: visitors(state.visitors)})})
+  let managers: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: visitors(state.managers)})})
+  P.Value.record({fields: F.pair("profile", P.Value.text({value: "delvetalk-scoped-law-v1"}), F.pair("invoke", P.Value.record({fields: grants(visitors(state.methods), people)}), F.pair("reprogram", managers, F.pair("law", managers, P.Fields.nil()))))})
+record Input:
+  name: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+  allocations: A.Allocations
+def make(state: State, input: Input, context: F.Context) -> Decision:
+  let allowed: Bool = input.name != "" && textLength(input.name) <= 64n
+  {accepted: allowed, reason: if allowed then "" else "Give this object a short name.", state: if allowed then extend(state, {last: input.name}) else state, result: input.name, allocations: if allowed then A.Allocations.cons({head: {name: input.name, protocol: state.child, law: authority(state, context.principal)}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Method:
+  label: String
+  fields: {name: Field}
+record Description:
+  name: String
+  initial: State
+  methods: {make: Method}
+  panels: {last: String}
+  allocation: {limit: Nat}
+def field() -> Field:
+  {type: "string", minLength: 1n, maxLength: 64n}
+def describe() -> Description:
+  {name: "The object forge", initial: initial(P.Value.none()), methods: {make: {label: "Make an object", fields: {name: field()}}}, panels: {last: "Last made"}, allocation: {limit: 16n}}
+def prepareMake(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let name: String = P.text(P.get(contribution, "name"))
+  if name == "" then P.Preparation.question({message: "Give the object a name.", needs: P.Names.cons({head: "name", tail: P.Names.nil()})}) else if textLength(name) > 64n then P.Preparation.refused({message: "The name is too long."}) else C.make(context.object, name, P.oneField("name", P.Value.text({value: name})), "Make an object whose maker can revise it.")
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {name: Field}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: E.Children
+  invitations: {make: Invitation}
+def view(state: State, panel: String) -> View:
+  {title: "The object forge", prose: if panel == "last" then (if state.last == "" then "Nothing made here yet." else state.last) else "Make a small object, then write and try a variation before adopting it.", actions: {}, children: E.Children.nil(), invitations: {make: {visible: true, text: "Make an object", prepare: "prepareMake", fields: {name: field()}, observations: P.Requests.nil()}}}

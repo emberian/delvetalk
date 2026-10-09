@@ -39,8 +39,13 @@ def data(value):
     if isinstance(value, str):
         return {'tag': 'label', 'value': value}
     if isinstance(value, dict):
-        return {'tag': 'record', 'fields': [{'name': key, 'value': data(item)} for key, item in value.items()]}
+        return record({key: data(item) for key, item in value.items()})
     raise ValueError('plain input requires Nat, Bool, String or a record')
+
+
+def record(fields):
+    """Frame named DataWire values; the native constructor checks their types."""
+    return {'tag': 'record', 'fields': [{'name': key, 'value': value} for key, value in fields.items()]}
 
 
 def variant(label, payload):

@@ -195,9 +195,12 @@ def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable
         let operation ← IO.ofExcept (str request "op")
         let reply ← IO.ofExcept (
           if operation == "retained-root" then RetainedRoots.mint session.committed.roots request
+          else if operation == "capture-roots" then do
+            let captured ← RetainedRoots.capture session.committed.roots session.committed.base request
+            put (← put captured "sequence" (toJson session.committed.sequence)) "head" (.str session.committed.head)
           else if operation == "prepare-retained" then do
             let captured ← put request "op" (.str "prepare")
-            RetainedRoots.prepareCaptured session.committed.roots capturedPreparation captured
+            RetainedRoots.prepareCaptured session.committed.roots session.committed.base capturedPreparation captured
           else query session.committed.base request)
         pure (obj [("status", .str "query"), ("reply", reply)])
       else if op == "export" then

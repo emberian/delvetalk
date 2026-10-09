@@ -49,13 +49,13 @@ class DeskTests(unittest.TestCase):
 
     def test_complete_proposal_compile_adopt_and_retry(self):
         pending = self.submit()['data']['root']
-        self.assertEqual(pending['state']['proposal']['source'].encode(), self.source)
-        self.assertEqual(pending['state']['status'], 'pending')
+        self.assertEqual(desk_module.candidate_state(pending)['proposal']['source'].encode(), self.source)
+        self.assertEqual(desk_module.candidate_state(pending)['status'], 'pending')
         compiled = self.desk.check('candidate', 'compiler', 'compile', pending)
         self.assertEqual(compiled['kind'], 'committed')
         ready = compiled['data']['root']
-        self.assertEqual(ready['state']['status'], 'ready')
-        artifact = desk_module.load_artifact(self.desk.artifact_store, ready['state']['artifact'])
+        self.assertEqual(desk_module.candidate_state(ready)['status'], 'ready')
+        artifact = desk_module.load_artifact(self.desk.artifact_store, desk_module.candidate_state(ready)['artifact'])
         self.assertTrue(artifact['report']['passed'])
         self.assertEqual(artifact['candidateRootSha256'], desk_module.digest(pending))
         # Resume after a lost worker reply must not compile again or change identity.
@@ -66,17 +66,17 @@ class DeskTests(unittest.TestCase):
         target = self.desk.inspect('target')
         self.assertEqual(target['state'], {'count': 41})
         self.assertEqual(target['law'], self.target['law'])
-        self.assertEqual(target['protocol'], ready['state']['protocol'])
+        self.assertEqual(target['protocol'], desk_module.candidate_state(ready)['protocol'])
         self.assertEqual(self.desk.adopt('candidate', 'target', 'reviewer', 'adopt', ready, self.target), adopted)
-        self.assertEqual(self.desk.inspect('candidate')['state']['status'], 'ready')
+        self.assertEqual(desk_module.candidate_state(self.desk.inspect('candidate'))['status'], 'ready')
 
     def test_failed_compile_retained_and_cannot_adopt(self):
         pending = self.submit(source=b'{not JSON')['data']['root']
         receipt = self.desk.check('candidate', 'compiler', 'broken', pending)
         failed = receipt['data']['root']
-        self.assertEqual(failed['state']['status'], 'failed')
-        self.assertTrue(failed['state']['diagnostics'])
-        artifact = desk_module.load_artifact(self.desk.artifact_store, failed['state']['artifact'])
+        self.assertEqual(desk_module.candidate_state(failed)['status'], 'failed')
+        self.assertTrue(desk_module.candidate_state(failed)['diagnostics'])
+        artifact = desk_module.load_artifact(self.desk.artifact_store, desk_module.candidate_state(failed)['artifact'])
         self.assertFalse(artifact['passed'])
         self.assertEqual(self.desk.check('candidate', 'compiler', 'broken', pending), receipt)
         self.assertEqual(self.desk.adopt('candidate', 'target', 'reviewer', 'no-adopt', failed, self.target)['kind'], 'refused')
@@ -118,7 +118,7 @@ class DeskTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'intent already bound'):
             self.desk.check('candidate', 'compiler', 'compile', compiled['data']['root'])
         altered = copy.deepcopy(pending)
-        altered['state']['proposal']['source'] = altered['state']['proposal']['source'] + '\n'
+        altered['version'] += 1
         self.assertEqual(self.desk.check('candidate', 'compiler', 'stale-compile', altered)['kind'], 'refused')
         ready = self.desk.inspect('candidate')
         changed = self.desk.exchange({'op': 'invoke', 'object': 'target', 'principal': 'player',
@@ -133,8 +133,8 @@ class DeskTests(unittest.TestCase):
                    'passed': False, 'diagnostics': [{'kind': 'worker-timeout', 'seconds': 45}]}
         with mock.patch.object(desk_module, 'bounded_compile', return_value=failure):
             result = self.desk.check('candidate', 'compiler', 'timed-out', pending)
-        self.assertEqual(result['data']['root']['state']['status'], 'failed')
-        self.assertEqual(result['data']['root']['state']['diagnostics'], failure['diagnostics'])
+        self.assertEqual(desk_module.candidate_state(result['data']['root'])['status'], 'failed')
+        self.assertEqual(desk_module.candidate_state(result['data']['root'])['diagnostics'], failure['diagnostics'])
 
     def test_actual_worker_wall_timeout(self):
         pending = self.submit()['data']['root']
@@ -150,12 +150,12 @@ class DeskTests(unittest.TestCase):
         migration = translated['lowered']['protocol']['initial']
         pending = self.submit(source=source, scenarios=scenarios, syntax='spween-scene-i64@1', migration=migration)['data']['root']
         ready = self.desk.check('candidate', 'compiler', 'scene-compile', pending)['data']['root']
-        self.assertEqual(ready['state']['status'], 'ready', ready['state']['diagnostics'])
-        self.assertIsNotNone(ready['state']['roomArtifact'])
+        self.assertEqual(desk_module.candidate_state(ready)['status'], 'ready', desk_module.candidate_state(ready)['diagnostics'])
+        self.assertIsNotNone(desk_module.candidate_state(ready)['roomArtifact'])
         receipt = self.desk.adopt('candidate', 'target', 'reviewer', 'scene-adopt', ready, self.target)
         self.assertEqual(receipt['kind'], 'committed')
         room = desk_module.module('test_desk_room', 'scene/room.py')
-        artifact = room.load_artifact(self.desk.artifact_store / 'rooms', ready['state']['roomArtifact'])
+        artifact = room.load_artifact(self.desk.artifact_store / 'rooms', desk_module.candidate_state(ready)['roomArtifact'])
         view = room.room_view(self.desk.inspect('target'), artifact, 'target')
         self.assertIn('source', str(view))
         self.assertEqual(artifact['content']['source'].encode(), source)

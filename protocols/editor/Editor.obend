@@ -224,19 +224,19 @@ record NameInvitation:
   text: String
   prepare: String
   fields: {name: StringField}
-  observations: P.Names
+  observations: P.Requests
 record SubmitInvitation:
   visible: Bool
   text: String
   prepare: String
   fields: {syntax: {type: String, options: {ordinary: String, typed: String}}, source: StringField, examples: StringField}
-  observations: P.Names
+  observations: P.Requests
 record Invitation:
   visible: Bool
   text: String
   prepare: String
   fields: {}
-  observations: P.Names
+  observations: P.Requests
 record View:
   title: String
   prose: String
@@ -246,4 +246,9 @@ record View:
 def view(state: State, panel: String) -> View:
   let prior: BaseView = baseView(state, panel)
   let configured: Bool = state.target != "" && state.factory != ""
-  {title: prior.title, prose: prior.prose, actions: {}, children: prior.children, invitations: {make: {visible: configured && state.next <= 32n, text: "Make a new variation or rebase", prepare: "prepareMake", fields: {name: nameField()}, observations: if configured then names2(state.target, state.factory) else P.Names.nil()}, submit: {visible: state.phase == "planned", text: "Submit source and examples", prepare: "prepareSubmit", fields: {syntax: {type: "enum", options: {ordinary: "objective-bend-spell@2", typed: "objective-bend-spell@3"}}, source: {type: "string", minLength: 1n, maxLength: 32768n}, examples: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: if configured then names2(state.target, candidate(state)) else P.Names.nil()}, review: {visible: state.phase == "pending" || state.phase == "ready" || state.phase == "failed", text: "Review the current candidate", prepare: "prepareReview", fields: {}, observations: if state.candidate != "" then names1(state.candidate) else P.Names.nil()}, adopt: {visible: state.phase == "ready", text: "Adopt this checked variation", prepare: "prepareAdopt", fields: {}, observations: if state.candidate != "" then names2(state.target, state.candidate) else P.Names.nil()}}}
+  {title: prior.title, prose: prior.prose, actions: {}, children: prior.children, invitations: {make: {visible: configured && state.next <= 32n, text: "Make a new variation or rebase", prepare: "prepareMake", fields: {name: nameField()}, observations: if configured then requests2(state.target, state.factory) else P.Requests.nil()}, submit: {visible: state.phase == "planned", text: "Submit source and examples", prepare: "prepareSubmit", fields: {syntax: {type: "enum", options: {ordinary: "objective-bend-spell@2", typed: "objective-bend-spell@3"}}, source: {type: "string", minLength: 1n, maxLength: 32768n}, examples: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: if configured then requests2(state.target, candidate(state)) else P.Requests.nil()}, review: {visible: state.phase == "pending" || state.phase == "ready" || state.phase == "failed", text: "Review the current candidate", prepare: "prepareReview", fields: {}, observations: if state.candidate != "" then requests1(state.candidate) else P.Requests.nil()}, adopt: {visible: state.phase == "ready", text: "Adopt this checked variation", prepare: "prepareAdopt", fields: {}, observations: if state.candidate != "" then requests2(state.target, state.candidate) else P.Requests.nil()}}}
+
+def requests1(a: String) -> P.Requests:
+  P.Requests.cons({head: {object: a, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})
+def requests2(a: String, b: String) -> P.Requests:
+  P.Requests.cons({head: {object: a, inspectState: false, inspectLaw: false}, tail: requests1(b)})

@@ -17,8 +17,8 @@ class SourceHistory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary) / 'world'
             workspace.initialize(directory, [{'id': 'desk', 'syntax': 'protocol-json@1',
-                'source': (ROOT / 'protocols/source-desk/protocol.json').read_bytes(),
-                'law': ['author']}], entry_objects=['desk'], principal='builder')
+                'source': b.canonical(b.desk_module.module('history_candidate_package', 'protocols/source-desk/package.py').candidate()),
+                'law': ['author']}], entry_objects=['desk'], principal='builder', profile='compiled')
             # Deliberately uncompiled: source availability is independent of success.
             proposal = source_store.prepare_proposal(directory / 'artifacts',
                 'protocol-markdown@1', b'# Authored source\r\n' + b'opaque prose\n' * 6000, b'[]\n')

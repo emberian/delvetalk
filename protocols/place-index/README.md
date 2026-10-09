@@ -18,6 +18,14 @@ observation, then invoke `caption {object,label}`. The index checks native
 Context2 kind, object and adjacency; equal caller-supplied data is insufficient.
 `addedBy` is the curator, and `observedVersion` records the target at curation time.
 
+[ExhibitWriting](ExhibitWriting.obend) authors that transaction as an ordinary
+source preparation. Load it after `Preparation`, `Abi`, and `Encounter`, and
+configure `initial` with `{index, target}`. Its invitation captures both objects;
+the visitor supplies only a label of 1–128 characters. The native receiver binds
+the preparation owner's root and both observations, then checks every call under
+the visitor's current authority. Copying this writing invitation grants no
+curation rights.
+
 Remove and reorder require current membership but no fresh target observation.
 `reorder {object,before}` places the member before another; empty `before` moves
 it to the end. Neither operation changes the target. Labels and object fields have

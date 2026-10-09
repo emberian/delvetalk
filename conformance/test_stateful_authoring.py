@@ -19,7 +19,6 @@ import continuation
 import workspace
 
 PACKAGE = ROOT / 'protocols/stateful-workshop'
-FIELDS = helpers.clerk.loads((PACKAGE / 'migration-fields.json').read_bytes())
 
 
 def monotonic():
@@ -35,7 +34,7 @@ class StatefulAuthoring(helpers.TownForgeJourneyTests):
     def setUp(self):
         original = helpers.forge.build_stateful
         def configured(visitors, compiler):
-            return original(visitors, compiler, methods=['light', 'douse'], state_fields=FIELDS)
+            return original(visitors, compiler, methods=['light', 'douse'])
         with patch.object(helpers.forge, 'build', side_effect=configured):
             super().setUp()
 
@@ -46,14 +45,28 @@ class StatefulAuthoring(helpers.TownForgeJourneyTests):
 
     def submit_revision(self, target, name, source_file, example_file, state):
         candidate, card = self.make('desks', name)
-        fields = {'target': target, 'source': (PACKAGE / source_file).read_text(),
-                  'scenarios': (PACKAGE / example_file).read_text(),
-                  'migration_lit': state['lit'], 'migration_count': state['count']}
-        source, response = self.reply(card, fields)
-        self.committed(response)
-        pending = self.root(candidate)
-        self.assertEqual(pending['state']['proposal']['syntax'], 'objective-bend-spell@2')
-        self.assertEqual(pending['state']['migration'], state)
+        source_text = (PACKAGE / source_file).read_text()
+        examples = (PACKAGE / example_file).read_text()
+        if state == self.root(target)['state']:
+            source = self.submit(candidate, card, target, source_text, examples,
+                syntax='objective-bend-spell@2')
+        else:
+            # This boundary challenge is an explicit operator proposal, not the
+            # preserving Writing policy or a Python-generated workflow.
+            self.sequence += 1
+            source = (f'at://{helpers.MAKER}/{helpers.clerk.FEED}/reset-{self.sequence}',
+                      'reset-cid-' + str(self.sequence))
+            self.pds.records[source[0]] = (source[1], {'$type': helpers.clerk.FEED,
+                'text': 'Try this explicit complete reset while keeping the current law.'})
+            decision = {'status': 'act', 'interpreter': 'local journey operator',
+                'basis': 'The test operator explicitly proposes a complete reset.',
+                'request': {'object': candidate, 'command': 'submit', 'expected': self.root(candidate),
+                    'input': {'proposal': {'syntax': 'objective-bend-spell@2', 'source': source_text,
+                        'scenarios': examples}, 'migration': state, 'target': target}}}
+            self.committed(self.operator.receive(*source, interpretation=decision))
+        pending = helpers.desk.candidate_state(self.root(candidate))
+        self.assertEqual(pending['proposal']['syntax'], 'objective-bend-spell@2')
+        self.assertEqual(pending['migration'], state)
         ready = self.check(candidate, source)
         self.assertEqual(ready['status'], 'ready', ready)
         return candidate, ready
@@ -159,7 +172,7 @@ class StatefulAuthoring(helpers.TownForgeJourneyTests):
         self.assertEqual(helpers.clerk.loads((restored / 'world.json').read_bytes()),
                          helpers.clerk.loads(self.clerk.database.read_bytes()))
         for candidate in (first_desk, second_desk, incompatible):
-            artifact = self.root(candidate)['state']['artifact']
+            artifact = helpers.desk.candidate_state(self.root(candidate))['artifact']
             self.assertEqual((restored / 'artifacts/builds' / (artifact + '.json')).read_bytes(),
                              (self.home / 'artifacts/builds' / (artifact + '.json')).read_bytes())
         restored_client = helpers.compiler_queue.desk.Desk(restored / 'world.json',

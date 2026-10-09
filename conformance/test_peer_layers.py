@@ -17,6 +17,7 @@ _spec = importlib.util.spec_from_file_location('peer_post_helpers', ROOT / 'conf
 helpers = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(helpers)
 import continuation
+import desk
 import source_store
 import workspace
 
@@ -29,11 +30,14 @@ class PeerLayers(helpers.TownForgeJourneyTests):
     def setUp(self):
         original = helpers.forge.build_stateful
         def configured(visitors, compiler):
+            adapter = helpers.clerk.module('peer_initial_adapter', 'syntaxes/obend_object.py')
+            initial = adapter.lower_modules([
+                {'name': name, 'source': (PACKAGE / (name + '.obend')).read_text()}
+                for name in ('Base', 'Doubling', 'Main')])
             factories = original(visitors, compiler, methods=['ring', 'stamp', 'base'],
-                state_fields={'value': {'type': 'nat', 'label': 'Retained rings', 'minimum': 0, 'maximum': 10000}})
-            generic = helpers.clerk.loads((ROOT / 'protocols/factories/source-desk.json').read_bytes())
-            generic['initial']['compiler'] = compiler
-            factories['desks'] = generic
+                                 initial_program=initial)
+            package = helpers.clerk.module('peer_source_desk', 'protocols/source-desk/package.py')
+            factories['desks'] = package.factory(compiler, [helpers.MAKER])
             return factories
         with patch.object(helpers.forge, 'build', side_effect=configured):
             super().setUp()

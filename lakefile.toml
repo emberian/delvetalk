@@ -33,6 +33,10 @@ name = "SourceContract"
 srcDir = "profiles"
 
 [[lean_lib]]
+name = "SourceAmendment"
+srcDir = "profiles"
+
+[[lean_lib]]
 name = "Preparation"
 srcDir = "profiles"
 

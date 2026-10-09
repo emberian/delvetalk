@@ -30,13 +30,6 @@ source_object = module('desk_source_object', 'scripts/source_object.py')
 history = module('desk_history', 'scripts/history.py')
 adoption = module('desk_adoption', 'scripts/adoption.py')
 canonical, loads = translate.canonical, translate.load_json
-SOURCE_DESK_PROTOCOL_PATHS = (
-    'protocols/source-desk/protocol.json',
-    'protocols/town-forge/source-desk.json',
-    'protocols/stateful-workshop/source-desk.json',
-    'protocols/editor/candidate.json',
-    'protocols/spween-handler-workshop/source-desk.json',
-)
 _REVIEWED_CANDIDATE = None
 SOURCE_CANDIDATE_FILES = ('protocols/editor/generate.py', 'protocols/editor/Candidate.obend',
                           'world/lib/prelude/Preparation.obend')
@@ -70,10 +63,6 @@ def candidate_state(root):
 
 def is_source_desk_protocol(protocol):
     """Recognize only reviewed complete bodies; this selection grants no authority."""
-    expected = canonical(protocol)
-    if any(expected == canonical(loads((ROOT / path).read_bytes()))
-           for path in SOURCE_DESK_PROTOCOL_PATHS):
-        return True
     if not isinstance(protocol, dict) or 'sourcePackages' not in protocol:
         return False
     global _REVIEWED_CANDIDATE
@@ -92,7 +81,7 @@ def is_source_desk_protocol(protocol):
 
 def execution_paths(profile='compiled'):
     """Return custody dependency names independently from byte hashing."""
-    return tuple(sorted(set(runtime_profile.paths(profile)) | set(SOURCE_DESK_PROTOCOL_PATHS)
+    return tuple(sorted(set(runtime_profile.paths(profile))
         | set(SOURCE_CANDIDATE_FILES)
         | set(source_store.adapter_pin('objective-bend-spell@3')['files']) | {
         'scripts/desk.py', 'scripts/adoption.py', 'scripts/history.py', 'scripts/source_store.py',

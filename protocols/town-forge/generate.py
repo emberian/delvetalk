@@ -1,18 +1,18 @@
-#!/usr/bin/env python3
-"""Ordinary governed factories for small resident-authored doors and spells."""
-import json
+"""Physical packaging of source-owned forge objects and writing participants."""
+import importlib.util
 from pathlib import Path
+import sys
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import source_object
+import translate
+
 SPELL_SYNTAX = 'objective-bend-spell@1'
-L = lambda value: ['literal', value]
-I = lambda key: ['input', key]
-S = lambda key: ['state', key]
-P = ['principal']
-label = lambda text: ['label', text]
-record = lambda fields: ['record', [[key, value] for key, value in fields.items()]]
-eq = lambda left, right: ['binary', 'labelEqual', left, right]
-choose = lambda condition, yes, no: ['ifBool', condition, yes, no]
+_spec = importlib.util.spec_from_file_location('forge_source_desk', ROOT / 'protocols/source-desk/package.py')
+source_desks = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(source_desks)
 
 
 def principals(values):
@@ -32,48 +32,19 @@ def factory_law(makers, managers=()):
     return scoped({'make': principals(makers)}, managers, managers)
 
 
-def form_string(label_text, maximum=4096):
-    return {'type': 'string', 'label': label_text, 'minLength': 1, 'maxLength': maximum}
-
-
-def action(command, text):
-    return record({command: record({'text': label(text), 'command': label(command),
-                                   'input': record({})})})
-
-
-def view(title, prose, actions):
-    return {'profile': 'delvetalk-bend-view-v1',
-            'term': ['lam', ['lam', record({'title': title, 'prose': prose, 'actions': actions})]]}
-
-
 def door(revision=0):
-    """A waiting placeholder; authored behavior lives only in Objective Bend."""
     if revision != 0:
         raise ValueError('use spell_source for authored door revisions')
-    return {'profile': 'delvetalk-local-v1', 'name': 'town-forge-chalk-door-v1',
-        'initial': {}, 'commands': {'knock': {
-            'require': [], 'set': {},
-            'result': L('The chalk door is waiting for a spell.'), 'outbox': []}},
-        'affordances': {'knock': {'label': 'Whisper to the door',
-            'fields': {'word': form_string('Your word', 80)}}},
-        'viewProgram': view(label('The chalk door'),
-            label('A door drawn in chalk. Its maker has not given it a spell yet.'),
-            action('knock', 'Whisper to the door'))}
+    return translate.translate(SPELL_SYNTAX, (HERE / 'Chalk.obend').read_bytes())['lowered']
 
 
 def spell_source(revision=1):
-    """Exact resident-authored Objective Bend; never serialize an AST for them."""
     names = {1: 'paper-door.obend', 2: 'moon-door.obend'}
-    if revision not in names:
-        raise ValueError('spell revision must be 1 or 2')
-    return (HERE.parents[1] / 'syntaxes/examples' / names[revision]).read_text()
+    return (ROOT / 'syntaxes/examples' / names[revision]).read_text()
 
 
 def example_source(revision=1):
-    names = {1: 'paper-door.examples', 2: 'moon-door.examples'}
-    if revision not in names:
-        raise ValueError('spell revision must be 1 or 2')
-    return (HERE / names[revision]).read_text()
+    return (HERE / {1: 'paper-door.examples', 2: 'moon-door.examples'}[revision]).read_text()
 
 
 def challenge_source():
@@ -81,167 +52,32 @@ def challenge_source():
 
 
 def source_desk():
-    protocol = json.loads((HERE.parent / 'source-desk/protocol.json').read_text())
-    protocol['name'] = 'town-forge-source-desk-v1'
-    protocol['description'] = 'Write a small spell, try examples, then explicitly install it with an empty state.'
-    # Pure views materialize the whole state: keep empty/pending state inside
-    # the existing Nat/Bool/String/record boundary. Completion keeps the base
-    # compiler's actual protocol/diagnostics; its retained reply presents those.
-    protocol['initial'] = {key: ('' if value is None else value)
-                           for key, value in protocol['initial'].items()}
-    protocol['initial'].update(proposal={'syntax': SPELL_SYNTAX, 'source': '', 'scenarios': ''},
-                               migration={}, protocol={}, diagnostics={})
-    submit = protocol['commands']['submit']
-    for key in ('target', 'source', 'scenarios'):
-        submit['require'].append([['bend', ['lam', choose(eq(['bound', 0], label('')),
-            ['boolean', False], ['boolean', True])], [I(key)]], L(True)])
-    submit['set'].update(proposal=['record', {'syntax': L(SPELL_SYNTAX),
-        'source': I('source'), 'scenarios': I('scenarios')}], migration=L({}), target=I('target'))
-    protocol['affordances'] = {'submit': {'label': 'Write a spell and its examples', 'fields': {
-        'target': form_string('Exact door object name', 256),
-        'source': form_string('Objective Bend spell'),
-        'scenarios': form_string('Examples to try')}}}
-    state, panel = ['bound', 1], ['bound', 0]
-    get = lambda key: ['get', state, key]
-    empty = eq(get('status'), label('empty'))
-    prose = label('Write an Objective Bend spell and examples. This door keeps no memory: '
-                  'installation starts with an empty state. Try the spell, then choose whether to install it.')
-    for key in ('source', 'scenarios'):
-        text = choose(empty, label(''), ['get', get('proposal'), key])
-        prose = choose(eq(panel, label(key)), text, prose)
-    prose = choose(eq(panel, label('target')), choose(empty, label(''), get('target')), prose)
-    prose = choose(eq(panel, label('status')), get('status'), prose)
-    protocol['viewProgram'] = view(label('The spell-writing desk'), prose,
-        choose(empty, action('submit', 'Write a spell and its examples'), record({})))
-    protocol['viewPanels'] = [{'id': key, 'label': title} for key, title in (
-        ('status', 'Desk state'), ('target', 'Door'), ('source', 'Exact spell source'),
-        ('scenarios', 'Exact examples'))]
-    return protocol
+    return source_desks.candidate()
 
 
-def factory(kind, child, law):
-    making_doors = kind == 'objects'
-    title = 'The door forge' if making_doors else 'The spell-writing desks'
-    invitation = ('Draw a chalk door and give it a name. Then write a spell to bring it to life.'
-                  if making_doors else
-                  'Make a writing desk for a new spell, a revision, or an example you want to try.')
-    make_label = 'Make a door' if making_doors else 'Make a writing desk'
-    last = ['get', ['bound', 1], 'last']
-    last_text = choose(eq(last, label('')), label('Nothing made here yet.'), last)
-    prose = choose(eq(['bound', 0], label('last')), last_text, label(invitation))
-    return {'profile': 'delvetalk-local-v1', 'name': 'town-forge-' + kind + '-v1',
-        'description': 'Make a chalk door.' if kind == 'objects' else 'Make a spell-writing desk.',
-        'initial': {'last': ''}, 'allocation': {'limit': 16},
-        'viewProgram': view(label(title), prose, action('make', make_label)),
-        'viewPanels': [{'id': 'last', 'label': 'Last made'}],
-        'affordances': {'make': {'label': make_label,
-            'fields': {'name': {**form_string('A short name', 64),
-                'example': 'moon-door' if making_doors else 'moon-workshop'}}, 'children': ['name']}},
-        'commands': {'make': {'require': [], 'set': {'last': I('name')},
-            'result': ['record', {'name': I('name'), 'maker': P}], 'outbox': [],
-            'allocate': [{'name': I('name'), 'protocol': L(child), 'law': law}]}}}
+def object_factory(child, visitors, methods, *, managers=()):
+    modules = source_object.read_modules([
+        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
+        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+        ('Factory', ROOT / 'protocols/editor/Factory.obend'),
+        ('Creation', ROOT / 'protocols/factories/Creation.obend'),
+        ('ObjectFactory', HERE / 'ObjectFactory.obend')])
+    config = {'child': child, 'visitors': principals(visitors), 'methods': principals(methods), 'managers': list(managers)}
+    return source_object.load(modules, syntax='objective-bend-spell@3',
+        constructor='initial', arguments=[source_object.value(config)])
 
 
 def build(visitors, compiler):
-    visitors = principals(visitors)
-    principals([compiler])
-    # These are explicit law expressions. The maker is the actual invocation principal.
-    object_law = ['record', {'profile': L('delvetalk-scoped-law-v1'),
-        'invoke': ['record', {'knock': ['array', [P] + [L(who) for who in visitors]]}],
-        'reprogram': ['array', [P]], 'law': ['array', [P]]}]
-    desk_law = ['record', {'profile': L('delvetalk-scoped-law-v1'),
-        'invoke': ['record', {'submit': ['array', [P]], 'adopt': ['array', [P]],
-            'compiled': L([compiler]), 'failed': L([compiler])}],
-        'reprogram': L([]), 'law': L([])}]
-    return {'objects': factory('objects', door(0), object_law),
-            'desks': factory('desks', source_desk(), desk_law)}
+    return {'objects': object_factory(door(), visitors, ['knock']),
+            'desks': source_desks.factory(compiler, visitors),
+            'writers': source_desks.writing_factory()}
 
 
-def source_desk_v2(state_fields):
-    """Explicit scalar migration template; source semantics remain in Bend."""
-    if not isinstance(state_fields, dict) or not state_fields:
-        raise ValueError('explicit finite state fields required')
-    protocol = source_desk()
-    protocol['name'] = 'town-forge-stateful-desk-v2'
-    protocol['description'] = 'Write stateful Bend and examples; choose the complete installation state.'
-    protocol['initial']['proposal']['syntax'] = 'objective-bend-spell@2'
-    submit = protocol['commands']['submit']
-    submit['set']['proposal'][1]['syntax'] = L('objective-bend-spell@2')
-    migration = {}
-    for name, specification in state_fields.items():
-        if (not isinstance(name, str) or not name or not isinstance(specification, dict)
-                or specification.get('type') not in ('nat', 'bool', 'string')):
-            raise ValueError('migration fields require named scalar schemas')
-        key = 'migration_' + name
-        migration[name] = I(key)
-        protocol['affordances']['submit']['fields'][key] = dict(specification)
-    submit['set']['migration'] = ['record', migration]
-    protocol['affordances']['submit']['fields']['target']['label'] = 'Exact object to revise'
-    state, panel = ['bound', 1], ['bound', 0]
-    get = lambda key: ['get', state, key]
-    empty = eq(get('status'), label('empty'))
-    prose = label('Write Bend and examples. Supply every migration field explicitly; installation preserves current law.')
-    for key in ('source', 'scenarios'):
-        text = choose(empty, label(''), ['get', get('proposal'), key])
-        prose = choose(eq(panel, label(key)), text, prose)
-    prose = choose(eq(panel, label('target')), choose(empty, label(''), get('target')), prose)
-    prose = choose(eq(panel, label('status')), get('status'), prose)
-    protocol['viewProgram'] = view(label('The stateful writing desk'), prose,
-        choose(empty, action('submit', 'Write a stateful revision'), record({})))
-    protocol['viewPanels'] = [{'id': key, 'label': title} for key, title in (
-        ('status', 'Desk state'), ('target', 'Object'), ('source', 'Exact Bend source'),
-        ('scenarios', 'Exact examples'))]
-    return protocol
-
-
-def stateful_factory(kind, child, law):
-    protocol = factory(kind, child, law)
-    objects = kind == 'objects'
-    protocol['name'] = 'town-forge-stateful-' + kind + '-v2'
-    title = 'The object workshop' if objects else 'The stateful writing desks'
-    invitation = ('Make an object awaiting its first authored behavior.' if objects else
-        'Make a writing desk for stateful source, examples and an explicit complete migration.')
-    label_text = 'Make an object' if objects else 'Make a stateful writing desk'
-    protocol['description'] = invitation
-    protocol['affordances']['make']['label'] = label_text
-    protocol['affordances']['make']['fields']['name']['example'] = 'moth-instrument' if objects else 'next-score'
-    last = ['get', ['bound', 1], 'last']
-    protocol['viewProgram'] = view(label(title),
-        choose(eq(['bound', 0], label('last')),
-               choose(eq(last, label('')), label('Nothing made here yet.'), last), label(invitation)),
-        action('make', label_text))
-    return protocol
-
-
-def build_stateful(visitors, compiler, *, methods, state_fields):
-    """Explicit configured grants, never permissions inferred from source metadata."""
-    visitors = principals(visitors)
-    principals([compiler])
-    methods = principals(methods)
-    placeholder = door()
-    placeholder['name'] = 'town-forge-stateful-placeholder-v2'
-    placeholder['commands'] = {name: {'require': [[L(False), L(True)]], 'set': {},
-        'result': L(''), 'outbox': []} for name in methods}
-    placeholder['affordances'] = {name: {'label': name, 'fields': {}} for name in methods}
-    placeholder['viewProgram'] = view(label('An object awaiting behavior'),
-        label('Its maker must install an authored program before it can be used.'), record({}))
-    object_law = ['record', {'profile': L('delvetalk-scoped-law-v1'),
-        'invoke': ['record', {name: ['array', [P] + [L(who) for who in visitors]] for name in methods}],
-        'reprogram': ['array', [P]], 'law': ['array', [P]]}]
-    desk_law = ['record', {'profile': L('delvetalk-scoped-law-v1'),
-        'invoke': ['record', {'submit': ['array', [P]], 'adopt': ['array', [P]],
-            'compiled': L([compiler]), 'failed': L([compiler])}],
-        'reprogram': L([]), 'law': L([])}]
-    return {'objects': stateful_factory('objects', placeholder, object_law),
-            'desks': stateful_factory('desks', source_desk_v2(state_fields), desk_law)}
-
-
-def files():
-    package = build(['visitor'], 'compiler')
-    return {'objects-factory.json': package['objects'], 'desks-factory.json': package['desks'],
-        'source-desk.json': source_desk(), 'migration.json': {}}
-
-
-if __name__ == '__main__':
-    for name, value in files().items():
-        (HERE / name).write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')) + '\n')
+def build_stateful(visitors, compiler, *, methods, initial_program=None):
+    if initial_program is None:
+        initial_program = translate.translate('objective-bend-spell@2',
+            (ROOT / 'protocols/stateful-workshop/Instrument.obend').read_bytes())['lowered']
+    return {'objects': object_factory(initial_program, visitors, methods),
+            'desks': source_desks.factory(compiler, visitors),
+            'writers': source_desks.writing_factory()}

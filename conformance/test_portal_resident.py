@@ -83,11 +83,17 @@ class ResidentConsumerRoutingTest(unittest.TestCase):
         book = Mock()
         book.card.return_value = {'view': {'object': 'index'}}
         book.metadata.return_value = {'runtime': self.runtime}
-        book.capture.side_effect = lambda view, alias, *, roots: {'alias': alias, 'view': view, 'roots': roots}
+        book.capture.side_effect = lambda view, alias, *, roots, references: {
+            'alias': alias, 'view': view, 'roots': roots, 'references': references}
+        reference = {'profile': 'delvetalk-retained-root-v1', 'object': 'lamp', 'key': 'a' * 64}
+        def capture(database, objects, **kwargs):
+            snapshot = self.read_without_world_lock(database)
+            return {'roots': {name: {'root': snapshot['objects'][name], 'reference': reference}
+                             for name in objects}, 'sequence': 0, 'head': None}
         descriptor = {'key': 'lamp', 'object': 'lamp', 'panel': 'main', 'label': 'The lantern'}
         with patch.object(operator, '_configuration', return_value=({'objects': ['lamp']}, book)), patch.object(
                 town.town_cards.projection, 'child', return_value=descriptor), patch.object(
-                town.world, 'snapshot', side_effect=self.read_without_world_lock, create=True), patch.object(
+                town.world, 'capture_roots', side_effect=capture, create=True), patch.object(
                 town.bootstrap, 'bound_room_artifact', return_value=None), patch.object(
                 town.bootstrap.room, 'inspect_object', side_effect=lambda root, identity, artifact, **kw:
                 {'root': root, 'object': identity, 'mode': 'raw'}):
@@ -96,6 +102,7 @@ class ResidentConsumerRoutingTest(unittest.TestCase):
         self.assertEqual(captured['card']['view']['root'], self.root)
         self.assertEqual(captured['card']['alias'], 'child')
         self.assertEqual(captured['card']['roots']['lamp'], self.root)
+        self.assertEqual(captured['card']['references']['lamp'], reference)
         self.assertFalse(self.database.exists())
 
 

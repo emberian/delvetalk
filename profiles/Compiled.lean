@@ -6,6 +6,7 @@ import FileCustody
 import ResidentStore
 import SourcePackages
 import SourceContract
+import SourceAmendment
 import Preparation
 import Delvetalk.Package
 open Lean World
@@ -282,10 +283,16 @@ def checkSourceContract (contract candidate : Json) (checkMethods : Bool) : Eval
   SourceContract.check (fun spec => do Delvetalk.Package.compile (← sourceSpec spec))
     contract candidate checkMethods
 
+def checkSourceAmendment (amendment before after request : Json) (principal : String) : Evaluation Unit :=
+  SourceAmendment.check (fun package arguments =>
+    evaluateExtra { object := "" } (.arr #[.str "package-data-v1", package, .arr arguments]) pure)
+    amendment before after request principal
+
 def runtime : World.Runtime := {
   budget := 100000, validateExtra := validateExtra, evaluateExtra := evaluateExtra,
   validateTransition := validateTransition, executeTransition := executeTransition,
   checkSourceContract := checkSourceContract,
+  checkSourceAmendment := checkSourceAmendment,
   stageMessages := Messages.stage, reprogramResult := reprogramResult }
 
 def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
@@ -295,11 +302,13 @@ def transition (world request : Json) (principal : String) : Except String (Json
   | _ => Transactions.transitionWith runtime world request principal
 
 def handle (world request : Json) : Except String (Json × Json) := do
+  if (← str request "op") == "capture-roots" then
+    return (world, ← RetainedRoots.capture (RetainedRoots.fromWorld world) world request)
   if (← str request "op") == "retained-root" then
     return (world, ← RetainedRoots.mint (RetainedRoots.fromWorld world) request)
   if (← str request "op") == "prepare-retained" then
     let captured ← put request "op" (.str "prepare")
-    return (world, ← RetainedRoots.prepareCaptured (RetainedRoots.fromWorld world)
+    return (world, ← RetainedRoots.prepareCaptured (RetainedRoots.fromWorld world) world
       (fun index world request => Preparation.run world request (RetainedRoots.reference index)) captured)
   if (← str request "op") == "value-codec" then
     return (world, ← Preparation.codec request)

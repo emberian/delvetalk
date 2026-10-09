@@ -1,0 +1,47 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
+
+record State:
+  index: String
+  target: String
+def initial(config: State) -> State:
+  config
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+def report(state: State, input: {}, context: Abi.Context) -> Decision:
+  {accepted: true, reason: "", state: state, result: "Use the captured invitation to exhibit this object."}
+record Description:
+  name: String
+  initial: State
+  methods: {report: {label: String, fields: {}}}
+  panels: {}
+def describe() -> Description:
+  {name: "Exhibit an object", initial: {index: "", target: ""}, methods: {report: {label: "About this invitation", fields: {}}}, panels: {}}
+def prepareExhibit(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let label: String = P.text(P.get(contribution, "label"))
+  let index: P.Observation = P.observation(observations, state.index)
+  let target: P.Observation = P.observation(observations, state.target)
+  if state.index == "" || state.target == "" then P.Preparation.refused({message: "Configure an exhibition and an object."}) else if index.object == "" || target.object == "" then P.Preparation.refused({message: "Capture the exhibition and the object."}) else if label == "" then P.Preparation.question({message: "Give this exhibit a label.", needs: P.Names.cons({head: "label", tail: P.Names.nil()})}) else if textLength(label) > 128n then P.Preparation.refused({message: "Use at most 128 characters for the label."}) else P.Preparation.ready({summary: "Observe, exhibit and label this object.", reads: P.Reads.cons({head: P.Read.existing({object: state.index}), tail: P.Reads.cons({head: P.Read.existing({object: state.target}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.observe({object: state.target}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: state.index, command: "add", result: 0n}), tail: P.Effects.cons({head: P.Effect.invoke({object: state.index, command: "caption", input: P.Value.record({fields: P.Fields.cons({head: {name: "object", value: P.Value.text({value: state.target})}, tail: P.Fields.cons({head: {name: "label", value: P.Value.text({value: label})}, tail: P.Fields.nil()})})})}), tail: P.Effects.nil()})})})})
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {label: Field}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: E.Children
+  invitations: {exhibit: Invitation}
+def view(state: State, panel: String) -> View:
+  {title: "Bring an exhibit here", prose: "Observe this object and add its label to the exhibition in one turn.", actions: {}, children: E.Children.nil(), invitations: {exhibit: {visible: state.index != "" && state.target != "", text: "Observe, exhibit and label this object", prepare: "prepareExhibit", fields: {label: {type: "string", minLength: 1n, maxLength: 128n}}, observations: P.Requests.cons({head: {object: state.index, inspectState: false, inspectLaw: false}, tail: P.Requests.cons({head: {object: state.target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})})}}}

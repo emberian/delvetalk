@@ -35,7 +35,7 @@ def epoch(profile, clerk_profile):
     for name in ('service', 'bootstrap', 'history', 'continuation', 'watch', 'desk', 'source_store', 'message_relay'):
         path = 'scripts/' + name + '.py'
         files[path] = history.file_hash(ROOT / path)
-    for path in (*desk.SOURCE_DESK_PROTOCOL_PATHS, 'scene/room.py'):
+    for path in (*desk.SOURCE_CANDIDATE_FILES, 'scene/room.py'):
         files[path] = history.file_hash(ROOT / path)
     return {'profile': profile, 'python': list(sys.version_info[:3]),
             'platform': [platform.system(), platform.machine()], 'files': files}

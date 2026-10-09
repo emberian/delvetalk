@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import clerk
 import compiler_queue
+import desk
 import town
 import town_cards
 import workspace
@@ -53,7 +54,7 @@ class TownForgeJourneyTests(unittest.TestCase):
             {'id': key, 'syntax': 'protocol-json@1',
              'source': clerk.canonical(protocol), 'law': forge.factory_law([MAKER])}
             for key, protocol in factories.items()],
-            entry_objects=['objects', 'desks'], principal=MAKER, profile='compiled',
+            entry_objects=['objects', 'desks', 'writers'], principal=MAKER, profile='compiled',
             title='The visitor and the spell maker', world_id='urn:test:town-forge-journey')
         self.pds = PublicRecords()
         self.clerk = clerk.Clerk(self.base / 'clerk', self.pds)
@@ -73,7 +74,19 @@ class TownForgeJourneyTests(unittest.TestCase):
         self.assertFalse((self.clerk.state / 'world.json').exists())
 
     def root(self, object_id):
-        return self.clerk.snapshot(object_id)['root']
+        try:
+            return self.clerk.snapshot(object_id)['root']
+        except ValueError as error:
+            if 'pins changed' not in str(error):
+                raise
+            retained = self.clerk.config()['profile']['pins']
+            current = clerk.pins('compiled')
+            changed = sorted(path for path in retained.keys() | current.keys()
+                             if retained.get(path) != current.get(path))
+            raise ValueError(f'{error}: {changed}') from error
+
+    def candidate_state(self, object_id):
+        return desk.candidate_state(self.root(object_id))
 
     def publish(self, cards, body=None):
         self.sequence += 1
@@ -118,26 +131,35 @@ class TownForgeJourneyTests(unittest.TestCase):
     def committed(self, response):
         self.assertEqual(response['receipt']['reply']['kind'], 'committed', response)
 
-    def make(self, factory, name):
-        _, response = self.reply(self.capture(factory), {'name': name})
+    def make(self, factory, name, *, author=MAKER, **fields):
+        _, response = self.reply(self.capture(factory), {'name': name, **fields}, author=author)
         self.committed(response)
         identity = factory + '/' + name
         self.assertIn(identity, self.clerk.config()['objects'])
         return identity, next(card for card in response['cards'] if card['card']['object'] == identity)
 
-    def submit(self, candidate, card, target, source_text, examples_text):
+    def submit(self, candidate, card, target, source_text, examples_text, *, syntax=None, author=MAKER):
         self.assertTrue(source_text.startswith('edition ObjectiveBend 1\n'))
         self.assertTrue(examples_text.startswith('examples DelveTalk 1\n'))
-        fields = {'target': target, 'source': source_text, 'scenarios': examples_text}
-        source, response = self.reply(card, fields)
+        self.assertEqual(card['card']['object'], candidate)
+        syntax = syntax or forge.SPELL_SYNTAX
+        _, writing = self.make('writers', candidate.rsplit('/', 1)[-1] + '-writing',
+                               author=author, candidate=candidate, target=target, syntax=syntax)
+        captured_state = self.root(target)['state']
+        fields = {'source': source_text, 'scenarios': examples_text}
+        source, response = self.reply(writing, fields, author=author)
         post_text = self.pds.records[source[0]][1]['text']
         self.assertIn('source: <<', post_text)
         self.assertIn('scenarios: <<', post_text)
         self.committed(response)
-        self.assertEqual(self.root(candidate)['state']['status'], 'pending')
-        self.assertEqual(self.root(candidate)['state']['proposal']['syntax'], 'objective-bend-spell@1')
-        self.assertEqual(self.root(candidate)['state']['proposal']['source'], fields['source'])
-        self.assertEqual(self.root(candidate)['state']['proposal']['scenarios'], fields['scenarios'])
+        self.assertEqual(response['receipt']['request']['op'], 'transaction')
+        state = self.candidate_state(candidate)
+        self.assertEqual(state['status'], 'pending')
+        self.assertEqual(state['proposal']['syntax'], syntax)
+        self.assertEqual(state['proposal']['source'], fields['source'])
+        self.assertEqual(state['proposal']['scenarios'], fields['scenarios'])
+        self.assertEqual(state['migration'], captured_state)
+        self.assertEqual(state['target'], target)
         return source
 
     def check(self, candidate, source):
@@ -190,12 +212,12 @@ class TownForgeJourneyTests(unittest.TestCase):
                                            alias='review-current-door')
         _, installed = self.reply(fresh, {})
         self.committed(installed)
-        self.assertEqual(self.root(target)['protocol'], before_candidate['state']['protocol'])
+        self.assertEqual(self.root(target)['protocol'], desk.candidate_state(before_candidate)['protocol'])
         paper_protocol = self.root(target)['protocol']
         self.assertEqual(paper_protocol['commands']['knock']['result'][0], 'package')
         self.assertEqual(paper_protocol['commands']['knock']['result'][1]['modules'][0]['source'],
                          forge.spell_source(1))
-        self.assertEqual(self.root(candidate)['state']['lastRelease'], MAKER)
+        self.assertEqual(self.candidate_state(candidate)['lastRelease'], MAKER)
         paper_card = self.capture(target)
         self.assertIn('The paper door', paper_card['body'])
         self.assertIn('please', paper_card['body'])
@@ -265,7 +287,7 @@ class TownForgeJourneyTests(unittest.TestCase):
         self.assertEqual(moon_reply['receipt']['reply']['data']['result'], MOON_RESULT)
         self.assertIn(MOON_RESULT, moon_reply['body'])
         moon_protocol = self.root(target)['protocol']
-        self.assertEqual(moon_protocol, self.root(revision)['state']['protocol'])
+        self.assertEqual(moon_protocol, self.candidate_state(revision)['protocol'])
         self.assertEqual(moon_protocol['commands']['knock']['result'][0], 'package')
         self.assertEqual(moon_protocol['commands']['knock']['result'][1]['modules'][0]['source'],
                          forge.spell_source(2))

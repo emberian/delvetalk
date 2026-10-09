@@ -14,6 +14,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import affordances
+import source_offers
 import compiler_queue
 import workspace
 
@@ -112,11 +113,12 @@ class GuardedAuthoring(unittest.TestCase):
                     'intent': 'invoke-' + str(serial), 'expected': client.inspect(object_id),
                     'command': command, 'input': fields})
 
-            def make(factory, name):
+            def make(factory, name, **fields):
                 nonlocal serial
                 serial += 1
                 observed = room.inspect_object(client.inspect(factory), factory)
-                request = affordances.request(observed, 'a1', 'maker', 'make-' + str(serial), {'name': name})
+                offer = source_offers.capture(observed, {factory: client.inspect(factory)}, database=client.database)['make']
+                request = source_offers.request(offer, 'maker', 'make-' + str(serial), {'name': name, **fields}, database=client.database)
                 receipt = client.exchange(request)
                 self.assertEqual(receipt['kind'], 'committed', receipt)
                 refs = affordances.allocated_refs(receipt)
@@ -139,13 +141,17 @@ class GuardedAuthoring(unittest.TestCase):
             for index, (source, word) in enumerate(((SOURCE, 'please'), (REVISION, 'moon')), 1):
                 candidate = make('desks', 'spell-' + str(index))
                 before_door, before_commons = client.inspect(TARGET), client.inspect('commons')
-                observed = room.inspect_object(client.inspect(candidate), candidate)
-                submitted = client.exchange(affordances.request(observed, 'a1', 'maker',
-                    'source-' + str(index), {'target': TARGET, 'source': source, 'scenarios': examples(word)}))
+                writer = make('writers', 'writer-' + str(index), candidate=candidate,
+                    target=TARGET, syntax=forge.SPELL_SYNTAX)
+                observed = room.inspect_object(client.inspect(writer), writer)
+                offer = source_offers.capture(observed, {writer: client.inspect(writer),
+                    candidate: client.inspect(candidate), TARGET: before_door}, database=client.database)['submit']
+                submitted = client.exchange(source_offers.request(offer, 'maker',
+                    'source-' + str(index), {'source': source, 'scenarios': examples(word)}, database=client.database))
                 self.assertEqual(submitted['kind'], 'committed', submitted)
-                pending = submitted['data']['root']
-                self.assertEqual(pending['state']['proposal']['source'], source)
-                self.assertEqual(pending['state']['proposal']['syntax'], 'objective-bend-spell@1')
+                pending = client.inspect(candidate)
+                self.assertEqual(desk.candidate_state(pending)['proposal']['source'], source)
+                self.assertEqual(desk.candidate_state(pending)['proposal']['syntax'], 'objective-bend-spell@1')
                 job = queue.enqueue(candidate, 'compiler', 'compile-' + str(index), pending)['job']
                 checked = queue.run(limit=1, deadline_seconds=30)
                 self.assertEqual(checked['errors'], [], checked)
@@ -153,7 +159,7 @@ class GuardedAuthoring(unittest.TestCase):
                 finished = queue.inspect(job)
                 self.assertEqual(finished['phase'], 'finished', finished)
                 ready = finished['receipt']['data']['root']
-                self.assertEqual(ready['state']['status'], 'ready', ready)
+                self.assertEqual(desk.candidate_state(ready)['status'], 'ready', ready)
                 build = desk.load_artifact(client.artifact_store, finished['artifact'])
                 self.assertTrue(build['report']['passed'])
                 self.assertEqual(build['report']['outcomes'][0]['steps'][0]['receipt']['data']['result']['place'], 'garden')

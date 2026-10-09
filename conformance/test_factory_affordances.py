@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Declared factory forms compose with actual Lean allocation and durable retry."""
+"""Independent raw receiver allocation fixtures exercise forms and durable retry."""
 import copy
 import importlib.util
 import json
@@ -23,7 +23,7 @@ room = module('factory_room', 'scene/room.py')
 
 
 def factory(name='object'):
-    return json.loads((ROOT / 'protocols/factories' / (name + '.json')).read_text())
+    return json.loads((ROOT / 'conformance/fixtures' / ('allocation-' + name + '.json')).read_text())
 
 
 class FactoryAffordanceTests(unittest.TestCase):
@@ -208,23 +208,6 @@ class FactoryAffordanceTests(unittest.TestCase):
         with self.assertRaises(a.AffordanceError):
             a.allocated_refs({'kind': 'committed', 'data': {'allocated': {'workshop/fake': {'version': 1}}}})
 
-    def test_source_desk_factory_pins_compiler_and_preserves_separate_authority(self):
-        view = self.seed(factory('source-desk'))
-        receipt = self.call(self.prepare(view, 'proposal'))
-        self.assertEqual(receipt['kind'], 'committed', receipt)
-        child = a.allocated_refs(receipt)[0]
-        self.assertEqual(child['root']['protocol'], json.loads((ROOT / 'protocols/source-desk/protocol.json').read_text()))
-        self.assertEqual(child['root']['law']['invoke']['compiled'], ['compiler'])
-        self.assertEqual(child['root']['law']['invoke']['submit'], ['maker'])
-        self.assertEqual(child['root']['law']['reprogram'], [])
-        request = {'op': 'invoke', 'object': child['object'], 'principal': 'maker', 'intent': 'submit',
-                   'expected': child['root'], 'command': 'submit',
-                   'input': {'proposal': {'syntax': 'example', 'source': 'source', 'scenarios': '[]'},
-                             'migration': {}, 'target': 'workshop/lamp'}}
-        pending = self.call(request)
-        self.assertEqual(pending['kind'], 'committed')
-        request.update(command='compiled', intent='forged-compiler', expected=pending['data']['root'], input={})
-        self.assertEqual(self.call(request)['data'], 'unauthorized')
 
 
 if __name__ == '__main__': unittest.main()

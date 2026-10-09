@@ -77,6 +77,8 @@ class Authoring:
         if not isinstance(candidate, str) or candidate not in roots:
             raise ValueError('Unknown candidate object')
         expected = roots[candidate]
+        if not desk.is_source_desk_protocol(expected['protocol']):
+            raise ValueError('Authoring requires a reviewed source Candidate')
         principal = self.portal.principal or 'portal-preview'
         intent = 'portal-authoring:' + secrets.token_hex(16)
         request = None

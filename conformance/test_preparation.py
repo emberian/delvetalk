@@ -27,6 +27,16 @@ def prepareData(state: State, contribution: P.Value, observations: P.Observation
 '''
 
 
+SOURCE += """def prepareOwnerArgument(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  if P.observation(observations, context.object).object == "" then P.Preparation.question({message: "Owner state is already an explicit argument.", needs: P.Names.nil()}) else P.Preparation.refused({message: "Owner was explicitly observed."})
+"""
+
+
+SOURCE += """def prepareManufactured(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  P.Preparation.ready({summary: "Attempt a manufactured retained value", reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.oneField("migration", P.Value.retained({object: P.text(P.get(contribution, "object")), key: P.text(P.get(contribution, "key"))}))}), tail: P.Effects.nil()})})
+"""
+
+
 def job(snapshot, request):
     process = subprocess.run([BINARY], input=(world.wire_dumps({'world': snapshot, 'request': request}) + '\n').encode(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
@@ -54,7 +64,7 @@ class NativePreparation(unittest.TestCase):
         self.root = self.snapshot['objects']['gallery']
         self.peer = self.snapshot['objects']['peer']
         self.invitation = {'format': source_offers.FORMAT, 'object': 'gallery', 'root': self.root,
-            'entry': 'prepareGesture', 'observations': [{'object': 'peer', 'root': self.peer}],
+            'entry': 'prepareGesture', 'observations': [{'object': 'peer', 'root': self.peer, 'inspectState': False, 'inspectLaw': False}],
             'title': 'Gallery', 'label': 'Offer a gesture', 'fields': []}
 
     def prepare(self, contribution, principal='actor', entry='prepareGesture'):
@@ -92,15 +102,54 @@ class NativePreparation(unittest.TestCase):
             self.prepare({}, entry='prepareUnobserved')
         request = {'op': 'prepare', 'object': 'gallery', 'root': self.root, 'entry': 'prepareGesture',
                    'principal': 'actor', 'intent': 'tampered', 'contribution': {},
-                   'observations': [{'object': 'peer', 'root': {**self.peer, 'version': 8}}]}
+                   'observations': [{'object': 'peer', 'root': {**self.peer, 'version': 8}, 'inspectState': False, 'inspectLaw': False}]}
         frame = job(self.snapshot, request)
         self.assertIn('differs', frame['error'])
+
+    def test_owner_binding_does_not_invent_a_source_observation(self):
+        outcome = self.prepare({}, entry='prepareOwnerArgument')
+        self.assertEqual(outcome['kind'], 'question')
+        invitation = {**self.invitation, 'entry': 'prepareOwnerArgument',
+                      'observations': [{'object': 'gallery', 'root': self.root, 'inspectState': False, 'inspectLaw': False}]}
+        outcome = source_offers.prepare(invitation, 'actor', 'explicit-owner', {}, binary=BINARY)
+        self.assertEqual(outcome['kind'], 'refused')
+        invitation['observations'].append({'object': 'gallery', 'root': self.root, 'inspectState': False, 'inspectLaw': False})
+        with self.assertRaisesRegex(ValueError, 'duplicate preparation observation'):
+            source_offers.prepare(invitation, 'actor', 'duplicate-owner', {}, binary=BINARY)
+
+    def test_retained_wire_depth_uses_admitted_ceiling_not_contribution_depth(self):
+        value = {'leaf': 'exact retained data'}
+        for _ in range(80):
+            value = {'wrapper': value}
+        observed = {**self.peer, 'state': value}
+        invitation = {**self.invitation, 'entry': 'prepareData',
+                      'observations': [{'object': 'peer', 'root': observed, 'inspectState': False, 'inspectLaw': False}]}
+        outcome = source_offers.prepare(invitation, 'actor', 'retained-wire', {}, binary=BINARY)
+        self.assertEqual(outcome['request']['calls'][0]['input'], value)
+        with self.assertRaisesRegex(ValueError, 'nesting capacity'):
+            source_offers.prepare(self.invitation, 'actor', 'authored-too-deep', value, binary=BINARY)
+        invitation['observations'][0]['inspectState'] = True
+        with self.assertRaisesRegex(ValueError, 'typed data nesting capacity'):
+            source_offers.prepare(invitation, 'actor', 'inspect-too-deep', {}, binary=BINARY)
+
+    def test_manufactured_and_foreign_retained_values_refuse(self):
+        with self.assertRaisesRegex(ValueError, 'differs from captured root'):
+            self.prepare({'object': 'peer', 'key': 'manufactured'}, entry='prepareManufactured')
+        with self.assertRaisesRegex(ValueError, 'not held'):
+            self.prepare({'object': 'foreign', 'key': 'even-a-valid-global-locator'}, entry='prepareManufactured')
+        # Physical standalone conversion supplies no captured authority/table.
+        value = {'tag': 'variant', 'label': 'retained', 'payload': {'tag': 'record', 'fields': [
+            {'name': 'object', 'value': {'tag': 'label', 'value': 'peer'}},
+            {'name': 'key', 'value': {'tag': 'label', 'value': 'manufactured'}}]}}
+        reply = job({'objects': {}, 'receipts': []},
+                    {'op': 'value-codec', 'direction': 'decode', 'values': [value]})
+        self.assertIn('not held', reply['error'])
 
     def test_generic_value_preserves_decimal_null_and_array_without_recipes(self):
         from decimal import Decimal
         observed = {**self.peer, 'state': {'gesture': 'wave', 'decimal': Decimal('1.00'), 'missing': None,
                                           'list': [True, Decimal('-0.250'), 'x']}}
-        invitation = {**self.invitation, 'entry': 'prepareData', 'observations': [{'object': 'peer', 'root': observed}]}
+        invitation = {**self.invitation, 'entry': 'prepareData', 'observations': [{'object': 'peer', 'root': observed, 'inspectState': False, 'inspectLaw': False}]}
         outcome = source_offers.prepare(invitation, 'actor', 'exactdata', {}, binary=BINARY)
         actual = outcome['request']['calls'][0]['input']
         self.assertEqual(actual, observed['state'])

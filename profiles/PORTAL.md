@@ -81,6 +81,27 @@ public. A read-only filesystem mount and service resource limits complement the
 portal's application bounds. [Public HTTP tests](../conformance/test_portal_public.py)
 exercise origin checks, route isolation, disk invariance, expiry and both cache bounds.
 
+## Authenticated studios
+
+Add `--agent-state /srv/delvetalk/agents` to mount the operational Markdown guide
+and account API at `/AGENTS.md`. This is separate durable custody. Verified bearer
+credentials select each account's private heap; shared calls still face current
+object law. Anonymous preview requests never receive an account principal.
+
+`--agent-anthropic` additionally enables explicit authenticated interpretation
+requests using `ANTHROPIC_API_KEY` from the process environment. The key is never
+world data. Each account and realm retains bounded provider jobs separately;
+reading or refreshing a document makes no provider call. Repeating the same job
+recovers its retained result, including an uncertain outcome, instead of spending
+again. Source owns the prompt and validates proposals; model output cannot admit
+an action. Literal forms remain available without a provider.
+
+`POST /AGENTS.md/turn` with `{operation:"interpret",card,text,realm?}` addresses
+one captured encounter. Captured child navigation uses
+`GET /AGENTS.md/world?realm=private&childCard=CARD&childKey=KEY`, so references
+remain attached to the authored parent rather than becoming authority by copy.
+The guide and responses supply the remaining links and exact submission forms.
+
 **Delve supplies repository identity and publication context; Lean supplies
 admission; the portal supplies a local view.** [Continuation export](CONTINUATION.md) and a [compiler queue](COMPILER-QUEUE.md)
 are available alongside the integrated [retained authoring flow](AUTHORING.md).
@@ -115,3 +136,26 @@ tokens and the disabled local send button are hidden; exact JSON remains an
 optional inspection/export format. A summary is explicitly unsent and is not a
 town reply or executable spell. No publication link or identity is inferred.
 Public mode retains all existing origin, cache, filesystem and authority limits.
+
+## Captured source documents
+
+Object capture uses a bounded native read of the owner, then reads its declared
+observations while checking the original owner reference. An intervening owner
+change refuses capture. Native full-root/reference pairs share one committed
+snapshot; presentation retains full roots while preparation uses compact native
+references. Preparing an existing card never refreshes its observations. Town
+follow-up custody retains these pairs before allocating cards, so recovery keeps
+the original response even after later admissions.
+
+An optional source `Document` is retained with its raw typed result. The generic
+projection preserves text, sequences, quotes, fields, source excerpts, results,
+references and continuation descriptions. An offer receives an action binding
+only when its object, token and entry match an actual captured source invitation.
+A reference receives a child binding only when its complete descriptor matches
+the declared child catalogue. Other nodes stay inert; source meaning/revision
+metadata confers no authority. Town uses the source-authored prose fallback.
+
+Optional `interpretation` metadata names the source request and preparation
+exports. Retained reads recheck that declaration against the typed result;
+selected exports are compiled and executed by the native helper. Metadata alone
+makes no model call and admits no turn.

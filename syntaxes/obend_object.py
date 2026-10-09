@@ -35,13 +35,7 @@ def children() -> Children:
   Children.nil()
 '''
 
-NAMES_SOURCE = '''edition ObjectiveBend 1
-sum Names:
-  nil: {}
-  cons: {head: String, tail: Names}
-def names() -> Names:
-  Names.nil()
-'''
+
 
 
 def _native(request, deadline):
@@ -223,7 +217,8 @@ def _lower_modules(modules, *, typed):
                        for name in names]
             source = ('edition ObjectiveBend 1\nimport ./Preparation.obend as P\n'
                       + ('import ./Allocation.obend as A\ndef value() -> A.Allocations:\n  A.Allocations.nil()\n'
-                         if kind == 'allocations' else 'def value() -> P.Value:\n  P.Value.none()\n'))
+                         if kind == 'allocations' else ('def value() -> P.Requests:\n  P.Requests.nil()\n'
+                         if kind == 'requests' else 'def value() -> P.Value:\n  P.Value.none()\n')))
             contracts[kind] = _native({'op': 'compile', 'modules': sources + [{'name': 'Contract', 'source': source}],
                                        'entry': 'value', 'limits': LIMITS}, deadline)['artifact']
         return contracts[kind]
@@ -360,15 +355,18 @@ def _lower_modules(modules, *, typed):
         if _type(raw_parameters[1]) != 'label':
             raise ValueError('view requires panel String')
         members = _row_members(raw_view)
-        if set(members) not in ({'title', 'prose', 'actions', 'children'},
-                                {'title', 'prose', 'actions', 'children', 'invitations'}):
-            raise ValueError('typed view requires title/prose/actions/children and optional invitations')
+        if not {'title', 'prose', 'actions', 'children'} <= set(members) or set(members) - {'title', 'prose', 'actions', 'children', 'invitations', 'document', 'interpretation'}:
+            raise ValueError('typed view requires title/prose/actions/children and optional invitations/document/interpretation')
+        if 'interpretation' in members and _type(members['interpretation']) != {'request': 'label', 'prepare': 'label'}:
+            raise ValueError('view interpretation requires request/prepare String export names')
+        if 'document' in members:
+            document_path = ['codomain', 'codomain', {'field': 'document'}]
+            compare(view_artifact, document_path, view_artifact, document_path, 'view document')
         if 'invitations' in members:
             invitations = _row_members(members['invitations'])
             if len(invitations) > 16:
                 raise ValueError('view invitations require at most 16 entries')
-            names_contract = _native({'op': 'compile', 'modules': [{'name': 'NamesContract', 'source': NAMES_SOURCE}],
-                                      'entry': 'names', 'limits': LIMITS}, deadline)['artifact']
+            requests_contract = contract('requests')
             for name, raw_invitation in invitations.items():
                 invitation = _row_members(raw_invitation)
                 _exact(invitation, ('visible', 'text', 'prepare', 'fields', 'observations'), 'view invitation')
@@ -376,11 +374,11 @@ def _lower_modules(modules, *, typed):
                         or _type(invitation['prepare']) != 'label' or not isinstance(_type(invitation['fields']), dict)):
                     raise ValueError('view invitation requires visible Bool, text/prepare String and field metadata')
                 compare(view_artifact, ['codomain', 'codomain', {'field': 'invitations'},
-                        {'field': name}, {'field': 'observations'}], names_contract, [], 'invitation observations')
+                        {'field': name}, {'field': 'observations'}], requests_contract, [], 'invitation observations')
         child_contract = _native({'op': 'compile', 'modules': [{'name': 'ChildrenContract', 'source': CHILDREN_SOURCE}],
                                  'entry': 'children', 'limits': LIMITS}, deadline)['artifact']
         compare(view_artifact, ['codomain', 'codomain', {'field': 'children'}], child_contract, [], 'view children')
-        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'invitations', 'actions')}
+        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'invitations', 'actions', 'document', 'interpretation')}
         try:
             view['actions'] = _type(members['actions'])
         except ValueError:

@@ -4,6 +4,7 @@
 import Delvetalk.Package
 import Delvetalk.PackageData
 import FileCustody
+import RetainedRoots
 import MessagesCore
 import SourcePackages
 
@@ -35,6 +36,10 @@ def text (value : Data) : Except String String :=
   | _ => throw "preparation requires String"
 def nat (value : Data) : Except String Nat :=
   match value with | .natural n => pure n | _ => throw "preparation requires Nat"
+-- Retained typed state may contain DataWire wrappers up to the admitted ceiling.
+-- Authored contributions and the standalone logical Value codec remain depth 64.
+def retainedValueDepth : Nat := 256
+
 def rec (fields : List (String × Data)) : Data := .record fields
 def var (name : String) (fields : List (String × Data)) : Data := .variant name (rec fields)
 
@@ -74,11 +79,18 @@ def list : Nat → Data → Except String (List Data)
     pure ((← member payload "head") :: (← list n (← member payload "tail")))
   | _, _ => throw "preparation requires a list"
 
-def decodeValue : Nat → Data → Work Json
+def decodeValueHeld (held : List (String × Json)) : Nat → Data → Work Json
   | 0, _ => throw "preparation value nesting capacity"
   | n + 1, value => do
     spend
     match value with
+    | .variant "retained" payload =>
+      exact payload ["object", "key"]
+      let object ← text (← member payload "object")
+      let key ← text (← member payload "key")
+      let some root := held.lookup object | throw "retained Value is not held by this preparation read set"
+      if RetainedRoots.digest root != key then throw "retained Value differs from captured root"
+      pure (← field root "state")
     | .variant "none" payload => exact payload []; pure .null
     | .variant "boolean" payload =>
       exact payload ["value"]
@@ -97,7 +109,7 @@ def decodeValue : Nat → Data → Work Json
       match value with | .num _ => pure value | _ => throw "preparation number is not numeric"
     | .variant "array" payload =>
       exact payload ["values"]
-      pure (.arr (← (← list 1025 (← member payload "values")).toArray.mapM (decodeValue n)))
+      pure (.arr (← (← list 1025 (← member payload "values")).toArray.mapM (decodeValueHeld held n)))
     | .variant "record" payload =>
       exact payload ["fields"]
       let mut names : List String := []
@@ -108,16 +120,19 @@ def decodeValue : Nat → Data → Work Json
         let name ← text (← member entry "name")
         if names.contains name then throw "preparation duplicate JSON field"
         names := name :: names
-        fields := fields ++ [(name, ← decodeValue n (← member entry "value"))]
+        fields := fields ++ [(name, ← decodeValueHeld held n (← member entry "value"))]
       pure (obj fields)
     | _ => throw "unknown preparation Value variant"
+
+def decodeValue (depth : Nat) (value : Data) : Work Json :=
+  decodeValueHeld [] depth value
 
 def identity (value : Data) : Except String String := do
   let id ← text value
   if id.isEmpty || id.utf8ByteSize > 256 then throw "preparation requires a bounded object identity"
   return id
 
-def effect (index : Nat) (value : Data) : Work Json := do
+def effect (held : List (String × Json)) (index : Nat) (value : Data) : Work Json := do
   spend
   let .variant kind payload := value | throw "preparation effect requires a variant"
   let target ← identity (← member payload "object")
@@ -126,7 +141,7 @@ def effect (index : Nat) (value : Data) : Work Json := do
   | "invoke" =>
     exact payload ["object", "command", "input"]
     let command ← identity (← member payload "command")
-    let input ← decodeValue 64 (← member payload "input")
+    let input ← decodeValueHeld held retainedValueDepth (← member payload "input")
     discard input.getObj?
     return obj (base ++ [("command", .str command), ("input", input)])
   | "invokeResult" =>
@@ -143,11 +158,11 @@ def effect (index : Nat) (value : Data) : Work Json := do
   | "reprogram" =>
     exact payload ["object", "protocol", "state"]
     return obj (("op", .str "reprogram") :: base ++ [
-      ("protocol", ← decodeValue 64 (← member payload "protocol")),
-      ("state", ← decodeValue 64 (← member payload "state"))])
+      ("protocol", ← decodeValueHeld held retainedValueDepth (← member payload "protocol")),
+      ("state", ← decodeValueHeld held retainedValueDepth (← member payload "state"))])
   | "law" =>
     exact payload ["object", "law"]
-    return obj (("op", .str "law") :: base ++ [("law", ← decodeValue 64 (← member payload "law"))])
+    return obj (("op", .str "law") :: base ++ [("law", ← decodeValueHeld held retainedValueDepth (← member payload "law"))])
   | _ => throw "unknown preparation effect"
 
 def bind (owner : String) (ownerRoot : Json) (observations : List (String × Json))
@@ -190,7 +205,7 @@ def bind (owner : String) (ownerRoot : Json) (observations : List (String × Jso
     if callsData.isEmpty then throw "preparation requires at least one effect"
     let mut calls := #[]
     for call in callsData do
-      let framed ← effect calls.size call
+      let framed ← effect (observations.filter (fun pair => (reads.lookup pair.1).isSome)) calls.size call
       let id ← str framed "object"
       match reads.lookup id with
       | none => throw "preparation effect has no declared read"
@@ -228,12 +243,15 @@ def run (world request : Json)
   let observationsJson ← (← field request "observations").getArr?
   if observationsJson.size > 16 then throw "preparation observation capacity"
   let mut observations := [(owner, root)]
+  let mut sourceObservations : List (String × Json × Bool × Bool) := []
   for observation in observationsJson do
     let keys := (← pairs observation).map Prod.fst
-    if keys.length != 2 || !keys.all (["object", "root"].contains) then throw "preparation observation requires exact fields"
+    if keys.length != 4 || !keys.all (["object", "root", "inspectState", "inspectLaw"].contains) then throw "preparation observation requires exact fields"
     let id ← str observation "object"
     let observed ← field observation "root"
     if (← readObject objects id principal) != observed then throw "preparation observation differs from captured inspection"
+    if sourceObservations.any (fun item => item.1 == id) then throw "duplicate preparation observation"
+    sourceObservations := sourceObservations ++ [(id, observed, ← (← field observation "inspectState").getBool?, ← (← field observation "inspectLaw").getBool?)]
     if id == owner then
       if observed != root then throw "preparation owner observation differs"
     else
@@ -242,11 +260,15 @@ def run (world request : Json)
   let ((args, captured), remaining) ← (do
     let contribution ← encodeValue 64 (← field request "contribution")
     let mut data := var "nil" []
-    for (id, observed) in observations.reverse do
+    for (id, observed, inspectState, inspectLaw) in sourceObservations.reverse do
       spend
+      let stateData ← if inspectState then encodeValue retainedValueDepth (← field observed "state")
+        else pure (var "retained" [("object", .label id), ("key", .label (RetainedRoots.digest observed))])
+      let lawData ← if inspectLaw then encodeValue retainedValueDepth (← field observed "law")
+        else pure (var "none" [])
       let observation := rec [("object", .label id), ("version", .natural (← (← field observed "version").getNat?)),
         ("program", .label (Messages.digest (← field observed "protocol"))),
-        ("state", ← encodeValue 64 (← field observed "state"))]
+        ("state", stateData), ("law", lawData)]
       data := var "cons" [("head", observation), ("tail", data)]
     let state ← field (← field root "state") "model"
     let args := #[state, dataJson contribution, dataJson data,

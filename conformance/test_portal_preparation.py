@@ -36,9 +36,12 @@ class PortalPreparation(unittest.TestCase):
                             {'principal': 'visitor', 'allow_local_actions': True}))
         # This class uses a synthetic view; native source/retention is exercised
         # by NativePortalPreparation below rather than admitted by this mock.
+        def capture(objects, *, expected=None):
+            return {'roots': {name: {'root': self.root, 'reference': {
+                'profile': 'delvetalk-retained-root-v1', 'object': name, 'key': 'a' * 64}}
+                for name in objects}, 'sequence': 0, 'head': None}
         with patch.object(app, '_view', return_value=copy.deepcopy(self.view)), patch.object(
-                source_offers.world, 'query', side_effect=lambda database, request: {
-                    'profile': 'delvetalk-retained-root-v1', 'object': request['object'], 'key': 'test-reference'}):
+                app, 'capture_roots', side_effect=capture):
             card = app.object('gestures')
         return app, card
 

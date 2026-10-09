@@ -34,17 +34,21 @@ class ConsumerForwarding(unittest.TestCase):
                 with self.subTest(public=public):
                     app = portal.Portal(home, **({'public_origin': 'https://delvetalk.example'} if public else
                         {'principal': ACTOR, 'allow_local_actions': True}))
-                    refs = {name: {'profile': 'delvetalk-retained-root-v1', 'object': name, 'key': name * 8} for name in roots}
+                    refs = {name: {'profile': 'delvetalk-retained-root-v1', 'object': name, 'key': ('a' if name == 'gallery' else 'b') * 64} for name in roots}
                     calls = []
-                    def query(database, request):
+                    def query(database, request, **options):
                         self.assertEqual(database, app.database)
                         calls.append(copy.deepcopy(request))
-                        if request['op'] == 'retained-root':
-                            self.assertEqual(request['root'], roots[request['object']])
-                            return refs[request['object']]
+                        if request['op'] == 'capture-roots':
+                            self.assertNotIn('root', request)
+                            self.assertLess(len(portal.world.wire_dumps(request)), 500)
+                            self.assertEqual(request['expected'], {} if len(calls) == 1 else {'gallery': refs['gallery']})
+                            return {'roots': {name: {'root': roots[name], 'reference': refs[name]}
+                                for name in request['objects']}, 'sequence': 0, 'head': None}
                         self.assertEqual(request['op'], 'prepare-retained')
                         self.assertEqual(request['root'], refs['gallery'])
-                        self.assertEqual(request['observations'], [{'object': 'peer', 'root': refs['peer']}])
+                        self.assertEqual(request['observations'], retained['offers']['o1']['observations'])
+                        self.assertEqual(request['observations'][0]['root'], refs['peer'])
                         return {'kind': 'ready', 'summary': 'Gesture', 'request': {
                             'op': 'transaction', 'principal': request['principal'], 'intent': request['intent'],
                             'reads': refs, 'calls': [{'object': 'peer', 'command': 'touch', 'input': request['contribution']}]}}
@@ -57,7 +61,7 @@ class ConsumerForwarding(unittest.TestCase):
                             draft = app.prepare({'card': card['card'], 'action': 'o1', 'fields': {'gesture': 'wave'}})
                         self.assertEqual([row['version'] for row in draft['reads']], [None, None])
                         self.assertLess(len(draft['wireJson']), 1000)
-                        self.assertEqual([item['op'] for item in calls], ['retained-root', 'retained-root', 'prepare-retained'])
+                        self.assertEqual([item['op'] for item in calls], ['capture-roots', 'capture-roots', 'prepare-retained'])
                         self.assertEqual(calls[-1]['principal'], 'portal-preview' if public else ACTOR)
                         with patch.object(source_offers.world, 'query', side_effect=ValueError('unknown retained root')), patch.object(
                                 source_offers.process_custody, 'run', side_effect=AssertionError('No isolated-root fallback')):
@@ -99,7 +103,7 @@ class NativeConsumerJourney(unittest.TestCase):
         protocol = obend_object.lower_data_modules([
             {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
             {'name': 'Gallery', 'source': BEND}])
-        peer = {'profile': 'delvetalk-local-v1', 'initial': {'gesture': 'initial', 'padding': 'x' * 100000},
+        peer = {'profile': 'delvetalk-local-v1', 'initial': {'gesture': 'initial', 'padding': 'x' * 600000},
                 'commands': {'touch': {'require': [], 'set': {'gesture': ['input', 'gesture']},
                                       'result': ['input', 'gesture'], 'outbox': []}}}
         with tempfile.TemporaryDirectory() as temporary, ExitStack() as active:
@@ -113,6 +117,9 @@ class NativeConsumerJourney(unittest.TestCase):
             if backend == 'resident':
                 active.enter_context(portal.world.resident_session(database, profile='compiled'))
                 self.assertFalse(database.exists())
+            large_capture = portal.world.capture_roots(database, ['peer'])
+            self.assertGreater(len(portal.world.wire_dumps(large_capture['roots']['peer']['root']).encode()),
+                               portal.world.MAX_EXPANDED_REQUEST_BYTES)
             pds = PublicRecords()
             receiver = clerk.Clerk(base / 'clerk', request=pds)
             receiver.attach(home, portal.world.snapshot(database)['objects'], [ACTOR], expected_genesis=seed['genesis'],
@@ -125,6 +132,16 @@ class NativeConsumerJourney(unittest.TestCase):
             original_bytecode = sys.dont_write_bytecode
             self.addCleanup(setattr, sys, 'dont_write_bytecode', original_bytecode)
             public = portal.Portal(home, public_origin='https://delvetalk.example')
+            project = public._view
+            def advance_during_projection(root, object_id, panel):
+                view = project(root, object_id, panel)
+                changed = portal.world.exchange(database, {'op': 'law', 'object': object_id,
+                    'principal': ACTOR, 'intent': 'owner-raced', 'expected': root, 'law': [ACTOR]}, profile='compiled')
+                self.assertEqual(changed['kind'], 'committed')
+                return view
+            with patch.object(public, '_view', side_effect=advance_during_projection), self.assertRaises(ValueError):
+                public.object('gallery')
+            self.assertFalse(public.preview.records)
             before = {str(p.relative_to(home)): p.read_bytes() for p in home.rglob('*') if p.is_file()}
             card = public.object('gallery')
             draft = public.prepare({'card': card['card'], 'action': 'o1', 'fields': {'gesture': 'preview'}})
@@ -162,9 +179,10 @@ class NativeConsumerJourney(unittest.TestCase):
             first_followup = book.card('reply-1-1')
             peer_root = portal.world.snapshot(database)['objects']['peer']
             self.assertEqual(peer_root['state']['gesture'], 'town')
-            advanced = portal.world.exchange(database, {'op': 'invoke', 'object': 'peer', 'principal': ACTOR,
-                'intent': 'advance-after-lost-response', 'expected': peer_root, 'command': 'touch',
-                'input': {'gesture': 'later'}}, profile='compiled')
+            peer_reference = portal.world.capture_roots(database, ['peer'])['roots']['peer']['reference']
+            advanced = portal.world.exchange(database, {'op': 'transaction', 'principal': ACTOR,
+                'intent': 'advance-after-lost-response', 'reads': {'peer': peer_reference},
+                'calls': [{'object': 'peer', 'command': 'touch', 'input': {'gesture': 'later'}}]}, profile='compiled')
             self.assertEqual(advanced['kind'], 'committed')
             reply = operator.receive(SOURCE['uri'], SOURCE['cid'])
             self.assertEqual(reply['cards'][0], first_followup)
@@ -175,8 +193,15 @@ class NativeConsumerJourney(unittest.TestCase):
             followup = next(card for card in reply['cards'] if card.get('offers'))
             self.assertIn('protocol', followup['view']['root'])
             self.assertEqual(next(iter(followup['offers'].values()))['root']['profile'], 'delvetalk-retained-root-v1')
+            if backend == 'resident':
+                active.close()
+                active.enter_context(portal.world.resident_session(database, profile='compiled'))
+            restored_preview = public.prepare({'card': card['card'], 'action': 'o1', 'fields': {'gesture': 'preview'}})
+            self.assertEqual(restored_preview['wire']['reads'], draft['wire']['reads'])
             pds.records.clear()
-            self.assertEqual(town.Town(receiver.state, request=pds).receive(SOURCE['uri'], SOURCE['cid']), reply)
+            recovered = town.Town(receiver.state, request=pds)
+            with patch.object(recovered, '_capture_roots', side_effect=AssertionError('No recapture on retry')):
+                self.assertEqual(recovered.receive(SOURCE['uri'], SOURCE['cid']), reply)
 
 
 if __name__ == '__main__':

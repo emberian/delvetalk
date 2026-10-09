@@ -1,5 +1,4 @@
 """Text authoring and exact captured migrations over existing source desks."""
-import copy
 import importlib.util
 from pathlib import Path
 import sys
@@ -9,7 +8,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 import source_offers
 import desk
-import room
+import source_object
 
 
 def module(name, relative):
@@ -19,7 +18,10 @@ def module(name, relative):
     return value
 
 
+room = module('spween_workshop_room', 'scene/room.py')
 forge = module('spween_workshop_forge', 'protocols/town-forge/generate.py')
+handlers = module('spween_workshop_handlers', 'scene/handlers.py')
+adapter = module('spween_workshop_adapter', 'syntaxes/spween_workshop.py')
 source_desk_package = module('spween_source_desk_package', 'protocols/source-desk/package.py')
 SYNTAX = 'spween-handler-workshop@1'
 
@@ -48,19 +50,16 @@ def source_desk():
 def build(authors, compiler, *, initial_state=None):
     authors = forge.principals(authors)
     forge.principals([compiler])
+    material = adapter.parse_source(authoring_source())
+    document = handlers.bridge({'op': 'parse', 'source': material['scene']})
+    modules = handlers.modules_for(document, handler_modules=material['handlerModules'],
+        scene_source=(HERE / 'UnwrittenScene.obend').read_text())
     if initial_state is None:
-        artifact = desk.translate.translate(SYNTAX, authoring_source().encode('utf-8'))
-        initial_state = artifact['lowered']['initial']
-    placeholder = forge.door()
-    placeholder.update(name='unwritten-spween-handler-workshop-v1', initial=copy.deepcopy(initial_state))
-    placeholder['commands'] = {command: {'require': [[forge.L(False), forge.L(True)]],
-        'set': {}, 'result': forge.L('The workshop awaits its scene.'), 'outbox': []}
-        for command in ('start', 'choose')}
-    placeholder['affordances'] = {}
-    placeholder.pop('viewProgram', None)
-    placeholder['description'] = 'Write a scene and handlers at a desk, check examples, then adopt.'
-    object_law = forge.L(forge.scoped({key: authors for key in ('start', 'choose')}, authors, authors))
-    return {'objects': forge.factory('objects', placeholder, object_law),
+        placeholder = source_object.load(modules, syntax='objective-bend-spell@3')
+    else:
+        placeholder = source_object.load(modules, syntax='objective-bend-spell@3',
+            constructor='initial', arguments=[initial_state['model']])
+    return {'objects': forge.object_factory(placeholder, authors, ['start', 'choose'], managers=authors),
             'desks': source_desk_package.factory(compiler, authors),
             'writers': source_desk_package.writing_factory()}
 

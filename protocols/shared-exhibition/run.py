@@ -87,7 +87,7 @@ def run(directory, content=None):
     compiled = queue.inspect(job)
     ready = record('queued-compilation', compiled['receipt'])['data']['root']
     if bootstrap.desk_module.candidate_state(ready)['status'] != 'ready':
-        raise AssertionError(ready['state']['diagnostics'])
+        raise AssertionError(bootstrap.desk_module.candidate_state(ready)['diagnostics'])
     bootstrap.preserve_build(directory, bootstrap.desk_module.candidate_state(ready)['artifact'])
     assert desk.inspect(TARGET) == target, 'compilation must not adopt'
     record('compiler-cannot-adopt', desk.adopt(CANDIDATE, TARGET, 'compiler', 'bad-adopt', ready, target), 'refused')

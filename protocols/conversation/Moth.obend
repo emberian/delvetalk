@@ -1,0 +1,30 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
+record State:
+  borrower: String
+record Completion:
+  recipient: String
+  moth: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Completion
+def lend(state: State, input: {recipient: String}, context: Abi.Context) -> Decision:
+  let ok = state.borrower == "" && input.recipient != ""
+  {accepted: ok, reason: if ok then "" else "This moth is already lent or needs a recipient.", state: if ok then {borrower: input.recipient} else state, result: {recipient: input.recipient, moth: context.object}}
+record Description:
+  name: String
+  initial: State
+  methods: {lend: {label: String, fields: {recipient: Abi.StringField}}}
+  panels: {}
+def describe() -> Description:
+  {name: "A lending moth", initial: {borrower: ""}, methods: {lend: {label: "Lend this moth", fields: {recipient: {type: "string", minLength: 1n, maxLength: 64n}}}}, panels: {}}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: E.Children
+def view(state: State, panel: String) -> View:
+  {title: "A lending moth", prose: if state.borrower == "" then "Available for a visit." else textConcat("Visiting ", state.borrower), actions: {}, children: E.Children.nil()}

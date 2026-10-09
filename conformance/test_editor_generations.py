@@ -72,10 +72,14 @@ class EditorGenerations(unittest.TestCase):
         return view['data']['prose']
 
     def invitation(self, key):
-        snapshot = desk.world.snapshot(self.client.database)
-        view = workspace.bootstrap.room.inspect_object(snapshot['objects'][EDITOR], EDITOR)
+        owner = desk.world.capture_roots(self.client.database, [EDITOR], principal=MAKER)
+        view = workspace.bootstrap.room.inspect_object(owner['roots'][EDITOR]['root'], EDITOR)
         self.assertEqual(view['mode'], 'projection', view)
-        return source_offers.capture(view, snapshot['objects'], database=self.client.database)[key]
+        captured = source_offers.capture_observations(view, owner,
+            database=self.client.database, principal=MAKER)
+        roots = {identity: pair['root'] for identity, pair in captured['roots'].items()}
+        references = {identity: pair['reference'] for identity, pair in captured['roots'].items()}
+        return source_offers.capture(view, roots, references=references)[key]
 
     def candidate_state(self, candidate):
         return desk.candidate_state(self.root(candidate))

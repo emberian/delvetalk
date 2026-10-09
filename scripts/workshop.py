@@ -13,6 +13,7 @@ commons = b.module('workshop_commons', 'protocols/commons/generate.py')
 ticket = b.module('workshop_ticket', 'protocols/work-ticket/package.py')
 table = b.module('workshop_table', 'game/table/protocol.py')
 writing = b.module('workshop_source_desks', 'protocols/source-desk/package.py')
+objects = b.module('workshop_objects', 'protocols/factories/package.py')
 
 
 def scoped(commands, people, *, programmers=(), managers=()):
@@ -52,14 +53,10 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
     add('commons', commons.build(participants, places, [('porch', 'garden'), ('garden', 'porch')]),
         commons.law(participants, managers=(steward,)))
 
-    objects = b.loads((ROOT / 'protocols/factories/object.json').read_bytes())
-    objects['description'] = 'Create objects shared by the two workshop builders.'
-    objects['commands']['make']['allocate'][0]['law'] = ['literal',
-        list(builders)]
-    objects['commands']['make']['allocate'][0]['protocol'][1]['description'] = 'A shared object. Both workshop builders may use, reprogram and govern it.'
-    add('factory:objects', objects, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
+    add('factory:objects', objects.factory(builders), scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     desks = writing.factory(compiler, builders)
     add('factory:desks', desks, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
+    add('factory:writing', writing.writing_factory(), scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('ticket:welcome', ticket.build(requester=builders[0], links={'context': ref('commons')}),
         {'profile': 'delvetalk-scoped-law-v1',
          'invoke': {'post': [builders[0]], 'claim': list(builders), 'submit': list(builders),
@@ -67,7 +64,7 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
          'reprogram': [], 'law': [steward]})
     add('table:automatafl', table.protocol('table:automatafl'), table.law(*builders))
     return workspace.initialize(directory, seeds,
-        entry_objects=['commons', 'factory:objects', 'factory:desks', 'ticket:welcome', 'table:automatafl'],
+        entry_objects=['commons', 'factory:objects', 'factory:desks', 'factory:writing', 'ticket:welcome', 'table:automatafl'],
         default_object='commons', principal=steward, profile='compiled',
         title='DelveTalk · the shared workshop', world_id=world_id)
 

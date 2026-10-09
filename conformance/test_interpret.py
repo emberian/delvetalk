@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('interpret_test', ROOT / 'scripts/interpret.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+import model_service
 
 
 def card():
@@ -27,6 +28,14 @@ def card():
 
 
 class InterpretTests(unittest.TestCase):
+    def setUp(self):
+        self.custody = tempfile.TemporaryDirectory()
+        self.addCleanup(self.custody.cleanup)
+        original = module.AnthropicProposer
+        patcher = patch.object(module, 'AnthropicProposer', side_effect=lambda key: original(key, directory=self.custody.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_namespaced_factory_card_tokens_preserve_declared_child_bounds(self):
         value = card()
         value['objectRef'] = {'format': 'delvetalk-object-ref-v1', 'world': 'world-one', 'object': 'room:one'}
@@ -68,7 +77,7 @@ class InterpretTests(unittest.TestCase):
         texts = ['do old a1', 'do c123 unknown', 'do c123 a3', 'do c123 a4', 'do',
                  'do c123 a1 {"principal":"owner"}', 'do c123 a1 []',
                  'do c123 a1 {} trailing', 'do c123 a1 {"x":1,"x":2}',
-                 'do c123 a1 {}\ndo c123 a1', 'do c123 a1 {"x":NaN}', 'do c123 a2']
+                 'do c123 a1 {}\ndo c123 a1', 'do c123 a1 {"x":NaN}']
         for text in texts:
             with self.subTest(text=text):
                 self.assertEqual(module.interpret(text, card(), proposer=proposer)['status'], 'clarify')
@@ -85,7 +94,7 @@ class InterpretTests(unittest.TestCase):
                       {'action': 'a4', 'fields': {}}, {'action': 'a1', 'fields': {'intent': 'override'}},
                       {'action': 'a1', 'fields': {}, 'principal': 'owner'},
                       {'op': 'law', 'principal': 'owner', 'law': ['owner']},
-                      {'action': 'a2', 'fields': {'count': 3}}, {'status': 'proposed', 'command': 'sit'}]:
+                      {'status': 'proposed', 'command': 'sit'}]:
             with self.subTest(reply=reply):
                 result = module.interpret('please do something', original, proposer=lambda *_: reply)
                 self.assertEqual(result['status'], 'clarify')
@@ -162,14 +171,14 @@ class InterpretTests(unittest.TestCase):
         opener.open.return_value = response
         return opener, response
 
-    def test_anthropic_adapter_uses_one_fixed_bounded_request_and_no_tools(self):
+    def test_anthropic_adapter_uses_source_prompt_in_one_bounded_request_and_no_tools(self):
         opener, response = self.http(self.response())
-        with patch.object(module.urllib.request, 'build_opener', return_value=opener):
+        with patch.object(model_service.urllib.request, 'build_opener', return_value=opener):
             result = module.interpret('please sit', card(), proposer=module.AnthropicProposer('fake-test-key'))
         self.assertEqual(result['status'], 'proposed')
         opener.open.assert_called_once()
         request = opener.open.call_args.args[0]
-        self.assertEqual(request.full_url, module.ENDPOINT)
+        self.assertEqual(request.full_url, model_service.ENDPOINT)
         self.assertEqual(opener.open.call_args.kwargs['timeout'], 15)
         body = json.loads(request.data)
         self.assertEqual(body['model'], 'claude-haiku-5-5')
@@ -183,17 +192,19 @@ class InterpretTests(unittest.TestCase):
 
     def test_anthropic_refuses_redirects_oversize_partial_or_reasoning_output(self):
         with self.assertRaisesRegex(ValueError, 'redirects'):
-            module.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other.invalid')
+            model_service.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other.invalid')
         raws = [b'x' * (module.MAX_REPLY + 1), self.response(stop_reason='max_tokens'),
                 self.response(content=[{'type': 'thinking', 'thinking': 'do not retain'}]),
                 self.response('{"action":"a1","action":"a2","fields":{}}'),
                 self.response('```json\n{"action":"a1","fields":{}}\n```')]
-        for raw in raws:
+        for index, raw in enumerate(raws):
             with self.subTest(raw=raw[:40]):
                 opener, _ = self.http(raw)
-                with patch.object(module.urllib.request, 'build_opener', return_value=opener):
-                    result = module.interpret('sit', card(), proposer=module.AnthropicProposer('fake'))
-                self.assertEqual(result['status'], 'clarify')
+                with patch.object(model_service.urllib.request, 'build_opener', return_value=opener):
+                    helper = module.AnthropicProposer('fake')
+                    helper.generation = str(index)
+                    result = module.interpret('sit', card(), proposer=helper)
+                self.assertEqual(result['status'], 'escalate' if index == 0 else 'clarify')
                 opener.open.assert_called_once()
                 self.assertNotIn('thinking', json.dumps(result))
         failure = Mock(side_effect=TimeoutError('must not expose secret-test-key'))

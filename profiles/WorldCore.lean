@@ -64,6 +64,8 @@ structure Runtime where
   reprogramResult : String → Json → Evaluation Json := fun _ _ => pure .null
   checkSourceContract : Json → Json → Bool → Evaluation Unit :=
     fun _ _ _ => throw "source contracts require compiled profile"
+  checkSourceAmendment : Json → Json → Json → Json → String → Evaluation Unit :=
+    fun _ _ _ _ _ => throw "source amendments require compiled profile"
   -- Admission-owned effects are staged under the same budget and rollback as
   -- the source invocation. The default preserves ordinary inert outboxes.
   stageMessages : Json → Json → Json → Json → Nat → Array Json →
@@ -236,17 +238,23 @@ def validateLaw (j : Json) : Except String Unit := do
   | .arr _ => discard (law j)
   | _ =>
     let profile ← str j "profile"
-    if !(["delvetalk-scoped-law-v1", "delvetalk-scoped-law-v2", "delvetalk-scoped-law-v3"].contains profile) then
+    if !(["delvetalk-scoped-law-v1", "delvetalk-scoped-law-v2", "delvetalk-scoped-law-v3", "delvetalk-scoped-law-v4"].contains profile) then
       throw "unknown law profile"
     for (key, _) in (← pairs j) do
       if !(["profile", "invoke", "reprogram", "law", "predicate"].contains key) &&
-          !(["delvetalk-scoped-law-v2", "delvetalk-scoped-law-v3"].contains profile && key == "invariant") &&
-          !(profile == "delvetalk-scoped-law-v3" && key == "contract") then
+          !(["delvetalk-scoped-law-v2", "delvetalk-scoped-law-v3", "delvetalk-scoped-law-v4"].contains profile && key == "invariant") &&
+          !(["delvetalk-scoped-law-v3", "delvetalk-scoped-law-v4"].contains profile && key == "contract") &&
+          !(profile == "delvetalk-scoped-law-v4" && key == "amendment") then
         throw "unsupported scoped law field"
     if profile == "delvetalk-scoped-law-v2" then
       discard (Delvetalk.decode (← field j "invariant"))
     if profile == "delvetalk-scoped-law-v3" then
       discard (pairs (← field j "contract"))
+    if profile == "delvetalk-scoped-law-v4" then
+      discard (pairs (← field j "amendment"))
+      if let some contract := (field j "contract").toOption then
+        discard (pairs contract)
+    if profile == "delvetalk-scoped-law-v3" || profile == "delvetalk-scoped-law-v4" then
       if let some invariant := (field j "invariant").toOption then
         discard (Delvetalk.decode invariant)
     for (_, principals) in (← pairs (← field j "invoke")) do
@@ -302,7 +310,8 @@ def rootCheck (o request : Json) : Except String Unit := do
 -- resolved. This consumes the same turn budget as authority and execution.
 def checkInvariant (authority before after request : Json) (principal : String) : Evaluation Unit := do
   let profile := (str authority "profile").toOption
-  if profile != some "delvetalk-scoped-law-v2" && profile != some "delvetalk-scoped-law-v3" then return
+  if profile != some "delvetalk-scoped-law-v2" && profile != some "delvetalk-scoped-law-v3" &&
+      profile != some "delvetalk-scoped-law-v4" then return
   let some invariant := (field authority "invariant").toOption | return
   let op ← str request "op"
   let command ← if op == "invoke" then str request "command" else pure ""
@@ -320,12 +329,19 @@ def checkCandidateWith (runtime : Runtime) (before after request : Json) (princi
   checkInvariant (← field before "law") before after request principal
   let op ← str request "op"
   let checkContract (authority : Json) (methods : Bool) : Evaluation Unit := do
-    if (str authority "profile").toOption == some "delvetalk-scoped-law-v3" then
-      runtime.checkSourceContract (← field authority "contract") after methods
+    let profile := (str authority "profile").toOption
+    if profile == some "delvetalk-scoped-law-v3" || profile == some "delvetalk-scoped-law-v4" then
+      if let some contract := (field authority "contract").toOption then
+        runtime.checkSourceContract contract after methods
+  let checkAmendment (authority : Json) : Evaluation Unit := do
+    if (str authority "profile").toOption == some "delvetalk-scoped-law-v4" then
+      runtime.checkSourceAmendment (← field authority "amendment") before after request principal
+  checkAmendment (← field before "law")
   checkContract (← field before "law") (["create", "reprogram", "law"].contains op)
   -- New law cannot install an invariant already false of the proposed state.
   -- Old law must also admit its own revision; management has no bypass.
   if op == "law" then
+    checkAmendment (← field after "law")
     checkInvariant (← field after "law") before after request principal
     checkContract (← field after "law") true
 

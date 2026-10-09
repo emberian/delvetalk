@@ -20,6 +20,7 @@
     ],
     "package": [
       "spec/Delvetalk/Package.lean",
+      "spec/Delvetalk/DocumentTemplate.lean",
       "spec/Delvetalk/PackageData.lean",
       "spec/Delvetalk/Reflection.lean",
       "spec/original/Theory/AssertAxioms.lean.txt",
@@ -53,6 +54,7 @@
     "sourceContracts": [
       "profiles/SourcePackages.lean",
       "profiles/SourceContract.lean",
+      "profiles/SourceAmendment.lean",
       "profiles/Preparation.lean"
     ]
   },

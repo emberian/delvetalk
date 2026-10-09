@@ -1,0 +1,103 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Encounter.obend as E
+import ./Document.obend as D
+import ./Conversation.obend as C
+import ./Interpretation.obend as I
+import ./ConversationModel.obend as M
+record Input:
+  original: String
+  target: String
+  recipient: String
+record Interpreted:
+  original: String
+  target: String
+  recipient: String
+  token: String
+  policy: String
+def capture() -> D.Capture:
+  {object: "conversation", revision: 0n, meaning: "lending-meaning-v1", entry: "prepareResolve", token: "resolve"}
+def needs(fields: P.Fields) -> P.Names:
+  let recipient = if P.text(P.field(fields, "recipient")) == "" then P.Names.cons({head: "recipient", tail: P.Names.nil()}) else P.Names.nil()
+  if P.text(P.field(fields, "target")) == "" then P.Names.cons({head: "target", tail: recipient}) else recipient
+def valid(fields: P.Fields) -> Bool:
+  match fields:
+    case nil(_): true
+    case cons(c): ((c.head.name == "target" && (P.text(c.head.value) == "moth:amber" || P.text(c.head.value) == "moth:silver")) || (c.head.name == "recipient" && textLength(P.text(c.head.value)) > 0n && textLength(P.text(c.head.value)) <= 64n)) && valid(c.tail)
+def policy() -> C.Policy:
+  {revision: "lending-policy-v1", capacity: 32n, window: 8n, accepts: fn(fields: P.Fields) -> Bool: valid(fields), needs: fn(fields: P.Fields) -> P.Names: needs(fields)}
+def bindings(input: Input) -> P.Fields:
+  let recipient = if input.recipient == "" then P.Fields.nil() else P.Fields.cons({head: {name: "recipient", value: P.Value.text({value: input.recipient})}, tail: P.Fields.nil()})
+  if input.target == "" then recipient else P.Fields.cons({head: {name: "target", value: P.Value.text({value: input.target})}, tail: recipient})
+def initial() -> C.State:
+  C.initial("Lend a moth", capture(), needs(P.Fields.nil()))
+def answer(state: C.State, input: Input, context: Abi.Context) -> C.Decision:
+  C.contribute(policy(), state, C.literal(state, input.original, bindings(input)), context)
+def interpret(state: C.State, input: Interpreted, context: Abi.Context) -> C.Decision:
+  C.contribute(policy(), state, {original: input.original, policy: input.policy, context: P.Observations.nil(), capture: extend(state.capture, {token: input.token}), bindings: bindings({original: input.original, target: input.target, recipient: input.recipient}), unresolved: P.Names.nil()}, context)
+def retain(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
+  if C.wireValid(input) then C.contribute(policy(), state, C.fromValue(input), context) else C.decided(state, false, "Supply a complete typed interpretation envelope.")
+record Completion:
+  recipient: String
+  moth: String
+def resolve(state: C.State, input: Completion, context: Abi.Context) -> C.Decision:
+  let actual = context.inputOrigin.kind == "invoke" && context.inputOrigin.object == P.text(P.field(state.bindings, "target")) && context.inputOrigin.command == "lend" && context.inputOrigin.immediatelyPrevious && input.moth == context.inputOrigin.object && input.recipient == P.text(P.field(state.bindings, "recipient"))
+  if actual then C.finish(state, D.text(textConcat("Lent ", textConcat(input.moth, textConcat(" to ", input.recipient)))), context) else C.decided(state, false, "Completion requires the actual moth's immediately preceding lending result.")
+def prepareResolve(state: C.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let target = P.text(P.field(state.bindings, "target"))
+  if state.closed then P.Preparation.refused({message: "This intention is already complete."}) else if C.ready(state) == false then P.Preparation.question({message: "Which moth and who should receive it?", needs: state.unresolved}) else if P.observation(observations, target).object == "" then P.Preparation.refused({message: "Capture the selected moth before completing this intention."}) else P.Preparation.ready({summary: "Lend the selected moth and retain its actual result", reads: P.Reads.cons({head: P.Read.existing({object: target}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: target, command: "lend", input: P.oneField("recipient", P.field(state.bindings, "recipient"))}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "resolve", result: 0n}), tail: P.Effects.nil()})})})
+def observations(state: C.State) -> P.Requests:
+  let target = P.text(P.field(state.bindings, "target"))
+  if target == "" then P.Requests.nil() else P.Requests.cons({head: {object: target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})
+def amber() -> E.Child:
+  {key: "amber", label: "Amber moth", object: "moth:amber", panel: "main"}
+def silver() -> E.Child:
+  {key: "silver", label: "Silver moth", object: "moth:silver", panel: "main"}
+def document(state: C.State, after: Nat, limit: Nat, introduction: String) -> D.Document:
+  let references = D.concat(D.Document.reference(amber()), D.concat(D.text(" / "), D.Document.reference(silver())))
+  let offer = D.Document.offer({label: "Finish choosing", capture: state.capture})
+  D.concat(D.text(textConcat(introduction, "\n")), D.concat(references, D.concat(D.text("\n"), D.concat(offer, D.concat(D.text("\n"), C.render(policy(), state, after, limit))))))
+record Description:
+  name: String
+  initial: C.State
+  methods: {retain: {label: String, fields: {}, inputCodec: String}, answer: {label: String, fields: {original: Abi.StringField, target: Abi.StringField, recipient: Abi.StringField}}, interpret: {label: String, fields: {original: Abi.StringField, target: Abi.StringField, recipient: Abi.StringField, token: Abi.StringField, policy: Abi.StringField}}, resolve: {label: String, fields: {recipient: Abi.StringField, moth: Abi.StringField}}}
+  panels: {}
+def field(max: Nat) -> Abi.StringField:
+  {type: "string", minLength: 0n, maxLength: max}
+def describe() -> Description:
+  {name: "Lending conversation", initial: initial(), methods: {retain: {label: "Retain an interpreted contribution", fields: {}, inputCodec: "value"}, answer: {label: "Answer a field", fields: {original: field(1024n), target: field(64n), recipient: field(64n)}}, interpret: {label: "Retain an interpretation", fields: {original: field(1024n), target: field(64n), recipient: field(64n), token: field(64n), policy: field(64n)}}, resolve: {label: "Receive the actual lending result", fields: {recipient: field(64n), moth: field(128n)}}}, panels: {}}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {answer: Action, interpret: Action}
+  children: E.Children
+  invitations: {resolve: Invitation}
+  document: D.Document
+  interpretation: {request: String, prepare: String}
+def render(state: C.State, introduction: String) -> View:
+  let doc = document(state, 0n, 8n, introduction)
+  {title: "Lending conversation", prose: D.plain(doc), actions: {answer: {visible: state.closed == false, text: "Answer a field", command: "answer", input: {}}, interpret: {visible: state.closed == false, text: "Retain an interpretation", command: "interpret", input: {}}}, children: E.Children.cons({head: amber(), tail: E.Children.cons({head: silver(), tail: E.Children.nil()})}), invitations: {resolve: {visible: state.closed == false, text: "Finish choosing", prepare: "prepareResolve", fields: {}, observations: observations(state)}}, document: doc, interpretation: {request: "interpretationRequest", prepare: "prepareInterpretation"}}
+def view(state: C.State, panel: String) -> View:
+  render(state, "Choose a moth and its recipient. Both field answers and interpreted prose continue this conversation.")
+def textSchema(name: String, min: Nat, max: Nat) -> P.Value:
+  P.Value.record({fields: M.field("name", M.text(name), M.field("type", M.text("string"), M.field("minLength", P.Value.natural({value: min}), M.field("maxLength", P.Value.natural({value: max}), P.Fields.nil()))))})
+def schema() -> P.Values:
+  P.Values.cons({head: textSchema("target", 1n, 64n), tail: P.Values.cons({head: textSchema("recipient", 1n, 64n), tail: P.Values.nil()})})
+def interpretationPolicy() -> I.Policy:
+  extend(I.defaultPolicy(), {revision: policy().revision, vocabulary: "The two moth references are moth:amber and moth:silver. Resolve a stated reference; ask when ambiguous. Recipient is a named participant. Preparing this operation lends the selected actual moth."})
+def interpretationRequest(state: C.State, original: String, observations: P.Observations, context: P.Context) -> M.Request:
+  M.interpretationRequest(interpretationPolicy(), state, original, observations, schema(), document(state, 0n, 8n, "Choose the actual moth and recipient."))
+def prepareInterpretation(state: C.State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  M.prepareInterpretation(policy(), interpretationPolicy(), state, input, observations, context, schema())

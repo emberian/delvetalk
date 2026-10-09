@@ -22,6 +22,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import runtime_profile
+import process_custody
 import world
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +36,7 @@ class ReceivingError(ValueError):
 
 def _pins(profile):
     files = runtime_profile.file_hashes(profile)
-    for name in ('profiles/ResidentStore.lean', 'scripts/resident_store.py'):
+    for name in ('profiles/ResidentStore.lean', 'scripts/resident_store.py', 'scripts/process_custody.py'):
         with (ROOT / name).open('rb') as stream:
             files[name] = hashlib.file_digest(stream, 'sha256').hexdigest()
     return json.dumps(files, sort_keys=True, separators=(',', ':'))
@@ -47,10 +48,21 @@ class Resident:
     After an uncertain preparation/commit, only recover() may resume this object;
     it reconstructs durable state and retries the exact retained attempt. A new
     Resident also reconstructs committed state before accepting any request.
+
+    Optional memory_bytes sets Linux RLIMIT_AS before exec (virtual address space,
+    not an RSS guarantee). Explicit limits on unsupported systems refuse startup.
+    A killed receiver is an uncertain attempt, never a semantic refusal/success.
+    This persistent process has no cumulative CPU quota; RPC wall time is bounded.
     """
-    def __init__(self, database, *, profile='compiled', timeout=30, use_checkpoint=True):
+    def __init__(self, database, *, profile='compiled', timeout=30, use_checkpoint=True, memory_bytes=None):
         if profile not in world.PROFILES: raise ValueError('unknown resident profile')
         if not math.isfinite(timeout) or timeout <= 0: raise ValueError('resident timeout must be positive')
+        if memory_bytes is not None:
+            if type(memory_bytes) is not int or memory_bytes <= 0:
+                raise ValueError('resident memory_bytes must be a positive integer')
+            if not sys.platform.startswith('linux'):
+                raise ValueError('resident memory limit requires Linux RLIMIT_AS')
+        self.memory_bytes = memory_bytes
         self.database = Path(database).resolve()
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self.profile, self.timeout = profile, timeout
@@ -165,7 +177,13 @@ class Resident:
         executable = ROOT / '.lake/build/bin' / world.PROFILES[self.profile][0]
         if not executable.is_file(): raise ValueError('prebuilt resident receiver required')
         self.errors = tempfile.TemporaryFile()
-        self.process = subprocess.Popen([str(executable), '--resident'], cwd=ROOT,
+        arguments = [str(executable), '--resident']
+        if self.memory_bytes is not None:
+            # The fresh interpreter sets limits before exec; no post-fork Python
+            # callback runs in the threaded account-heap parent's address space.
+            arguments = [sys.executable, '-c', process_custody.LAUNCH,
+                         json.dumps([None, self.memory_bytes, None]), *arguments]
+        self.process = subprocess.Popen(arguments, cwd=ROOT,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.errors, bufsize=0,
             start_new_session=True, env={**os.environ, 'LEAN_NUM_THREADS': '1'})
         os.set_blocking(self.process.stdin.fileno(), False)

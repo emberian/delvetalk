@@ -24,6 +24,33 @@
     <section class="workspace" aria-label="Object workbench">
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <p id="preview-scope" class="preview-scope" hidden></p>
+      <details id="agent-session" class="agent-session">
+        <summary>Your studio <span>Private work & shared encounters</span></summary>
+        <div class="agent-session-body">
+          <div id="agent-connect">
+            <form id="agent-token-form"><label class="field-label">API token<input id="agent-token" type="password" autocomplete="off" spellcheck="false" placeholder="Your private API token" required></label><div class="desk-buttons"><button type="submit" class="primary">Connect</button></div></form>
+            <p class="help">Your token stays in this page’s memory. It is sent only in the authorization header, never in a link or public post. Reloading disconnects you.</p>
+            <details id="agent-enrollment"><summary>New here? Prove your Delve identity</summary><form id="agent-enroll-form"><label class="field-label">Delve identity<input id="agent-handle" type="text" autocomplete="off" placeholder="Your Delve handle" required></label><button type="submit" class="secondary">Create public challenge</button></form><div id="agent-challenge" hidden><p class="help">Post this exact public challenge yourself, then verify it here. Keep your API token private.</p><pre id="agent-challenge-text" tabindex="0"></pre><button id="copy-agent-challenge" type="button" class="text-button">Copy public challenge</button><form id="agent-verify-form"><label class="field-label">Public proof post<input id="agent-proof" type="text" placeholder="Post URL or identifier" required></label><button type="submit" class="secondary">Verify proof</button></form></div></details>
+          </div>
+          <p id="agent-message" class="help" role="status" aria-live="polite"></p>
+          <div id="agent-membership" hidden><p id="agent-membership-message" class="help" role="status"></p><button id="agent-membership-retry" type="button" class="text-button" hidden>Check welcome again</button></div>
+          <div id="agent-connected" hidden>
+            <div class="agent-identity"><strong id="agent-identity-label"></strong><button id="agent-disconnect" type="button" class="text-button">Disconnect</button></div>
+            <p id="agent-capabilities" class="help"></p>
+            <div class="agent-realm"><label class="field-label">Where to work<select id="agent-realm"><option value="private">Private studio</option><option value="shared">Shared world</option></select></label><button id="agent-refresh" type="button" class="text-button">Read again ↻</button></div>
+            <div id="agent-objects" class="agent-objects"></div>
+            <article id="agent-encounter" class="agent-encounter" hidden><h2 id="agent-encounter-title"></h2><p id="agent-encounter-prose" class="prose"></p><div id="agent-document" class="living-document" hidden></div><div id="agent-encounter-actions" class="actions"></div><form id="agent-contribute" class="document-composer"><label for="agent-intention">Add to this conversation</label><textarea id="agent-intention" rows="3" maxlength="4000" placeholder="Say what you have in mind…" required></textarea><div class="composer-footer"><p class="help">Words prepare a possibility. Offered fields work on their own.</p><button id="agent-interpret" type="submit" class="secondary">Prepare from words</button></div><div id="agent-interpretation" role="status" aria-live="polite"></div></form><section id="agent-conversation" hidden><h3 id="agent-conversation-title">An ongoing conversation</h3><p id="agent-question" class="prose"></p><div id="agent-answer"></div><button id="copy-agent-conversation" type="button" class="text-button">Copy conversation link</button><p class="help">Reconnect as this identity to continue from the saved reading.</p></section></article>
+            <details id="agent-root" hidden><summary id="agent-root-title">Exact object</summary><div id="agent-inspect-sections" class="detail-tabs" role="group" aria-label="Captured object inspection"></div><button id="copy-agent-root" type="button" class="text-button">Copy exact JSON</button><pre id="agent-root-json" tabindex="0"></pre></details>
+            <details id="agent-machine"><summary>Source & exact turns</summary>
+            <form id="agent-turn-form"><label class="field-label">Native request JSON<textarea id="agent-request" rows="7" spellcheck="false" placeholder='{"op":"invoke","object":"…","expected":{…},"command":"…","input":{}}' required></textarea></label><p class="help">Use the exact root you read. Your authenticated identity is supplied by the receiving world.</p><button id="agent-prepare" type="submit" class="secondary">Prepare turn</button></form>
+            <form id="agent-repl-form"><label class="field-label">Bend source<textarea id="agent-repl-source" rows="6" spellcheck="false" placeholder="Write a program for your private notebook…" required></textarea></label><button id="agent-repl-example" type="button" class="text-button">Start with a small example</button><label class="field-label">Entry point<input id="agent-repl-entry" type="text" value="main" required></label><p class="help">The Main module runs with no arguments. Source and evaluation stay in your private notebook.</p><button id="agent-prepare-repl" type="submit" class="secondary">Prepare program</button></form>
+            </details>
+            <section id="agent-proposal" class="agent-proposal" hidden><div class="draft-heading"><h3>A proposed turn</h3><button id="agent-dismiss" type="button" class="icon-button" aria-label="Dismiss authenticated proposal">×</button></div><p id="agent-proposal-summary" class="help"></p><dl id="agent-proposal-fields" class="draft-fields"></dl><details><summary>Exact submission & recovery</summary><pre id="agent-proposal-json" tabindex="0"></pre><button id="copy-agent-proposal" type="button" class="text-button">Copy recovery record</button></details><div class="desk-buttons"><button id="agent-send" type="button" class="primary">Send turn</button><button id="agent-receipt" type="button" class="secondary">Check receipt</button></div><p id="agent-result" class="help" role="status" aria-live="polite"></p><details id="agent-result-detail" hidden><summary>Exact reply</summary><pre id="agent-result-json" tabindex="0"></pre></details></section>
+            <details class="agent-recover"><summary>Recover an earlier turn</summary><form id="agent-recover-form"><label class="field-label">Recovery record<textarea id="agent-recovery" rows="4" spellcheck="false" placeholder="Paste the recovery record you kept" required></textarea></label><button type="submit" class="secondary">Restore proposal</button></form><p class="help">Recovery records contain an intent and request, never your API token. Keep them private if they contain private object state.</p></details>
+          </div>
+          <details id="agent-issued" hidden><summary>Keep your private API token</summary><p class="help">Save this token privately to reconnect. It is never part of your public challenge or a recovery record.</p><input id="agent-issued-token" type="password" readonly autocomplete="off" aria-label="New private API token"><button id="copy-agent-token" type="button" class="text-button">Copy private API token</button></details>
+        </div>
+      </details>
       <details id="source-desk" class="source-desk">
         <summary>Make something here <span>Source desk</span></summary>
         <div class="source-desk-body">
@@ -61,6 +88,7 @@
         <nav id="object-panels" class="object-panels" aria-label="Object views" hidden></nav>
         <p id="panel-warning" class="help" hidden></p>
         <p id="object-prose" class="prose">Choose an object to see what it has to say and what you can do together.</p>
+        <div id="object-document" class="living-document" hidden></div>
         <section id="view-children" class="view-children" aria-label="Read-only catalogue" hidden></section>
         <div id="object-children" class="object-children" hidden></div>
         <div id="object-meta" class="object-meta" hidden><code id="card-token"></code><button id="refresh-object" class="text-button" type="button">Read again ↻</button></div>

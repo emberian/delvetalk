@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Forge protocols allocate, compile and revise using the existing Lean host."""
 import importlib.util
-import json
 from pathlib import Path
 import sys
 import tempfile
@@ -11,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import affordances
 import compiler_queue
-import town_cards
+import source_offers
 
 
 def module(name, path):
@@ -56,10 +55,17 @@ class ForgeTests(unittest.TestCase):
             'intent': 'turn-' + str(self.serial), 'expected': expected or self.inspect(name),
             'command': command, 'input': fields})
 
-    def allocate(self, factory, name, principal='maker'):
+    def prepared(self, name, fields, principal='maker', observations=None):
         self.serial += 1
-        request = affordances.request(self.view(factory), 'a1', principal,
-            'make-' + str(self.serial), {'name': name})
+        root = self.inspect(name)
+        offers = source_offers.capture(room.inspect_object(root, name),
+            {name: root, **(observations or {})}, database=self.client.database)
+        invitation = next(iter(offers.values()))
+        return source_offers.request(invitation, principal, 'prepare-' + str(self.serial),
+            fields, database=self.client.database)
+
+    def allocate(self, factory, name, principal='maker', **fields):
+        request = self.prepared(factory, {'name': name, **fields}, principal)
         receipt = self.call(request)
         self.assertEqual(receipt['kind'], 'committed', receipt)
         self.assertEqual(self.call(request), receipt)
@@ -68,13 +74,13 @@ class ForgeTests(unittest.TestCase):
         return child
 
     def submit(self, candidate, target, source, scenarios, principal='maker'):
-        self.serial += 1
-        request = affordances.request(self.view(candidate), 'a1', principal,
-            'submit-' + str(self.serial), {'target': target,
-                'source': source, 'scenarios': scenarios})
+        writer = self.allocate('writers', 'write-' + str(self.serial), principal,
+            candidate=candidate, target=target, syntax=forge.SPELL_SYNTAX)
+        request = self.prepared(writer, {'source': source, 'scenarios': scenarios}, principal,
+            {candidate: self.inspect(candidate), target: self.inspect(target)})
         result = self.call(request)
         self.assertEqual(result['kind'], 'committed', result)
-        return result['data']['root']
+        return self.inspect(candidate)
 
     def compile(self, candidate, pending, principal='compiler'):
         self.serial += 1
@@ -88,37 +94,20 @@ class ForgeTests(unittest.TestCase):
         self.assertEqual(artifact['candidateRootSha256'], desk.digest(pending))
         return result['receipt'], artifact
 
-    def test_generated_files_and_views_are_inline_and_bounded(self):
-        for name, value in forge.files().items():
-            self.assertEqual(json.loads((ROOT / 'protocols/town-forge' / name).read_text()), value)
-        book = town_cards.CardBook.create(self.path / 'cards', issuer_did='did:plc:' + 'a' * 24,
-            world_id='forge-test', runtime={'profile': 'compiled'})
-        for factory in ('objects', 'desks'):
+    def test_source_factories_offer_preparation_and_retain_exact_submission(self):
+        for factory in ('objects', 'desks', 'writers'):
             opening = self.view(factory)
             self.assertEqual(opening['mode'], 'projection')
-            card = affordances.card(opening)
-            self.assertTrue(card['prose'])
-            self.assertEqual(card['actions'][0]['command'], 'make')
-            captured = book.capture(opening, alias=factory)
-            self.assertNotIn('State:', captured['body'])
-            self.assertIn('Nothing made here yet.', captured['body'])
+            self.assertTrue(source_offers.capture(opening, {factory: self.inspect(factory)},
+                database=self.client.database))
         target = self.allocate('objects', 'paper')
         candidate = self.allocate('desks', 'spell')
-        self.assertEqual(room.inspect_object(self.inspect('objects'), 'objects', panel='last')['data']['prose'], 'paper')
-        source = forge.spell_source(1)
-        scenarios = forge.example_source(1)
-        pending = self.submit(candidate, target, source, scenarios)
-        self.assertEqual(pending['state']['proposal'],
-            {'syntax': forge.SPELL_SYNTAX, 'source': source, 'scenarios': scenarios})
-        self.assertEqual(pending['state']['migration'], {})
-        self.assertEqual(pending['state']['submitter'], 'maker')
-        for panel, text in (('source', source), ('scenarios', scenarios), ('target', target)):
-            view = room.inspect_object(pending, candidate, panel=panel)
-            self.assertEqual(view['data']['prose'], text)
-        self.assertEqual(affordances.card(self.view(candidate))['actions'], [])
-        captured = book.capture(self.view(candidate), alias='spell')
-        self.assertLessEqual(len(captured['body'].encode()), 12000)
-        self.assertIn('Exact spell source', captured['body'])
+        source, examples = forge.spell_source(), forge.example_source()
+        pending = self.submit(candidate, target, source, examples)
+        state = desk.candidate_state(pending)
+        self.assertEqual(state['proposal'], {'syntax': forge.SPELL_SYNTAX, 'source': source, 'scenarios': examples})
+        self.assertEqual(state['migration'], self.inspect(target)['state'])
+        self.assertEqual(state['submitter'], 'maker')
 
     def test_creator_and_visitor_laws_are_real_and_do_not_follow_labels(self):
         target = self.allocate('objects', 'moon')
@@ -136,24 +125,26 @@ class ForgeTests(unittest.TestCase):
         other = self.allocate('objects', 'visitor-door', 'visitor')
         self.assertEqual(self.inspect(other)['law']['reprogram'], ['visitor'])
         candidate = self.allocate('desks', 'spell')
-        fields = {'source': 'not a spell', 'scenarios': 'not examples', 'target': target, 'principal': 'compiler'}
+        fields = {'proposal': {'syntax': forge.SPELL_SYNTAX, 'source': 'not a spell', 'scenarios': 'not examples'}, 'migration': {}, 'target': target, 'principal': 'compiler'}
         self.assertEqual(self.invoke(candidate, 'submit', fields, 'visitor')['data'], 'unauthorized')
         accepted = self.invoke(candidate, 'submit', fields)
-        self.assertEqual(accepted['data']['root']['state']['submitter'], 'maker')
+        self.assertEqual(desk.candidate_state(accepted['data']['root'])['submitter'], 'maker')
         forged = self.invoke(candidate, 'compiled', {'artifact': 'a' * 64,
             'protocol': forge.door(0), 'roomArtifact': None}, 'maker')
         self.assertEqual(forged['data'], 'unauthorized')
 
-    def test_raw_submission_guards_and_one_shot_candidate(self):
+    def test_source_writing_questions_and_candidate_one_shot(self):
+        target = self.allocate('objects', 'door')
         candidate = self.allocate('desks', 'spell')
+        writer = self.allocate('writers', 'write', candidate=candidate, target=target, syntax=forge.SPELL_SYNTAX)
         root = self.inspect(candidate)
-        fields = {'source': 'not a spell', 'scenarios': 'not examples', 'target': 'objects/door'}
-        for key in fields:
-            bad = dict(fields, **{key: ''})
-            self.assertEqual(self.invoke(candidate, 'submit', bad)['kind'], 'refused')
-            self.assertEqual(self.inspect(candidate), root)
-        self.assertEqual(self.invoke(candidate, 'submit', fields)['kind'], 'committed')
-        self.assertEqual(self.invoke(candidate, 'submit', fields)['data'], 'precondition failed')
+        with self.assertRaises(source_offers.PreparationOutcome) as caught:
+            self.prepared(writer, {'source': '', 'scenarios': ''}, observations={candidate: root, target: self.inspect(target)})
+        self.assertEqual(caught.exception.outcome['kind'], 'question')
+        self.assertEqual(self.inspect(candidate), root)
+        self.submit(candidate, target, forge.spell_source(), forge.example_source())
+        fields = {'proposal': {'syntax': forge.SPELL_SYNTAX, 'source': forge.spell_source(), 'scenarios': forge.example_source()}, 'migration': {}, 'target': target}
+        self.assertEqual(self.invoke(candidate, 'submit', fields)['kind'], 'refused')
 
     def test_queue_compile_then_explicit_revision_changes_actual_door_and_view(self):
         target = self.allocate('objects', 'paper')
@@ -165,7 +156,7 @@ class ForgeTests(unittest.TestCase):
             receipt, artifact = self.compile(candidate, pending)
             self.assertEqual(receipt['kind'], 'committed', receipt)
             ready = receipt['data']['root']
-            self.assertEqual(ready['state']['status'], 'ready')
+            self.assertEqual(desk.candidate_state(ready)['status'], 'ready')
             self.assertTrue(artifact['report']['passed'])
             self.assertEqual(artifact['sourceMaterial']['source'], source)
             self.assertEqual(artifact['sourceMaterial']['scenarios'], forge.example_source(revision))
@@ -197,7 +188,7 @@ class ForgeTests(unittest.TestCase):
             forge.challenge_source(), 'visitor')
         receipt, artifact = self.compile(candidate, pending)
         failed = receipt['data']['root']
-        self.assertEqual(failed['state']['status'], 'failed')
+        self.assertEqual(desk.candidate_state(failed)['status'], 'failed')
         report = artifact['report']
         self.assertFalse(report['passed'])
         observed = report['outcomes'][0]

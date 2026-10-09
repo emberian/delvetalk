@@ -1,0 +1,178 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Document.obend as D
+record Interpretation:
+  original: String
+  policy: String
+  context: P.Observations
+  capture: D.Capture
+  bindings: P.Fields
+  unresolved: P.Names
+record Contribution:
+  actor: String
+  proposal: Interpretation
+sum Contributions:
+  nil: {}
+  cons: {head: Contribution, tail: Contributions}
+record Outcome:
+  actor: String
+  status: String
+  content: D.Document
+sum Outcomes:
+  nil: {}
+  cons: {head: Outcome, tail: Outcomes}
+record State:
+  focus: String
+  capture: D.Capture
+  bindings: P.Fields
+  unresolved: P.Names
+  contributions: Contributions
+  outcomes: Outcomes
+  count: Nat
+  closed: Bool
+record Policy:
+  revision: String
+  capacity: Nat
+  window: Nat
+  accepts: P.Fields -> Bool
+  needs: P.Fields -> P.Names
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+def initial(focus: String, capture: D.Capture, needs: P.Names) -> State:
+  {focus: focus, capture: capture, bindings: P.Fields.nil(), unresolved: needs, contributions: Contributions.nil(), outcomes: Outcomes.nil(), count: 0n, closed: false}
+def merge(older: P.Fields, newer: P.Fields) -> P.Fields:
+  match newer:
+    case nil(_): older
+    case cons(c): P.Fields.cons({head: c.head, tail: merge(older, c.tail)})
+def decided(state: State, accepted: Bool, message: String) -> Decision:
+  {accepted: accepted, reason: if accepted then "" else message, state: state, result: message}
+def literal(state: State, original: String, fields: P.Fields) -> Interpretation:
+  {original: original, policy: "literal", context: P.Observations.nil(), capture: state.capture, bindings: fields, unresolved: P.Names.nil()}
+def contribute(policy: Policy, state: State, proposal: Interpretation, context: Abi.Context) -> Decision:
+  let valid = D.sameCapture(state.capture, proposal.capture) && (proposal.policy == "literal" || proposal.policy == policy.revision) && policy.accepts(proposal.bindings)
+  let bindings = merge(state.bindings, proposal.bindings)
+  let next = extend(state, {bindings: bindings, unresolved: policy.needs(bindings), contributions: Contributions.cons({head: {actor: context.principal, proposal: proposal}, tail: state.contributions}), count: state.count + 1n})
+  if state.closed then decided(state, false, "This intention is already complete.") else if state.count >= policy.capacity then decided(state, false, "This conversation has reached its contribution budget.") else if valid == false then decided(state, false, "The proposal does not match this captured offer or interpretation policy.") else decided(next, true, "Contribution retained.")
+def ready(state: State) -> Bool:
+  match state.unresolved:
+    case nil(_): state.closed == false
+    case cons(_): false
+# This retains an authored outcome. Calling it does not forge a host receipt.
+# The method receiving a real result must enforce its own authenticated origin.
+def finish(state: State, content: D.Document, context: Abi.Context) -> Decision:
+  if ready(state) == false then decided(state, false, "Answer the remaining question first.") else decided(extend(state, {closed: true, outcomes: Outcomes.cons({head: {actor: context.principal, status: "completed", content: content}, tail: state.outcomes})}), true, "Intention completed.")
+def contributionWindow(items: Contributions, after: Nat, limit: Nat) -> D.Documents:
+  match items:
+    case nil(_): D.Documents.nil()
+    case cons(c): if limit == 0n then D.Documents.nil() else if after > 0n then contributionWindow(c.tail, after - 1n, limit) else D.Documents.cons({head: D.quote(c.head.actor, D.text(c.head.proposal.original)), tail: contributionWindow(c.tail, 0n, limit - 1n)})
+def outcomeWindow(items: Outcomes, limit: Nat) -> D.Documents:
+  match items:
+    case nil(_): D.Documents.nil()
+    case cons(c): if limit == 0n then D.Documents.nil() else D.Documents.cons({head: D.Document.result({status: c.head.status, body: c.head.content}), tail: outcomeWindow(c.tail, limit - 1n)})
+def render(policy: Policy, state: State, after: Nat, limit: Nat) -> D.Document:
+  let bound = if limit > policy.window then policy.window else limit
+  let history = D.Document.sequence({items: contributionWindow(state.contributions, after, bound)})
+  let fields = D.Document.fields({capture: state.capture, values: state.bindings, needs: state.unresolved})
+  let next = if after + bound < state.count && bound > 0n then D.Document.continuation({key: state.focus, after: after + bound, limit: bound, label: "Earlier contributions"}) else D.empty()
+  let outcomes = D.Document.sequence({items: outcomeWindow(state.outcomes, bound)})
+  D.concat(D.text(state.focus), D.concat(fields, D.concat(history, D.concat(outcomes, next))))
+# Wire decoding is source data interpretation. Context remains attributed proposal
+# evidence; only a later native preparation capture authorizes observations.
+def fields(value: P.Value) -> P.Fields:
+  match value:
+    case record(r): r.fields
+    case none(_): P.Fields.nil()
+    case retained(_): P.Fields.nil()
+    case boolean(_): P.Fields.nil()
+    case natural(_): P.Fields.nil()
+    case number(_): P.Fields.nil()
+    case text(_): P.Fields.nil()
+    case array(_): P.Fields.nil()
+def values(value: P.Value) -> P.Values:
+  match value:
+    case array(a): a.values
+    case none(_): P.Values.nil()
+    case retained(_): P.Values.nil()
+    case boolean(_): P.Values.nil()
+    case natural(_): P.Values.nil()
+    case number(_): P.Values.nil()
+    case text(_): P.Values.nil()
+    case record(_): P.Values.nil()
+def contextValues(items: P.Values) -> P.Observations:
+  match items:
+    case nil(_): P.Observations.nil()
+    case cons(c): P.Observations.cons({head: {object: P.text(P.get(c.head, "object")), version: P.natural(P.get(c.head, "version")), program: P.text(P.get(c.head, "program")), state: P.get(c.head, "state"), law: P.get(c.head, "law")}, tail: contextValues(c.tail)})
+def nameValues(items: P.Values) -> P.Names:
+  match items:
+    case nil(_): P.Names.nil()
+    case cons(c): P.Names.cons({head: P.text(c.head), tail: nameValues(c.tail)})
+def fromValue(value: P.Value) -> Interpretation:
+  let capture = P.get(value, "capture")
+  {original: P.text(P.get(value, "original")), policy: P.text(P.get(value, "policy")), context: contextValues(values(P.get(value, "context"))), capture: {object: P.text(P.get(capture, "object")), revision: P.natural(P.get(capture, "revision")), meaning: P.text(P.get(capture, "meaning")), entry: P.text(P.get(capture, "entry")), token: P.text(P.get(capture, "token"))}, bindings: fields(P.get(value, "bindings")), unresolved: nameValues(values(P.get(value, "unresolved")))}
+def isText(value: P.Value) -> Bool:
+  match value:
+    case text(_): true
+    case none(_): false
+    case retained(_): false
+    case boolean(_): false
+    case natural(_): false
+    case number(_): false
+    case record(_): false
+    case array(_): false
+def isNat(value: P.Value) -> Bool:
+  match value:
+    case natural(_): true
+    case none(_): false
+    case retained(_): false
+    case boolean(_): false
+    case text(_): false
+    case number(_): false
+    case record(_): false
+    case array(_): false
+def isRecord(value: P.Value) -> Bool:
+  match value:
+    case record(_): true
+    case none(_): false
+    case retained(_): false
+    case boolean(_): false
+    case text(_): false
+    case number(_): false
+    case natural(_): false
+    case array(_): false
+def isArray(value: P.Value) -> Bool:
+  match value:
+    case array(_): true
+    case none(_): false
+    case retained(_): false
+    case boolean(_): false
+    case text(_): false
+    case number(_): false
+    case natural(_): false
+    case record(_): false
+def fieldCount(items: P.Fields) -> Nat:
+  match items:
+    case nil(_): 0n
+    case cons(c): 1n + fieldCount(c.tail)
+def hasField(items: P.Fields, name: String) -> Bool:
+  match items:
+    case nil(_): false
+    case cons(c): c.head.name == name || hasField(c.tail, name)
+def contextWire(items: P.Values, remaining: Nat) -> Bool:
+  match items:
+    case nil(_): true
+    case cons(c): remaining > 0n && fieldCount(fields(c.head)) == 5n && hasField(fields(c.head), "state") && hasField(fields(c.head), "law") && isText(P.get(c.head, "object")) && isNat(P.get(c.head, "version")) && isText(P.get(c.head, "program")) && contextWire(c.tail, remaining - 1n)
+def namesWire(items: P.Values, remaining: Nat) -> Bool:
+  match items:
+    case nil(_): true
+    case cons(c): remaining > 0n && isText(c.head) && namesWire(c.tail, remaining - 1n)
+def wireValid(value: P.Value) -> Bool:
+  let capture = P.get(value, "capture")
+  fieldCount(fields(value)) == 6n && isText(P.get(value, "original")) && textLength(P.text(P.get(value, "original"))) <= 4096n && isText(P.get(value, "policy")) && fieldCount(fields(capture)) == 5n && isText(P.get(capture, "object")) && isNat(P.get(capture, "revision")) && isText(P.get(capture, "meaning")) && isText(P.get(capture, "entry")) && isText(P.get(capture, "token")) && isRecord(P.get(value, "bindings")) && fieldCount(fields(P.get(value, "bindings"))) <= 16n && isArray(P.get(value, "context")) && contextWire(values(P.get(value, "context")), 16n) && isArray(P.get(value, "unresolved")) && namesWire(values(P.get(value, "unresolved")), 16n)
+def recordSource(policy: Policy, state: State, language: String, source: String, revision: String, result: String, context: Abi.Context) -> Decision:
+  let contribution = contribute(policy, state, literal(state, source, P.Fields.nil()), context)
+  let cell = D.concat(D.Document.source({language: language, code: source, revision: revision}), D.Document.result({status: "recorded", body: D.text(result)}))
+  if contribution.accepted then decided(extend(contribution.state, {outcomes: Outcomes.cons({head: {actor: context.principal, status: "recorded", content: cell}, tail: state.outcomes})}), true, result) else contribution

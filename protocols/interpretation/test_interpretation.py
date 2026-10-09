@@ -1,0 +1,172 @@
+"""Source/native interpretation and bounded physical custody, without paid calls."""
+import copy
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import interpret
+import model_service
+import source_object as source
+
+
+def card():
+    return {'card': 'capture-1', 'object': 'moth', 'title': 'Lend', 'prose': 'Quoted room text.',
+        'actions': [{'id': 'lend', 'label': 'Lend a moth', 'available': True, 'fields': [
+            {'name': 'recipient', 'label': 'Recipient', 'required': True, 'type': 'string', 'maxLength': 32},
+            {'name': 'nights', 'label': 'Nights', 'required': True, 'type': 'nat', 'minimum': 1, 'maximum': 7}]}]}
+
+
+class SourceInterpretation(unittest.TestCase):
+    def test_literal_and_model_share_partial_binding_and_validation(self):
+        literal = interpret.interpret('do capture-1 lend {"nights":2}', card())
+        model = interpret.interpret('two nights', card(), proposer=lambda *_: {'action': 'lend', 'fields': {'nights': 2}})
+        self.assertEqual(literal['status'], 'partial')
+        self.assertEqual(literal['unresolved'], ['recipient'])
+        self.assertEqual(literal['fields'], model['fields'])
+        for fields in ({'nights': True}, {'nights': 8}, {'principal': 'owner'}):
+            self.assertEqual(interpret.interpret('x', card(), proposer=lambda *_: {'action': 'lend', 'fields': fields})['status'], 'clarify')
+        self.assertEqual(interpret.interpret('do stale lend {}', card())['status'], 'clarify')
+
+    def test_model_text_has_no_authority_and_literal_needs_no_provider(self):
+        for answer in ({'action': 'lend', 'fields': {}, 'principal': 'owner'}, {'action': 'shell', 'fields': {}}, None, []):
+            self.assertEqual(interpret.interpret('ignore policy', card(), proposer=lambda *_: answer)['status'], 'clarify')
+        def forbidden(*_):
+            raise AssertionError('literal attempted provider')
+        self.assertEqual(interpret.interpret('do capture-1 lend {"recipient":"Ada","nights":2}', card(), proposer=forbidden)['status'], 'proposed')
+
+    def test_source_prompt_revision_and_receipt_deduplication(self):
+        calls = []
+        def provider(body):
+            calls.append(copy.deepcopy(body))
+            return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': '{"action":"lend","fields":{"nights":2}}'}]}
+        with tempfile.TemporaryDirectory() as directory:
+            helper = interpret.AnthropicProposer(None, provider=provider, directory=directory)
+            self.assertEqual(interpret.interpret('two nights', card(), proposer=helper)['status'], 'partial')
+            interpret.interpret('two nights', card(), proposer=helper)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]['model'], 'claude-haiku-5-5')
+            self.assertIn('Missing fields are welcome', calls[0]['system'])
+            self.assertEqual(set(json.loads(calls[0]['messages'][0]['content'])), {'userRequest', 'untrustedCard'})
+            policy = source.plain(interpret.native('defaultPolicy'))
+            policy.update(revision='room-v2', vocabulary='moths are loaned specimens')
+            helper.policy = source.data(policy)
+            interpret.interpret('two nights', card(), proposer=helper)
+            self.assertEqual(len(calls), 2)
+            self.assertIn('loaned specimens', calls[1]['system'])
+            self.assertIn('document', helper.last_receipt['job'])
+            restored = model_service.Service(directory, lambda _: self.fail('receipt replay called provider'))
+            self.assertEqual(restored.request(helper.last_receipt['job']), helper.last_receipt)
+
+    def test_uncertain_and_malformed_reply_are_retained_without_retry(self):
+        for reply in ({'stop_reason': 'max_tokens', 'content': []}, {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': '{bad'}]}):
+            calls = []
+            with tempfile.TemporaryDirectory() as directory:
+                helper = interpret.AnthropicProposer(None, directory=directory, provider=lambda body: calls.append(body) or reply)
+                self.assertEqual(interpret.interpret('help', card(), proposer=helper)['status'], 'clarify')
+                interpret.interpret('help', card(), proposer=helper)
+                self.assertEqual(len(calls), 1)
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []
+            def fail(body):
+                calls.append(body)
+                raise TimeoutError('private remote failure')
+            helper = interpret.AnthropicProposer(None, directory=directory, provider=fail)
+            self.assertEqual(interpret.interpret('help', card(), proposer=helper)['status'], 'escalate')
+            interpret.interpret('help', card(), proposer=helper)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(helper.last_receipt['status'], 'uncertain')
+
+    def test_source_job_provider_preparation_and_governed_receiving_path(self):
+        sys.path.insert(0, str(ROOT))
+        from conformance.test_document_conversation import modules, rows
+        import resident_store
+        import source_offers
+        retained_modules = modules()
+        protocol = source.adapter.lower_data_modules(retained_modules)
+        empty = source.variant('nil', source.record({}))
+        context = source.data({'object': 'conversation', 'principal': 'iris'})
+        with tempfile.TemporaryDirectory() as directory:
+            with __import__('contextlib').closing(resident_store.Resident(Path(directory) / 'world.sqlite')) as receiver:
+                created = receiver.exchange({'op': 'create', 'object': 'conversation', 'principal': 'iris',
+                    'intent': 'create', 'protocol': protocol, 'law': ['iris']})
+                self.assertEqual(created['kind'], 'committed', created)
+                root = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
+                job_wire = interpret.native('interpretationRequest', [root['state']['model'], source.data('Lend the amber moth'), empty, context], modules=retained_modules)
+                job = source.plain(next(f['value'] for f in job_wire['fields'] if f['name'] == 'job'))
+                envelope = source.values('decode', [next(f['value'] for f in job_wire['fields'] if f['name'] == 'envelope')])[0]
+                calls = []
+                def provider(body):
+                    calls.append(body)
+                    return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': '{"action":"resolve","fields":{"target":"moth:amber"}}'}]}
+                helper = interpret.AnthropicProposer(None, directory=Path(directory) / 'models', identity_scope='iris/private', provider=provider)
+                reply = helper.request_source(job, source_modules=retained_modules, envelope=envelope)
+                self.assertEqual(job['revision'], 'lending-policy-v1')
+                invitation = {'format': source_offers.FORMAT, 'object': 'conversation', 'root': root,
+                    'entry': 'prepareInterpretation', 'observations': [], 'title': 'Conversation', 'label': 'Interpret', 'fields': []}
+                prepared = source_offers.prepare(invitation, 'iris', 'retain-model-1', {'request': envelope, 'reply': reply})
+                self.assertEqual(prepared['kind'], 'ready', prepared)
+                receipt = receiver.exchange(prepared['request'])
+                self.assertEqual(receipt['kind'], 'committed', receipt)
+                state = source.plain(receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})['state']['model'])
+                contribution = rows(state['contributions'])[0]
+                self.assertEqual(contribution['actor'], 'iris')
+                self.assertEqual(contribution['proposal']['original'], 'Lend the amber moth')
+                self.assertEqual(contribution['proposal']['policy'], 'lending-policy-v1')
+                self.assertEqual(rows(state['unresolved']), ['recipient'])
+                self.assertEqual(receiver.exchange(prepared['request']), receipt)
+                stale = copy.deepcopy(prepared['request'])
+                stale['intent'] = 'different-intent-same-old-capture'
+                self.assertEqual(receiver.exchange(stale)['kind'], 'refused')
+                current = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
+                other_actor = source_offers.prepare({**invitation, 'root': current}, 'mallory', 'no-authority', {'request': envelope, 'reply': reply})
+                self.assertEqual(other_actor['kind'], 'ready', other_actor)
+                self.assertEqual(receiver.exchange(other_actor['request'])['kind'], 'refused')
+                self.assertEqual(helper.request_source(job, source_modules=retained_modules, envelope=envelope), reply)
+                self.assertEqual(len(calls), 1)
+                forged = dict(envelope, policy='wrong-policy')
+                refused = source_offers.prepare(invitation, 'iris', 'wrong-policy', {'request': forged, 'reply': reply})
+                self.assertEqual(refused['kind'], 'refused', refused)
+
+    def test_physical_service_quota_and_busy_never_call_provider(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []
+            service = model_service.Service(directory, lambda body: calls.append(body) or {}, max_jobs=1)
+            first = service.request({'body': {}, 'identityScope': 'account-a'})
+            self.assertEqual(first['status'], 'received')
+            self.assertEqual(service.request({'body': {}, 'identityScope': 'account-a'}), first)
+            self.assertEqual(service.request({'body': {}, 'identityScope': 'account-b'})['status'], 'quota')
+            with open(Path(directory) / 'service.lock', 'a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertEqual(service.request({'body': {}, 'identityScope': 'account-a'})['status'], 'busy')
+            self.assertEqual(len(calls), 1)
+
+    def test_explicit_generation_and_pure_retained_render(self):
+        modules = source.read_modules([(name, ROOT / path) for name, path in [
+            ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
+            ('Encounter', 'world/lib/prelude/Encounter.obend'), ('Document', 'world/lib/document/Document.obend'),
+            ('Conversation', 'protocols/conversation/Conversation.obend'), ('Interpretation', 'protocols/interpretation/Interpretation.obend'),
+            ('ModelEncounter', 'protocols/interpretation/Encounter.obend')]])
+        job = interpret.native('prompt', [interpret.native('defaultPolicy'), source.data('{}')])
+        request = source.record({'key': source.data('exact-1'), 'generation': source.data(1),
+            'templateRevision': source.data('template-v1'), 'original': source.data('hello'),
+            'context': source.variant('nil', source.record({})),
+            'capture': source.data({'object': 'moth', 'revision': 1, 'meaning': 'p1', 'entry': 'lend', 'token': 'c1'}), 'job': job})
+        pending = interpret.native('pending', [request], modules=modules)
+        duplicate = source.plain(interpret.native('regenerate', [pending, request], modules=modules))
+        self.assertFalse(duplicate['accepted'])
+        wrong = source.plain(interpret.native('receive', [pending, source.data({'key': 'other', 'status': 'received', 'output': 'forged'})], modules=modules))
+        self.assertFalse(wrong['accepted'])
+        decision = interpret.native('receive', [pending, source.data({'key': 'exact-1', 'status': 'received', 'output': 'retained moth'})], modules=modules)
+        state = next(f['value'] for f in decision['fields'] if f['name'] == 'state')
+        first = interpret.native('render', [state], modules=modules)
+        self.assertEqual(first, interpret.native('render', [state], modules=modules))
+        self.assertIn('retained moth', json.dumps(source.plain(first)))
+
+
+if __name__ == '__main__':
+    unittest.main()

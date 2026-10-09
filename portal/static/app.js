@@ -4,6 +4,7 @@
 const $ = id => document.getElementById(id);
 const state = { world: null, card: null, draft: null, preparation: null, preparationGeneration: 0, detail: null, generation: 0, routeGeneration: 0, location: location.href, sending: false, uncertain: false };
 const authoring = { draft: null, pending: false, preparing: false, uncertain: false, source: null, sourceText: null, rawFiles: {}, status: null };
+const agentSession = { token: '', me: null, generation: 0, readGeneration: 0, prepareGeneration: 0, card: null, conversation: null, conversations: new Map(), proposal: null, sending: false, uncertain: false, challenge: null, proof: null };
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
 function element(tag, className, content) {
   const node = document.createElement(tag);
@@ -85,6 +86,7 @@ function renderObjects() {
 async function loadWorld() {
   const world = await api('/api/world');
   state.world = world;
+  $('agent-session').hidden = world.agents?.available === false;
   $('world-title').textContent = world.title || 'The workbench';
   const preview = world.mode === 'public-preview';
   $('mode').textContent = preview ? 'Public preview' : world.mode === 'local-interactive' ? 'Local world' : 'Read-only world';
@@ -308,6 +310,7 @@ function renderActions(card) {
   $('actions-section').hidden = false;
   for (const [index, action] of actions.entries()) {
     const form = element('form', 'action');
+    form.dataset.actionId = action.id;
     const top = element('div', 'action-top');
     const label = element('p', 'action-label', action.label || action.id);
     const submit = element('button', 'secondary', state.world?.mode === 'public-preview' ? 'Preview' : 'Prepare');
@@ -325,6 +328,7 @@ function renderActions(card) {
     if (action.observedAvailable === false)
       form.append(element('p', 'help', 'Its condition was false when this room was read. The world checks it again when you send.'));
     const controls = (action.fields || []).map((field, i) => fieldInput(field, index, i, action.preparation === true));
+    form.documentControls = controls;
     if (action.preparation) form.append(element('p', 'help', 'Start with what you know. The object can ask for more before proposing an action.'));
     for (const control of controls) {
       if (action.children?.some(child => child.field === control.field.name)) {
@@ -364,6 +368,128 @@ function renderActions(card) {
     $('actions').append(form);
   }
   if (!actions.length) $('actions').append(element('p', 'muted', 'No actions are offered in this reading.'));
+  const rendered = renderLivingDocument(card, $('object-document'), $('actions'), {
+    reference: node => openObject(node.object, true, node.panel, 'push', { card: card.card, key: node.childKey }),
+  });
+  $('object-prose').hidden = rendered;
+  $('actions-section').hidden = rendered && !$('actions').childElementCount;
+}
+function documentValue(value) {
+  if (value && typeof value === 'object') {
+    const kind = value.variant || value.kind || value.label;
+    const payload = value.payload || value;
+    if (['text', 'nat', 'bool', 'natural', 'boolean', 'label'].includes(kind)
+        && ['string', 'boolean', 'number'].includes(typeof payload.value)) return payload.value;
+  }
+  return value;
+}
+// This is a renderer for the source-defined Document ABI. Only qualified
+// actionId/childKey bindings from the captured card create controls or links.
+function renderLivingDocument(card, target, forms, context = {}) {
+  target.replaceChildren();
+  target.hidden = !card.document;
+  if (!card.document) return false;
+  const actionForms = new Map([...forms.children].filter(form => form.dataset?.actionId).map(form => [form.dataset.actionId, form]));
+  const actions = new Map((card.actions || []).map(action => [action.id, action]));
+  const used = new Set();
+  let remaining = 1024;
+  let collectRemaining = 1024;
+  const bindings = new Map();
+  function collect(node, depth = 0) {
+    if (!node || --collectRemaining < 0 || depth > 64) return;
+    if (node.kind === 'fields' && node.actionId && actions.has(node.actionId)) bindings.set(node.actionId, node);
+    if (node.kind === 'sequence') for (const child of (node.items || []).slice(0, 1024)) collect(child, depth + 1);
+    if (node.kind === 'quote' || node.kind === 'result') collect(node.body, depth + 1);
+  }
+  collect(card.document);
+  function offer(actionId, label) {
+    const form = actionForms.get(actionId);
+    if (!form) return element('p', 'document-unbound', label || 'This offer is available for inspection.');
+    if (used.has(actionId)) {
+      const link = element('button', 'document-reference', label || actions.get(actionId).label);
+      link.type = 'button';
+      link.addEventListener('click', () => { form.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); form.documentControls?.[0]?.input.focus(); });
+      return link;
+    }
+    used.add(actionId);
+    const values = bindings.get(actionId)?.values || [];
+    for (const { name, value } of values) {
+      const control = form.documentControls?.find(control => control.field.name === name);
+      const plain = documentValue(value);
+      if (!control) continue;
+      if (control.field.type === 'bool' && typeof plain === 'boolean') control.input.checked = plain;
+      else if (control.field.type === 'string' && typeof plain === 'string') control.input.value = plain;
+      else if (control.field.type === 'enum' && control.field.options.includes(plain)) control.input.value = String(control.field.options.indexOf(plain));
+      else if (control.field.type === 'nat' && (typeof plain === 'string' || Number.isSafeInteger(plain)) && /^(0|[1-9][0-9]*)$/.test(String(plain)) && Number.isSafeInteger(Number(plain))) control.input.value = String(plain);
+    }
+    if (form.parentNode) form.parentNode.removeChild(form);
+    form.classList.add('document-offer');
+    return form;
+  }
+  function node(value, depth = 0) {
+    if (!value || typeof value !== 'object' || --remaining < 0 || depth > 64) return element('p', 'help', 'This part is too large to display here. Its source remains available for inspection.');
+    switch (value.kind) {
+      case 'text': return element('p', 'document-text', value.value);
+      case 'sequence': {
+        const sequence = element('div', 'document-sequence');
+        for (const child of (value.items || []).slice(0, 1024)) sequence.append(node(child, depth + 1));
+        return sequence;
+      }
+      case 'quote': {
+        const quote = element('blockquote', 'document-quote');
+        quote.append(node(value.body, depth + 1));
+        if (value.attribution) quote.append(element('footer', '', value.attribution));
+        return quote;
+      }
+      case 'reference': {
+        if (!value.childKey || typeof context.reference !== 'function') return element('span', 'document-unbound-reference', value.label);
+        const button = element('button', 'document-reference', value.label);
+        button.type = 'button';
+        button.addEventListener('click', () => busy(button, 'Opening…', () => context.reference(value)));
+        return button;
+      }
+      case 'offer': return offer(value.actionId, value.label);
+      case 'fields': {
+        const group = element('section', 'document-bindings');
+        if (value.values?.length) {
+          const list = element('dl', 'draft-fields');
+          for (const field of value.values) list.append(element('dt', '', field.name), element('dd', '', text(documentValue(field.value))));
+          group.append(list);
+        }
+        if (value.needs?.length) group.append(element('p', 'help', `Still open: ${value.needs.join(', ')}`));
+        if (value.actionId && !used.has(value.actionId)) group.append(offer(value.actionId));
+        return group;
+      }
+      case 'source': {
+        const source = element('details', 'document-source');
+        source.append(element('summary', '', value.language ? `${value.language} source` : 'Source'));
+        const code = element('pre', '', value.code);
+        code.tabIndex = 0;
+        const button = element('button', 'text-button', 'Copy source');
+        button.type = 'button';
+        button.addEventListener('click', () => copy(value.code, button));
+        source.append(button, code);
+        if (value.revision) source.append(element('p', 'help', `Revision: ${value.revision}`));
+        return source;
+      }
+      case 'result': {
+        const result = element('section', 'document-result');
+        result.dataset.status = ['pending', 'refused', 'uncertain', 'committed', 'complete'].includes(value.status) ? value.status : 'recorded';
+        result.append(element('p', 'document-status', value.status), node(value.body, depth + 1));
+        return result;
+      }
+      case 'continuation': {
+        const section = element('details', 'document-continuation');
+        section.append(element('summary', '', value.label || 'Continuation'));
+        section.append(element('p', 'help', 'A retained continuation. No receiving control is attached to this reading.'));
+        section.append(element('pre', '', JSON.stringify({ key: value.key, after: value.after, limit: value.limit }, null, 2)));
+        return section;
+      }
+      default: return element('p', 'help', 'This document section is not supported by this viewer. Inspect its source for the exact value.');
+    }
+  }
+  target.append(node(card.document));
+  return true;
 }
 async function prepare(card, action, fields) {
   if (state.sending) throw new Error('Wait for the send result before preparing another action.');
@@ -617,6 +743,8 @@ $('interpret-form').addEventListener('submit', event => {
     $('interpret-result').replaceChildren(element('p', '', proposal.message || proposal.summary || ''));
     if (proposal.status === 'proposed' && proposal.action) {
       await prepare(card.card, proposal.action, proposal.fields || {});
+    } else if (proposal.status === 'partial' && proposal.action) {
+      renderPartialInterpretation($('interpret-result'), proposal, () => prepare(card.card, proposal.action, proposal.fields || {}));
     }
   });
 });
@@ -650,6 +778,16 @@ function renderCreatedChildren(children) {
     button.addEventListener('click', () => openObject(child.object, true));
     target.append(button);
   }
+}
+function renderPartialInterpretation(target, proposal, continueWith) {
+  const fields = element('dl', 'draft-fields');
+  for (const [key, value] of Object.entries(proposal.fields || {})) fields.append(element('dt', '', key), element('dd', '', text(value)));
+  target.append(fields);
+  if (proposal.unresolved?.length) target.append(element('p', 'help', `Still open: ${proposal.unresolved.join(', ')}`));
+  const button = element('button', 'secondary', 'Continue with these details');
+  button.type = 'button';
+  button.addEventListener('click', () => busy(button, 'Preparing…', continueWith));
+  target.append(button);
 }
 function configureAuthoring(config) {
   const enabled = Boolean(config) && state.world.mode !== 'public-preview' && state.world.capabilities?.authoring !== false;
@@ -910,6 +1048,474 @@ async function openLocation() {
   } catch (error) { notice(error.message, true); }
 }
 window.addEventListener('popstate', openLocation);
+// Authenticated visitor traffic uses the same receiving routes as network agents.
+// Credentials are memory-only and never enter navigation, recovery data or posts.
+async function agentApi(path, body, authenticated = true) {
+  if (!/^\/AGENTS\.md(?:\/(?:verify|me|world|turn|repl|receipt))?(?:\?|$)/.test(path))
+    throw new Error('Unknown agent API route.');
+  if (authenticated && !agentSession.token) throw new Error('Connect with your API token first.');
+  const headers = { Accept: 'application/json' };
+  if (authenticated) headers.Authorization = `Bearer ${agentSession.token}`;
+  const options = { headers, credentials: 'omit', redirect: 'error', cache: 'no-store' };
+  if (body !== undefined) {
+    options.method = 'POST';
+    headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
+  const raw = await response.text();
+  let data;
+  try { data = JSON.parse(raw); }
+  catch { throw new Error(`The agent route returned an unreadable reply (${response.status}).`); }
+  if (!response.ok) throw new Error(text(data.message || data.error) || `Agent request failed (${response.status}).`);
+  return { data, raw };
+}
+function agentMessage(message) { $('agent-message').textContent = message; }
+function agentHas(capability) { return agentSession.me?.capabilities?.[capability] === true; }
+function renderAgentIdentity() {
+  const me = agentSession.me;
+  $('agent-connect').hidden = Boolean(me);
+  $('agent-connected').hidden = !me;
+  if (!me) return;
+  $('agent-identity-label').textContent = me.did || me.accountId;
+  const enabled = Object.entries(me.capabilities || {}).filter(([, value]) => value === true).map(([key]) => key);
+  $('agent-capabilities').textContent = `Available here: ${enabled.length ? enabled.join(', ') : 'inspection only'}. Each write still faces the current world rules.`;
+  $('agent-prepare').disabled = !agentHas('turn');
+  $('agent-repl-form').hidden = !agentHas('repl');
+}
+async function connectAgent(token) {
+  if (agentSession.sending) throw new Error('Wait for the current reply before changing identity.');
+  if (typeof token !== 'string' || !token.trim() || /[\x00-\x20\x7f]/.test(token)) throw new Error('Enter a valid API token.');
+  const generation = ++agentSession.generation;
+  agentSession.token = token;
+  agentSession.me = null;
+  $('agent-token').value = '';
+  if ($('agent-issued-token').value !== token) {
+    $('agent-issued-token').value = '';
+    $('agent-issued').hidden = true;
+  }
+  $('agent-encounter').hidden = true;
+  $('agent-root').hidden = true;
+  try {
+    const { data: me } = await agentApi('/AGENTS.md/me');
+    if (generation !== agentSession.generation) return;
+    if (!me.did || !Array.isArray(me.realms)) throw new Error('The identity reply is missing its realm contract.');
+    agentSession.me = me;
+    $('agent-realm').replaceChildren();
+    for (const realm of me.realms.filter(realm => realm === 'private' || realm === 'shared')) {
+      const option = element('option', '', realm === 'private' ? 'Private studio' : 'Shared world');
+      option.value = realm;
+      $('agent-realm').append(option);
+    }
+    $('agent-realm').value = me.defaultRealm === 'shared' ? 'shared' : 'private';
+    renderAgentIdentity();
+    $('agent-proposal').hidden = !agentSession.proposal || agentSession.proposal.did !== me.did;
+    agentMessage('Connected as your verified identity. The public preview below remains available.');
+    await readAgentWorld();
+    await restoreAgentConversation();
+  } catch (error) {
+    if (generation === agentSession.generation && !agentSession.me) {
+      agentSession.token = '';
+      renderAgentIdentity();
+    }
+    throw error;
+  }
+}
+function disconnectAgent() {
+  if (agentSession.sending) return agentMessage('Wait for the reply before disconnecting.');
+  ++agentSession.generation;
+  ++agentSession.readGeneration;
+  agentSession.token = '';
+  agentSession.me = null;
+  $('agent-token').value = '';
+  $('agent-issued-token').value = '';
+  $('agent-issued').hidden = true;
+  $('agent-membership').hidden = true;
+  agentSession.proof = null;
+  $('agent-root-json').textContent = '';
+  $('agent-encounter').hidden = true;
+  $('agent-encounter-title').textContent = '';
+  $('agent-encounter-prose').textContent = '';
+  $('agent-encounter-actions').replaceChildren();
+  $('agent-request').value = '';
+  $('agent-repl-source').value = '';
+  $('agent-recovery').value = '';
+  $('agent-objects').replaceChildren();
+  agentSession.card = null;
+  renderAgentIdentity();
+  agentMessage('Disconnected. No API token is stored in this browser. Reconnect as the same identity to recover any proposal still open in this page.');
+}
+async function readAgentWorld() {
+  const generation = agentSession.generation;
+  const read = ++agentSession.readGeneration;
+  const realm = $('agent-realm').value;
+  if (!agentSession.me || !['private', 'shared'].includes(realm)) return;
+  $('agent-repl-form').hidden = realm !== 'private' || !agentHas('repl');
+  $('agent-encounter').hidden = true;
+  const { data } = await agentApi(`/AGENTS.md/world?realm=${realm}`);
+  if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
+  $('agent-objects').replaceChildren();
+  $('agent-root').hidden = true;
+  for (const object of data.objects || []) {
+    if (typeof object.object !== 'string') continue;
+    const button = element('button', 'secondary', object.object);
+    button.type = 'button';
+    button.addEventListener('click', () => busy(button, 'Reading…', () => openAgentObject(object.object, realm)));
+    $('agent-objects').append(button);
+  }
+  if (!$('agent-objects').childElementCount) $('agent-objects').append(element('p', 'help', 'No objects in this realm yet.'));
+  agentMessage(realm === 'private' ? 'Your private studio. Keep source, make objects, and return to your work.' : 'A shared place. Open an object to see what it offers your identity.');
+  const first = (data.objects || []).find(object => realm === 'private' ? object.object === 'notebook' : /garden/i.test(object.object)) || data.objects?.[0];
+  if (first) await openAgentObject(first.object, realm);
+}
+async function openAgentObject(object, realm, captured = null) {
+  const generation = agentSession.generation;
+  const read = ++agentSession.readGeneration;
+  const response = captured ? { data: captured } : await agentApi(`/AGENTS.md/world?realm=${realm}&object=${encodeURIComponent(object)}&view=encounter&panel=main`);
+  if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
+  const card = response.data;
+  agentSession.card = { ...card, realm };
+  $('agent-encounter-title').textContent = card.title || object;
+  $('agent-encounter-prose').textContent = text(card.prose);
+  $('agent-encounter').hidden = false;
+  $('agent-conversation').hidden = true;
+  $('agent-encounter-actions').replaceChildren();
+  for (const [index, action] of (card.actions || []).entries()) {
+    const form = element('form', 'action');
+    form.dataset.actionId = action.id;
+    const caption = element('p', 'action-label', action.label || action.id);
+    const fields = (action.fields || []).map((field, i) => fieldInput(field, `agent-${index}`, i, action.preparation === true));
+    form.documentControls = fields;
+    form.append(caption);
+    if (action.description) form.append(element('p', 'help', action.description));
+    const group = element('div', 'action-fields');
+    fields.forEach(field => group.append(field.label));
+    form.append(group);
+    const button = element('button', 'secondary', 'Prepare');
+    button.type = 'submit';
+    button.disabled = !agentHas('turn') || action.available === false || action.inspectOnly === true;
+    form.append(button);
+    const offerDetails = element('details', 'document-offer-details');
+    offerDetails.append(element('summary', '', 'Offer token'));
+    const token = action.token || `do ${card.card} ${action.id}`;
+    offerDetails.append(element('code', '', token));
+    const copyToken = element('button', 'text-button', 'Copy token');
+    copyToken.type = 'button';
+    copyToken.addEventListener('click', () => copy(token, copyToken));
+    offerDetails.append(copyToken);
+    form.append(offerDetails);
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      busy(button, 'Preparing…', async () => {
+        const values = readFields(fields);
+        if (form.reportValidity()) await prepareAgentAction({ ...card, realm }, action.id, values);
+      });
+    });
+    $('agent-encounter-actions').append(form);
+  }
+  if (!card.actions?.length) $('agent-encounter-actions').append(element('p', 'help', card.unsupported || 'This object offers no actions in this reading.'));
+  $('agent-encounter-prose').hidden = renderLivingDocument(card, $('agent-document'), $('agent-encounter-actions'), {
+    reference: async node => {
+      const { data: result } = await agentApi(`/AGENTS.md/world?realm=${realm}&childCard=${encodeURIComponent(card.card)}&childKey=${encodeURIComponent(node.childKey)}`);
+      if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
+      if (result.status !== 'opened') throw new Error(result.message || 'This reference is unavailable in the current world.');
+      await openAgentObject(result.card.object, realm, result.card);
+    },
+  });
+  $('agent-interpretation').replaceChildren();
+  $('agent-intention').value = '';
+  const pending = agentSession.conversations.get(`${agentSession.me.did}|${realm}|${object}`);
+  if (pending) showAgentConversation(pending.card, pending.result);
+  const root = await agentApi(`/AGENTS.md/world?realm=${realm}&detail=${encodeURIComponent(card.card)}`);
+  if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
+  const exactRoot = root.data.exact?.root || root.data.rootJson;
+  if (typeof exactRoot === 'string') {
+    $('agent-root-title').textContent = `Look inside ${card.title || object}`;
+    const sections = root.data.exact || { root: exactRoot };
+    $('agent-inspect-sections').replaceChildren();
+    const choose = key => {
+      $('agent-root-json').textContent = sections[key];
+      for (const button of $('agent-inspect-sections').children) button.setAttribute('aria-pressed', String(button.dataset.key === key));
+    };
+    for (const key of ['source', 'state', 'law', 'history', 'root']) {
+      if (typeof sections[key] !== 'string') continue;
+      const button = element('button', '', key[0].toUpperCase() + key.slice(1));
+      button.type = 'button';
+      button.dataset.key = key;
+      button.addEventListener('click', () => choose(key));
+      $('agent-inspect-sections').append(button);
+    }
+    choose(typeof sections.source === 'string' ? 'source' : 'root');
+    $('agent-root').hidden = false;
+    $('agent-root').open = false;
+  }
+}
+async function prepareAgentAction(card, action, fields) {
+  if (!agentHas('turn') || agentSession.sending || agentSession.uncertain) throw new Error('Resolve the pending turn before preparing another.');
+  const generation = agentSession.generation;
+  const read = agentSession.readGeneration;
+  const preparation = ++agentSession.prepareGeneration;
+  const { data: result } = await agentApi('/AGENTS.md/turn', { realm: card.realm, operation: 'prepare', card: card.card, action, fields });
+  if (generation !== agentSession.generation || preparation !== agentSession.prepareGeneration || agentSession.sending || agentSession.uncertain) return;
+  if (result.format === 'delvetalk-portal-preparation-v1') {
+    agentSession.conversations.set(`${agentSession.me.did}|${card.realm}|${card.object}`, { card, result });
+    if (agentSession.card?.object === card.object && agentSession.card?.realm === card.realm) showAgentConversation(card, result);
+  } else {
+    if (read !== agentSession.readGeneration) return;
+    if (typeof result.draft !== 'string' || typeof result.intent !== 'string') throw new Error('The prepared turn is missing its retained intent.');
+    agentSession.conversations.delete(`${agentSession.me.did}|${card.realm}|${card.object}`);
+    $('agent-conversation').hidden = true;
+    showAgentProposal({ format: 'delvetalk-browser-turn-v1', did: agentSession.me.did, kind: 'draft', realm: card.realm,
+      intent: result.intent, draft: result.draft, summary: result.summary || 'An offered action', fields: result.fields || fields, wireJson: result.wireJson || '' });
+  }
+}
+function showAgentConversation(card, result) {
+  agentSession.conversation = { card, result };
+  $('agent-conversation').hidden = false;
+  $('agent-conversation-title').textContent = result.outcome.kind === 'question' ? 'An ongoing conversation' : 'Preparation declined';
+  $('agent-question').textContent = text(result.outcome.message);
+  $('agent-answer').replaceChildren();
+  $('copy-agent-conversation').hidden = typeof result.preparation !== 'string';
+  if (result.outcome.kind !== 'question') return;
+  const action = card.actions?.find(action => action.id === result.action);
+  const fields = [...new Set(result.outcome.needs || [])].map((name, index) => {
+    const field = action?.fields?.find(field => field.name === name) || { name, label: name, type: 'string', minLength: 0, maxLength: 65536 };
+    return fieldInput(field, 'agent-answer', index, true);
+  });
+  const form = element('form', 'action');
+  fields.forEach(field => form.append(field.label));
+  const button = element('button', 'secondary', 'Continue conversation');
+  button.type = 'submit';
+  form.append(button);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    busy(button, 'Preparing…', async () => {
+      const answers = Object.assign(Object.create(null), result.fields || {}, readFields(fields));
+      if (form.reportValidity()) await prepareAgentAction(card, result.action, answers);
+    });
+  });
+  $('agent-answer').append(form);
+  fields[0]?.input.focus({ preventScroll: true });
+}
+async function restoreAgentConversation() {
+  const params = new URL(location.href).searchParams;
+  const preparation = params.get('conversation');
+  const realm = params.get('agentRealm');
+  if (!preparation || !['private', 'shared'].includes(realm) || !agentSession.me) return;
+  const generation = agentSession.generation;
+  const { data: result } = await agentApi(`/AGENTS.md/world?realm=${realm}&preparation=${encodeURIComponent(preparation)}`);
+  if (generation !== agentSession.generation) return;
+  const { data: card } = await agentApi(`/AGENTS.md/world?realm=${realm}&card=${encodeURIComponent(result.card)}`);
+  if (generation !== agentSession.generation) return;
+  $('agent-realm').value = realm;
+  await readAgentWorld();
+  if (generation !== agentSession.generation) return;
+  const captured = { ...card, realm };
+  agentSession.conversations.set(`${agentSession.me.did}|${realm}|${card.object}`, { card: captured, result });
+  await openAgentObject(card.object, realm, captured);
+}
+async function enrollAgent() {
+  if (agentSession.sending || agentSession.me) throw new Error('Disconnect before beginning another enrollment.');
+  const identity = $('agent-handle').value.trim();
+  if (!identity) throw new Error('Enter your Delve handle or DID.');
+  const generation = ++agentSession.generation;
+  const { data } = await agentApi('/AGENTS.md', identity.startsWith('did:') ? { did: identity } : { handle: identity }, false);
+  if (generation !== agentSession.generation) return;
+  if (data.status !== 'pending' || typeof data.token !== 'string' || typeof data.challenge?.text !== 'string') throw new Error('The enrollment route did not provide a public challenge.');
+  agentSession.token = data.token;
+  agentSession.challenge = data.challenge;
+  $('agent-challenge-text').textContent = data.challenge.text;
+  $('agent-challenge').hidden = false;
+  $('agent-issued-token').value = data.token;
+  $('agent-issued').hidden = false;
+  agentMessage(`Post only the public challenge exactly as shown, without extra text. Then paste the post’s at:// URI below and verify it.${data.challenge.expiresAt ? ` Challenge expires: ${text(data.challenge.expiresAt)}.` : ''}`);
+}
+async function verifyAgent() {
+  if (!agentSession.challenge || !agentSession.token) throw new Error('Create a challenge first.');
+  const generation = agentSession.generation;
+  const uri = $('agent-proof').value.trim();
+  if (!uri.startsWith('at://')) throw new Error('Use the proof post’s at:// URI.');
+  const { data } = await agentApi('/AGENTS.md/verify', { uri });
+  if (generation !== agentSession.generation) return;
+  if (data.status !== 'verified') throw new Error('The proof has not been verified.');
+  await connectAgent(agentSession.token);
+  agentSession.proof = uri;
+  showAgentMembership(data.membership);
+  $('agent-challenge').hidden = true;
+  agentSession.challenge = null;
+}
+function showAgentMembership(membership) {
+  $('agent-membership').hidden = !membership;
+  if (!membership) return;
+  const messages = {
+    committed: 'Your identity is verified, and the shared welcome action committed. Each object still applies its current rules.',
+    refused: 'Your identity is verified. The shared welcome action was refused; verification alone grants no shared-world authority.',
+    pending: 'Your identity is verified. The shared welcome outcome is pending; check it again without making a new identity.',
+    unconfigured: 'Your identity is verified. This host has no automatic shared welcome; access depends on each object’s current rules.',
+  };
+  $('agent-membership-message').textContent = messages[membership.status] || 'Identity verification and shared membership are separate.';
+  $('agent-membership-retry').hidden = membership.status !== 'pending';
+}
+function newAgentProposal(kind, input) {
+  if (agentSession.sending || agentSession.uncertain) throw new Error('Recover the pending receipt before replacing this proposal.');
+  if (!agentHas(kind === 'turn' ? 'turn' : 'repl')) throw new Error('This capability is not available for your identity.');
+  const realm = $('agent-realm').value;
+  if (!['private', 'shared'].includes(realm)) throw new Error('Choose a realm.');
+  if (kind === 'repl' && realm !== 'private') throw new Error('Programs run in your private studio. Switch there first.');
+  if (kind === 'turn') {
+    const request = JSON.parse(input);
+    if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('A native request must be a JSON object.');
+    if (Object.hasOwn(request, 'principal') || Object.hasOwn(request, 'intent')) throw new Error('Leave principal and intent out of the request; identity and recovery supply them.');
+  }
+  const proposal = { format: 'delvetalk-browser-turn-v1', did: agentSession.me.did, kind, realm,
+    intent: `browser:${crypto.randomUUID()}`, ...(kind === 'turn' ? { requestJson: input }
+      : { repl: { modules: [{ name: 'Main', source: input }], entry: $('agent-repl-entry').value, arguments: [] } }) };
+  showAgentProposal(proposal);
+}
+function showAgentProposal(proposal, restored = false) {
+  if (proposal.did !== agentSession.me?.did) throw new Error('Reconnect as the identity named in this recovery record.');
+  agentSession.proposal = proposal;
+  agentSession.uncertain = restored;
+  $('agent-proposal').hidden = false;
+  $('agent-proposal-summary').textContent = `${proposal.summary || (proposal.kind === 'turn' ? 'Native request' : 'Bend program')} · ${proposal.realm === 'private' ? 'private studio' : 'shared world'} · ${restored ? 'restored with the same intent' : 'prepared, not sent'}. Keep the recovery record before sending.`;
+  $('agent-proposal-json').textContent = JSON.stringify(proposal, null, 2);
+  $('agent-proposal-fields').replaceChildren();
+  for (const [key, value] of Object.entries(proposal.fields || {})) $('agent-proposal-fields').append(element('dt', '', key), element('dd', '', text(value)));
+  $('agent-result').textContent = '';
+  $('agent-result-detail').hidden = true;
+  $('agent-send').disabled = !agentHas(proposal.kind === 'repl' ? 'repl' : 'turn');
+  $('agent-send').textContent = restored ? 'Send / retry same turn' : 'Send turn';
+  $('agent-receipt').disabled = false;
+  $('agent-proposal').tabIndex = -1;
+  $('agent-proposal').focus({ preventScroll: true });
+}
+function restoreAgentProposal(raw) {
+  if (agentSession.sending || agentSession.uncertain) throw new Error('Recover the pending receipt before replacing this proposal.');
+  const proposal = JSON.parse(raw);
+  const allowed = ['format', 'did', 'kind', 'realm', 'intent', ...(proposal?.kind === 'draft' ? ['draft', 'summary', 'fields', 'wireJson'] : [proposal?.kind === 'turn' ? 'requestJson' : 'repl'])];
+  if (!proposal || proposal.format !== 'delvetalk-browser-turn-v1' || !['turn', 'repl', 'draft'].includes(proposal.kind)
+      || !['private', 'shared'].includes(proposal.realm) || typeof proposal.intent !== 'string' || !proposal.intent
+      || Object.keys(proposal).some(key => !allowed.includes(key))) throw new Error('This is not a supported recovery record.');
+  if (proposal.kind === 'turn' && typeof proposal.requestJson !== 'string') throw new Error('The recovery request is missing.');
+  if (proposal.kind === 'draft' && (typeof proposal.draft !== 'string' || !proposal.draft)) throw new Error('The retained draft reference is missing.');
+  if (proposal.kind === 'repl' && (proposal.realm !== 'private' || !proposal.repl || typeof proposal.repl.entry !== 'string'
+      || !Array.isArray(proposal.repl.modules) || !Array.isArray(proposal.repl.arguments)
+      || Object.keys(proposal.repl).some(key => !['modules', 'entry', 'arguments'].includes(key)))) throw new Error('Invalid private program recovery record.');
+  if (proposal.kind === 'turn') {
+    const request = JSON.parse(proposal.requestJson);
+    if (!request || typeof request !== 'object' || Array.isArray(request) || Object.hasOwn(request, 'principal') || Object.hasOwn(request, 'intent')) throw new Error('The recovery request must omit principal and intent.');
+  }
+  showAgentProposal(proposal, true);
+}
+function showAgentReply(result, raw) {
+  const kind = (result.reply || result.receipt)?.kind;
+  const settled = kind === 'committed' || kind === 'refused';
+  agentSession.uncertain = !settled;
+  $('agent-result').textContent = settled ? `Retained outcome: ${kind}.`
+    : 'No confirmed outcome yet. Check the receipt or retry this exact proposal with the same intent.';
+  $('agent-result-json').textContent = typeof result.replyJson === 'string' ? result.replyJson : raw;
+  if (typeof result.evaluationJson === 'string') $('agent-result-json').textContent = `Evaluation\n${result.evaluationJson}\n\nReceipt\n${result.receiptJson || 'Not yet retained'}`;
+  const value = result.evaluation?.value;
+  if (settled && value && ['string', 'boolean', 'number'].includes(typeof value.value))
+    $('agent-result').textContent = `Result: ${text(value.value)} · receipt ${kind}.`;
+  $('agent-result-detail').hidden = false;
+  $('agent-send').disabled = settled;
+  $('agent-send').textContent = settled ? 'Outcome retained' : 'Retry same turn';
+}
+async function sendAgentProposal(receiptOnly = false) {
+  const proposal = agentSession.proposal;
+  if (!proposal || agentSession.sending || proposal.did !== agentSession.me?.did) return;
+  if (!receiptOnly && !agentHas(proposal.kind === 'repl' ? 'repl' : 'turn')) return agentMessage('This capability is not available for your identity.');
+  const generation = agentSession.generation;
+  agentSession.sending = true;
+  for (const id of ['agent-send', 'agent-receipt', 'agent-dismiss', 'agent-disconnect']) $(id).disabled = true;
+  try {
+    const response = receiptOnly
+      ? await agentApi(`/AGENTS.md/receipt?realm=${proposal.realm}&intent=${encodeURIComponent(proposal.intent)}`)
+      : proposal.kind === 'draft'
+        ? await agentApi('/AGENTS.md/turn', { realm: proposal.realm, operation: 'execute', draft: proposal.draft })
+        : await agentApi(`/AGENTS.md/${proposal.kind}`, { realm: proposal.realm, intent: proposal.intent,
+          ...(proposal.kind === 'turn' ? { requestJson: proposal.requestJson } : proposal.repl) });
+    if (generation !== agentSession.generation || agentSession.proposal !== proposal) return;
+    showAgentReply(response.data, response.raw);
+  } catch (error) {
+    if (generation === agentSession.generation && agentSession.proposal === proposal) {
+      agentSession.uncertain = true;
+      $('agent-result').textContent = `${error.message} Keep this proposal and check its receipt before starting another turn.`;
+      $('agent-send').disabled = false;
+      $('agent-send').textContent = 'Retry same turn';
+    }
+  } finally {
+    agentSession.sending = false;
+    for (const id of ['agent-receipt', 'agent-dismiss', 'agent-disconnect']) $(id).disabled = false;
+  }
+}
+$('agent-token-form').addEventListener('submit', event => { event.preventDefault(); busy(event.submitter, 'Connecting…', () => connectAgent($('agent-token').value)); });
+$('agent-enroll-form').addEventListener('submit', event => { event.preventDefault(); busy(event.submitter, 'Creating…', enrollAgent); });
+$('agent-verify-form').addEventListener('submit', event => { event.preventDefault(); busy(event.submitter, 'Verifying…', verifyAgent); });
+$('agent-membership-retry').addEventListener('click', () => busy($('agent-membership-retry'), 'Checking…', async () => {
+  if (!agentSession.proof) throw new Error('Keep your original proof URI to check its welcome outcome.');
+  const generation = agentSession.generation;
+  const { data } = await agentApi('/AGENTS.md/verify', { uri: agentSession.proof });
+  if (generation === agentSession.generation) showAgentMembership(data.membership);
+}));
+$('copy-agent-challenge').addEventListener('click', () => copy($('agent-challenge-text').textContent, $('copy-agent-challenge')));
+$('copy-agent-token').addEventListener('click', () => copy($('agent-issued-token').value, $('copy-agent-token')));
+$('copy-agent-conversation').addEventListener('click', () => {
+  const conversation = agentSession.conversation;
+  if (!conversation?.result.preparation) return;
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('conversation', conversation.result.preparation);
+  url.searchParams.set('agentRealm', conversation.card.realm);
+  copy(url.href, $('copy-agent-conversation'));
+});
+$('agent-disconnect').addEventListener('click', disconnectAgent);
+$('agent-realm').addEventListener('change', () => readAgentWorld().catch(error => agentMessage(error.message)));
+$('agent-refresh').addEventListener('click', () => busy($('agent-refresh'), 'Reading…', readAgentWorld));
+$('copy-agent-root').addEventListener('click', () => copy($('agent-root-json').textContent, $('copy-agent-root')));
+$('copy-agent-proposal').addEventListener('click', () => copy($('agent-proposal-json').textContent, $('copy-agent-proposal')));
+$('agent-turn-form').addEventListener('submit', event => { event.preventDefault(); try { newAgentProposal('turn', $('agent-request').value); } catch (error) { agentMessage(error.message); } });
+$('agent-contribute').addEventListener('submit', event => {
+  event.preventDefault();
+  const card = agentSession.card;
+  if (!card) return;
+  busy($('agent-interpret'), 'Considering…', async () => {
+    if (agentSession.sending || agentSession.uncertain) throw new Error('Recover the pending turn before preparing another.');
+    const generation = agentSession.generation, read = agentSession.readGeneration;
+    const original = $('agent-intention').value;
+    const { data: proposal } = await agentApi('/AGENTS.md/turn', { realm: card.realm, operation: 'interpret', card: card.card, text: original });
+    if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
+    const target = $('agent-interpretation');
+    target.replaceChildren(element('blockquote', 'document-quote', original), element('p', '', proposal.message || proposal.summary || proposal.status));
+    if (proposal.status === 'proposed' && proposal.action) await prepareAgentAction(card, proposal.action, proposal.fields || {});
+    else if (proposal.status === 'partial' && proposal.action) renderPartialInterpretation(target, proposal, () => prepareAgentAction(card, proposal.action, proposal.fields || {}));
+  });
+});
+for (const [input, form] of [['agent-intention', 'agent-contribute'], ['agent-repl-source', 'agent-repl-form']]) {
+  $(input).addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing) {
+      event.preventDefault();
+      $(form).requestSubmit();
+    }
+  });
+}
+$('agent-repl-form').addEventListener('submit', event => { event.preventDefault(); try { newAgentProposal('repl', $('agent-repl-source').value); } catch (error) { agentMessage(error.message); } });
+$('agent-repl-example').addEventListener('click', () => {
+  if ($('agent-repl-source').value.trim()) return agentMessage('Your source is already here. Clear the editor first to load the example.');
+  $('agent-repl-source').value = 'edition ObjectiveBend 1\ndef main() -> Nat:\n  6n * 7n\n';
+  $('agent-repl-entry').value = 'main';
+});
+$('agent-recover-form').addEventListener('submit', event => { event.preventDefault(); try { restoreAgentProposal($('agent-recovery').value); } catch (error) { agentMessage(error.message); } });
+$('agent-send').addEventListener('click', () => sendAgentProposal());
+$('agent-receipt').addEventListener('click', () => sendAgentProposal(true));
+$('agent-dismiss').addEventListener('click', () => {
+  if (agentSession.sending) return;
+  if (agentSession.uncertain) return agentMessage('This proposal has an uncertain outcome. Keep its recovery record and check the receipt before replacing it.');
+  agentSession.proposal = null;
+  $('agent-proposal').hidden = true;
+});
 (async () => {
   try { await loadWorld(); await openLocation(); }
   catch (error) { notice(error.message, true); $('mode').textContent = 'World unavailable'; }

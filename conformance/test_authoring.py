@@ -36,7 +36,7 @@ class AuthoringTests(unittest.TestCase):
             'protocol': desk.loads(self.source), 'law': law({'add': ['author']}, ['reviewer'])})
         desk.immutable(self.path / 'manifest.json', {'format': 'delvetalk-workspace-v1',
             'worldId': 'urn:test:authoring', 'title': 'An independent workshop', 'defaultObject': 'target', 'entryObjects': ['target', 'candidate'],
-            'runtime': portal.bootstrap.history.runtime('transactions')})
+            'runtime': portal.bootstrap.history.runtime('compiled')})
 
     def app(self, principal=None):
         return portal.Portal(self.path, principal=principal, allow_local_actions=bool(principal))
@@ -60,7 +60,7 @@ class AuthoringTests(unittest.TestCase):
         self.assertEqual(result['phase'], 'finished', result)
         self.assertEqual(result['receipt']['kind'], 'committed', result)
         if source != '{ broken source':
-            self.assertEqual(self.client.inspect('candidate')['state']['status'], 'ready', result)
+            self.assertEqual(desk.candidate_state(self.client.inspect('candidate'))['status'], 'ready', result)
         return compiler, build, result
 
     def test_large_source_full_lifecycle_restart_and_exact_adoption(self):
@@ -108,12 +108,12 @@ class AuthoringTests(unittest.TestCase):
         self.path = self.path / 'workshop'
         workspace.initialize(self.path, [
             {'id': 'candidate', 'syntax': 'protocol-json@1',
-             'source': (ROOT / 'protocols/source-desk/protocol.json').read_bytes(),
+             'source': desk.canonical(desk.module('authoring_candidate_package', 'protocols/source-desk/package.py').candidate()),
              'law': law({'submit': ['author'], 'compiled': ['compiler'], 'failed': ['compiler'],
                          'adopt': ['reviewer']})},
             {'id': 'target', 'syntax': 'protocol-json@1', 'source': self.source.encode(),
              'law': law({}, ['reviewer'])}],
-            entry_objects=['target', 'candidate'], principal='owner')
+            entry_objects=['target', 'candidate'], principal='owner', profile='compiled')
         self.client = desk.Desk(self.path / 'world.json', self.path / 'artifacts')
         source = '---\nid: garden\n---\n=== gate\nAn unclaimed path.\n* [Walk]\n  -> END\n'
         scenarios = desk.canonical([{'name': 'start', 'law': ['visitor'], 'steps': [
@@ -231,7 +231,7 @@ class AuthoringTests(unittest.TestCase):
         self.assertEqual(reviewer.execute({'draft': stale['draft']})['receipt']['kind'], 'refused')
 
     def test_factory_preview_and_receipt_child_links(self):
-        protocol = desk.loads((ROOT / 'protocols/factories/object.json').read_bytes())
+        protocol = desk.loads((ROOT / 'conformance/fixtures/allocation-object.json').read_bytes())
         self.client.exchange({'op': 'create', 'object': 'workshop', 'principal': 'owner', 'intent': 'factory',
             'protocol': protocol, 'law': law({'make': ['author']})})
         app = self.app('author')
@@ -273,7 +273,7 @@ class AuthoringTests(unittest.TestCase):
         path.write_bytes(desk.canonical(saved))
         with self.assertRaisesRegex(ValueError, 'identity mismatch'):
             author.execute({'draft': draft['draft']})
-        self.assertEqual(self.client.inspect('candidate')['state']['status'], 'empty')
+        self.assertEqual(desk.candidate_state(self.client.inspect('candidate'))['status'], 'empty')
 
     def test_enqueue_lost_local_result_recovers_original_job(self):
         import authoring

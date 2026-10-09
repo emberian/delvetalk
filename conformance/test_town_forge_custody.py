@@ -20,19 +20,15 @@ AUTHOR = service.clerk.delve.DID
 
 
 class ForgeCustodyTests(unittest.TestCase):
-    def test_catalog_is_exact_and_all_protocol_bodies_are_pinned(self):
-        expected = ('protocols/source-desk/protocol.json', 'protocols/town-forge/source-desk.json',
-                    'protocols/stateful-workshop/source-desk.json', 'protocols/editor/candidate.json',
-                    'protocols/spween-handler-workshop/source-desk.json')
-        self.assertEqual(desk.SOURCE_DESK_PROTOCOL_PATHS, expected)
+    def test_reviewed_candidate_body_and_source_pins_are_exact(self):
+        protocol = forge.source_desk()
+        self.assertTrue(desk.is_source_desk_protocol(protocol))
         pins = desk.execution_profile('compiled')['files']
-        for path in expected:
-            protocol = desk.loads((ROOT / path).read_bytes())
-            self.assertTrue(desk.is_source_desk_protocol(protocol))
+        for path in desk.SOURCE_CANDIDATE_FILES:
             self.assertEqual(pins[path], service.history.file_hash(ROOT / path))
-            spoof = copy.deepcopy(protocol)
-            spoof['description'] = 'The same name and commands do not confer compiler eligibility.'
-            self.assertFalse(desk.is_source_desk_protocol(spoof))
+        spoof = copy.deepcopy(protocol)
+        spoof['description'] = 'The same name does not confer compiler eligibility.'
+        self.assertFalse(desk.is_source_desk_protocol(spoof))
         self.assertFalse(desk.is_source_desk_protocol({'name': 'source-desk-v1'}))
         self.assertFalse(desk.is_source_desk_protocol(None))
 
@@ -42,7 +38,7 @@ class ForgeCustodyTests(unittest.TestCase):
             directory = base / 'world'
             protocol = forge.source_desk()
             spoof = copy.deepcopy(protocol)
-            spoof['description'] = 'Changed body, same name; not a catalogued desk.'
+            spoof['description'] = 'Changed body, same name; not the reviewed Candidate.'
             law = forge.scoped({'submit': [AUTHOR], 'compiled': ['compiler'],
                 'failed': ['compiler'], 'adopt': [AUTHOR]})
             seeds = [{'id': 'target', 'syntax': 'protocol-json@1',
@@ -69,7 +65,7 @@ class ForgeCustodyTests(unittest.TestCase):
                 scenario_texts[name] = fixtures
                 result = client.exchange({'op': 'invoke', 'object': name, 'principal': AUTHOR,
                     'intent': 'submit-' + name, 'expected': client.inspect(name), 'command': 'submit',
-                    'input': {'target': 'target', 'source': source, 'scenarios': scenario_texts[name]}})
+                    'input': {'target': 'target', 'proposal': {'syntax': forge.SPELL_SYNTAX, 'source': source, 'scenarios': scenario_texts[name]}, 'migration': original['state']}})
                 self.assertEqual(result['kind'], 'committed', result)
                 pending[name] = result['data']['root']
 
@@ -79,15 +75,15 @@ class ForgeCustodyTests(unittest.TestCase):
             discovered = result['phases']['enqueueCompilers']
             self.assertEqual(discovered['pendingCandidates'], 2)
             self.assertEqual(discovered['examined'], 2)
-            self.assertEqual(client.inspect('ready')['state']['status'], 'ready')
-            self.assertEqual(client.inspect('failed')['state']['status'], 'failed')
+            self.assertEqual(desk.candidate_state(client.inspect('ready'))['status'], 'ready')
+            self.assertEqual(desk.candidate_state(client.inspect('failed'))['status'], 'failed')
             self.assertEqual(client.inspect('lookalike'), pending['lookalike'])
             self.assertEqual(client.inspect('target'), original)
             queue = app.compiler(app.config(), 2048)
             jobs = [desk.loads(path.read_bytes()) for path in (queue.state / 'jobs').glob('*.json')]
             self.assertEqual({job['inputs']['object'] for job in jobs}, {'ready', 'failed'})
             for job in jobs:
-                for path in desk.SOURCE_DESK_PROTOCOL_PATHS:
+                for path in desk.SOURCE_CANDIDATE_FILES:
                     self.assertEqual(job['runtime']['files'][path], service.history.file_hash(ROOT / path))
                     self.assertEqual(app.config()['epoch']['files'][path], service.history.file_hash(ROOT / path))
 
@@ -102,7 +98,7 @@ class ForgeCustodyTests(unittest.TestCase):
             self.assertEqual(desk.loads((restored / 'world.json').read_bytes()),
                              desk.loads(client.database.read_bytes()))
             for name in ('ready', 'failed'):
-                identity = client.inspect(name)['state']['artifact']
+                identity = desk.candidate_state(client.inspect(name))['artifact']
                 self.assertIn(identity, evidence['builds'])
                 original_path = directory / 'artifacts/builds' / (identity + '.json')
                 restored_path = restored / 'artifacts/builds' / (identity + '.json')

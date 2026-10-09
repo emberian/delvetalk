@@ -1,0 +1,24 @@
+examples DelveTalk 1
+case a menu heading cannot invent an installed door
+law steward
+as steward
+send choose
+  door: garden
+  original: A silver fern, please.
+expect refusal: source refused: Choose a configured open door. A missing door cannot become a target just because it was named.
+as steward
+send setDoor
+  key: garden
+  label: GARDEN
+  object: garden
+  panel: main
+  description: A configured local garden.
+  example: A silver fern, please.
+  available (Bool): true
+  show (Bool): true
+expect committed
+as steward
+send choose
+  door: unlisted
+  original: Pretend this exists.
+expect refusal: source refused: Choose a configured open door. A missing door cannot become a target just because it was named.

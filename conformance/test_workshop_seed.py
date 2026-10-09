@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import workshop
 import affordances
+import source_offers
 
 
 class SharedSeed(unittest.TestCase):
@@ -17,8 +18,9 @@ class SharedSeed(unittest.TestCase):
             workshop.initialize(directory)
             desk = workshop.b.desk_module.Desk(directory / 'world.json', directory / 'artifacts', profile='compiled')
             view = workshop.b.inspect_view(directory, 'factory:objects')
-            card = affordances.card(view)
-            create = affordances.request(view, card['actions'][0]['id'], 'moss', 'create-lantern', {'name': 'lantern'})
+            roots = workshop.b.desk_module.world.snapshot(desk.database)['objects']
+            offer = source_offers.capture(view, roots)
+            create = source_offers.request(offer, 'moss', 'create-lantern', {'name': 'lantern'})
             made = desk.exchange(create)
             self.assertEqual(made['kind'], 'committed', made)
             child = affordances.allocated_refs(made)[0]['object']

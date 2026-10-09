@@ -83,7 +83,8 @@ def _resident_pins(profile):
     runtime_profile = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runtime_profile)
     return runtime_profile.hash_paths((*runtime_profile.paths(profile),
-        'profiles/ResidentStore.lean', 'scripts/resident_store.py', 'scripts/resident_server.py'), root=ROOT)
+        'profiles/ResidentStore.lean', 'scripts/resident_store.py', 'scripts/resident_server.py',
+        'scripts/process_custody.py'), root=ROOT)
 
 
 def configure_resident(database, *, profile='compiled', socket_path=None, timeout=30):
@@ -285,6 +286,43 @@ def query(database, request, *, profile='compiled', timeout=30):
     if profile != config['profile']:
         raise ValueError('selected resident profile differs from caller')
     return _resident_rpc(database, config, 'query', timeout=timeout, readonly=True, request=request)
+
+
+def capture_roots(database, objects, *, principal='reader', profile='compiled', timeout=30,
+                  expected=None, receiver=None):
+    """Read exact roots and their native locators together, never upload roots.
+
+    A direct pooled Resident is an explicit transport alternative to a database
+    descriptor. Neither transport interprets guards or resolves references.
+    """
+    if receiver is not None and database is not None:
+        raise ValueError('root capture selects exactly one native transport')
+    request = {'op': 'capture-roots', 'objects': list(objects), 'principal': principal,
+               'expected': {} if expected is None else expected}
+    if receiver is None:
+        if database is None:
+            raise ValueError('root capture requires native transport')
+        result = query(database, request, profile=profile, timeout=timeout)
+    else:
+        if receiver.profile != profile:
+            raise ValueError('root capture receiver profile differs')
+        result = receiver.query(request)
+    if (not isinstance(result, dict) or set(result) != {'roots', 'sequence', 'head'}
+            or not isinstance(result['roots'], dict)
+            or set(result['roots']) != set(request['objects'])
+            or type(result['sequence']) is not int or result['sequence'] < 0
+            or (result['head'] is not None and (not isinstance(result['head'], str) or len(result['head']) != 64))):
+        raise ValueError('malformed native root capture')
+    for identity, pair in result['roots'].items():
+        if pair is None:
+            continue
+        if (not isinstance(pair, dict) or set(pair) != {'root', 'reference'}
+                or not isinstance(pair['reference'], dict)
+                or set(pair['reference']) != {'profile', 'object', 'key'}
+                or pair['reference']['profile'] != 'delvetalk-retained-root-v1'
+                or pair['reference']['object'] != identity):
+            raise ValueError('malformed native root/reference pair')
+    return result
 
 
 def wire_loads(text):

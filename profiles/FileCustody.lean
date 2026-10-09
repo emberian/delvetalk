@@ -44,7 +44,7 @@ def lookup (snapshot : System.FilePath) : IO Unit := do
 -- Reject mutations before invoking the shared native receiver. The unchanged
 -- world assertion also catches an accidentally effectful future query hook.
 def queryOperations : List String := ["inspect", "messages-pending", "message-event",
-  "retained-root", "prepare", "prepare-retained", "value-codec"]
+  "retained-root", "capture-roots", "prepare", "prepare-retained", "value-codec"]
 
 def query (receive : Json → Json → Except String (Json × Json))
     (snapshot : System.FilePath) : IO Unit := do
@@ -58,7 +58,9 @@ def query (receive : Json → Json → Except String (Json × Json))
     if next != world then throw (IO.userError "read-only query changed world")
     pure (World.obj [("reply", reply)])
   catch error => pure (World.obj [("error", .str error.toString)])
-  (← IO.getStdout).putStrLn (encode result)
+  let rendered := encode result
+  (← IO.getStdout).putStrLn (if rendered.utf8ByteSize > 64 * 1024 * 1024 then
+    encode (World.obj [("error", .str "read-only query response capacity")]) else rendered)
 
 def run (receive : Json → Json → Except String (Json × Json))
     (snapshot candidate : System.FilePath) : IO Unit := do

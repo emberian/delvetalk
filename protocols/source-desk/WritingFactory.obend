@@ -4,6 +4,7 @@ import ./Allocation.obend as A
 import ./Encounter.obend as E
 import ./Factory.obend as F
 import ./Writing.obend as W
+import ./Creation.obend as C
 record State:
   writer: P.Value
   last: String
@@ -42,15 +43,23 @@ def field() -> Field:
   {type: "string", minLength: 1n, maxLength: 256n}
 def describe() -> Description:
   {name: "Writing cards", initial: {writer: P.Value.none(), last: ""}, methods: {make: {label: "Make a writing card", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}, candidate: field(), target: field(), syntax: field()}}}, panels: {}, allocation: {limit: 16n}}
-record Action:
+def prepareMake(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let name: String = P.text(P.get(contribution, "name"))
+  let candidate: String = P.text(P.get(contribution, "candidate"))
+  let target: String = P.text(P.get(contribution, "target"))
+  let syntax: String = P.text(P.get(contribution, "syntax"))
+  if name == "" || candidate == "" || target == "" || syntax == "" then P.Preparation.question({message: "Name the writing card, candidate, target and syntax.", needs: P.Names.cons({head: "name", tail: P.Names.cons({head: "candidate", tail: P.Names.cons({head: "target", tail: P.Names.cons({head: "syntax", tail: P.Names.nil()})})})})}) else if textLength(name) > 64n then P.Preparation.refused({message: "The writing card name is too long."}) else C.make(context.object, name, P.Value.record({fields: F.pair("name", W.text(name), F.pair("candidate", W.text(candidate), F.pair("target", W.text(target), F.pair("syntax", W.text(syntax), P.Fields.nil()))))}), "Allocate a configured source writing card.")
+record Invitation:
   visible: Bool
   text: String
-  command: String
-  input: {}
+  prepare: String
+  fields: {name: Field, candidate: Field, target: Field, syntax: Field}
+  observations: P.Requests
 record View:
   title: String
   prose: String
-  actions: {make: Action}
+  actions: {}
   children: E.Children
+  invitations: {make: Invitation}
 def view(state: State, panel: String) -> View:
-  {title: "Writing cards", prose: "Choose an existing candidate and target for a captured source submission.", actions: {make: {visible: true, text: "Make a writing card", command: "make", input: {}}}, children: E.Children.nil()}
+  {title: "Writing cards", prose: "Choose an existing candidate and target for a captured source submission.", actions: {}, children: E.Children.nil(), invitations: {make: {visible: true, text: "Make a writing card", prepare: "prepareMake", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}, candidate: field(), target: field(), syntax: field()}, observations: P.Requests.nil()}}}

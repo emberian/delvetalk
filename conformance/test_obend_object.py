@@ -113,7 +113,7 @@ class SourceObjectTests(unittest.TestCase):
                 {'id': 'lantern', 'syntax': 'protocol-json@1', 'source': desk.canonical(target),
                  'law': scoped({'light': [VISITOR], 'douse': [VISITOR]}, [MAKER])},
                 {'id': 'writing', 'syntax': 'protocol-json@1',
-                 'source': (ROOT / 'protocols/source-desk/protocol.json').read_bytes(),
+                 'source': desk.canonical(desk.module('obend_candidate_package', 'protocols/source-desk/package.py').candidate()),
                  'law': scoped({'submit': [MAKER], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': [MAKER]})},
             ]
             seed = workspace.initialize(directory, seeds, entry_objects=['lantern', 'writing'],
@@ -125,7 +125,7 @@ class SourceObjectTests(unittest.TestCase):
             checked = client.check('writing', 'compiler', 'check', pending)
             self.assertEqual(checked['kind'], 'committed', checked)
             ready = checked['data']['root']
-            self.assertEqual(ready['state']['status'], 'ready', ready)
+            self.assertEqual(desk.candidate_state(ready)['status'], 'ready', ready)
             self.assertEqual(client.inspect('lantern'), old)
             adopted = client.adopt('writing', 'lantern', MAKER, 'adopt', ready, old)
             self.assertEqual(adopted['kind'], 'committed', adopted)

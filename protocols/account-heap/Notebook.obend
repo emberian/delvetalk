@@ -1,0 +1,68 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Encounter.obend as E
+import ./Document.obend as D
+import ./Conversation.obend as C
+import ./Interpretation.obend as I
+import ./ConversationModel.obend as M
+record Input:
+  source: String
+  result: String
+def missing(fields: P.Fields) -> P.Names:
+  if P.text(P.field(fields, "source")) == "" then P.Names.cons({head: "source", tail: P.Names.nil()}) else P.Names.nil()
+def accepts(fields: P.Fields) -> Bool:
+  match fields:
+    case nil(_): true
+    case cons(c): (c.head.name == "source" || c.head.name == "result") && C.isText(c.head.value) && textLength(P.text(c.head.value)) <= 65536n && accepts(c.tail)
+def policy() -> C.Policy:
+  {revision: "notebook-policy-v1", capacity: 64n, window: 8n, accepts: fn(fields: P.Fields) -> Bool: accepts(fields), needs: fn(fields: P.Fields) -> P.Names: missing(fields)}
+def initial() -> C.State:
+  C.initial("Your private notebook", {object: "notebook", revision: 1n, meaning: "record-source-and-result", entry: "prepareRecord", token: "record"}, missing(P.Fields.nil()))
+def record(state: C.State, input: Input, context: Abi.Context) -> C.Decision:
+  C.recordSource(policy(), state, "Bend or note", input.source, "submitted-source", input.result, context)
+def retain(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
+  if C.wireValid(input) then C.contribute(policy(), state, C.fromValue(input), context) else C.decided(state, false, "Supply a complete typed interpretation envelope.")
+def prepareRecord(state: C.State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  if C.ready(state) == false then P.Preparation.question({message: "What would you like to keep?", needs: state.unresolved}) else P.Preparation.ready({summary: "Keep the selected source and result in this notebook", reads: P.Reads.nil(), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "record", input: P.Value.record({fields: P.Fields.cons({head: {name: "source", value: P.field(state.bindings, "source")}, tail: P.Fields.cons({head: {name: "result", value: P.Value.text({value: P.text(P.field(state.bindings, "result"))})}, tail: P.Fields.nil()})})})}), tail: P.Effects.nil()})})
+record Description:
+  name: String
+  initial: C.State
+  methods: {record: {label: String, fields: {source: Abi.StringField, result: Abi.StringField}}, retain: {label: String, fields: {}, inputCodec: String}}
+  panels: {}
+def describe() -> Description:
+  {name: "Private notebook", initial: initial(), methods: {record: {label: "Keep a note or source result", fields: {source: {type: "string", minLength: 0n, maxLength: 65536n}, result: {type: "string", minLength: 0n, maxLength: 65536n}}}, retain: {label: "Continue an interpreted intention", fields: {}, inputCodec: "value"}}, panels: {}}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {record: Action}
+  children: E.Children
+  invitations: {record: Invitation}
+  document: D.Document
+  interpretation: {request: String, prepare: String}
+def document(state: C.State, after: Nat, limit: Nat) -> D.Document:
+  D.concat(D.text("Keep a thought, experiment with Bend, or continue an unfinished contribution.\n"), C.render(policy(), state, after, limit))
+def view(state: C.State, panel: String) -> View:
+  let doc = document(state, 0n, 8n)
+  {title: "Your private notebook", prose: D.plain(doc), actions: {record: {visible: state.count < 64n, text: "Keep a note or source result", command: "record", input: {}}}, children: E.Children.nil(), invitations: {record: {visible: C.ready(state), text: "Keep the interpreted contribution", prepare: "prepareRecord", fields: {}, observations: P.Requests.nil()}}, document: doc, interpretation: {request: "interpretationRequest", prepare: "prepareInterpretation"}}
+def textSchema(name: String, min: Nat, max: Nat) -> P.Value:
+  P.Value.record({fields: M.field("name", M.text(name), M.field("type", M.text("string"), M.field("minLength", P.Value.natural({value: min}), M.field("maxLength", P.Value.natural({value: max}), P.Fields.nil()))))})
+def schema() -> P.Values:
+  P.Values.cons({head: textSchema("source", 1n, 65536n), tail: P.Values.cons({head: textSchema("result", 0n, 65536n), tail: P.Values.nil()})})
+def interpretationPolicy() -> I.Policy:
+  extend(I.defaultPolicy(), {revision: policy().revision, vocabulary: "Keep notes and source/result contributions in this notebook. Do not claim that supplied result text was executed. Offer source and result fields; source is the needed contribution."})
+def interpretationRequest(state: C.State, original: String, observations: P.Observations, context: P.Context) -> M.Request:
+  M.interpretationRequest(interpretationPolicy(), state, original, observations, schema(), document(state, 0n, 8n))
+def prepareInterpretation(state: C.State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  M.prepareInterpretation(policy(), interpretationPolicy(), state, input, observations, context, schema())

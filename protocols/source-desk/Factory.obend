@@ -3,6 +3,7 @@ import ./Preparation.obend as P
 import ./Allocation.obend as A
 import ./Encounter.obend as Encounter
 import ./Factory.obend as F
+import ./Creation.obend as C
 
 # An ordinary workshop reuses the Candidate factory's child authority.
 # This specialization accepts a direct name rather than an Editor.plan origin.
@@ -37,15 +38,21 @@ record Description:
   allocation: {limit: Nat}
 def describe() -> Description:
   {name: "Writing desks", initial: initial(P.Value.none()), methods: {make: {label: "Make a writing desk", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}}}}, panels: {last: "Last made"}, allocation: {limit: 16n}}
-record Action:
+record Invitation:
   visible: Bool
   text: String
-  command: String
-  input: {}
+  prepare: String
+  fields: {name: TextField}
+  observations: P.Requests
 record View:
   title: String
   prose: String
-  actions: {make: Action}
+  actions: {}
   children: Encounter.Children
+  invitations: {make: Invitation}
 def view(state: F.State, panel: String) -> View:
-  {title: "Writing desks", prose: if panel == "last" then state.last else "Make a fresh desk for a proposal. Its maker may submit and release it; the configured compiler may report results.", actions: {make: {visible: state.compiler != "", text: "Make a writing desk", command: "make", input: {}}}, children: Encounter.Children.nil()}
+  {title: "Writing desks", prose: if panel == "last" then state.last else "Make a fresh desk for a proposal. Its maker may submit and release it; the configured compiler may report results.", actions: {}, children: Encounter.Children.nil(), invitations: {make: {visible: state.compiler != "", text: "Make a writing desk", prepare: "prepareMake", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}}, observations: P.Requests.nil()}}}
+
+def prepareMake(state: F.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let name: String = P.text(P.get(contribution, "name"))
+  if state.compiler == "" then P.Preparation.refused({message: "Configure the workshop compiler."}) else if name == "" then P.Preparation.question({message: "Name the writing desk.", needs: P.Names.cons({head: "name", tail: P.Names.nil()})}) else C.make(context.object, name, P.oneField("name", P.Value.text({value: name})), "Make a new writing desk under its current factory law.")

@@ -1,0 +1,170 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+# Law construction is ordinary source; unknown fields and authority are preserved.
+def fields(v: P.Value) -> P.Fields:
+  match v:
+    case record(r): r.fields
+    case retained(_): P.Fields.nil()
+    case none(_): P.Fields.nil()
+    case boolean(_): P.Fields.nil()
+    case natural(_): P.Fields.nil()
+    case number(_): P.Fields.nil()
+    case text(_): P.Fields.nil()
+    case array(_): P.Fields.nil()
+def values(v: P.Value) -> P.Values:
+  match v:
+    case array(a): a.values
+    case retained(_): P.Values.nil()
+    case none(_): P.Values.nil()
+    case boolean(_): P.Values.nil()
+    case natural(_): P.Values.nil()
+    case number(_): P.Values.nil()
+    case text(_): P.Values.nil()
+    case record(_): P.Values.nil()
+def set(xs: P.Fields, name: String, value: P.Value) -> P.Fields:
+  match xs:
+    case nil(_): P.Fields.cons({head: {name: name, value: value}, tail: P.Fields.nil()})
+    case cons(c): if c.head.name == name then P.Fields.cons({head: {name: name, value: value}, tail: c.tail}) else P.Fields.cons({head: c.head, tail: set(c.tail, name, value)})
+def put(v: P.Value, name: String, value: P.Value) -> P.Value:
+  P.Value.record({fields: set(fields(v), name, value)})
+def contains(xs: P.Values, who: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): P.text(c.head) == who || contains(c.tail, who)
+def append(xs: P.Values, who: String) -> P.Values:
+  match xs:
+    case nil(_): P.Values.cons({head: P.Value.text({value: who}), tail: P.Values.nil()})
+    case cons(c): P.Values.cons({head: c.head, tail: append(c.tail, who)})
+def grant(principals: P.Value, who: String) -> P.Value:
+  let prior: P.Values = values(principals)
+  P.Value.array({values: if contains(prior, who) then prior else append(prior, who)})
+def grantMethods(invoke: P.Value, methods: P.Names, who: String) -> P.Value:
+  match methods:
+    case nil(_): invoke
+    case cons(c): grantMethods(put(invoke, c.head, grant(P.get(invoke, c.head), who)), c.tail, who)
+def enrolledLaw(law: P.Value, methods: P.Names, who: String) -> P.Value:
+  put(law, "invoke", grantMethods(P.get(law, "invoke"), methods, who))
+def tag(v: P.Value) -> Nat:
+  match v:
+    case retained(_): 7n
+    case none(_): 0n
+    case boolean(_): 1n
+    case natural(_): 2n
+    case number(_): 3n
+    case text(_): 4n
+    case array(_): 5n
+    case record(_): 6n
+def boolean(v: P.Value) -> Bool:
+  match v:
+    case boolean(b): b.value
+    case retained(_): false
+    case none(_): false
+    case natural(_): false
+    case number(_): false
+    case text(_): false
+    case array(_): false
+    case record(_): false
+def number(v: P.Value) -> String:
+  match v:
+    case number(n): n.encoded
+    case retained(_): ""
+    case none(_): ""
+    case boolean(_): ""
+    case natural(_): ""
+    case text(_): ""
+    case array(_): ""
+    case record(_): ""
+def has(xs: P.Fields, name: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): c.head.name == name || has(c.tail, name)
+def fieldCount(xs: P.Fields) -> Nat:
+  match xs:
+    case nil(_): 0n
+    case cons(c): 1n + fieldCount(c.tail)
+def emptyValues(xs: P.Values) -> Bool:
+  match xs:
+    case nil(_): true
+    case cons(_): false
+def equalCons(head: P.Value, tail: P.Values, b: P.Values) -> Bool:
+  match b:
+    case nil(_): false
+    case cons(d): equal(head, d.head) && equalValues(tail, d.tail)
+def equalValues(a: P.Values, b: P.Values) -> Bool:
+  match a:
+    case nil(_): emptyValues(b)
+    case cons(c): equalCons(c.head, c.tail, b)
+def equalFieldsUnordered(a: P.Fields, b: P.Fields) -> Bool:
+  match a:
+    case nil(_): true
+    case cons(c): has(b, c.head.name) && equal(c.head.value, P.field(b, c.head.name)) && equalFieldsUnordered(c.tail, b)
+# Captured JSON normally preserves field order. Compare matching rows once;
+# retain the unordered fallback for equivalent objects with a different order.
+def emptyFields(xs: P.Fields) -> Bool:
+  match xs:
+    case nil(_): true
+    case cons(_): false
+def equalFieldCons(head: P.Field, tail: P.Fields, b: P.Fields) -> Bool:
+  match b:
+    case nil(_): false
+    case cons(d): if head.name == d.head.name then equal(head.value, d.head.value) && equalFields(tail, d.tail) else 1n + fieldCount(tail) == fieldCount(b) && has(b, head.name) && equal(head.value, P.field(b, head.name)) && equalFieldsUnordered(tail, b)
+def equalFields(a: P.Fields, b: P.Fields) -> Bool:
+  match a:
+    case nil(_): emptyFields(b)
+    case cons(c): equalFieldCons(c.head, c.tail, b)
+def equalRetained(object: String, key: String, b: P.Value) -> Bool:
+  match b:
+    case retained(r): object == r.object && key == r.key
+    case none(_): false
+    case boolean(_): false
+    case natural(_): false
+    case number(_): false
+    case text(_): false
+    case array(_): false
+    case record(_): false
+def equalSame(a: P.Value, b: P.Value) -> Bool:
+  match a:
+    case retained(x): equalRetained(x.object, x.key, b)
+    case none(_): true
+    case boolean(x): x.value == boolean(b)
+    case natural(x): x.value == P.natural(b)
+    case number(x): x.encoded == number(b)
+    case text(x): x.value == P.text(b)
+    case array(x): equalValues(x.values, values(b))
+    case record(x): equalFields(x.fields, fields(b))
+def equal(a: P.Value, b: P.Value) -> Bool:
+  tag(a) == tag(b) && equalSame(a, b)
+def names(xs: P.Values) -> P.Names:
+  match xs:
+    case nil(_): P.Names.nil()
+    case cons(c): P.Names.cons({head: P.text(c.head), tail: names(c.tail)})
+def singleton(xs: P.Values) -> String:
+  match xs:
+    case nil(_): ""
+    case cons(c): if emptyValues(c.tail) then P.text(c.head) else ""
+def appendedCons(head: P.Value, tail: P.Values, b: P.Values) -> String:
+  match b:
+    case nil(_): ""
+    case cons(d): if equal(head, d.head) then appended(tail, d.tail) else ""
+def appended(a: P.Values, b: P.Values) -> String:
+  match a:
+    case nil(_): singleton(b)
+    case cons(c): appendedCons(c.head, c.tail, b)
+def newPrincipal(before: P.Value, after: P.Value, methods: P.Names) -> String:
+  match methods:
+    case nil(_): ""
+    case cons(c):
+      let who: String = appended(values(P.get(before, c.head)), values(P.get(after, c.head)))
+      if who == "" then newPrincipal(before, after, c.tail) else who
+record AmendmentContext:
+  object: String
+  principal: String
+  currentLaw: P.Value
+  nextLaw: P.Value
+def amend(context: AmendmentContext) -> Bool:
+  let amendment: P.Value = P.get(context.currentLaw, "amendment")
+  let config: P.Value = P.get(if tag(amendment) == 6n then amendment else P.get(context.nextLaw, "amendment"), "config")
+  let service: String = P.text(P.get(config, "service"))
+  let methods: P.Names = names(values(P.get(config, "commands")))
+  let who: String = newPrincipal(P.get(context.currentLaw, "invoke"), P.get(context.nextLaw, "invoke"), methods)
+  if service == "" then false else if context.principal != service then true else if who == "" then equal(context.currentLaw, context.nextLaw) else textLength(who) <= 256n && equal(context.nextLaw, enrolledLaw(context.currentLaw, methods, who))

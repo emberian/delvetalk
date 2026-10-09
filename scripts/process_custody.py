@@ -26,7 +26,8 @@ def limit(kind, wanted):
     value = wanted if hard == resource.RLIM_INFINITY else min(wanted, hard)
     resource.setrlimit(kind, (value, value))
     return value
-limit(resource.RLIMIT_CPU, cpu)
+if cpu is not None:
+    limit(resource.RLIMIT_CPU, cpu)
 if memory is not None and sys.platform.startswith('linux'):
     memory = limit(resource.RLIMIT_AS, memory)
     os.environ['MIMALLOC_ARENA_RESERVE'] = '131072'

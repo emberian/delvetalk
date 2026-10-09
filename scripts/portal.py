@@ -176,6 +176,15 @@ class Portal:
         # the JSON-world lock itself; never acquire it around an IPC read.
         return world.snapshot(self.database)
 
+    def capture_roots(self, objects, *, expected=None):
+        """Native paired roots/references; account heaps may supply their own transport."""
+        return world.capture_roots(self.database, objects, principal=self.principal or 'portal-preview',
+                                   profile=self.profile, expected=expected)
+
+    def prepare_invitation(self, invitation, principal, intent, fields):
+        import source_offers
+        return source_offers.prepare(invitation, principal, intent, fields, database=self.database)
+
     def world(self):
         snapshot = self.snapshot()
         return {'title': self.metadata.get('title', 'DelveTalk · a shared workbench'),
@@ -283,10 +292,11 @@ class Portal:
         if not isinstance(panel, str) or len(panel) > 128:
             raise ValueError('Invalid view panel')
         object_id = object_id or bootstrap.default_object(self.metadata)
-        snapshot = self.snapshot()
-        if object_id not in snapshot['objects']:
+        capture = self.capture_roots([object_id])
+        pair = capture['roots'][object_id]
+        if pair is None:
             raise ValueError('Unknown object')
-        root = snapshot['objects'][object_id]
+        root = pair['root']
         if navigation:
             bootstrap.projection.validate_panel(root, panel)
         panel_warning = None
@@ -316,7 +326,10 @@ class Portal:
         bootstrap.projection.children(view)  # Validate before retaining any observation.
         import composite_offers
         import source_offers
-        captured_offers = source_offers.capture_available(view, snapshot['objects'], database=self.database)
+        capture = source_offers.capture_observations(view, capture, capture_roots=self.capture_roots)
+        roots = {name: pair['root'] for name, pair in capture['roots'].items() if pair is not None}
+        references = {name: pair['reference'] for name, pair in capture['roots'].items() if pair is not None}
+        captured_offers = source_offers.capture_available(view, roots, references=references)
         offers = {}
         for index, key in enumerate(sorted(set(captured_offers['offers']) | set(captured_offers['unavailable'])), 1):
             action_id = 'o' + str(index)
@@ -331,11 +344,17 @@ class Portal:
                           'command': unavailable['command'], 'available': False, 'inspectOnly': True,
                           'fields': [], 'reason': unavailable['reason']}
             card['actions'].append(action)
+        document = bootstrap.projection.bound_document(view, card['actions'], offers)
+        if document is not None:
+            card['document'] = document
+        interpretation = bootstrap.projection.interpretation(view)
+        if interpretation is not None:
+            card['interpretation'] = interpretation
         card.update(panel=panel, panels=panels)
         if panel_warning:
             card['panelWarning'] = panel_warning
         identity = self._store('cards', {'view': view, 'card': card, 'offers': offers,
-            'historyLength': len(snapshot['receipts']), 'runtime': self.runtime})
+            'historyLength': capture['sequence'], 'captureHead': capture['head'], 'runtime': self.runtime})
         return self.card(identity)
 
     def object_ref(self, object_id):
@@ -357,6 +376,20 @@ class Portal:
         saved = self._read('cards', identity)
         card = copy.deepcopy(saved['card'])
         card['children'] = bootstrap.projection.children(saved['view'])
+        document = bootstrap.projection.bound_document(saved['view'], card['actions'], saved.get('offers', {}))
+        if document is not None:
+            if canonical(card.get('document')) != canonical(document):
+                raise ValueError('Captured document differs from its source bindings')
+            card['document'] = document
+        else:
+            card.pop('document', None)
+        interpretation = bootstrap.projection.interpretation(saved['view'])
+        if interpretation is not None:
+            if canonical(card.get('interpretation')) != canonical(interpretation):
+                raise ValueError('Captured interpretation differs from its source exports')
+            card['interpretation'] = interpretation
+        else:
+            card.pop('interpretation', None)
         card.update(self.object_ref(card['object']))
         card.update(card=identity, links={'self': '/api/card?card=' + identity,
             'details': '/api/detail?card=' + identity,
@@ -443,9 +476,11 @@ class Portal:
     def captured_request(self, saved, action, principal, intent, fields):
         """Frame only a retained offer; never refresh its roots during preparation."""
         if action in saved.get('offers', {}):
-            import composite_offers
-            return composite_offers.request(saved['offers'][action], principal, intent, fields,
-                                            database=self.database)
+            import source_offers
+            outcome = self.prepare_invitation(saved['offers'][action], principal, intent, fields)
+            if outcome['kind'] != 'ready':
+                raise source_offers.PreparationOutcome(outcome)
+            return outcome['request']
         return affordances.request(saved['view'], action, principal, intent, fields)
 
     @staticmethod
@@ -537,7 +572,7 @@ class Portal:
         return {**result, 'interpretation': identity}
 
 
-def make_server(portal, port=0):
+def make_server(portal, port=0, *, agents=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = 'DelveTalkPortal/1'
 
@@ -574,11 +609,17 @@ def make_server(portal, port=0):
             origin = portal.public_origin if portal.public else 'http://' + host
             if len(self.headers.get_all('Origin', [])) > 1 or self.headers.get('Origin') not in (None, origin):
                 raise PermissionError('Cross-origin requests are refused')
-            navigation = (portal.public and method == 'GET' and url.path == '/'
+            navigation = (portal.public and method == 'GET' and url.path in ('/', '/AGENTS.md')
                           and self.headers.get('Sec-Fetch-Mode') == 'navigate'
                           and self.headers.get('Sec-Fetch-Dest') == 'document')
             if self.headers.get('Sec-Fetch-Site') not in (None, 'same-origin', 'none') and not navigation:
                 raise PermissionError('Cross-site requests are refused')
+            query = parse_qs(url.query, keep_blank_values=True)
+            if any(len(value) != 1 for value in query.values()):
+                raise ValueError('Repeated query fields')
+            q = {key: value[0] for key, value in query.items()}
+            if agents is not None and (url.path == '/AGENTS.md' or url.path.startswith('/AGENTS.md/')):
+                return agents.handle(self, method, url.path, q)
             if portal.public:
                 allowed = {'GET': {'/', '/static/app.js', '/static/style.css', '/api/world',
                                    '/api/object', '/api/card', '/api/child', '/api/detail', '/api/draft', '/api/preparation'},
@@ -586,10 +627,6 @@ def make_server(portal, port=0):
                            'POST': {'/api/prepare', '/api/interpret'}}
                 if url.path not in allowed.get(method, set()):
                     raise PermissionError('This relation is unavailable on a public preview')
-            query = parse_qs(url.query, keep_blank_values=True)
-            if any(len(value) != 1 for value in query.values()):
-                raise ValueError('Repeated query fields')
-            q = {key: value[0] for key, value in query.items()}
             if method in ('GET', 'HEAD'):
                 if url.path in ('/', '/static/app.js', '/static/style.css'):
                     name = {'/': 'index.html', '/static/app.js': 'app.js', '/static/style.css': 'style.css'}[url.path]
@@ -597,6 +634,7 @@ def make_server(portal, port=0):
                     return self.respond(200, (STATIC / name).read_bytes(), mime + '; charset=utf-8')
                 if url.path == '/api/world':
                     exact(q, ()); result = portal.world()
+                    result['agents'] = {'available': agents is not None, 'guide': '/AGENTS.md'}
                 elif url.path == '/api/object':
                     exact(q, (), ('object', 'panel')); result = portal.object(q.get('object'), q.get('panel', 'main'))
                 elif url.path == '/api/card':
@@ -676,22 +714,45 @@ def main():
     parser.add_argument('--state', type=Path, help='private portal custody; defaults inside world directory')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--public-origin', help='exact HTTPS origin for read-only public previews behind a trusted proxy')
+    parser.add_argument('--agent-state', type=Path, help='opt into verified agent accounts and native heaps in this separate custody directory')
+    parser.add_argument('--agent-welcome-object', help='optional source-owned enrollment object; requires a dedicated welcome principal')
+    parser.add_argument('--agent-welcome-principal', help='dedicated source enrollment service identity; never a remote caller or general operator')
+    parser.add_argument('--agent-anthropic', action='store_true', help='enable explicit authenticated model proposals with bounded per-account custody')
     parser.add_argument('--principal', help='trusted local caller identity; never a Delve login')
     parser.add_argument('--allow-local-actions', action='store_true')
     parser.add_argument('--anthropic', action='store_true', help='opt into one paid proposal call per NL interpretation')
     args = parser.parse_args()
     if args.public_origin and (args.principal is not None or args.allow_local_actions or args.anthropic or args.state is not None):
         parser.error('--public-origin cannot combine with --principal, --allow-local-actions, --anthropic or --state')
+    if args.agent_state is not None and not args.public_origin:
+        parser.error('--agent-state requires an explicit --public-origin')
+    if (args.agent_welcome_object is None) != (args.agent_welcome_principal is None):
+        parser.error('--agent-welcome-object and --agent-welcome-principal must be configured together')
+    if args.agent_welcome_object is not None and args.agent_state is None:
+        parser.error('Source welcome configuration requires --agent-state')
+    if args.agent_anthropic and args.agent_state is None:
+        parser.error('--agent-anthropic requires --agent-state')
     proposer = None
-    if args.anthropic:
+    model_provider = None
+    if args.anthropic or args.agent_anthropic:
         key = os.environ.get('ANTHROPIC_API_KEY')
         if not key:
-            parser.error('--anthropic requires ANTHROPIC_API_KEY')
-        proposer = interpret.AnthropicProposer(key)
+            parser.error('Anthropic configuration requires ANTHROPIC_API_KEY')
+        from model_service import AnthropicMessages
+        model_provider = AnthropicMessages(key)
     portal = Portal(args.directory, state=args.state, principal=args.principal,
                     allow_local_actions=args.allow_local_actions, proposer=proposer,
                     public_origin=args.public_origin)
-    server = make_server(portal, args.port)
+    if args.anthropic:
+        portal.proposer = interpret.AnthropicProposer(None, directory=portal.state / 'model-jobs',
+            identity_scope=canonical([str(portal.directory), portal.principal]).decode(), provider=model_provider)
+    agents = None
+    if args.agent_state is not None:
+        from agent_api import open_api
+        welcome = ({'object': args.agent_welcome_object, 'principal': args.agent_welcome_principal}
+                   if args.agent_welcome_object is not None else None)
+        agents = open_api(portal, args.agent_state, welcome=welcome, model_provider=model_provider)
+    server = make_server(portal, args.port, agents=agents)
     print('DelveTalk portal: ' + (portal.public_origin or 'http://127.0.0.1:' + str(server.server_port)), flush=True)
     print('Local interaction as ' + args.principal if portal.interactive else 'Inspection and draft preparation only.', flush=True)
     try:
@@ -700,6 +761,8 @@ def main():
         pass
     finally:
         server.server_close()
+        if agents is not None:
+            agents.heaps.close()
 
 
 if __name__ == '__main__':

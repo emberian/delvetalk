@@ -1,0 +1,78 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Allocation.obend as A
+import ./Encounter.obend as E
+import ./Creation.obend as C
+
+record Config:
+  object: P.Value
+  participants: P.Value
+record State:
+  object: P.Value
+  participants: P.Value
+  last: String
+def initial(config: Config) -> State:
+  {object: config.object, participants: config.participants, last: ""}
+def ordinary(object: P.Value) -> State:
+  {object: object, participants: P.Value.none(), last: ""}
+def without(values: P.Values, maker: String) -> P.Values:
+  match values:
+    case nil(_): P.Values.nil()
+    case cons(c): if P.text(c.head) == maker then without(c.tail, maker) else P.Values.cons({head: c.head, tail: without(c.tail, maker)})
+def people(state: State, maker: String) -> P.Value:
+  match state.participants:
+    case array(a): P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: without(a.values, maker)})})
+    case none(_): P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: P.Values.nil()})})
+    case boolean(_): P.Value.none()
+    case natural(_): P.Value.none()
+    case number(_): P.Value.none()
+    case text(_): P.Value.none()
+    case record(_): P.Value.none()
+    case retained(_): P.Value.none()
+record Input:
+  name: String
+record Result:
+  name: String
+  maker: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+  allocations: A.Allocations
+def make(state: State, input: Input, context: Abi.Context) -> Decision:
+  let accepted: Bool = input.name != ""
+  {accepted: accepted, reason: if accepted then "" else "Name the new object.", state: if accepted then extend(state, {last: input.name}) else state, result: {name: input.name, maker: context.principal}, allocations: if accepted then A.Allocations.cons({head: {name: input.name, protocol: state.object, law: people(state, context.principal)}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Method:
+  label: String
+  fields: {name: Field}
+record Description:
+  name: String
+  initial: State
+  methods: {make: Method}
+  panels: {last: String}
+  allocation: {limit: Nat}
+def describe() -> Description:
+  {name: "Object workshop", initial: {object: P.Value.none(), participants: P.Value.none(), last: ""}, methods: {make: {label: "Make an object", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}}}}, panels: {last: "Last made"}, allocation: {limit: 16n}}
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {name: Field}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: E.Children
+  invitations: {make: Invitation}
+def view(state: State, panel: String) -> View:
+  {title: "Object workshop", prose: if panel == "last" then state.last else "Create an object, then teach it a new program. Its maker and the configured participants may use and govern it.", actions: {}, children: E.Children.nil(), invitations: {make: {visible: true, text: "Make an object", prepare: "prepareMake", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}}, observations: P.Requests.nil()}}}
+def prepareMake(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let name: String = P.text(P.get(contribution, "name"))
+  if name == "" then P.Preparation.question({message: "Name the object.", needs: P.Names.cons({head: "name", tail: P.Names.nil()})}) else C.make(context.object, name, P.oneField("name", P.Value.text({value: name})), "Make an object with its captured workshop and absence roots.")

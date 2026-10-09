@@ -53,6 +53,7 @@ world:
 	python3 conformance/test_compiled.py
 	python3 conformance/test_source_packages.py
 	python3 conformance/test_source_contract.py
+	python3 conformance/test_source_amendment.py
 	python3 conformance/test_preparation.py
 	python3 conformance/test_source_transition.py
 	python3 conformance/test_source_data_transition.py

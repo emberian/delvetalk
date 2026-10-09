@@ -264,6 +264,12 @@ def compareDataTypes (j : Json) : Except String Json := do
 
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
+  | "template-expand" =>
+    let source ← j.getObjValAs? String "source"
+    if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
+    let expanded ← DocumentTemplate.lower source
+    return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.source),
+      ("schema", toJson "delvetalk.document-template-expansion.v1")]
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
   | "run-data-v1" => runData j

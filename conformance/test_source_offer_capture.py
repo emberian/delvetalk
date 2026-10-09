@@ -25,7 +25,7 @@ class InvitationCapture(unittest.TestCase):
         self.assertEqual(invitation['entry'], 'prepareGesture')
         self.assertEqual(invitation['object'], 'owner')
         self.assertEqual(invitation['root'], self.view['root'])
-        self.assertEqual(invitation['observations'], [{'object': 'peer', 'root': self.peer}])
+        self.assertEqual(invitation['observations'], [{'object': 'peer', 'root': self.peer, 'inspectState': False, 'inspectLaw': False}])
         self.assertNotIn('calls', invitation)
         self.assertNotIn('bindings', invitation)
         self.assertNotIn('captures', invitation)

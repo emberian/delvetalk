@@ -1,0 +1,92 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
+import ./GrantPolicy.obend as G
+record Member:
+  did: String
+  proof: String
+sum Members:
+  nil: {}
+  cons: {head: Member, tail: Members}
+record State:
+  service: String
+  targets: P.Values
+  members: Members
+  count: Nat
+  capacity: Nat
+  open: Bool
+def initial(config: P.Value) -> State:
+  {service: P.text(P.get(config, "service")), targets: G.values(P.get(config, "targets")), members: Members.nil(), count: 0n, capacity: P.natural(P.get(config, "capacity")), open: G.boolean(P.get(config, "open"))}
+def contains(xs: Members, did: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): c.head.did == did || contains(c.tail, did)
+record Verified:
+  did: String
+  proof: String
+def allowed(state: State, input: Verified, principal: String) -> Bool:
+  principal == state.service && state.service != "" && state.open && state.capacity <= 64n && state.count < state.capacity && input.did != "" && textLength(input.did) <= 256n && input.proof != "" && textLength(input.proof) <= 128n && contains(state.members, input.did) == false
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+def enroll(state: State, input: Verified, context: Abi.Context) -> Decision:
+  let yes: Bool = allowed(state, input, context.principal)
+  {accepted: yes, reason: if yes then "" else "This verified identity needs a new invitation from the welcome steward.", state: if yes then extend(state, {members: Members.cons({head: {did: input.did, proof: input.proof}, tail: state.members}), count: state.count + 1n}) else state, result: if yes then "Welcome to the shared garden and workshop." else ""}
+def targetsReady(xs: P.Values, observations: P.Observations, service: String) -> Bool:
+  match xs:
+    case nil(_): true
+    case cons(c):
+      let target: String = P.text(P.get(c.head, "object"))
+      let observed: P.Observation = P.observation(observations, target)
+      let config: P.Value = P.get(P.get(observed.law, "amendment"), "config")
+      observed.object == target && target != "" && G.emptyValues(G.values(P.get(c.head, "commands"))) == false && P.text(P.get(observed.law, "profile")) == "delvetalk-scoped-law-v4" && P.text(P.get(config, "service")) == service && G.equal(P.get(config, "commands"), P.get(c.head, "commands")) && targetsReady(c.tail, observations, service)
+def reads(xs: P.Values) -> P.Reads:
+  match xs:
+    case nil(_): P.Reads.nil()
+    case cons(c): P.Reads.cons({head: P.Read.existing({object: P.text(P.get(c.head, "object"))}), tail: reads(c.tail)})
+def laws(xs: P.Values, observations: P.Observations, did: String) -> P.Effects:
+  match xs:
+    case nil(_): P.Effects.nil()
+    case cons(c):
+      let target: String = P.text(P.get(c.head, "object"))
+      let methods: P.Names = G.names(G.values(P.get(c.head, "commands")))
+      P.Effects.cons({head: P.Effect.law({object: target, law: G.enrolledLaw(P.observation(observations, target).law, methods, did)}), tail: laws(c.tail, observations, did)})
+def prepareEnroll(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let input: Verified = {did: P.text(P.get(contribution, "did")), proof: P.text(P.get(contribution, "proof"))}
+  if allowed(state, input, context.principal) == false then P.Preparation.refused({message: "This verified identity needs a new invitation from the welcome steward."}) else if G.emptyValues(state.targets) || targetsReady(state.targets, observations, state.service) == false then P.Preparation.refused({message: "Capture the configured shared places with their current enrollment policies."}) else P.Preparation.ready({summary: "Welcome this verified identity to the shared places, preserving every other permission.", reads: reads(state.targets), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "enroll", input: contribution}), tail: laws(state.targets, observations, input.did)})})
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Description:
+  name: String
+  initial: State
+  methods: {enroll: {label: String, fields: {did: Field, proof: Field}}}
+  panels: {}
+def didField() -> Field:
+  {type: "string", minLength: 1n, maxLength: 256n}
+def proofField() -> Field:
+  {type: "string", minLength: 1n, maxLength: 128n}
+def describe() -> Description:
+  {name: "Welcome", initial: initial(P.Value.none()), methods: {enroll: {label: "Record an authenticated welcome", fields: {did: didField(), proof: proofField()}}}, panels: {}}
+def targetRequests(xs: P.Values) -> P.Requests:
+  match xs:
+    case nil(_): P.Requests.nil()
+    case cons(c): P.Requests.cons({head: {object: P.text(P.get(c.head, "object")), inspectState: false, inspectLaw: true}, tail: targetRequests(c.tail)})
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {did: Field, proof: Field}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Encounter.Children
+  invitations: {enroll: Invitation}
+def view(state: State, panel: String) -> View:
+  {title: "Welcome", prose: "A verified account may ask the welcome steward for a place in the shared garden and workshop. Personal rooms remain personal.", actions: {}, children: Encounter.Children.nil(), invitations: {enroll: {visible: state.open, text: "Welcome a verified account", prepare: "prepareEnroll", fields: {did: didField(), proof: proofField()}, observations: targetRequests(state.targets)}}}

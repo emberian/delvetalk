@@ -1,0 +1,15 @@
+edition ObjectiveBend 1
+def allowed(word: String) -> Bool:
+  true
+def knock(word: String) -> String:
+  "The chalk door is waiting for a spell."
+record Action:
+  text: String
+  command: String
+  input: {}
+record View:
+  title: String
+  prose: String
+  actions: {knock: Action}
+def view(state: {}, panel: String) -> View:
+  {title: "The chalk door", prose: "A door drawn in chalk. Its maker has not given it a spell yet.", actions: {knock: {text: "Whisper to the door", command: "knock", input: {}}}}

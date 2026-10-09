@@ -15,8 +15,9 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('index_town_helpers', ROOT / 'conformance/test_town_forge_journey.py')
 helpers = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helpers)
-import composite_offers
 import continuation
+import source_object
+import source_offers
 import source_store
 import translate
 import workspace
@@ -45,18 +46,6 @@ def entries(root):
         cursor = field(cursor['payload'], 'tail')
     assert cursor == {'tag': 'variant', 'label': 'nil', 'payload': {'tag': 'record', 'fields': []}}
     return values
-
-
-def exhibit_offer(index, index_root, target, target_root):
-    return {'format': composite_offers.FORMAT, 'title': 'Bring an exhibit here',
-        'label': 'Observe, exhibit and label this object', 'command': 'exhibit',
-        'reads': {index: copy.deepcopy(index_root), target: copy.deepcopy(target_root)},
-        'calls': [{'op': 'observe', 'object': target},
-                  {'object': index, 'command': 'add', 'inputFrom': 0},
-                  {'object': index, 'command': 'caption', 'input': {'object': target, 'label': None}}],
-        'fields': [{'name': 'label', 'label': 'Exhibit label', 'type': 'string', 'required': True,
-                    'minLength': 1, 'maxLength': 128}],
-        'bindings': [{'field': 'label', 'call': 2, 'input': 'label'}]}
 
 
 class PlaceIndexAdmission(unittest.TestCase):
@@ -170,12 +159,23 @@ class PlaceIndexJourney(helpers.TownForgeJourneyTests):
     def setUp(self):
         original_build, original_law = helpers.forge.build_stateful, helpers.forge.factory_law
         def configured(visitors, compiler):
+            initial = translate.translate('objective-bend-spell@2',
+                (ROOT / 'syntaxes/examples/lantern.obend').read_bytes())['lowered']
             factories = original_build([A, B], compiler,
                 methods=['add', 'caption', 'remove', 'reorder', 'light', 'douse'],
-                state_fields={'lit': {'type': 'bool', 'label': 'Lit'}})
-            generic = helpers.clerk.loads((ROOT / 'protocols/factories/source-desk.json').read_bytes())
-            generic['initial']['compiler'] = compiler
-            factories['desks'] = generic
+                initial_program=initial)
+            source_desks = helpers.clerk.module('place_index_source_desks', 'protocols/source-desk/package.py')
+            factories['desks'] = source_desks.factory(compiler, [A, B])
+            writing_modules = source_object.read_modules([
+                ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+                ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+                ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+                ('ExhibitWriting', PACKAGE / 'ExhibitWriting.obend')])
+            for name in ('first-lantern', 'second-lantern'):
+                factories['exhibit-' + name] = source_object.load(writing_modules,
+                    syntax='objective-bend-spell@3', constructor='initial',
+                    arguments=[source_object.data({'index': 'objects/exhibition',
+                                                  'target': 'objects/' + name})])
             return factories
         with patch.object(helpers.forge, 'build', side_effect=configured), patch.object(
                 helpers.forge, 'factory_law', side_effect=lambda makers: original_law([A, B])):
@@ -245,18 +245,17 @@ class PlaceIndexJourney(helpers.TownForgeJourneyTests):
         return result
 
     def exhibit(self, index, target, label):
-        self.sequence += 1
-        offer = exhibit_offer(index, self.root(index), target, self.root(target))
-        card = self.book.capture_composite(offer, alias='exhibit-' + str(self.sequence))
-        parent = self.publish([card])
-        self.sequence += 1
-        uri = f'at://{B}/{helpers.clerk.FEED}/exhibit-{self.sequence}'
-        cid = 'exhibit-cid-' + str(self.sequence)
-        self.pds.records[uri] = (cid, {'$type': helpers.clerk.FEED,
-            'text': 'delvetalk ' + card['alias'] + ' exhibit\nlabel: ' + label,
-            'reply': {'root': parent, 'parent': parent}})
-        response = self.operator.receive(uri, cid)
+        self.assertEqual(index, 'objects/exhibition')
+        card = self.capture('exhibit-' + target.rsplit('/', 1)[-1])
+        publication = self.publish([card])
+        before_index, before_target = self.root(index), self.root(target)
+        _, denied = self.reply(card, {'label': label}, author=A, parent=publication)
+        self.assertEqual(denied['receipt']['reply']['kind'], 'refused')
+        self.assertEqual(self.root(index), before_index)
+        self.assertEqual(self.root(target), before_target)
+        _, response = self.reply(card, {'label': label}, author=B, parent=publication)
         self.committed(response)
+        self.assertEqual(response['receipt']['request']['op'], 'transaction')
         return response
 
     def test_two_authors_discover_revise_remove_and_restore_real_list(self):
@@ -336,8 +335,16 @@ class PlaceIndexJourney(helpers.TownForgeJourneyTests):
             expected_runtime=workspace.bootstrap.history.runtime('compiled'))
         command = workspace.bootstrap.room.view_request(child_view, 'douse', A, 'restored-douse')
         self.assertEqual(recovered.exchange(command)['kind'], 'committed')
-        request = composite_offers.request(exhibit_offer(index, recovered.inspect(index), first,
-            recovered.inspect(first)), B, 'restore-add', {'label': 'Returned moon lantern'})
+        writer = 'exhibit-' + first.rsplit('/', 1)[-1]
+        captured = helpers.clerk.world.capture_roots(recovered.database, [writer, index, first],
+                                                     principal=B, profile='compiled')
+        writer_view = workspace.bootstrap.room.inspect_object(captured['roots'][writer]['root'], writer,
+            expected_runtime=workspace.bootstrap.history.runtime('compiled'))
+        invitation = source_offers.capture(writer_view,
+            {name: pair['root'] for name, pair in captured['roots'].items()},
+            references={name: pair['reference'] for name, pair in captured['roots'].items()})['exhibit']
+        request = source_offers.request(invitation, B, 'restore-add',
+            {'label': 'Returned moon lantern'}, database=recovered.database)
         self.assertEqual(recovered.exchange(request)['kind'], 'committed')
         self.assertEqual([r['object'] for r in entries(recovered.inspect(index))], [second, first])
 

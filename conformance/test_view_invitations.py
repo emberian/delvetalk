@@ -23,7 +23,7 @@ def names(values):
 
 def item(visible=True):
     value = wire({'visible': visible, 'text': 'Offer a gesture', 'prepare': 'prepareGesture', 'fields': {}})
-    value['fields'].append({'name': 'observations', 'value': names(['peer'])})
+    value['fields'].append({'name': 'observations', 'value': names([{'object': 'peer', 'inspectState': False, 'inspectLaw': False}])})
     return value
 
 
@@ -36,19 +36,16 @@ def fixture(rows=None):
     return view
 
 
-EXTRA = '''sum Names:
-  nil: {}
-  cons: {head: String, tail: Names}
-record Invitation:
+EXTRA = '''record Invitation:
   visible: Bool
   text: String
   prepare: String
   fields: {}
-  observations: Names
+  observations: P.Requests
 '''
 SOURCE = BASE.replace('sum Children:', EXTRA + 'sum Children:').replace(
     'actions: Actions, children: Children}', 'actions: Actions, children: Children, invitations: {gesture: Invitation}}').replace(
-    'children: Children.nil()}', 'children: Children.nil(), invitations: {gesture: {visible: true, text: "Offer a gesture", prepare: "prepareGesture", fields: {}, observations: Names.cons({head: "peer", tail: Names.nil()})}}}')
+    'children: Children.nil()}', 'children: Children.nil(), invitations: {gesture: {visible: true, text: "Offer a gesture", prepare: "prepareGesture", fields: {}, observations: P.Requests.cons({head: {object: "peer", inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})}}}')
 
 
 SOURCE = SOURCE.replace('edition ObjectiveBend 1\n', 'edition ObjectiveBend 1\nimport ./Preparation.obend as P\n', 1)
@@ -61,7 +58,7 @@ class InvitationFraming(unittest.TestCase):
     def test_retained_copy_filters_visibility_without_fetching_or_retargeting(self):
         view = fixture({'gesture': item(), 'hidden': item(False)})
         expected = {'gesture': {'visible': True, 'text': 'Offer a gesture', 'prepare': 'prepareGesture',
-                               'fields': {}, 'observations': ['peer']}}
+                               'fields': {}, 'observations': [{'object': 'peer', 'inspectState': False, 'inspectLaw': False}]}}
         self.assertEqual(projection.invitations(view), expected)
         copied = projection.invitations(view)
         copied['gesture']['observations'] = ['other']
@@ -75,17 +72,27 @@ class InvitationFraming(unittest.TestCase):
         view['mode'] = 'raw'
         self.assertEqual(projection.invitations(view), {})
 
+    def test_observation_flags_are_exact_source_booleans(self):
+        invitation = item()
+        requested = [{'object': 'peer', 'inspectState': True, 'inspectLaw': False}]
+        invitation['fields'][-1]['value'] = names(requested)
+        self.assertEqual(projection.invitations(fixture({'gesture': invitation}))['gesture']['observations'], requested)
+        for invalid in ('peer', {'object': 'peer'}, {'object': 'peer', 'inspectState': 1, 'inspectLaw': False}):
+            invitation['fields'][-1]['value'] = names([invalid])
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(projection.ProjectionError, 'booleans'):
+                fixture({'gesture': invitation})
+
     def test_hidden_metadata_and_duplicate_observations_are_checked(self):
         hidden = item(False)
         hidden['fields'][2]['value'] = wire('../not-an-export')
         with self.assertRaisesRegex(projection.ProjectionError, 'export name'):
             fixture({'hidden': hidden})
         hidden = item(False)
-        hidden['fields'][-1]['value'] = names(['peer', 'peer'])
+        hidden['fields'][-1]['value'] = names([{'object': 'peer', 'inspectState': False, 'inspectLaw': False}] * 2)
         with self.assertRaisesRegex(projection.ProjectionError, 'duplicate'):
             fixture({'hidden': hidden})
-        hidden['fields'][-1]['value'] = names([str(i) for i in range(9)])
-        with self.assertRaisesRegex(projection.ProjectionError, '8'):
+        hidden['fields'][-1]['value'] = names([{'object': str(i), 'inspectState': False, 'inspectLaw': False} for i in range(17)])
+        with self.assertRaisesRegex(projection.ProjectionError, '16'):
             fixture({'hidden': hidden})
 
 
@@ -99,7 +106,7 @@ class NativeInvitations(unittest.TestCase):
             'sourcePackage': projection.source_packages.NAME})
         root = {'protocol': protocol, 'state': protocol['initial'], 'version': 0, 'law': ['actor']}
         view = projection.project(root, 'gestures')
-        self.assertEqual(projection.invitations(view)['gesture']['observations'], ['peer'])
+        self.assertEqual(projection.invitations(view)['gesture']['observations'], [{'object': 'peer', 'inspectState': False, 'inspectLaw': False}])
         self.assertEqual(projection.invitations(view)['gesture']['prepare'], 'prepareGesture')
         self.assertEqual(projection.action_order(view), ['z-start'])
         self.assertEqual(view['root'], root)

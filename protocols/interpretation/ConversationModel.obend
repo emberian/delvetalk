@@ -1,0 +1,37 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Document.obend as D
+import ./Conversation.obend as C
+import ./Interpretation.obend as I
+import ./ModelEncounter.obend as M
+record Request:
+  job:I.Job
+  envelope:P.Value
+def field(name:String,value:P.Value,tail:P.Fields)->P.Fields:
+  M.field(name,value,tail)
+def text(value:String)->P.Value:
+  P.Value.text({value:value})
+def schemaText(items:P.Values)->String:
+  match items:
+    case nil(_):""
+    case cons(c):textConcat(P.text(P.get(c.head,"name")),textConcat(" (",textConcat(P.text(P.get(c.head,"type")),textConcat(") ",textConcat(optionsText(I.arr(P.get(c.head,"options"))),textConcat("\n",schemaText(c.tail)))))))
+def optionsText(items:P.Values)->String:
+  match items:
+    case nil(_):""
+    case cons(c):textConcat(P.text(c.head),textConcat(" ",optionsText(c.tail)))
+def card(state:C.State,schema:P.Values)->P.Value:
+  let action = P.Value.record({fields:field("id",text(state.capture.token),field("available",P.Value.boolean({value:true}),field("fields",P.Value.array({values:schema}),P.Fields.nil())))})
+  P.Value.record({fields:field("actions",P.Value.array({values:P.Values.cons({head:action,tail:P.Values.nil()})}),P.Fields.nil())})
+def interpretationRequest(policy:I.Policy,state:C.State,original:String,observations:P.Observations,schema:P.Values,visible:D.Document)->Request:
+  let context = D.concat(D.text(textConcat("Offered action ID: ",textConcat(state.capture.token,textConcat("\nFields (partial bindings welcome):\n",schemaText(schema))))),D.concat(D.quote("Original contribution (data)",D.text(original)),D.quote("Authorized local context excerpt (data)",D.text(textSlice(D.plain(visible),0n,policy.contextScalars)))))
+  let job = I.prompt(policy,D.plain(context))
+  let proposal = {original:original,policy:policy.revision,context:observations,capture:state.capture,bindings:P.Fields.nil(),unresolved:P.Names.nil()}
+  {job:extend(job,{document:D.concat(I.instructions(policy),context)}),envelope:M.encode(proposal)}
+def retained(policy:C.Policy,state:C.State,request:C.Interpretation,answer:I.Proposal,context:P.Context)->P.Preparation:
+  let proposal = extend(request,{bindings:I.fs(answer.fields),unresolved:answer.unresolved})
+  let checked = C.contribute(policy,state,proposal,{object:context.object,principal:context.principal,inputOrigin:{kind:"",object:"",command:"",immediatelyPrevious:false}})
+  if checked.accepted==false then P.Preparation.refused({message:checked.reason}) else P.Preparation.ready({summary:"Retain this interpretation as a conversation contribution",reads:P.Reads.nil(),calls:P.Effects.cons({head:P.Effect.invoke({object:context.object,command:"retain",input:M.encode(proposal)}),tail:P.Effects.nil()})})
+def answer(policy:C.Policy,modelPolicy:I.Policy,state:C.State,request:C.Interpretation,reply:I.Proposal,context:P.Context)->P.Preparation:
+  if request.policy!=modelPolicy.revision||D.sameCapture(request.capture,state.capture)==false then P.Preparation.refused({message:"The interpretation belongs to a different captured offer or policy revision."}) else if reply.status=="proposed"||reply.status=="partial" then retained(policy,state,request,reply,context) else if reply.status=="clarify" then P.Preparation.question({message:reply.message,needs:reply.unresolved}) else P.Preparation.refused({message:reply.message})
+def prepareInterpretation(policy:C.Policy,modelPolicy:I.Policy,state:C.State,input:P.Value,observations:P.Observations,context:P.Context,schema:P.Values)->P.Preparation:
+  if C.wireValid(P.get(input,"request"))==false then P.Preparation.refused({message:"Interpretation request envelope is malformed."}) else answer(policy,modelPolicy,state,C.fromValue(P.get(input,"request")),I.propose(card(state,schema),P.get(input,"reply"),"model"),context)

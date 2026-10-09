@@ -70,7 +70,7 @@ class TownAuthoringTests(unittest.TestCase):
         self.path = Path(self.tmp.name)
         self.pds = fixture.FakePDS()
         self.clerk = clerk.Clerk(self.path / 'clerk', self.pds)
-        protocol = clerk.loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes())
+        protocol = desk.module('town_candidate_package', 'protocols/source-desk/package.py').candidate()
         law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {
             'submit': [A], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': [A]},
             'law': [A], 'reprogram': []}

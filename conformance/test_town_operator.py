@@ -97,7 +97,7 @@ class TownOperatorTests(unittest.TestCase):
 
     def test_factory_refusal_skips_absent_read_and_commit_captures_enrolled_child(self):
         f = self.fixture
-        protocol = town.loads((ROOT / 'protocols/factories/object.json').read_bytes())
+        protocol = town.loads((ROOT / 'conformance/fixtures/allocation-object.json').read_bytes())
         changed = town.clerk.world.exchange(f.c.database, {'op': 'reprogram', 'object': 'counter',
             'principal': A, 'intent': 'install-factory', 'expected': f.root,
             'protocol': protocol, 'state': protocol['initial']})

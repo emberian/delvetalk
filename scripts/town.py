@@ -62,14 +62,37 @@ class Town:
                                                        expected_runtime=expected_runtime))
         return views
 
+    def _capture_roots(self, objects, profile, *, expected=None):
+        return world.capture_roots(self.clerk.database, objects, profile=profile, expected=expected)
+
+    def _capture_view(self, object_id, expected_runtime, profile):
+        capture = self._capture_roots([object_id], profile)
+        pair = capture['roots'][object_id]
+        if pair is None:
+            return None, capture
+        root = pair['root']
+        artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
+        view = bootstrap.room.inspect_object(root, object_id, artifact, expected_runtime=expected_runtime)
+        return view, self._capture_observations(view, capture, profile)
+
+    def _capture_observations(self, view, capture, profile):
+        return town_cards.source_offers.capture_observations(view, capture,
+            capture_roots=lambda objects, expected=None: self._capture_roots(objects, profile, expected=expected))
+
+    @staticmethod
+    def _capture_parts(capture):
+        return {'roots': {name: pair['root'] for name, pair in capture['roots'].items() if pair is not None},
+                'references': {name: pair['reference'] for name, pair in capture['roots'].items() if pair is not None}}
+
     def capture(self, object_id, *, alias=None):
         with self.lock():
             config, book = self._configuration()
             if object_id not in config['objects']:
                 raise ValueError('object is not enrolled in this clerk')
-            snapshot = world.snapshot(self.clerk.database)
-            captured = book.capture(self._views([object_id], book.metadata()['runtime'], snapshot=snapshot)[0],
-                alias=alias, roots=snapshot['objects'], database=self.clerk.database)
+            view, capture = self._capture_view(object_id, book.metadata()['runtime'], config.get('runtimeProfile', 'world'))
+            if view is None:
+                raise ValueError('object absent from current world: ' + object_id)
+            captured = book.capture(view, alias=alias, **self._capture_parts(capture))
             return {'status': 'prepared', **captured}
 
     def capture_offer(self, object_id, key, *, alias=None):
@@ -78,14 +101,10 @@ class Town:
             config, book = self._configuration()
             if object_id not in config['objects']:
                 raise ValueError('object is not enrolled in this clerk')
-            snapshot = world.snapshot(self.clerk.database)
-            root = snapshot['objects'].get(object_id)
-            if root is None:
+            view, capture = self._capture_view(object_id, book.metadata()['runtime'], config.get('runtimeProfile', 'world'))
+            if view is None:
                 raise ValueError('object absent from current world: ' + object_id)
-            artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
-            view = bootstrap.room.inspect_object(root, object_id, artifact,
-                expected_runtime=book.metadata()['runtime'])
-            captured = book.capture_source_offer(view, snapshot['objects'], key, alias=alias, database=self.clerk.database)
+            captured = book.capture_source_offer(view, key=key, alias=alias, **self._capture_parts(capture))
             return {'status': 'prepared', **captured}
 
     def capture_child(self, parent_alias, child_key, *, alias=None):
@@ -105,10 +124,12 @@ class Town:
                         'panel': panel, 'reason': reason, 'detail': detail}
             if object_id not in config['objects']:
                 return unavailable('unenrolled', 'This object is not enrolled for town replies.')
-            snapshot = world.snapshot(self.clerk.database)
-            root = snapshot['objects'].get(object_id)
-            if root is None:
+            profile = config.get('runtimeProfile', 'world')
+            capture = self._capture_roots([object_id], profile)
+            pair = capture['roots'][object_id]
+            if pair is None:
                 return unavailable('absent', 'This object is absent from the current world.')
+            root = pair['root']
             try:
                 town_cards.projection.validate_panel(root, panel)
             except ValueError as error:
@@ -120,9 +141,10 @@ class Town:
                 if (('viewProgram' in root['protocol'] and view.get('mode') != 'projection')
                         or ('roomArtifact' in root['protocol'] and view.get('mode') != 'room')):
                     raise ValueError(view.get('reason', 'Child view is unavailable.'))
+                capture = self._capture_observations(view, capture, profile)
             except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
                 return unavailable('view-unavailable', str(error)[:2000])
-            captured = book.capture(view, alias=alias, roots=snapshot['objects'], database=self.clerk.database)
+            captured = book.capture(view, alias=alias, **self._capture_parts(capture))
             return {'status': 'prepared', **selected, 'card': captured}
 
     def bind(self, alias, uri, cid):
@@ -194,36 +216,31 @@ class Town:
                 request = receipt['request']
                 targets = [request['object']] if 'object' in request else sorted(request['reads'])
                 targets = list(dict.fromkeys(targets + [child['object'] for child in town_cards.affordances.allocated_refs(receipt['reply'])]))
-                snapshot = world.snapshot(self.clerk.database)
-                entry['views'], entry['notices'] = [], []
+                entry['views'], entry['notices'], entry['captures'] = [], [], {}
                 for target in targets:
-                    root = snapshot['objects'].get(target)
-                    if root is None:
-                        entry['notices'].append({'object': target, 'reason': 'absent'})
-                        continue
                     try:
-                        artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
-                        entry['views'].append(bootstrap.room.inspect_object(root, target, artifact,
-                                                    expected_runtime=book.metadata()['runtime']))
+                        view, capture = self._capture_view(target, book.metadata()['runtime'], config.get('runtimeProfile', 'world'))
+                        if view is None:
+                            entry['notices'].append({'object': target, 'reason': 'absent'})
+                            continue
+                        entry['views'].append(view)
+                        entry['captures'][target] = capture
                     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                         entry['notices'].append({'object': target, 'reason': 'view-unavailable', 'detail': str(error)[:2000]})
-                entry['offerRoots'] = {}
-                for view in entry['views']:
-                    # Preserve presentation preimages independently of the native
-                    # references minted when the follow-up card is captured.
-                    entry['offerRoots'][view['object']] = view['root']
-                    for invitation in town_cards.projection.invitations(view).values():
-                        for identity in invitation['observations']:
-                            if identity in snapshot['objects']:
-                                entry['offerRoots'][identity] = snapshot['objects'][identity]
                 entry['aliases'] = ['reply-' + str(entry['sequence']) + '-' + str(n + 1) for n in range(len(entry['views']))]
                 save(path, entry)  # Capture exact views before allocating any follow-up card.
             cards = []
             notices = list(entry.get('notices', []))
             for view, alias in zip(entry['views'], entry['aliases']):
                 try:
-                    cards.append(book.capture(view, alias=alias, roots=entry.get('offerRoots'),
-                                              database=self.clerk.database))
+                    if 'captures' in entry:
+                        # Retry uses the saved atomic pairs, even after the world advances.
+                        cards.append(book.capture(view, alias=alias, **self._capture_parts(entry['captures'][view['object']])))
+                    else:
+                        # Legacy journals retained full preimages; never replace them
+                        # with current roots while completing their original response.
+                        cards.append(book.capture(view, alias=alias, roots=entry.get('offerRoots'),
+                                                  database=self.clerk.database))
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                     notices.append({'object': view['object'], 'reason': 'card-unavailable', 'detail': str(error)[:2000]})
             prepared = book.prepare_outcome(receipt['reply'])

@@ -16,7 +16,7 @@ spec.loader.exec_module(queue_module)
 desk = queue_module.desk
 
 
-@unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-transactions').is_file(), 'build transactions host first')
+@unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-compiled').is_file(), 'build compiled host first')
 class CompilerQueueTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -57,12 +57,12 @@ class CompilerQueueTests(unittest.TestCase):
         self.assertEqual(self.enqueue(pending), identity)
         job = desk.loads(self.queue.job_path(identity).read_bytes())
         self.assertEqual(job['inputs']['expected'], pending)
-        self.assertEqual(job['inputs']['expected']['state']['proposal']['source'].encode(), self.source)
+        self.assertEqual(desk.candidate_state(job['inputs']['expected'])['proposal']['source'].encode(), self.source)
         report = self.queue.run()
         self.assertEqual(report['errors'], [])
         result = self.queue.inspect(identity)
         self.assertEqual(result['phase'], 'finished')
-        self.assertEqual(result['receipt']['data']['root']['state']['status'], 'ready')
+        self.assertEqual(desk.candidate_state(result['receipt']['data']['root'])['status'], 'ready')
         artifact = desk.load_artifact(self.client.artifact_store, result['artifact'])
         self.assertTrue(artifact['report']['passed'])
         self.assertEqual(artifact['candidateRootSha256'], desk.digest(pending))
@@ -70,7 +70,7 @@ class CompilerQueueTests(unittest.TestCase):
         with mock.patch.object(queue_module.worker, 'command', side_effect=AssertionError('recompiled')):
             self.assertEqual(self.queue.run()['processed'], [])
         altered = copy.deepcopy(pending)
-        altered['state']['proposal']['source'] += '\n'
+        altered['version'] += 1
         with self.assertRaisesRegex(ValueError, 'intent already bound'):
             self.enqueue(altered)
 
@@ -78,7 +78,7 @@ class CompilerQueueTests(unittest.TestCase):
         identity = self.enqueue(self.submit(b'{invalid JSON'))
         self.assertEqual(self.queue.run()['errors'], [])
         result = self.queue.inspect(identity)
-        self.assertEqual(result['receipt']['data']['root']['state']['status'], 'failed')
+        self.assertEqual(desk.candidate_state(result['receipt']['data']['root'])['status'], 'failed')
         artifact = desk.load_artifact(self.client.artifact_store, result['artifact'])
         self.assertFalse(artifact['passed'])
         self.assertTrue(artifact['diagnostics'])
@@ -138,7 +138,7 @@ class CompilerQueueTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 self.queue.run()
         self.assertEqual(self.queue.inspect(identity)['phase'], 'running')
-        self.assertEqual(self.client.inspect('candidate')['state']['status'], 'ready')
+        self.assertEqual(desk.candidate_state(self.client.inspect('candidate'))['status'], 'ready')
         identity = self.replace_job(identity, lambda job: job['runtime']['files'].update({'scripts/propose.py': '0' * 64}))
         # Lost return cannot turn completed historical admission into new compilation.
         self.assertEqual(self.queue.run()['errors'], [])
@@ -170,7 +170,7 @@ class CompilerQueueTests(unittest.TestCase):
             with self.assertRaises(TimeoutError):
                 self.queue.enqueue('candidate', 'compiler', 'compile', pending, deadline_seconds=0.05)
         altered = copy.deepcopy(pending)
-        altered['state']['proposal']['source'] += '\n'
+        altered['version'] += 1
         with self.assertRaisesRegex(ValueError, 'candidate changed'):
             self.enqueue(altered)
         self.assertFalse(list((self.queue.state / 'jobs').glob('*.json')))

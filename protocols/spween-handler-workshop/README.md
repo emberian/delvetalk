@@ -51,8 +51,8 @@ final `obend SceneRuntime` block after Handler. That module exports the same
 `BaseRuntime.Default` with its own extension. The sealed package includes that
 pinned ordinary base source; an import never looks it up elsewhere. The
 [lanternlight revision](LanternRuntime.obend) changes the view while inheriting
-start, choice and validation behavior. Its full source document fits the existing
-4096-scalar post form. Larger replacements use the source-reference/Desk API.
+start, choice and validation behavior. Writing cards accept bounded multiline source and examples. Larger replacements
+use the source-reference/Desk API.
 The complete selected runtime and dependency text stays in source custody.
 An optional final `Scene` imports `DefaultScene` to reuse standard methods while
 defining its own `describe()` and additional typed exports. See
@@ -62,16 +62,21 @@ a receive-only method; the generic native source binder checks both.
 The native frontend resolves and checks only the explicitly sealed package.
 Python neither executes handlers nor searches for imports.
 
-`generate.build(authors, compiler)` supplies ordinary governed factories. Its
-initial placeholder state comes from native `describe()`. Each proposal gets a
-fresh desk. `submission_offer(candidate, candidate_root, target, target_root)`
-creates a writing card bound to both exact observations. The resident fills only
-source and examples; the offered migration explicitly preserves the entire
-captured target state. If the target changes before submission, Lean refuses the
-transaction. Checking examples produces a review card; adoption separately checks
-current authority and both reviewed roots. Preservation does not prove that an
-arbitrary replacement handler accepts that schema; incompatible migrations remain
-a matter for explicit examples and receiving checks.
+`generate.build(authors, compiler)` supplies governed object, Candidate and
+writing-card factories. Its placeholder state comes from native `describe()`.
+Each proposal gets a fresh immutable Candidate. A resident makes an ordinary
+source writing participant naming that Candidate, the target and syntax. Its
+view exposes a submission invitation; `submission_offer(writer, writer_root,
+observations)` captures that actual invitation rather than constructing a plan.
+
+The reusable [Writing source](../source-desk/Writing.obend) chooses the complete
+proposal and captured target-state migration in ordinary Bend. The resident
+supplies source and examples; native preparation binds the exact owner,
+Candidate and target observations. A changed target refuses submission without
+refreshing the capture. Checking produces a review card; adoption separately
+checks current authority and the reviewed roots. Preservation does not prove
+that an arbitrary replacement handler accepts the schema; explicit examples and
+receiving admission still check that compatibility.
 
 The source wrapper retains the complete document; the lowered program retains
 exact scene and ordered handler/runtime strings. Adapter, parser, source-data helper

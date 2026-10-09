@@ -1,5 +1,7 @@
 edition ObjectiveBend 1
 import ./Preparation.obend as P
+import ./Encounter.obend as E
+import ./Abi.obend as Abi
 
 record State:
   candidate: String
@@ -7,21 +9,12 @@ record State:
   syntax: String
 def initial(config: State) -> State:
   config
-record Origin:
-  kind: String
-  object: String
-  command: String
-  immediatelyPrevious: Bool
-record Context:
-  object: String
-  principal: String
-  inputOrigin: Origin
 record Decision:
   accepted: Bool
   reason: String
   state: State
   result: String
-def report(state: State, input: {}, context: Context) -> Decision:
+def report(state: State, input: {}, context: Abi.Context) -> Decision:
   {accepted: true, reason: "", state: state, result: "Source and examples are prepared through the captured writing invitation."}
 record Description:
   name: String
@@ -49,23 +42,15 @@ record Invitation:
   text: String
   prepare: String
   fields: {source: Field, scenarios: Field}
-  observations: P.Names
-record Child:
-  key: String
-  label: String
-  object: String
-  panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}
+  observations: P.Requests
 record View:
   title: String
   prose: String
   actions: {}
-  children: Children
+  children: E.Children
   invitations: {submit: Invitation}
 def view(state: State, panel: String) -> View:
-  {title: "Write a variation", prose: "Source and examples are checked before adoption. This writing card preserves its captured target's complete state.", actions: {}, children: Children.nil(), invitations: {submit: {visible: state.candidate != "" && state.target != "", text: "Submit source and examples", prepare: "prepareSubmit", fields: {source: {type: "string", minLength: 1n, maxLength: 32768n}, scenarios: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: P.Names.cons({head: state.candidate, tail: P.Names.cons({head: state.target, tail: P.Names.nil()})})}}}
+  {title: "Write a variation", prose: "Source and examples are checked before adoption. This writing card preserves its captured target's complete state.", actions: {}, children: E.Children.nil(), invitations: {submit: {visible: state.candidate != "" && state.target != "", text: "Submit source and examples", prepare: "prepareSubmit", fields: {source: {type: "string", minLength: 1n, maxLength: 32768n}, scenarios: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: P.Requests.cons({head: {object: state.candidate, inspectState: false, inspectLaw: false}, tail: P.Requests.cons({head: {object: state.target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})})}}}
 
 # Configure this checked program as data; receiving admission checks its schema.
 def replaced(fields: P.Fields, name: String, value: P.Value) -> P.Fields:
@@ -75,6 +60,7 @@ def replaced(fields: P.Fields, name: String, value: P.Value) -> P.Fields:
 def replacedValue(value: P.Value, name: String, replacement: P.Value) -> P.Value:
   match value:
     case record(r): P.Value.record({fields: replaced(r.fields, name, replacement)})
+    case retained(_): P.Value.none()
     case none(_): P.Value.none()
     case boolean(_): P.Value.none()
     case natural(_): P.Value.none()

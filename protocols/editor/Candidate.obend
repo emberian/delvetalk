@@ -42,6 +42,7 @@ def ordinary() -> State:
 def isRecord(value: P.Value) -> Bool:
   match value:
     case record(_): true
+    case retained(_): false
     case none(_): false
     case boolean(_): false
     case natural(_): false

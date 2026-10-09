@@ -121,9 +121,9 @@ class WorkspaceTests(unittest.TestCase):
     def test_pending_reference_sources_restore_exactly_before_compilation(self):
         source_store=b.module('workspace_source_store_test','scripts/source_store.py')
         destination=self.directory/'source-workspace'
-        source_protocol=(ROOT/'protocols/source-desk/protocol.json').read_bytes()
+        source_protocol=b.canonical(b.desk_module.module('workspace_candidate_package', 'protocols/source-desk/package.py').candidate())
         workspace.initialize(destination,[{'id':'desk','syntax':'protocol-json@1','source':source_protocol,
-            'law':['author','compiler']}],entry_objects=['desk'],principal='builder')
+            'law':['author','compiler']}],entry_objects=['desk'],principal='builder',profile='compiled')
         source=b'# A large source card\n' + b'annotation remains opaque\n'*3000 + b'```delvetalk-protocol\n'+b.canonical(protocol())+b'\n```\n'
         scenarios=b.canonical([{'name':'write','law':['author'],'steps':[
             {'principal':'author','command':'write','input':{'message':'Hello'},'root':'initial','kind':'committed'}]}])
@@ -140,8 +140,8 @@ class WorkspaceTests(unittest.TestCase):
         restored=self.directory/'source-restored'
         b.restore_bootstrap(bundle,restored,expected_genesis=anchors['genesis'],expected_head=anchors['head'])
         pending=b.desk_module.Desk(restored/'world.json',restored/'artifacts').inspect('desk')
-        self.assertEqual(pending['state']['status'],'pending')
-        exact_source,exact_scenarios=source_store.validate_proposal(restored/'artifacts',pending['state']['proposal'])
+        self.assertEqual(b.desk_module.candidate_state(pending)['status'],'pending')
+        exact_source,exact_scenarios=source_store.validate_proposal(restored/'artifacts',b.desk_module.candidate_state(pending)['proposal'])
         self.assertEqual(exact_source,source)
         self.assertEqual(exact_scenarios,scenarios)
         self.assertTrue(source_store.declared_dependencies(pending))

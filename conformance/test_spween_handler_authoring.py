@@ -94,6 +94,10 @@ class HandlerAuthoring(helpers.TownForgeJourneyTests):
                           factory_law([helpers.MAKER, helpers.VISITOR])):
             super().setUp()
 
+    def committed(self, response):
+        reply = response['receipt']['reply']
+        self.assertEqual(reply['kind'], 'committed', {key: reply.get(key) for key in ('kind', 'data')})
+
     def post(self, card, fields, *, author=helpers.MAKER, parent=None, action=None):
         if card['format'] == 'delvetalk-town-adoption-card-v1':
             return super().post(card, fields, author=author, parent=parent, action=action)
@@ -124,16 +128,22 @@ class HandlerAuthoring(helpers.TownForgeJourneyTests):
         self.committed(made)
         candidate = 'desks/' + name
         before = copy.deepcopy(self.root(target))
-        offer = workshop.submission_offer(candidate, self.root(candidate), target, before)
+        _, made_writer = self.reply(self.capture('writers'), {'name': name,
+            'candidate': candidate, 'target': target, 'syntax': workshop.SYNTAX}, author=author)
+        self.committed(made_writer)
+        writer = 'writers/' + name
+        self.assertIn(writer, self.clerk.config()['objects'])
+        offer = workshop.submission_offer(writer, self.root(writer),
+            {candidate: self.root(candidate), target: before}, database=self.clerk.database)
         card = self.book.capture_composite(offer, alias='write-' + name)
         source, submitted = self.reply(card, {'source': workshop.authoring_source(revision),
             'scenarios': workshop.examples()}, author=author)
         self.committed(submitted)
-        pending = self.root(candidate)
-        self.assertEqual(pending['state']['proposal']['syntax'], workshop.SYNTAX)
-        self.assertEqual(pending['state']['submitter'], author)
-        self.assertEqual(pending['state']['proposal']['source'], workshop.authoring_source(revision))
-        self.assertEqual(pending['state']['migration'], before['state'])
+        pending = workshop.desk.candidate_state(self.root(candidate))
+        self.assertEqual(pending['proposal']['syntax'], workshop.SYNTAX)
+        self.assertEqual(pending['submitter'], author)
+        self.assertEqual(pending['proposal']['source'], workshop.authoring_source(revision))
+        self.assertEqual(pending['migration'], before['state'])
         text = self.pds.records[source[0]][1]['text']
         self.assertIn('```spween', text)
         self.assertIn('```obend Handler', text)
@@ -175,7 +185,7 @@ class HandlerAuthoring(helpers.TownForgeJourneyTests):
         self.assertEqual(repair_count(self.root(target)), 3, 'new ordinary handler adds two repairs')
         final = self.root(target)
         for candidate, revision in ((first, 1), (second, 2)):
-            identity = self.root(candidate)['state']['artifact']
+            identity = workshop.desk.candidate_state(self.root(candidate))['artifact']
             build = workshop.desk.load_artifact(self.home / 'artifacts', identity)
             self.assertEqual(build['sourceMaterial']['source'], workshop.authoring_source(revision))
             lowered = build['report']['candidate']['artifact']['lowered']
@@ -191,7 +201,7 @@ class HandlerAuthoring(helpers.TownForgeJourneyTests):
         self.assertEqual(helpers.clerk.loads((restored / 'world.json').read_bytes()),
                          helpers.clerk.loads(self.clerk.database.read_bytes()))
         for candidate in (first, second):
-            identity = self.root(candidate)['state']['artifact']
+            identity = workshop.desk.candidate_state(self.root(candidate))['artifact']
             self.assertIn(identity, evidence['builds'])
             self.assertEqual((restored / 'artifacts/builds' / (identity + '.json')).read_bytes(),
                              (self.home / 'artifacts/builds' / (identity + '.json')).read_bytes())

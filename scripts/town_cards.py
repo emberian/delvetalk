@@ -14,10 +14,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affordances
 import world
-import references
+import references as object_references
 import adoption
 import composite_offers
 import source_offers
+import desk
 
 _projection_spec = importlib.util.spec_from_file_location('town_projection',
     Path(__file__).resolve().parents[1] / 'scene/projection.py')
@@ -348,7 +349,7 @@ class CardBook:
     def create(cls, path, *, issuer_did, world_id, runtime, display_names=None):
         if not isinstance(issuer_did, str) or not DID.fullmatch(issuer_did):
             raise ValueError('card issuer must be an explicitly configured PLC DID')
-        references.component(world_id)
+        object_references.component(world_id)
         display_names = {} if display_names is None else display_names
         if (not isinstance(display_names, dict) or len(display_names) > 256
                 or any(not isinstance(did, str) or not DID.fullmatch(did) or not isinstance(label, str)
@@ -392,28 +393,34 @@ class CardBook:
         with self._db() as db:
             return [row[0] for row in db.execute('SELECT alias FROM cards ORDER BY rowid')]
 
-    def capture(self, view, alias=None, *, roots=None, database=None):
+    def capture(self, view, alias=None, *, roots=None, database=None, references=None):
         """Retain presentation preimages and optionally mint native read references."""
         metadata = self.metadata()
         view = copy.deepcopy(view)
         projection.assert_runtime(view, metadata['runtime'])
         card = affordances.card(view)
         available = source_offers.capture_available(view,
-            {view['object']: view['root']} if roots is None else roots, database=database)
+            {view['object']: view['root']} if roots is None else roots, database=database, references=references)
         offers = {}
         for key in sorted(set(available['offers']) | set(available['unavailable'])):
             identity = 'a' + str(len(card['actions']) + 1)
             if key in available['offers']:
                 offer = available['offers'][key]
-                action = {**composite_offers.action(offer), 'id': identity}
+                action = {**composite_offers.action(offer), 'id': identity, 'offer': key}
                 offers[identity] = offer
             else:
                 detail = available['unavailable'][key]
                 action = {'id': identity, 'command': detail['command'], 'label': detail['label'],
                           'available': False, 'fields': [], 'reason': detail['reason']}
             card['actions'].append(action)
+        document = projection.bound_document(view, card['actions'], offers)
+        if document is not None:
+            card['document'] = document
+        interpretation = projection.interpretation(view)
+        if interpretation is not None:
+            card['interpretation'] = interpretation
         panels = _panels(view, metadata['runtime'])
-        object_ref = references.object_reference(metadata['worldId'], view['object'])
+        object_ref = object_references.object_reference(metadata['worldId'], view['object'])
         def build(name):
             body = render_card(name, card, view, panels, metadata['displayNames'])
             result = {'format': 'delvetalk-town-card-v1', 'alias': name, 'view': view,
@@ -425,9 +432,9 @@ class CardBook:
             return result
         return self._capture(alias, build)
 
-    def capture_source_offer(self, view, roots, key, *, alias=None, database=None):
+    def capture_source_offer(self, view, roots, key, *, alias=None, database=None, references=None):
         """Retain one visible authored plan from the same complete observation."""
-        captured = source_offers.capture_available(view, roots, database=database)
+        captured = source_offers.capture_available(view, roots, database=database, references=references)
         if key not in captured['offers']:
             detail = captured['unavailable'].get(key, {}).get('reason', 'source does not offer this action')
             raise ValueError(detail)
@@ -464,15 +471,15 @@ class CardBook:
                 or set(candidate) != {'law', 'protocol', 'state', 'version'}
                 or set(target) != {'law', 'protocol', 'state', 'version'}):
             raise ValueError('adoption requires exact candidate and target roots')
-        state = candidate.get('state')
+        state = desk.candidate_state(candidate)
         if (not isinstance(state, dict) or state.get('status') != 'ready'
                 or state.get('target') != target_id or not isinstance(state.get('migration'), dict)
                 or not isinstance(state.get('protocol'), dict)):
             raise ValueError('adoption requires a ready candidate with its explicit target and migration')
         # Reuse the constructor for its same-object exact-root check as well.
         adoption.request(candidate_id, target_id, '', '', candidate, target)
-        object_ref = references.object_reference(metadata['worldId'], target_id)
-        candidate_ref = references.object_reference(metadata['worldId'], candidate_id)
+        object_ref = object_references.object_reference(metadata['worldId'], target_id)
+        candidate_ref = object_references.object_reference(metadata['worldId'], candidate_id)
         def build(name):
             lines = ['[[delvetalk-card ' + name + ']]', 'Adopt a proposed revision',
                      'Proposal ' + canonical(candidate_id) + ' → ' + canonical(target_id),
@@ -528,8 +535,16 @@ class CardBook:
             raise ValueError('captured card content mismatch')
         if 'view' in value:
             projection.children(value['view'])
+            document = projection.bound_document(value['view'], value['card']['actions'], value.get('offers', {}))
+            if canonical(value['card'].get('document')) != canonical(document):
+                raise ValueError('Captured document differs from its source bindings')
+            interpretation = projection.interpretation(value['view'])
+            if canonical(value['card'].get('interpretation')) != canonical(interpretation):
+                raise ValueError('Captured interpretation differs from its source exports')
             for panel in value.get('panels', []):
                 projection.children(panel['view'])
+                projection.document(panel['view'])
+                projection.interpretation(panel['view'])
         return value
 
     def publication(self, alias):

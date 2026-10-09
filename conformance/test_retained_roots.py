@@ -155,7 +155,8 @@ class RetainedRootTests(unittest.TestCase):
                 roots[identity] = reply['data']['root']
             invitation = {'format': source_offers.FORMAT, 'object': 'gallery',
                 'root': self.reference(database, roots['gallery'], 'gallery'), 'entry': 'prepareGesture',
-                'observations': [{'object': 'peer', 'root': self.reference(database, roots['peer'], 'peer')}],
+                'observations': [{'object': 'peer', 'root': self.reference(database, roots['peer'], 'peer'),
+                                  'inspectState': False, 'inspectLaw': False}],
                 'title': 'Gallery', 'label': 'Gesture', 'fields': []}
             outcome = source_offers.prepare(invitation, 'actor', 'gesture', {'gesture': 'wave'}, database=database)
             self.assertLess(len(world.wire_dumps(outcome['request']).encode()), 1024)

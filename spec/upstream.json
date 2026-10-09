@@ -142,7 +142,30 @@
       "sha256": "4bb634638e50fc26c950e852578435316e83d2ad32f5c428e3019cf16cf27ebc"
     },
     "Compiler/ObjectiveBendParse.lean": {
-      "sha256": "b4b9cd89fd945aab7028660af0aedaf34c59694cf34eeddbd401222696bf765a"
+      "sha256": "b4b9cd89fd945aab7028660af0aedaf34c59694cf34eeddbd401222696bf765a",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Compiler/ObjectiveBendParse.lean"
+        },
+        "purpose": "Explicit hosted document literal source lowering. Pure templates become ordinary checked Bend calls; original parser is reconstructed exactly. Source identities and mapped byte/line spans retain original input.",
+        "replacements": [
+          {
+            "from": "import Lean\nimport Compiler.ObjectiveBendLaw\nnamespace Minidregg.Compiler.ObjectiveBendParse\nopen Lean\n",
+            "to": "import Lean\nimport Compiler.ObjectiveBendLaw\nimport Delvetalk.DocumentTemplate\nnamespace Minidregg.Compiler.ObjectiveBendParse\nopen Lean\n"
+          },
+          {
+            "from": "\n/-- Parse one module's source text. -/\ndef parseObjective (source : String) : Except Diagnostic Json := do\n  let lines \u2190 sourceLines source\n  let ((imports, decls), _) \u2190 (declarations lines).run 0\n",
+            "to": "\n/-- Parse one module's source text. -/\ndef parseObjectivePlain (source : String) : Except Diagnostic Json := do\n  let lines \u2190 sourceLines source\n  let ((imports, decls), _) \u2190 (declarations lines).run 0\n"
+          },
+          {
+            "from": "    (\"imports\", Json.arr imports), (\"declarations\", Json.arr decls),\n    (\"theoremScope\", toJson \"new source AST; elaboration and reference semantics are Objective Core4\")]\n\n/-- Strict UTF-8 decoding as `new TextDecoder(\"utf-8\",{fatal:true})`: invalid bytes refuse and a\n",
+            "to": "    (\"imports\", Json.arr imports), (\"declarations\", Json.arr decls),\n    (\"theoremScope\", toJson \"new source AST; elaboration and reference semantics are Objective Core4\")]\n\n/-- Hosted document literals lower to ordinary source calls before the unchanged\nparser. Exact input source remains the package identity; spans refer to it. -/\ndef parseObjective (source : String) : Except Diagnostic Json := do\n  let expanded \u2190 (Delvetalk.DocumentTemplate.lower source).mapError (fun message => \u27e8message, none\u27e9)\n  match parseObjectivePlain expanded.source with\n  | .ok ast => return expanded.remap ast\n  | .error diagnostic =>\n    if expanded.origins.isEmpty then throw diagnostic\n    let span := diagnostic.span.map fun span =>\n      let start := expanded.position span.start\n      let stop := expanded.position span.stop\n      { span with start := start.byte, stop := stop.byte, line := start.line }\n    throw { diagnostic with span }\n\n/-- Strict UTF-8 decoding as `new TextDecoder(\"utf-8\",{fatal:true})`: invalid bytes refuse and a\n"
+          }
+        ],
+        "builtSha256": "e43545c02b9d172b5fe7988ccb218eded09ef31eec32b641927397ba700a9015"
+      }
     },
     "Compiler/ObjectiveBendC4.lean": {
       "sha256": "97987e908221956ff66a77979aa8d9e8d93b1efdaa4a0d6f562348fd373404fa"
