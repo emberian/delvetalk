@@ -98,6 +98,10 @@ class ProviderHTTPError(Exception):
         super().__init__('provider returned HTTP ' + str(code))
 
 
+class ProviderInputError(ValueError):
+    """The bounded physical frame was refused before any HTTP request."""
+
+
 class AnthropicMessages:
     def __init__(self, api_key):
         if not isinstance(api_key, str) or not api_key or len(api_key) > 4096 or '\n' in api_key or '\r' in api_key:
@@ -105,16 +109,21 @@ class AnthropicMessages:
         self.api_key = api_key
 
     def __call__(self, body):
-        if (set(body) != {'model', 'max_tokens', 'stream', 'system', 'messages'}
+        if (not isinstance(body, dict)
+                or set(body) != {'model', 'max_tokens', 'stream', 'system', 'messages'}
                 or type(body['max_tokens']) is not int or not 1 <= body['max_tokens'] <= 1024
                 or body['stream'] is not False):
-            raise ValueError('bounded Messages frame required')
+            raise ProviderInputError('bounded Messages frame required')
+        try:
+            raw_request = encoded(body)
+        except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
+            raise ProviderInputError('Messages frame exceeds physical encoding bounds') from None
         headers = {'Content-Type': 'application/json', 'anthropic-version': '2023-06-01'}
         if self.api_key.startswith('sk-ant-oat01-'):
             headers.update({'Authorization': 'Bearer ' + self.api_key, 'anthropic-beta': 'oauth-2025-04-20'})
         else:
             headers['x-api-key'] = self.api_key
-        request = urllib.request.Request(ENDPOINT, data=encoded(body), headers=headers, method='POST')
+        request = urllib.request.Request(ENDPOINT, data=raw_request, headers=headers, method='POST')
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(),
             urllib.request.HTTPSHandler(context=ssl.create_default_context()))
         try:
@@ -196,6 +205,8 @@ class Service:
                 saved.update(status='rejected', httpStatus=error.code)
                 if error.error_type is not None:
                     saved['errorType'] = error.error_type
+            except ProviderInputError:
+                saved.update(status='unsupported')
             except Exception:
                 # No response body, key, or remote diagnostic is reflected.
                 saved.update(status='uncertain')

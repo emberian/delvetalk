@@ -54,4 +54,15 @@ class Transport(unittest.TestCase):
                     self.assertEqual(receipt['errorType'], 'rate_limit_error')
                 self.assertEqual(json.loads(next(Path(directory).glob('*.json')).read_text()), receipt)
 
+    def test_oversized_encoded_frame_is_unsupported_without_network(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(model.urllib.request, 'build_opener') as opener:
+            provider = model.AnthropicMessages('synthetic-key')
+            service = model.Service(directory, provider)
+            body = {'model': 'claude-haiku-5-5', 'max_tokens': 512, 'stream': False,
+                    'system': chr(0) * 12000, 'messages': [{'role': 'user', 'content': 'synthetic'}]}
+            receipt = service.request({'body': body})
+            self.assertEqual(receipt['status'], 'unsupported')
+            self.assertEqual(service.request({'body': body}), receipt)
+            opener.assert_not_called()
+
 if __name__ == '__main__': unittest.main()
