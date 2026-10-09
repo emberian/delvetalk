@@ -117,6 +117,8 @@ class Observer:
         self.dir = Path(state_dir)
         self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(self.dir / 'observe.sqlite', isolation_level=None)
+        self.db.execute('PRAGMA journal_mode=WAL')
+        self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
         self.client, self.refused = client, []
 
