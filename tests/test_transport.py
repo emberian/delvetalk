@@ -380,9 +380,12 @@ class Posting(unittest.TestCase):
     def test_record_posted_builds_world_posted_from_the_confirmed_result(self):
         seen = []
         h = type('H', (), {'send': lambda s, r: seen.append(r) or {'status': 'posted'}})()
-        post.record_posted(h, {'uri': f'at://{DID}/town.delve.feed.post/x1', 'cid': 'bafyc'}, 'directory', 'welcome')
+        post.record_posted(h, {'uri': f'at://{DID}/town.delve.feed.post/x1', 'cid': 'bafyc'}, 'directory', post.slot_record(f'{DID}:welcome-1'))
         self.assertEqual(seen, [{'op': 'world-posted', 'principal': 'transport', 'uri': f'at://{DID}/town.delve.feed.post/x1',
-                                 'cid': 'bafyc', 'object': 'directory', 'slot': 'welcome'}])
+                                 'cid': 'bafyc', 'object': 'directory', 'slot': {'principal': DID, 'intent': 'welcome-1'}}])
+        for bad in ('welcome', ':x', 'x:'):
+            with self.assertRaises(delve.Failure):
+                post.slot_record(bad)
 
     def test_record_without_a_journal_is_refused_before_anything_happens(self):
         with tempfile.TemporaryDirectory() as d:
