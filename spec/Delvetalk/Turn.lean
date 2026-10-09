@@ -13,6 +13,7 @@ import Theory.ObjectiveBendDemandSettleProofs
 import Theory.ObjectiveBendDataConformance
 import Delvetalk.Limits
 import Delvetalk.Canonical
+import Delvetalk.Profile
 
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTyping
@@ -292,8 +293,9 @@ def conclude (packet : Json) (binding : Binding) (bounds : DataBounds) (plan res
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
       | none => .error ("turn refused: " ++ failureName failure)
 
-/-- `packet` belongs to an artifact the caller has already verified. -/
-def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
+/-- `packet` belongs to an artifact the caller has already verified. The checked, applied entry of an activity and its Plan/response/result types. -/
+def prepareStart (packet : Json) (arguments : List Data) :
+    Except String (AnnotatedTerm × Ty × Ty × Ty) := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
@@ -311,14 +313,18 @@ def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b
     entryType := rest
   let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
   let (plan, response, result) ← activityShape source.assumptions checked.type
+  return (source, plan, response, result)
+
+def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
+  let (source, plan, response, result) ← prepareStart packet arguments
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
   conclude packet binding source.assumptions.bounds plan response result b capacities outcome
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
-def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) (b : Budgets) :
-    Except String Delvetalk.Turn.Outcome := do
+def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) :
+    Except String (DataBounds × Ty × Ty × Ty × State × State) := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
@@ -334,18 +340,36 @@ def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding)
   unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume (dataTerm value) state
     | throw "turn refused: checkpoint is not a yielded state"
+  return (decoded.source.assumptions.bounds, plan, response, result, state, resumed)
+
+open Minidregg.Theory.ObjectiveBendDemandCollect in
+def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) (b : Budgets) :
+    Except String Delvetalk.Turn.Outcome := do
+  let (bounds, plan, response, result, state, resumed) ← prepareResume packet checkpoint binding value
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude packet binding decoded.source.assumptions.bounds plan response result b capacities outcome
+  conclude packet binding bounds plan response result b capacities outcome
+
+def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
 
 def start (packet arguments limits request : Json) : Except String Json := do
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
-  return (← startActivity packet values (← Binding.ofJson request) (← budgets limits)).toJson
+  let b ← budgets limits
+  let reply := (← startActivity packet values (← Binding.ofJson request) b).toJson
+  if !wantsProfile request then return reply
+  let (source, _) ← prepareStart packet values
+  return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial source.term))
 
 def resumeTurn (packet checkpointJson responseJson limits request : Json) : Except String Json := do
   let checkpoint ← Checkpoint.fromJson checkpointJson
   let value ← decodeData Bounds.dataWireDepth responseJson
-  return (← resumeActivity packet checkpoint (← Binding.ofJson request) value (← budgets limits)).toJson
+  let b ← budgets limits
+  let binding ← Binding.ofJson request
+  let reply := (← resumeActivity packet checkpoint binding value b).toJson
+  if !wantsProfile request then return reply
+  let (_, _, _, _, state, resumed) ← prepareResume packet checkpoint binding value
+  return reply.setObjVal! "profile"
+    (Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed)
 
 end Delvetalk.Turn

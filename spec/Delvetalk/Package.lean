@@ -164,7 +164,7 @@ end
 open Delvetalk.Turn (applyArgument bounded)
 
 /-- One global demand/extraction budget. No game rule or host authority lives here. -/
-def executePacket (packet arguments limits : Json) : Except String Json := do
+def executePacket (packet arguments limits : Json) (profile : Bool := false) : Except String Json := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
@@ -179,10 +179,13 @@ def executePacket (packet arguments limits : Json) : Except String Json := do
   let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
   let budget : Budget := ⟨nodes,ticks,bytes⟩
   let capacities : Limits := ⟨heap,stack⟩
+  let profiled := fun (reply : Json) => if profile then
+      reply.setObjVal! "profile" (Delvetalk.Profile.profile capacities bytes ticks (initial source.term))
+    else reply
   match execute capacities budget source.term with
   | .ok execution =>
       let result := execution.extraction.result
-      return Json.mkObj [("status", toJson "finished"), ("value", dataJson result.value),
+      return profiled <| Json.mkObj [("status", toJson "finished"), ("value", dataJson result.value),
         ("type", typeJson checked.type), ("ticksUsed", toJson (ticks - result.remaining.ticks)),
         ("heapCells", toJson result.state.heap.size),
         ("nodesUsed", toJson (nodes - result.remaining.nodes))]
@@ -248,6 +251,7 @@ def verifyArtifact (artifact : Json) : Except String Unit := do
 def runVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   executePacket (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
+    ((j.getObjValAs? Bool "profile").toOption.getD false)
 
 def run (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")

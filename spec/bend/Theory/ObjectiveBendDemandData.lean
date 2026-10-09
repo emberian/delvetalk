@@ -73,15 +73,29 @@ def textPrefixCost (text alphabet : String) (member : Bool) (ticks : Nat) : Nat 
     ((ticks - 1) / perScalar) (String.Legacy.iter text) 0 0
   if result.2.2 then (1 + perScalar * result.2.1, 0) else (ticks + 1, 0)
 
-/-- Hosted text work and conservative result allocation bound, checked before
+/-- The byte size of the first `n` scalars, scanning at most `fuel` of them
+(`none` once the scan would pass `fuel`). No string is allocated. -/
+def scalarPrefixBytes : Nat → Nat → String.Legacy.Iterator → Option Nat
+  | _, 0, cursor => some cursor.i.byteIdx
+  | 0, _ + 1, _ => none
+  | fuel + 1, n + 1, cursor => if cursor.atEnd then some cursor.i.byteIdx else scalarPrefixBytes fuel n cursor.next
+
+/-- `textTake`/`textDrop` by `n` scalars of `text`: the exact byte size of the
+prefix they traverse, when `ticks` can pay for it. The scan is bounded by what
+the work allowance could pay (each scalar costs at least two ticks), so an
+unaffordable prefix is refused after at most `ticks / 2` scalars. -/
+def prefixCost (text : String) (n ticks : Nat) : Option Nat :=
+  scalarPrefixBytes ((ticks - 1) / 2 + 1) n (String.Legacy.iter text)
+
+/-- Hosted text work and exact result allocation bound, checked before
 `stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.
 Unicode operations traverse scalar sequences; their UTF-8 size bounds both the
 scalar traversal and copied bytes. `textTake` and `textDrop` are charged by the
-prefix they traverse (the taken, respectively the dropped, scalars: at most four
-bytes each), not by the whole input. Each reserves what it allocates: `textTake`
-copies the taken prefix (at most `min B (4n)` bytes); `textDrop` retains nothing
-of the dropped prefix and copies the suffix, which is at most `B - n` bytes since
-every dropped scalar is at least one byte. (The runtime's `String.Slice.toString`
+prefix they traverse (the taken, respectively the dropped, scalars), measured in
+bytes by a bounded scan (`prefixCost`), not by the whole input and not by the
+four-bytes-per-scalar upper bound. Each reserves what it allocates: `textTake`
+copies the taken prefix; `textDrop` retains nothing of the dropped prefix and
+copies the suffix (`B - prefix` bytes). (The runtime's `String.Slice.toString`
 is `lean_string_utf8_extract`, a fresh string: the suffix is copied, not shared.
 That copy is the one text work not charged in ticks, so that a drop-by-one walk
 stays linear; its bytes are bounded here.) Decimal conversion uses a conservative
@@ -95,12 +109,14 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
       (1 + 2 * bytes, bytes)
   | .returned (.natural n), .binaryRight .textTake (.label text) :: _ =>
       if n == 0 || n >= text.utf8ByteSize then (1, 0)
-      else let bytes := min text.utf8ByteSize (4 * n)
-           (1 + 2 * bytes, bytes)
+      else match prefixCost text n ticks with
+        | some bytes => (1 + 2 * bytes, bytes)
+        | none => (ticks + 1, 0)
   | .returned (.natural n), .binaryRight .textDrop (.label text) :: _ =>
       if n == 0 || n >= text.utf8ByteSize then (1, 0)
-      else let dropped := min text.utf8ByteSize (4 * n)
-           (1 + 2 * dropped, text.utf8ByteSize - n)
+      else match prefixCost text n ticks with
+        | some dropped => (1 + 2 * dropped, text.utf8ByteSize - dropped)
+        | none => (ticks + 1, 0)
   | .returned (.label head), .joinHead separator accumulated first _ :: _ =>
       -- Appending onto the join's own accumulator: charged by the bytes added, so a
       -- join is linear in its output; it reserves the whole new accumulator.
