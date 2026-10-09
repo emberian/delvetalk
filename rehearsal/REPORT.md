@@ -57,7 +57,12 @@ interim overlay helper in `seed.py` is gone; `--owner` stays.
 | journal height, bytes | 185, 1.2 MB | 257, 3.5 MB | 223, 0.4 MB | 308, 0.5 MB | 537, 23.1 MB (suspensions 22.4 MB) |
 | wall time on hbox | 15 s | 24 s | 19 s | 32 s | 35 s |
 
-Run 5 is deterministic: two consecutive runs gave identical counts and bytes.
+Run 5 is deterministic: two consecutive runs gave identical counts and bytes. Rerun on foundation
+503af33 (binary `01508bb2…`), where pins are source CIDs, `receive` is `{text, post}` (the host owns
+`slot`), the bridge sends `replyTo`, and `create` mints child ids. The probes now send `{text, post}`
+as the bridge does. Every count is identical: 253 turns, 58 drafts, 3 bells, 0 rains, the same gate
+verdicts. The journal is 23,072,265 bytes, 7.6 KB more for the pins. The objects lane's matching
+Garden and Bell changes were not yet in foundation at that run; the rehearsal reruns when they land.
 
 ## The §10 gate, item by item (run 5)
 
