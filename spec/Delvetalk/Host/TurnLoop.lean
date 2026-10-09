@@ -26,6 +26,8 @@ structure TurnRequest where
   limits : Json
   /-- Digest of the whole request; binds the identity for retries. -/
   digest : String
+  /-- Answer the tick breakdown of the turn's activity segments (not part of the digest). -/
+  profile : Bool := false
 
 def parseTurn (j : Json) : Except String TurnRequest := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
@@ -44,7 +46,11 @@ def parseTurn (j : Json) : Except String TurnRequest := do
     if asked > Limits.maxTurnTicks then throw "ticks exceeds the turn ceiling"
   let digest := Journal.bodyHash (Json.mkObj [("principal", toJson principal), ("object", toJson object),
     ("method", toJson method), ("argument", dataJson argument), ("limits", limits)])
-  return ⟨principal, object, method, argument, intent, limits, digest⟩
+  let profile ← match j.getObjVal? "profile" with
+    | .ok (.bool b) => pure b
+    | .ok _ => throw "profile must be true or false"
+    | .error _ => pure false
+  return ⟨principal, object, method, argument, intent, limits, digest, profile⟩
 
 inductive Abort where
   /-- The request is not a well-formed turn; nothing is journaled. -/
@@ -54,6 +60,9 @@ inductive Abort where
   /-- A machine budget ran out (`ticks`, `heap`, `stack`, `nodes`, `bytes`): the named
       silence, journaled as class `budget` with the resource as its reason. -/
   | budget (resource : String)
+  /-- The turn is refused with a named class other than `evaluation` (`typeMismatch`: the
+      argument does not conform to the method's input type). -/
+  | refused (cls reason : String)
   /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
       (interpretation : Option Json := none)
@@ -105,6 +114,10 @@ structure TurnState where
   /-- `check` Plans this turn ran; the journal keeps the count. -/
   checks : Nat := 0
   limits : Json
+  /-- `profile: true` on the request: every activity segment's tick breakdown, by kind
+      (`Delvetalk.Profile`), summed over the turn. Memory only; never journaled. -/
+  profiling : Bool := false
+  profile : Std.HashMap String (Nat × Nat) := {}
 
 abbrev M := ExceptT Abort (StateM TurnState)
 
@@ -179,6 +192,22 @@ def budgetsNow : M Delvetalk.Turn.Budgets := do
 
 def spend (used : Nat) : M Unit :=
   modify fun s => { s with ticks := s.ticks - used }
+
+/-- Add one segment's profile rows (`[{kind, steps, ticks}]`) to the turn's tally. -/
+def noteProfile (rows : Unit → Except String Json) : M Unit := do
+  unless (← get).profiling do return
+  let .ok (.arr rows) := rows () | return
+  let add := fun (t : Std.HashMap String (Nat × Nat)) (row : Json) =>
+    match row.getObjValAs? String "kind", row.getObjValAs? Nat "steps", row.getObjValAs? Nat "ticks" with
+    | .ok k, .ok n, .ok x => let (a, b) := t.getD k (0, 0); t.insert k (a + n, b + x)
+    | _, _, _ => t
+  modify fun s => { s with profile := rows.foldl add s.profile }
+
+/-- The tally as the kernel prints a profile: heaviest kind first. -/
+def profileJson (tally : Std.HashMap String (Nat × Nat)) : Json :=
+  let rows := tally.toList.toArray.qsort (fun a b => a.2.2 > b.2.2 || (a.2.2 == b.2.2 && a.1 < b.1))
+  Json.arr (rows.map fun (kind, steps, spent) =>
+    Json.mkObj [("kind", toJson kind), ("steps", toJson steps), ("ticks", toJson spent)])
 
 def countPlan : M Unit := do
   let s ← get
@@ -301,6 +330,39 @@ def usableGrant (via self callee method : String) : M (Option String) := do
   | some g => return if (g.to == s.subject || g.to == self) && !s.revokes.contains via then some g.grantor else none
   | none => return none
 
+/-- The fields of a row type (`field` chain ending `emptyRow`) as `(name, member)`. -/
+partial def rowFields (row : Json) : Option (List (String × Json)) :=
+  match (row.getObjValAs? String "tag").toOption with
+  | some "emptyRow" => some []
+  | some "field" => do
+    let name ← (row.getObjValAs? String "name").toOption
+    let member ← (row.getObjVal? "member").toOption
+    let rest ← rowFields ((row.getObjVal? "tail").toOption.getD Json.null)
+    return (name, member) :: rest
+  | _ => none
+
+/-- A form field's kind for a member type: text, a natural, or a choice among the labels of a
+    sum whose every payload is empty. Any other type has no form. -/
+def formKind (member : Json) : Option Data :=
+  match (member.getObjValAs? String "tag").toOption with
+  | some "label" => some (.variant "text" (.record [("min", .natural 0), ("max", .natural Limits.formTextMax)]))
+  | some "natural" => some (.variant "natural" (.record [("min", .natural 0), ("max", .natural Limits.formNaturalMax)]))
+  | some "variant" => do
+    let cases ← rowFields ((member.getObjVal? "row").toOption.getD Json.null)
+    guard (!cases.isEmpty && cases.all fun (_, p) => (p.getObjValAs? String "tag").toOption == some "emptyRow")
+    return .variant "choice" (.record [("options", listData (cases.map fun (n, _) => Data.label n))])
+  | _ => none
+
+/-- The actions of an object as forms, from its artifact's method table: every method a turn can
+    run (it takes a context) whose input is a record of form-expressible fields. -/
+def methodForms (id : String) (methods : Json) : List Data :=
+  ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m => do
+    guard ((m.getObjValAs? Bool "context").toOption == some true)
+    let name ← (m.getObjValAs? String "name").toOption
+    let fields ← rowFields ((m.getObjVal? "input").toOption.getD Json.null)
+    let kinds ← fields.mapM fun (n, member) => (formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
+    return .record [("card", .label id), ("action", .label name), ("fields", listData kinds)]
+
 /-- An object's card: its pure `render(state)` run on its committed state under this turn's
     ticks. `noCard` when it has no such method, `render` when it fails or runs out. -/
 def renderCard (o : Object) : M (Except String Data) := do
@@ -311,6 +373,26 @@ def renderCard (o : Object) : M (Except String Data) := do
   | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
   | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "render"
   | .error _ => return .error "render"
+
+/-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
+def argumentRefusal : String := "turn refused: argument does not conform to its type"
+
+/-- Does `argument` fit the input of a compiled method? A method without an input takes any. At
+    `Data` any well-formed value fits; at a data type the value must conform under the packet's
+    bounds (the check the kernel's `prepareStart` makes). -/
+def argumentFits (compiled : Compiled) (argument : Data) : Bool :=
+  match compiled.type with
+  | .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) =>
+    if domain == .data then argument.wellFormed
+    else !(domain.isDataUnder compiled.bounds [] Ty.dataFuel []) || argument.conformsUnder compiled.bounds domain
+  | _ => true
+
+/-- A kernel refusal at the start or resumption of an activity: an argument that does not
+    conform is the journaled class `typeMismatch`, anything else an `evaluation`. -/
+def kernelRefusal {α : Type} (r : Except String α) : M α :=
+  match r with
+  | .ok a => pure a
+  | .error e => if e.startsWith argumentRefusal then throw (.refused "typeMismatch" e) else throw (.evaluation e)
 
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
@@ -334,11 +416,14 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
     | .arrow _ _ _ (.arrow _ _ _ r) => pure ([obj.state, context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
+  unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal)
   match r with
   | .computation .. =>
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
-    let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet arguments binding b)
+    let started ← kernelRefusal (Delvetalk.Turn.startActivity compiled.packet arguments binding b)
+    noteProfile fun _ => (Delvetalk.Turn.prepareStart compiled.packet arguments |>.map fun (source, _) =>
+      Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial source.term))
     drive depth id caller compiled binding started 0
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
@@ -371,6 +456,8 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
       | _ => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
+    noteProfile fun _ => (Delvetalk.Turn.prepareResume compiled.packet checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
+      Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
     drive depth self caller compiled binding next 0
 
 /-- `await {slot, patience}`: answered at once if the slot is settled or hopeless;
@@ -476,6 +563,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       else match ← usableGrant via self id method with
         | none => refusedWith bounds responseType "noGrant"
         | some subject =>
+          let some calleeObj := (← get).world.objects[id]? | refusedWith bounds responseType "unknownObject"
+          let callee ← compiledMethod calleeObj method
+          if !argumentFits callee argument then refusedWith bounds responseType "typeMismatch" else
           let result ← runMethod (depth + 1) id method argument self subject via
           respond bounds responseType "returned" [.record [("result", result)]]
   | .variant "reprogram" (.record f) =>
@@ -520,8 +610,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | none => respond bounds responseType "denied" [emptyRecord]
     | some o =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord]
-      else respond bounds responseType "inspected" [.record [("pin", .label o.pin),
-        ("law", .label o.lawText), ("source", .label (entrySource o))]]
+      else
+        let shown := [("pin", Data.label o.pin), ("law", .label o.lawText), ("source", .label (entrySource o))]
+        let id := ((f.lookup "object").bind referenceId).getD ""
+        respond bounds responseType "inspected"
+          [.record (shown ++ [("methods", listData (methodForms id o.methods))]), .record shown]
   | .variant "objects" (.record f) =>
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
     let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"
@@ -779,6 +872,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls := "budget", reason := some resource })
     return (w', turnReply r)
+  | .error (.refused cls reason) =>
+    let (w', r) := commit w { proposal with writes := [], creates := [] } base
+      (some { cls, reason := some reason, object := some ctx.object })
+    return (w', turnReply r)
   | .error (.suspend sp si patience checkpoint interpretation) =>
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
@@ -832,7 +929,7 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .ok b => pure b.ticks
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
-                            direct := how.delivery.isNone, ticks, limits := req.limits }
+                            direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile }
   let (result, st) := (runMethod 0 req.object req.method req.argument how.caller req.principal how.via |>.run).run init
   let ctx : Ctx :=
     { principal := req.principal
@@ -846,7 +943,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
       ticksStart := ticks
       caller := how.caller
       via := how.via }
-  finishTurn w ctx result st
+  let (w', r) ← finishTurn w ctx result st
+  return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   runTurnWith w req {}
@@ -1148,7 +1246,8 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
     if !o.read.permits principal then
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
-      ("law", toJson o.lawText), ("source", toJson (entrySource o))]
+      ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
+      ("forms", dataJson (listData (methodForms id o.methods)))]
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
 def cardOp (w : World) (j : Json) : Except String Json := do
@@ -1220,6 +1319,7 @@ def scratchState (w : World) : TurnState :=
 def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
+  | .refused cls r => s!"{cls}: {r}"
   | .suspend .. => "unexpected suspension"
 
 /-- The input type of a method: `none` when it takes none, an error when it is not a method. -/

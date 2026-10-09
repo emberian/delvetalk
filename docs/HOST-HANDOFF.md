@@ -1,11 +1,12 @@
-# Host handoff (lane/host3, after grants, the outbound channel, time, and journal weight)
+# Host handoff (lane/host4: kernel integration, snapshots, FOUNDATION section 13)
 
 For the lane that continues the host. The authority model (FOUNDATION section 11 rows 1 to 3) and
 program reflection (row 5: inspect, check, the sealed library, interpret) are built; section 5 says how.
 Everything is in `spec/Delvetalk/Host/`. Line numbers drift; grep the names.
 Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 `test_deliveries.py`, `test_reprogram.py`, `test_await.py`, `test_replay.py`, `test_authority.py`,
-`test_reflection.py`, `test_grants.py`, `test_outbound.py`, `test_journal.py`, `test_workshop.py`.
+`test_reflection.py`, `test_grants.py`, `test_outbound.py`, `test_journal.py`, `test_workshop.py`,
+`test_integration.py`.
 `make check` runs everything in parallel (~2 min); `make smoke` the fast pair. Two wall-clock bounds
 (`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
 loaded box; alone they take 3.3 s and pass.
@@ -272,6 +273,23 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
    adds `publications`. Transport posts the text, confirms with `world-posted {uri, cid, object}`, and routes a
    reply (`merge` from the page's owner) by `world-addressee` to the object's `receive` (bridge work).
+
+12. **Kernel integration (host4).** An argument that does not conform to the method's input type
+   (`argumentFits`: at `Data` well-formed, at a data type `conformsUnder` the packet's bounds; the kernel's
+   own "turn refused: argument does not conform to its type" from `startActivity` is mapped the same way by
+   `kernelRefusal`) refuses the turn with the journaled class `typeMismatch` (`object` = the turn's object;
+   it binds, it is not transient); in a `call` the Plan is answered `refused {clause: typeMismatch}` and the
+   callee does not run. `world-turn {…, profile: true}` sums `Delvetalk.Profile` over every activity
+   segment the turn ran (start and each resume, nested calls included; pure methods have none) and returns it
+   as `profile [{kind, steps, ticks}]`, heaviest first; it is not in the digest and never journaled, and a
+   retry or a later resumption carries none. `Object.methods` is the artifact's method table (reprogram
+   replaces it); `world-inspect` answers it raw as `methods` plus `forms`; the `inspect` Plan answers
+   `inspected {pin, law, source, methods: Forms}` (Plan.obend line changed) where each form is
+   `{card: object, action: method, fields}` for every method that takes a context and whose input is a
+   record of `String` (text 0..`formTextMax` 1400), `Nat` (natural 0..`formNaturalMax`) or a closed sum of
+   empty payloads (choice); a method with any other input field (a list, a nested record, a sum held as a
+   bounds variable) is not listed. An object whose Response predates the field gets the old three-field form.
+   `Object.predicate`/`predicateReads` record the artifact's `law: {present, reads}` for item 3(e).
 
 ## 6. Gotchas
 

@@ -102,6 +102,13 @@ def maxTitleBytes : Nat := 256
 def listPage : Nat := 64
 /-- Bytes of a post's AT URI and CID. -/
 def maxUriBytes : Nat := 512
+/-- A text field of a form derived from a method's input type: at most the characters a card
+    reader shows. A natural field: at most this. -/
+def formTextMax : Nat := 1400
+def formNaturalMax : Nat := 1000000000
+/-- Journal entries between snapshots, and bytes of one snapshot file. -/
+def snapshotEvery : Nat := 1000
+def maxSnapshotBytes : Nat := 268435456
 end Limits
 
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
@@ -153,6 +160,10 @@ structure Program where
   stateType : Ty
   bounds : DataBounds
   migration : Option Compiled
+  /-- The artifact's method table and whether it declares a Bend law (and `lawReads`). -/
+  methods : Json := Json.arr #[]
+  predicate : Bool := false
+  predicateReads : Bool := false
 
 structure Object where
   /-- `packetSha256` of the compiled artifact the object was created from. -/
@@ -172,6 +183,12 @@ structure Object where
   inputs : Json := Json.null
   /-- Digest of `inputs`, the key of this object's compiled methods. -/
   inputsKey : String := ""
+  /-- The compiler's method table of the pinned artifact (`[{name, input, result, activity, context}]`). -/
+  methods : Json := Json.arr #[]
+  /-- The artifact's `law: {present, reads}`: the package declares `def law(old, new, request)`,
+      and `def lawReads()` beside it. -/
+  predicate : Bool := false
+  predicateReads : Bool := false
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

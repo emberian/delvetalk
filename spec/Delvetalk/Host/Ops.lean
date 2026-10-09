@@ -499,6 +499,12 @@ def replaceSource (inputs : Json) (source : String) : Except String Json := do
     return inputs.setObjVal! "modules" (.arr (modules.pop.push (Json.mkObj [("name", toJson name), ("source", toJson source)])))
   | _ => return inputs.setObjVal! "source" (toJson source)
 
+/-- The method table and the Bend-law shape an artifact records. -/
+def artifactShape (artifact : Json) : Json × Bool × Bool :=
+  let law := (artifact.getObjVal? "law").toOption.getD Json.null
+  ((artifact.getObjVal? "methods").toOption.getD (Json.arr #[]),
+   (law.getObjValAs? Bool "present").toOption.getD false, (law.getObjValAs? Bool "reads").toOption.getD false)
+
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
 def prepareProgram (w : World) (o : Object) (source migration : String) : Except (String × String) Program := do
@@ -534,7 +540,9 @@ def prepareProgram (w : World) (o : Object) (source migration : String) : Except
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
       pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid⟩)
-  return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated }
+  let (methods, predicate, predicateReads) := artifactShape artifact
+  return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
+           methods, predicate, predicateReads }
 
 def programKey (o : Object) (source migration : String) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration
@@ -697,7 +705,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       unless state.conformsUnder prog.bounds prog.stateType && (dataJson state).compress.utf8ByteSize ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
       next := { o with pin := prog.pin, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
-                       stateType := prog.stateType, bounds := prog.bounds }
+                       stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
+                       predicate := prog.predicate, predicateReads := prog.predicateReads }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin), ("source", toJson source), ("migration", toJson migration),
         ("result", dataJson state)]]
@@ -943,9 +952,10 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     | some text => parseLawText text
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
   unless amendable laws creator "" height 0 pin state do throw noAmendmentClause
+  let (methods, predicate, predicateReads) := artifactShape b.artifact
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
-            inputs, inputsKey := inputsKeyOf inputs }, sources)
+            inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
   if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
