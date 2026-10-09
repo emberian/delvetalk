@@ -608,6 +608,15 @@ def prepareNativeWith {α : Type} (read : Assumptions → Ty → α → Work Dat
   shape source.assumptions 256 [] type
   return ⟨source, type, normalized.toArray, decoded.fuel⟩
 
+/-- The same admission for a source already checked (a selected package entry): only
+the arguments are admitted; the package is not decoded or checked again. -/
+def prepareNativeChecked (source : AnnotatedTerm) (initial : Checked source []) (fuel : Nat)
+    (arguments : Array Data) : Work NativePreparation := do
+  let (type, normalized) ← prepareNativeArguments (fun _ _ value => pure value) source.assumptions initial.type
+    arguments.toList
+  shape source.assumptions 256 [] type
+  return ⟨source, type, normalized.toArray, fuel⟩
+
 def prepareNative (packet : Json) (arguments : Array Data) : Work NativePreparation :=
   prepareNativeWith (fun _ _ value => pure value) packet (pure arguments)
 

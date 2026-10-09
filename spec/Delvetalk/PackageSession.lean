@@ -4,56 +4,166 @@ import Delvetalk.Host.Session
 namespace Delvetalk.PackageSession
 open Lean (Json toJson)
 
-/-- Only this process's successful compiler outputs enter the cache. Digests are
-    never lookup keys: both compile requests and claimed artifacts compare whole
-    Json values, including source, configuration and executable packet. -/
-structure Entry where
-  request : Json
-  artifact : Json
+/-- A prepared closure, keyed by the request's modules (or single source) and limits. -/
+structure Front where
+  modules : Json
+  limits : Json
+  request : Package.PreparedRequest
   bytes : Nat
 
-abbrev Cache := List Entry
+/-- A compiled entry held decoded and checked, with the artifact it was compiled to. -/
+structure Held where
+  artifact : Json
+  entry : Delvetalk.CheckedEntry
+  bytes : Nat
 
-def maxBytes : Nat := 8388608
+/-- Computation reuse only: this process's own compiler outputs. No world, principal, law,
+result or receipt is cached. A claimed artifact runs from the cache only when it equals,
+as a whole JSON value, the artifact this process compiled under the same pin; otherwise
+its source is recompiled (through the front cache) and compared. -/
+structure Cache where
+  fronts : List Front := []
+  frontBytes : Nat := 0
+  held : Std.HashMap String Held := {}
+  order : Array String := #[]
+  heldBytes : Nat := 0
+  hits : Nat := 0
+  misses : Nat := 0
 
-def fit : Nat → List Entry → List Entry
-  | _, [] => []
-  | remaining, entry :: rest =>
-      if entry.bytes ≤ remaining then entry :: fit (remaining - entry.bytes) rest else []
+def modulesKey (j : Json) : Json :=
+  match j.getObjVal? "modules" with
+  | .ok modules => modules
+  | .error _ => (j.getObjVal? "source").toOption.getD .null
 
-def retain (cache : Cache) (request artifact : Json) : Cache :=
-  let bytes := request.compress.utf8ByteSize + artifact.compress.utf8ByteSize
-  if bytes > maxBytes then cache
-  else ⟨request, artifact, bytes⟩ :: fit (maxBytes - bytes) (cache.take 7)
+def sourceBytes (modules : Json) : Nat :=
+  match modules with
+  | .arr items => items.foldl (fun n m => n + ((m.getObjValAs? String "source").toOption.map String.utf8ByteSize).getD 0) 0
+  | .str source => source.utf8ByteSize
+  | _ => 0
 
-def compiled (artifact : Json) : Json :=
+/-- The prepared closure of a request: from the cache, or prepared and retained (newest
+first; the oldest leave when the source bytes would exceed the bound). -/
+def front (cache : Cache) (j : Json) : Cache × Except Minidregg.Compiler.ObjectiveBendFrontEnd.Diagnostic Package.PreparedRequest :=
+  let modules := modulesKey j
+  let limits := Package.getLimits j
+  match cache.fronts.find? (fun f => f.limits == limits && f.modules == modules) with
+  | some f => (cache, .ok f.request)
+  | none =>
+    match Package.prepareRequest j with
+    | .error e => (cache, .error e)
+    | .ok request =>
+      let bytes := sourceBytes modules
+      if bytes > Bounds.frontCacheSourceBytes then (cache, .ok request) else
+      let rec keep : List Front → Nat → List Front
+        | [], _ => []
+        | f :: rest, room => if f.bytes ≤ room then f :: keep rest (room - f.bytes) else []
+      let fronts := keep cache.fronts (Bounds.frontCacheSourceBytes - bytes)
+      ({ cache with fronts := ⟨modules, limits, request, bytes⟩ :: fronts,
+                    frontBytes := bytes + fronts.foldl (· + ·.bytes) 0 }, .ok request)
+
+/-- Hold a compiled entry under its pin; the oldest leave when the bound would be exceeded. -/
+def hold (cache : Cache) (artifact : Json) (entry : Delvetalk.CheckedEntry) : Cache := Id.run do
+  let bytes := artifact.compress.utf8ByteSize
+  if bytes > Bounds.entryCacheBytes then return cache
+  let mut cache := cache
+  if let some old := cache.held[entry.pin]? then
+    cache := { cache with held := cache.held.erase entry.pin, heldBytes := cache.heldBytes - old.bytes,
+                          order := cache.order.filter (· != entry.pin) }
+  let mut order := cache.order
+  let mut held := cache.held
+  let mut total := cache.heldBytes
+  let mut drop := 0
+  while total + bytes > Bounds.entryCacheBytes && drop < order.size do
+    if let some old := held[order[drop]!]? then
+      total := total - old.bytes
+      held := held.erase order[drop]!
+    drop := drop + 1
+  return { cache with held := held.insert entry.pin ⟨artifact, entry, bytes⟩,
+                      order := (order.extract drop order.size).push entry.pin, heldBytes := total + bytes }
+
+def compiledReply (artifact : Json) : Json :=
   Json.mkObj [("status", toJson "compiled"), ("artifact", artifact)]
 
-/-- Computation reuse only. No world, principal, law, result or receipt is cached.
-    Unknown artifacts follow ordinary source recompilation; execution always
-    checks/materializes the current arguments with the current request budgets. -/
+/-- Compile the request's entry through the front cache and hold it. -/
+def compile (cache : Cache) (j : Json) : Cache × Except String (Json × Delvetalk.CheckedEntry) :=
+  match j.getObjValAs? String "entry" with
+  | .error e => (cache, .error e)
+  | .ok entry =>
+    let (cache, request) := front cache j
+    match request.bind fun request => (Package.compileEntryFrom request entry).mapError (Package.withHint j) with
+    | .error d => (cache, .error (Package.Diagnostic.render d))
+    | .ok compiled =>
+      if !compiled.laws.isEmpty then (cache, .error "package laws require a host law adapter; this pure profile refuses them")
+      else (hold cache compiled.artifact compiled.entry, .ok (compiled.artifact, compiled.entry))
+
+/-- The held entry of a claimed artifact: from the cache when it is exactly the artifact
+held under its pin, else by recompiling its claimed source and comparing. -/
+def entryOf (cache : Cache) (artifact : Json) : Cache × Except String Delvetalk.CheckedEntry :=
+  let pin := (artifact.getObjValAs? String "packetSha256").toOption.getD ""
+  -- `{"packetSha256": pin}` alone names an entry this process compiled: the pin is the CID
+  -- of its own packet. Nothing to verify, nothing to parse beyond the pin.
+  let pinOnly := match artifact with
+    | .obj fields => fields.size == 1
+    | _ => false
+  match cache.held[pin]? with
+  | some h => if pinOnly || h.artifact == artifact then ({ cache with hits := cache.hits + 1 }, .ok h.entry)
+      else recompile pin
+  | none => if pinOnly then ({ cache with misses := cache.misses + 1 },
+        .error "unknown packetSha256: this process holds no such entry; send the whole artifact")
+      else recompile pin
+where recompile (_pin : String) : Cache × Except String Delvetalk.CheckedEntry :=
+  let cache := { cache with misses := cache.misses + 1 }
+  if (artifact.getObjValAs? String "schema").toOption != some "delvetalk.obend-package.v1" then
+    (cache, .error "unsupported package artifact")
+  else
+    let request := Json.mkObj [("modules", (artifact.getObjVal? "modules").toOption.getD .null),
+      ("entry", (artifact.getObjVal? "entry").toOption.getD .null), ("limits", (artifact.getObjVal? "limits").toOption.getD .null)]
+    match compile cache request with
+    | (cache, .error e) => (cache, .error e)
+    | (cache, .ok (rebuilt, entry)) =>
+      if rebuilt == artifact then (cache, .ok entry)
+      else (cache, .error "artifact does not match recompilation of its claimed source")
+
+def status (cache : Cache) : Json :=
+  Json.mkObj [("status", toJson "packet-cache"), ("fronts", toJson cache.fronts.length),
+    ("frontSourceBytes", toJson cache.frontBytes), ("maxFrontSourceBytes", toJson Bounds.frontCacheSourceBytes),
+    ("entries", toJson cache.held.size), ("entryBytes", toJson cache.heldBytes),
+    ("maxEntryBytes", toJson Bounds.entryCacheBytes), ("hits", toJson cache.hits), ("misses", toJson cache.misses)]
+
+/-- Runs of a held entry never decode the packet or re-check the package. -/
+def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) : Except String Json := do
+  let limits := Package.getLimits j
+  if operation == "run" then
+    let profile := (j.getObjValAs? Bool "profile").toOption.getD false
+    Package.executeEntry entry (← j.getObjVal? "arguments") limits profile
+  else if operation == "run-data-v1" then
+    Package.executeDataEntryWire entry (← j.getObjVal? "arguments") limits
+  else if operation == "turn-start" then
+    Delvetalk.Turn.startEntryJson entry (← j.getObjVal? "arguments") limits j
+  else if operation == "turn-resume" then
+    Delvetalk.Turn.resumeEntryJson entry (← j.getObjVal? "checkpoint") (← j.getObjVal? "response") limits j
+  else throw "unsupported held operation"
+
 def step (cache : Cache) (request : Json) : Cache × Except String Json :=
   match request.getObjValAs? String "op" with
   | .ok "compile" =>
-      match cache.find? (fun entry => entry.request == request) with
-      | some entry => (cache, .ok (compiled entry.artifact))
-      | none => match Package.compile request with
-        | .error error => (cache, .error error)
-        | .ok artifact => (retain cache request artifact, .ok (compiled artifact))
+      match compile cache request with
+      | (cache, .ok (artifact, _)) => (cache, .ok (compiledReply artifact))
+      | (cache, .error e) => (cache, .error e)
+  | .ok "packet-cache-status" => (cache, .ok (status cache))
   | .ok operation =>
-      let known := match request.getObjVal? "artifact" with
-        | .ok artifact => cache.any (fun entry => entry.artifact == artifact)
-        | .error _ => false
-      if known && operation == "run" then (cache, Package.runVerified request)
-      else if known && operation == "run-data-v1" then (cache, Package.runDataVerified request)
-      else if known && operation == "turn-start" then (cache, Package.turnStartVerified request)
-      else if known && operation == "turn-resume" then (cache, Package.turnResumeVerified request)
+      if ["run", "run-data-v1", "turn-start", "turn-resume"].contains operation then
+        match request.getObjVal? "artifact" with
+        | .error e => (cache, .error e)
+        | .ok artifact =>
+          let (cache, entry) := entryOf cache artifact
+          (cache, entry.bind fun entry => runHeld entry operation request)
       else (cache, Package.job request)
   | .error _ => (cache, Package.job request)
 
 /-- Per-process state: the compile cache beside an optional open World. -/
 structure Session where
-  cache : Cache := []
+  cache : Cache := {}
   world : Host.Session := none
 
 /-- World ops own their journal file; everything else is `step`. -/

@@ -54,6 +54,12 @@ def maxModuleBytes : Nat := 524288
 /-- All source text of a package offered to the import scan. (The host's
     `maxPackageBytes`, 32 KiB, is a tighter host-only bound on `reprogram`.) -/
 def maxPackageSourceBytes : Nat := 1048576
+/-- A session's cache of prepared closures (parsed, specialized, elaborated, checked
+whole), bounded by the source bytes of the closures it holds. -/
+def frontCacheSourceBytes : Nat := 8388608
+/-- A session's cache of compiled entries held decoded and checked, indexed by
+`packetSha256`, bounded by the bytes of their artifacts. -/
+def entryCacheBytes : Nat := 67108864
 
 /-! ## Documents rendered by the host -/
 

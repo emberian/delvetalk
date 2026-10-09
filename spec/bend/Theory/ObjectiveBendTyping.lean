@@ -1,6 +1,7 @@
 import Theory.ObjectiveBendTypes
 import Theory.ObjectiveBendOpenRecursion
 import Theory.AxiomPin
+import Std.Data.HashMap
 namespace Minidregg.Theory.ObjectiveBendTyping
 open ObjectiveBendTypes ObjectiveBendOpenRecursion
 set_option autoImplicit false
@@ -1304,10 +1305,12 @@ structure PacketParts where
 def termNestingCapacity : Nat := 4096
 
 def decodePacketParts (value : Json) (table : Array (Ty × Nat)) : Except String PacketParts := do
-  let annotations ← (← (← value.getObjVal? "annotations").getArr?).toList.mapM fun entry => do
+  -- Indexed by path: one insertion per annotation, a repeated path refused at its insertion.
+  let mut annotations : Std.HashMap (List Nat) LambdaAnnotation := {}
+  for entry in ← (← value.getObjVal? "annotations").getArr? do
     let path ← (← (← entry.getObjVal? "path").getArr?).toList.mapM jsonNat
-    return (path, ← decodeLambda table entry)
-  if !decide (annotations.map Prod.fst).Nodup then throw "duplicate lambda annotation path"
+    if annotations.contains path then throw "duplicate lambda annotation path"
+    annotations := annotations.insert path (← decodeLambda table entry)
   let bounds ← (← (← value.getObjVal? "bounds").getArr?).toList.mapM fun entry => do
     return (← jsonNat (← entry.getObjVal? "index"), ← decodeType table (← entry.getObjVal? "type"))
   if !decide (bounds.map Prod.fst).Nodup then throw "duplicate future type bound"
@@ -1322,8 +1325,7 @@ def decodePacketParts (value : Json) (table : Array (Ty × Nat)) : Except String
     | .error _ => pure 4096
     | .ok fuel => jsonNat fuel
   if fuel > 16384 then throw "checker fuel capacity"
-  return ⟨fun path => (annotations.find? (fun entry => entry.1 == path)).map Prod.snd,
-      ⟨bounds,shareable,[]⟩,context,fuel⟩
+  return ⟨fun path => annotations[path]?, ⟨bounds,shareable,[]⟩,context,fuel⟩
 
 /-- Schema, type table, term, then the rest (`decodePacketParts`), in that order. -/
 def decodePacket (value : Json) : Except String DecodedPacket := do

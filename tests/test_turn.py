@@ -639,3 +639,52 @@ class KnotTests(TurnCase):
         self.assertIn('"Package.count"', packet)
         self.assertNotIn('"Package.unused"', packet)
         self.assertEqual(h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(4)]})["value"], nat(4))
+
+
+class SessionCacheTests(TurnCase):
+    """One prepared closure per package, entries held decoded and checked, runs by pin."""
+
+    SOURCE = "edition ObjectiveBend 1\ndef double(n: Nat) -> Nat:\n  n + n\ndef seven() -> Nat:\n  7n\n"
+
+    def compile(self, h, entry, source=None):
+        return h.send({"op": "compile", "entry": entry, "modules": [{"name": "Package", "source": source or self.SOURCE}]})
+
+    def test_an_unreached_ill_typed_definition_still_refuses_the_package(self):
+        # Refuted if pruning an entry's packet let an unreached declaration go unchecked.
+        h = self.host()
+        bad = self.SOURCE + "def broken(n: Nat) -> Bool:\n  n + 1n\n"
+        r = self.compile(h, "double", bad)
+        self.assertEqual(r["status"], "error", r)
+
+    def test_entries_share_one_prepared_closure_and_run_by_pin(self):
+        h = self.host()
+        double = self.compile(h, "double")["artifact"]
+        seven = self.compile(h, "seven")["artifact"]
+        status = h.send({"op": "packet-cache-status"})
+        self.assertEqual((status["fronts"], status["entries"]), (1, 2), status)
+        by_pin = h.send({"op": "run", "artifact": {"packetSha256": double["packetSha256"]}, "arguments": [nat(4)]})
+        self.assertEqual((by_pin["status"], by_pin["value"]), ("finished", nat(8)), by_pin)
+        whole = h.send({"op": "run", "artifact": seven, "arguments": []})
+        self.assertEqual(whole["value"], nat(7), whole)
+        self.assertGreaterEqual(h.send({"op": "packet-cache-status"})["hits"], 2)
+
+    def test_an_unknown_pin_and_a_tampered_artifact_are_refused_by_name(self):
+        h = self.host()
+        art = self.compile(h, "double")["artifact"]
+        unknown = h.send({"op": "run", "artifact": {"packetSha256": "bafyreinotapin"}, "arguments": [nat(1)]})
+        self.assertEqual(unknown["status"], "error")
+        self.assertIn("unknown packetSha256", unknown["message"])
+        tampered = dict(art, modules=[{"name": "Package", "source": self.SOURCE.replace("n + n", "n + n + n")}])
+        refused = h.send({"op": "run", "artifact": tampered, "arguments": [nat(1)]})
+        self.assertEqual((refused["status"], refused["message"]),
+                         ("error", "artifact does not match recompilation of its claimed source"), refused)
+
+    def test_a_fresh_process_verifies_a_known_artifact_once_then_holds_it(self):
+        art = self.compile(self.host(), "double")["artifact"]
+        h = self.host()
+        first = h.send({"op": "run", "artifact": art, "arguments": [nat(2)]})
+        self.assertEqual(first["value"], nat(4), first)
+        status = h.send({"op": "packet-cache-status"})
+        self.assertEqual((status["misses"], status["entries"]), (1, 1), status)
+        h.send({"op": "run", "artifact": art, "arguments": [nat(3)]})
+        self.assertEqual(h.send({"op": "packet-cache-status"})["hits"], 1)

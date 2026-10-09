@@ -268,7 +268,7 @@ inductive PTy where
   | computation (plan response result : PTy)
   /-- The universal first-order type (hosted extension). -/
   | data
-  deriving Inhabited, Repr, BEq
+  deriving Inhabited, Repr, BEq, Hashable
 
 def PTy.row : List (String × PTy) → PTy
   | [] => .emptyRow
@@ -2148,12 +2148,22 @@ partial def knotNames (json : Json) (acc : Array String) : Array String :=
   | .arr items => items.foldl (fun acc v => knotNames v acc) acc
   | _ => acc
 
-/-- The knot fields the entry reaches, transitively (recursion included), in declaration
+/-- A whole closure elaborated once: every knot field with the knot keys it names, the
+field types, and the elaborator's final state. Selecting an entry (`Elaborated.select`)
+reuses it; nothing here depends on the entry. -/
+structure Elaborated where
+  ctx : Ctx
+  fields : List (String × ATerm)
+  references : Std.HashMap String (Array String)
+  rowFields : List (String × PTy)
+  unresolved : List String
+  state : St
+
+/-- The knot fields `entryKey` reaches, transitively (recursion included), in declaration
 order. A spec's claims (`key#claim#name`) are kept with their spec: nothing references
 them, and they are typed only as knot fields. The packet carries no unreachable
-declaration, so its knot row's depth is the reached count, not the closure's size. -/
-def reachableKnot (fields : List (String × ATerm)) (entryKey : String) : List (String × ATerm) := Id.run do
-  let table : Std.HashMap String ATerm := fields.foldl (fun t (k, v) => t.insert k v) {}
+declaration (they are checked once per closure, `Elaborated.whole`). -/
+def Elaborated.reachable (e : Elaborated) (entryKey : String) : List (String × ATerm) := Id.run do
   let mut seen : Std.HashSet String := {}
   let mut work : Array String := #[entryKey]
   while h : work.size > 0 do
@@ -2161,19 +2171,17 @@ def reachableKnot (fields : List (String × ATerm)) (entryKey : String) : List (
     work := work.pop
     if seen.contains key then continue
     seen := seen.insert key
-    if let some value := table[key]? then
-      for name in knotNames value.json #[] do
-        if !seen.contains name && table.contains name then work := work.push name
+    for name in e.references.getD key #[] do
+      if !seen.contains name then work := work.push name
   let claimed := fun (key : String) => match key.splitOn "#claim#" with
     | [owner, _] => seen.contains owner
     | _ => false
-  return fields.filter fun (key, _) => seen.contains key || claimed key
+  return e.fields.filter fun (key, _) => seen.contains key || claimed key
 
-def elaborateM (c : Ctx) (entryModule : Nat) (entryDefinition : String) (args : Json) (mode : String) : M Output := do
+def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × PTy) × List String) := do
   let fuel := 100000
-  let userModules := c.modules
   let mut fields : List (String × ATerm) := []
-  for m in userModules do
+  for m in c.modules do
     for d in m.decls do
       fields ← emitDecl c fuel m d fields
   let mut rowFields : List (String × PTy) := []
@@ -2182,40 +2190,51 @@ def elaborateM (c : Ctx) (entryModule : Nat) (entryDefinition : String) (args : 
     match ← globalType c fuel name with
     | some t => rowFields := rowFields ++ [(name, t)]
     | none => unresolved := unresolved ++ [name]
-  let globalRow := if unresolved.isEmpty then some (PTy.row rowFields) else none
-  let reason := if unresolved.isEmpty then none else some ("declaration types unresolved: " ++ String.intercalate ", " unresolved)
-  let some entry := userModules[entryModule]? | fail "missing selected entry"
-  let entryKey := entry.name ++ "." ++ entryDefinition
-  if (declOf c entryKey).isNone then fail "missing selected entry"
-  let knot := reachableKnot fields entryKey
-  let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
-  let knotRow := globalRow.map fun _ => PTy.row (rowFields.filter fun (k, _) => kept.contains k)
+  return (fields, rowFields, unresolved)
+
+/-- The knot over `knot`'s fields: `fix` of the package specification. -/
+def Elaborated.root (e : Elaborated) (knot : List (String × ATerm)) : ATerm :=
+  let reason := if e.unresolved.isEmpty then none
+    else some ("declaration types unresolved: " ++ String.intercalate ", " e.unresolved)
   let rootExtension := ATerm.lam ⟨some (.variable 0), some (arrowTy .emptyRow (.variable 0)), "unrestricted", "reusable", reason⟩
     (.lam ⟨some .emptyRow, some (.variable 0), "unrestricted", "reusable", reason⟩ (.extend (.bound 0) knot))
-  let packageLabel := (toJson (userModules.map (·.name))).compress
-  let root := ATerm.fix (.specification (.record [("package", .label packageLabel)]) rootExtension) (.record [])
-  let mut selected := ATerm.get root entryKey
+  let packageLabel := (toJson (e.ctx.modules.map (·.name))).compress
+  ATerm.fix (.specification (.record [("package", .label packageLabel)]) rootExtension) (.record [])
+
+def Elaborated.globalRow (e : Elaborated) : Option PTy :=
+  if e.unresolved.isEmpty then some (PTy.row e.rowFields) else none
+
+/-- The whole closure as one term (every declaration, every template): what is checked
+once per package so that pruning an entry's packet never skips checking a declaration. -/
+def Elaborated.whole (e : Elaborated) : Output :=
+  { term := e.root e.fields, globalRow := e.globalRow, knotRow := e.globalRow, sumBounds := e.state.sumBounds,
+    typeErrors := e.state.typeErrors, templates := e.state.templates }
+
+/-- Select an entry of an elaborated closure: its reached knot, applied to `args`. -/
+def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : String) (args : Json)
+    (mode : String) : Except String Output := do
+  let some entry := e.ctx.modules[entryModule]? | throw "missing selected entry"
+  let entryKey := entry.name ++ "." ++ entryDefinition
+  if (declOf e.ctx entryKey).isNone then throw "missing selected entry"
+  let knot := e.reachable entryKey
+  let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
+  let globalRow := e.globalRow
+  let knotRow := globalRow.map fun _ => PTy.row (e.rowFields.filter fun (k, _) => kept.contains k)
+  let mut selected := ATerm.get (e.root knot) entryKey
   if mode == "definition" then
     match args with
-    | .arr a => if !a.isEmpty then fail "definition mode forbids invocation arguments"
-    | _ => fail "definition mode forbids invocation arguments"
+    | .arr a => if !a.isEmpty then throw "definition mode forbids invocation arguments"
+    | _ => throw "definition mode forbids invocation arguments"
   else match args with
-    | .arr a => for x in a do
-        match legacyArgument 256 x with
-        | .ok t => selected := .app selected t
-        | .error e => fail e
+    | .arr a => for x in a do selected := .app selected (← legacyArgument 256 x)
     | envelope =>
       if exactKeys envelope ["schema", "values"] && (envelope.getObjValAs? String "schema").toOption == some "dregg.objective-bend.argument-values.v1" then
         match (envelope.getObjVal? "values").bind Json.getArr? with
-        | .ok values => for x in values do
-            match typedArgument 256 x with
-            | .ok t => selected := .app selected t
-            | .error e => fail e
-        | .error _ => fail "arguments must select a supported complete value envelope"
-      else fail "arguments must select a supported complete value envelope"
-  let st ← get
-  return { term := selected, globalRow, knotRow, sumBounds := st.sumBounds, typeErrors := st.typeErrors,
-           templates := st.templates.filter fun (key, _, _) => kept.contains key }
+        | .ok values => for x in values do selected := .app selected (← typedArgument 256 x)
+        | .error _ => throw "arguments must select a supported complete value envelope"
+      else throw "arguments must select a supported complete value envelope"
+  return { term := selected, globalRow, knotRow, sumBounds := e.state.sumBounds, typeErrors := e.state.typeErrors,
+           templates := e.state.templates.filter fun (key, _, _) => kept.contains key }
 
 /-- The built-in module: `builtinSource` through the parser and the AST decoder. -/
 def builtinModule : Except String Module := do
@@ -2266,11 +2285,17 @@ def context (modules : List Module) : Except String Ctx := do
       | _ => pure ()
   return ⟨modules, decls, records, sums⟩
 
+/-- Elaborate every declaration of a closure once. -/
+def elaboratePackage (modules : List Module) : Except String Elaborated := do
+  let c ← context modules
+  let ((fields, rowFields, unresolved), state) ← (elaboratePackageM c).run {}
+  let references := fields.foldl (fun (map : Std.HashMap String (Array String)) (key, value) =>
+    map.insert key (knotNames value.json #[])) {}
+  return ⟨c, fields, references, rowFields, unresolved, state⟩
+
 def elaborate (modules : List Module) (entryModule : Nat) (entryDefinition : String) (args : Json) (mode : String) :
     Except String Output := do
-  let c ← context modules
-  let (out, _) ← (elaborateM c entryModule entryDefinition args mode).run {}
-  return out
+  (← elaboratePackage modules).select entryModule entryDefinition args mode
 
 /-! ## The typing proposal (literalAnnotations) -/
 
@@ -2332,6 +2357,8 @@ bounds. The order is a contract (the checker decodes refs to earlier entries onl
 structure Interner where
   table : Array Json := #[]
   seen : Std.HashMap String Nat := {}
+  /-- Whole subtrees already interned: a shared type (a Plan, a knot row) is walked once. -/
+  trees : Std.HashMap PTy Json := {}
 
 abbrev InternM := StateM Interner
 
@@ -2345,37 +2372,41 @@ def internNode (node : Json) : InternM Json := do
       pure s.table.size
   return Json.mkObj [("tag", "ref"), ("index", toString index)]
 
-def PTy.intern : PTy → InternM Json
-  | .natural => pure (Json.mkObj [("tag", "natural")])
-  | .boolean => pure (Json.mkObj [("tag", "boolean")])
-  | .label => pure (Json.mkObj [("tag", "label")])
-  | .emptyRow => pure (Json.mkObj [("tag", "emptyRow")])
-  | .variable i => pure (Json.mkObj [("tag", "variable"), ("index", toString i)])
-  | .data => pure (Json.mkObj [("tag", "data")])
-  | .arrow r q d c => do
-    let dj ← d.intern
-    let cj ← c.intern
-    internNode (Json.mkObj [("tag", "arrow"), ("reuse", r), ("parameter", q), ("domain", dj), ("codomain", cj)])
-  | .field n m t => do
-    let mj ← m.intern
-    let tj ← t.intern
-    internNode (Json.mkObj [("tag", "field"), ("name", n), ("member", mj), ("tail", tj)])
-  | .specification m e => do
-    let mj ← m.intern
-    let ej ← e.intern
-    internNode (Json.mkObj [("tag", "specification"), ("metadata", mj), ("extension", ej)])
-  | .prototype s t => do
-    let sj ← s.intern
-    let tj ← t.intern
-    internNode (Json.mkObj [("tag", "prototype"), ("spec", sj), ("target", tj)])
-  | .variant r => do
-    let rj ← r.intern
-    internNode (Json.mkObj [("tag", "variant"), ("row", rj)])
-  | .computation p r a => do
-    let pj ← p.intern
-    let rj ← r.intern
-    let aj ← a.intern
-    internNode (Json.mkObj [("tag", "computation"), ("plan", pj), ("response", rj), ("result", aj)])
+def PTy.intern (t : PTy) : InternM Json := do
+  if let some j := (← get).trees[t]? then return j
+  let j ← match t with
+    | .natural => pure (Json.mkObj [("tag", "natural")])
+    | .boolean => pure (Json.mkObj [("tag", "boolean")])
+    | .label => pure (Json.mkObj [("tag", "label")])
+    | .emptyRow => pure (Json.mkObj [("tag", "emptyRow")])
+    | .variable i => pure (Json.mkObj [("tag", "variable"), ("index", toString i)])
+    | .data => pure (Json.mkObj [("tag", "data")])
+    | .arrow r q d c => do
+      let dj ← d.intern
+      let cj ← c.intern
+      internNode (Json.mkObj [("tag", "arrow"), ("reuse", r), ("parameter", q), ("domain", dj), ("codomain", cj)])
+    | .field n m t => do
+      let mj ← m.intern
+      let tj ← t.intern
+      internNode (Json.mkObj [("tag", "field"), ("name", n), ("member", mj), ("tail", tj)])
+    | .specification m e => do
+      let mj ← m.intern
+      let ej ← e.intern
+      internNode (Json.mkObj [("tag", "specification"), ("metadata", mj), ("extension", ej)])
+    | .prototype s t => do
+      let sj ← s.intern
+      let tj ← t.intern
+      internNode (Json.mkObj [("tag", "prototype"), ("spec", sj), ("target", tj)])
+    | .variant r => do
+      let rj ← r.intern
+      internNode (Json.mkObj [("tag", "variant"), ("row", rj)])
+    | .computation p r a => do
+      let pj ← p.intern
+      let rj ← r.intern
+      let aj ← a.intern
+      internNode (Json.mkObj [("tag", "computation"), ("plan", pj), ("response", rj), ("result", aj)])
+  modify fun s => { s with trees := s.trees.insert t j }
+  return j
 
 def Annotation.intern (a : Annotation) : InternM Json := do
   let d ← a.domain.intern

@@ -252,6 +252,28 @@ theorem prepareNativeWith_typing {α : Type}
   rw [checked_closed_uses initial] at typed
   exact admitted.typing typed
 
+/-- A selected package entry's native preparation is typed in the same sense: the
+checked entry applied to literals of its admitted arguments. -/
+theorem prepareNativeChecked_typing {source : AnnotatedTerm} {initial : Checked source []} {fuel : Nat}
+    {arguments : Array Data} {prepared : NativePreparation} {work remaining : Nat}
+    (success : (prepareNativeChecked source initial fuel arguments).run work = .ok (prepared, remaining)) :
+    prepared.source = source ∧ ∃ terms, Literals terms prepared.arguments.toList ∧
+      PartialTyping prepared.source.assumptions []
+        (literalApplications prepared.source.term terms) prepared.resultType [] := by
+  simp only [prepareNativeChecked] at success
+  obtain ⟨pair, afterPrepared, preparedOk, rest⟩ := work_bind_ok _ _ success
+  rcases pair with ⟨resultType, values⟩
+  obtain ⟨_, afterShape, _, rest⟩ := work_bind_ok _ _ rest
+  have admitted := prepareNativeArguments_admitted (fun _ _ value => pure value) source.assumptions initial.type
+    arguments.toList preparedOk
+  have eq := work_pure_output _ rest
+  subst eq
+  refine ⟨rfl, ?_⟩
+  have typed := initial.derivation
+  rw [checked_closed_uses initial] at typed
+  simpa [AnnotatedTerm.erase] using admitted.typing typed
+
 #print axioms prepareNativeWith_typing
 #print axioms normalizeNative_typing
+#print axioms prepareNativeChecked_typing
 end Delvetalk.PackageData
