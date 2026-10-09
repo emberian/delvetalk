@@ -183,6 +183,19 @@ def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
       acc.map fun (i, ws) => if i == id then (i, ws ++ [{ caller := "", kind, edits := [] }]) else (i, ws)
     else acc ++ [(id, [{ caller := "", kind, edits := [] }])]) p.writes
 
+/-- A child id `<parent>/<kind>/<n>` raises its parent's `minted` counter to `n` (any creation of
+    that shape, named or minted, so a later mint never collides with a named child). -/
+def noteMinted (w : World) (id : String) : World :=
+  let parts := id.splitOn "/"
+  if parts.length < 3 then w else
+  match parts.getLast!.toNat? with
+  | none => w
+  | some n =>
+    let parent := "/".intercalate (parts.take (parts.length - 2))
+    match w.objects[parent]? with
+    | some p => if p.minted ≥ n then w else { w with objects := w.objects.insert parent { p with minted := n } }
+    | none => w
+
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/
 def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
@@ -678,10 +691,12 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let assumptions := decoded.source.assumptions
   unless stateTypeOk assumptions ty do
     throw ("compile", "initial() must return a closed record of first-order data")
-  let compiledPin ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
-  -- An extension's code is its layer over the code it extends, whatever `initial` it reaches.
+  let packet ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
+  let sourcePin ← (artifact.getObjValAs? String "sourcesSha256").mapError (("compile", ·))
+  -- The pin is the sources' CID. An extension's is its layer over the sources it extends,
+  -- whatever `initial` it reaches.
   let pin := if extend then Journal.bodyHash (Json.arr #[toJson "extend", toJson o.pin, toJson (Journal.bodyHash (toJson source))])
-    else compiledPin
+    else sourcePin
   let same := ty == o.stateType &&
     (← (relevantBounds assumptions.bounds ty).mapError (("stateType", ·))) ==
       (← (relevantBounds o.bounds o.stateType).mapError (("stateType", ·)))
@@ -710,7 +725,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
       !own.contains ((m.getObjValAs? String "name").toOption.getD ""))
     pure (Json.arr rows, lawHere || o.predicate, if lawHere then readsHere else o.predicateReads)
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
-           methods, predicate, predicateReads }
+           methods, predicate, predicateReads, packet }
 
 def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
@@ -787,8 +802,23 @@ def expandInputs (w : World) (inputs : Json) : Except String Json := do
     return Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "sourceCid") ++ [("source", toJson (← resolve cid))])
   | _, _ => return inputs
 
-def createRecJson (id : String) (c : CreateRec) : Json :=
-  Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin), ("sourcesSha256", toJson c.sources),
+/-- What compiled an object's sources here, recorded beside its pin and never compared on
+    replay: the host binary's pin and the packet digest. -/
+def compiledJson (binary packet : String) : Json :=
+  Json.mkObj [("binary", toJson binary), ("packet", toJson packet)]
+
+/-- A record without its `compiled` observation, for replay's comparisons. -/
+def withoutCompiled (j : Json) : Json :=
+  match j.getObj? with
+  | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "compiled"))
+  | .error _ => j
+
+/-- The recorded packet of a record, when it has one. -/
+def recordedPacket (j : Json) : Option String :=
+  (j.getObjVal? "compiled").toOption.bind fun c => (c.getObjValAs? String "packet").toOption
+
+def createRecJson (binary id : String) (c : CreateRec) : Json :=
+  Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin), ("compiled", compiledJson binary c.object.packet),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
     if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)
@@ -947,6 +977,25 @@ def contextData (id principal handle caller intent : String) (height clock : Nat
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
 
+/-- The fields of a record type, through the packet's bounds; none for any other type. -/
+partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+  | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (recordFieldTypes bounds (fuel - 1))
+  | .field n m tail => ((n, m) :: ·) <$> recordFieldTypes bounds fuel tail
+  | .emptyRow => some []
+  | _ => none
+
+/-- A record the host builds (a Context, a law's Request) as the receiving code's own library
+    declares it: the fields its type names, in its order, each fitted alike. An object compiled
+    under an older library whose Context lacks a field the host now fills keeps running; a
+    field the host cannot fill leaves the record as built (and the kernel refuses it by name). -/
+partial def fitRecord (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data) : Data :=
+  match d, recordFieldTypes bounds (bounds.length + 1) ty with
+  | .record fs, some names =>
+    if names.all (fun (n, _) => fs.any (·.1 == n)) then
+      .record (names.map fun (n, m) => (n, fitRecord bounds m ((fs.lookup n).getD (.record []))))
+    else d
+  | _, _ => d
+
 /-- An object's Bend law on one ordinary write: none when it admits. -/
 def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (subject caller method : String)
     (argument : Data) (kind : Nat) (pin : String) : Option Refusal := Id.run do
@@ -965,6 +1014,9 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
+  let request := match c.type with
+    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ requestType _)) => fitRecord c.bounds requestType request
+    | _ => request
   match (runPure entry [o.state, new, request] Delvetalk.Bounds.lawTicks).1 with
   | .ok (.variant "admitted" _) => return none
   | .ok (.variant "refused" (.record f)) =>
@@ -1046,11 +1098,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && (dataJson state).compress.utf8ByteSize ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
-      next := { o with pin := prog.pin, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
+      next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
-        ("newPin", toJson prog.pin), ("source", toJson source), ("migration", toJson migration),
+        ("newPin", toJson prog.pin), ("compiled", compiledJson w.binary prog.packet),
+        ("source", toJson source), ("migration", toJson migration),
         ("result", dataJson state)] |> fun j => if extend then j.setObjVal! "mode" (toJson "extend") else j]
     -- The current law judges the whole write, under the pin the object will run. Every
     -- kind of change the object undergoes in this turn is judged, once for each object
@@ -1087,7 +1140,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     out := out ++ [(id, { next with version := o.version + 1, state })]
   return { updates := out, reprograms, amendments,
            creations := p.creates.map fun (id, c) => (id, c.object),
-           creates := p.creates.map fun (id, c) => createRecJson id c }
+           creates := p.creates.map fun (id, c) => createRecJson w.binary id c }
 
 /-! ## Entries -/
 
@@ -1155,6 +1208,10 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
           ((e.getObj?.toOption.map (·.toList)).getD []))]).getD #[])
     height := w.height + 1, head := hash, entries := w.entries.push entry
+    replies := match (entry.getObjValAs? String "replyTo").toOption,
+        identity.getObjValAs? String "principal", identity.getObjValAs? String "intent" with
+      | some post, .ok p, .ok i => if w.replies.contains post then w.replies else w.replies.insert post (p, i)
+      | _, _, _ => w.replies
     handles := if tagOf entry == "principal" then
         match (entry.getObjVal? "outcome").toOption with
         | some o => match o.getObjValAs? String "did", o.getObjValAs? String "handle" with
@@ -1270,7 +1327,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     | .ok judged =>
       let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) ::
@@ -1354,8 +1411,10 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     (lawText : Option String := none) : Except String (Object × String) := do
   unless state.conformsUnder b.assumptions.bounds b.ty do throw "seed does not conform to the package state type"
   if (dataJson state).compress.utf8ByteSize > Limits.maxSeedBytes then throw "seed exceeds state byte capacity"
-  let pin ← b.artifact.getObjValAs? String "packetSha256"
+  -- The pin is the source closure's CID; the compiled packet is only observed beside it.
+  let packet ← b.artifact.getObjValAs? String "packetSha256"
   let sources ← b.artifact.getObjValAs? String "sourcesSha256"
+  let pin := sources
   -- No law declared: the creator owns reprogramming and amendment, anyone may write.
   let laws ← match lawText with
     | some text => parseLawText text
@@ -1364,7 +1423,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
   let (methods, predicate, predicateReads) := artifactShape b.artifact
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
-            inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads }, sources)
+            inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
   if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
@@ -1382,9 +1441,9 @@ def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (c
   let (o, sources, _) ← buildObjectIn w inputs seed read chain creator height lawText
   return (o, sources)
 
-def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
+def createOutcome (binary id : String) (o : Object) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
-    ("sourcesSha256", toJson sources), ("compile", artifact), ("seed", seed)]
+    ("compiled", compiledJson binary o.packet), ("compile", artifact), ("seed", seed)]
 
 /-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
     come from `initial()`), for `world-create` and the `create` Plan alike. -/
@@ -1449,12 +1508,13 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
   let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
-  let outcome := createOutcome id o sources (compactInputs inputs) seed
+  discard <| pure sources
+  let outcome := createOutcome w.binary id o (compactInputs inputs) seed
   let outcome := if supervisor.isEmpty then outcome else outcome.setObjVal! "supervisor" (toJson supervisor)
   let outcome := match owner with
     | some o => outcome.setObjVal! "owner" (toJson o)
     | none => outcome
-  let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
+  let (w', entry) := push (noteMinted { w with objects := w.objects.insert id o } id) (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
   return (w', reply entry)
@@ -1719,6 +1779,12 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
   checkRootCids w entry
+  -- A turn answers only a post recorded for the object it ran on (its first root).
+  if let some post := (entry.getObjValAs? String "replyTo").toOption then
+    let first := ((entry.getObjVal? "roots").toOption.bind (·.getArr?.toOption)).bind (·[0]?)
+      |>.bind (·.getObjValAs? String "object" |>.toOption)
+    unless (w.posts[post]?).map (some ·.object) == some first do
+      throw s!"a turn answers {post}, which is not a post recorded for its object"
   checkResumes w entry principal intent
   checkEnded w entry principal intent
   match ← outcome.getObjValAs? String "tag" with
@@ -1757,7 +1823,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         (← checkpoint.getObjValAs? String "principal") (← checkpoint.getObjValAs? String "intent")
         (← checkpoint.getObjValAs? String "rootsDigest") tokens do
       throw "checkpoint digest does not match its tokens"
-    discard <| outcome.getObjVal? "slot"
+    -- A suspension waits on a slot, or on the reply that answers a post.
+    if (outcome.getObjValAs? String "post").toOption.isNone then discard <| outcome.getObjVal? "slot"
     discard <| natField outcome "deadline"
     return record w entry key []
   | "library" =>
@@ -1789,10 +1856,12 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let owner := (outcome.getObjValAs? String "owner").toOption
     if owner.isSome && (w.opener.isEmpty || principal != w.opener) then throw "an owner named by another than the opener"
     let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
-    unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
-      throw s!"object {id} no longer compiles to its recorded pin"
+    -- The pin binds the sources; the packet this compiler made of them is only counted if it differs.
+    unless o.pin == (← outcome.getObjValAs? String "pin") && sources == o.pin do
+      throw s!"object {id} is not the source closure its pin names"
+    let w := if (recordedPacket outcome).any (· != o.packet) then { w with recompiledDifferently := w.recompiledDifferently + 1 } else w
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
-    return record { w with objects := w.objects.insert id o } entry key [id]
+    return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
   | "refused" =>
     let cls ← outcome.getObjValAs? String "class"
     unless refusalClasses.contains cls do throw s!"unknown refusal class {cls}"
@@ -1826,16 +1895,20 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     match judge w (w.height + 1) p with
     | .error r => throw s!"admitted entry would be refused ({r.cls})"
     | .ok judged =>
-      unless judged.reprograms == recordedPrograms.toList && judged.amendments == recordedLaws.toList &&
-          judged.creates == recordedCreates.toList do
+      let strip := fun (l : List Json) => l.map withoutCompiled
+      unless strip judged.reprograms == strip recordedPrograms.toList && judged.amendments == recordedLaws.toList &&
+          strip judged.creates == strip recordedCreates.toList do
         throw "recorded reprograms, amendments or creations do not replay"
+      let differs := ((judged.reprograms ++ judged.creates).zip (recordedPrograms.toList ++ recordedCreates.toList)).filter
+        fun (now, then_) => (recordedPacket then_).isSome && recordedPacket then_ != recordedPacket now
+      let w := { w with recompiledDifferently := w.recompiledDifferently + differs.length }
       let updates := judged.updates
       for raw in rawWrites do
         let id ← raw.getObjValAs? String "object"
         let some (_, o) := updates.find? (·.1 == id) | throw "write missing"
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w grants revokes spent
       let holders := (grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)

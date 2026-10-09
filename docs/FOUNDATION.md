@@ -93,7 +93,10 @@ a read-only `getRecord`/`describeRepo` façade over the journal, later as a
 real PDS if the town follows it. An object's program identity, its pin, is
 the CID of its sealed source closure, not of a compiled packet: a compiler
 change or a library change never moves the pin of an object whose source did
-not change, and replay recompiles from the journaled sources. Durability
+not change, and replay recompiles from the journaled sources. In the journal:
+`created {pin, compiled {binary, packet}, compile, seed}`, `creates[] {object,
+pin, compiled}`, `reprograms[] {object, oldPin, newPin, compiled}`; a packet
+that recompiles differently only increments `world-status.recompiledDifferently`. Durability
 is fsync, not a full barrier: an entry may be lost on power loss within the
 operating system's write-back window, and the chain check on reopen cuts a
 torn tail rather than reading a corrupt one. A preview world does not justify

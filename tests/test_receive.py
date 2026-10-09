@@ -36,14 +36,16 @@ class Cards(Chain):
         self.assertEqual(len(reply["offers"]), 1, reply)
         return reply["offers"][0]["text"]
 
-    def test_receive_takes_exactly_text_post_and_slot(self):
-        # The transport always sends all three; a missing slot or a forged extra field is refused
-        # typeMismatch (binding, journaled) before the card runs, and nothing is written.
+    def test_receive_takes_text_and_post_and_the_host_owns_slot(self):
+        # slot is the host's: left out, it is filled from the recorded post ("" when the reply
+        # answers none); a forged extra field is still refused typeMismatch before the card runs.
         self.garden()
-        for i, argument in enumerate([record(text=label("delvetalk garden plant"), post=label("at://glm/post/1")),
-                                      record(text=label("x"), post=label("p"), slot=label(""), principal=label("ember"))]):
-            r = self.turn("garden", "receive", argument, principal="glm", identity=f"forged-{i}")
-            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), r)
+        filled = self.turn("garden", "receive", record(text=label("delvetalk garden plant"), post=label("at://glm/post/1")),
+                           principal="glm", identity="no-slot")
+        self.assertEqual(filled["status"], "admitted", filled)
+        forged = self.turn("garden", "receive", record(text=label("x"), post=label("p"), slot=label(""), principal=label("ember")),
+                           principal="glm", identity="forged")
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), forged)
         self.assertEqual(self.version("garden"), 0)
 
     def test_an_unclear_spell_gets_a_card_naming_the_needs_and_the_template_filled_in(self):
