@@ -246,7 +246,7 @@ class AgentHTTPTest(unittest.TestCase):
         status, retried, _ = self.turn(alice, 'same-turn', request)
         self.assertEqual(status, 200, retried)
         self.assertEqual(retried['reply'], retained['reply'])
-        self.assertEqual(self.inspect(alice, 'counter')['state']['count'], 7)
+        self.assertEqual(source_object.plain(source_object.state_data(self.inspect(alice, 'counter')))['count'], 7)
         self.assertEqual(self.request('GET', '/AGENTS.md/receipt?intent=same-turn', token=bob)[1]['status'], 'unknown')
         self.assertEqual(self.request('GET', '/AGENTS.md/receipt?realm=shared&intent=same-turn', token=alice)[1]['status'], 'unknown')
         self.assertEqual(self.turn(alice, 'same-turn', {**request, 'input': {'amount': 8}})[0], 400)

@@ -1,5 +1,5 @@
 """Governed allocation over mock PDS transport and the actual Lean receivers."""
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import sys
 import tempfile
@@ -16,10 +16,7 @@ import worker
 
 
 def fixture(name, path):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(ROOT / path, name)
 
 
 live = fixture('allocation_receiving_live', 'conformance/test_live_path.py')
@@ -36,14 +33,16 @@ class AllocationReceiving(unittest.TestCase):
             self.assertTrue((ROOT / '.lake/build/bin' / binary).is_file(),
                             'Build Lean receivers first; receiving tests do not spawn compilers')
 
-    def seed(self, runtime='world', child_law=None):
+    def seed(self, runtime='compiled', child_law=None):
         self.serial += 1
         self.directory = self.base / str(self.serial)
         self.directory.mkdir()
         self.pds = live.PDS()
         self.clerk = clerk.Clerk(self.directory / 'clerk', self.pds)
-        law = allocation.factory_law()
-        law['invoke']['make'] = [delve.DID]
+        law = allocation.law(actors=(delve.DID,))
+        law['read'].extend([delve.DID, 'local-clerk-operator'])
+        child_law = child_law if child_law is not None else allocation.law('report', actors=(delve.DID,))
+        child_law['read'].extend([delve.DID, 'local-clerk-operator'])
         self.root = self.clerk.bootstrap('factory', allocation.factory_protocol(child_law=child_law),
             law, [delve.DID], runtime_profile=runtime)['data']['root']
         credentials = self.directory / 'mock-credentials.json'
@@ -60,16 +59,16 @@ class AllocationReceiving(unittest.TestCase):
 
     def make(self, name='one'):
         return {'object': 'factory', 'expected': self.root, 'command': 'make',
-                'input': {'name': name}, 'absent': ['factory/' + name]}
+                'input': {'name': name, 'second': ''}, 'absent': ['factory/' + name]}
 
     def transaction(self):
         return {'op': 'transaction', 'reads': {'factory': {'expected': self.root},
                     'factory/one': {'expected': None}, 'factory/unused': {'expected': None}},
-                'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'one'}},
-                          {'object': 'factory/one', 'command': 'write', 'input': {'text': 'inhabited'}}]}
+                'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'one', 'second': ''}},
+                          {'object': 'factory/one', 'command': 'report', 'input': {}}]}
 
     def test_remote_allocation_registers_only_admitted_children_and_replays_exact_receipt(self):
-        for runtime in ('world', 'compiled'):
+        for runtime in ('compiled',):
             with self.subTest(runtime=runtime):
                 self.seed(runtime)
                 payload = self.make()
@@ -78,7 +77,7 @@ class AllocationReceiving(unittest.TestCase):
                 receipt = self.clerk.receive(publication['uri'], publication['cid'])
                 self.assertEqual(receipt['reply']['kind'], 'committed')
                 child = self.clerk.snapshot('factory/one')['root']
-                self.assertEqual(child['law'], [delve.DID])
+                self.assertEqual(child['law']['invoke']['report'], [delve.DID])
                 self.assertEqual(receipt['reply']['data']['allocated'], {'factory/one': child})
                 self.assertEqual(self.clerk.config()['objects'], ['factory', 'factory/one'])
                 self.assertEqual(receipt['request']['principal'], delve.DID)
@@ -93,22 +92,22 @@ class AllocationReceiving(unittest.TestCase):
                 self.assertEqual(restarted.snapshot('factory')['root']['version'], 1)
 
     def test_new_child_is_remotely_addressable_but_creator_has_no_implicit_authority(self):
-        self.seed(child_law=[])
+        self.seed(child_law=allocation.law('report', actors=()))
         self.assertEqual(self.receive(self.make())['reply']['kind'], 'committed')
         child = self.clerk.snapshot('factory/one')['root']
-        payload = {'object': 'factory/one', 'expected': child, 'command': 'write', 'input': {'text': 'no'}}
+        payload = {'object': 'factory/one', 'expected': child, 'command': 'report', 'input': {}}
         denied = self.receive(payload, 'write')
         self.assertEqual(denied['reply']['data'], 'unauthorized')
         self.assertEqual(self.clerk.snapshot('factory/one')['root'], child)
 
     def test_transaction_allocates_calls_and_preserves_unused_absence_in_worker_head(self):
-        for runtime in ('world', 'compiled'):
+        for runtime in ('compiled',):
             with self.subTest(runtime=runtime):
                 self.seed(runtime)
                 receipt = self.receive(self.transaction(), 'compose')
                 self.assertEqual(receipt['reply']['kind'], 'committed')
                 roots = receipt['reply']['data']['roots']
-                self.assertEqual(roots['factory/one']['state'], {'text': 'inhabited'})
+                self.assertEqual(receipt['reply']['data']['results'][-1], 0)
                 self.assertEqual(roots['factory/one']['version'], 1)
                 self.assertIsNone(roots['factory/unused'])
                 self.assertEqual(self.clerk.config()['objects'], ['factory', 'factory/one'])
@@ -122,7 +121,7 @@ class AllocationReceiving(unittest.TestCase):
                                  ['factory', 'factory/one', 'factory/unused'])
 
     def test_failed_child_call_rolls_back_allocation_and_does_not_register_custody(self):
-        self.seed(child_law=[])
+        self.seed(child_law=allocation.law('report', actors=()))
         denied = self.receive(self.transaction(), 'rollback')
         self.assertEqual(denied['reply']['data'], 'unauthorized')
         self.assertEqual(self.clerk.config()['objects'], ['factory'])
@@ -158,15 +157,15 @@ class AllocationReceiving(unittest.TestCase):
         self.seed()
         clerk.world.exchange(self.clerk.database, {'op': 'create', 'object': 'factory/one',
             'principal': 'operator', 'intent': 'operator-child',
-            'protocol': allocation.child_protocol(), 'law': [delve.DID]})
+            'protocol': allocation.child_protocol(), 'law': allocation.law('report', actors=(delve.DID,))}, profile='compiled')
         refused = self.receive(self.make(), 'occupied')
         self.assertEqual(refused['reply']['data'], 'stale absence root')
         self.assertEqual(self.clerk.config()['objects'], ['factory'])
         root = clerk.world.exchange(self.clerk.database, {'op': 'inspect', 'object': 'factory/one',
-                                                        'principal': 'reader'})
+                                                        'principal': 'reader'}, profile='compiled')
         with self.assertRaisesRegex(ValueError, 'not configured'):
-            self.receive({'object': 'factory/one', 'expected': root, 'command': 'write',
-                          'input': {'text': 'no'}}, 'unregistered')
+            self.receive({'object': 'factory/one', 'expected': root, 'command': 'report',
+                          'input': {}}, 'unregistered')
 
     def test_transport_rejects_nonlocal_namespaces_and_nonabsence_unregistered_reads(self):
         self.seed()
