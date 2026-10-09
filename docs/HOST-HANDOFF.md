@@ -262,10 +262,16 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 9. **Listing and cards.** Plan `objects {prefix, after}` -> `listed {ids, more}` (`listIds`: ids the frame's subject
    may view, prefix match, strictly after `after` in byte order, sorted, `listPage` 64) and op
    `world-objects {principal, prefix?, after?}` -> `{status: "listed", ids, more}`. Plan `card {object}` ->
-   `carded {document}`: `renderCard` compiles the target's `render` and runs it on its committed state under the
-   turn's ticks (records the target as a root; `denied` without read authority, `noCard` without `render`,
-   `refused {clause: render}` if it fails). Op `world-card {principal, object}` -> `{status: "card", text, document}`
-   (text by `Document.render`), journals nothing.
+   `carded {document}`: `renderCard` runs the target's card on its committed state under the turn's ticks
+   (records the target as a root; `denied` without read authority, `noCard` without a card method,
+   `refused {clause: render}` if it fails). The card has a point of view: `renderFor(state, context)` when the
+   method table lists it, else `render`, given the reader's Context when it takes two arguments (so the
+   objects' rename of `renderFor` to `render` changes nothing here). The Context (`cardContext`): principal =
+   the reader (the frame's subject), object = the target, caller = the asking object ("" for the op), intent
+   and height of the current turn ("" and the world's height for the op), `inputOrigin.kind` "card". It runs the
+   held entry (`executeDataEntry`). Op `world-card {principal, object}` -> `{status: "card", text, document}`
+   (text by `Document.render`) as that principal sees it, journals nothing; the HTML object page asks it for
+   the logged-in reader (its receive-turn fallback is gone).
 10. **The outbound channel.** `offer {to, document}`: `to` "" is the frame's subject. An admitted entry retains
    `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`), and `world-offers {principal, after?}`
    answers `{status: "offers", offers [{height, ordinal, identity, text}], more}` (after = journal height,

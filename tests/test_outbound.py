@@ -55,6 +55,15 @@ CARDED = PACKAGE.replace("import ./Plan.obend as Plans", "import ./Plan.obend as
   Document.text(textConcat("Count: ", natText(state.count)))
 """
 
+# A card with a point of view: `render(state, context)`, the name objects use once `renderFor` is renamed.
+VIEWED = CARDED.replace("def render(state: State) -> Document.Document:\n  Document.text(textConcat(\"Count: \", natText(state.count)))\n", "") + """def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(textConcat("for ", textConcat(context.principal, textConcat(" by ", textConcat(context.caller, textConcat(" of ", textConcat(context.object, textConcat(" intent ", textConcat(context.intent, textConcat(" from ", context.inputOrigin.kind))))))))))
+"""
+# Both names, as objects have them until the rename: `renderFor` is the one the host runs.
+BOTH = CARDED + """def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(textConcat("Count for ", textConcat(context.principal, textConcat(": ", natText(state.count)))))
+"""
+
 DIRECTORY = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
@@ -145,6 +154,15 @@ class Cards(Catalogue):
         self.assertEqual(self.host.send(op="world-card", principal="kim", object="bell-secret")["status"], "denied")
         self.assertEqual(self.host.send(op="world-card", principal="kim", object="ghost")["status"], "unknown")
         self.assertEqual(self.host.send(op="world-status")["height"], height)
+
+    def test_a_card_is_rendered_for_its_reader_through_either_name(self):
+        self.make("viewed", VIEWED, source_seed())
+        self.make("both", BOTH, source_seed())
+        self.assertEqual(self.show("viewed"), "for kim by directory of viewed intent t1 from card")
+        self.assertEqual(self.host.send(op="world-card", principal="kim", object="viewed")["text"],
+                         "for kim by  of viewed intent  from card")
+        self.assertEqual(self.show("both", principal="ember"), "Count for ember: 0")
+        self.assertEqual(self.host.send(op="world-card", principal="kim", object="both")["text"], "Count for kim: 0")
 
 
 WAITER = """edition ObjectiveBend 1
