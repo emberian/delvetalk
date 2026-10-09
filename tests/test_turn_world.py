@@ -12,6 +12,7 @@ import unittest
 
 from tests import host
 from tests.host import Host, HostCase
+from tests.wire import cid_of
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BINARY = host.binary()
@@ -171,8 +172,10 @@ class CounterTurns(TurnWorld):
 
     def test_the_receipt_lists_the_object_as_first_root_and_reports_ticks(self):
         self.create("c1", counter_modules(), 4)
+        read = cid_of(self.host.send(op="world-view", principal="ember", object="c1")["state"])
         r = self.turn("c1", "bump")
-        self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0}])
+        # The root names the exact state the turn read: object, version and the state's CID.
+        self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0, "cid": read}])
         self.assertEqual(r["result"], nat(5))
         self.assertGreater(r["ticksUsed"], 0)
         self.assertEqual(r["receipt"]["outcome"]["writes"][0]["version"], 1)

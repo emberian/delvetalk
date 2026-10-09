@@ -71,7 +71,8 @@ class Laws(LawWorld):
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label(OWNER), doors=nil(), greeted=nil()))
-        self.assertEqual(r, {"status": "error", "message": "law has no amendment clause"})
+        self.assertEqual(r["status"], "error", r)
+        self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
     def test_anyone_submits_and_only_the_owner_admits(self):
         self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=nil()))
@@ -125,14 +126,14 @@ class Predicates(LawWorld):
         self.assertEqual(self.clause(r), "lawRefused/tooSoon", r)
 
     def test_wakes_predicate_refuses_a_strangers_trigger(self):
-        self.create("wake", wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
-        r = self.turn("wake", "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
+        self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/owner", r)
 
     def test_the_owners_own_writes_pass_both_tiers(self):
-        self.create("wake", wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
-        r = self.turn("wake", "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
+        self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OWNER)
         self.assertEqual(r["status"], "admitted", r)
         self.create("tide", closure("Tide"), TIDE_SEED)

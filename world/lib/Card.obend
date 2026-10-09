@@ -183,7 +183,7 @@ def valueNatural(value: Form.Value) -> Nat:
 # The context of a reader nobody is: what a card shows a
 # stranger. Mine is "(yours)" when the principal is the reader.
 def stranger() -> Abi.Context:
-  {world: "", object: "", principal: "", caller: "", intent: "", height: 0n, inputOrigin: {kind: "", object: "", command: "", program: "", immediatelyPrevious: false}}
+  {world: "", object: "", principal: "", handle: "", caller: "", intent: "", height: 0n, clock: 0n, inputOrigin: {kind: "", object: "", command: "", program: "", immediatelyPrevious: false}}
 def reads(principal: String, context: Abi.Context) -> Bool:
   principal != "" && principal == context.principal
 def mine(principal: String, context: Abi.Context) -> String:

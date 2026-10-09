@@ -1,12 +1,9 @@
 """The garden reads the model's own words (rehearsal findings 2 and 3, objects side).
 
-The host is changing an interpretation whose reply carries no `{method, argument}` json to resume
-the garden with `replied {text}` (lane/host6 d1096a0); the garden fits the text with Spell against
-its plant form, takes `unclear: <need>` as what is missing, and ends the turn with no card at all
-for `unclear: not addressed` (prose that names no card) or anything else. On foundation's host the
-text reply settles as `unclear {needs: ["the reply names no method"]}` and the resumed turn offers
-"I did not quite get that. I still need: the reply names no method." — so the world-turn tests are
-expected failures until the host lands; the classification itself is pure and tested now.
+The host resumes an interpretation whose reply carries no `{method, argument}` json with
+`replied {text}`; the garden fits the text with Spell against its plant form, takes
+`unclear: <need>` as what is missing, and ends the turn with no card at all for
+`unclear: not addressed` (prose that names no card) or anything else.
 
 Refuted by: a spell in the model's text not planting, `unclear: not addressed` offering a card, or a
 named need not reaching the needs card."""
@@ -53,7 +50,6 @@ class Resumed(test_chain.Chain):
     def text(self, raw):
         return {"status": "replied", "json": None, "raw": raw, "model": "m"}
 
-    @unittest.expectedFailure
     def test_a_spell_in_the_models_text_plants(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -61,7 +57,6 @@ class Resumed(test_chain.Chain):
         resumed = self.interpret(self.text(SPELL))
         self.assertEqual(resumed["result"]["label"], "planted", resumed)
 
-    @unittest.expectedFailure
     def test_not_addressed_ends_the_turn_with_no_card(self):
         self.policy()
         self.garden("policy")
@@ -69,21 +64,12 @@ class Resumed(test_chain.Chain):
         resumed = self.interpret(self.text("unclear: not addressed"))
         self.assertEqual((resumed["status"], resumed["result"]["label"], resumed["offers"]), ("admitted", "silent", []), resumed)
 
-    @unittest.expectedFailure
     def test_a_named_need_reaches_the_needs_card(self):
         self.policy()
         self.garden("policy")
         self.say("plant something pretty")
         resumed = self.interpret(self.text("unclear: colour"))
         self.assertIn("I still need: colour.", resumed["offers"][0]["text"])
-
-    def test_foundations_host_answers_text_with_no_method(self):
-        """Pins what the expected failures see today; delete it when the host lands replied {text}."""
-        self.policy()
-        self.garden("policy")
-        self.say("plant something pretty")
-        resumed = self.interpret(self.text("unclear: colour"))
-        self.assertIn("I still need: the reply names no method.", resumed["offers"][0]["text"])
 
 
 if __name__ == "__main__":
