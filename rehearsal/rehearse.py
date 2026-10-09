@@ -64,24 +64,21 @@ EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\n
 
 
 def seeds(top):
-    """(object, module, principal, intent, seed JSON) in the order the runbook creates them."""
-    out = [('policy', 'Policy', OWNER, 'genesis-policy', rec(
+    """(object, module, creator, owner, intent, partial seed) in the order the runbook creates them. Seeds name only
+    the fields genesis decides; deploy/seed.py lays them over each package's own initial()."""
+    out = [('policy', 'Policy', OWNER, None, 'genesis-policy', rec(
                owner=lab(OWNER), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
                lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
-               examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]), escalate=lab(''))),
-           ('directory', 'Directory', OWNER, 'genesis-directory', rec(
+               examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
+           ('directory', 'Directory', OWNER, None, 'genesis-directory', rec(
                owner=lab(OWNER), doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
-           ('garden', 'Garden', OWNER, 'genesis-garden', rec(
-               planted=nat(0), policy=ref('policy'), confirm=boo(True), pending=lst(), children=lst())),
-           ('tide', 'Tide', OWNER, 'genesis-tide', rec(ticks=nat(0), last=nat(0), gap=nat(1), subs=lst())),
-           ('workshop', 'Workshop', OWNER, 'genesis-workshop', rec(title=lab('Workshop')))]
+           ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'), confirm=boo(True))),
+           ('tide', 'Tide', OWNER, None, 'genesis-tide', rec(gap=nat(1))),
+           ('workshop', 'Workshop', OWNER, None, 'genesis-workshop', rec(title=lab('Workshop')))]
     for handle, did in top:
-        out.append((did, 'Avatar', OWNER, 'genesis-avatar-' + did, rec(
-            handle=lab(handle), at=ref(''), holding=lst(), inbox=lst(), observers=lst(), following=lst())))
-        out.append(('env/' + did, 'Env', OWNER, 'genesis-env-' + did, rec(
-            owner=lab(did), buffer=lst(), seen=nat(0), subscribers=lst())))
-        out.append(('wake/' + did, 'Wake', OWNER, 'genesis-wake-' + did, rec(
-            owner=lab(did), env=ref('env/' + did), triggers=lst(), nextId=nat(1))))
+        out.append((did, 'Avatar', OWNER, did, 'genesis-avatar-' + did, rec(handle=lab(handle))))
+        out.append(('env/' + did, 'Env', OWNER, did, 'genesis-env-' + did, rec(owner=lab(did))))
+        out.append(('wake/' + did, 'Wake', OWNER, did, 'genesis-wake-' + did, rec(owner=lab(did), env=ref('env/' + did))))
     return out
 
 
@@ -119,6 +116,16 @@ class Run:
                 out.append({'text': line})
         return out
 
+    def open_world(self):
+        """Open the journal once with the clock principal and the opener (ember), the settings hostd's world
+        keeps; hostd opens it afterwards naming only the clock. Until hostd passes `opener` itself."""
+        proc = subprocess.Popen([self.env['DELVETALK_OBEND']], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        out, _ = proc.communicate(json.dumps({'op': 'world-open', 'path': str(self.state / 'world.journal'),
+                                              'clock': 'transport', 'opener': OWNER}) + '\n', timeout=120)
+        reply = json.loads(out.splitlines()[0])
+        assert reply.get('status') == 'opened', reply
+        return reply
+
     def start_hostd(self):
         self.hostd = subprocess.Popen([sys.executable, '-m', 'transport.hostd', '--state', str(self.state),
                                        '--journal', str(self.state / 'world.journal')],
@@ -138,22 +145,14 @@ class Run:
 
     def seed(self, top):
         made = []
-        for obj, module, principal, intent, seed in seeds(top):
+        for obj, module, principal, owner, intent, seed in seeds(top):
             got = self.program('-m', 'deploy.seed', '--host-socket', str(self.state / 'host.sock'), '--principal', principal,
-                               '--object', obj, '--module', module, '--intent', intent, '--seed', canonical(seed), what=obj)
+                               '--object', obj, '--module', module, '--intent', intent, '--seed', canonical(seed),
+                               *(('--owner', owner) if owner else ()), what=obj)
             reply = got[-1] if got else {}
             if reply.get('status') != 'created':
                 self.errors.append({'kind': 'seed', 'object': obj, 'principal': principal, 'reply': reply})
-                if principal == OWNER and module in ('Env', 'Wake', 'Avatar'):
-                    # The runbook's creator is refused: create it as its owner instead (docs/GENESIS.md says
-                    # Envs and Wakes are made by the principal's own spells).
-                    did = obj.split('/', 1)[-1]
-                    got = self.program('-m', 'deploy.seed', '--host-socket', str(self.state / 'host.sock'), '--principal', did,
-                                       '--object', obj, '--module', module, '--intent', intent, '--seed', canonical(seed), what=obj)
-                    reply = got[-1] if got else {}
-                    if reply.get('status') != 'created':
-                        self.errors.append({'kind': 'seed', 'object': obj, 'principal': did, 'reply': reply})
-            made.append({'object': obj, 'module': module, 'status': reply.get('status'),
+            made.append({'object': obj, 'module': module, 'status': reply.get('status'), 'owner': owner,
                          'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal')})
         return made
 
@@ -316,6 +315,7 @@ def main(argv=None):
     counts = collections.Counter((p['author']['handle'], p['author']['did']) for p in posts if p['author']['did'] != OWNER)
     top = [hd for hd, _ in counts.most_common(20)]
     r = Run(a)
+    results_open = r.open_world()
     r.start_hostd()
     results = {'binary': a.binary, 'posts': len(posts), 'first': posts[0]['record']['createdAt'], 'last': posts[-1]['record']['createdAt'],
                'top': [{'handle': h, 'did': d, 'posts': counts[(h, d)]} for h, d in top]}
