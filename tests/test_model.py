@@ -256,5 +256,31 @@ class OAuth(unittest.TestCase):
         self.assertNotIn('Authorization', self.sent[0])
 
 
+class Spend(unittest.TestCase):
+    def test_wire_never_carries_sampling_fields_and_thinking_is_opt_in(self):
+        seen = []
+        t = lambda *a: seen.append(json.loads(a[3])) or (200, body('{}'))
+        with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'k'}, clear=True):
+            model.ask({**REQ, 'temperature': 0.2, 'top_p': 0.9, 'top_k': 3}, transport=t)
+            self.assertNotIn('thinking', seen[0])
+            os.environ['DELVETALK_MODEL_THINKING'] = 'off'
+            model.ask(REQ, transport=t)
+        self.assertEqual(seen[1]['thinking'], {'type': 'disabled'})
+        for wire in seen:
+            self.assertEqual(set(wire) - {'thinking'}, {'model', 'max_tokens', 'system', 'messages'})
+
+    def test_spend_log_and_ratelimit_headers(self):
+        t = lambda *a: (200, body('{}'), {'Anthropic-RateLimit-Requests-Remaining': '7', 'x-other': '1'})
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'sekret', 'DELVETALK_KEY_NAME': 'max-grant'}, clear=True):
+            r = model.ask(REQ, transport=t, state=d)
+            model.ask(REQ, transport=lambda *a: (429, b'{}'), state=d)  # failures are not logged
+            lines = [json.loads(x) for x in (Path(d) / 'model-spend.jsonl').read_text().splitlines()]
+            self.assertNotIn('sekret', (Path(d) / 'model-spend.jsonl').read_text())
+        self.assertEqual(r['rateLimits'], {'anthropic-ratelimit-requests-remaining': '7'})
+        self.assertEqual(len(lines), 1)
+        self.assertEqual({k: lines[0][k] for k in ('model', 'inputTokens', 'outputTokens', 'account')},
+                         {'model': 'claude-haiku-5-5', 'inputTokens': 3, 'outputTokens': 4, 'account': 'max-grant'})
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -173,7 +173,17 @@ A refused turn is not an HTTP error. It comes back with the receipt and the host
 
 `transport/model.py` has two auth modes, chosen by `DELVETALK_MODEL_AUTH`.
 
-- `key` (default): an API key from `DELVETALK_ANTHROPIC_KEY` or the file at `DELVETALK_ANTHROPIC_KEY_FILE`. Sent as `x-api-key`.
-- `oauth`: runs on subscription extra usage. Reads tokeman's `~/.config/tokeman/tokens.toml` (override with `DELVETALK_TOKENS_TOML`) and refuses it if group or other can read it.
+- `key` (default, primary): a plain Console API key from `DELVETALK_ANTHROPIC_KEY` or the file at `DELVETALK_ANTHROPIC_KEY_FILE`, sent as `x-api-key` with no special headers.
+  A Max plan includes ordinary API credits ($100 or $200 a month, expiring each billing cycle). To claim them:
+  1. In claude.ai, open Settings, Billing, API credits, and link the organization.
+  2. Create an API key in that organization.
+  3. Put the key in the key file (mode 600).
+- `oauth` (fallback): runs on subscription extra usage. Reads tokeman's `~/.config/tokeman/tokens.toml` (override with `DELVETALK_TOKENS_TOML`) and refuses it if group or other can read it.
   The account is `DELVETALK_MODEL_ACCOUNT`, or else the one `tokeman --json` shows with the most seven-day headroom for the model's bucket (Haiku uses the general window).
-  Sent as `Authorization: Bearer` with `anthropic-beta: oauth-2025-04-20`. On 429 or 529 it rotates once to the next account. Results carry the account name and `rotated`, never a token.
+  If every account is spent it prefers one with extra usage enabled. Sent as `Authorization: Bearer` with `anthropic-beta: oauth-2025-04-20`.
+  On 429 or 529 it rotates once to the next account. Results carry the account name, `rotated` and `overageInUse`, never a token.
+
+Both modes: only `model`, `max_tokens`, `system` and `messages` are sent (never `temperature`, `top_p` or `top_k`).
+`DELVETALK_MODEL_THINKING=off` adds `thinking: {"type": "disabled"}` for cheap deterministic JSON calls.
+With a state directory, each replied call appends `{at, model, inputTokens, outputTokens, account}` to `<state>/model-spend.jsonl`; total it against the monthly grant, since no balance endpoint exists.
+`DELVETALK_KEY_NAME` labels the key in that log. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.

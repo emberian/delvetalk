@@ -77,7 +77,7 @@ def main(argv=None, out=None):
     if bool(a.once) == bool(a.poll):
         ap.error('give exactly one of --once and --poll SECONDS')
     host = Host(a.journal, clock='transport')
-    step = lambda: out.write(canonical(run(a.state, host, lambda req: model.ask(req, a.mock))) + '\n') and out.flush()
+    step = lambda: out.write(canonical(run(a.state, host, lambda req: model.ask(req, a.mock, state=a.state))) + '\n') and out.flush()
     try:
         step() if a.once else daemon(a.state, 'interpret', a.poll, step)
     finally:
