@@ -11,6 +11,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -82,42 +83,50 @@ def exchange(database, request, *, profile='world'):
     # The lock has stable identity across replacing the database file.
     with open(str(database) + '.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        world = wire_loads(database.read_text()) if database.exists() else {
-            'objects': {}, 'receipts': []}
         executable = ROOT / '.lake/build/bin' / binary
         command = ([str(executable)] if executable.exists() else
                    ['lake', 'env', 'lean', '--run', 'profiles/' + source])
-        proc = subprocess.run(command, cwd=ROOT,
-                              input=wire_dumps({'world': world, 'request': request}) + '\n',
-                              text=True, capture_output=True,
-                              env={**os.environ, 'LEAN_NUM_THREADS': '1'})
-        if proc.returncode:
-            raise RuntimeError(proc.stderr + proc.stdout)
-        response = wire_loads(proc.stdout)
-        if 'error' in response:
-            raise ValueError(response['error'])
-        updated = response['world']
-        if updated != world:
-            temporary = None
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=database.parent,
+                                             prefix=database.name + '.', delete=False) as f:
+                temporary = f.name
+            # Paths are trusted custody arguments, never fields of a request.
+            # Lean reads the snapshot and retains all admission/replay decisions.
+            proc = subprocess.run([*command, '--files', str(database), temporary], cwd=ROOT,
+                                  input=wire_dumps(request) + '\n', text=True, capture_output=True,
+                                  env={**os.environ, 'LEAN_NUM_THREADS': '1'})
+            if proc.returncode:
+                raise RuntimeError(proc.stderr + proc.stdout)
+            response = wire_loads(proc.stdout)
+            if not isinstance(response, dict):
+                raise ValueError('malformed file custody response')
+            if set(response) == {'error'}:
+                raise ValueError(response['error'])
+            if set(response) != {'reply', 'changed'} or type(response['changed']) is not bool:
+                raise ValueError('malformed file custody response')
+            # A retained reply can follow a prior rename whose directory fsync
+            # failed. Re-establish both barriers even when admission is unchanged.
+            descriptor = os.open(temporary if response['changed'] else database, os.O_RDONLY | os.O_NOFOLLOW)
             try:
-                with tempfile.NamedTemporaryFile(mode='w', dir=database.parent,
-                                                 prefix=database.name + '.', delete=False) as f:
-                    temporary = f.name
-                    f.write(wire_dumps(updated))
-                    f.write('\n')
-                    f.flush()
-                    os.fsync(f.fileno())
+                info = os.fstat(descriptor)
+                if not stat.S_ISREG(info.st_mode) or info.st_size == 0:
+                    raise ValueError('missing file custody snapshot or candidate')
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            if response['changed']:
                 os.replace(temporary, database)
                 temporary = None
-                directory = os.open(database.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
+            directory = os.open(database.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
             finally:
-                if temporary is not None:
-                    os.unlink(temporary)
-        return response['reply']
+                os.close(directory)
+            return response['reply']
+        finally:
+            if temporary is not None:
+                os.unlink(temporary)
 
 
 def main():

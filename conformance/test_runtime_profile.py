@@ -22,6 +22,17 @@ class RuntimeProfileTests(unittest.TestCase):
                 path = self.root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('fixture bytes for ' + name)
+        (self.root / runtime.MANIFEST).write_bytes((ROOT / runtime.MANIFEST).read_bytes())
+
+    def test_manifest_is_pinned_and_owns_profile_growth(self):
+        before = runtime.file_hashes('compiled', root=self.root)
+        manifest = runtime.load_manifest(root=self.root)
+        manifest['groups']['package'].append('spec/Extra.lean')
+        (self.root / 'spec/Extra.lean').write_text('new dependency')
+        (self.root / runtime.MANIFEST).write_text(json.dumps(manifest))
+        after = runtime.file_hashes('compiled', root=self.root)
+        self.assertEqual(set(after) - set(before), {'spec/Extra.lean'})
+        self.assertNotEqual(before[runtime.MANIFEST], after[runtime.MANIFEST])
 
     def test_transitive_compiled_sources_and_provenance_invalidate_pins(self):
         baseline = runtime.file_hashes('compiled', root=self.root)

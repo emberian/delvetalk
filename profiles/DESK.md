@@ -49,6 +49,7 @@ The direct compiler has 45-second wall, 30-second CPU and 8 MiB file bounds;
 [compiler queue](COMPILER-QUEUE.md) adds durable bounded scheduling.
 
 **References do not enlarge compiled-output limits:** roots, protocols and
-adoption still face 64 KiB requests/16 MiB frames.
+adoption still face 64 KiB requests. Only the legacy whole-world framed CLI
+has a 16 MiB frame cap; normal local custody uses request-only transport.
 
 Checks: [desk](../conformance/test_desk.py), [references](../conformance/test_source_store.py).

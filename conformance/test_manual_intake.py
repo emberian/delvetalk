@@ -86,6 +86,39 @@ class ManualIntake(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'CID mismatch'):
             self.c.receive_interpreted(*self.post('wrong-cid'), self.decision())
 
+    def test_law_revision_uses_repository_identity_current_authority_and_exact_retry(self):
+        def decision(root):
+            return {'status': 'act', 'interpreter': 'local operator',
+                'basis': 'The manager requests an explicit law revision.',
+                'request': {'op': 'law', 'object': 'counter', 'law': [fixture.A], 'expected': root}}
+        denied = self.c.receive_interpreted(*self.post('law-denied', fixture.B), decision(self.f.root))
+        self.assertEqual(denied['reply']['data'], 'unauthorized')
+        # Terminal refusal adds custody, but never changes the object's authority.
+        self.assertEqual(self.c.snapshot('counter')['root'], self.f.root)
+        source = self.post('law-authorized')
+        chosen = decision(self.f.root)
+        accepted = self.c.receive_interpreted(*source, chosen)
+        self.assertEqual(accepted['reply']['kind'], 'committed')
+        self.assertEqual(accepted['request']['principal'], fixture.A)
+        self.assertEqual(accepted['request']['intent'], 'delve:' + source[0])
+        self.assertEqual(accepted['reply']['data']['root']['law'], [fixture.A])
+        stale = self.c.receive_interpreted(*self.post('law-stale'), decision(self.f.root))
+        self.assertEqual(stale['reply']['data'], 'stale read root')
+        retained = self.c.database.read_bytes()
+        self.f.pds.records.clear()
+        self.assertEqual(self.c.receive_interpreted(*source, chosen), accepted)
+        self.assertEqual(self.c.database.read_bytes(), retained)
+
+    def test_law_intake_rejects_identity_override_and_malformed_envelope(self):
+        request = {'op': 'law', 'object': 'counter', 'law': [fixture.A], 'expected': self.f.root}
+        for key, value in [('principal', fixture.A), ('intent', 'manager-chosen'), ('law', 'not-a-law')]:
+            changed = {**request, key: value}
+            source = self.post('law-forged-' + key, fixture.B)
+            decision = {'status': 'act', 'interpreter': 'operator', 'basis': 'A proposed law edit.', 'request': changed}
+            with self.assertRaisesRegex(ValueError, 'unknown fields|law must be'):
+                self.c.receive_interpreted(*source, decision)
+            self.assertFalse(self.f.journal(source[0]).exists())
+
     def test_machine_and_manual_routes_share_one_source_attempt(self):
         source = self.f.post('machine')
         receipt = self.c.receive(*source)

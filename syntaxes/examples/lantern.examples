@@ -1,0 +1,29 @@
+examples DelveTalk 1
+case visitors tend the moth lantern
+law maker visitor
+observe main
+  title: Moth lantern
+  prose: A lantern waits for its first moth. Light it?
+  offer light -> light: Light the lantern
+expect view
+as visitor
+send light
+expect result: A small sun for lost moths.
+observe main
+  title: Moth lantern
+  prose: Moths circle the little sun. Let it sleep?
+  offer douse -> douse: Let it sleep
+expect view
+as visitor
+send light
+expect refusal: source refused: Already lit.
+as visitor
+at initial
+send douse
+expect refusal: stale read root
+as stranger
+send douse
+expect refusal: unauthorized
+as visitor
+send douse
+expect result: The moths dream.

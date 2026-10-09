@@ -1,0 +1,72 @@
+{
+  "format": "delvetalk-runtime-closure-v1",
+  "groups": {
+    "common": [
+      "scripts/world.py",
+      "lean-toolchain",
+      "lakefile.toml",
+      "spec/upstream.json",
+      "profiles/WorldCore.lean",
+      "profiles/FileCustody.lean",
+      "spec/Delvetalk/Core.lean",
+      "spec/upstream/Theory/AxiomPin.lean",
+      "spec/upstream/Theory/ObjectiveBendOpenRecursion.lean"
+    ],
+    "transactions": [
+      "profiles/TransactionsCore.lean"
+    ],
+    "package": [
+      "spec/Delvetalk/Package.lean",
+      "spec/original/Theory/AssertAxioms.lean.txt",
+      "spec/original/Compiler/ObjectiveBendTermWire.lean.txt",
+      "spec/upstream/Compiler/ObjectiveBendC4.lean",
+      "spec/upstream/Compiler/ObjectiveBendContract.lean",
+      "spec/upstream/Compiler/ObjectiveBendDataWire.lean",
+      "spec/upstream/Compiler/ObjectiveBendElaborate.lean",
+      "spec/upstream/Compiler/ObjectiveBendFrontEnd.lean",
+      "spec/upstream/Compiler/ObjectiveBendLaw.lean",
+      "spec/upstream/Compiler/ObjectiveBendParse.lean",
+      "spec/upstream/Compiler/ObjectiveBendTermWire.lean",
+      "spec/upstream/Compiler/Sha256.lean",
+      "spec/upstream/Pred/Core.lean",
+      "spec/upstream/Pred/HashEqDigest.lean",
+      "spec/upstream/Theory/AssertAxioms.lean",
+      "spec/upstream/Theory/AssertCompiled.lean",
+      "spec/upstream/Theory/HashBytes.lean",
+      "spec/upstream/Theory/ObjectiveBendDemandData.lean",
+      "spec/upstream/Theory/ObjectiveBendDemandMachine.lean",
+      "spec/upstream/Theory/ObjectiveBendDemandMachineFast.lean",
+      "spec/upstream/Theory/ObjectiveBendTypes.lean",
+      "spec/upstream/Theory/ObjectiveBendTyping.lean",
+      "spec/upstream/Theory/Sp800185Cshake256Core.lean",
+      "spec/upstream/Theory/Sp800185Cshake256Fast.lean",
+      "spec/upstream/Theory/Sp800185Cshake256Spec.lean"
+    ]
+  },
+  "profiles": {
+    "world": {
+      "binary": "delvetalk-world",
+      "source": "profiles/World.lean",
+      "groups": [
+        "common"
+      ]
+    },
+    "transactions": {
+      "binary": "delvetalk-transactions",
+      "source": "profiles/Transactions.lean",
+      "groups": [
+        "common",
+        "transactions"
+      ]
+    },
+    "compiled": {
+      "binary": "delvetalk-compiled",
+      "source": "profiles/Compiled.lean",
+      "groups": [
+        "common",
+        "transactions",
+        "package"
+      ]
+    }
+  }
+}

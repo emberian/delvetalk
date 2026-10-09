@@ -1,79 +1,60 @@
-# Resident activity: a bell that opens someone else's door
+# Resident activity: a bell that opens someone else’s door
 
-Proposal, 2026-10-08. **Future work; not implemented or deployed.** External
-publication remains paused.
+**Next receiving primitive; not implemented or deployed.** Residents should be
+able to leave contributions and return to find independently authored objects
+have reacted. Posts expose the source, invitation and consequence. Publication
+remains separate and paused.
 
-Build one persistent installation: residents author an instrument and a door,
-leave contributions, and return to find their objects have reacted. Sources,
-actions and results must be available in posts. Lightweight portals and spells
-can become nearly natural language with a little explicit syntax; environmental
-meaning belongs below that replaceable language layer.
+## Retained messages first
 
-## Reuse the world; add authenticated delivery
+Transactions already provide atomic changes and inert outboxes; `inputFrom`
+authenticates earlier results within one transaction. Neither authenticates a
+retained event or prevents its consumption under another intent. Source
+transitions currently emit no outbox. A Python dispatcher must not invent that
+missing semantic authority.
 
-[Factories](../protocols/factories/README.md),
-[work tickets](../protocols/work-ticket/README.md) and
-[commons](../protocols/commons/README.md) already generate ordinary programs with
-explicit state and authority. [Transactions](../profiles/TransactionsCore.lean)
-supply atomic changes and outboxes. The [service](../scripts/service.py) supplies
-bounded receiving/compiler/checkpoint work: its tick is not world time. The
-[worker](../scripts/worker.py) prepares receipts, not protocol-event delivery.
+Add an opt-in source effect ABI with bounded, addressed messages: destination,
+command and record payload. Lean stamps each emission with its originating
+receipt, call/slot ordinal, source identity and actual source preimage at the
+emitting call. Transaction-final roots cannot replace that intermediate evidence.
+Event identity is local to the receiving world; public references also retain
+its custody identity.
 
-The missing primitive is **Lean-authenticated consumption of a retained outbox
-event**. `inputFrom` can carry host-authenticated origin within one transaction;
-it does not establish provenance or consumption of retained events. A privileged Python dispatcher
-would otherwise decide which claimed events are real. A single-object installation
-needs no extension; independently authored objects do.
+`deliver(eventRef, expectedRecipientRoot)` resolves committed evidence. Callers
+cannot substitute source, destination, command or payload. The relay still needs
+the recipient’s current grant; provenance confers no authority. The method sees
+host-authenticated event context separately from supplied input. Successful
+recipient effects and terminal consumption commit together. A new intent cannot
+consume the same event again. Refusal leaves it pending; exact retries recover
+the original receipt before changed rules are checked.
 
-Propose an opt-in local activity profile. Each event declares destination,
-source-release command, destination-receive command and record payload. Lean
-stamps source identity, exact emission root/program, originating receipt and
-ordinal. Transaction final roots cannot substitute for intermediate emission
-roots. Existing unannotated outboxes remain inert.
-Identity includes the selected world genesis; descendants retain parent event
-and root cause, never a caller's claim of provenance.
+An admitted ordinary send has happened. Do not require a fresh source-release
+invocation for every message. **Retractable offers are a separate protocol**:
+explicit source release/cancellation and destination acceptance may compose under
+both current laws. Their stronger commitment must be visible to their authors.
 
-`deliver(event, exactCurrentSourceRoot, exactCurrentDestinationRoot)` resolves the
-committed receipt and atomically invokes source release, destination receive,
-and consumption. Both ordinary commands check current scoped law and see
-authenticated event context unavailable to ordinary input. Source guards enforce
-cancellation/generation; destination guards select acceptable sources/programs.
-The relay has only those command grants, never management authority. Lean owns
-meaning; transport preserves requests and custody. No arbitrary trusted eval.
+Initially delivery should emit no descendants. Bound message count, pending
+capacity and delivery batches explicitly; refuse atomically rather than discard
+emissions. This gives a useful mailbox before choosing causal-tree accounting.
+A clock can later be an ordinary object with an explicitly granted driver;
+service ticks and wall time are not replayable world time.
 
-## Recorded time and recovery
+## Custody and acceptance
 
-A clock is an ordinary object: admitted `beat` increments logical time and emits
-bounded events. Replay never reads wall time; downtime causes no catch-up burst.
-Cards say “two beats remain.” Availability belongs to the explicitly configured
-clock driver. Recipient protocols reject duplicate/out-of-order generations.
+Persist the exact attempt before admission. After an uncertain reply, retry that
+identity; after a confirmed stale refusal, a fresh-root attempt may address the
+same still-pending event. Interrupted delivery must not become a second effect.
+Expose blocked events and reasons to operators and residents.
 
-Persist each exact attempt before admission. Uncertain replies retry identically;
-confirmed stale refusals permit a fresh-root attempt for the same event. Lean
-commits consumption with effects, preventing another successful delivery under
-a different intent. Historical retries survive revocation; new attempts face
-current source and destination rules. Blocked events remain visible.
+The first joined journey: two residents author a bell and door through separate
+desks. Ringing emits a real message; delivery changes the door’s offered action.
+A forged payload fails. Kill after commit and before reply, restart, recover one
+reaction, then reconstruct from history. Revise either program with an event
+pending and exercise its specified revision policy; do not silently move a
+captured continuation to new code.
 
-Start with semantic caps: eight active objects, two emissions per command,
-128 outstanding events, depth eight and 32 deliveries per causal root shared
-across branches. One delivery shares the evaluator budget; service batches stop
-at 16 attempts and their process deadline. Exhaustion rolls back, never drops
-effects. Whole-world rewrites, growing receipts and the 16 MiB frame limit make
-this a finite installation; permanent operation needs indexed receipt custody
-that preserves retries. Post publication remains separate.
-
-## First acceptance
-
-Future `conformance/test_resident_activity.py` should exercise actual Lean and
-restarted custody with locally prepared posts. Residents independently submit,
-review and adopt complete instrument/door source through existing source desks;
-the forge can begin now using existing admission. No browser is required.
-Kill between commit and reply, restart, and assert one reaction. Forge origins,
-race roots, revoke grants, cancel generations and construct feedback loops:
-assert refusal, recovery and bounded work. The first door changes an actionable
-invitation; actual commons movement needs explicit atomic composition.
-
-Iris leaves a note; Moss adds another and leaves. A recorded beat plays their
-chord. The separately authored door hears it, opens an invitation, then closes
-after two beats. Returning residents see the chord, authors and consequences in
-posts: their things have kept the place alive between visits.
+Local file custody removes the whole-world wire ceiling. Parsing, receipt scans
+and snapshot rewriting remain linear; sustained activity still needs measured
+capacity and a receiving-owned indexed/journal representation. Arbitrary saved
+language stacks, terminal linear obligations and exactly-once external delivery
+are further contracts, not consequences of this mailbox.

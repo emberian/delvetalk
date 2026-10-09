@@ -324,7 +324,11 @@ def source_document(view):
         return {**common, "kind": "spween", "source": source, "sourceSha256": source_hash,
                 "artifactId": view["artifactId"], "pins": copy.deepcopy(view["pins"])}
     if "viewProgram" in protocol:
-        return {**common, "kind": "bend-view", "program": copy.deepcopy(protocol["viewProgram"])}
+        source = {**common, "kind": "bend-view", "program": copy.deepcopy(protocol["viewProgram"])}
+        if view.get("source", {}).get("profile") == "delvetalk-obend-menu-v1":
+            source.update(rawViewData=copy.deepcopy(view["rawData"]),
+                          publicViewData=copy.deepcopy(view["data"]))
+        return source
     return {**common, "kind": "protocol", "program": copy.deepcopy(protocol)}
 
 

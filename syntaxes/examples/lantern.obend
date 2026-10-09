@@ -1,0 +1,42 @@
+edition ObjectiveBend 1
+record State:
+  lit: Bool
+record Context:
+  object: String
+  principal: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+record Method:
+  label: String
+  fields: {}
+record Description:
+  name: String
+  initial: State
+  methods: {light: Method, douse: Method}
+  panels: {}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record View:
+  title: String
+  prose: String
+  actions: {light: Action, douse: Action}
+record Lantern:
+  light: State -> Decision
+  douse: State -> Decision
+  inscription: State -> String
+extension Moth(self: Lantern, super: {}) -> Lantern:
+  {light: fn(state: State) -> Decision: {accepted: state.lit == false, reason: if state.lit then "Already lit." else "", state: {lit: true}, result: "A small sun for lost moths."}, douse: fn(state: State) -> Decision: {accepted: state.lit, reason: if state.lit then "" else "Already dark.", state: {lit: false}, result: "The moths dream."}, inscription: fn(state: State) -> String: if state.lit then "Moths circle the little sun. Let it sleep?" else "A lantern waits for its first moth. Light it?"}
+def describe() -> Description:
+  {name: "Moth lantern", initial: {lit: false}, methods: {light: {label: "Light the lantern", fields: {}}, douse: {label: "Let it sleep", fields: {}}}, panels: {}}
+def light(state: State, input: {}, context: Context) -> Decision:
+  fix(Moth, {}).light(state)
+def douse(state: State, input: {}, context: Context) -> Decision:
+  fix(Moth, {}).douse(state)
+def view(state: State, panel: String) -> View:
+  {title: "Moth lantern", prose: fix(Moth, {}).inscription(state), actions: {light: {visible: state.lit == false, text: "Light the lantern", command: "light", input: {}}, douse: {visible: state.lit, text: "Let it sleep", command: "douse", input: {}}}}

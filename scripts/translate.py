@@ -48,6 +48,31 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def closure_paths(registry, adapter, validator, *, root=ROOT, runtime_manifest=None):
+    """Reviewed syntax paths; opt-in runtime profiles share host closure ownership."""
+    root = Path(root).resolve()
+    paths = set(registry['closure'] + adapter.get('closure', []) +
+                validator.get('closure', []) + ['scripts/translate.py'])
+    if 'runtimeProfile' in adapter:
+        spec = importlib.util.spec_from_file_location('syntax_runtime_profile', root / 'scripts/runtime_profile.py')
+        runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runtime)
+        paths.update(runtime.paths(adapter['runtimeProfile'], root=root, manifest=runtime_manifest))
+    return tuple(sorted(paths))
+
+
+def closure_files(registry, adapter, validator, *, root=ROOT):
+    """Hash the shared closure, refusing dependencies outside the repository."""
+    root = Path(root).resolve()
+    files = {}
+    for name in closure_paths(registry, adapter, validator, root=root):
+        path = (root / name).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError('adapter closure must stay inside the repository')
+        files[name] = digest(path.read_bytes())
+    return files
+
+
 def translate(syntax, raw, registry_path=None):
     source = raw.decode('utf-8')  # No newline normalization, including CRLF/BOM.
     registry_path = registry_path or ROOT / 'syntaxes/registry.json'
@@ -61,14 +86,7 @@ def translate(syntax, raw, registry_path=None):
     if adapter.get('reviewed') is not True:
         raise ValueError('adapter must be explicitly reviewed before execution')
     validator = registry['targets'][adapter['target']]
-    paths = sorted(set(registry['closure'] + adapter.get('closure', []) +
-                       validator.get('closure', []) + ['scripts/translate.py']))
-    files = {}
-    for name in paths:
-        path = (ROOT / name).resolve()
-        if not path.is_relative_to(ROOT):
-            raise ValueError('adapter closure must stay inside the repository')
-        files[name] = digest(path.read_bytes())
+    files = closure_files(registry, adapter, validator)
     def invoke(entry, value):
         if entry['module'] not in files:
             raise ValueError('adapter/validator module missing from declared closure')
@@ -79,6 +97,9 @@ def translate(syntax, raw, registry_path=None):
     lowered = invoke(adapter, source)
     invoke(validator, lowered)
     lowered_bytes = canonical(lowered)  # Also rejects nonfinite/surrogate output.
+    if 'runtimeProfile' in adapter and (Path(registry_path).read_bytes() != registry_bytes
+            or closure_files(registry, adapter, validator) != files):
+        raise ValueError('adapter runtime or registry changed during translation; retry with stable dependencies')
     identity = {'syntax': syntax, 'adapter': adapter, 'validator': validator,
                 'registry_sha256': digest(registry_bytes), 'files': files}
     return {'format': 'delvetalk-lowered-v1', 'syntax': syntax,

@@ -101,6 +101,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         authorizeRequest o (← put call "op" (.str op)) principal
         let candidate ← reprogramCandidate call results
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
+        checkCandidate o nextObj (← put call "op" (.str op)) principal
         pure (nextObj, Json.null, (#[] : Array Json), Json.null, World.noInputOrigin)
       else do
         let input ← callInput call results
@@ -110,6 +111,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         let (nextState, result, emitted) ← executeCommandWith runtime o invocation principal inputOrigin
         let n ← (← field o "version").getNat?
         let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
+        checkCandidate o nextObj invocation principal
         pure (nextObj, result, emitted, invocation, inputOrigin)
       staged ← put staged id nextObj
       if op == "invoke" then

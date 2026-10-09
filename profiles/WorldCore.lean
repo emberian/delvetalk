@@ -203,11 +203,15 @@ def validateLaw (j : Json) : Except String Unit := do
   match j with
   | .arr _ => discard (law j)
   | _ =>
-    for (key, _) in (← pairs j) do
-      if !(["profile", "invoke", "reprogram", "law", "predicate"].contains key) then
-        throw "unsupported scoped law field"
-    if (← str j "profile") != "delvetalk-scoped-law-v1" then
+    let profile ← str j "profile"
+    if profile != "delvetalk-scoped-law-v1" && profile != "delvetalk-scoped-law-v2" then
       throw "unknown law profile"
+    for (key, _) in (← pairs j) do
+      if !(["profile", "invoke", "reprogram", "law", "predicate"].contains key) &&
+          !(profile == "delvetalk-scoped-law-v2" && key == "invariant") then
+        throw "unsupported scoped law field"
+    if profile == "delvetalk-scoped-law-v2" then
+      discard (Delvetalk.decode (← field j "invariant"))
     for (_, principals) in (← pairs (← field j "invoke")) do
       discard (law principals)
     discard (law (← field j "reprogram"))
@@ -255,6 +259,30 @@ def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit :
 
 def rootCheck (o request : Json) : Except String Unit := do
   if o != (← field request "expected") then throw "stale read root"
+
+-- A receiving invariant belongs to law, outside replaceable command code.
+-- Every candidate uses actual staged states; invocation input has already been
+-- resolved. This consumes the same turn budget as authority and execution.
+def checkInvariant (authority before after request : Json) (principal : String) : Evaluation Unit := do
+  if (str authority "profile").toOption != some "delvetalk-scoped-law-v2" then return
+  let op ← str request "op"
+  let command ← if op == "invoke" then str request "command" else pure ""
+  let input ← if op == "invoke" then field request "input" else pure (obj [])
+  let context ← toTerm 64 (obj [("object", .str (← str request "object")),
+    ("principal", .str principal), ("op", .str op), ("command", .str command),
+    ("state", ← field before "state"), ("nextState", ← field after "state"), ("input", input)])
+  let term ← Delvetalk.decode (← field authority "invariant")
+  match (← normalize (.app term context)) with
+  | .boolean true => pure ()
+  | .boolean false => throw "state invariant refused"
+  | _ => throw "state invariant must return Bool"
+
+def checkCandidate (before after request : Json) (principal : String) : Evaluation Unit := do
+  checkInvariant (← field before "law") before after request principal
+  -- New law cannot install an invariant already false of the proposed state.
+  -- Old law must also admit its own revision; management has no bypass.
+  if (← str request "op") == "law" then
+    checkInvariant (← field after "law") before after request principal
 
 def receipt (request : Json) (kind : String) (data : Json) : Json :=
   obj [("intent", (field request "intent").toOption.getD .null),
@@ -347,6 +375,7 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
       let childProtocol ← eval (← field allocation "protocol")
       let childLaw ← eval (← field allocation "law")
       let child ← newObjectWith runtime childProtocol childLaw
+      checkCandidate child child (obj [("op", .str "create"), ("object", .str id)]) principal
       staged ← put staged id child
       roots := roots.push (id, child)
       childCount := childCount + 1
@@ -360,6 +389,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
   if op == "create" then
     if (field objects id).isOk then throw "object exists"
     let o ← newObjectWith runtime (← field request "protocol") (← field request "law")
+    checkCandidate o o request principal
     let next ← put world "objects" (← put objects id o)
     return (next, receipt request "committed" (obj [("root",o), ("result",.null), ("outbox", .arr #[])]))
   let o ← field objects id
@@ -370,6 +400,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     let authority ← field request "law"
     validateLaw authority
     let nextObj ← put (← put o "law" authority) "version" (toJson (n+1))
+    checkCandidate o nextObj request principal
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
   if op == "reprogram" then
@@ -381,12 +412,14 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     -- an expression executed with extra authority. Law and identity stay put.
     let state ← field request "state"
     let nextObj ← reprogramObjectWith runtime o protocol state
+    checkCandidate o nextObj request principal
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
   if op != "invoke" then throw "unknown operation"
   let absent ← absenceReads objects request
   let (nextState, result, outbox) ← executeCommandWith runtime o request principal
   let nextObj ← put (← put o "state" nextState) "version" (toJson (n+1))
+  checkCandidate o nextObj request principal
   let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o request principal absent
   let next ← put world "objects" staged
   let mut data := obj [("root",nextObj), ("result",result), ("outbox", .arr outbox)]

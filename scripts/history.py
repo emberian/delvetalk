@@ -17,6 +17,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import world
 import runtime_profile
+import translate
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMAT = 'delvetalk-history-v1'
@@ -226,7 +227,13 @@ def lowered_protocol(artifact, bundle):
             or canonical(validator) != canonical(translation['validator'])
             or adapter.get('reviewed') is not True or adapter['target'] != artifact['target']):
         raise ValueError('translation does not match pinned registry')
-    closure = set(registry['closure'] + adapter.get('closure', []) + validator.get('closure', []) + ['scripts/translate.py'])
+    manifest = None
+    if 'runtimeProfile' in adapter:
+        manifest_sha = translation['files'].get(runtime_profile.MANIFEST)
+        if manifest_sha is None:
+            raise ValueError('translation lacks its retained runtime manifest')
+        manifest = loads(read_blob(bundle, manifest_sha).read_bytes())
+    closure = set(translate.closure_paths(registry, adapter, validator, runtime_manifest=manifest))
     if set(translation['files']) != closure:
         raise ValueError('translation dependency closure mismatch')
     for sha in translation['files'].values():

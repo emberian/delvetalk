@@ -16,6 +16,11 @@ Exact retries recover retained terminal receipts, including refusals. The clerk 
 
 [Receipt publication](../profiles/RECEIPTS.md) uses create-only intent keys for requests/receipts and a stable object key with increasing version and previous-CID CAS for current roots. AT's [`putRecord`](https://docs.bsky.app/docs/api/com-atproto-repo-put-record) supplies conditional writes. This adapter refuses a losing CAS; it does not automatically rebase or bind other repository writers.
 
+The town’s [Canon/Runtime v1.1](https://delve.town/profile/inkling.delve.town/post/3mxeqmf47e223)
+uses fresh keys for successive canon cards. This adapter’s overwritten current-root
+record is a discovery pointer, not such a card. Do not describe it as append-only
+revision publication; that would require a separate retained revision record.
+
 Runtime commit, receipt publication and root publication are separate operations. Missing publication does not imply failure; a fetched root need not be the runtime head. Retain uncertain bytes for exact reconciliation. Immutable evidence and mutable discovery pointers are compatible.
 
 [History replay](../profiles/HISTORY.md) reconstructs local admissions from trusted genesis/head anchors and a separately trusted matching engine. It does not authenticate public authorship or establish distributed consensus. Independent hosts still need explicit head selection, authority, recovery and delivery contracts.

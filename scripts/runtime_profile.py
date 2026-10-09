@@ -1,50 +1,70 @@
 """Reviewed local runtime custody closures; hashes identify bytes, never authority.
 
-Keep the explicit closures here when a host's Lean imports change. Standard Lean
+Keep runtime_profiles.json current when a host's Lean imports change. Standard Lean
 and Std modules belong to the pinned toolchain. This is not a Lean module loader
 or a build/refinement claim, and never executes a compiler or bundled binary.
 """
 import hashlib
-from pathlib import Path
+import json
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILES = {
-    'world': ('delvetalk-world', 'profiles/World.lean'),
-    'transactions': ('delvetalk-transactions', 'profiles/Transactions.lean'),
-    'compiled': ('delvetalk-compiled', 'profiles/Compiled.lean'),
-}
-COMMON = ('scripts/runtime_profile.py', 'scripts/world.py', 'lean-toolchain',
-          'lakefile.toml', 'spec/upstream.json', 'profiles/WorldCore.lean',
-          'spec/Delvetalk/Core.lean', 'spec/upstream/Theory/AxiomPin.lean',
-          'spec/upstream/Theory/ObjectiveBendOpenRecursion.lean')
-# Transitive project-local Package/frontend dependencies, including compatibility
-# originals as provenance alongside the actual adapted sources and manifest.
-PACKAGE_MODULES = '''
-Compiler/ObjectiveBendC4 Compiler/ObjectiveBendContract Compiler/ObjectiveBendDataWire
-Compiler/ObjectiveBendElaborate Compiler/ObjectiveBendFrontEnd Compiler/ObjectiveBendLaw
-Compiler/ObjectiveBendParse Compiler/ObjectiveBendTermWire Compiler/Sha256
-Pred/Core Pred/HashEqDigest
-Theory/AssertAxioms Theory/AssertCompiled Theory/HashBytes
-Theory/ObjectiveBendDemandData Theory/ObjectiveBendDemandMachine Theory/ObjectiveBendDemandMachineFast
-Theory/ObjectiveBendTypes Theory/ObjectiveBendTyping
-Theory/Sp800185Cshake256Core Theory/Sp800185Cshake256Fast Theory/Sp800185Cshake256Spec
-'''.split()
-PACKAGE = ('spec/Delvetalk/Package.lean',
-           'spec/original/Theory/AssertAxioms.lean.txt',
-           'spec/original/Compiler/ObjectiveBendTermWire.lean.txt',
-           *(f'spec/upstream/{name}.lean' for name in PACKAGE_MODULES))
+MANIFEST = 'scripts/runtime_profiles.json'
 
 
-def paths(profile):
-    """Return one allowlisted profile's complete reviewed repository paths."""
-    if profile not in PROFILES:
+def relative_path(name):
+    if (not isinstance(name, str) or not name or name == '.' or '\\' in name or '\x00' in name
+            or PurePosixPath(name).is_absolute() or '..' in name.split('/')
+            or str(PurePosixPath(name)) != name):
+        raise ValueError('runtime dependency must be a normalized repository path')
+    return name
+
+
+def validate_manifest(value):
+    if (not isinstance(value, dict) or set(value) != {'format', 'groups', 'profiles'}
+            or value['format'] != 'delvetalk-runtime-closure-v1'
+            or not isinstance(value['groups'], dict) or not isinstance(value['profiles'], dict)):
+        raise ValueError('invalid runtime closure manifest')
+    for group, names in value['groups'].items():
+        if not isinstance(group, str) or not group or not isinstance(names, list):
+            raise ValueError('invalid runtime closure group')
+        for name in names:
+            relative_path(name)
+    for profile, entry in value['profiles'].items():
+        if (not isinstance(profile, str) or not profile or not isinstance(entry, dict)
+                or set(entry) != {'binary', 'source', 'groups'} or not isinstance(entry['groups'], list)
+                or any(not isinstance(group, str) or group not in value['groups'] for group in entry['groups'])):
+            raise ValueError('invalid runtime closure profile')
+        relative_path(entry['source'])
+        if '/' in relative_path(entry['binary']):
+            raise ValueError('runtime binary must be a basename')
+    return value
+
+
+def load_manifest(*, root=ROOT):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('duplicate runtime manifest key')
+            result[key] = value
+        return result
+    return validate_manifest(json.loads((Path(root) / MANIFEST).read_bytes(), object_pairs_hook=pairs))
+
+
+PROFILES = {name: (entry['binary'], entry['source'])
+            for name, entry in load_manifest()['profiles'].items()}
+
+
+def paths(profile, *, manifest=None, root=ROOT):
+    """Resolve current or retained declarative data without executing retained code."""
+    manifest = load_manifest(root=root) if manifest is None else validate_manifest(manifest)
+    if not isinstance(profile, str) or profile not in manifest['profiles']:
         raise ValueError('unknown runtime profile: ' + str(profile))
-    binary, source = PROFILES[profile]
-    selected = [*COMMON, source, '.lake/build/bin/' + binary]
-    if profile in ('transactions', 'compiled'):
-        selected.append('profiles/TransactionsCore.lean')
-    if profile == 'compiled':
-        selected.extend(PACKAGE)
+    entry = manifest['profiles'][profile]
+    selected = [MANIFEST, 'scripts/runtime_profile.py', entry['source'], '.lake/build/bin/' + entry['binary']]
+    for group in entry['groups']:
+        selected.extend(manifest['groups'][group])
     return tuple(sorted(set(selected)))
 
 
@@ -52,7 +72,7 @@ def file_hashes(profile, *, root=ROOT):
     """Read pinned files only; refuse missing paths and escaping symlinks."""
     root = Path(root).resolve()
     result = {}
-    for name in paths(profile):
+    for name in paths(profile, root=root):
         path = (root / name).resolve()
         if not path.is_relative_to(root):
             raise ValueError('runtime dependency escapes repository: ' + name)

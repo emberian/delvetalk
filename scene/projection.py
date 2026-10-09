@@ -11,6 +11,8 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'delvetalk-bend-view-v1'
 SOURCE_PROFILE = 'delvetalk-obend-view-v1'
+MENU_PROFILE = 'delvetalk-obend-menu-v1'
+SOURCE_PROFILES = (SOURCE_PROFILE, MENU_PROFILE)
 FORMAT = 'delvetalk-projection-view-v1'
 _spec = importlib.util.spec_from_file_location('projection_world', ROOT / 'scripts/world.py')
 world = importlib.util.module_from_spec(_spec)
@@ -45,6 +47,29 @@ def _validate(data, root):
     return data
 
 
+def _menu_data(raw, root):
+    """Check the complete eager source result, then expose its offered actions.
+
+    Visibility is presentation over state/panel, never caller authentication or
+    an invocation guard. Hidden descriptors have the same structural contract.
+    """
+    if not isinstance(raw, dict) or set(raw) != {'title', 'prose', 'actions'}:
+        raise ProjectionError('MenuData requires exactly title, prose and actions')
+    if not isinstance(raw['actions'], dict) or len(raw['actions']) > 64:
+        raise ProjectionError('MenuData actions must be a record of at most 64 entries')
+    actions = {}
+    for key, descriptor in raw['actions'].items():
+        if (not isinstance(descriptor, dict)
+                or set(descriptor) != {'visible', 'text', 'command', 'input'}
+                or type(descriptor['visible']) is not bool):
+            raise ProjectionError('menu action requires visible Bool, text, command and input')
+        actions[key] = {name: value for name, value in descriptor.items() if name != 'visible'}
+    # Validate hidden entries too; filtering must not conceal a malformed menu.
+    normalized = _validate({'title': raw['title'], 'prose': raw['prose'], 'actions': actions}, root)
+    normalized['actions'] = {key: action for key, action in actions.items() if raw['actions'][key]['visible']}
+    return normalized
+
+
 def _assert_source_runtime(observed, binary_digest, expected_runtime):
     if (not isinstance(expected_runtime, dict) or expected_runtime.get('name') != 'compiled'
             or not isinstance(expected_runtime.get('files'), dict)
@@ -64,8 +89,8 @@ def assert_runtime(view, expected_runtime):
     """
     program = view.get('root', {}).get('protocol', {}).get('viewProgram', {})
     source = view.get('source', {})
-    if ((isinstance(program, dict) and program.get('profile') == SOURCE_PROFILE)
-            or (isinstance(source, dict) and source.get('profile') == SOURCE_PROFILE)):
+    if ((isinstance(program, dict) and program.get('profile') in SOURCE_PROFILES)
+            or (isinstance(source, dict) and source.get('profile') in SOURCE_PROFILES)):
         _assert_source_runtime(view.get('runtimeProfile'), view.get('runtimeSha256'), expected_runtime)
 
 
@@ -87,7 +112,8 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
         program = snapshot['protocol']['viewProgram']
         if not isinstance(program, dict):
             raise ProjectionError('unsupported view program')
-        source_view = program.get('profile') == SOURCE_PROFILE
+        source_view = program.get('profile') in SOURCE_PROFILES
+        menu_view = program.get('profile') == MENU_PROFILE
         if source_view:
             if set(program) != {'profile', 'package'}:
                 raise ProjectionError('unsupported source view program')
@@ -136,12 +162,15 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
         if 'error' in response: raise ProjectionError(str(response['error']))
         receipt = response['reply']
         if receipt['kind'] != 'committed': raise ProjectionError('view refused: ' + str(receipt['data']))
-        data = _validate(receipt['data']['result'], snapshot)
+        raw = receipt['data']['result']
+        data = _menu_data(raw, snapshot) if menu_view else _validate(raw, snapshot)
         view = {'format': FORMAT, 'mode': 'projection', 'object': object_id, 'root': snapshot,
                 'panel': panel, 'source': copy.deepcopy(program), 'programSha256': _digest(program),
                 'runtimeSha256': runtime, 'data': data, 'actions': copy.deepcopy(data['actions'])}
         if source_view:
             view['runtimeProfile'] = {'profile': host, 'files': pins}
+        if menu_view:
+            view['rawData'] = copy.deepcopy(raw)
         return view
     except ProjectionError:
         raise

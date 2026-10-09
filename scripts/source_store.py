@@ -131,13 +131,7 @@ def adapter_pin(syntax):
     if adapter is None or adapter.get('reviewed') is not True:
         raise ValueError('source references require a reviewed registered syntax')
     validator = registry['targets'][adapter['target']]
-    paths = set(registry['closure'] + adapter.get('closure', []) + validator.get('closure', []) + ['scripts/translate.py'])
-    files = {}
-    for name in sorted(paths):
-        path = (ROOT / name).resolve()
-        if not path.is_relative_to(ROOT):
-            raise ValueError('adapter dependency escapes repository')
-        files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    files = translate.closure_files(registry, adapter, validator, root=ROOT)
     identity = {'syntax': syntax, 'adapter': adapter, 'validator': validator,
                 'registry_sha256': hashlib.sha256(registry_raw).hexdigest(), 'files': files}
     return {**identity, 'pin': hashlib.sha256(canonical(identity)).hexdigest()}

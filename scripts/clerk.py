@@ -442,8 +442,12 @@ class Clerk:
             exact(payload, ['op', 'object', 'protocol', 'state', expected_key], 'requestJson')
             if not isinstance(payload['protocol'], dict) or not isinstance(payload['state'], dict):
                 raise ValueError('reprogram protocol and state must be objects')
+        elif operation == 'law':
+            exact(payload, ['op', 'object', 'law', expected_key], 'requestJson')
+            if not isinstance(payload['law'], (list, dict)):
+                raise ValueError('law must be an array or object')
         else:
-            raise ValueError('unsupported remote operation; only invoke, reprogram and transaction are allowed')
+            raise ValueError('unsupported remote operation; only invoke, reprogram, law and transaction are allowed')
         if operation != 'transaction' and (not isinstance(payload['object'], str) or payload['object'] not in config['objects']):
             raise ValueError('object is not configured for remote requests')
         resolved = None

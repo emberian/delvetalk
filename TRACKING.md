@@ -16,7 +16,7 @@ installed a Spween room through the portal, used it and reviewed the work.
    restore exactly. Fresh clerk/cardbook custody includes three unbound cards and
    eighteen explicit participants. The timer remains disabled; no automatic
    discovery or public receipt delivery is established.
-3. **Welcome v1:** the latest private editorial draft is 1,269 words: a 458-word
+3. **Welcome v1:** the latest private editorial draft is 1,281 words: a 458-word
    portal plus the language explanation and seventeen mentions. Its three cards
    come from a separate compiled rehearsal. Preserve the earlier hosted captures;
    fresh live capture after release reconciliation precedes publication/binding.
@@ -61,20 +61,36 @@ that assumed every example invoked a method. Both were repaired; affected queue
 and authoring checks plus every remaining check target pass, including browser
 form behavior. These changes are local; they do not update the hosted release.
 
+The [construction wave](docs/CONSTRUCTION-V2.md) now implements general source
+objects, contextual menus, receiving invariants, composite offers and request-only
+file custody. The joined post-only journey passes revision, protected migration,
+deliberate law change, visitor interaction and exact restoration. Full regression passed after updating the desk-catalog fixture for the third
+registered desk; the repaired group and every remaining check target passed. Source-module reuse is the next Faré authoring bridge; the core native
+compiler already demonstrates the required cross-module self/super composition.
+
 ## Next queues
 
-- **Authored interfaces:** simpler source bindings and context-sensitive offered
-  actions; extend view assertions to the final merged forms where useful.
-- **World vocabulary:** move more protocol behavior into reusable Bend, including
-  commons and work tickets, without parallel maintained generators.
-- **Durable reactions:** explicit retained-event consumption and recorded time;
-  transaction input origin does not yet provide an autonomous event loop.
-- **Host maturation:** optional receiving invariants, useful admission proofs,
-  shared source storage and indexed receipts before large persistent worlds.
+- **Independent source reuse:** sealed ordered multi-module proposals through source
+  custody, desks, compiler queue and exact restoration. Existing native imports and
+  self/super composition work; the resident authoring bridge is missing.
+- **World composition:** governed room contents/discovery and reusable Bend commons
+  and tickets. Avoid parallel behavior generators and duplicated place descriptions.
+- **Durable reactions:** source effect ABI and receiving-authenticated retained-event
+  consumption. Ordinary messages and retractable offers have distinct commitments;
+  recorded clocks follow delivery/recovery, not service wall time.
+- **Long-lived host:** shared source storage, indexed receipts and durable incremental
+  custody. File transport removes the frame ceiling, not linear snapshot work.
   Preserve exact retries, history and current authority through representation changes.
+- **Language bridges:** usable typed prototype reflection and explicit source-contract
+  binding to receiving law; neither follows merely from the new state invariant.
+  Final merged form assertions remain useful beyond source-view expectations.
 - **Selective upstream repair:** Mini's `extend` synthesis under `let` has a
   three-line reproducer; direct extension and an extra annotated binding work.
   Repair the frontend without changing the checker or converging object hosts.
+- **Opening and archive:** reconcile release and recapture hosted cards, then bind
+  Ember's publication. Welcome remains v1; Canon/Runtime conventions are v1.1.
+  Scope mutable PDS discovery pointers and configured-PDS limits explicitly.
+  Private observations exist; continuous raw archival coverage is not yet established.
 
 ## Boundaries
 

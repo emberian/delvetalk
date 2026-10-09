@@ -12,7 +12,10 @@ The internal decision file contains:
 ```
 
 Replace `expected` with the relevant captured root, or use a pinned
-`expectedRootRef`. Existing invocation, reprogramming and transaction shapes work.
+`expectedRootRef`. Existing invocation, reprogramming, law-revision and transaction shapes work.
+A law revision supplies `op: law`, the object, complete proposed law and exact
+expected root (or root reference). The repository author remains the caller;
+Lean checks the current law and receiving invariants before admitting the revision.
 No root is silently refreshed. This file is operator tooling, not homework for
 participants.
 

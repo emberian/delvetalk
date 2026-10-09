@@ -1,0 +1,14 @@
+examples DelveTalk 1
+case two voices play the instrument
+law maker visitor
+observe main
+  title: Moth chorus
+  prose: A lantern waits for its first moth. Light it?
+  offer light -> light: Play the chorus
+expect view
+as maker
+send light
+expect result: Two notes welcome the moths.
+as visitor
+send douse
+expect result: The moths dream.

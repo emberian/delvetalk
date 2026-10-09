@@ -33,6 +33,7 @@ canonical, loads = translate.canonical, translate.load_json
 SOURCE_DESK_PROTOCOL_PATHS = (
     'protocols/source-desk/protocol.json',
     'protocols/town-forge/source-desk.json',
+    'protocols/stateful-workshop/source-desk.json',
 )
 
 

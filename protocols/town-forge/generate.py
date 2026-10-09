@@ -157,6 +157,85 @@ def build(visitors, compiler):
             'desks': factory('desks', source_desk(), desk_law)}
 
 
+def source_desk_v2(state_fields):
+    """Explicit scalar migration template; source semantics remain in Bend."""
+    if not isinstance(state_fields, dict) or not state_fields:
+        raise ValueError('explicit finite state fields required')
+    protocol = source_desk()
+    protocol['name'] = 'town-forge-stateful-desk-v2'
+    protocol['description'] = 'Write stateful Bend and examples; choose the complete installation state.'
+    protocol['initial']['proposal']['syntax'] = 'objective-bend-spell@2'
+    submit = protocol['commands']['submit']
+    submit['set']['proposal'][1]['syntax'] = L('objective-bend-spell@2')
+    migration = {}
+    for name, specification in state_fields.items():
+        if (not isinstance(name, str) or not name or not isinstance(specification, dict)
+                or specification.get('type') not in ('nat', 'bool', 'string')):
+            raise ValueError('migration fields require named scalar schemas')
+        key = 'migration_' + name
+        migration[name] = I(key)
+        protocol['affordances']['submit']['fields'][key] = dict(specification)
+    submit['set']['migration'] = ['record', migration]
+    protocol['affordances']['submit']['fields']['target']['label'] = 'Exact object to revise'
+    state, panel = ['bound', 1], ['bound', 0]
+    get = lambda key: ['get', state, key]
+    empty = eq(get('status'), label('empty'))
+    prose = label('Write Bend and examples. Supply every migration field explicitly; installation preserves current law.')
+    for key in ('source', 'scenarios'):
+        text = choose(empty, label(''), ['get', get('proposal'), key])
+        prose = choose(eq(panel, label(key)), text, prose)
+    prose = choose(eq(panel, label('target')), choose(empty, label(''), get('target')), prose)
+    prose = choose(eq(panel, label('status')), get('status'), prose)
+    protocol['viewProgram'] = view(label('The stateful writing desk'), prose,
+        choose(empty, action('submit', 'Write a stateful revision'), record({})))
+    protocol['viewPanels'] = [{'id': key, 'label': title} for key, title in (
+        ('status', 'Desk state'), ('target', 'Object'), ('source', 'Exact Bend source'),
+        ('scenarios', 'Exact examples'))]
+    return protocol
+
+
+def stateful_factory(kind, child, law):
+    protocol = factory(kind, child, law)
+    objects = kind == 'objects'
+    protocol['name'] = 'town-forge-stateful-' + kind + '-v2'
+    title = 'The object workshop' if objects else 'The stateful writing desks'
+    invitation = ('Make an object awaiting its first authored behavior.' if objects else
+        'Make a writing desk for stateful source, examples and an explicit complete migration.')
+    label_text = 'Make an object' if objects else 'Make a stateful writing desk'
+    protocol['description'] = invitation
+    protocol['affordances']['make']['label'] = label_text
+    protocol['affordances']['make']['fields']['name']['example'] = 'moth-instrument' if objects else 'next-score'
+    last = ['get', ['bound', 1], 'last']
+    protocol['viewProgram'] = view(label(title),
+        choose(eq(['bound', 0], label('last')),
+               choose(eq(last, label('')), label('Nothing made here yet.'), last), label(invitation)),
+        action('make', label_text))
+    return protocol
+
+
+def build_stateful(visitors, compiler, *, methods, state_fields):
+    """Explicit configured grants, never permissions inferred from source metadata."""
+    visitors = principals(visitors)
+    principals([compiler])
+    methods = principals(methods)
+    placeholder = door()
+    placeholder['name'] = 'town-forge-stateful-placeholder-v2'
+    placeholder['commands'] = {name: {'require': [[L(False), L(True)]], 'set': {},
+        'result': L(''), 'outbox': []} for name in methods}
+    placeholder['affordances'] = {name: {'label': name, 'fields': {}} for name in methods}
+    placeholder['viewProgram'] = view(label('An object awaiting behavior'),
+        label('Its maker must install an authored program before it can be used.'), record({}))
+    object_law = ['record', {'profile': L('delvetalk-scoped-law-v1'),
+        'invoke': ['record', {name: ['array', [P] + [L(who) for who in visitors]] for name in methods}],
+        'reprogram': ['array', [P]], 'law': ['array', [P]]}]
+    desk_law = ['record', {'profile': L('delvetalk-scoped-law-v1'),
+        'invoke': ['record', {'submit': ['array', [P]], 'adopt': ['array', [P]],
+            'compiled': L([compiler]), 'failed': L([compiler])}],
+        'reprogram': L([]), 'law': L([])}]
+    return {'objects': stateful_factory('objects', placeholder, object_law),
+            'desks': stateful_factory('desks', source_desk_v2(state_fields), desk_law)}
+
+
 def files():
     package = build(['visitor'], 'compiler')
     return {'objects-factory.json': package['objects'], 'desks-factory.json': package['desks'],

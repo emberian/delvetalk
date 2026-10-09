@@ -1,0 +1,12 @@
+{
+  "lit": {
+    "type": "bool",
+    "label": "Preserve whether it is lit"
+  },
+  "count": {
+    "type": "nat",
+    "label": "Complete retained note count",
+    "minimum": 0,
+    "maximum": 10000
+  }
+}

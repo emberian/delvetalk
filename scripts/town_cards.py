@@ -16,6 +16,7 @@ import affordances
 import world
 import references
 import adoption
+import composite_offers
 
 _projection_spec = importlib.util.spec_from_file_location('town_projection',
     Path(__file__).resolve().parents[1] / 'scene/projection.py')
@@ -393,6 +394,29 @@ class CardBook:
                     'body': body, 'textSha256': sha(body)}
         return self._capture(alias, build)
 
+    def capture_composite(self, offer, *, alias=None):
+        """Retain a fixed transaction offer, including every exact known read."""
+        metadata = self.metadata()
+        offer = composite_offers.validate(offer)
+        action = composite_offers.action(offer)
+        def build(name):
+            lines = ['[[delvetalk-card ' + name + ']]', offer['title'], offer['label'],
+                     'All steps commit together or none do. Each checks your current permissions.',
+                     'Reply here, or describe your intention for us to interpret:',
+                     spell(name, action, _example(action), selector=offer['command'])]
+            lines.extend(_field(field, token) for token, field_name in field_words(action).items()
+                         for field in action['fields'] if field['name'] == field_name)
+            lines.extend(['If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.',
+                          '[[/delvetalk-card ' + name + ']]'])
+            body = '\n'.join(lines)
+            if len(body.encode('utf-8')) > MAX_CARD_BYTES:
+                raise ValueError('town composite card exceeds 12000 bytes')
+            _block(body, name)
+            return {'format': 'delvetalk-town-composite-card-v1', 'alias': name,
+                    'offer': offer, 'runtime': metadata['runtime'],
+                    'body': body, 'textSha256': sha(body)}
+        return self._capture(alias, build)
+
     def capture_adoption(self, candidate_id, expected_candidate, target_id, expected_target, *, alias=None):
         """Capture one fixed adoption, not authority to supply arbitrary transactions."""
         metadata = self.metadata()
@@ -527,6 +551,14 @@ class CardBook:
                           'fields': _spell_fields(chosen, parsed['fields'])}
             request = affordances.request(captured['view'], parsed['action'], author,
                                           'delve:' + source['uri'], parsed['fields'])
+        elif captured['format'] == 'delvetalk-town-composite-card-v1':
+            action = composite_offers.action(captured['offer'])
+            if parsed['action'] not in ('a1', action['command']):
+                raise ValueError('word is not offered by this captured composite card')
+            fields = (_spell_fields(action, parsed['fields'])
+                      if parsed.get('syntax') == 'delvetalk-town-spell-v1' else parsed['fields'])
+            request = composite_offers.request(captured['offer'], author,
+                                               'delve:' + source['uri'], fields)
         elif captured['format'] == 'delvetalk-town-adoption-card-v1':
             if parsed['action'] not in ('a1', 'adopt') or parsed['fields']:
                 raise ValueError('adoption permits only a1 with empty fields {}')

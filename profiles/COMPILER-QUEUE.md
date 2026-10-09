@@ -41,7 +41,8 @@ recompilation; an exact retained receipt wins even after candidate/runtime chang
 Otherwise changed candidates, missing/tampered source references, missing binaries
 and changed adapter/runtime pins refuse before admission. Sources resolve only
 from the selected artifact store; history must preserve them even before compilation.
-References do not bypass the 64 KiB compiled-request/16 MiB frame limits. `retry` resets the attempt budget without changing pins
+References do not bypass the 64 KiB compiled-request limit. The 16 MiB
+whole-world cap applies only to the legacy framed CLI. `retry` resets the attempt budget without changing pins
 or source. Runtime hashes identify bytes, not compiler correctness or authority.
 
 Check: `python3 conformance/test_compiler_queue.py` (uses the built transactions

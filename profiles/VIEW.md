@@ -26,6 +26,21 @@ it. World-bound observations check their retained compiled-runtime pins before
 execution. Captured cards must agree with their book's runtime, including panels.
 Standalone observations retain their actual runtime instead of claiming a world's.
 
+Contextual menus use `delvetalk-obend-menu-v1` with the same package descriptor.
+Each source action adds `visible:Bool`, allowing a fixed typed row to offer different
+actions as state changes:
+
+```text
+light: {visible: if state.lit then false else true,
+        text: "Light the lantern", command: "light", input: {}}
+```
+
+Every descriptor is materialized and validated, including hidden entries; then
+only visible actions enter ordinary `ViewData`, with `visible` removed. Inspection
+retains both the raw source result and normalized view. Existing v1 is unchanged.
+Views receive state and panel, **no authenticated viewer**. Hiding a method neither
+denies its direct invocation nor replaces current-law checks or receiving guards.
+
 ```python
 view = projection.project(committed_root, "workshop-sign", panel="main")
 html = projection.html_view(view)
@@ -47,4 +62,5 @@ equivalence nor compiler refinement.
 [Working sign programs](../scene/projections/sign-v1.json),
 [upgrade](../scene/projections/sign-v2.json), [room integration](../scene/ROOM.md).
 Check: `python3 conformance/test_projection.py` for upgrades, stale actions,
-independent panels, escaping and adversarial results.
+independent panels, escaping and adversarial results; `python3 conformance/test_obend_menu.py`
+for source menus, hidden-descriptor validation, town/portal agreement and real admission.

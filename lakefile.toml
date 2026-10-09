@@ -24,6 +24,10 @@ srcDir = "profiles"
 name = "WorldCore"
 srcDir = "profiles"
 
+[[lean_lib]]
+name = "FileCustody"
+srcDir = "profiles"
+
 [[lean_exe]]
 name = "delvetalk-typed"
 root = "TypedMain"

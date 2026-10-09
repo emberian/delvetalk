@@ -70,6 +70,19 @@
         "syntaxes/obend_spell.py"
       ]
     },
+    "objective-bend-spell@2": {
+      "reviewed": true,
+      "module": "syntaxes/obend_object.py",
+      "entry": "lower",
+      "target": "local-protocol-v1",
+      "runtimeProfile": "compiled",
+      "closure": [
+        "syntaxes/obend_object.py",
+        "scripts/affordances.py",
+        "spec/PackageMain.lean",
+        ".lake/build/bin/delvetalk-obend"
+      ]
+    },
     "spween-scene-i64@2": {
       "reviewed": true,
       "module": "syntaxes/spween.py",

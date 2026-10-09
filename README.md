@@ -56,9 +56,9 @@ or [private game participant](game/table/PARTICIPANT.md) for complete agent jour
 
 | Need | Contract |
 |---|---|
-| Compose actions atomically | [Transactions](profiles/TRANSACTIONS.md) |
+| Compose actions atomically | [Transactions](profiles/TRANSACTIONS.md), [post-carried offers](profiles/COMPOSITE-OFFERS.md) |
 | Govern actions, edits and creation | [Current law](profiles/AUTHORITY.md), [programming](profiles/PROGRAMMING.md), [allocation](profiles/ALLOCATION.md) |
-| Propose, compile, adopt | [Source desk](profiles/DESK.md), [compiler queue](profiles/COMPILER-QUEUE.md), [protocols](protocols/README.md) |
+| Author and revise stateful objects | [Bend objects](syntaxes/OBJECTS.md), [source desk](profiles/DESK.md), [joined workshop](protocols/stateful-workshop/README.md) |
 | Invent syntax or presentation | [Adapters](syntaxes/README.md), [Spween](scene/README.md), [Bend views](profiles/VIEW.md) |
 | Recover and independently replay | [History](profiles/HISTORY.md), [continuation packages](profiles/CONTINUATION.md) |
 | Receive authenticated Delve requests | [Clerk](profiles/CLERK.md), [worker](profiles/WORKER.md) |

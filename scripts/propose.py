@@ -139,7 +139,7 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
                         'op': 'inspect', 'object': 'candidate', 'principal': 'proposal-fixture'}, profile=profile)
                     try:
                         program = root['protocol'].get('viewProgram')
-                        if not isinstance(program, dict) or program.get('profile') != projection.SOURCE_PROFILE:
+                        if not isinstance(program, dict) or program.get('profile') not in projection.SOURCE_PROFILES:
                             raise projection.ProjectionError('observation requires a source view')
                         view = projection.project(root, 'candidate', step['observe'], expected_runtime=expected_runtime)
                         result['steps'].append({'index': step_index, 'view': view})

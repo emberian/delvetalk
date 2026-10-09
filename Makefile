@@ -41,6 +41,8 @@ world:
 	python3 conformance/test_authority.py
 	python3 conformance/test_compiled.py
 	python3 conformance/test_source_transition.py
+	python3 conformance/test_state_invariant.py
+	python3 conformance/test_file_custody.py
 	python3 conformance/test_runtime_profile.py
 	python3 conformance/test_convergence.py
 	python3 conformance/test_game_table.py
@@ -69,6 +71,7 @@ wiki:
 	python3 conformance/test_wiki.py
 syntax:
 	python3 conformance/test_syntax.py
+	python3 conformance/test_adapter_runtime_pins.py
 delve:
 	python3 conformance/test_watch.py
 	python3 conformance/test_worker.py
@@ -81,6 +84,7 @@ delve:
 	python3 conformance/test_clerk_compiled.py
 	python3 conformance/test_clerk_attach.py
 	python3 conformance/test_town_cards.py
+	python3 conformance/test_composite_offers.py
 	python3 conformance/test_authored_interfaces.py
 	python3 conformance/test_town_receiving.py
 	python3 conformance/test_town_journey.py
@@ -91,6 +95,9 @@ delve:
 	python3 conformance/test_manual_intake.py
 	python3 conformance/test_obend_spell.py
 	python3 conformance/test_obend_view.py
+	python3 conformance/test_obend_menu.py
+	python3 conformance/test_obend_object.py
+	python3 conformance/test_stateful_authoring.py
 	python3 conformance/test_spell_examples.py
 	python3 conformance/test_spween_migration.py
 	python3 conformance/test_service.py

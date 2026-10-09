@@ -1,6 +1,7 @@
 /- Opt-in source package and hash expressions. All admission is shared with the
    default hosts; only this executable selects the extensions and larger budget. -/
 import TransactionsCore
+import FileCustody
 import Delvetalk.Package
 open Lean World
 
@@ -158,4 +159,5 @@ def handle (world request : Json) : Except String (Json × Json) :=
 def job (j : Json) : Json := World.jobWith handle j
 end Compiled
 
-def main : IO Unit := World.serve Compiled.job
+def main (args : List String) : IO Unit :=
+  FileCustody.mainWith Compiled.handle Compiled.job args
