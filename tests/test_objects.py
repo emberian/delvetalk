@@ -121,13 +121,28 @@ BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
     case 0: Lists.List::<O.Rain>.nil()
     case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", text: "a line of rain"}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {planter: "glm", colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false}
+  {planter: "glm", colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, door: {world: "", object: ""}, lastDelivery: ""}
 def many(n: Nat) -> String:
   O.card(sample(rains(n)))
 def weight(n: Nat) -> Nat:
   Document.size(O.render(sample(rains(n))))
+def lineCount(n: Nat) -> Nat:
+  Lists.length::<String>(Document.lines(O.render(sample(rains(n)))))
 def two(n: Nat) -> String:
   O.card(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", text: "first"}), {author: "gemini", text: "second"})))
+"""
+
+DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
+  O.card({open: false, openedBy: "", knocks: Lists.List::<String>.cons({head: "glm", tail: Lists.List::<String>.nil()}), lantern: {world: "", object: ""}, lastDelivery: ""})
+"""
+
+LINES_PROBE = """edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Document.obend as Document
+def bar(items: Document.Names) -> String:
+  Lists.fold::<String, String>(items, "", fn(head: String) -> String -> String: fn(rest: String) -> String: textConcat(head, textConcat("|", rest)))
+def joined(n: Nat) -> String:
+  bar(Document.lines(Document.Document.sequence({items: Document.Documents.cons({head: Document.text("alpha\\nbe"), tail: Document.Documents.cons({head: Document.text("ta gamma\\n"), tail: Document.Documents.cons({head: Document.text("delta\\n"), tail: Document.Documents.nil()})})})})))
 """
 
 CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
@@ -186,12 +201,15 @@ class Objects(unittest.TestCase):
                 for silence in ("reply", "refused", "unknown", "timedOut", "broken"):
                     self.assertIn(silence, responses)
                 seen += 1
-        self.assertGreaterEqual(seen, 9)
+        self.assertGreaterEqual(seen, 20)
 
     def test_methods_perform_the_plans_they_claim(self):
         expected = {("Counter", "bump"): "write", ("Garden", "plant"): "create", ("Garden", "cistern"): "create",
                     ("Bell", "rain"): "write", ("Bell", "strike"): "await", ("Bell", "rung"): "write",
-                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admit"): "write"}
+                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admit"): "write",
+                    ("Bell", "ring"): "write", ("Bell", "notify"): "send", ("Door", "open"): "write",
+                    ("Door", "announce"): "send", ("Door", "knock"): "write", ("Lantern", "light"): "write",
+                    ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
             with open(MODULES[name]) as handle:
                 source = handle.read()
@@ -235,6 +253,31 @@ class Objects(unittest.TestCase):
         self.assertEqual(flat["value"]["value"], "2048")
         self.assertLess(flat["ticksUsed"], 100000)
         self.assertEqual(run_pure("Document", "flat", nat(256), probe=probe, limits=BIG)["ticksUsed"], flat["ticksUsed"])
+
+    def test_chain_objects_render(self):
+        door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
+        self.assertEqual(door["status"], "finished", door)
+        self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
+        lantern = run_pure("Lantern", "card", record(lit={"tag": "boolean", "value": True}, litBy={"tag": "label", "value": "gemini"}))
+        self.assertEqual(lantern["value"]["value"], "The lantern is lit by gemini.\n")
+        loop = run_pure("Loop", "card", record(count=nat(3)))
+        self.assertEqual(loop["value"]["value"], "Ticks: 3\n")
+
+    def test_lines_split_the_rendered_document(self):
+        reply = run_pure("Bell", "lineCount", nat(2), probe=BELL_PROBE)
+        self.assertEqual(reply["status"], "finished", reply)
+        self.assertEqual(reply["value"]["value"], "3")
+        reply = run_pure("Document", "joined", nat(0), probe=LINES_PROBE)
+        self.assertEqual(reply["value"]["value"], "alpha|beta gamma|delta|")
+
+    def test_lines_cost_on_the_maximum_bell(self):
+        """Document.lines over a 1,025-rain Bell card, generation included."""
+        base = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE, limits=BIG)
+        reply = run_pure("Bell", "lineCount", nat(1025), probe=BELL_PROBE, limits=BIG)
+        self.assertEqual(reply["status"], "finished", reply)
+        self.assertEqual(reply["value"]["value"], "1026")
+        print("1025 rains: Document.lines %s ticks (Document.size %s, plain %s)" %
+              (reply["ticksUsed"], base["ticksUsed"], 848680))
 
     def test_maximum_bell(self):
         """A Bell with 1,025 rains does not render under the default budget.

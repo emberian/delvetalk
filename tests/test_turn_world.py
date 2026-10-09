@@ -411,7 +411,8 @@ class BellList(TurnWorld):
         empty = {"tag": "record", "fields": []}
         seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
                       seed=label("s"), rains={"tag": "variant", "label": "nil", "payload": empty},
-                      rung={"tag": "boolean", "value": False})
+                      rung={"tag": "boolean", "value": False},
+                      door=record(world=label(""), object=label("")), lastDelivery=label(""))
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
                            modules=modules, entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)

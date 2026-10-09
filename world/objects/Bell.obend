@@ -16,6 +16,8 @@ record State:
   seed: String
   rains: Lists.List<Rain>
   rung: Bool
+  door: Plans.Reference
+  lastDelivery: String
 # What the garden hands the host when it plants a bell.
 record Seed:
   planter: String
@@ -24,12 +26,17 @@ record Seed:
 record Edits:
   rains: Plans.Entries<Rain, {}>
   rung: Plans.Edit<Bool, {}>
-type Plan = Plans.Plan<Edits, {}>
+  door: Plans.Edit<Plans.Reference, {}>
+  lastDelivery: Plans.Edit<String, {}>
+# The argument of a send: who is acting.
+record Who:
+  who: String
+type Plan = Plans.Plan<Edits, Who>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
-  {planter: "", colour: Colour.amber({}), seed: "", rains: Lists.List::<Rain>.nil(), rung: false}
+  {planter: "", colour: Colour.amber({}), seed: "", rains: Lists.List::<Rain>.nil(), rung: false, door: {world: "", object: ""}, lastDelivery: ""}
 def keep() -> Edits:
-  {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({})}
+  {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({}), door: Plans.Edit::<Plans.Reference, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({})}
 def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Rain>(state.rains)
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries::<Rain, {}>.append({item: input})})})):
@@ -38,14 +45,32 @@ def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Resp
 # The strike waits for the admission receipt of the planting, then rings.
 def strike(state: State, input: {slot: Plans.Slot}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.await({slot: input.slot, patience: 8n})):
-    case reply(r): ring(state, r.receipt.outcome, context)
+    case reply(r): ringOn(state, r.receipt.outcome, context)
     case _: state.rung
-def ring(state: State, outcome: Plans.Outcome, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+def ringOn(state: State, outcome: Plans.Outcome, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match outcome:
     case admitted(_): rung(context)
     case refused(_): state.rung
 def rung(context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rung: Plans.Edit::<Bool, {}>.set({value: true})})})):
+    case written(_): true
+    case _: false
+# Points the bell at the door it rings. The host overwrites the placeholder.
+def configure(state: State, input: {door: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {door: Plans.Edit::<Plans.Reference, {}>.set({value: input.door})})})):
+    case written(_): true
+    case _: false
+# Rings: marks the bell rung, then sends Door.open to the configured door.
+def ring(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rung: Plans.Edit::<Bool, {}>.set({value: true})})})):
+    case written(_): notify(state, input, context)
+    case _: false
+def notify(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.send({object: state.door, method: "open", argument: input})):
+    case delivery(d): remember(d.id, context)
+    case _: false
+def remember(id: String, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {lastDelivery: Plans.Edit::<String, {}>.set({value: id})})})):
     case written(_): true
     case _: false
 def colourName(colour: Colour) -> String:
