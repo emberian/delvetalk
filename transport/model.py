@@ -90,7 +90,7 @@ def interpret_body(status, raw, model):
     except (ValueError, KeyError, TypeError, AttributeError):
         return failed('malformed')
     # A reply is the model's text; `json` is the first JSON value in it when there is one.
-    # The Policy prompt asks for a plain spell, so a text-only reply is not malformed: the host
+    # The Policy prompt asks for a plain spell, so a text-only reply is not malformed: the object
     # fits `raw` against the offered forms, and `json` is for callers that asked for JSON.
     try:
         value = extract(text)
