@@ -28,12 +28,16 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "cistern", blurb: "Keeps receipts, refusals first."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), renderFor(state, context))
 def outcomeName(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"
     case refused(r): textConcat("refused ", r.class)
 def line(receipt: Plans.Receipt) -> Document.Document:
   Document.text(textConcat("#", textConcat(natText(receipt.height), textConcat(" ", textConcat(Card.handle(receipt.slot.principal), textConcat(": ", textConcat(outcomeName(receipt.outcome), "\n")))))))
-def render(state: State) -> Document.Document:
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Cistern\n"), tail: Card.clipped(Lists.map::<Plans.Receipt, Document.Document>(state.entries, line), 8n)})})
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

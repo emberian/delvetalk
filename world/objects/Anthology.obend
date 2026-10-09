@@ -13,17 +13,23 @@ record Proposal:
   line: String
   status: Status
 record State:
+  owner: String
   proposals: Lists.List<Proposal>
 # What a creator may supply; the host lays it over initial().
-type Seed = {}
+record Seed:
+  owner: String
 record Edits:
   proposals: Plans.Entries<Proposal, Proposal>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
+# Anyone submits (submit, or a submit spell through receive, which only appends);
+# only the owner admits. The methods named are the package's own, so the law's trust in
+# them is the pin's.
+law owner: request.subject == new.owner or (request.kind == 0 and (request.method == "submit" or request.method == "receive"))
 def defaultSeed() -> Seed:
-  {}
+  {owner: ""}
 def seeded(seed: Seed) -> State:
-  {proposals: Lists.List::<Proposal>.nil()}
+  {owner: seed.owner, proposals: Lists.List::<Proposal>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 # Submission only proposes; admission is the receiver's law, not the author's. The
@@ -40,14 +46,14 @@ def at(items: Lists.List<Proposal>, index: Nat) -> Found:
   match items:
     case nil(_): Found.none({})
     case cons(c): if index == 0n then Found.some({proposal: c.head}) else at(c.tail, index - 1n)
-# The host replaces the item at the index by the change, so admission rewrites
-# the proposal with its status flipped.
+# The admitted proposal is addressed by its bytes, so a submission landing first
+# shifts nothing; admission rewrites it with its status flipped.
 def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match at(state.proposals, input.index):
     case none(_): false
     case some(s): admitted(context, input.index, s.proposal)
 def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amend({index: index, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
     case _: true
 def forms() -> Card.Forms:
   Card.Forms.cons({head: {card: "", action: "submit", fields: Form.Fields.cons({head: {name: "line", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})
@@ -58,12 +64,16 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): submitted::<Card.Reply>(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
 def statusName(status: Status) -> String:
   match status:
     case proposed(_): "proposed"
     case admitted(_): "admitted"
-def entry(proposal: Proposal) -> Document.Document:
-  Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.handle(proposal.author), textConcat(": ", textConcat(proposal.line, "\n")))))))
+def entry(context: Abi.Context) -> Proposal -> Document.Document:
+  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.handle(proposal.author), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry(context)), 8n)})})
+# The card for the host's `card {object}` until the host passes the reader's context.
 def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology\n"), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry), 8n)})})
+  renderFor(state, Card.stranger())

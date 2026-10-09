@@ -89,11 +89,18 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "withdraw" then withdrew::<Card.Reply>(state, context, doneReply) else countersigned::<Card.Reply>(state, post, context, doneReply)
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
 def signatureLine(signature: Signature) -> Document.Document:
   Document.text(textConcat("signed: ", textConcat(Card.handle(signature.principal), textConcat(" at ", textConcat(signature.post, "\n")))))
 def waitingLine(state: State) -> Document.Document:
   Document.text(if state.withdrawn != "" then textConcat("Withdrawn by ", textConcat(Card.handle(state.withdrawn), ".\n")) else if atRest(state) then "At rest: every party has countersigned.\n" else textConcat("Waiting for ", textConcat(natText(unsigned(state)), " of the parties.\n")))
-def render(state: State) -> Document.Document:
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
   let head = Document.text(textConcat("DEAL", textConcat(if state.piece == "" then "" else textConcat(" for ", state.piece), textConcat("\n\nTerms: ", textConcat(state.terms, "\n\n")))))
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(Card.clipped(Lists.map::<Signature, Document.Document>(state.signatures, signatureLine), 8n), Document.Documents.cons({head: waitingLine(state), tail: Document.Documents.nil()}))})})
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(Card.clipped(Lists.map::<Signature, Document.Document>(state.signatures, signatureLine), 8n), Document.Documents.cons({head: waitingLine(state), tail: Document.Documents.cons({head: Document.text(partyLine(state, context)), tail: Document.Documents.nil()})}))})})
+# A party reading the card sees where it stands and the spell to sign; nobody else does.
+def partyLine(state: State, context: Abi.Context) -> String:
+  if party(state, context.principal) == false || state.withdrawn != "" || atRest(state) then "" else if hasSigned(state, context.principal) then "\nYou are a party and have countersigned.\n" else textConcat("\nYou are a party and have not countersigned. Reply:\n\n    delvetalk ", textConcat(context.object, " countersign\n"))
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

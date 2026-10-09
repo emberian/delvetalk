@@ -15,3 +15,15 @@ record Form:
   card: String
   action: String
   fields: Fields
+# A field's value, typed by its Kind (Spell.fit produces these).
+sum Value:
+  text: {value: String}
+  natural: {value: Nat}
+  choice: {value: String}
+# A lens (FOUNDATION section 13, row 2): one exposed scalar field of an object's State,
+# the kind of value it takes, and put, which makes the object's Edits that set that
+# field to a value and keep every other. Card's set answers `delvetalk <card> set` with
+# `<field>: <value>` through it, and `?` lists it. (Generic records do not parse, so a
+# lens is the one constructor of a generic sum.)
+sum Lens<E>:
+  lens: {field: String, form: Kind, put: Value -> E}

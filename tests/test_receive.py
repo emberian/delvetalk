@@ -110,7 +110,9 @@ def planted(context: Abi.Context) -> String:
     # --- the root menu ------------------------------------------------------------
 
     def directory(self):
-        self.make("root", closure("Directory"), record())
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), doors={"tag": "list", "items": []}))
+        self.assertEqual(r["status"], "created", r)
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
             self.assertEqual(reply["result"]["label"], "done", reply)

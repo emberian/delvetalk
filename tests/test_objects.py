@@ -167,7 +167,7 @@ CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
-  Document.plain(O.render({proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}))
+  Document.plain(O.render({owner: "ember", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}))
 """
 
 
@@ -221,7 +221,7 @@ class Objects(unittest.TestCase):
         self.assertGreaterEqual(seen, 20)
 
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
+        expected = {("Counter", "bumped"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rained"): "write", ("Bell", "strike"): "await", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
                     ("Card", "notified"): "send", ("Door", "open"): "write", ("Door", "knocked"): "write",

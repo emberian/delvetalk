@@ -10,20 +10,27 @@ record Note:
   from: String
   text: String
 # The object a verified principal gets; its id is the principal's DID string.
+# Its mailbox: who is told when its principal sends (observers, each by the method it
+# named), and what it follows (the objects it asked to tell it, by `notice` or `note`).
 record State:
   handle: String
   at: Plans.Reference
   holding: Lists.List<Plans.Reference>
   inbox: Lists.List<Note>
+  observers: Card.Observers
+  following: Lists.List<Plans.Reference>
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   handle: String
   at: Plans.Reference
   holding: Lists.List<Plans.Reference>
 record Edits:
+  handle: Plans.Edit<String, {}>
   at: Plans.Edit<Plans.Reference, {}>
   holding: Plans.Entries<Plans.Reference, {}>
   inbox: Plans.Entries<Note, {}>
+  observers: Plans.Entries<Card.Observer, {}>
+  following: Plans.Entries<Plans.Reference, {}>
 # Its calls into places carry nothing: the place reads the mover from its caller.
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<Place.State, Place.Done>
@@ -36,11 +43,11 @@ sum Found:
 def defaultSeed() -> Seed:
   {handle: "", at: Plans.nobody(), holding: Lists.List::<Plans.Reference>.nil()}
 def seeded(seed: Seed) -> State:
-  {handle: seed.handle, at: seed.at, holding: seed.holding, inbox: Lists.List::<Note>.nil()}
+  {handle: seed.handle, at: seed.at, holding: seed.holding, inbox: Lists.List::<Note>.nil(), observers: Card.Observers.nil(), following: Lists.List::<Plans.Reference>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {at: Plans.Edit::<Plans.Reference, {}>.keep({}), holding: Plans.Entries::<Plans.Reference, {}>.keep({}), inbox: Plans.Entries::<Note, {}>.keep({})}
+  {handle: Plans.Edit::<String, {}>.keep({}), at: Plans.Edit::<Plans.Reference, {}>.keep({}), holding: Plans.Entries::<Plans.Reference, {}>.keep({}), inbox: Plans.Entries::<Note, {}>.keep({}), observers: Plans.Entries::<Card.Observer, {}>.keep({}), following: Plans.Entries::<Plans.Reference, {}>.keep({})}
 def edited(edits: Edits, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): true
@@ -52,11 +59,86 @@ def mine(context: Abi.Context) -> Bool:
 def arrive(state: State, input: {at: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   if mine(context) then edited(extend(keep(), {at: Plans.Edit::<Plans.Reference, {}>.set({value: input.at})}), context) else false
 # A note from the turn's principal; it is appended in the order it arrives.
-def noted<T>(text: String, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {inbox: Plans.Entries::<Note, {}>.append({item: {from: context.principal, text: text}})})})):
+# The inbox keeps the newest 64 notes: a full inbox drops its oldest first.
+def noted<T>(state: State, from: String, text: String, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
+  match state.inbox:
+    case cons(c): if Lists.length::<Note>(state.inbox) < 64n then posted::<T>(from, text, context, then) else crowded::<T>(c.head, from, text, context, then)
+    case nil(_): posted::<T>(from, text, context, then)
+def crowded<T>(oldest: Note, from: String, text: String, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {inbox: Plans.Entries::<Note, {}>.removeItem({item: oldest})})})):
+    case _: posted::<T>(from, text, context, then)
+def posted<T>(from: String, text: String, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {inbox: Plans.Entries::<Note, {}>.append({item: {from: from, text: text}})})})):
     case _: then(true)
 def note(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  noted::<Bool>(input.text, context, fn(done: Bool) -> Bool: done)
+  noted::<Bool>(state, context.principal, input.text, context, fn(done: Bool) -> Bool: done)
+# What an observed object (a bell, a door) sends with nothing: a note that it moved,
+# from the object that told it.
+def notice(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  noted::<Bool>(state, if context.caller == "" then context.principal else context.caller, textConcat("news from ", if context.caller == "" then Card.handle(context.principal) else context.caller), context, fn(done: Bool) -> Bool: done)
+# --- The mailbox -------------------------------------------------------------------
+# One turn may send at most sendsPerTurn (the host's Limits.sendsPerTurn, 32; a turn
+# past it is refused whole), so the mailing list holds that many and a send to all of
+# it is one turn's worth.
+def sendsPerTurn() -> Nat:
+  32n
+# An object observes this avatar only for itself: the observer named is the caller.
+def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  if input.object.object != context.caller && input.object.object != context.principal then Card.Change.refused({reason: "An observer adds only itself."}) else observeChanged(Card.observingUpTo(state.observers, input, sendsPerTurn()), context)
+def unobserve(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  if input.object.object != context.caller && input.object.object != context.principal && mine(context) == false then Card.Change.refused({reason: "An observer removes only itself."}) else observeChanged(Card.unobserving(state.observers, input), context)
+def observeChanged(change: Card.Change, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  match change:
+    case edit(e): observeWritten(change, e.entries, context)
+    case _: change
+def observeWritten(change: Card.Change, entries: Plans.Entries<Card.Observer, {}>, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {observers: entries})})):
+    case _: change
+sum Mailed:
+  sent: {count: Nat}
+  followed: {object: Plans.Reference}
+  refused: {reason: String}
+def mailedReply(action: String) -> Mailed -> Card.Reply:
+  fn(mailed: Mailed) -> Card.Reply: mailedAs(action, mailed)
+def mailedAs(action: String, mailed: Mailed) -> Card.Reply:
+  match mailed:
+    case refused(r): Card.Reply.refused({reason: r.reason})
+    case _: Card.Reply.done({action: action})
+# The avatar's principal sends a line to every observer, each by the method it named.
+def sent<T>(state: State, text: String, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  if mine(context) == false then then(Mailed.refused({reason: "Only the avatar's own principal sends from it."})) else if Lists.length::<Card.Observer>(state.observers) > sendsPerTurn() then then(Mailed.refused({reason: "More observers than one turn may send to."})) else Card.broadcast::<Edits, Place.State, Place.Done, T>(state.observers, Data.of::<{text: String}>({text: text}), 0n, fn(count: Nat) -> T: then(Mailed.sent({count: count})))
+def send(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Mailed>:
+  sent::<Mailed>(state, input.text, context, fn(m: Mailed) -> Mailed: m)
+# Subscribe to an object: ask it (a send: its observe runs in its own turn, under its
+# law) to tell this avatar, by `note` with a line when it is an avatar (a DID) and by
+# `notice` otherwise, and remember following it.
+def methodFor(object: Plans.Reference) -> String:
+  if textTake(object.object, 4n) == "did:" then "note" else "notice"
+def subscribed<T>(state: State, object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  if mine(context) == false then then(Mailed.refused({reason: "Only the avatar's own principal subscribes it."})) else if Lists.any::<Plans.Reference>(state.following, fn(f: Plans.Reference) -> Bool: Plans.same(f, object)) then then(Mailed.refused({reason: textConcat("Already following ", object.object)})) else if Lists.length::<Plans.Reference>(state.following) >= sendsPerTurn() then then(Mailed.refused({reason: "Following thirty-two is the most."})) else asking::<T>(object, context, then)
+def asking<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.send({object: object, method: "observe", argument: Data.of::<Card.Observer>({object: Plans.self(context), method: methodFor(object)})})):
+    case delivery(_): following::<T>(object, context, then)
+    case _: then(Mailed.refused({reason: textConcat("Could not ask ", object.object)}))
+def following<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {following: Plans.Entries::<Plans.Reference, {}>.append({item: object})})})):
+    case _: then(Mailed.followed({object: object}))
+def subscribe(state: State, input: {object: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Mailed>:
+  subscribed::<Mailed>(state, input.object, context, fn(m: Mailed) -> Mailed: m)
+def unsubscribed<T>(state: State, object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  if mine(context) == false then then(Mailed.refused({reason: "Only the avatar's own principal unsubscribes it."})) else unfollowing::<T>(Lists.find::<Plans.Reference>(state.following, fn(f: Plans.Reference) -> Bool: Plans.same(f, object)), object, context, then)
+def unfollowing<T>(found: Lists.Maybe<Plans.Reference>, object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  match found:
+    case none(_): then(Mailed.refused({reason: textConcat("Not following ", object.object)}))
+    case some(s): unasking::<T>(s.value, context, then)
+def unasking<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.send({object: object, method: "unobserve", argument: Data.of::<Card.Observer>({object: Plans.self(context), method: methodFor(object)})})):
+    case _: unfollowed::<T>(object, context, then)
+def unfollowed<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {following: Plans.Entries::<Plans.Reference, {}>.removeItem({item: object})})})):
+    case _: then(Mailed.followed({object: object}))
+def unsubscribe(state: State, input: {object: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Mailed>:
+  unsubscribed::<Mailed>(state, input.object, context, fn(m: Mailed) -> Mailed: m)
 # Things call hold and release on their holder's avatar. Both are idempotent and
 # never refuse, so a thing that has already staged its own writes cannot be left
 # half done. The thing is the calling object; the giver is the turn's principal, and
@@ -79,9 +161,9 @@ def release(state: State, context: Abi.Context) -> Activity<Plan, Response, Plac
 def releaseThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(state.holding, thing(context)):
     case none(_): Place.Done.done({})
-    case some(a): released(a.value, context)
-def released(index: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.remove({index: index})})})):
+    case some(_): released(context)
+def released(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.removeItem({item: thing(context)})})})):
     case _: Place.Done.done({})
 def find(exits: Lists.List<Place.Exit>, label: String) -> Found:
   match exits:
@@ -124,9 +206,9 @@ def arrived<T>(to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> A
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {at: Plans.Edit::<Plans.Reference, {}>.set({value: to})})})):
     case _: then(Moved.moved({to: to}))
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "move", fields: Form.Fields.cons({head: {name: "exit", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "note", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})
+  Card.Forms.cons({head: {card: "", action: "move", fields: Form.Fields.cons({head: {name: "exit", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "note", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "send", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "subscribe", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "unsubscribe", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})})})})
 def door() -> Card.Door:
-  {word: "avatar", blurb: "You in the world: move through exits, leave notes."}
+  {word: "avatar", blurb: "You in the world: move through exits, leave notes, follow things and send to your followers."}
 def movedReply(moved: Moved) -> Card.Reply:
   match moved:
     case moved(_): Card.Reply.done({action: "move"})
@@ -135,12 +217,27 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): if a.action == "move" then walk::<Card.Reply>(state, Card.text(a.fields, "exit"), context, movedReply) else noted::<Card.Reply>(Card.text(a.fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"}))
-    case _: Card.answer::<Edits, Place.State, Place.Done>(routed, context, forms(), render(state))
+    case act(a): if a.action == "move" then walk::<Card.Reply>(state, Card.text(a.fields, "exit"), context, movedReply) else acted(state, a.action, a.fields, context)
+    case _: Card.answerLensed::<Edits, Place.State, Place.Done>(routed, context, forms(), lenses(), if mine(context) then "" else "Only the avatar's own principal changes it.", renderFor(state, context))
+def acted(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  if action == "note" then noted::<Card.Reply>(state, context.principal, Card.text(fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"})) else if action == "send" then sent::<Card.Reply>(state, Card.text(fields, "text"), context, mailedReply("send")) else if action == "subscribe" then subscribed::<Card.Reply>(state, {world: context.world, object: Card.text(fields, "to")}, context, mailedReply("subscribe")) else unsubscribed::<Card.Reply>(state, {world: context.world, object: Card.text(fields, "to")}, context, mailedReply("unsubscribe"))
+# The handle the card shows is set through a lens: `delvetalk <did> set` and `handle: ...`.
+def lenses() -> Lists.List<Form.Lens<Edits>>:
+  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "handle", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {handle: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})
 def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text(textConcat("Holding: ", textConcat(item.object, "\n")))
 def noteLine(item: Note) -> Document.Document:
   Document.text(textConcat(Card.handle(item.from), textConcat(": ", textConcat(item.text, "\n"))))
 # Notes newest first; eight of each list, then a count.
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: Document.text(textConcat(state.handle, textConcat(" is at ", textConcat(state.at.object, "\n")))), tail: Document.Documents.nil()}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.holding, holdingLine), 8n)), Lists.concat::<Document.Document>(mailFor(state, context), inboxFor(state, context)))})
+# Followers are counted for everyone; what it follows is its principal's to see.
+def mailFor(state: State, context: Abi.Context) -> Document.Documents:
+  Document.Documents.cons({head: Document.text(textConcat(natText(Lists.length::<Card.Observer>(state.observers)), textConcat(" following, follows ", textConcat(natText(Lists.length::<Plans.Reference>(state.following)), "\n")))), tail: if Card.reads(context.object, context) then Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.following, fn(f: Plans.Reference) -> Document.Document: Document.text(textConcat("Follows: ", textConcat(f.object, "\n")))), 8n) else Document.Documents.nil()})
+# The notes are the avatar's principal's alone; anyone else sees how many there are.
+def inboxFor(state: State, context: Abi.Context) -> Document.Documents:
+  if Card.reads(context.object, context) then Card.clipped(Lists.map::<Note, Document.Document>(Lists.reverse::<Note>(state.inbox), noteLine), 8n) else Document.Documents.cons({head: Document.text(if Lists.length::<Note>(state.inbox) == 1n then "1 note\n" else textConcat(natText(Lists.length::<Note>(state.inbox)), " notes\n")), tail: Document.Documents.nil()})
+# The card for the host's `card {object}` until the host passes the reader's context.
 def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: Document.text(textConcat(state.handle, textConcat(" is at ", textConcat(state.at.object, "\n")))), tail: Document.Documents.nil()}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.holding, holdingLine), 8n)), Card.clipped(Lists.map::<Note, Document.Document>(Lists.reverse::<Note>(state.inbox), noteLine), 8n))})
+  renderFor(state, Card.stranger())
