@@ -6,6 +6,12 @@ Start with the [runnable quickstart](../README.md) or
 interfaces; source and conformance tests define their executable scope. A passing
 local case does not establish deployment or a general proof.
 
+The current architectural correction is explicit: [Bend owns behavior](design/BEND.md),
+[durable objects compose](design/COMPOSITION.md), [objects author encounters](design/ENCOUNTERS.md),
+and [the repository follows those responsibilities](design/REPOSITORY.md).
+These decisions identify replacements still to implement; existing Python workflow
+code is not the intended architecture.
+
 | Task | Contract |
 | --- | --- |
 | Understand the system | [Architecture](SEMANTIC-INTEGRATION.md), [source/proof boundary](../spec/README.md) |

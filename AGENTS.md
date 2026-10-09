@@ -4,6 +4,17 @@ DelveTalk is a small semantics and protocol workbench. Keep behavior precise
 and contributions runnable; a convention becomes useful when its failure case
 can be reproduced.
 
+- DelveTalk is a self-contained-as-possible, metaprogrammed Bend system. World
+  behavior, workflows, interaction logic, scene execution and metaprogramming
+  belong in Bend. Python is not an application implementation language here:
+  keep only necessary platform transport, physical custody and process I/O.
+  A Python generator of executable AST/source still authors behavior; native
+  execution of its output does not satisfy this boundary. Existing such code
+  is replacement work, not precedent. See docs/design/BEND.md.
+- Commit useful increments regularly; qualification and convergence are separate
+  from checkpoints. Do not hold completed work hostage to the entire suite.
+  Root owns named-path commits in this shared checkout; inspect concurrent edits.
+
 - Lean owns the pinned source relation and local host admission. Python, JS and
   C are independent core evaluators. Python world code handles custody of a
   local file and process transport, not admission decisions.
