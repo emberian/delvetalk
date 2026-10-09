@@ -47,7 +47,7 @@ def digest(credential):
 class Identity:
     def __init__(self, state_dir, client, origin=ORIGIN, clock=time.time):
         Path(state_dir).mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.db = sqlite3.connect(Path(state_dir) / 'identity.sqlite', isolation_level=None)
+        self.db = sqlite3.connect(Path(state_dir) / 'identity.sqlite', isolation_level=None, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self.client, self.origin, self.clock = client, origin.rstrip('/'), clock
