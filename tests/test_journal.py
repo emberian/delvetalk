@@ -47,6 +47,22 @@ class Sources(Reflection):
         self.assertEqual(before[0]["source"], BELL)
 
 
+class Lock(Reflection):
+    def test_a_second_process_cannot_open_a_held_journal_and_the_first_still_commits(self):
+        self.open_library()
+        self.assertTrue(self.host.send(op="world-status")["locked"])
+        other = self.spawn()
+        refused = other.send(op="world-open", path=self.path)
+        self.assertEqual(refused, {"status": "error", "message": "journal is open in another process"})
+        self.assertEqual(self.host.send(op="world-create", principal="ember", identity="mk", object="a", source=BELL,
+                                        entry="initial", seed=SEED)["status"], "created")
+        # The same process may reopen its own journal; once it lets go, the other may open it.
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+        self.release()
+        opened = other.send(op="world-open", path=self.path)
+        self.assertEqual((opened["status"], opened["objects"]), ("opened", 1), opened)
+
+
 class Maximum(Reflection):
     def test_two_hundred_bells_create_and_replay_compiling_once(self):
         self.open_library()

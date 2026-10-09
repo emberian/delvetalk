@@ -38,8 +38,16 @@ def loadLibrary (path : String) : IO (Except String Library) := do
     return sealLibrary modules
   catch e => return .error s!"library unreadable: {e}"
 
-def openWorld (path : String) : IO (Except String Open) := do
+/-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
+    `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
+    (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
+def openWorld (path : String) (held : Option IO.FS.Handle := none) : IO (Except String Open) := do
   try
+    let handle ← match held with
+      | some h => pure h
+      | none => IO.FS.Handle.mk path IO.FS.Mode.append
+    if held.isNone then
+      unless ← handle.tryLock (exclusive := true) do return .error "journal is open in another process"
     let exists_ ← System.FilePath.pathExists path
     let content ← if exists_ then do
         let info ← System.FilePath.metadata path
@@ -49,9 +57,7 @@ def openWorld (path : String) : IO (Except String Open) := do
       else pure ""
     match replay content with
     | .error e => return .error e
-    | .ok world =>
-      let handle ← IO.FS.Handle.mk path IO.FS.Mode.append
-      return .ok { world, path, handle }
+    | .ok world => return .ok { world, path, handle }
   catch e => return .error s!"journal unreadable: {e}"
 
 /-- Run a pure world step and make its entry durable before the reply exists. -/
@@ -87,7 +93,10 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
     match request.getObjValAs? String "path" with
     | .error e => return (session, .error e)
     | .ok path =>
-      match ← openWorld path with
+      let held := match session with
+        | some o => if o.path == path then some o.handle else none
+        | none => none
+      match ← openWorld path held with
       | .error e => return (session, .error e)
       | .ok o =>
         -- The first open naming a clock principal or a posting quota journals them.
@@ -169,7 +178,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota)]))
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

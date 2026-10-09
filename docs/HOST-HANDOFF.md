@@ -288,6 +288,10 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fcntl(F_FULLFSYNC)`
   (macOS) / `fsync`; this made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s. One sync per
   `durable` call (not per entry). The build needs `lakefile.lean` (the TOML cannot declare `extern_lib`).
+- **Journal lock**: `openWorld` takes an exclusive `flock` on the journal handle (`IO.FS.Handle.tryLock`, the
+  runtime's flock; no second C extern was needed) and refuses "journal is open in another process"; the lock lives
+  as long as the session's handle, so opening another path releases it. Re-opening the same path in the same
+  process reuses the held handle. `world-status` reports `locked: true`.
 - **1Password**: `git commit` can fail with "1Password: failed to fill whole buffer"; make the commit
   unsigned (`git -c commit.gpgsign=false commit ...`), which the owner's notes allow for unattended work.
 - **Tests**: never run an unfiltered package suite on a loop; `tests.test_replay` and `test_await` each
