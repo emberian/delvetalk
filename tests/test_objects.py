@@ -167,7 +167,7 @@ CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
-  Document.plain(O.render({proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}))
+  Document.plain(O.render({owner: "ember", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}))
 """
 
 

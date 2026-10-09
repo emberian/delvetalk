@@ -5,12 +5,11 @@ Directory: only its owner adds or removes a door. Anthology: anyone submits, onl
 Each is made with world-create (a lawful module cannot be imported by a creator) by its owner (a law
 must admit an amendment by its installer).
 
-Tide's and Wake's Bend predicates `law(old, new, request)`: the host on foundation records them and
-does not run them, so a turn their predicate refuses is admitted today. The flip tests write through
-a variant of the package whose method skips the Bend-side check the real one makes (and, for Wake,
-whose law text admits any ordinary write, so only the predicate stands); they are expected failures
-until the host runs the predicate (lane/host4 14b5c89, "The two-tier law: run the package's Bend law
-after the text admits"), when the refusal's clause is the predicate's: "self", "tooSoon", "owner".
+Tide's and Wake's Bend predicates `law(old, new, request)`, which the host runs after the law text
+admits a kind-0 write (lane/host4 14b5c89, merged in foundation 88b9534; before it these turns were
+admitted). The tests write through a variant of the package whose method skips the Bend-side check
+the real one makes (and, for Wake, whose law text admits any ordinary write, so only the predicate
+stands); the refusal's clause is the predicate's: "self", "tooSoon", "owner".
 
 Refuted by: a stranger's add, remove or admit committing; an owner's being refused; a stranger's
 submit being refused; the variants committing once the host runs predicates."""
@@ -114,20 +113,17 @@ class Predicates(LawWorld):
         self.assertNotEqual(tide_variant()[-1]["source"], closure("Tide")[-1]["source"])
         self.assertNotEqual(wake_variant()[-1]["source"], closure("Wake")[-1]["source"])
 
-    @unittest.expectedFailure
     def test_tides_predicate_refuses_someone_elses_subscription(self):
         self.create("tide", tide_variant(), TIDE_SEED)
         r = self.turn("tide", "subscribe", record(every=nat(1), note=label("wake me")), principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/self", r)
 
-    @unittest.expectedFailure
     def test_tides_predicate_refuses_a_tick_too_soon(self):
         self.create("tide", tide_variant(), TIDE_SEED)
         self.assertEqual(self.turn("tide", "tick", principal=OTHER)["status"], "admitted")
         r = self.turn("tide", "tick", principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/tooSoon", r)
 
-    @unittest.expectedFailure
     def test_wakes_predicate_refuses_a_strangers_trigger(self):
         self.create("wake", wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
         r = self.turn("wake", "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
