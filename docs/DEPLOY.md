@@ -9,8 +9,7 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/Dockerfile.host` | the host binary for linux/amd64; final image is the binary and glibc |
 | `deploy/Dockerfile.transport` | python 3.13 slim + the binary + `transport/`, `world/`, the guide |
 | `deploy/build.sh` | builds both, prints the binary's SHA-256, writes `deploy/out/host.sha256` |
-| `deploy/compose.yml` | `delvetalk-http`; `delvetalk-bridge`, `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
-| `deploy/one-writer.sh` | image entrypoint; skipped in compose (`ONE_WRITER=skip`) because `transport.hostd` holds the lock itself |
+| `deploy/compose.yml` | `delvetalk-hostd`, `delvetalk-http`, `delvetalk-bridge`; `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
 | `deploy/seed.py` | `world-create` of one object from `world/` |
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |

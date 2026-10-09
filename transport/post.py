@@ -126,7 +126,6 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--credentials', default=CREDENTIALS)
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--host-socket', metavar='PATH', help='hostd socket: read the posting quota and record posts')
-    p.add_argument('--journal', help='instead of a socket: open this journal in-process (stop the stack first)')
     p.add_argument('--record', metavar='OBJECT', help='after a confirmed post, call world-posted for this object (needs --host-socket)')
     p.add_argument('--slot')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
@@ -142,15 +141,15 @@ def main(argv=None, out=None, client=None):
             text = wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
-        if a.record and not (a.host_socket or a.journal):
+        if a.record and not a.host_socket:
             raise Failure('record_needs_journal')
         reader = client or Client(http_transport)
         reply = reply_ref(reader, a.reply_to) if a.reply_to else None
         request = build_request(text, reply, mention_facets(reader, text))
         host = None
-        if a.host_socket or a.journal:
-            from transport.hostproc import Host, HostClient
-            host = Host(a.journal) if a.journal else HostClient(a.host_socket)
+        if a.host_socket:
+            from transport.hostproc import HostClient
+            host = HostClient(a.host_socket)
         try:
             limit, source = quota_limit(host)
             if not a.authorized:

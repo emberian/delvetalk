@@ -16,8 +16,7 @@
 # host and opens the journal. It holds /data/journal.lock for its life (exit 75
 # if taken) and serves the HTTP front, the bridge and the interpreter over one
 # unix socket, /data/state/host.sock, so they are plain clients and may start,
-# stop and restart without touching the world. The one-writer entrypoint wrapper
-# is skipped for every service (ONE_WRITER=skip): hostd takes the lock itself.
+# stop and restart without touching the world.
 #
 # Every shell `$` in this file would be compose's; there are no shell bodies.
 
@@ -40,8 +39,6 @@ x-service: &service
     # path, not a named volume, as the edge keeps /var/lib/dregg/<service>:
     # it is what deploy/backup.sh reads.
     - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
-  environment:
-    ONE_WRITER: skip
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "5" }
@@ -111,7 +108,6 @@ services:
   # credential is mounted here.
   delvetalk-bridge:
     <<: *service
-    profiles: ["town"]
     command: ["python3", "-m", "transport.bridge", "run", "--state", "/data/state", "--poll", "60"]
     depends_on:
       delvetalk-hostd: { condition: service_healthy }

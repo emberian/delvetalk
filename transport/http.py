@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
-from transport.hostproc import BINARY, HOST_TIMEOUT, POOL, Heaps, Host, HostClient, RemoteHeaps, add_host_args, connect  # noqa: F401
+from transport.hostproc import HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
@@ -37,7 +37,7 @@ class Front(HTTPServer):
     def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy = heaps, repl or Host(None), trust_proxy  # tests pass a repl; main() gives a hostd client
+        self.heaps, self.repl, self.trust_proxy = heaps, repl, trust_proxy
         self.hits, self.cards, self.nonce = {}, {}, secrets.token_hex(4)
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
@@ -329,11 +329,8 @@ def main(argv=None):
     ap.add_argument('--origin', default=ORIGIN)
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
-    if a.standalone:
-        host, heaps, repl = Host(a.journal), Heaps(Path(a.state) / 'heaps'), None
-    else:
-        sock = a.host_socket or Path(a.state) / 'host.sock'
-        host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
+    sock = a.host_socket or Path(a.state) / 'host.sock'
+    host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
     front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
                   heaps=heaps, repl=repl, trust_proxy=a.trust_proxy)
     try:

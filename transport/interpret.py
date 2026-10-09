@@ -16,23 +16,13 @@ import sys
 from pathlib import Path
 
 from transport import model
-from transport.bridge import daemon
+from transport.bridge import daemon, write_atomic
 from transport.delve import canonical
 from transport.hostproc import add_host_args, connect
 
 
 def receipt_path(state, request_id):
     return Path(state) / 'interpretations' / (hashlib.sha256(str(request_id).encode()).hexdigest()[:24] + '.json')
-
-
-def write_atomic(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = path.with_suffix('.tmp')
-    with open(tmp, 'w') as f:
-        f.write(canonical(value) + '\n')
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
 
 
 def user_content(item):
@@ -76,7 +66,7 @@ def main(argv=None, out=None):
     a = ap.parse_args(argv)
     if bool(a.once) == bool(a.poll):
         ap.error('give exactly one of --once and --poll SECONDS')
-    host = connect(a, 'transport')
+    host = connect(a)
     step = lambda: out.write(canonical(run(a.state, host, lambda req: model.ask(req, a.mock, state=a.state))) + '\n') and out.flush()
     try:
         step() if a.once else daemon(a.state, 'interpret', a.poll, step)

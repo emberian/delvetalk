@@ -23,7 +23,6 @@ from transport.observe import SCHEMA, Observer
 
 DELIVER_ROUNDS = 8
 KINDS = ('spell', 'summon')
-CLOCK = 'transport'  # the clock principal named at world-open (hostd opens the world with it)
 
 
 def uri_hash(uri):
@@ -36,6 +35,7 @@ def draft_exists(outbox, uri):
 
 def write_atomic(path, value):
     tmp = path.with_suffix('.tmp')
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with open(tmp, 'w') as f:
         f.write(canonical(value) + '\n')
         f.flush()
@@ -199,7 +199,7 @@ def main(argv=None, out=None):
     else:
         if bool(a.once) == bool(a.poll):
             ap.error('give exactly one of --once and --poll SECONDS')
-        host = connect(a, CLOCK)
+        host = connect(a)
         try:
             poll = None
             if a.observe or a.poll or a.mock:

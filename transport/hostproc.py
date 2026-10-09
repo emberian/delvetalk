@@ -1,7 +1,7 @@
 """Host processes and the clients of the one that owns the world.
 
 Host / Heaps run `delvetalk-obend` in-process: used by hostd (the only daemon that does) and by
-tests and --standalone runs. HostClient / RemoteHeaps are what every other program uses: one JSON
+tests. HostClient / RemoteHeaps are what every other program uses: one JSON
 line per op over hostd's unix socket (<state>/host.sock).
 """
 import collections
@@ -85,12 +85,10 @@ class Heaps:
     def journal(self, did):
         return self.dir / f'{did}.journal'
 
-    def get(self, did, create=True):
+    def get(self, did):
         if did in self.pool:
             self.pool.move_to_end(did)
             return self.pool[did]
-        if not create and not self.journal(did).exists():
-            return None
         self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         while len(self.pool) >= self.size:
             self.pool.popitem(last=False)[1].close()
@@ -144,14 +142,10 @@ class RemoteHeaps:
         pass
 
 
-def connect(args, clock=None):
-    """The host a program talks to: hostd's socket, or an in-process host with --standalone."""
-    if getattr(args, 'standalone', False):
-        return Host(args.journal, clock=clock)
+def connect(args):
+    """The host a program talks to: hostd's socket."""
     return HostClient(args.host_socket or Path(args.state) / 'host.sock')
 
 
 def add_host_args(ap):
     ap.add_argument('--host-socket', metavar='PATH', help='hostd socket (default <state>/host.sock)')
-    ap.add_argument('--standalone', action='store_true', help='spawn an in-process host over --journal (single-program use only)')
-    ap.add_argument('--journal', help='world journal (--standalone only)')
