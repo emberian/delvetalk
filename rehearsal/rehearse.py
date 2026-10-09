@@ -289,7 +289,7 @@ def grammar_probes(out, binary):
         for i, (obj, what, text) in enumerate(GRAMMAR):
             who = f'did:plc:rehearsalprobe{i:010d}'
             reply = host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': f'probe-{i}',
-                               'argument': rec(text=lab(text), post=lab(f'at://{who}/town.delve.feed.post/probe{i}'), slot=lab(''))})
+                               'argument': rec(text=lab(text), post=lab(f'at://{who}/town.delve.feed.post/probe{i}'))})
             outcome = (reply.get('receipt') or {}).get('outcome') or {}
             results.append({'object': obj, 'what': what, 'text': text, 'status': reply.get('status'),
                             'class': outcome.get('class'), 'reason': outcome.get('reason') or reply.get('message'),
@@ -303,7 +303,7 @@ def grammar_probes(out, binary):
 
 def turn_text(host, who, obj, intent, text):
     return host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': intent,
-                      'argument': rec(text=lab(text), post=lab(intent), slot=lab(''))})
+                      'argument': rec(text=lab(text), post=lab(intent))})
 
 
 def burst_probe(host, n=9):
