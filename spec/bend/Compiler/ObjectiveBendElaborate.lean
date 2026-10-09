@@ -106,13 +106,14 @@ structure Signature where
 inductive Decl where
   | spec (s : Spec)
   | extension (name : String) (params : List Param) (targetType : String) (body : Body) (binders : String)
+  | reexport (name target : String)
   | function (name : String) (params : List Param) (resultType : String) (body : Body)
   | record (name : String) (fields : List (String × String)) (methods : List Signature)
   | sum (name : String) (cases : List (String × String))
   deriving Inhabited
 
 def Decl.name : Decl → String
-  | .spec s => s.name | .extension n .. => n | .function n .. => n | .record n .. => n | .sum n .. => n
+  | .spec s => s.name | .extension n .. => n | .function n .. => n | .record n .. => n | .sum n .. => n | .reexport n .. => n
 
 structure Module where
   name : String
@@ -232,6 +233,7 @@ def decodeDecl (j : Json) : Except String Decl := do
     let fields ← (← arr j "fields").mapM fun f => do return (← str f "name", ← str f "type")
     let methods ← (← arr j "methods").mapM decodeSignature
     return .record name fields methods
+  | "reexport" => return .reexport (← str j "name") (← str j "target")
   | "sum" => return .sum (← str j "name") (← (← arr j "cases").mapM fun c => do return (← str c "label", ← str c "type"))
   | other => .error ("unknown AST declaration " ++ other)
 
@@ -866,6 +868,7 @@ def globalType (c : Ctx) : Nat → String → M (Option PTy)
     let some (d, m) := declOf c key | return none
     modify fun s => { s with inferring := s.inferring ++ [key] }
     let t ← match d with
+      | .reexport .. => fail "internal unresolved export"
       | .function _ params resultType body => do
         let mut result ← sourceType c fuel resultType m.name []
         if resultType == "_" then
@@ -2041,6 +2044,10 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
     if (trimStr resultType).startsWith "Activity<" then
       fail ("refused (nullary-activity): " ++ key ++ " has no parameters, so it is a shared lazy value; an Activity needs a parameter, e.g. (start: {})")
   let value ← match d with
+    | .reexport _ target => do
+      let some (alias, name) := qualifiedName target | fail ("invalid export target " ++ target)
+      let some origin := importOf m alias | fail ("unknown export import alias " ++ target)
+      globalRef outerEnv (origin ++ "." ++ name)
     | .function _ params resultType b => do
       let result ← if resultType == "_" then do pure (ResultSpec.given (resultOf (← globalType c fuel key) params.length))
         else pure (ResultSpec.source resultType)
@@ -2139,7 +2146,21 @@ def context (modules : List Module) : Except String Ctx := do
       | .record .. | .sum .. => pure ()
       | _ =>
         if (decls.find? (·.1 == key)).isSome then throw ("duplicate declaration " ++ key)
-        decls := decls ++ [(key, d, m)]
+        match d with
+        | .reexport _ target =>
+          if m.imports.any (·.1 == d.name) then throw ("export collides with import alias " ++ key)
+          let some (alias, name) := qualifiedName target | throw ("export requires Alias.name: " ++ target)
+          let some origin := importOf m alias | throw ("unknown export import alias " ++ target)
+          let targetKey := origin ++ "." ++ name
+          let some (_, original, definingModule) := decls.find? (·.1 == targetKey)
+            | throw ("export target is not an earlier imported value declaration: " ++ target)
+          match original with
+          | .function .. => pure ()
+          | _ => throw ("export currently requires a function or constant declaration: " ++ target)
+          if m.decls.any (fun other => other.name == d.name && match other with | .record .. | .sum .. => true | _ => false) then
+            throw ("export collides with source type " ++ key)
+          decls := decls ++ [(key, original, definingModule)]
+        | _ => decls := decls ++ [(key, d, m)]
   for m in modules ++ [← builtinModule] do
     for d in m.decls do
       let key := m.name ++ "." ++ d.name

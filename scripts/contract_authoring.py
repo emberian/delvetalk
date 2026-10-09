@@ -86,8 +86,6 @@ class Contracts:
                 return retained
             return validate(retained)
         state = desk.candidate_state(candidate_root)
-        if not desk.is_source_desk_protocol(candidate_root['protocol']):
-            raise ValueError('contract release requires a reviewed SourceDesk body')
         build = desk.load_artifact(self.client.artifact_store, state['artifact'])
         if (build.get('passed') is not True or build['proposal'] != state['proposal']
                 or build['protocol'] != state['protocol'] or build['target'] != target
@@ -98,7 +96,7 @@ class Contracts:
         if bindings != build['sourceBindings']:
             raise ValueError('candidate source bindings differ from checked build')
         syntax = bindings['syntax']
-        if syntax not in ('objective-bend-spell@2', 'objective-bend-spell@3'):
+        if syntax != 'objective-bend-object':
             raise ValueError('contract requires an explicit Objective Bend source candidate')
         modules = ([{'name': item['name'], 'source': item['source']} for item in source['modules']]
                    if isinstance(source, dict) else [{'name': 'Main', 'source': source.decode('utf-8')}])

@@ -651,6 +651,8 @@ def namedImportRe : Re := seqs [str "import", many1 space, group 1 ident, many1 
   group 2 (seqs [str "./", many1 (.char (fun c => c != '"' && c != '\\')), str ".obend"]), chr '"', .done]
 def importRe : Re := seqs [str "import", many1 space, group 1 (many1 nonSpace),
   opt (seqs [many1 space, str "as", many1 space, group 2 ident]), .done]
+def exportRe : Re := seqs [str "export", many1 space, group 1 ident, chr '.', group 2 ident,
+  opt (seqs [many1 space, str "as", many1 space, group 3 ident]), .done]
 def importLeadRe : Re := .seq (str "import") space
 def genOneRe : Re := seqs [str ".bend", opt (chr '"'), alts [space, .done]]
 /-- `spec S [extends P, ...] for T:` (closed) or `spec S[Self has {...}, Super has {...}]:`
@@ -732,6 +734,12 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
     if let some (_, caps) := imported then
       imports := imports.push (Json.mkObj [("path", toJson (cap line.text caps 1)), ("alias", toJson (cap line.text caps 2)),
         ("span", line.span.json)])
+      continue
+    if let some (_, caps) ← matchAt line exportRe line.text then
+      let target := cap line.text caps 1 ++ "." ++ cap line.text caps 2
+      let name := (capture line.text caps 3).map String.ofList |>.getD (cap line.text caps 2)
+      decls := decls.push (Json.mkObj [("kind", toJson "reexport"), ("name", toJson name),
+        ("target", toJson target), ("span", line.span.json)])
       continue
     if let some (_, caps) ← matchAt line specRe line.text then
       let parents := match capture line.text caps 3 with

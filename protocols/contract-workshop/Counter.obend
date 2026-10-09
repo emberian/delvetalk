@@ -4,9 +4,16 @@ record State:
   count: Nat
 record Input:
   amount: Nat
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
 record Context:
   object: String
   principal: String
+  inputOrigin: Origin
 record Decision:
   accepted: Bool
   reason: String
@@ -42,11 +49,20 @@ record Action:
   text: String
   command: String
   input: {amount: Nat}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
   actions: {add: Action}
+  children: Children
 def describe() -> Description:
   {name: "The governed counter", initial: {count: 0}, methods: {add: {label: "Add to the counter", fields: {amount: {type: "nat", maximum: 100}}}}, panels: {}}
 def view(state: State, panel: String) -> View:
-  {title: "The governed counter", prose: "Its method promise belongs to the current law.", actions: {add: {visible: true, text: "Add one", command: "add", input: {amount: 1}}}}
+  {title: "The governed counter", prose: "Its method promise belongs to the current law.", children: Children.nil(), actions: {add: {visible: true, text: "Add one", command: "add", input: {amount: 1}}}}

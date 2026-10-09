@@ -17,8 +17,8 @@ must have both the candidate's current `adopt` grant and the target's current
 the captured target root, and the named specification export. The native compiler
 checks the retained original source. Native `inspect-spec-v1` computes its actual
 metadata. The resulting immutable proposal retains source bindings, the checked
-build, metadata, and the exact release request for review. Plain versus model
-state follows the candidate's explicitly selected @2 or @3 syntax.
+build, metadata, and the exact release request for review. The current
+`objective-bend-object` syntax binds the typed model state and its source schema.
 `Workshop.obend` chooses the turn and revises the captured law; Python supplies
 compiler data and retains exact attempts. The target law is an explicit source
 observation, never an ambient lookup. Missing projection refuses preparation.
@@ -43,7 +43,8 @@ The CLI uses ordinary operator custody files:
 ```sh
 python3 scripts/contract_authoring.py --database WORLD --artifacts ARTIFACTS create \
   --candidate source-desk --principal owner --intent new-desk --law desk-law.json
-# Submit and check source through the ordinary scripts/desk.py commands.
+# Submit source and request its check through the source desk; the compiler
+# receives the offered work and its exact intent.
 python3 scripts/contract_authoring.py --database WORLD --artifacts ARTIFACTS prepare \
   --candidate source-desk --target counter --principal steward --intent promise-1 \
   --candidate-root ready.json --target-root counter.json --entry contract > promise.json

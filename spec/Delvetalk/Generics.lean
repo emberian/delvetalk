@@ -270,6 +270,12 @@ def rewrite : Nat → Nat → String → List (String × GType) → List String 
       let rendered ← render target (← typeOf fuel origin bindings raw)
       spendString rendered
       return rendered
+    if kind j == "reexport" then
+      let name := string j "target"
+      if let some declaration ← resolve origin name then
+        if !(parameters declaration.ast).isEmpty then
+          throw ("unspecialized generic export is unsupported: " ++ name ++ " in " ++ (← originModule origin).name ++
+            " at " ++ (field j "span").compress ++ "; export an ordinary checked definition")
     if kind j == "specialize" then
       let some name := path locals (field j "target") | throw "generic specialization requires an unshadowed declaration"
       let some declaration ← resolve origin name | throw ("unknown generic declaration: " ++ name)

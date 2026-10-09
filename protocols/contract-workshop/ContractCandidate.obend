@@ -1,27 +1,24 @@
 edition ObjectiveBend 1
-import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Candidate.obend as C
 import ./ContractWorkshop.obend as W
 
 # A candidate gains a contract workshop by ordinary source composition.
-def ordinary() -> C.State:
-  C.ordinary()
+export C.ordinary
 def describe() -> C.Description:
   extend(C.describe(), {name: "ContractCandidate", initial: C.ordinary()})
-def submit(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
-  C.submit(state, input, context)
-def compiled(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
-  C.compiled(state, input, context)
-def failed(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
-  C.failed(state, input, context)
-def report(state: C.State, input: {}, context: Abi.Context) -> C.Decision:
-  C.report(state, input, context)
-def adopt(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
-  C.adopt(state, input, context)
-def prepareRelease(state: C.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  C.prepareRelease(state, contribution, observations, context)
+export C.submit
+export C.requestCheck
+export C.prepareInspectProposal
+export C.prepareCompilerWork
+export C.compiled
+export C.failed
+export C.report
+export C.adopt
+export C.prepareRelease
 def prepareContract(state: C.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  W.prepare(state.status, state.target, state.protocol, P.text(P.get(state.proposal, "syntax")), contribution, observations, context)
-def view(state: C.State, panel: String) -> C.View:
-  C.view(state, panel)
+  match P.textField(state.proposal, "syntax"):
+    case missing(_): P.Preparation.refused({message: "The checked proposal must retain its source syntax."})
+    case wrongKind(_): P.Preparation.refused({message: "The checked proposal syntax must be text."})
+    case found(t): W.prepare(state.status, state.target, state.protocol, t.value, contribution, observations, context)
+export C.view

@@ -25,17 +25,17 @@ class ContractAuthoring(unittest.TestCase):
         self.contracts = contract_authoring.Contracts(self.client)
         self.serial = 0
         self.names = {}
-        self.target_law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'add': ['visitor']},
+        self.target_law = {'profile': 'delvetalk-scoped-law', 'invoke': {'add': ['visitor']},
                            'reprogram': ['maker'], 'law': ['steward']}
-        self.candidate_law = {'profile': 'delvetalk-scoped-law-v1',
-            'invoke': {'submit': ['maker'], 'compiled': ['compiler'], 'failed': ['compiler'],
-                       'adopt': ['steward']}, 'reprogram': [], 'law': ['owner']}
+        self.candidate_law = {'profile': 'delvetalk-scoped-law',
+            'invoke': {'submit': ['maker'], 'requestCheck': ['maker'], 'compiled': ['compiler'], 'failed': ['compiler'],
+                       'adopt': ['steward']}, 'reprogram': [], 'law': ['owner'], 'read': 'public'}
 
     def call(self, request):
         self.serial += 1
         return self.client.exchange({'principal': 'owner', 'intent': 'call-' + str(self.serial), **request})
 
-    def candidate(self, name, source=SOURCE, *, syntax='objective-bend-spell@2', migration=None):
+    def candidate(self, name, source=SOURCE, *, syntax='objective-bend-object', migration=None):
         if isinstance(source, list):
             manifest = source_store.seal_modules([{'name': item['name'],
                 'sourceRef': source_store.store_bytes(self.client.artifact_store, item['source'].encode())}
@@ -43,12 +43,24 @@ class ContractAuthoring(unittest.TestCase):
             proposal = source_store.prepare_module_proposal(self.client.artifact_store, manifest, EXAMPLES, syntax=syntax)
         else:
             proposal = source_store.prepare_proposal(self.client.artifact_store, syntax, source, EXAMPLES)
+        authored = source if isinstance(source, list) else [{'name': 'Main', 'source': source.decode()}]
+        target_protocol = desk.source_object.load(authored, syntax=syntax)
+        model = {'count': 0} if migration is None else migration
+        migration = {'model': desk.source_object.compact_state(target_protocol,
+            desk.source_object.data(model), entry='describe', path=[{'field': 'initial'}])}
         made = self.contracts.create(name, 'owner', 'create-' + name, self.candidate_law)
         self.assertEqual(made['kind'], 'committed', made)
         submitted = self.client.submit_refs(name, 'maker', 'submit-' + name, made['data']['root'],
-                                           proposal, {'count': 0} if migration is None else migration, 'counter')
+                                           proposal, migration, 'counter')
         self.assertEqual(submitted['kind'], 'committed', submitted)
-        checked = self.client.check(name, 'compiler', 'check-' + name, submitted['data']['root'])
+        pending = submitted['data']['root']
+        requested = self.client.exchange(desk.projection.request(desk.projection.project(pending, name),
+            'check', 'maker', 'request-check-' + name))
+        self.assertEqual(requested['kind'], 'committed', requested)
+        pending = self.client.inspect(name, principal='compiler')
+        work = desk.compiler_work(pending, name, 'compiler', self.client.database)
+        self.assertIsNotNone(work)
+        checked = self.client.check(name, 'compiler', work['intent'], pending)
         self.assertEqual(checked['kind'], 'committed', checked)
         root = self.client.inspect(name)
         self.assertEqual(desk.candidate_state(root)['status'], 'ready', desk.candidate_state(root)['diagnostics'])
@@ -170,23 +182,14 @@ class ContractAuthoring(unittest.TestCase):
         self.assertEqual(self.client.inspect('proposal'), candidate)
 
     def test_model_contract_reads_large_source_from_retained_candidate(self):
-        typed = SOURCE.decode().replace('record View:',
-            'record Child:\n  key: String\n  label: String\n  object: String\n  panel: String\n'
-            'sum Children:\n  nil: {}\n  cons: {head: Child, tail: Children}\nrecord View:')
-        typed = typed.replace('record Context:\n  object: String\n  principal: String',
-            'record Origin:\n  kind: String\n  object: String\n  command: String\n'
-            '  immediatelyPrevious: Bool\nrecord Context:\n  object: String\n  principal: String\n'
-            '  inputOrigin: Origin')
-        typed = typed.replace('  actions: {add: Action}', '  children: Children\n  actions: {add: Action}')
-        typed = typed.replace('prose: "Its method promise belongs to the current law.", actions:',
-            'prose: "Its method promise belongs to the current law.", children: Children.nil(), actions:')
+        typed = SOURCE.decode()
         padding = '# Retained source is not an authored form contribution.\n' * 650
         typed += '\n' + padding
         modules = [{'name': 'Notes', 'source': 'edition ObjectiveBend 1\n' + padding + 'def value() -> Nat:\n  0n\n'},
                    {'name': 'Main', 'source': typed}]
         self.assertGreater(sum(len(item['source'].encode()) for item in modules), 65536)
-        model = {'model': desk.source_object.data({'count': 0})}
-        candidate = self.candidate('typed', modules, syntax='objective-bend-spell@3', migration=model)
+        model = {'count': 0}
+        candidate = self.candidate('typed', modules, syntax='objective-bend-object', migration=model)
         root = self.target(candidate)
         proposal = self.prepare(candidate, root)
         contract = proposal['request']['calls'][1]['law']['contract']
@@ -196,7 +199,7 @@ class ContractAuthoring(unittest.TestCase):
         self.assertEqual(result['kind'], 'committed', result)
         self.assertEqual(self.client.inspect('counter')['state'], root['state'])
 
-    def test_source_workshop_requires_projected_law_and_preserves_v4_guard(self):
+    def test_source_workshop_requires_projected_law_and_preserves_amendment_guard(self):
         source = """edition ObjectiveBend 1
 import ./Preparation.obend as P
 record Context:
@@ -205,11 +208,9 @@ record Context:
   currentLaw: P.Value
   nextLaw: P.Value
 def amend(context: Context) -> Bool:
-  (context.principal == "owner" || context.principal == "steward") && P.text(P.get(P.get(context.currentLaw, "amendment"), "config")) == "keep" && P.text(P.get(P.get(context.nextLaw, "amendment"), "config")) == "keep"
+  (context.principal == "owner" || context.principal == "steward") && P.textOrEmpty(P.get(P.get(context.currentLaw, "amendment"), "config")) == "keep" && P.textOrEmpty(P.get(P.get(context.nextLaw, "amendment"), "config")) == "keep"
 """
-        self.target_law.update(profile='delvetalk-scoped-law-v4',
-            predicate=['lam', ['boolean', True]], invariant=['lam', ['boolean', True]],
-            amendment={'profile': 'delvetalk-source-amendment-v1', 'config': 'keep',
+        self.target_law.update(amendment={'profile': 'delvetalk-source-amendment-v1', 'config': 'keep',
                 'package': {'modules': [
                     {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
                     {'name': 'Amendment', 'source': source}], 'entry': 'amend'}})
