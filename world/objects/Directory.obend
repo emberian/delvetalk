@@ -121,7 +121,7 @@ def inspecting(state: State, input: Card.Heard, first: Spell.Binding, fields: Sp
     case _: doorsFor(state, input, first, fields, rest, context)
 def offering(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, to: Plans.Reference, found: Lists.Maybe<Form.Form>, rest: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match found:
-    case some(f): passOn(to.object, {text: spellFor(to.object, f.value, first, fields), post: input.post, slot: input.slot}, context)
+    case some(f): passOn(to.object, {text: spellFor(to.object, f.value, first, fields), post: input.post}, context)
     case none(_): doorsFor(state, input, first, fields, rest, context)
 # The spell the field lines mean for a form: the action line as it was written (the
 # door's own Spell.fit gives its value to the form's first open text field) and every
@@ -159,7 +159,7 @@ def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, 
     case _: Heard.silent({})
 def readBack(parsed: Spell.Parsed, text: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match parsed:
-    case spell(s): if s.card != context.object then passOn(s.card, {text: text, post: input.post, slot: input.slot}, context) else Heard.silent({})
+    case spell(s): if s.card != context.object then passOn(s.card, {text: text, post: input.post}, context) else Heard.silent({})
     case notASpell(_): Heard.silent({})
 # The door words, for a card that lists them.
 def words(state: State) -> String:
