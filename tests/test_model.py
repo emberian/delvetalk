@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from transport import interpret, model
-from transport.http import Host
+from transport.hostproc import Host
 
 REQ = {'system': 'You interpret utterances.', 'user': 'plant a fern'}
 

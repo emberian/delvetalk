@@ -12,8 +12,6 @@ COPY transport ./transport
 COPY docs/AGENTS-API.md ./docs/AGENTS-API.md
 COPY world ./world
 COPY deploy/seed.py ./deploy/seed.py
-COPY deploy/one-writer.sh /usr/local/bin/one-writer
 ENV DELVETALK_OBEND=/usr/local/bin/delvetalk-obend HOME=/tmp \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LEAN_NUM_THREADS=1
 USER 10425:10425
-ENTRYPOINT ["/usr/local/bin/one-writer"]

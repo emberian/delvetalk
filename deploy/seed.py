@@ -2,8 +2,7 @@
 """Create one object in a world journal from a module in world/ and its imports.
 
 Run as `python3 -m deploy.seed` from the repository root. Carries bytes: the operator names the object, the module, the creating principal
-and the typed seed; the host compiles, judges and journals. Normally through hostd's
-socket (--host-socket); --journal opens the journal in-process and needs the stack stopped.
+and the typed seed; the host compiles, judges and journals. Through hostd's socket.
 
   python3 -m deploy.seed --host-socket /data/state/host.sock --principal did:plc:... \
       --object garden --module Garden --intent mk-garden \
@@ -15,7 +14,7 @@ import re
 import sys
 from pathlib import Path
 
-from transport.hostproc import Host, HostClient
+from transport.hostproc import HostClient
 
 ROOT = Path(__file__).resolve().parent.parent
 IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
@@ -39,8 +38,7 @@ def closure(name, found, seen=None, out=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='seed.py')
-    ap.add_argument('--host-socket', help='hostd socket (the normal way)')
-    ap.add_argument('--journal', help='with no socket: open this journal in-process (stop the stack first)')
+    ap.add_argument('--host-socket', required=True, help='hostd socket')
     for flag in ('--principal', '--object', '--module', '--intent', '--seed'):
         ap.add_argument(flag, required=True)
     ap.add_argument('--law', help='law text; default: the host default law')
@@ -49,9 +47,7 @@ def main(argv=None):
            'modules': closure(a.module, modules_on_disk()), 'entry': 'initial', 'seed': json.loads(a.seed)}
     if a.law:
         req['law'] = a.law
-    if not (a.host_socket or a.journal):
-        ap.error('give --host-socket or --journal')
-    host = HostClient(a.host_socket) if a.host_socket else Host(a.journal)
+    host = HostClient(a.host_socket)
     try:
         reply = host.send(req)
     finally:
