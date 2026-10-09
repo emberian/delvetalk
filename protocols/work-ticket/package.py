@@ -11,9 +11,8 @@ HERE = Path(__file__).resolve().parent
 
 
 def modules():
-    return source_object.read_modules([('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
-        ('ReviewableWork', HERE / 'ReviewableWork.obend'), ('Ticket', HERE / 'Ticket.obend')])
+    return source_object.read_closure([('ReviewableWork', HERE / 'ReviewableWork.obend'),
+        ('Ticket', HERE / 'Ticket.obend')])
 
 
 def build(*, requester=None, links=None):
@@ -28,7 +27,7 @@ def build(*, requester=None, links=None):
             if field['name'] in links:
                 ref = references.validate_reference(links[field['name']])
                 field['value'] = source_object.variant('present', source_object.data(ref))
-    return source_object.load(modules(), syntax='objective-bend-spell@3', constructor='initial', arguments=[config])
+    return source_object.load(modules(), syntax='objective-bend-object', constructor='initial', arguments=[config])
 
 
 def law():

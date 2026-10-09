@@ -8,11 +8,8 @@ import source_object
 
 
 def candidate():
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Candidate', ROOT / 'protocols/editor/Candidate.obend'),
         ('ContractWorkshop', ROOT / 'protocols/contract-workshop/Workshop.obend'),
         ('ContractCandidate', ROOT / 'protocols/contract-workshop/ContractCandidate.obend')])
-    return source_object.load(modules, syntax='objective-bend-spell@3')
+    return source_object.load(modules, syntax='objective-bend-object')

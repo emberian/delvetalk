@@ -17,24 +17,19 @@ def candidate():
 
 
 def factory(compiler, reporters, *, reviewers=()):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
         ('Factory', ROOT / 'protocols/editor/Factory.obend'),
         ('WorkshopFactory', HERE / 'Factory.obend')])
-    config = {'compiler': compiler, 'reporters': list(reporters), 'reviewers': list(reviewers), 'candidate': candidate()}
+    config = source_object.record({'compiler': source_object.data(compiler),
+        'reporters': source_object.value(list(reporters)), 'reviewers': source_object.value(list(reviewers)),
+        'candidate': source_object.value(candidate())})
     return source_object.load(modules, syntax='objective-bend-object',
-        constructor='initial', arguments=[source_object.value(config)])
+        constructor='initial', arguments=[config])
 
 
 def writing(candidate, target, syntax):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Writing', HERE / 'Writing.obend')])
     return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.data({
@@ -42,11 +37,7 @@ def writing(candidate, target, syntax):
 
 
 def writing_factory():
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
         ('Factory', ROOT / 'protocols/editor/Factory.obend'),
         ('Writing', HERE / 'Writing.obend'),

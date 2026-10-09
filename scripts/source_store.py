@@ -17,6 +17,7 @@ canonical, loads = translate.canonical, translate.load_json
 REF = 'delvetalk-source-ref-v1'
 PROPOSAL = 'delvetalk-source-proposal-v1'
 MODULE_PROPOSAL = 'delvetalk-module-proposal-v1'
+INLINE_MODULE_PROPOSAL = 'delvetalk-inline-module-proposal-v1'
 MODULE_MANIFEST = 'delvetalk-module-manifest-v1'
 MODULE_MATERIAL = 'delvetalk-module-material-v1'
 MAX_MODULE_BYTES = 1024 * 1024
@@ -59,9 +60,14 @@ def blob_path(artifact_store, sha):
 
 def _read(path, maximum):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(descriptor, 'rb') as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise ValueError('source custody requires a regular file')
+        stream = os.fdopen(descriptor, 'rb')
+    except BaseException:
+        os.close(descriptor)
+        raise
+    with stream:
         raw = stream.read(maximum + 1)
     if len(raw) > maximum:
         raise ValueError('stored source exceeds byte bound')
@@ -276,10 +282,27 @@ def resolve_modules(artifact_store, manifest):
     return validate_module_material({'format': MODULE_MATERIAL, 'manifest': manifest, 'modules': modules})
 
 
+def inline_module_material(modules, artifact_store=None):
+    """Bind explicit retained module bytes; never author or resolve source."""
+    if not isinstance(modules, list) or not 1 <= len(modules) <= 64:
+        raise ValueError('inline module custody requires 1..64 modules')
+    entries = []
+    for module in modules:
+        if (not isinstance(module, dict) or set(module) != {'name', 'source'}
+                or not isinstance(module['name'], str) or not isinstance(module['source'], str)):
+            raise ValueError('inline module custody requires exact name and source')
+        raw = module['source'].encode('utf-8')
+        ref = reference(raw) if artifact_store is None else store_bytes(artifact_store, raw)
+        entries.append({'name': module['name'], 'sourceRef': ref})
+    manifest = seal_modules(entries)
+    return validate_module_material({'format': MODULE_MATERIAL, 'manifest': manifest,
+                                     'modules': [{**entry, 'source': module['source']} for entry, module in zip(entries, modules)]})
+
+
 def prepare_module_proposal(artifact_store, manifest, scenarios, *, syntax='objective-bend-object'):
     """Opt-in resident assembly; the final module supplies the host bindings."""
     resolve_modules(artifact_store, manifest)
-    if syntax not in ('objective-bend-object', 'objective-bend-spell@2', 'objective-bend-spell@3'):
+    if syntax not in ('objective-bend-object',):
         raise ValueError('module proposal requires explicit source object syntax')
     proposal = {'format': MODULE_PROPOSAL, 'syntax': syntax,
                 'manifest': loads(canonical(manifest)),
@@ -293,7 +316,7 @@ def validate_module_proposal(artifact_store, proposal, *, check_adapter=True):
     if (not isinstance(proposal, dict)
             or set(proposal) != {'format', 'syntax', 'manifest', 'scenariosRef', 'adapterPin'}
             or proposal['format'] != MODULE_PROPOSAL
-            or proposal['syntax'] not in ('objective-bend-object', 'objective-bend-spell@2', 'objective-bend-spell@3')):
+            or proposal['syntax'] not in ('objective-bend-object',)):
         raise ValueError('invalid module reference proposal')
     declared_dependencies(proposal)
     material = resolve_modules(artifact_store, proposal['manifest'])

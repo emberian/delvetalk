@@ -56,11 +56,7 @@ def source_desk():
 
 
 def object_factory(child, visitors, methods, *, managers=(), read="public"):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Factory', ROOT / 'protocols/editor/Factory.obend'),
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
         ('ObjectFactory', HERE / 'ObjectFactory.obend')])

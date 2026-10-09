@@ -12,9 +12,7 @@ import source_object
 def sources(name):
     if name not in ('Bell', 'Door', 'Lantern', 'Loop'):
         raise ValueError('unknown resident source')
-    return [{'name': key, 'source': (ROOT / 'world/lib/prelude' / (key + '.obend')).read_text()}
-            for key in ('List', 'Abi', 'Preparation', 'Encounter', 'Emissions')] + [
-                {'name': name, 'source': (HERE / (name + '.obend')).read_text()}]
+    return source_object.read_closure([(name, HERE / (name + '.obend'))])
 
 
 def load(name, configuration=None):

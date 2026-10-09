@@ -8,13 +8,12 @@ HERE = Path(__file__).resolve().parent
 
 
 def modules():
-    return source_object.read_modules([('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
-        ('Agreement', HERE / 'Agreement.obend'), ('Exhibition', HERE / 'Exhibition.obend')])
+    return source_object.read_closure([('Agreement', HERE / 'Agreement.obend'),
+        ('Exhibition', HERE / 'Exhibition.obend')])
 
 
 def build(participants=None):
     if participants is None:
-        return source_object.load(modules(), syntax='objective-bend-spell@3')
-    return source_object.load(modules(), syntax='objective-bend-spell@3', constructor='initial',
+        return source_object.load(modules(), syntax='objective-bend-object')
+    return source_object.load(modules(), syntax='objective-bend-object', constructor='initial',
                               arguments=[source_object.data(participants)])

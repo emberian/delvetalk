@@ -8,8 +8,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def policy_modules():
-    return source_object.read_modules([
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+    return source_object.read_closure([
         ('GrantPolicy', HERE / 'GrantPolicy.obend')])
 
 
@@ -20,12 +19,13 @@ def amendment(service, commands, *, reprogram=False):
 
 
 def welcome(service, targets, *, capacity=64, opened=True):
-    modules = source_object.read_modules([
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('GrantPolicy', HERE / 'GrantPolicy.obend'),
         ('Welcome', HERE / 'Welcome.obend')])
-    return source_object.load(modules, syntax='objective-bend-spell@3', constructor='initial',
-        arguments=[source_object.value({'service': service, 'targets': targets,
-                                       'capacity': capacity, 'open': opened})])
+    framed = source_object.variant('nil', source_object.record({}))
+    for item in reversed(list(targets)):
+        framed = source_object.variant('cons', source_object.record({
+            'head': source_object.value(item), 'tail': framed}))
+    return source_object.load(modules, syntax='objective-bend-object', constructor='initial',
+        arguments=[source_object.record({'service': source_object.data(service), 'targets': framed,
+                                       'capacity': source_object.data(capacity), 'open': source_object.data(opened)})])

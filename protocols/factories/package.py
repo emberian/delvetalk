@@ -9,25 +9,19 @@ import source_object
 
 
 def object():
-    return source_object.load(source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
-        ('Object', HERE / 'Object.obend')]), syntax='objective-bend-spell@3')
+    return source_object.load(source_object.read_closure([
+        ('Object', HERE / 'Object.obend')]), syntax='objective-bend-object')
 
 
 def factory(participants=None, *, read="public"):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Creation', HERE / 'Creation.obend'),
         ('ObjectFactory', HERE / 'Factory.obend')])
     child = source_object.value(object())
     if participants is None and read == "public":
-        return source_object.load(modules, syntax='objective-bend-spell@3',
+        return source_object.load(modules, syntax='objective-bend-object',
             constructor='ordinary', arguments=[child])
     config = source_object.record({'object': child, 'participants': source_object.value(None if participants is None else list(participants)),
                                    'read': source_object.value(read)})
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[config])

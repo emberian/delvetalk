@@ -14,10 +14,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def candidate(*, editor_mode=True):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Candidate', HERE / 'Candidate.obend')])
     if editor_mode:
         return source_object.load(modules, syntax='objective-bend-object')
@@ -26,15 +23,12 @@ def candidate(*, editor_mode=True):
 
 
 def factory(compiler, makers):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
-        ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
+    modules = source_object.read_closure([
         ('Factory', HERE / 'Factory.obend')])
-    configuration = {'compiler': compiler, 'reporters': list(makers), 'candidate': candidate()}
+    configuration = source_object.record({'compiler': source_object.data(compiler),
+        'reporters': source_object.value(list(makers)), 'candidate': source_object.value(candidate())})
     return source_object.load(modules, syntax='objective-bend-object',
-        constructor='initial', arguments=[source_object.value(configuration)])
+        constructor='initial', arguments=[configuration])
 
 
 def editor_source():
@@ -42,10 +36,7 @@ def editor_source():
 
 
 def editor_artifact(target, factory):
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Editor', HERE / 'Editor.obend')])
     protocol = source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.data({'target': target, 'factory': factory})])
@@ -53,6 +44,6 @@ def editor_artifact(target, factory):
 
 
 def editor_law(makers):
-    return {'profile': 'delvetalk-scoped-law-v1',
+    return {'profile': 'delvetalk-scoped-law',
         'invoke': {key: list(makers) for key in ('draft', 'plan', 'review', 'approve', 'finish')},
         'reprogram': list(makers), 'law': list(makers)}

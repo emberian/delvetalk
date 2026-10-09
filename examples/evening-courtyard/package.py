@@ -9,14 +9,12 @@ import source_object
 
 
 def modules(afterglow=False):
-    paths = [(name, ROOT / 'world/lib/prelude' / (name + '.obend'))
-             for name in ('Abi', 'Preparation', 'Encounter')]
-    paths += [('Document', ROOT / 'world/lib/document/Document.obend'),
-              ('Conversation', ROOT / 'protocols/conversation/Conversation.obend'),
-              ('CourtyardBook', HERE / 'CourtyardBook.obend')]
+    paths = [('Interpretation', ROOT / 'protocols/interpretation/Interpretation.obend'),
+             ('Conversation', ROOT / 'protocols/conversation/Conversation.obend'),
+             ('CourtyardBook', HERE / 'CourtyardBook.obend')]
     if afterglow:
-        paths += [('AfterglowBook', HERE / 'AfterglowBook.obend')]
-    return source_object.read_modules(paths)
+        paths.append(('AfterglowBook', HERE / 'AfterglowBook.obend'))
+    return source_object.read_closure(paths)
 
 
 def book(places, *, afterglow=False):

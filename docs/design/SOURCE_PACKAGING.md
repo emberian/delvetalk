@@ -31,3 +31,10 @@ The compiler never installs or searches this library as an ambient environment.
 
 `conformance/test_source_closure.py` checks physical custody failures separately
 from actual native parsing, compilation and the six major loader closures.
+
+For already retained in-memory module texts, `source_closure.order(roots, modules)`
+uses the same native import graph and returns dependency-first exact module
+records. It performs no filesystem loading or source rewriting. This permits
+scene packages to compose their explicit source material without copying a
+second dependency-ordering recipe; downstream tables and manifests retain the
+same module bytes and names.
