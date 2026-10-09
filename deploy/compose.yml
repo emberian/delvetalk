@@ -12,14 +12,12 @@
 # names, so the Caddy route needs no change; the old systemd
 # delvetalk-proxy.socket listens on the same address and must be stopped first.
 #
-# ONE WRITER PER JOURNAL. Each transport program starts its own host process
-# with the world in memory; two of them appending to one journal break the chain
-# at the next height. Every service enters through `one-writer`, which holds
-# /data/journal.lock for the process's life and exits 75 if it is taken. So
-# `delvetalk-http` is the default and the writer; the bridge and the interpreter
-# are behind the `town` profile and cannot start while it runs. That is the
-# intended failure until the host owns its journal exclusively and serves the
-# other programs over one socket (docs/DEPLOY.md, "One writer").
+# ONE WRITER PER JOURNAL. `delvetalk-hostd` is the only program that spawns the
+# host and opens the journal. It holds /data/journal.lock for its life (exit 75
+# if taken) and serves the HTTP front, the bridge and the interpreter over one
+# unix socket, /data/state/host.sock, so they are plain clients and may start,
+# stop and restart without touching the world. The one-writer entrypoint wrapper
+# is skipped for every service (ONE_WRITER=skip): hostd takes the lock itself.
 #
 # Every shell `$` in this file would be compose's; there are no shell bodies.
 
@@ -42,11 +40,33 @@ x-service: &service
     # path, not a named volume, as the edge keeps /var/lib/dregg/<service>:
     # it is what deploy/backup.sh reads.
     - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
+  environment:
+    ONE_WRITER: skip
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "5" }
 
 services:
+  # The single writer: the host process, the world journal, every private heap.
+  delvetalk-hostd:
+    <<: *service
+    command: ["python3", "-m", "transport.hostd", "--state", "/data/state", "--journal", "/data/world.journal", "--lock", "/data/journal.lock"]
+    # Replay on start recompiles every created object (~0.2 to 1 s each), and up
+    # to 8 private heaps run as their own host processes. The old systemd unit's
+    # measured need was a 4 GiB address space and about 62 MiB RSS for a tiny world.
+    mem_limit: 2g
+    mem_reservation: 256m
+    cpus: 1.0
+    pids_limit: 128
+    healthcheck:
+      # The question only a live host can answer: its journal height from world-status
+      # (the host has no height when world-open refused the journal).
+      test: ["CMD", "python3", "-c", "import sys; from transport.hostproc import HostClient; sys.exit(not isinstance(HostClient('/data/state/host.sock').send({'op': 'world-status'}).get('height'), int))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
   # The HTTP front: /AGENTS.md for agents, / and /o/<object> for people.
   # 0.0.0.0 inside the container; the port mapping binds the private address
   # only. --trust-proxy keys the unauthenticated limits on the last
@@ -58,8 +78,6 @@ services:
       - python3
       - -m
       - transport.http
-      - --journal
-      - /data/world.journal
       - --state
       - /data/state
       - --bind
@@ -71,13 +89,11 @@ services:
       - --trust-proxy
     ports:
       - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"
-    # Replay on start recompiles every created object (~0.2 to 1 s each), and up
-    # to 8 private heaps run as their own host processes. The old systemd unit's
-    # measured need was a 4 GiB address space and about 62 MiB RSS for a tiny world.
-    mem_limit: 2g
-    mem_reservation: 256m
+    depends_on:
+      delvetalk-hostd: { condition: service_healthy }
+    mem_limit: 512m
     cpus: 1.0
-    pids_limit: 128
+    pids_limit: 64
     healthcheck:
       # The question a visitor asks first, then the one only a live host can
       # answer: /AGENTS.md is served without the host, so a broken chain would
@@ -96,7 +112,9 @@ services:
   delvetalk-bridge:
     <<: *service
     profiles: ["town"]
-    command: ["python3", "-m", "transport.bridge", "run", "--state", "/data/state", "--journal", "/data/world.journal", "--poll", "60"]
+    command: ["python3", "-m", "transport.bridge", "run", "--state", "/data/state", "--poll", "60"]
+    depends_on:
+      delvetalk-hostd: { condition: service_healthy }
     mem_limit: 1g
     cpus: 0.5
     pids_limit: 64
@@ -129,7 +147,7 @@ services:
 
   # Operator commands, never started by `up`:
   #   docker compose run --rm delvetalk-ops python3 -m deploy.seed ...
-  #   docker compose run --rm -e ONE_WRITER=skip delvetalk-ops python3 -m transport.bridge outbox --state /data/state
+  #   docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
   delvetalk-ops:
     <<: *service
     profiles: ["ops"]

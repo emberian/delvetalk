@@ -10,7 +10,8 @@ from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
 from tests.test_turn_world import closure, label, nat, record
 from transport import bridge, delve, observe
-from transport.http import Host
+from tests.host import start_hostd, stop_hostd
+from transport.hostproc import HostClient
 
 CARD = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -62,8 +63,9 @@ class BridgeCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state = Path(self.tmp.name) / 'state'
-        self.host = Host(str(Path(self.tmp.name) / 'world.journal'), BINARY)
-        self.addCleanup(self.host.close)
+        self.hostd = start_hostd(str(Path(self.tmp.name) / 'hostd'), BINARY)
+        self.addCleanup(stop_hostd, self.hostd)
+        self.host = HostClient(Path(self.tmp.name) / 'hostd' / 'host.sock')
 
     def make(self, name, body=OFFERING, law=''):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-' + name, 'object': name,
