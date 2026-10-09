@@ -66,9 +66,9 @@ class TariffTests(unittest.TestCase):
 
     def test_spell_parse_of_64_fields(self):
         out = test_spell.run("fieldCount", test_spell.text(test_spell.Maximum().reply(44)))
-        print("\n  spell, 64 fields: %d ticks (57,044 before the last-spell search; 56,957 before card names took :/.; 97,355 before that)" % out["ticksUsed"])
+        print("\n  spell, 64 fields: %d ticks (68,150 before tagged fences; 57,044 before the last-spell search; 56,957 before card names took :/.; 97,355 before that)" % out["ticksUsed"])
         self.assertEqual(out["value"]["value"], "64")
-        self.assertEqual(out["ticksUsed"], 68150)
+        self.assertEqual(out["ticksUsed"], 75412)
 
     def test_plain_of_1025_leaves(self):
         flat = run_pure("Document", "flat", nat(1025), probe=DOCUMENT, limits=BIG)

@@ -69,14 +69,15 @@ sum Fields2:
   found: {bindings: Bindings}
   bad: {reason: String}
   again: {text: String}
-  stray: {reason: String, rest: String}
+  stray: {bindings: Bindings, rest: String}
 # The spell a post means is its LAST delvetalk line that is not quotation (agents quote
 # the invitation, and example spells, above their own): a line indented four spaces or
 # more, or by a tab, is quotation, taken only when the post has no other; a `>` line and a
 # fence line (```) are never a spell line; a delvetalk line whose card or action is
 # malformed is not one either. The search runs once: the first unquoted spell line is
 # parsed, and its field lines hand over to any later unquoted spell line (`again`) or,
-# at a line that is not a field, to the next spell line after it (`stray`).
+# at a line that is not a field, to the next spell line after it, the spell standing
+# with the fields read so far when there is none (`stray`).
 sum Candidate:
   none: {}
   at: {card: String, action: String, tail: String, rest: String}
@@ -88,8 +89,16 @@ def isSpellAt(text: String, indent: Nat) -> Bool:
   textTake(textDrop(text, indent), 10n) == "delvetalk " || textTake(textDrop(text, indent), 10n) == "delvetalk\t"
 def isQuote(text: String) -> Bool:
   textSpan(textTake(text, 4n), " ") == 4n || textTake(text, 1n) == "\t"
+# A fence with an info string (```bend, ```json) opens code: its lines are never a
+# spell or a field. A bare fence is skipped as a line and what it holds is read.
+def tagged(text: String, indent: Nat, stop: Nat) -> Bool:
+  stop > indent + 3n && textTake(textDrop(text, indent), 3n) == "```" && textSpan(textDrop(text, indent + 3n), " \t\r") < stop - indent - 3n
+def pastFence(text: String) -> String:
+  if text == "" then text else pastFenceLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
+def pastFenceLine(text: String, indent: Nat, stop: Nat) -> String:
+  if textTake(textDrop(text, indent), 3n) == "```" then textDrop(text, stop + 1n) else pastFence(textDrop(text, stop + 1n))
 def seekLine(text: String, indent: Nat, stop: Nat, quoted: Candidate, reason: String) -> Parsed:
-  if indent < stop && isSpellAt(text, indent) then found(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), quoted, reason) else seek(textDrop(text, stop + 1n), quoted, reason)
+  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), quoted, reason) else if indent < stop && isSpellAt(text, indent) then found(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), quoted, reason) else seek(textDrop(text, stop + 1n), quoted, reason)
 def headingAt(text: String, indent: Nat, stop: Nat) -> Candidate:
   heading(trimEnd(textDrop(textTake(text, stop), indent + 9n)), textDrop(text, stop + 1n))
 def found(candidate: Candidate, quote: Bool, rest: String, quoted: Candidate, reason: String) -> Parsed:
@@ -143,19 +152,30 @@ def both(first: Fields2, second: Fields2) -> Fields2:
 def sequenced(bindings: Bindings, second: Fields2) -> Fields2:
   match second:
     case found(g): Fields2.found({bindings: Lists.concat::<Binding>(bindings, g.bindings)})
+    case stray(st): Fields2.stray({bindings: Lists.concat::<Binding>(bindings, st.bindings), rest: st.rest})
     case _: second
 def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
   match parsed:
     case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
     case bad(b): Parsed.notASpell({reason: b.reason})
     case again(a): parse(a.text)
-    case stray(r): seek(r.rest, Candidate.none({}), r.reason)
+    case stray(r): seekAfter(r.rest, Parsed.spell({card: card, action: action, fields: r.bindings}))
+# After a line that is not a field: a later unquoted spell line takes over; without one,
+# the spell stands with the fields read so far (prose may follow a spell).
+def seekAfter(text: String, otherwise: Parsed) -> Parsed:
+  if text == "" then otherwise else seekAfterLine(text, textSpan(text, " \t"), textBreak(text, "\n"), otherwise)
+def seekAfterLine(text: String, indent: Nat, stop: Nat, otherwise: Parsed) -> Parsed:
+  if tagged(text, indent, stop) then seekAfter(pastFence(textDrop(text, stop + 1n)), otherwise) else if indent < stop && isSpellAt(text, indent) && isQuote(text) == false then foundAfter(headingAt(text, indent, stop), textDrop(text, stop + 1n), otherwise) else seekAfter(textDrop(text, stop + 1n), otherwise)
+def foundAfter(candidate: Candidate, rest: String, otherwise: Parsed) -> Parsed:
+  match candidate:
+    case none(_): seekAfter(rest, otherwise)
+    case at(a): spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
 def fieldLines(text: String) -> Fields2:
   if text == "" then Fields2.found({bindings: Bindings.nil()}) else spellLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
 # A later spell line among the fields: quoted, it is skipped; unquoted, it takes over;
 # one naming no card and action ends the fields, as --- does.
 def spellLine(text: String, indent: Nat, stop: Nat) -> Fields2:
-  if indent < stop && isSpellAt(text, indent) then laterSpell(text, isQuote(text), headingAt(text, indent, stop), textDrop(text, stop + 1n)) else fieldLine(text, stop)
+  if tagged(text, indent, stop) then fieldLines(pastFence(textDrop(text, stop + 1n))) else if indent < stop && isSpellAt(text, indent) then laterSpell(text, isQuote(text), headingAt(text, indent, stop), textDrop(text, stop + 1n)) else fieldLine(text, stop)
 def laterSpell(text: String, quote: Bool, candidate: Candidate, rest: String) -> Fields2:
   match candidate:
     case at(_): if quote then fieldLines(rest) else Fields2.again({text: text})
@@ -175,10 +195,11 @@ def classify(line: String, first: String, rest: String) -> Fields2:
 def binding(line: String, rest: String) -> Fields2:
   let colon = textBreak(line, ":")
   let name = textTake(line, colon)
-  if colon == 0n || name == line then Fields2.stray({reason: textConcat("Not a field line: ", textTake(line, 40n)), rest: rest}) else consed(name, trimStart(textDrop(line, colon + 1n)), fieldLines(rest))
+  if colon == 0n || name == line then Fields2.stray({bindings: Bindings.nil(), rest: rest}) else consed(name, trimStart(textDrop(line, colon + 1n)), fieldLines(rest))
 def consed(name: String, value: String, parsed: Fields2) -> Fields2:
   match parsed:
     case found(f): Fields2.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
+    case stray(st): Fields2.stray({bindings: Bindings.cons({head: {name: name, value: value}, tail: st.bindings}), rest: st.rest})
     case _: parsed
 sum Verdict:
   fine: {}
