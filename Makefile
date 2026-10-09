@@ -28,6 +28,8 @@ packages:
 	python3 conformance/test_automatafl.py
 	python3 conformance/test_automatafl_audit.py
 world:
+	python3 conformance/test_world_wire.py
+	python3 conformance/test_staging.py
 	python3 conformance/test_world.py
 	python3 conformance/test_world_adversarial.py
 	python3 conformance/test_allocation.py
@@ -77,6 +79,7 @@ scene:
 	python3 conformance/test_scene_adversarial.py
 	python3 conformance/test_scene_exchange.py
 portal:
+	python3 conformance/test_portal_artifacts.py
 	python3 conformance/test_affordances.py
 	python3 conformance/test_interpret.py
 	python3 conformance/test_portal.py

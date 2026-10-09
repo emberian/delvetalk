@@ -78,6 +78,33 @@ were replaced with links to executable contracts.
   skip, plus core/JS/Rust/package/source checks. Browser
   acceptance confirms exact repository-record preparation leaves the draft unsent.
 
+## Efficiency pass
+
+Object updates now insert into the persistent tree map; allocation counts direct
+children once per batch and accumulates roots linearly. For valid balanced maps,
+replacement takes O(log n); quota scanning for k children takes O(n), formerly
+O(kn), excluding child construction and insertion. Twenty-four complete
+old/new host results agree, including refusals and retries. Six-run local medians
+(startup and JSON included): 1,024 objects/64 updates, **46.9 → 34.8 ms**;
+2,048 unrelated objects/64 allocations, **65.7 → 41.6 ms**.
+
+Native JSON encoding avoids per-value Python dispatch unless exact Decimals occur.
+A 250-object/250-receipt fixture encoded 100 times in **0.725 → 0.127 seconds**;
+1,000 mixed-tree comparisons preserved previous bytes. This is encoder throughput,
+not end-to-end admission speed. Scene inspection validates only candidates for the
+exact admitted program; unrelated damaged or alternate-program artifacts no longer
+block a valid room. Claimed exact matches still undergo full validation.
+
+The axiom audit uses six serial Lean starts instead of eight, retaining separate
+direct/tree rejection diagnostics and positive controls (**21.9 → 18.1 seconds**).
+Cold Linux build measurement was about 134 seconds; no duplicate Lake compilation
+was found. Package compilation remains a measured future target, without adding a
+cache or changing source verification in this pass. Timings are local samples;
+these optimizations add no semantic equivalence or compiler-adequacy theorem.
+Joined local `make check` passes **59 Python groups/475 methods**, one Linux-only
+skip, plus core/JS/Rust/package/source checks. A fresh compiled portal exports
+five objects and replays all 20 admissions into an offline continuation.
+
 ## Scope
 
 Local principals are assertions; Delve identity comes through the separate clerk.

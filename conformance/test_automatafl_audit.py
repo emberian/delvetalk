@@ -3,6 +3,7 @@
 
 Tiny probe modules compile serially; no package rebuild or Mathlib is involved.
 """
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -27,7 +28,7 @@ class AuditorCompatibility(unittest.TestCase):
                 source = temp / (module.replace('.', '/') + '.lean')
                 source.parent.mkdir(parents=True, exist_ok=True)
                 source.write_text(text)
-                return subprocess.run(['lean', '-j', '1', '-R', str(temp), str(source),
+                return subprocess.run(['lean', '--json', '-j', '1', '-R', str(temp), str(source),
                                        '-o', str(source.with_suffix('.olean'))], cwd=ROOT,
                                       env=env, capture_output=True, text=True, timeout=30)
 
@@ -43,12 +44,26 @@ class AuditorCompatibility(unittest.TestCase):
                 module = 'Theory.Auditor' + suffix
                 compiled = lean(module, 'import Theory.AssertAxioms\n' + declaration + '\n')
                 self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-                direct = lean('Direct' + suffix, f'import {module}\n#assert_axioms audit_bad\n')
-                self.assertNotEqual(direct.returncode, 0)
-                self.assertIn(rejected, direct.stdout + direct.stderr)
-                tree = lean('Tree' + suffix, f'import {module}\n#assert_axioms_tree\n')
-                self.assertNotEqual(tree.returncode, 0)
-                self.assertIn(rejected, tree.stdout + tree.stderr)
+                # Both commands inspect the same imported environment. Lean
+                # continues after an elaboration error, so one compiler process
+                # can exercise both refusals without weakening either control.
+                both = lean('Both' + suffix, f'import {module}\n'
+                            '#assert_axioms audit_bad\n#assert_axioms_tree\n')
+                self.assertNotEqual(both.returncode, 0)
+                diagnostics = both.stdout + both.stderr
+                # Structured diagnostics retain wrapped offender lists inside
+                # their own messages rather than matching unrelated output.
+                errors = [message['data'] for line in both.stdout.splitlines()
+                          if (message := json.loads(line)).get('severity') == 'error']
+                direct = [message for message in errors
+                          if 'depends on axioms outside the standard three' in message]
+                tree = [message for message in errors
+                        if '#assert_axioms_tree:' in message
+                        and 'rest on axioms outside the standard three' in message]
+                self.assertEqual(len(direct), 1, diagnostics)
+                self.assertEqual(len(tree), 1, diagnostics)
+                self.assertIn(rejected, direct[0])
+                self.assertIn(rejected, tree[0])
 
 
 if __name__ == '__main__':

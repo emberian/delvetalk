@@ -127,12 +127,33 @@ class Portal:
     def _view(self, root, object_id, panel):
         artifact = None
         if 'roomArtifact' in root['protocol']:
-            # Resolve the current admitted program, never a stale index's "latest" label.
+            binding = root['protocol']['roomArtifact']
+            if (not isinstance(binding, dict) or set(binding) != {'format', 'contentSha256'}
+                    or binding['format'] != bootstrap.room.FORMAT
+                    or not isinstance(binding['contentSha256'], str)
+                    or not re.fullmatch(r'[0-9a-f]{64}', binding['contentSha256'])):
+                raise ValueError('Invalid admitted room artifact binding')
+            admitted_protocol = canonical(root['protocol'])
+            # A declaration selects a candidate, never authenticates it. Unrelated
+            # damaged files must not prevent reading this admitted room; validate
+            # byte identity and the complete contract only for matching candidates.
             for path in sorted((self.directory / 'artifacts/rooms').glob('*.json')):
+                try:
+                    envelope = loads(path.read_bytes())
+                except (OSError, ValueError, UnicodeError):
+                    continue
+                if not isinstance(envelope, dict) or not isinstance(envelope.get('protocol'), dict):
+                    continue
+                if envelope['protocol'].get('roomArtifact') != binding:
+                    continue
+                if canonical(envelope['protocol']) != admitted_protocol:
+                    continue
                 candidate = bootstrap.room.load_artifact(path.parent, path.stem)
-                if canonical(candidate['protocol']) == canonical(root['protocol']):
-                    artifact = candidate
-                    break
+                if canonical(candidate['protocol']) != admitted_protocol:
+                    raise ValueError('Bound room artifact protocol differs from the admitted program')
+                artifact = candidate
+            if artifact is None:
+                raise ValueError('Exact bound room artifact is unavailable')
         return bootstrap.room.inspect_object(root, object_id, artifact, panel=panel)
 
     def object(self, object_id=None, panel='main'):

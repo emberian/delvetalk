@@ -34,20 +34,42 @@ def wire_loads(text):
     return json.loads(text, parse_float=Decimal, parse_constant=invalid)
 
 
-def wire_dumps(value):
+def _needs_decimal_encoding(value):
+    """Check object keys before native JSON can silently coerce them."""
+    if isinstance(value, dict):
+        decimal = False
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError('JSON object keys must be strings')
+            # Visit every child: short-circuiting would miss invalid later keys.
+            decimal = _needs_decimal_encoding(item) or decimal
+        return decimal
+    if isinstance(value, (list, tuple)):
+        decimal = False
+        for item in value:
+            decimal = _needs_decimal_encoding(item) or decimal
+        return decimal
+    return isinstance(value, Decimal)
+
+
+def _decimal_dumps(value):
     # Preserve exact decimal preimages: binary float roundtrips can merge roots.
     if isinstance(value, Decimal):
         if not value.is_finite():
             raise ValueError('non-JSON decimal')
         return str(value)
     if isinstance(value, dict):
-        if not all(isinstance(key, str) for key in value):
-            raise ValueError('JSON object keys must be strings')
-        return '{' + ','.join(json.dumps(key, ensure_ascii=False) + ':' + wire_dumps(item)
+        return '{' + ','.join(json.dumps(key, ensure_ascii=False) + ':' + _decimal_dumps(item)
                               for key, item in value.items()) + '}'
     if isinstance(value, (list, tuple)):
-        return '[' + ','.join(wire_dumps(item) for item in value) + ']'
+        return '[' + ','.join(_decimal_dumps(item) for item in value) + ']'
     return json.dumps(value, ensure_ascii=False, allow_nan=False)
+
+
+def wire_dumps(value):
+    if _needs_decimal_encoding(value):
+        return _decimal_dumps(value)
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
 
 
 def exchange(database, request, *, profile='world'):

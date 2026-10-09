@@ -17,8 +17,7 @@ def pairs (j : Json) : Except String (List (String × Json)) := do
   return o.toList
 
 def put (j : Json) (k : String) (v : Json) : Except String Json := do
-  let xs ← pairs j
-  return obj ((xs.filter (fun p => p.1 != k)) ++ [(k,v)])
+  return .obj ((← j.getObj?).insert k v)
 
 def empty : Json := obj [("objects", obj []), ("receipts", .arr #[])]
 
@@ -301,7 +300,10 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
     let parent ← str request "object"
     let eval := evaluateWith runtime ⟨parent⟩ 64 (← field o "state") (← field request "input") principal
     let mut staged := objects
-    let mut roots : List (String × Json) := []
+    let mut roots : Array (String × Json) := #[]
+    -- Only successful direct allocations change this count during this call.
+    -- A subsequent transaction call counts from its own already-staged world.
+    let mut childCount := (← pairs objects).countP (fun entry => directChild parent entry.1)
     for allocation in (← allocations.getArr?) do
       tick
       let name ← (← eval (← field allocation "name")).getStr?
@@ -309,14 +311,14 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
       let id := parent ++ "/" ++ name
       if !absent.contains id then throw "allocation target missing absence root"
       if (field staged id).isOk then throw "object exists"
-      let children := (← pairs staged).filter (fun entry => directChild parent entry.1)
-      if children.length >= limit then throw "factory child quota exhausted"
+      if childCount >= limit then throw "factory child quota exhausted"
       let childProtocol ← eval (← field allocation "protocol")
       let childLaw ← eval (← field allocation "law")
       let child ← newObjectWith runtime childProtocol childLaw
       staged ← put staged id child
-      roots := roots ++ [(id, child)]
-    return (staged, obj roots)
+      roots := roots.push (id, child)
+      childCount := childCount + 1
+    return (staged, obj roots.toList)
 
 def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String) : Evaluation (Json × Json) := do
   let objects ← field world "objects"
