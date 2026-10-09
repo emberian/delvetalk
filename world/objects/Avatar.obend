@@ -165,6 +165,34 @@ def releaseThing(state: State, context: Abi.Context) -> Activity<Plan, Response,
 def released(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.removeItem({item: thing(context)})})})):
     case _: Place.Done.done({})
+# Accept what someone offered: the thing's transfer (judged by its own law) moves custody
+# to this avatar, and this avatar records it in its own holding, in the same turn.
+def acceptedReply(state: State, thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  if mine(context) == false then Card.Reply.refused({reason: "Only the avatar's own principal accepts for it."}) else acceptingReply(thing, context)
+def acceptingReply(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.call({object: thing, method: "transfer", argument: Plans.nothing()})):
+    case returned(r): acceptedAs(r.result, thing, context)
+    case _: Card.Reply.refused({reason: textConcat("No answer from ", thing.object)})
+def acceptedAs(result: Place.Done, thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match result:
+    case done(_): recordedAs(thing, context)
+    case refused(r): Card.Reply.refused({reason: r.reason})
+def recordedAs(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.append({item: thing})})})):
+    case _: Card.Reply.done({action: "accept"})
+def accept(state: State, input: {thing: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  if mine(context) == false then Place.Done.refused({reason: "Only the avatar's own principal accepts for it."}) else accepting(input.thing, context)
+def accepting(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.call({object: thing, method: "transfer", argument: Plans.nothing()})):
+    case returned(r): accepted(r.result, thing, context)
+    case _: Place.Done.refused({reason: textConcat("No answer from ", thing.object)})
+def accepted(result: Place.Done, thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match result:
+    case done(_): recorded(thing, context)
+    case refused(_): result
+def recorded(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.append({item: thing})})})):
+    case _: Place.Done.done({})
 def find(exits: Lists.List<Place.Exit>, label: String) -> Found:
   match exits:
     case nil(_): Found.none({})
@@ -206,7 +234,7 @@ def arrived<T>(to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> A
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {at: Plans.Edit::<Plans.Reference, {}>.set({value: to})})})):
     case _: then(Moved.moved({to: to}))
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "move", fields: Form.Fields.cons({head: {name: "exit", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "note", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "send", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "subscribe", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "unsubscribe", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})})})})
+  Card.Forms.cons({head: {card: "", action: "move", fields: Form.Fields.cons({head: {name: "exit", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "note", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "accept", fields: Form.Fields.cons({head: {name: "thing", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "send", fields: Form.Fields.cons({head: {name: "text", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "subscribe", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "unsubscribe", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})})})})})
 def door() -> Card.Door:
   {word: "avatar", blurb: "You in the world: move through exits, leave notes, follow things and send to your followers."}
 def movedReply(moved: Moved) -> Card.Reply:
@@ -220,7 +248,7 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case act(a): if a.action == "move" then walk::<Card.Reply>(state, Card.text(a.fields, "exit"), context, movedReply) else acted(state, a.action, a.fields, context)
     case _: Card.answerLensed::<Edits, Place.State, Place.Done>(routed, context, forms(), lenses(), if mine(context) then "" else "Only the avatar's own principal changes it.", render(state, context))
 def acted(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if action == "note" then noted::<Card.Reply>(state, context.principal, Card.text(fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"})) else if action == "send" then sent::<Card.Reply>(state, Card.text(fields, "text"), context, mailedReply("send")) else if action == "subscribe" then subscribed::<Card.Reply>(state, {world: context.world, object: Card.text(fields, "to")}, context, mailedReply("subscribe")) else unsubscribed::<Card.Reply>(state, {world: context.world, object: Card.text(fields, "to")}, context, mailedReply("unsubscribe"))
+  if action == "accept" then acceptedReply(state, {world: context.world, object: Card.text(fields, "thing")}, context) else if action == "note" then noted::<Card.Reply>(state, context.principal, Card.text(fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"})) else if action == "send" then sent::<Card.Reply>(state, Card.text(fields, "text"), context, mailedReply("send")) else if action == "subscribe" then subscribed::<Card.Reply>(state, {world: context.world, object: Card.text(fields, "to")}, context, mailedReply("subscribe")) else unsubscribed::<Card.Reply>(state, {world: context.world, object: Card.text(fields, "to")}, context, mailedReply("unsubscribe"))
 # The handle the card shows is set through a lens: `delvetalk <did> set` and `handle: ...`.
 def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "handle", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {handle: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})

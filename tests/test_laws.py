@@ -152,7 +152,8 @@ class NoStrangerAmends(LawWorld):
         from tests.test_chain import garden_state
         self.create("garden", closure("Garden"), garden_state(owner=OWNER))
         self.create("stone", closure("Thing"), record(owner=label(OWNER), name=label("stone"), description=label(""),
-                                                      holder=reference(""), location=reference("")))
+                                                      holder=reference(""), location=reference(""),
+                                                      offer={"tag": "variant", "label": "none", "payload": record()}))
         self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=nil(), greeted=nil()))
         for obj in ("garden", "stone", "dir"):
             version = self.version(obj)

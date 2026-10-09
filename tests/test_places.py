@@ -38,8 +38,8 @@ def names(wire):
 
 
 class Types(unittest.TestCase):
-    METHODS = {"Place": ["enter", "leave", "take", "put", "receive"], "Thing": ["acquire", "drop", "give", "receive"],
-               "Avatar": ["move", "arrive", "note", "hold", "release", "receive"]}
+    METHODS = {"Place": ["enter", "leave", "take", "put", "receive"], "Thing": ["acquire", "drop", "offer", "withdraw", "transfer", "give", "receive"],
+               "Avatar": ["move", "arrive", "note", "hold", "release", "accept", "receive"]}
 
     def test_every_method_is_an_activity_over_the_plan_library(self):
         for module, methods in self.METHODS.items():
@@ -126,21 +126,95 @@ class Floor(Chain):
         self.assertEqual(self.refusal_reason(reply), "Only someone here can put things down.")
         self.assertEqual((self.version("porch"), self.version("stone")), (0, 0))
 
-    def test_give_requires_the_caller_to_be_the_holder_and_notes_the_recipient(self):
+    # --- giving is offer and accept ------------------------------------------------------
+
+    def holders(self):
+        """glm holds the stone; kimik3 and mallory have avatars on the porch."""
         self.make("stone", closure("Thing"), thing_seed("stone", holder="glm", location="garden"))
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch", holding=["stone"]))
         self.make("kimik3", closure("Avatar"), avatar_seed("kimik3", "porch"))
-        refused = self.turn("stone", "give", record(to=reference("kimik3")), principal="kimik3")
-        self.assertEqual(self.refusal_reason(refused), "You are not holding it.")
-        self.assertEqual(self.version("stone"), 0)
-        given = self.turn("stone", "give", record(to=reference("kimik3")), principal="glm")
-        self.assertEqual(self.result_label(given), "done", given)
-        holder = [f for f in self.state("stone")["fields"] if f["name"] == "holder"][0]["value"]
-        self.assertEqual([f["value"]["value"] for f in holder["fields"] if f["name"] == "object"], ["kimik3"])
-        self.assertEqual(self.holding("glm"), [])
-        self.assertEqual(self.holding("kimik3"), ["stone"])
-        self.assertEqual(self.inbox("kimik3"), [("glm", "gave you stone")])
-        self.assertEqual(self.inbox("glm"), [])
+        self.make("mallory", closure("Avatar"), avatar_seed("mallory", "porch"))
+
+    def now(self):
+        return self.host.send(op="world-status")["height"]
+
+    def offer(self, to="kimik3", until=None, who="glm"):
+        return self.turn("stone", "offer", record(to=reference(to), until=nat(until if until is not None else self.now() + 50)), principal=who)
+
+    def accept(self, who="kimik3"):
+        return self.turn(who, "accept", record(thing=reference("stone")), principal=who)
+
+    def stone(self, name):
+        return [f for f in self.state("stone")["fields"] if f["name"] == name][0]["value"]
+
+    def holder(self):
+        return [f["value"]["value"] for f in self.stone("holder")["fields"] if f["name"] == "object"][0]
+
+    def test_an_offer_leaves_custody_until_the_recipient_accepts(self):
+        self.holders()
+        self.assertEqual(self.refusal_reason(self.offer(who="kimik3")), "You are not holding it.")
+        self.assertEqual(self.result_label(self.offer()), "done")
+        self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
+        second = self.refusal_reason(self.offer(to="mallory"))
+        self.assertTrue(second.startswith("Already offered to kimik3 until "), second)
+        self.assertEqual(self.refusal_reason(self.accept("mallory")), "It is offered to kimik3")
+        card = self.card("stone", principal="kimik3")
+        print("\n--- stone, offered, read by kimik3 ---\n" + card)
+        self.assertIn("Offered to kimik3 (you): accept it from your avatar until height ", card)
+        self.assertEqual(self.result_label(self.accept()), "done")
+        self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
+        self.assertEqual((self.holding("glm"), self.holding("kimik3")), ([], ["stone"]))
+        self.assertEqual(self.refusal_reason(self.accept()), "Nothing is offered.")
+
+    def test_the_holder_withdraws_and_nobody_else_does(self):
+        self.holders()
+        self.offer()
+        self.assertEqual(self.refusal_reason(self.turn("stone", "withdraw", principal="kimik3")), "Only its holder withdraws an offer.")
+        self.assertEqual(self.result_label(self.turn("stone", "withdraw", principal="glm")), "done")
+        self.assertEqual(self.stone("offer")["label"], "none")
+        self.assertEqual(self.refusal_reason(self.accept()), "Nothing is offered.")
+        self.assertEqual(self.refusal_reason(self.turn("stone", "withdraw", principal="glm")), "Nothing is offered.")
+        self.assertTrue(self.refusal_reason(self.offer(until=self.now())).startswith("until must be after the current height"))
+
+    def test_an_offer_past_its_height_answers_expired_and_stays(self):
+        self.holders()
+        until = self.now() + 3
+        self.assertEqual(self.result_label(self.offer(until=until)), "done")
+        for clock in range(10, 14):
+            self.host.send(op="world-advance", height=clock)
+        self.assertGreaterEqual(self.now(), until)
+        self.assertEqual(self.refusal_reason(self.accept()), "expired: the offer ran until height %d" % until)
+        self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
+
+    def test_a_stale_transfer_leaves_the_offer_and_a_retry_takes_it(self):
+        self.holders()
+        before = self.version("stone")
+        self.offer()
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        edits = record(name=keep, description=keep, location=keep,
+                       holder={"tag": "variant", "label": "set", "payload": record(value=reference("kimik3"))},
+                       offer={"tag": "variant", "label": "set", "payload": record(value={"tag": "variant", "label": "none", "payload": record()})})
+        stale = self.host.send(op="world-propose", principal="kimik3", identity="stale", roots=[{"object": "stone", "version": before}],
+                               writes=[{"object": "stone", "edits": [edits]}])
+        self.assertEqual((stale["status"], stale["receipt"]["outcome"]["class"]), ("refused", "staleRoot"), stale)
+        # At the current version the same move, not made by the offered avatar's call, is the law's to refuse.
+        forged = self.host.send(op="world-propose", principal="kimik3", identity="forged", roots=[{"object": "stone", "version": self.version("stone")}],
+                                writes=[{"object": "stone", "edits": [edits]}])
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "notOffered"), forged)
+        self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
+        by_spell = self.turn("kimik3", "receive", record(text=label("delvetalk kimik3 accept / thing: stone"), post=label(""), slot=label("")), principal="kimik3")
+        self.assertEqual(self.result_label(by_spell), "done", by_spell)
+        self.assertEqual((self.holder(), self.holding("kimik3")), ("kimik3", ["stone"]))
+
+    def test_give_is_an_offer_for_one_release(self):
+        self.holders()
+        h = self.now()
+        self.assertEqual(self.result_label(self.turn("stone", "give", record(to=reference("kimik3")), principal="glm")), "done")
+        until = [f["value"]["value"] for f in self.stone("offer")["payload"]["fields"] if f["name"] == "until"][0]
+        self.assertGreaterEqual(int(until), h + 1000)
+        self.assertEqual(self.holder(), "glm")
+        self.assertIn("(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)", self.card("stone"))
+        self.assertEqual(self.result_label(self.accept()), "done")
 
     def holding(self, name):
         return names([f["value"] for f in self.state(name)["fields"] if f["name"] == "holding"][0])
@@ -168,7 +242,9 @@ class Floor(Chain):
 
     def test_thing_inspect_offers_its_card(self):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
-        self.assertTrue(self.card("stone").startswith("stone\na stone\nNobody holds it.\n\nReply with a spell:\n\n    delvetalk stone acquire\n"), self.card("stone"))
+        card = self.card("stone")
+        self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n(give is now offer"), card)
+        self.assertIn("\nReply with a spell:\n\n    delvetalk stone acquire\n", card)
 
     def test_a_place_with_64_things_renders_under_the_default_budget(self):
         things = ["thing%02d" % i for i in range(64)]
