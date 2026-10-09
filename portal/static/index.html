@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DelveTalk · A small world</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#object-card">Skip to the object</a>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="DelveTalk home"><span class="mark" aria-hidden="true">d<span>t</span></span><span>DelveTalk<small>A small world, shared.</small></span></a>
+    <div class="connection"><span class="lamp" aria-hidden="true"></span><span id="mode">Connecting…</span><span id="principal"></span></div>
+  </header>
+  <main class="workbench">
+    <aside class="shelf" aria-label="World objects">
+      <div class="shelf-heading"><h1 id="world-title">The workbench</h1><button id="refresh-world" class="icon-button" type="button" aria-label="Refresh the world" title="Refresh the world">↻</button></div>
+      <p class="aside-note">Pick something up.</p>
+      <nav id="objects" aria-label="Choose an object"><p class="muted">Opening the world…</p></nav>
+      <div class="shelf-foot"><span class="tiny-orbit" aria-hidden="true">✳</span><p>Objects carry their own words, state and possibilities.</p></div>
+    </aside>
+    <section class="workspace" aria-label="Object workbench">
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <article id="object-card" class="object-card" tabindex="-1">
+        <div class="card-topline"><span class="eyebrow">An object in the world</span><span id="version" class="version"></span></div>
+        <h2 id="object-title">Come in. Take a look around.</h2>
+        <p id="object-prose" class="prose">Choose an object to see what it has to say and what you can do together.</p>
+        <div id="object-meta" class="object-meta" hidden><code id="card-token"></code><button id="refresh-object" class="text-button" type="button">Read again ↻</button></div>
+        <section id="actions-section" class="actions-section" aria-labelledby="actions-title" hidden>
+          <h3 id="actions-title">Possibilities</h3>
+          <div id="actions" class="actions"></div>
+        </section>
+        <form id="interpret-form" class="interpret-form" hidden>
+          <label id="interpret-label" for="intent-text">Or say what you have in mind</label>
+          <div class="input-row"><input id="intent-text" name="text" type="text" placeholder="Describe a next step…" maxlength="2000" required><button type="submit" class="secondary">Suggest</button></div>
+          <p id="interpret-help" class="help">A suggestion is a draft. You decide whether to send it.</p>
+          <div id="interpret-result" class="interpret-result" aria-live="polite"></div>
+        </form>
+      </article>
+      <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" tabindex="-1" hidden>
+        <div class="draft-heading"><div><span class="eyebrow">Before anything changes</span><h2 id="draft-title">A proposed action</h2></div><button id="dismiss-draft" class="icon-button" type="button" aria-label="Dismiss draft">×</button></div>
+        <p id="draft-summary" class="prose"></p>
+        <p id="draft-target" class="help"></p>
+        <div class="command-row"><code id="draft-command"></code><button id="copy-draft" class="text-button" type="button">Copy</button></div>
+        <p id="draft-help" class="help"></p>
+        <details class="draft-exact"><summary>Inspect the exact proposal</summary><button id="copy-wire" class="text-button" type="button">Copy exact JSON</button><pre id="draft-wire" tabindex="0"></pre></details>
+        <div class="draft-footer"><button id="send-draft" type="button" class="primary">Send action</button><span id="draft-state" role="status" aria-live="polite"></span></div>
+      </section>
+      <details id="inspect" class="inspect" hidden>
+        <summary>Look inside <span>Source, state & history</span></summary>
+        <div class="inspect-body"><p class="help">Exact details for this reading of the object.</p><div id="detail-tabs" class="detail-tabs" role="group" aria-label="Inspect object details"></div><button id="copy-detail" class="text-button" type="button">Copy exact JSON</button><pre id="detail-content" tabindex="0">Opening…</pre></div>
+      </details>
+    </section>
+  </main>
+  <footer class="page-footer"><span>Little objects. Shared possibilities.</span><span id="footer-mode">Reading does not send an action.</span></footer>
+</body>
+</html>

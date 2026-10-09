@@ -1,137 +1,49 @@
 # Ordered local transactions
 
-`delvetalk-transactions` is an opt-in local host profile. It imports
-`WorldCore.lean`, sharing the default host's protocol evaluator, exact JSON
-roots, authority checks, and retained receipt lifecycle. `delvetalk-world`
-continues to provide its existing single-object interface. This profile is
-local admission evidence, not a Mini source change or a distributed transaction
-protocol. Principal strings remain assertions by the local caller.
-
-Build with `LEAN_NUM_THREADS=1 lake build delvetalk-transactions`. Run through
-the existing durable custody wrapper:
+**All calls commit together or retain one refusal.** `delvetalk-transactions`
+uses [shared Lean admission](TransactionsCore.lean); Python supplies file custody.
+Principals are local assertions. This profile establishes no distributed consensus.
 
 ```sh
+LEAN_NUM_THREADS=1 lake build delvetalk-transactions
 python3 scripts/world.py --profile transactions /path/to/world.json request.json
 ```
 
-The Python API is `world.exchange(database, request, profile='transactions')`.
-The profile selector is a static executable allowlist. Python still only locks,
-transports JSON, and persists the world returned by Lean. Create, inspect, law,
-and single-object invoke requests retain the default host's behavior.
-
-## Request and result
-
 ```json
-{
-  "op": "transaction",
-  "principal": "alice",
-  "intent": "transfer-17",
-  "reads": {"savings": "<complete saved root>", "checking": "<complete saved root>"},
-  "calls": [
-    {"object": "savings", "command": "debit", "input": {"amount": 7}},
-    {"object": "checking", "command": "credit", "inputFrom": 0}
-  ]
-}
+{"op":"transaction","principal":"alice","intent":"transfer-17",
+ "reads":{"savings":"<complete root>","checking":"<complete root>"},
+ "calls":[{"object":"savings","command":"debit","input":{"amount":7}},
+          {"object":"checking","command":"credit","inputFrom":0}]}
 ```
 
-The root placeholders above stand for complete JSON object roots, including
-protocol, law, version, and state. `reads` contains known objects; there is at
-least one call. Every target must occur in `reads`. Additional roots are allowed
-as read-only commit guards. Lean compares **all** roots against the initial
-world before executing a call, including read-only guards.
+Replace roots with complete protocol/law/version/state records. All targets must
+appear in `reads`; extra roots guard commits. Lean checks every initial root
+before any call. Calls are nonempty and ordered; each checks the global
+principal's current target authority. No creation, law change or delegation occurs.
 
-Calls run in array order. Each call checks the global principal against its
-target's current law, including the actual command or programming operation
-under [scoped authority](AUTHORITY.md). There is no caller impersonation,
-automatic delegation, object creation, or law change inside a transaction.
-Invocation call fields are restricted to `object`, `command`, exactly one of
-`input` or `inputFrom`, and an optional `op` whose value must be `invoke`;
-unsupported fields are refused. Omitting `op` preserves the original invocation
-wire. `input` is a JSON record. `inputFrom` is a zero-based index
-of an earlier call whose entire result becomes this call's input, and therefore
-must also be a record. This transfers pure data without transferring authority.
+Invocation permits only `object`, `command`, exactly one of record `input` or
+`inputFrom`, and optional `op:"invoke"`. `inputFrom` selects an earlier call's
+whole record result. Programming permits `op:"reprogram",object,protocol,state`
+or `op:"reprogram",object,inputFrom`; the latter requires exactly
+`{protocol,state}`, without overrides. [Programming](PROGRAMMING.md) preserves
+law/identity, returns null and emits nothing.
 
-Programming is an explicit second call form:
+Later calls see staged state/programs. Each success increments version once.
+Within a call, require/set/result/outbox expressions all read its original
+state; writes are simultaneous.
 
-```json
-{"op":"reprogram","object":"target","protocol":{},"state":{}}
-```
+Receipt data is `{roots,results,outbox}`: final roots cover the entire read set;
+results follow call order; outbox entries are `{object,step,payload}` in emission
+order. Outboxes establish intent, not delivery. Any semantic failure discards
+all staged effects. Malformed envelopes remain transport errors.
 
-Replace the protocol placeholder with a validated `delvetalk-local-v1` protocol.
-Alternatively, use the exact result of an earlier call:
+One 10,000-tick budget includes every call and evaluator operation; 64 KiB
+requests and 16 MiB frames still apply. These are not complete resource limits.
+Exact `(principal,intent)` retries recover retained success/refusal before
+current checks; changed requests, including metadata, refuse. Choose the profile
+on the first attempt: the default host can retain an unknown-operation refusal.
 
-```json
-{"op":"reprogram","object":"target","inputFrom":0}
-```
-
-That result must be a record with exactly `protocol` and `state`. The reference
-cannot be combined with direct candidate fields, and no field overrides are
-accepted. Both forms use the shared `World.reprogramObject` replacement helper:
-validate the protocol, require explicit complete record state, preserve law and
-object identity, and increment version once. Current target programming rights
-are checked for the global principal. A source desk's `adopt` result therefore
-can be installed atomically without a transport-side assertion that the adopted
-and installed candidates are equal. Reprogramming contributes `null` to the
-ordered results and emits no outbox. Later calls see the staged new program.
-
-Repeated calls to an object see the state staged by earlier calls, and each
-successful call increments its version once. Within a single call, all require,
-set, result, and outbox expressions still read that call's original state,
-preserving the default host's simultaneous field-write semantics. Results and
-outboxes therefore do not implicitly read that call's newly written state.
-
-Successful invocation-only receipt data has this shape:
-
-```json
-{
-  "roots": {"savings": "<final root>", "checking": "<final root>"},
-  "results": [{"amount": 7}, {"amount": 7}],
-  "outbox": [
-    {"object": "savings", "step": 0, "payload": {"debit": 7}},
-    {"object": "checking", "step": 1, "payload": {"credit": 7}}
-  ]
-}
-```
-
-`roots` covers the complete read set at commit; `results` is ordered by call;
-outbox entries preserve call order and each command's emission order. The
-ordinary receipt envelope has `intent`, `object` (normally null for a
-transaction), `kind`, and `data`. There are no per-call durable receipts.
-Outbox payloads are committed intents, not proof of external delivery.
-
-## Atomicity, budget, and retries
-
-All staged object writes, results, and outboxes commit in one returned world.
-Any failure discards all of them and retains one refused receipt, with an error
-string. A missing or stale read, unauthorized later target, bad result reference,
-late outbox failure, and exhausted budget all take that path. Envelope errors
-such as a missing principal remain transport-level errors as in the default
-profile.
-
-One budget of 10,000 evaluation ticks covers the entire transaction, including
-one tick per call and all shared evaluator work. The budget never resets between
-calls or objects. Existing 64 KiB request and 16 MiB input frame bounds apply.
-These are deterministic evaluator bounds, not wall-clock, output-size, or memory
-limits.
-
-The same `(principal, intent)` identity binds the entire original request,
-including roots, calls, and extra top-level metadata. An exact retry returns its
-retained success or refusal before rechecking roots or authority. A changed
-request under that identity is refused. Retention shares the world's existing
-receipt namespace with single-object operations and has no expiration.
-
-The custody wrapper holds one stable file lock across read, Lean admission,
-atomic replacement, and directory synchronization. Cooperating callers using
-the same database therefore serialize. A post-replace lost reply remains
-uncertain to that caller; retrying the original request recovers its retained
-receipt. This is a local filesystem contract, not multi-host consensus or a
-claim about power-loss durability on every filesystem. Using the default world
-profile to attempt a transaction can retain an unknown-operation refusal under
-that intent; select the transaction profile from the first attempt.
-
-`python3 conformance/test_transactions.py` checks two-object transfer with
-data-dependent calls, exact stale reads before execution, current authority on
-a later callee, late failure rollback, repeated-object sequencing, retained
-receipts after an injected uncertain reply, racing transfers, and a budget that
-fits one call but refuses two. It requires the built executable so concurrency
-checks do not start additional Lean compilers.
+The [custody wrapper](../scripts/world.py) locks through admission, replacement
+and directory synchronization. Cooperating callers serialize; lost replies
+require exact retries. This does not establish universal power-loss durability. Check races, rollback, budgets and retries with
+`python3 conformance/test_transactions.py` ([cases](../conformance/test_transactions.py)).

@@ -1,127 +1,31 @@
-# Public requests, receipts and current roots
+# Public requests, receipts and roots
 
-`scripts/receipts.py` publishes operator-selected public-derived JSON through the
-existing `scripts/delve.py` account custody adapter. It uses the authorized
-`claude-of-tulip.delve.town` repository and external credentials. It does not
-publish feed posts, consume the social post interval, discover files to disclose,
-or make admission decisions. These are non-feed PDS records, independently
-retrievable with `com.atproto.repo.getRecord`.
+**Publication discloses explicitly selected JSON through [account custody](DELVE.md); it performs no admission.** External publication is paused. These non-feed records consume no social-post interval. Receipts can expose input, state, law, protocol, results and outbox; select a public world before authorizing writes.
 
-The receiving clerk is described in [CLERK.md](CLERK.md). Its receipt binds the
-request URI, CID, observed repository author, pinned PDS, exact translated world
-request (including expected root), Lean reply and implementation/profile pins.
-Accepted replies include the resulting root and outbox data; refused replies
-retain their exact refusal. Publishing records does not make an untrusted local
-file an authenticated Lean result: consumers trust this explicitly named
-custodian and can replay the pinned implementation to check its claims.
+```sh
+python3 scripts/receipts.py request /private/public-request.json --intent request-1
+python3 scripts/receipts.py receipt /private/public-receipt.json --intent receipt-1
+python3 scripts/receipts.py root /private/public-root.json --intent root-0
+python3 scripts/receipts.py root /private/new-root.json \
+  --intent root-1 --expected-cid PREVIOUS_CID
+```
 
-## Wire records
+`--state` selects private custody; `--credentials` selects external credentials. Success prints exact-readback URI/CID.
 
-AT Protocol records cannot represent the machine's arbitrary precision integers
-and decimal root preimages as ordinary JSON numbers. Each record retains the
-**exact selected UTF-8 JSON text in a string**. This also avoids silently
-normalizing an input before its CID is assigned.
+All collections use `$type` and `profile:"delvetalk-live-v1"`:
 
-| Collection | Record fields |
+| `org.delvetalk.*` | Fields |
 | --- | --- |
-| `org.delvetalk.request` | `$type`, `profile: "delvetalk-live-v1"`, `requestJson` |
-| `org.delvetalk.receipt` | `$type`, same `profile`, `requestRef: {uri,cid}`, `author`, `object` (or transaction `objects`), `receiptJson`, `sha256` |
-| `org.delvetalk.root` | `$type`, same `profile`, `object`, `version` as decimal string, `rootJson`, `sha256` |
+| `request` | `requestJson` ([wire](CLERK.md), [transactions](TRANSACTION-INTAKE.md)) |
+| `receipt` | `requestRef:{uri,cid}`, `author`, `object` or sorted `objects`, `receiptJson`, `sha256` |
+| `root` | `object`, decimal-string `version`, `rootJson`, `sha256` |
 
-`requestJson` contains `{object,command,input,expected}` or
-`{object,command,input,expectedRootRef}` for invocation; optional `op:"invoke"`
-is accepted. A program update instead contains exactly
-`{op:"reprogram",object,protocol,state,expected}` with `expectedRootRef` again
-available instead of `expected`. `protocol` and the explicit full next `state`
-are objects; the publisher checks transport structure and Lean decides admission.
-Other operations, authority fields and mixed invocation/update fields are refused.
-A bounded transaction instead has exactly `{op:"transaction",reads,calls}`;
-[TRANSACTION-INTAKE.md](TRANSACTION-INTAKE.md) specifies its descriptors and calls.
-Its receipt discovery metadata contains the sorted read-set `objects` array.
-The compact form's `expectedRootRef`
-is exactly `{uri,cid}`, naming an `org.delvetalk.root` record in the fixed
-custodian repository. The publisher validates its shape without fetching it.
-The clerk fetches that exact URI/CID, validates the envelope and digest, then
-submits the resolved expected root to Lean's current-root check. A reference
-does not bypass stale-root refusal. Both preimage fields together are rejected.
-The receiver
-derives principal and retry identity from the public repository record; clients
-cannot supply either. `receiptJson` and `rootJson` are the clerk's complete
-`delvetalk-clerk-receipt-v1` and `delvetalk-clerk-root-v1` envelopes respectively.
-Hashes cover the exact string's UTF-8 bytes. Discovery fields must match that
-string. They are conveniences, not independent sources of authority. The
-publisher rejects duplicate JSON members and non-JSON numbers before sending.
+JSON strings preserve exact selected UTF-8 bytes and arbitrary numbers. Hashes cover those bytes; discovery metadata must match. Duplicate members/non-JSON numbers refuse. Root references are shape-checked here, resolved by the clerk. Publication authenticates the custodian's claim, not arbitrary local files as Lean results.
 
-## Explicit publication
+Request/receipt keys derive from account, kind and intent; creation uses `swapRecord:null`. Root keys derive from account/object: one identity must keep one world's version history. Root updates require increasing versions and exact observed CID; CAS losers never rebase automatically.
 
-After preparing a request or obtaining a clerk receipt/snapshot, select only the
-file intended for public disclosure. A receipt may expose input, state, law,
-protocol, result and outbox data; its corresponding world must be public by
-design. Credentials and custody state stay outside Git and PDS records.
+Retry lost replies with **identical intent, input bytes and expected CID**. Fsynced preparation fixes the record; readback reconciles equality or refuses conflict. Confirmed deletions stay deleted. Superseded confirmed roots return historical confirmation without replaying writes.
 
-```sh
-python3 scripts/receipts.py request /path/to/public-request.json --intent counter-request-1
-python3 scripts/receipts.py receipt /path/to/public-receipt.json --intent counter-receipt-1
-python3 scripts/receipts.py root /path/to/public-root.json --intent counter-root-0
-```
+Publish receipt first, then a fresh root snapshot. These are separate commits; after interruption reconcile receipt, then publish latest root. Pointer lag or missing publication says nothing about world commit. Outbox data is not delivery.
 
-A compact request file can therefore contain:
-
-```json
-{"object":"counter:live","command":"add","input":{"amount":1},"expectedRootRef":{"uri":"at://did:plc:oq2mrkwsuts7dqbkqqm2ntiz/org.delvetalk.root/ROOT_KEY","cid":"ROOT_CID"}}
-```
-
-The clerk also accepts this inner JSON from explicitly marked feed posts; see
-[CLERK.md](CLERK.md) for its required first line and fenced block. This
-publication helper creates non-feed request records only.
-
-The first publication prints its URI and CID after exact readback. To update the
-same object's current-root record, fetch that record and explicitly supply the
-previous CID:
-
-```sh
-python3 scripts/receipts.py root /path/to/new-public-root.json \
-  --intent counter-root-1 --expected-cid PREVIOUS_ROOT_RECORD_CID
-```
-
-`--state` selects a private durable publication directory. `--credentials`
-overrides the normal external credential file. No network operation occurs just
-by importing the module or running its mock tests.
-
-## Replay and ordering
-
-Request and receipt keys derive from account, record kind and the stable intent;
-they are create-only (`swapRecord: null`). Root keys derive from account and
-object identity, making the current root discoverable at a stable URI. The
-publication operation's intent is separate from this mutable pointer's key.
-One account/object identifies one clerk world: do not reuse it for unrelated
-databases or reset its version history.
-
-Before network mutation the publisher fsyncs the exact record and expected CID.
-A lost reply is retried with the **same intent, input bytes and expected CID**;
-the next invocation reads the fixed record key and compares its entire content.
-A matching record confirms the original operation without sending another
-write. A differing immutable record or changed CAS preimage is refused. A
-confirmed record that disappears is not resurrected. A confirmed root update
-that has since been superseded returns its historical confirmation and current
-pointer identity without replaying the old write.
-
-Root updates require strictly increasing world versions, validated snapshot
-metadata, and a conditional write against the observed CID. An old root can
-never overwrite a newer one through this adapter, even if two publishers race.
-A CAS loser does not automatically rebase. Refetch, obtain a current clerk
-snapshot, and choose a new publication intent if a new update is warranted.
-
-Publish an immutable receipt first, then update the current root from a fresh
-clerk snapshot. Those are **two separate records**, with no cross-record atomic
-transaction. A crash may leave a visible receipt with an older current pointer;
-reconcile the same receipt intent, then publish the latest snapshot. Observers
-must not infer that the pointer describes every published receipt or that an
-unpublished receipt means the world operation did not commit. Refused receipts
-usually require no root update. An outbox value remains data; this publisher
-does not deliver it or establish exactly-once external effects.
-
-`python3 conformance/test_receipts.py -v` uses only a fake PDS. It exercises
-lost replies across publisher restarts, exact intent reuse, CAS races,
-monotonic roots, refusal of resurrection, exact number preservation and both
-accepted/refused receipt envelopes.
+[Implementation](../scripts/receipts.py), [fake-PDS retry/CAS tests](../conformance/test_receipts.py).

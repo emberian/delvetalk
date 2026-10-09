@@ -1,4 +1,4 @@
-.PHONY: all build check core typed packages capsules world wiki syntax delve proposals scene-build scene
+.PHONY: all build check core typed packages capsules world wiki syntax delve proposals scene-build scene portal
 all: check
 build:
 	LEAN_NUM_THREADS=1 lake build delvetalk
@@ -43,6 +43,8 @@ world:
 	python3 conformance/test_inhabited_bootstrap.py
 	python3 conformance/test_bootstrap_adversarial.py
 	python3 conformance/test_history.py
+	python3 conformance/test_continuation.py
+	python3 conformance/test_compiler_queue.py
 wiki:
 	python3 conformance/test_wiki.py
 syntax:
@@ -66,4 +68,10 @@ scene:
 	python3 conformance/test_room.py
 	python3 conformance/test_scene.py
 	python3 conformance/test_scene_adversarial.py
-check: build scene-build capsules core typed packages world wiki syntax delve proposals scene
+portal:
+	python3 conformance/test_affordances.py
+	python3 conformance/test_interpret.py
+	python3 conformance/test_portal.py
+	python3 conformance/test_portal_adversarial.py
+	node --check portal/static/app.js
+check: build scene-build capsules core typed packages world wiki syntax delve proposals scene portal

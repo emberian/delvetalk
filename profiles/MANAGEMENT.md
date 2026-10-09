@@ -1,224 +1,61 @@
-# Clerk operator enrollment, current law and programming
+# Clerk management
 
-`scripts/manage.py` manages an existing [live clerk](CLERK.md) in a trusted local
-state directory. It uses the existing Lean executable through `world.exchange`;
-Python manages custody and transport only. It makes no network requests, reads
-no credentials and publishes nothing.
+**Local management separates transport enrollment from Lean authority.** It uses trusted filesystem custody, makes no network requests and publishes nothing. `--principal` asserts a local identity; the CLI does not authenticate it. Lean still checks current law.
 
-Transport enrollment and semantic authority are independent:
-
-- `register DID` allows the clerk to observe **new** request records from that
-  repository. It grants no authority in Lean.
-- `unregister DID` stops new observations. It does not revoke law, cancel a
-  previously retained attempt, delete receipts or prevent historical replay.
-- `law` submits a complete replacement law to Lean, under a supplied current
-  authority principal and exact expected root. It does not change enrollment.
-- `reprogram` submits a translated protocol and explicit complete replacement
-  state under the same current authority and exact-root checks. It preserves law.
-
-The local operator asserts `--principal`; this CLI does not authenticate that
-identity. The trusted state directory already allows direct `world.py` custody.
-The clerk's remote receiving path instead derives the principal from its pinned
-HTTPS PDS repository observation. Neither enrolling a DID nor naming it as a
-local principal overrides Lean's current-law check. Operator identities use
-`did:plc` identifiers; law JSON validation belongs to Lean. An authority principal need not itself be
-enrolled for remote observation.
-
-## Enroll, then grant authority
-
-Use your clerk state path and actual DID values below. `--allow` lists the
-**entire** replacement law, so retain each principal that should remain allowed.
-Legacy law arrays grant invocation and management together; scoped law can
-separate them. Neither form has an owner rescue bypass.
+| Command | Effect |
+| --- | --- |
+| `register DID` / `unregister DID` | Enable/stop new observations; never grant/revoke law or cancel retained attempts |
+| `law` | Replace complete law under current authority and exact root |
+| `reprogram` | Replace protocol and complete state; preserve law |
+| `add-object` | Locally create a reviewed object, then register custody |
 
 ```sh
 STATE="$HOME/claude_state/delvetalk-clerk"
-OPERATOR=did:plc:aaaaaaaaaaaaaaaaaaaaaaaa
-AUTHOR=did:plc:bbbbbbbbbbbbbbbbbbbbbbbb
-python3 scripts/manage.py --state "$STATE" register "$AUTHOR"
-python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/before-law.json
+python3 scripts/manage.py --state "$STATE" register AUTHOR_DID
+python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/root.json
 python3 scripts/manage.py --state "$STATE" law \
-  --object counter:live --principal "$OPERATOR" --intent enroll-author-001 \
-  --expected-root /tmp/before-law.json --allow "$OPERATOR" --allow "$AUTHOR"
+  --object counter:live --principal OPERATOR_DID --intent grant-1 \
+  --expected-root /tmp/root.json --allow OPERATOR_DID --allow AUTHOR_DID
 ```
 
-The example DIDs are placeholders. `--expected-root` accepts either the complete
-raw root JSON or an intact clerk snapshot envelope with matching object and
-checksum. It never replaces a supplied preimage with a newer snapshot. A
-concurrent commit can therefore produce a durable `stale read root` refusal.
-Lean checks authorization before the preimage; a revoked principal receives
-`unauthorized`, even with a stale preimage.
+Use actual `did:plc` identifiers. `--allow` is the entire replacement law. Enrollment and law are separate commits: inspect `status`, recover uncertainty, then revise with a fresh intent/root or explicitly unregister. Revocation changes law first; unregister separately if desired. Expected roots may be raw roots or intact matching clerk snapshots; the CLI never refreshes them. Lean checks authority before preimage.
 
-These are **two separate commits**, not a transaction across enrollment and
-law. If enrollment succeeds and law fails, the author remains enrolled without
-new authority. Inspect `status`, recover the law attempt if uncertain, then
-choose a fresh intent and snapshot for a revised attempt or explicitly
-`unregister` the author. No automatic rollback rewrites law or custody.
-
-For revocation, replace law without the author, then independently unregister
-its repository if desired. A law commit can succeed even if a later enrollment
-change fails. `status` reports current enrollment and retained law-attempt
-outcomes; use `clerk.py snapshot` to inspect current law.
-
-## Scoped authority and additional objects
-
-`law --law-file FILE` passes a complete JSON law to Lean instead of building
-the legacy array with `--allow` or `--empty-law`. These options are mutually
-exclusive. Lean supports legacy arrays and this exact scoped form:
+`--law-file FILE` replaces `--allow`/`--empty-law` and accepts:
 
 ```json
-{"profile":"delvetalk-scoped-law-v1","invoke":{"add":["did:plc:bbbbbbbbbbbbbbbbbbbbbbbb"]},"reprogram":["did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"],"law":["did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"]}
+{"profile":"delvetalk-scoped-law-v1","invoke":{"add":["AUTHOR_DID"]},"reprogram":["OPERATOR_DID"],"law":["OPERATOR_DID"]}
 ```
 
-The example grants B only the `add` command and A programming/law management.
-Missing command grants deny invocation. Lean validates the entire law and checks
-the current operation's scope; naming a grant in the proposed replacement does
-not authorize that replacement. Malformed law gets a retained Lean refusal.
-Removing all `law` principals deliberately locks out future law revisions.
-
-Bootstrap also accepts `--law-file` instead of repeated `--law`. To host another
-room, source desk or game table in an existing clerk, use local management:
+Missing command grants deny. Legacy arrays grant invocation and management together. Proposed grants cannot authorize their own installation. `--empty-law` removes all authority; removing every scoped `law` principal locks future law revision. **No owner recovery bypass exists.**
 
 ```sh
 python3 scripts/manage.py --state "$STATE" add-object \
-  --object desk:source --principal "$OPERATOR" --intent create-desk-001 \
+  --object desk:source --principal OPERATOR_DID --intent create-1 \
   --source protocols/counter/protocol.json --syntax protocol-json@1 \
   --law-file /tmp/desk-law.json
-```
-
-Choose the actual reviewed protocol source and initial law for that object.
-Creation uses the protocol's explicit `initial` state. It is a trusted local
-custody operation, not a grant of remote object creation. Lean owns create
-validation and refuses an existing object; this command cannot adopt or
-overwrite another object by name. Repository enrollment remains separate.
-
-The exact create request and translation artifact are journaled first. After
-Lean commits, the clerk atomically adds the object to `clerk.json`'s `objects`,
-then saves the terminal receipt. This is a recoverable sequence, not an atomic
-transaction across both files. If either later write fails, use `resume` with
-the original principal/intent: Lean replays the original create receipt and
-registration finishes. Pending journals block implementation upgrade. Refused
-creates never register an object. Existing objects, repository configuration,
-bootstrap history and prior receipts remain intact. No remote create/law path
-is introduced.
-
-## Install an explicitly selected program
-
-An agent can prepare source and exercise it with the isolated
-[proposal workflow](../protocols/PROPOSALS.md). Passing those scenarios does not
-grant authority or install the proposal. An authorized local operator can select
-that exact source, choose the complete replacement state, and request installation:
-
-```sh
-python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/before-program.json
+python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/root.json
 python3 scripts/manage.py --state "$STATE" reprogram \
-  --object counter:live --principal "$OPERATOR" --intent install-welcome-001 \
-  --expected-root /tmp/before-program.json \
+  --object counter:live --principal OPERATOR_DID --intent program-1 \
+  --expected-root /tmp/root.json \
   --source protocols/welcome-once/protocol.json --syntax protocol-json@1 \
   --state /tmp/welcome-state.json
 ```
 
-In that example `/tmp/welcome-state.json` must explicitly contain
-`{"welcome":null}` (or another complete state chosen by the operator). The first
-`--state`, before the subcommand, selects clerk custody; the subcommand's
-`--state` selects the replacement state file. No implicit migration expression
-runs and the protocol's `initial` field does not reset existing state. An empty
-object means deliberately empty state, not “retain the old state.”
+Creation uses protocol `initial`; existing names refuse. Reprogramming requires complete state (`{"welcome":null}` for this example), never implicit reset/migration. The global `--state` selects custody; the subcommand's selects replacement data. Explicit reviewed syntax lowers the protocol; Lean validates and atomically installs protocol/state with one version increment. Source caps at 512 KiB, state at 64 KiB, and the complete request at 64 KiB before intent reservation.
 
-Syntax is always explicit. `protocol-json@1`, `protocol-markdown@1` and the
-reviewed `spween-scene-i64@1` lowering can supply executable protocols. A raw core
-term or parse-only Spween source cannot. This uses the same `translate.py`
-registry and adapters as proposals; Python selects the protocol from the
-translation artifact, while Lean validates the protocol and complete state,
-checks current law and the exact root, and atomically replaces protocol/state
-with version incremented once. Object identity and law remain unchanged. New
-remote requests run the newly installed commands; historical receipts still
-describe the program and state used for their original attempts.
-
-The private management journal retains exact UTF-8 source, syntax identity,
-translation artifact, registry and adapter pins, lowered protocol, and exact
-state-file text/hash. These provenance fields stay outside the Lean request,
-whose fields are exactly `op`, `object`, `principal`, `intent`, `expected`,
-`protocol`, and `state`. Receipt envelopes retain this program evidence too;
-they are not public clerk-receipt envelopes and are not automatically published.
-Source is limited to 512 KiB and the state file to 64 KiB. The complete derived
-management request, including expected root, must fit the host's 64 KiB request
-envelope; oversized encoded requests are refused before reserving an intent.
-
-Retry the same command with the original inputs or use `resume` with its
-principal and intent. Recovery submits the retained Lean request without
-rerunning adapters or reading the original source files. Different source bytes,
-syntax, state-file bytes, object or root cannot replace a bound attempt, even
-when the new source would lower to the same protocol. Use a fresh intent for a
-new attempt. Pending recovery requires the original management, clerk and
-translation pins (including the Spween bridge executable when used). Completed
-receipts remain readable even when those implementations later change.
-
-## Recovery, refusal and deliberate lockout
-
-Every law, reprogram or add-object command requires an explicit stable `--intent`.
-Its Lean intent is `operator-law:`, `operator-reprogram:` or `operator-create:` followed by that value; local
-management reserves the pair of asserted principal and supplied intent across
-all three operations. Reusing that pair with a different operation, object, preimage,
-law or program input is rejected. A refusal is terminal just like a success: fix the
-request with a fresh intent rather than changing the retained attempt.
-
-The exact request and implementation profiles are atomically retained before
-admission. If the process stops before returning a receipt, use:
+## Recovery
 
 ```sh
 python3 scripts/manage.py --state "$STATE" status
-python3 scripts/manage.py --state "$STATE" resume \
-  --principal "$OPERATOR" --intent enroll-author-001
+python3 scripts/manage.py --state "$STATE" resume --principal OPERATOR_DID --intent grant-1
 ```
 
-`resume` replays the stored request and returns its retained receipt. It does
-not reconstruct the request from current law, re-read a preimage file, or need
-the original command-line arguments. After a world commit but before receipt
-export, Lean's retained `(principal,intent)` receipt prevents another revision.
-Completed receipts remain available after law changes, unenrollment and source
-pin changes. CLI exit status is 0 for completion, 2 for a retained Lean refusal,
-and 1 for a custody/transport error (argument parsing uses argparse's status 2).
-Inspect the JSON reply to distinguish semantic outcome from CLI misuse.
+Each `(principal,supplied intent)` binds one operation and exact inputs across management commands. Lean prefixes are `operator-law:`, `operator-reprogram:` and `operator-create:`. Success and refusal are terminal; revised inputs require fresh intent.
 
-An empty replacement is explicit, using `--empty-law` instead of `--allow`.
-This deliberately removes **all** invocation and management authority for the
-object. The command remains authorized only if its supplied principal belongs
-to the prior current law. After it commits, no local operator command can grant
-authority again under this profile. Enrollment changes do not rescue it; the
-old successful receipt remains readable.
+Journals fsync exact requests, source/state bytes, translations and pins before admission. Resume uses retained requests without rereading files or rerunning adapters. Pending recovery requires original management/clerk/translation pins and blocks upgrades; completed receipts survive source changes, revocation and unenrollment.
 
-## Custody and pending attempts
+After create commits, custody registration precedes terminal receipt export. Resume completes this recoverable sequence; refused creates never register. Clerk then world locks serialize admission. Previously retained remote requests survive unenrollment: uncommitted attempts face current law/root, committed attempts recover historical receipts.
 
-Management holds the same stable `clerk.lock` as receiving and upgrading. Semantic
-submission acquires the world lock through `world.exchange`, always after the
-clerk lock. Enrollment atomically replaces only `repositories` in `clerk.json`,
-retaining all other configuration fields. It does not write the world. Empty
-transport enrollment is permitted. Repeating an already-satisfied enrollment
-command is harmless.
+Exit: 0 completion; 2 Lean refusal (also argument errors); 1 custody error. Inspect JSON.
 
-Management journals live at `requests/management-<digest>.json`, separately named from
-remote URI journals. This deliberately makes the existing clerk upgrade's
-quiescence scan include uncertain management attempts. Management receipts retain the
-clerk's implementation profile plus the SHA256 of `scripts/manage.py` as a
-separate management profile; adding management does not silently repin the
-existing clerk. A pending attempt must finish with both pinned implementations.
-An edited management source cannot reinterpret an uncertain attempt. Completed
-management receipts remain historical and can be read with newer source.
-
-A remote request already retained before unenrollment remains bound to its
-original URI, CID, principal and preimage. If it has not committed, its retry
-still faces current Lean law and the exact root at admission. If it committed
-before a later revocation, recovery returns that historical committed receipt.
-Removing enrollment never erases either case. Management and receiving are
-serialized; direct `world.py` callers also serialize admission on the world
-lock, and a raced law request may correctly receive a stale-root refusal.
-
-Run `python3 conformance/test_management.py` after building `delvetalk-world`.
-The tests use a mock PDS and the actual Lean executable, covering enrollment
-without authority, authorized law addition, retained receipts after revocation,
-empty-law lockout, stable intents, interrupted receipt export, upgrade
-quiescence, pending requests after unenrollment, current-law checks after
-revocation, concurrent receiving, governed reprogramming, immutable source
-binding, adapter-free recovery, and the operator CLI. This is local receiving
-and custody evidence, not authentication of local operators or public delivery.
+[Implementation](../scripts/manage.py), [Lean/mock-PDS tests](../conformance/test_management.py), [adversarial tests](../conformance/test_management_adversarial.py).
