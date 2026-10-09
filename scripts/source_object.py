@@ -52,6 +52,14 @@ def variant(label, payload):
     return {'tag': 'variant', 'label': label, 'payload': payload}
 
 
+def list_data(items):
+    """Frame a source List of already encoded elements; native checks its type."""
+    result = variant('nil', record({}))
+    for item in reversed(list(items)):
+        result = variant('cons', record({'head': item, 'tail': result}))
+    return result
+
+
 def state_data(root, *, binary=None):
     """Materialize caller-held typed custody through the shared native resolver.
 
@@ -205,7 +213,7 @@ def load(modules, *, syntax, constructor=None, arguments=None):
         raise ValueError('source object Python custody code changed; use a fresh process')
     modules = deepcopy(adapter.source_packages.table(modules)['modules'])
     arguments = deepcopy(arguments)
-    protocol = adapter.lower_data_modules(modules)
+    protocol = adapter._lower_modules(modules, _capture=captured['adapter']['files'])
     if constructor is None:
         if arguments is not None:
             raise ValueError('configuration arguments require a named source constructor')
@@ -236,3 +244,20 @@ def load(modules, *, syntax, constructor=None, arguments=None):
     if captured != pins(syntax):
         raise ValueError('source object runtime changed during configuration')
     return protocol
+
+
+def seed_material(protocol):
+    """Retain exact source and recode the supplied state with its source schema.
+
+    This records a caller-held initial state, not proof that an arbitrary caller
+    supplied it by executing the declared constructor.
+    """
+    packages = adapter.source_packages.validate_tables(protocol)
+    if set(packages) != {'resident'}:
+        raise ValueError('one current source object seed requires its resident package')
+    model = state_data({'protocol': protocol, 'state': protocol['initial']})
+    initial = {'model': compact_state(protocol, model, entry='describe', path=[{'field': 'initial'}])}
+    material = {'modules': deepcopy(packages['resident']['modules']), 'initial': initial}
+    if 'sourceConfiguration' in protocol:
+        material['sourceConfiguration'] = deepcopy(protocol['sourceConfiguration'])
+    return material

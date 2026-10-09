@@ -7,7 +7,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SYNTAX = 'spween-handler-workshop@1'
 HEADER = 'spween handler workshop 1'
 MODULE_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]{0,127}\Z')
-RESERVED = {'Abi', 'Encounter', 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'Score', 'DefaultScene'}
+RESERVED = {'List', 'Abi', 'Encounter', 'Preparation', 'Emissions', 'Allocation', 'EncounterPages', 'Reflection', 'Document', 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'DefaultScene'}
+
+
+def frame_source(scene, modules):
+    """Frame exact authored text; preserve every scene and module byte."""
+    blocks = [('spween', scene)] + [('obend ' + item['name'], item['source']) for item in modules]
+    if any(not isinstance(text, str) or not text.endswith('\n') for _, text in blocks):
+        raise ValueError('fenced source payloads require a final newline')
+    source = HEADER + '\n\n' + ''.join('```' + name + '\n' + text + '```\n\n' for name, text in blocks)
+    parsed = parse_source(source)
+    if parsed['scene'] != scene or parsed['modules'] != modules:
+        raise ValueError('source fences do not retain exact supplied text')
+    return source
 
 
 def parse_source(source):
@@ -64,9 +76,9 @@ def parse_source(source):
         raise ValueError('remaining modules must end in SceneRuntime or Scene')
     if any(item['name'] == 'Scene' for item in runtime):
         raise ValueError('Scene must be the final module')
-    # Seven always-sealed modules, plus the default runtime/entry when omitted;
+    # Ten always-sealed modules, plus the default runtime/entry when omitted;
     # selecting an entry also retains DefaultScene as an explicit convenience.
-    if len(modules) + 7 + (0 if runtime else 1) + 1 > 64:
+    if len(modules) + 9 + (0 if runtime else 1) + 1 > 64:
         raise ValueError('authored and sealed package together exceed 64 modules')
     return {'scene': scene, 'modules': modules, 'handlerModules': handlers,
             'runtimeModules': runtime, 'sceneModules': entry}

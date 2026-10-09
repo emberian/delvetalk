@@ -11,7 +11,9 @@ import SourceContract
 import SourceAmendment
 import SourcePolicy
 import SourceProjection
+import OpaqueInteraction
 import Preparation
+import OpaquePreparation
 import Delvetalk.Package
 open Lean World
 
@@ -88,7 +90,7 @@ def canonicalState (o : Json) : Evaluation Json := do
   let data ← SourceState.readWith compileSource (← field o "protocol") (← field state "model")
   return obj [("model", Minidregg.Compiler.ObjectiveBendDataWire.dataJson data)]
 
-def prepareInvocation (o request : Json) (derived : Option World.NativeResult) : Evaluation Json := do
+def prepareInvocation (o request : Json) (derived : Option World.NativeResult) : Evaluation World.PreparedInvocation := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   let some transition := sourceTransition? command | throw "source command requires current transition"
@@ -113,7 +115,8 @@ def prepareInvocation (o request : Json) (derived : Option World.NativeResult) :
         pure data
       | _ => throw "unknown source data codec"
   Delvetalk.PackageData.validate selected.assumptions 256 data selected.type
-  put request "input" (Minidregg.Compiler.ObjectiveBendDataWire.dataJson data)
+  let request ← put request "input" (Minidregg.Compiler.ObjectiveBendDataWire.dataJson data)
+  return ⟨request, some ⟨data, selected.assumptions, selected.type⟩⟩
 
 def frameDerivedInput (o : Json) (command : String) (produced : World.NativeResult) : Evaluation Json := do
   let protocol ← field o "protocol"
@@ -135,12 +138,21 @@ def frameDerivedInput (o : Json) (command : String) (produced : World.NativeResu
     return value
   | _ => throw "unknown source data codec"
 
+def validateInitial (protocol : Json) : Evaluation Unit := do
+  let model ← field (← field protocol "initial") "model"
+  let selected ← SourceState.coherentInitialWith compileSource protocol
+  let data ← SourceState.readWith compileSource protocol model
+  let .record _ := data | throw "source initial state requires a record model"
+  if (str model "format").toOption != some SourceState.format then
+    Delvetalk.PackageData.validate selected.assumptions 256 data selected.type
+
 def initializeAllocation (protocol : Json) (produced : World.NativeResult) : Evaluation Json := do
-  let (descriptor, path) ← SourceState.initialSchema protocol
-  let selected ← SourceState.resolveWith compileSource protocol descriptor path
+  let (descriptor, path) ← SourceState.checkedInitialSchemaWith compileSource protocol
+  let selected ← SourceState.coherentInitialWith compileSource protocol
   Delvetalk.PackageData.shape produced.assumptions 256 [] produced.type
   unless (← Delvetalk.PackageData.equivalent produced.assumptions selected.assumptions 256 [] produced.type selected.type) do
     throw "allocation initial type differs from child state"
+  let .record _ := produced.value | throw "allocation initial requires a record model"
   Delvetalk.PackageData.validate selected.assumptions 256 produced.value selected.type
   return obj [("model", ← SourceState.writeWith compileSource protocol descriptor path produced.value)]
 
@@ -164,11 +176,11 @@ def executeDataTransition (context : World.CallContext) (protocol transition spe
   let emitting := Messages.emits transition
   if (← pairs state).map Prod.fst != ["model"] then
     throw "typed source state requires exactly model"
-  let inputData ← Delvetalk.PackageData.decode 256 input
+  let some inputData := context.nativeInput | throw "source body requires checked canonical input"
   let (identityData, identityNodes) ← Delvetalk.Package.jsonData 64 identity
   charge identityNodes
   let stateData ← SourceState.readWith compileSource protocol (← field state "model")
-  let mut arguments := #[stateData, inputData, identityData]
+  let mut arguments := #[stateData, inputData.value, identityData]
   let mut physicalArguments := #[← field state "model", context.physicalInput.getD input,
     Minidregg.Compiler.ObjectiveBendDataWire.dataJson identityData]
   if receiving then
@@ -291,6 +303,7 @@ def runtime : World.Runtime := {
   initializeAllocation := initializeAllocation
   recodeState := fun o protocol state => do SourceState.recodeWith compileSource (← field o "protocol") protocol state
   budget := 100000,
+  validateInitial := validateInitial,
   validateTransition := validateTransition, executeTransition := executeTransition,
   checkSourceContract := checkSourceContract,
   checkSourceAmendment := checkSourceAmendment,
@@ -298,14 +311,79 @@ def runtime : World.Runtime := {
   stageMessages := Messages.stage, reprogramResult := reprogramResult,
   programIdentity := ProgramDigest.digest }
 
+def opaqueViewBudget (root : Json) (panel : String) (fuel : Nat) : Except String (Json × Nat) := do
+  let execution : Evaluation Json := do
+    let protocol ← field root "protocol"
+    let view ← field protocol "viewProgram"
+    if (← str view "profile") != "delvetalk-obend-data-menu-v1" then
+      throw "unsupported source view"
+    let state ← field root "state"
+    if (← pairs state).map Prod.fst != ["model"] then throw "source view state requires model"
+    let data ← SourceState.readWith compileSource protocol (← field state "model")
+    let package ← SourcePackages.resolve protocol (← field view "package")
+    let result ← executeDataPackage (← sourceSpec package) #[
+      Minidregg.Compiler.ObjectiveBendDataWire.dataJson data,
+      obj [("tag", .str "label"), ("value", .str panel)]]
+    return Minidregg.Compiler.ObjectiveBendDataWire.dataJson result
+  execution.run fuel
+
+def opaqueView (root : Json) (panel : String) : Except String Json := do
+  let (result, _) ← opaqueViewBudget root panel runtime.budget
+  return result
+
+-- Preparation and planned execution share the receiving Evaluation allowance.
+-- Only the named source invitation owner can use view authority for its root;
+-- every dependent root and every planned operation still faces current law.
+def opaqueTransaction (world request : Json) (principal : String) : Except String (Json × Json) := do
+  let attempt : Except String (Json × Json) := do
+    if (← str request "principal") != principal then throw "principal differs"
+    let (prepared, remaining) ← OpaquePreparation.prepareBudget opaqueViewBudget world request runtime.budget
+    if (← str prepared "kind") != "ready" then throw "source preparation not ready"
+    let internal ← field prepared "request"
+    let expanded ← RetainedRoots.expandRequest (RetainedRoots.fromWorld world) internal
+    let (next, full) ← Transactions.transitionWith {runtime with budget := remaining}
+      world expanded principal (some (← str request "object"))
+    let data ← field full "data"
+    let references ← (← pairs (← field data "roots")).mapM fun (id, root) => do
+      return (id, if root == .null then .null else OpaqueInteraction.reference id root)
+    let calls ← (← field internal "calls").getArr?
+    let results ← (← field data "results").getArr?
+    let publicResults := results.mapIdx fun index result =>
+      if ((calls[index]? >>= fun call => (str call "op").toOption).getD "invoke") == "invoke" then result else .null
+    let projected := receipt request "committed" (obj [
+      ("references", obj references), ("results", .arr publicResults)])
+    return (← OpaqueInteraction.retain next expanded full, projected)
+  match attempt with
+  | .ok result => return result
+  | .error diagnostic =>
+    return (← OpaqueInteraction.retain world request (receipt request "refused" (.str diagnostic)),
+      receipt request "refused" (.str "opaque transaction refused"))
+
 def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
   match (← str request "op") with
+  | "opaque-transaction" => opaqueTransaction world request principal
+  | "opaque-invoke" => OpaqueInteraction.admit runtime world request principal
   | "messages-init" => Messages.initializeRegistry world request
   | "deliver" => Messages.deliverWith runtime world request principal
   | "settle-message" => Messages.settleWith runtime world request principal
   | _ => Transactions.transitionWith runtime world request principal
 
+def query (world request : Json) : Except String Json := do
+  match (← str request "op") with
+  | "opaque-invitation" | "opaque-prepare" => OpaquePreparation.queryBudget opaqueViewBudget world request runtime.budget
+  | "opaque-view" => OpaqueInteraction.query opaqueView world request
+  | "opaque-select" => OpaqueInteraction.selectQuery runtime world request
+  | "source-state" => SourceState.inspect request
+  | "value-codec" => Preparation.codec request
+  | _ => Messages.query world request
+
 def handle (world request : Json) : Except String (Json × Json) := do
+  if ["opaque-invitation", "opaque-prepare"].contains (← str request "op") then
+    return (world, ← query world request)
+  if ["opaque-view", "opaque-select"].contains (← str request "op") then
+    let guarded ← if (← str request "op") == "opaque-view" then
+      RetainedRoots.expandView (RetainedRoots.fromWorld world) request else pure request
+    return (world, ← query world guarded)
   if (← str request "op") == "catalogue-page" then
     return (world, ← World.cataloguePage world request (← (← field world "receipts").getArr?).size .null)
   if (← str request "op") == "capture-roots" then
@@ -339,7 +417,7 @@ end Compiled
 
 def main (args : List String) : IO Unit :=
   if args == ["--project-source"] then SourceProjection.main Compiled.projectSource
-  else if args == ["--resident"] then ResidentStore.serve Compiled.transition Messages.query
+  else if args == ["--resident"] then ResidentStore.serve Compiled.transition Compiled.query
     (fun index currentObjects world request =>
         Preparation.run world request (RetainedRoots.reference index) (some currentObjects))
   else FileCustody.mainWith Compiled.handle Compiled.job args

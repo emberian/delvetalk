@@ -1,0 +1,55 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Appointments.obend as Appointments
+import ./ScheduledBell.obend as Bell
+record Checks:
+  missingDue: Bool
+  wrongDue: Bool
+  zeroDue: Bool
+  missingPayloadTick: Bool
+  wrongPayloadTick: Bool
+  zeroPayloadTick: Bool
+  missingObservation: Bool
+def scheduleInput(due: P.Value) -> P.Value:
+  P.Value.record({fields: Bell.field("due", due, Bell.field("deadline", Bell.nat(0n), Bell.field("chord", Bell.text("C"), P.Fields.nil())))})
+def observed(object: String) -> P.Observation:
+  {object: object, version: 0n, program: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", state: P.Value.none(), law: P.Value.none()}
+def observations() -> P.Observations:
+  P.Observations.cons({head: observed("clock"), tail: P.Observations.cons({head: observed("door"), tail: P.Observations.cons({head: observed("bell"), tail: P.Observations.nil()})})})
+def isQuestion(value: P.Preparation) -> Bool:
+  match value:
+    case question(_): true
+    case refused(_): false
+    case ready(_): false
+def isRefused(value: P.Preparation) -> Bool:
+  match value:
+    case question(_): false
+    case refused(_): true
+    case ready(_): false
+def isReady(value: P.Preparation) -> Bool:
+  match value:
+    case question(_): false
+    case refused(_): false
+    case ready(_): true
+def payloadFields() -> P.Fields:
+  Bell.field("owner", Bell.text("moss"), Bell.field("id", Bell.text("bell"), Bell.field("generation", Bell.nat(1n), Bell.field("due", Bell.nat(0n), Bell.field("deadline", Bell.nat(0n), Bell.field("topic", Bell.text("C"), P.Fields.nil()))))))
+def missingTick(value: Appointments.PayloadLookup) -> Bool:
+  match value:
+    case missing(m): m.field == "tick"
+    case wrongKind(_): false
+    case found(_): false
+def wrongTick(value: Appointments.PayloadLookup) -> Bool:
+  match value:
+    case missing(_): false
+    case wrongKind(m): m.field == "tick"
+    case found(_): false
+def zeroTick(value: Appointments.PayloadLookup) -> Bool:
+  match value:
+    case missing(_): false
+    case wrongKind(_): false
+    case found(p): p.value.tick == 0n && p.value.due == 0n && p.value.deadline == 0n
+def checks() -> Checks:
+  let state = Bell.configured({object: "bell", owner: "moss", clock: "clock", recipient: "door"})
+  let context: P.Context = {object: "bell", principal: "moss"}
+  let missing = P.Value.record({fields: Bell.field("deadline", Bell.nat(0n), Bell.field("chord", Bell.text("C"), P.Fields.nil()))})
+  {missingDue: isQuestion(Bell.prepareSchedule(state, missing, observations(), context)), wrongDue: isRefused(Bell.prepareSchedule(state, scheduleInput(Bell.text("0")), observations(), context)), zeroDue: isReady(Bell.prepareSchedule(state, scheduleInput(Bell.nat(0n)), observations(), context)), missingPayloadTick: missingTick(Appointments.readPayload(P.Value.record({fields: payloadFields()}))), wrongPayloadTick: wrongTick(Appointments.readPayload(P.Value.record({fields: Bell.field("tick", Bell.text("0"), payloadFields())}))), zeroPayloadTick: zeroTick(Appointments.readPayload(P.Value.record({fields: Bell.field("tick", Bell.nat(0n), payloadFields())}))), missingObservation: isRefused(Bell.prepareSchedule(state, scheduleInput(Bell.nat(0n)), P.Observations.nil(), context))}

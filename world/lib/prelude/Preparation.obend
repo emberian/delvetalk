@@ -30,6 +30,7 @@ record Observation:
 type Observations = Lists.List<Observation>
 sum Read:
   existing: {object: String}
+  exact: {object: String, key: String}
   absent: {object: String}
 type Reads = Lists.List<Read>
 sum Effect:
@@ -249,3 +250,31 @@ def observed(xs: Observations, object: String) -> Bool:
   match lookupObservation(xs, object):
     case missing(_): false
     case found(_): true
+
+# A resolved source reference comes from a non-inspecting native observation.
+# This data type grants no authority; retained bind revalidates its exact root.
+record ResolvedReference:
+  object: String
+  key: String
+  program: String
+sum ReferenceLookup:
+  missing: {}
+  unresolved: {}
+  found: {value: ResolvedReference}
+def resolveObservation(observation: Observation) -> ReferenceLookup:
+  match observation.state:
+    case retained(reference):
+      if reference.object == observation.object && observation.object != "" && textLength(reference.key) == 64n && textLength(observation.program) == 64n then ReferenceLookup.found({value: {object: reference.object, key: reference.key, program: observation.program}}) else ReferenceLookup.unresolved()
+    case none(_): ReferenceLookup.unresolved()
+    case boolean(_): ReferenceLookup.unresolved()
+    case natural(_): ReferenceLookup.unresolved()
+    case number(_): ReferenceLookup.unresolved()
+    case text(_): ReferenceLookup.unresolved()
+    case array(_): ReferenceLookup.unresolved()
+    case record(_): ReferenceLookup.unresolved()
+def lookupReference(observations: Observations, object: String) -> ReferenceLookup:
+  match lookupObservation(observations, object):
+    case missing(_): ReferenceLookup.missing()
+    case found(observation): resolveObservation(observation.value)
+def referenceRead(reference: ResolvedReference) -> Read:
+  Read.exact({object: reference.object, key: reference.key})

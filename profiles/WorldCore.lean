@@ -5,6 +5,7 @@ import Lean
 import EvaluationState
 import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendTyping
+import Compiler.ObjectiveBendDataWire
 open Lean
 private def Option.toExcept (o : Option α) (error : String) : Except String α :=
   match o with
@@ -115,7 +116,7 @@ def eventObjects (world reference : Json) : Except String (List String) := do
   let evidence ← field retained "evidence"
   return [← str evidence "source", ← str evidence "to"]
 
-def admissionObjects (world entry : Json) : Except String (List String) := do
+def directAdmissionObjects (world entry : Json) : Except String (List String) := do
   let request ← field entry "request"
   let mut ids : List String := []
   if let some id := (str request "object").toOption then ids := id :: ids
@@ -130,6 +131,20 @@ def admissionObjects (world entry : Json) : Except String (List String) := do
       for reference in (← messages.getArr?) do ids := ids ++ (← eventObjects world reference)
   if ["deliver", "settle-message"].contains ((str request "op").toOption.getD "") then
     ids := ids ++ (← eventObjects world (← field request "event"))
+  return ids.eraseDups
+
+def admissionObjects (world entry : Json) : Except String (List String) := do
+  let mut ids ← directAdmissionObjects world entry
+  let request ← field entry "request"
+  if ["opaque-invoke", "opaque-transaction"].contains ((str request "op").toOption.getD "") then
+    -- Projected history never carries private roots/arguments. Its current
+    -- peer-read boundary still follows the privately retained full admission.
+    let original := do
+      let custody ← field world "opaqueCustody"
+      let intents ← field custody (← str request "principal")
+      field intents (← str request "intent")
+    if let some full := original.toOption then
+      ids := ids ++ (← directAdmissionObjects world full)
   return ids.eraseDups
 
 def readableAdmission (world entry : Json) (principal : String) : Except String Unit := do
@@ -185,6 +200,17 @@ def historyPageIndexed (world request : Json) (count : Nat)
 def historyPage (world request : Json) (receipts : Array Json) : Except String Json :=
   historyPageIndexed world request receipts.size (fun index => receipts[index]?)
 
+-- Evidence originates in the actual checked producer, never display decoding.
+structure NativeResult where
+  value : Minidregg.Theory.ObjectiveBendDemandData.Data
+  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+  type : Minidregg.Theory.ObjectiveBendTypes.Ty
+
+-- Trusted normalization result; public canonical JSON remains guard input.
+structure PreparedInvocation where
+  request : Json
+  nativeInput : Option NativeResult := none
+
 -- Host-bound identity for one actual receiving call, separate from user data.
 structure CallContext where
   object : String
@@ -192,12 +218,7 @@ structure CallContext where
   inputOrigin : Json := noInputOrigin
   eventFacts : Option Json := none
   physicalInput : Option Json := none
-
--- Evidence originates in the actual checked producer, never display decoding.
-structure NativeResult where
-  value : Minidregg.Theory.ObjectiveBendDemandData.Data
-  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
-  type : Minidregg.Theory.ObjectiveBendTypes.Ty
+  nativeInput : Option NativeResult := none
 
 -- Allocation configuration retains checked source type evidence until child admission.
 structure Allocation where
@@ -217,13 +238,15 @@ structure TransitionResult where
 structure Runtime where
   budget : Nat := 10000
   -- Native framing is decoded before guards/body; receipts retain physical input.
-  prepareInvocation : Json → Json → Option NativeResult → Evaluation Json := fun _ request _ => pure request
+  prepareInvocation : Json → Json → Option NativeResult → Evaluation PreparedInvocation := fun _ request _ => pure ⟨request, none⟩
   frameDerivedInput : Json → String → NativeResult → Evaluation Json :=
     fun _ _ _ => throw "typed derived input requires source runtime"
   initializeAllocation : Json → NativeResult → Evaluation Json :=
     fun _ _ => throw "typed allocation initial requires source runtime"
   recodeState : Json → Json → Json → Evaluation Json := fun _ _ state => pure state
   canonicalState : Json → Evaluation Json := fun root => field root "state"
+  validateInitial : Json → Evaluation Unit :=
+    fun _ => throw "source initial state requires compiled profile"
   validateTransition : Json → Json → Evaluation Unit :=
     fun _ _ => throw "source transitions require compiled profile"
   executeTransition : CallContext → Json → Json → String → Json → Evaluation TransitionResult :=
@@ -280,8 +303,9 @@ def validateProtocolUsing {m : Type → Type} [Monad m] [MonadExceptOf String m]
     let some transition := sourceTransition? command | throw "source command requires current transition"
     validate p transition
 
-def validateProtocolWith (runtime : Runtime) (protocol : Json) : Evaluation Unit :=
+def validateProtocolWith (runtime : Runtime) (protocol : Json) : Evaluation Unit := do
   validateProtocolUsing runtime.validateTransition protocol
+  runtime.validateInitial protocol
 
 /-- Pure boundary validation keeps the default host's source refusal. It does
 not start an evaluation run or manufacture fresh fuel inside a receiving turn. -/
@@ -297,7 +321,7 @@ def validateLaw (j : Json) : Except String Unit := do
     throw "unknown law profile"
   for (key, _) in (← pairs j) do
     unless ["profile", "invoke", "reprogram", "law", "predicate", "invariant",
-        "contract", "amendment", "read"].contains key do
+        "contract", "amendment", "read", "view"].contains key do
       throw "unsupported scoped law field"
   for (_, principals) in (← pairs (← field j "invoke")) do discard (law principals)
   discard (law (← field j "reprogram"))
@@ -314,24 +338,32 @@ def validateLaw (j : Json) : Except String Unit := do
     if let some descriptor := (field j key).toOption then discard (pairs descriptor)
   if let some reading := (field j "read").toOption then
     if reading != .str "public" then discard (law reading)
+  if let some views := (field j "view").toOption then
+    for (_, grant) in (← pairs views) do
+      if grant != .str "public" then discard (law grant)
 
 def prepareInvocation (runtime : Runtime) (o request : Json)
-    (nativeInput : Option NativeResult := none) : Evaluation Json := do
-  if (← str request "op") != "invoke" then return request
+    (nativeInput : Option NativeResult := none) : Evaluation PreparedInvocation := do
+  if (← str request "op") != "invoke" then return ⟨request, none⟩
   let prepared ← runtime.prepareInvocation o request nativeInput
-  if (← put prepared "input" (← field request "input")) != request then
+  if (← put prepared.request "input" (← field request "input")) != request then
     throw "invocation framing may only normalize input"
   return prepared
 
-def policyContextWith (runtime : Runtime) (o request : Json) (principal : String) : Evaluation Json := do
+def policyContextWith (runtime : Runtime) (o request : Json) (principal : String)
+    (settlementInput : Option Minidregg.Theory.ObjectiveBendDemandData.Data := none) : Evaluation Json := do
   let op ← str request "op"
   let command ← if op == "invoke" then str request "command" else pure ""
   let input ← if op == "invoke" then field request "input" else pure (obj [])
   discard (pairs input)
-  return obj [("principal", .str principal), ("op", .str op), ("command", .str command),
+  let facts := obj [("principal", .str principal), ("op", .str op), ("command", .str command),
     ("state", ← runtime.canonicalState o), ("input", input)]
+  match settlementInput with
+  | none => return facts
+  | some data => put facts "settlementInput" (Minidregg.Compiler.ObjectiveBendDataWire.dataJson data)
 
-def authorizeRequestWith (runtime : Runtime) (o request : Json) (principal : String) : Evaluation Unit := do
+def authorizeRequestWith (runtime : Runtime) (o request : Json) (principal : String)
+    (settlementInput : Option Minidregg.Theory.ObjectiveBendDemandData.Data := none) : Evaluation Unit := do
   let authority ← field o "law"
   validateLaw authority
   let principals ← match (← str request "op") with
@@ -348,7 +380,7 @@ def authorizeRequestWith (runtime : Runtime) (o request : Json) (principal : Str
   match (field authority "predicate").toOption with
   | none => pure ()
   | some predicate =>
-    runtime.checkSourcePolicy predicate (← put (← policyContextWith runtime o request principal) "object" (← field request "object"))
+    runtime.checkSourcePolicy predicate (← put (← policyContextWith runtime o request principal settlementInput) "object" (← field request "object"))
 
 def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit :=
   authorizeRequestWith {} o request principal
@@ -360,7 +392,8 @@ def rootCheck (o request : Json) : Except String Unit := do
 -- Every candidate uses actual staged states; invocation input has already been
 -- resolved. This consumes the same turn budget as authority and execution.
 def checkInvariantWith (runtime : Runtime) (authority before after request : Json) (principal : String)
-    (beforeState afterState : Option Json := none) : Evaluation Unit := do
+    (beforeState afterState : Option Json := none)
+    (settlementInput : Option Minidregg.Theory.ObjectiveBendDemandData.Data := none) : Evaluation Unit := do
   let some invariant := (field authority "invariant").toOption | return
   let op ← str request "op"
   let command ← if op == "invoke" then str request "command" else pure ""
@@ -374,19 +407,23 @@ def checkInvariantWith (runtime : Runtime) (authority before after request : Jso
   let facts := obj [("object", .str (← str request "object")),
     ("principal", .str principal), ("op", .str op), ("command", .str command),
     ("state", prior), ("nextState", next), ("input", input)]
+  let facts ← match settlementInput with
+    | none => pure facts
+    | some data => put facts "settlementInput" (Minidregg.Compiler.ObjectiveBendDataWire.dataJson data)
   runtime.checkSourcePolicy invariant facts
 
 def checkInvariant (authority before after request : Json) (principal : String) : Evaluation Unit :=
   checkInvariantWith {} authority before after request principal
 
-def checkCandidateWith (runtime : Runtime) (before after request : Json) (principal : String) : Evaluation Unit := do
+def checkCandidateWith (runtime : Runtime) (before after request : Json) (principal : String)
+    (settlementInput : Option Minidregg.Theory.ObjectiveBendDemandData.Data := none) : Evaluation Unit := do
   let beforeLaw ← field before "law"
   let afterLaw ← field after "law"
   let hasInvariant := (field beforeLaw "invariant").isOk ||
     ((str request "op").toOption == some "law" && (field afterLaw "invariant").isOk)
   let beforeState ← if hasInvariant then some <$> runtime.canonicalState before else pure none
   let afterState ← if hasInvariant then some <$> runtime.canonicalState after else pure none
-  checkInvariantWith runtime beforeLaw before after request principal beforeState afterState
+  checkInvariantWith runtime beforeLaw before after request principal beforeState afterState settlementInput
   let op ← str request "op"
   let checkContract (authority : Json) (methods : Bool) : Evaluation Unit := do
     if let some contract := (field authority "contract").toOption then
@@ -405,7 +442,7 @@ def checkCandidateWith (runtime : Runtime) (before after request : Json) (princi
     -- descriptor still runs its new guard under the remaining shared budget.
     let sameAmendment := (field beforeLaw "amendment").toOption == (field afterLaw "amendment").toOption
     unless sameAmendment do checkAmendment afterLaw
-    checkInvariantWith runtime afterLaw before after request principal beforeState afterState
+    checkInvariantWith runtime afterLaw before after request principal beforeState afterState settlementInput
     checkContract afterLaw true
 
 def checkCandidate (before after request : Json) (principal : String) : Evaluation Unit :=
@@ -418,13 +455,13 @@ def receipt (request : Json) (kind : String) (data : Json) : Json :=
 
 def executeCommandWith (runtime : Runtime) (o request : Json) (principal : String)
     (inputOrigin : Json := noInputOrigin) (eventFacts : Option Json := none)
-    (physicalInput : Option Json := none) : Evaluation TransitionResult := do
+    (physicalInput : Option Json := none) (nativeInput : Option NativeResult := none) : Evaluation TransitionResult := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   let state ← field o "state"
   let input ← field request "input"
   discard (pairs input)
-  let context : CallContext := { object := ← str request "object", protocol := protocol, inputOrigin := inputOrigin, eventFacts := eventFacts, physicalInput := physicalInput }
+  let context : CallContext := { object := ← str request "object", protocol := protocol, inputOrigin := inputOrigin, eventFacts := eventFacts, physicalInput := physicalInput, nativeInput := nativeInput }
   validateTransitionCommand command
   let some transition := sourceTransition? command | throw "source command requires current transition"
   runtime.executeTransition context state input principal transition
@@ -514,7 +551,8 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
   allocateDescriptorsWith runtime objects (← field o "protocol")
     (← str request "object") principal absent sourceAllocations
 
-def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String) : Evaluation (Json × Json) := do
+def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String)
+    (opaqueInvocation : Bool := false) : Evaluation (Json × Json) := do
   let workStart ← get
   let objects ← field world "objects"
   let id ← str request "object"
@@ -528,8 +566,12 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     return (next, receipt request "committed" (obj [("root",o), ("result",.null), ("outbox", .arr #[])]))
   -- This profile returns complete roots in receipts; invocation rights alone
   -- cannot authorize acquiring a private preimage through that reply.
-  let o ← readObject objects id principal
-  let semanticRequest ← prepareInvocation runtime o request
+  -- Only the custody-owned opaque adapter sets this parameter. Its complete
+  -- native admission is retained privately; the caller receives a projection.
+  if opaqueInvocation && op != "invoke" then throw "opaque requires invocation"
+  let o ← if opaqueInvocation then field objects id else readObject objects id principal
+  let prepared ← prepareInvocation runtime o request
+  let semanticRequest := prepared.request
   authorizeRequestWith runtime o semanticRequest principal
   rootCheck o request
   let n ← (← field o "version").getNat?
@@ -556,7 +598,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
   if op != "invoke" then throw "unknown operation"
   let absent ← absenceReads objects request
   let produced ← executeCommandWith runtime o semanticRequest principal
-    noInputOrigin none (some (← field request "input"))
+    noInputOrigin none (some (← field request "input")) prepared.nativeInput
   let nextObj ← put (← put o "state" produced.state) "version" (toJson (n+1))
   checkCandidateWith runtime o nextObj semanticRequest principal
   let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o semanticRequest principal absent noInputOrigin produced.allocations
@@ -567,8 +609,9 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
   if allocated != obj [] then data ← put data "allocated" allocated
   return (next, receipt request "committed" data)
 
-def transitionWith (runtime : Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
-  let (result, _) ← (transitionEvaluationWith runtime world request principal).run runtime.budget
+def transitionWith (runtime : Runtime) (world request : Json) (principal : String)
+    (opaqueInvocation : Bool := false) : Except String (Json × Json) := do
+  let (result, _) ← (transitionEvaluationWith runtime world request principal opaqueInvocation).run runtime.budget
   return result
 
 def executeCommand (o request : Json) (principal : String) : Evaluation TransitionResult :=

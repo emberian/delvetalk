@@ -18,11 +18,7 @@ import resident_store
 import world
 
 
-def create():
-    return {'op': 'create', 'object': 'room', 'principal': 'keeper', 'intent': 'create',
-            'protocol': {'profile': 'delvetalk-local-v1', 'initial': {'value': Decimal('1.2300')},
-                'commands': {'write': {'require': [], 'set': {'value': ['input', 'value']},
-                                      'result': ['state', 'value'], 'outbox': []}}}, 'law': ['keeper']}
+from conformance.source_custody_fixture import create, replace_initial_number
 
 
 class ResidentTests(unittest.TestCase):
@@ -56,7 +52,7 @@ class ResidentTests(unittest.TestCase):
                 next_root = compare(write)['data']['root']
                 compare({**write, 'input': {'value': Decimal('2.3')}})
                 compare({'op': 'law', 'object': 'room', 'principal': 'keeper', 'intent': 'lock',
-                         'expected': next_root, 'law': []})
+                         'expected': next_root, 'law': {'profile': 'delvetalk-scoped-law', 'invoke': {}, 'reprogram': [], 'law': []}})
                 compare(write)
                 compare({**write, 'intent': 'fresh'})
                 compare(request)
@@ -85,7 +81,7 @@ class ResidentTests(unittest.TestCase):
 
     def test_all_uncertain_boundaries_reconcile_exactly_once(self):
         for stage in ('after_prepare', 'before_commit', 'after_commit', 'after_finalize', 'before_reply'):
-            with self.subTest(stage=stage), self.open(stage + '.sqlite', profile='world') as resident:
+            with self.subTest(stage=stage), self.open(stage + '.sqlite', profile='compiled') as resident:
                 request = create()
                 def fail(at):
                     if at == stage: raise OSError('injected custody interruption')
@@ -102,17 +98,17 @@ class ResidentTests(unittest.TestCase):
 
     def test_restart_checkpoint_tail_and_native_index_exact_decimal(self):
         request = create()
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             reply = resident.exchange(request)
             resident.checkpoint()
             refusal = {'op': 'invoke', 'object': 'absent', 'principal': 'keeper', 'intent': 'absent'}
             refused = resident.exchange(refusal)
             expected = resident.export_world()
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             self.assertEqual(resident.exchange(request), reply)
             self.assertEqual(resident.exchange(refusal), refused)
             changed = copy.deepcopy(request)
-            changed['protocol']['initial']['value'] = Decimal('1.23')
+            replace_initial_number(changed, '1.23')
             self.assertEqual(resident.exchange(changed)['kind'], 'refused')
             self.assertEqual(resident.sequence, 2)
             self.assertEqual(resident.export_world(), expected)
@@ -120,7 +116,7 @@ class ResidentTests(unittest.TestCase):
             self.assertEqual(resident.export_world(), expected)
 
     def test_checkpoint_native_fold_rejects_duplicate_or_miskeyed_history_atomically(self):
-        with self.open('origin.sqlite', profile='world') as origin:
+        with self.open('origin.sqlite', profile='compiled') as origin:
             origin.exchange(create())
             snapshot = origin.export_world()
         duplicate = copy.deepcopy(snapshot)
@@ -135,7 +131,7 @@ class ResidentTests(unittest.TestCase):
             raw = world.wire_dumps(value).encode()
             path = self.directory / f'checkpoint-{i}.json'
             path.write_bytes(raw)
-            with self.open(f'check-{i}.sqlite', profile='world') as resident:
+            with self.open(f'check-{i}.sqlite', profile='compiled') as resident:
                 with self.assertRaises(resident_store.ReceivingError):
                     resident._rpc({'op': 'load', 'path': str(path), 'seal': {
                         'sequence': len(value['receipts']), 'head': 'trusted-test-head',
@@ -144,7 +140,7 @@ class ResidentTests(unittest.TestCase):
                 self.assertEqual(resident.exchange(create())['kind'], 'committed')
 
     def test_modified_frame_refused_by_exact_native_reexecution(self):
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             resident.exchange(create())
         db = sqlite3.connect(self.directory / 'resident.sqlite')
         raw = db.execute('select frame from entries').fetchone()[0]
@@ -153,33 +149,33 @@ class ResidentTests(unittest.TestCase):
         db.execute('update entries set frame=?', (world.wire_dumps(frame).encode(),))
         db.commit(); db.close()
         with self.assertRaisesRegex(resident_store.ReceivingError, 'does not reproduce'):
-            self.open(profile='world')
+            self.open(profile='compiled')
 
     def test_corrupt_checkpoint_and_second_writer_refused(self):
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             resident.exchange(create())
             resident.checkpoint()
-            with self.assertRaises(BlockingIOError): self.open(profile='world')
+            with self.assertRaises(BlockingIOError): self.open(profile='compiled')
         db = sqlite3.connect(self.directory / 'resident.sqlite')
         db.execute("update checkpoints set body=x'7b7d'")
         db.commit(); db.close()
-        with self.assertRaisesRegex(ValueError, 'digest'): self.open(profile='world')
-        with self.open(profile='world', use_checkpoint=False) as resident:
+        with self.assertRaisesRegex(ValueError, 'digest'): self.open(profile='compiled')
+        with self.open(profile='compiled', use_checkpoint=False) as resident:
             self.assertEqual(resident.sequence, 1)
 
     def test_file_and_resident_lookup_share_native_exact_numeric_and_key_order_rules(self):
         request = create()
         snapshot = self.directory / 'reference.json'
-        reply = world.exchange(snapshot, request, profile='world')
+        reply = world.exchange(snapshot, request, profile='compiled')
         def lookup(candidate):
-            run = subprocess.run([str(ROOT / '.lake/build/bin/delvetalk-world'), '--lookup-files', str(snapshot)],
+            run = subprocess.run([str(ROOT / '.lake/build/bin/delvetalk-compiled'), '--lookup-files', str(snapshot)],
                 input=world.wire_dumps(candidate), text=True, capture_output=True, check=True, timeout=10)
             return world.wire_loads(run.stdout)
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             self.assertEqual(resident.exchange(request), reply)
             reordered = dict(reversed(list(request.items())))
             different = copy.deepcopy(request)
-            different['protocol']['initial']['value'] = Decimal('1.23')
+            replace_initial_number(different, '1.23')
             for candidate, expected in ((reordered, reply), (different, None),
                     ({**request, 'intent': 'absent'}, None), ({}, None)):
                 self.assertEqual(lookup(candidate), expected)
@@ -187,35 +183,23 @@ class ResidentTests(unittest.TestCase):
             self.assertEqual(resident.sequence, 1)
         self.assertEqual(len(world.wire_loads(snapshot.read_bytes())['receipts']), 1)
 
-    def test_delta_preserves_numeric_scale_array_atomicity_and_ordered_map_edits(self):
-        with self.open(profile='world') as resident:
+    def test_source_value_roundtrip_preserves_numeric_scale_and_nested_arrays(self):
+        import source_object
+        values = [Decimal('1.2300'), {'a': [Decimal('2.300')], 'old': None}, {'z': False, 'a': {}}]
+        with self.open() as resident:
             root = resident.exchange(create())['data']['root']
-            def write(value, serial):
-                nonlocal root
-                request = {'op': 'invoke', 'principal': 'keeper', 'intent': str(serial), 'object': 'room',
-                           'expected': root, 'command': 'write', 'input': {'value': value}}
-                root = resident.exchange(request)['data']['root']
-                raw = resident.connection.execute('select frame from entries order by sequence desc limit 1').fetchone()[0]
-                return [change for change in world.wire_loads(raw)['delta']
-                        if change['path'][:3] == ['objects', 'room', 'state']]
-            prefix = ['objects', 'room', 'state', 'value']
-            changes = write(Decimal('1.23'), 0)
-            self.assertEqual(changes, [{'path': prefix, 'value': Decimal('1.23')}])
-            self.assertEqual(changes[0]['value'].as_tuple().exponent, -2)
-            write({'old': None, 'same': {'x': 1}}, 1)
-            changes = write({'same': {'x': 1}, 'a': {}, 'z': False}, 2)
-            self.assertEqual(changes, [{'path': prefix + ['a'], 'value': {}},
-                                      {'path': prefix + ['z'], 'value': False},
-                                      {'path': prefix + ['old'], 'remove': True}])
-            self.assertEqual(write({'z': False, 'a': {}, 'same': {'x': 1}}, 3), [])
-            write([Decimal('2.300')], 4)
-            changes = write([Decimal('2.30')], 5)
-            self.assertEqual(changes, [{'path': prefix, 'value': [Decimal('2.30')]}])
-            self.assertEqual(changes[0]['value'][0].as_tuple().exponent, -2)
-            self.assertEqual(write([Decimal('2.30')], 6), [])
+            for serial, value in enumerate(values):
+                reply = resident.exchange({'op': 'invoke', 'principal': 'keeper', 'intent': str(serial),
+                    'object': 'room', 'expected': root, 'command': 'write', 'input': {'value': value}})
+                self.assertEqual(reply['kind'], 'committed', reply)
+                root = reply['data']['root']
+                fields = root['state']['model']['fields']
+                stored = next(field['value'] for field in fields if field['name'] == 'value')
+                decoded = source_object.values('decode', [stored])[0]
+                self.assertEqual(world.wire_dumps(decoded), world.wire_dumps(value))
 
     def test_restart_rechecks_captured_runtime_before_accepting_work(self):
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             resident.exchange(create())
             with patch.object(resident_store, '_pins', return_value='changed runtime'):
                 with self.assertRaisesRegex(ValueError, 'runtime/profile identity'):
@@ -225,7 +209,7 @@ class ResidentTests(unittest.TestCase):
             self.assertEqual(resident.sequence, 1)
 
     def test_pending_preparation_requires_exact_finalize(self):
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             prepared = resident._rpc({'op': 'prepare', 'request': create()})
             with self.assertRaisesRegex(resident_store.ReceivingError, 'prepared entry'):
                 resident._rpc({'op': 'finalize', 'head': 'wrong'})
@@ -278,7 +262,7 @@ class ResidentTests(unittest.TestCase):
     def test_history_over_legacy_frame_size_uses_checkpoint_file_and_indexed_retry(self):
         request = {'op': 'invoke', 'object': 'absent', 'principal': 'keeper',
                    'intent': 'large-000', 'padding': 'x' * 60000}
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             reply = resident.exchange(request)
             for i in range(1, 285):
                 resident.exchange({**request, 'intent': f'large-{i:03d}'})
@@ -286,13 +270,13 @@ class ResidentTests(unittest.TestCase):
             resident.export(exported)
             self.assertGreater(exported.stat().st_size, 16 * 1024 * 1024)
             resident.checkpoint()
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             self.assertEqual(resident.exchange(request), reply)
             self.assertEqual(resident.sequence, 285)
             self.assertEqual(resident.retained_reply(request), reply)
 
     def test_journal_turn_bytes_do_not_rewrite_retained_history(self):
-        with self.open(profile='world') as resident:
+        with self.open(profile='compiled') as resident:
             for i in range(250):
                 reply = resident.exchange({'op': 'invoke', 'object': 'absent', 'principal': 'keeper',
                                            'intent': f'absent-{i:04d}'})

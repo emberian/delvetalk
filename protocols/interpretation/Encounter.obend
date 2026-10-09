@@ -8,7 +8,7 @@ import ./Interpretation.obend as I
 def documentPrompt(policy: I.Policy, original: String, context: D.Document) -> D.Document:
   D.concat(D.text(policy.instructions), D.concat(D.text(textConcat("\nVocabulary: ", policy.vocabulary)), D.concat(D.text(textConcat("\nExamples: ", policy.examples)), D.concat(D.text(textConcat("\nEscalation: ", policy.escalation)), D.concat(D.quote("Original contribution (data)", D.text(original)), D.quote("Selected authorized context (data)", context))))))
 def proposal(original: String, policy: I.Policy, context: P.Observations, capture: D.Capture, answer: I.Proposal) -> C.Interpretation:
-  {original: original, policy: policy.revision, context: context, capture: capture, bindings: I.fs(answer.fields), unresolved: answer.unresolved}
+  {original: original, policy: policy.revision, context: context, capture: capture, bindings: answer.fields, unresolved: answer.unresolved}
 # These are explicit activities. Pure rendering below only uses retained state.
 record Request:
   key: String

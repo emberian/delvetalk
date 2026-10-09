@@ -24,7 +24,18 @@ The factory's source make preparation captures its root and the child's absence.
 
 `Writing.obend` binds a Candidate, target and source language. Its source invitation
 captures the selected objects; source preparation constructs the proposal,
-migration and submission. `WritingFactory.obend` allocates this participant through
+migration and submission. Its inspect invitation selects the target's exact captured
+`resident` source table through the optional native definition argument, and
+`prepareInspect` produces source Document nodes for those installed modules.
+The same read grants protect source inspection and state acquisition. A retained
+old definition stays exact when the target changes; revoking current read access
+blocks its later acquisition. The `revise` invitation replaces a named installed
+module in Bend, retaining every other captured module and the complete captured
+state. This inline module proposal needs no host source file edits. Candidate
+inspection shows its proposed source and authored examples through the same
+Document renderer; its Check action durably requests the configured compiler.
+The service consumes that source request and reports against its exact root.
+Release remains a separate offered turn under current adoption authority. `WritingFactory.obend` allocates this participant through
 the same Creation/Allocation modules. A post is transported and authenticated by
 the existing Clerk; no Python helper decides the workflow.
 

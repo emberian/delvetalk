@@ -212,7 +212,7 @@ def bind (owner : String) (ownerRoot : Json) (observations : List (String × Jso
     for read in (← list 17 (← member payload "reads")) do
       spend
       let .variant readKind readPayload := read | throw "preparation read requires a variant"
-      exact readPayload ["object"]
+      exact readPayload (if readKind == "exact" then ["object", "key"] else ["object"])
       let id ← identity (← member readPayload "object")
       if declared.contains id then throw "duplicate preparation read"
       declared := id :: declared
@@ -220,6 +220,11 @@ def bind (owner : String) (ownerRoot : Json) (observations : List (String × Jso
         | "existing" => match observations.lookup id with
           | some root => pure root
           | none => throw ("preparation read was not observed: " ++ id)
+        | "exact" =>
+          let key ← text (← member readPayload "key")
+          let some root := observations.lookup id | throw ("preparation exact read was not observed: " ++ id)
+          if RetainedRoots.digest root != key then throw "preparation exact read differs from captured root"
+          pure root
         | "absent" =>
           if id == owner || (observations.lookup id).isSome then throw "preparation absence conflicts with observation"
           pure .null
@@ -247,9 +252,11 @@ def bind (owner : String) (ownerRoot : Json) (observations : List (String × Jso
       ("request", request)]
   | _ => throw "unknown preparation result"
 
-def run (world request : Json)
+def runBudget (world request : Json) (budget : Nat)
     (guard : String → Json → Except String Json := fun _ root => pure root)
-    (currentObjects : Option Json := none) : Except String Json := do
+    (currentObjects : Option Json := none)
+    (authorizeOwner : Json → String → String → Except String Unit :=
+      fun objects owner principal => do discard (readObject objects owner principal)) : Except String (Json × Nat) := do
   let keys := (← pairs request).map Prod.fst
   let required := ["op", "object", "root", "entry", "contribution", "observations", "principal", "intent"]
   let optional := ["contributionCodec", "definitions"]
@@ -268,7 +275,7 @@ def run (world request : Json)
   if principal.isEmpty || intent.isEmpty then throw "preparation requires principal and intent"
   let root ← field request "root"
   let objects ← field world "objects"
-  discard (readObject (currentObjects.getD objects) owner principal)
+  authorizeOwner (currentObjects.getD objects) owner principal
   if (← field objects owner) != root then throw "preparation owner root differs from captured inspection"
   let protocol ← field root "protocol"
   let hook ← field protocol "preparation"
@@ -287,7 +294,8 @@ def run (world request : Json)
     if keys.length != 4 || !keys.all (["object", "root", "inspectState", "inspectLaw"].contains) then throw "preparation observation requires exact fields"
     let id ← str observation "object"
     let observed ← field observation "root"
-    discard (readObject (currentObjects.getD objects) id principal)
+    if id == owner then authorizeOwner (currentObjects.getD objects) owner principal
+    else discard (readObject (currentObjects.getD objects) id principal)
     if (← field objects id) != observed then throw "preparation observation differs from captured inspection"
     if sourceObservations.any (fun item => item.1 == id) then throw "duplicate preparation observation"
     sourceObservations := sourceObservations ++ [(id, observed, ← (← field observation "inspectState").getBool?, ← (← field observation "inspectLaw").getBool?)]
@@ -311,7 +319,10 @@ def run (world request : Json)
         ("program", .label (Messages.digest (← field observed "protocol"))),
         ("state", stateData), ("law", lawData)]
       data := var "cons" [("head", observation), ("tail", data)]
-    let state ← ((SourceState.read (← field root "protocol") (← field (← field root "state") "model")).run 100000).map Prod.fst
+    let available ← get
+    let (state, afterState) ← (SourceState.read (← field root "protocol")
+      (← field (← field root "state") "model")).run available
+    set afterState
     let args := #[state, contribution, data,
       rec [("object", .label owner), ("principal", .label principal)]]
     let args ← match (field request "definitions").toOption with
@@ -319,7 +330,7 @@ def run (world request : Json)
       | some selections => do
         let definitions ← SourceReflection.definitions observations selections
         pure (args.push definitions)
-    pure (args, observations) : Work (Array Data × List (String × Json))).run 100000
+    pure (args, observations) : Work (Array Data × List (String × Json))).run budget
   let artifact ← Delvetalk.Package.compile spec
   let execution ← Delvetalk.Package.executeDataValues (← field artifact "packet") args
     (obj [("ticks", toJson remaining), ("heap", toJson (100000 : Nat)), ("stack", toJson (10000 : Nat)),
@@ -331,8 +342,14 @@ def run (world request : Json)
   let value ← match execution with
     | .finished value _ _ _ => pure value
     | .refused failure _ => throw ("source preparation refused: " ++ failure)
-  let (reply, _) ← (bind owner root captured principal intent value guard).run (remaining - used)
-  return reply
+  (bind owner root captured principal intent value guard).run (remaining - used)
+
+def run (world request : Json)
+    (guard : String → Json → Except String Json := fun _ root => pure root)
+    (currentObjects : Option Json := none)
+    (authorizeOwner : Json → String → String → Except String Unit :=
+      fun objects owner principal => do discard (readObject objects owner principal)) : Except String Json :=
+  (runBudget world request 100000 guard currentObjects authorizeOwner).map Prod.fst
 
 -- Pure physical codec for custody clients. This operation neither reads objects
 -- nor grants authority. It shares the exact Value bridge used by preparation

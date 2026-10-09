@@ -20,6 +20,12 @@ def card():
             {'name': 'nights', 'label': 'Nights', 'required': True, 'type': 'nat', 'minimum': 1, 'maximum': 7}]}]}
 
 
+def fixture_law(protocol):
+    return {'profile': 'delvetalk-scoped-law',
+            'invoke': {name: ['iris'] for name in protocol['commands']},
+            'read': 'public', 'reprogram': ['iris'], 'law': ['iris']}
+
+
 class SourceInterpretation(unittest.TestCase):
     def test_literal_and_model_share_partial_binding_and_validation(self):
         literal = interpret.interpret('do capture-1 lend {"nights":2}', card())
@@ -106,10 +112,10 @@ class SourceInterpretation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with __import__('contextlib').closing(resident_store.Resident(Path(directory) / 'world.sqlite')) as receiver:
                 created = receiver.exchange({'op': 'create', 'object': 'conversation', 'principal': 'iris',
-                    'intent': 'create', 'protocol': protocol, 'law': ['iris']})
+                    'intent': 'create', 'protocol': protocol, 'law': fixture_law(protocol)})
                 self.assertEqual(created['kind'], 'committed', created)
                 root = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
-                job_wire = interpret.native('interpretationRequest', [root['state']['model'], source.data('Lend the amber moth'), empty, context], modules=retained_modules)
+                job_wire = interpret.native('interpretationRequest', [source.state_data(root), source.data('Lend the amber moth'), empty, context], modules=retained_modules)
                 job = source.plain(next(f['value'] for f in job_wire['fields'] if f['name'] == 'job'))
                 envelope = next(f['value'] for f in job_wire['fields'] if f['name'] == 'envelope')
                 calls = []
@@ -118,19 +124,19 @@ class SourceInterpretation(unittest.TestCase):
                     return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': '{"action":"resolve","fields":{"target":"moth:amber"}}'}]}
                 helper = interpret.AnthropicProposer(None, directory=Path(directory) / 'models', identity_scope='iris/private', provider=provider)
                 reply = helper.request_source(job, source_modules=retained_modules, envelope=envelope)
-                self.assertEqual(job['revision'], 'lending-policy-v1')
+                self.assertEqual(job['revision'], 'lending-policy-v2')
                 invitation = {'format': source_offers.FORMAT, 'object': 'conversation', 'root': root,
                     'entry': 'prepareInterpretation', 'contributionCodec': 'data', 'observations': [], 'title': 'Conversation', 'label': 'Interpret', 'fields': []}
                 prepared = source_offers.prepare_value(invitation, 'iris', 'retain-model-1', source.record({'request': envelope, 'reply': source.value(reply)}))
                 self.assertEqual(prepared['kind'], 'ready', prepared)
                 receipt = receiver.exchange(prepared['request'])
                 self.assertEqual(receipt['kind'], 'committed', receipt)
-                state = source.plain(receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})['state']['model'])
-                contribution = rows(state['contributions'])[0]
+                state = source.plain(source.state_data(receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})))
+                contribution = rows(state['conversation']['contributions'])[0]
                 self.assertEqual(contribution['actor'], 'iris')
                 self.assertEqual(contribution['proposal']['original'], 'Lend the amber moth')
-                self.assertEqual(contribution['proposal']['policy'], 'lending-policy-v1')
-                self.assertEqual(rows(state['unresolved']), ['recipient'])
+                self.assertEqual(contribution['proposal']['policy'], 'lending-policy-v2')
+                self.assertEqual(rows(state['conversation']['unresolved']), ['recipient'])
                 self.assertEqual(receiver.exchange(prepared['request']), receipt)
                 stale = copy.deepcopy(prepared['request'])
                 stale['intent'] = 'different-intent-same-old-capture'
@@ -146,6 +152,32 @@ class SourceInterpretation(unittest.TestCase):
                 refused = source_offers.prepare_value(invitation, 'iris', 'wrong-policy', source.record({'request': forged, 'reply': source.value(reply)}))
                 self.assertEqual(refused['kind'], 'refused', refused)
 
+                # Complete the retained intention through the actual offered action.
+                moth_modules = source.read_closure([
+                    ('Moth', ROOT / 'protocols/conversation/Moth.obend')])
+                moth_protocol = source.adapter.lower_data_modules(moth_modules)
+                for name in ('moth:amber', 'moth:silver'):
+                    self.assertEqual(receiver.exchange({'op': 'create', 'object': name, 'principal': 'iris',
+                        'intent': 'create-' + name, 'protocol': moth_protocol, 'law': fixture_law(moth_protocol)})['kind'], 'committed')
+                current = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
+                answered = receiver.exchange({'op': 'invoke', 'object': 'conversation', 'principal': 'iris',
+                    'intent': 'answer-missing-recipient', 'expected': current, 'command': 'answer',
+                    'input': {'original': 'For Moss, please.', 'target': '', 'recipient': 'moss'}})
+                self.assertEqual(answered['kind'], 'committed', answered)
+                current = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
+                observations = [{'object': name, 'root': receiver.exchange({'op': 'inspect', 'object': name,
+                    'principal': 'iris'}), 'inspectState': False, 'inspectLaw': False}
+                    for name in ('moth:amber', 'moth:silver')]
+                finish = source_offers.prepare({**invitation, 'root': current, 'entry': 'prepareResolve',
+                    'observations': observations, 'contributionCodec': 'value'}, 'iris', 'finish-lending', {})
+                self.assertEqual(finish['kind'], 'ready', finish)
+                completed = receiver.exchange(finish['request'])
+                self.assertEqual(completed['kind'], 'committed', completed)
+                self.assertEqual(receiver.exchange(finish['request']), completed)
+                moth = receiver.exchange({'op': 'inspect', 'object': 'moth:amber', 'principal': 'iris'})
+                self.assertEqual(source.plain(source.state_data(moth))['borrower'], 'moss')
+                self.assertEqual(len(calls), 1)
+
     def test_physical_service_quota_and_busy_never_call_provider(self):
         import fcntl
         with tempfile.TemporaryDirectory() as directory:
@@ -160,11 +192,87 @@ class SourceInterpretation(unittest.TestCase):
                 self.assertEqual(service.request({'body': {}, 'identityScope': 'account-a'})['status'], 'busy')
             self.assertEqual(len(calls), 1)
 
+    def test_participant_revises_stored_prompt_and_next_source_request(self):
+        sys.path.insert(0, str(ROOT))
+        from conformance.test_document_conversation import modules, rows
+        import resident_store
+        import source_offers
+        import affordances
+        import portal
+        import town_cards
+        from scene import projection
+        retained_modules = modules()
+        protocol = source.adapter.lower_data_modules(retained_modules)
+        empty = source.variant('nil', source.record({}))
+        context = source.data({'object': 'conversation', 'principal': 'iris'})
+        with tempfile.TemporaryDirectory() as directory:
+            with __import__('contextlib').closing(resident_store.Resident(Path(directory) / 'world.sqlite')) as receiver:
+                self.assertEqual(receiver.exchange({'op': 'create', 'object': 'conversation', 'principal': 'iris',
+                    'intent': 'create', 'protocol': protocol, 'law': fixture_law(protocol)})['kind'], 'committed')
+                old = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
+                wire = interpret.native('interpretationRequest', [source.state_data(old), source.data('Lend the amber moth'),
+                    empty, context], modules=retained_modules)
+                old_envelope = next(f['value'] for f in wire['fields'] if f['name'] == 'envelope')
+                policy = source.plain(source.state_data(old))['conversation']['interpreter']
+                revised = {**policy, 'revision': 'participant-policy-v3', 'vocabulary': 'A lantern means the amber moth.'}
+                edit = {'revision': revised['revision'], 'section': 'vocabulary', 'text': revised['vocabulary']}
+                before_panel = projection.project(old, 'conversation', panel='interpretation')
+                self.assertIn('interpretation', [item['id'] for item in portal.Portal.panels(old)])
+                main = projection.project(old, 'conversation')
+                town_panels = town_cards._panels(main, None)
+                town_panel = next(item['view'] for item in town_panels if item['id'] == 'interpretation')
+                for captured_panel in (before_panel, town_panel):
+                    displayed = affordances.card(captured_panel)
+                    editing = next(action for action in displayed['actions'] if action.get('command') == 'reviseInterpretation')
+                    self.assertEqual({field['name'] for field in editing['fields']}, {'revision', 'section', 'text'})
+                changed_request = affordances.request(before_panel, editing['id'], 'iris', 'revise-prompt', edit)
+                denied = receiver.exchange({'op': 'invoke', 'object': 'conversation', 'principal': 'mallory',
+                    'intent': 'unauthorized-prompt-edit', 'expected': old, 'command': 'reviseInterpretation', 'input': edit})
+                self.assertEqual(denied['kind'], 'refused', denied)
+                self.assertEqual(receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'}), old)
+                changed = receiver.exchange(changed_request)
+                self.assertEqual(changed['kind'], 'committed', changed)
+                current = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
+                updated_state = source.plain(source.state_data(current))['conversation']
+                self.assertEqual(updated_state['interpreter'], revised)
+                self.assertEqual(updated_state['capture']['revision'],
+                    source.plain(source.state_data(old))['conversation']['capture']['revision'] + 1)
+                self.assertEqual(rows(updated_state['outcomes'])[0]['actor'], 'iris')
+                panel = projection.project(current, 'conversation', panel='interpretation')
+                self.assertIn(revised['vocabulary'], panel['data']['prose'])
+                new_wire = interpret.native('interpretationRequest', [source.state_data(current), source.data('Lend the lantern'),
+                    empty, context], modules=retained_modules)
+                job = source.plain(next(f['value'] for f in new_wire['fields'] if f['name'] == 'job'))
+                self.assertEqual(job['revision'], revised['revision'])
+                self.assertIn(revised['vocabulary'], job['system'])
+                self.assertIn(revised['examples'], job['system'])
+                calls = []
+                helper = interpret.AnthropicProposer(None, directory=Path(directory) / 'models', provider=lambda body:
+                    calls.append(body) or {'stop_reason': 'end_turn', 'content': [{'type': 'text',
+                    'text': '{"action":"resolve","fields":{"target":"moth:amber"}}'}]})
+                envelope = next(f['value'] for f in new_wire['fields'] if f['name'] == 'envelope')
+                reply = helper.request_source(job, source_modules=retained_modules, envelope=envelope)
+                invitation = {'format': source_offers.FORMAT, 'object': 'conversation', 'root': current,
+                    'entry': 'prepareInterpretation', 'contributionCodec': 'data', 'observations': [],
+                    'title': 'Conversation', 'label': 'Interpret', 'fields': []}
+                old_reply = source_offers.prepare_value(invitation, 'iris', 'old-prompt-reply',
+                    source.record({'request': old_envelope, 'reply': source.value(reply)}))
+                self.assertEqual(old_reply['kind'], 'refused', old_reply)
+                prepared = source_offers.prepare_value(invitation, 'iris', 'new-prompt-reply',
+                    source.record({'request': envelope, 'reply': source.value(reply)}))
+                self.assertEqual(prepared['kind'], 'ready', prepared)
+                receipt = receiver.exchange(prepared['request'])
+                self.assertEqual(receipt['kind'], 'committed', receipt)
+                state = source.plain(source.state_data(receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})))
+                self.assertEqual(rows(state['conversation']['contributions'])[0]['proposal']['policy'], revised['revision'])
+                self.assertEqual(helper.request_source(job, source_modules=retained_modules, envelope=envelope), reply)
+                self.assertEqual(len(calls), 1)
+
     def test_explicit_generation_and_pure_retained_render(self):
         modules = source.read_modules([(name, ROOT / path) for name, path in [
             ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
             ('Encounter', 'world/lib/prelude/Encounter.obend'), ('Document', 'world/lib/document/Document.obend'),
-            ('Conversation', 'protocols/conversation/Conversation.obend'), ('Interpretation', 'protocols/interpretation/Interpretation.obend'),
+            ('Interpretation', 'protocols/interpretation/Interpretation.obend'), ('Conversation', 'protocols/conversation/Conversation.obend'),
             ('ModelEncounter', 'protocols/interpretation/Encounter.obend')]])
         job = interpret.native('prompt', [interpret.native('defaultPolicy'), source.data('{}')])
         request = source.record({'key': source.data('exact-1'), 'generation': source.data(1),

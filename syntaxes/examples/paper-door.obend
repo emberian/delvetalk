@@ -1,14 +1,49 @@
 edition ObjectiveBend 1
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: {}
+  result: String
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Method:
+  label: String
+  fields: {word: Field}
+record Description:
+  name: String
+  initial: {}
+  methods: {knock: Method}
+  panels: {}
 record Action:
+  visible: Bool
   text: String
   command: String
   input: {}
-record Actions:
-  knock: Action
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
-  actions: Actions
+  actions: {knock: Action}
+  children: Children
 record Door:
   password: String
   opening: String
@@ -17,9 +52,11 @@ record Door:
   inscription: String
 extension Paper(self: Door, super: {}) -> Door:
   {password: "please", opening: "The paper door swings open onto a tiny lantern-lit room.", allowed: fn(word: String) -> Bool: word == self.password, knock: fn(word: String) -> String: self.opening, inscription: "A paper door with a brass knocker. Whisper please."}
-def allowed(word: String) -> Bool:
-  fix(Paper, {}).allowed(word)
-def knock(word: String) -> String:
-  fix(Paper, {}).knock(word)
+def describe() -> Description:
+  {name: "The paper door", initial: {}, methods: {knock: {label: "Whisper to the door", fields: {word: {type: "string", minLength: 0n, maxLength: 240n}}}}, panels: {}}
+def knock(state: {}, input: {word: String}, context: Context) -> Decision:
+  let door: Door = fix(Paper, {})
+  let accepted: Bool = door.allowed(input.word)
+  {accepted: accepted, reason: if accepted then "" else "precondition failed", state: state, result: door.knock(input.word)}
 def view(state: {}, panel: String) -> View:
-  {title: "The paper door", prose: fix(Paper, {}).inscription, actions: {knock: {text: "Whisper to the door", command: "knock", input: {}}}}
+  {title: "The paper door", prose: fix(Paper, {}).inscription, actions: {knock: {visible: true, text: "Whisper to the door", command: "knock", input: {}}}, children: Children.nil()}

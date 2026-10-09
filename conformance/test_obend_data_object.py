@@ -73,37 +73,27 @@ def view(state: State, panel: String) -> View:
 
 class TypedSourceBindingTests(unittest.TestCase):
     def test_explicit_typed_description_preserves_variant_model_and_menu(self):
-        artifact = translate.translate('objective-bend-spell@3', SOURCE.encode())
+        artifact = translate.translate('objective-bend-object', SOURCE.encode())
         protocol = artifact['lowered']
-        self.assertEqual(protocol['initial'], {'model': {'tag': 'record', 'fields': [
-            {'name': 'entries', 'value': {'tag': 'variant', 'label': 'nil', 'payload': {'tag': 'record', 'fields': []}}}]}})
-        self.assertEqual(protocol['commands']['add']['transition']['profile'], 'delvetalk-source-data-transition-v1')
+        self.assertEqual(protocol['initial']['model']['format'], 'delvetalk-compact-state')
+        self.assertEqual(protocol['commands']['add']['transition']['profile'], 'delvetalk-source-transition')
         self.assertEqual(protocol['viewProgram']['profile'], 'delvetalk-obend-data-menu-v1')
         self.assertEqual(artifact['source']['text'], SOURCE)
-        with self.assertRaises(ValueError): translate.translate('objective-bend-spell@2', SOURCE.encode())
 
     def test_initial_nil_does_not_hide_incompatible_method_state(self):
         bad = SOURCE.replace('record State:', 'sum WrongChildren:\n  nil: {}\n  cons: {head: Nat, tail: WrongChildren}\nrecord WrongState:\n  entries: WrongChildren\nrecord State:')
         bad = bad.replace('def add(state: State,', 'def add(state: WrongState,')
         bad = bad.replace('tail: state.entries', 'tail: Children.nil()')
         with self.assertRaisesRegex(ValueError, 'incompatible serializable state schema'):
-            translate.translate('objective-bend-spell@3', bad.encode())
+            translate.translate('objective-bend-object', bad.encode())
 
     def test_unselected_executable_alternative_and_wrong_children_schema_refuse(self):
         hidden = SOURCE.replace('  nil: {}\n', '  nil: {}\n  executable: Nat -> Nat\n', 1)
-        with self.assertRaises(ValueError): translate.translate('objective-bend-spell@3', hidden.encode())
+        with self.assertRaises(ValueError): translate.translate('objective-bend-object', hidden.encode())
         wrong = SOURCE.replace('  panel: String', '  panel: Nat').replace('panel: "main"', 'panel: 0')
         with self.assertRaisesRegex(ValueError, 'view children.*incompatible'):
-            translate.translate('objective-bend-spell@3', wrong.encode())
+            translate.translate('objective-bend-object', wrong.encode())
 
-    def test_context2_plain_profile_is_selected_without_typed_tag_guessing(self):
-        source = (ROOT / 'syntaxes/examples/lantern.obend').read_text()
-        context2 = '  principal: String\n  inputOrigin: {kind: String, object: String, command: String, immediatelyPrevious: Bool}'
-        protocol = translate.translate('objective-bend-spell@2', source.replace('  principal: String', context2).encode())['lowered']
-        self.assertEqual(protocol['initial'], {'lit': False})
-        self.assertTrue(all(c['transition']['profile'] == 'delvetalk-source-transition-v2' for c in protocol['commands'].values()))
-        legacy = translate.translate('objective-bend-spell@2', source.encode())['lowered']
-        self.assertTrue(all(c['transition']['profile'] == 'delvetalk-source-transition-v1' for c in legacy['commands'].values()))
 
 
 if __name__ == '__main__': unittest.main()

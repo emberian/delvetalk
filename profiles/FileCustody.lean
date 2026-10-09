@@ -63,7 +63,8 @@ def lookup (snapshot : System.FilePath) : IO Unit := do
 -- Reject mutations before invoking the shared native receiver. The unchanged
 -- world assertion also catches an accidentally effectful future query hook.
 def queryOperations : List String := ["inspect", "authorize-reads", "object-history", "messages-pending", "message-event",
-  "retained-root", "capture-roots", "catalogue-page", "prepare", "prepare-retained", "value-codec"]
+  "retained-root", "capture-roots", "catalogue-page", "prepare", "prepare-retained", "value-codec",
+  "opaque-view", "opaque-select", "opaque-invitation", "opaque-prepare"]
 
 def query (receive : Json → Json → Except String (Json × Json))
     (snapshot : System.FilePath) : IO Unit := do

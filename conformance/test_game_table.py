@@ -51,7 +51,8 @@ class GameTable(unittest.TestCase):
     def new(self, fixture='independent'):
         request = table.create_request(self.identity, *SEATS, principal='did:plc:host', intent='create')
         case = CASES[fixture]
-        initial = table.source_object.plain(request['protocol']['initial']['model'])
+        initial = table.source_object.plain(table.source_object.state_data(
+            {'protocol': request['protocol'], 'state': request['protocol']['initial']}))
         initial.update(width=case['w'], height=case['h'])
         initial['game'].update(board=sum(p*4**i for i,p in enumerate(case['cells'])),
                                automaton=case['a'],marks=sum(2**i for i in case['marks']))

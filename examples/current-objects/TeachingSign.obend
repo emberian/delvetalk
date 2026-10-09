@@ -1,0 +1,51 @@
+edition ObjectiveBend 1
+record State:
+  title: String
+  message: String
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+record Method:
+  label: String
+  fields: {}
+record Description:
+  name: String
+  initial: State
+  methods: {light: Method}
+  panels: {details: String}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {light: Action}
+  children: Children
+def describe() -> Description:
+  {name: "The workshop sign", initial: {title: "The workshop sign", message: "The lamp is dark."}, methods: {light: {label: "Light the lamp", fields: {}}}, panels: {details: "Lamp details"}}
+def light(state: State, input: {}, context: Context) -> Decision:
+  {accepted: true, reason: "", state: {title: state.title, message: "The lamp is lit."}, result: "lit"}
+def view(state: State, panel: String) -> View:
+  {title: state.title, prose: if panel == "details" then state.message else textConcat(state.message, " A participant can propose a new sign; its steward can accept it."), actions: {light: {visible: true, text: "Light the lamp", command: "light", input: {}}}, children: Children.nil()}

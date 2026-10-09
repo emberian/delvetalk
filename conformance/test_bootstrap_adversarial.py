@@ -5,6 +5,7 @@ Tests execute the actual Lean receiving path. They never compile Lean or post.
 """
 import copy
 import importlib.util
+from native_support import load_script
 import json
 from pathlib import Path
 import subprocess
@@ -14,9 +15,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('bootstrap_audit_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'bootstrap_audit_world')
 
 
 def scoped(invoke, reprogram=(), law=('steward',)):

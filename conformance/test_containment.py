@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / 'syntaxes'))
 import obend_object
 import world
 import history
+import source_object
 
 PACKAGE = ROOT / 'protocols/containment'
 
@@ -31,7 +32,7 @@ def member_rows(root):
     # Evidence decoder only: admission and movement execute the authored source.
     def field(record, name):
         return next(v['value'] for v in record['fields'] if v['name'] == name)
-    cursor = field(root['state']['model'], 'members')
+    cursor = field(source_object.state_data(root), 'members')
     rows = {}
     while cursor['label'] == 'cons':
         row = field(cursor['payload'], 'head')
@@ -44,6 +45,7 @@ def member_rows(root):
 class Containment(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.lampSource = compile_source('Lamp')
         cls.relation = compile_source('Main')
         cls.room = compile_source('Room', **{'capacity: 4n': 'capacity: 3n'})
         cls.narrow = compile_source('Room', **{'capacity: 4n': 'capacity: 1n', 'A room': 'The quiet room'})
@@ -55,18 +57,18 @@ class Containment(unittest.TestCase):
         self.database = self.base / 'world.json'
         self.serial = 0
         people = ['alice', 'bob', 'curator']
-        self.create('habitat', self.relation, {'profile': 'delvetalk-scoped-law-v1',
+        self.create('habitat', self.relation, {'profile': 'delvetalk-scoped-law',
             'invoke': {k: people for k in ('enroll', 'act', 'plan', 'arrive')},
             'reprogram': ['curator'], 'law': ['curator']})
-        room_law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'admit': ['alice', 'bob']},
+        room_law = {'profile': 'delvetalk-scoped-law', 'invoke': {'admit': ['alice', 'bob']},
                     'reprogram': ['curator'], 'law': ['curator']}
         self.create('garden', self.room, room_law)
         self.create('study', self.narrow, room_law)
-        self.lamp = {'profile': 'delvetalk-local-v1', 'initial': {'lit': False},
-            'commands': {'shine': {'require': [], 'set': {'lit': ['literal', True]},
-                'result': ['literal', 'The lamp shines.'], 'outbox': []}}}
+        self.lamp = self.lampSource
         for name in ('alice-body', 'bob-body', 'lamp'):
-            self.create(name, self.lamp, ['alice'] if name != 'bob-body' else ['bob'])
+            self.create(name, self.lamp, {'profile': 'delvetalk-scoped-law',
+                'invoke': {'shine': ['alice'] if name != 'bob-body' else ['bob']},
+                'reprogram': ['curator'], 'law': ['curator']})
         for room in ('garden', 'study'):
             self.enroll(room, 'curator')
             self.act('room', room, who='curator')

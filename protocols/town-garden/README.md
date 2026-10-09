@@ -15,7 +15,7 @@ There is no timer, external weather service or automatic publication.
 
 Supply the ordered modules `Abi`, `Encounter` from `world/lib/prelude`, followed
 by [Blooms](Blooms.obend) and [Garden](Garden.obend), to the ordinary typed source
-adapter (`objective-bend-spell@3`). Imports select those exact bytes. Source
+adapter (`objective-bend-object`). Imports select those exact bytes. Source
 `describe()` owns initial state, forms, examples and panels; `view()` owns the
 available actions and the link to a cutting's original bloom. No separate binding,
 generated executable protocol or legacy migration is required.

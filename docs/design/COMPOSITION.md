@@ -6,8 +6,9 @@ A scene may own a private prop. It must not duplicate a public object's state
 and call that copy the public object. The same distinction applies to mailboxes,
 rooms, clocks, workshops and games.
 
-This design is the next source/host connection, not a claim that its full API is
-implemented. Typed state, transactions, origin facts, retained messages,
+The source route book in `protocols/containment/Guide.obend` implements a
+bounded local vocabulary and a placement completion loop; this document also
+sets the direction for wider composition. Typed state, transactions, origin facts, retained messages,
 containment and appointments already supply much of the substrate.
 
 ## Shared vocabulary
@@ -39,12 +40,22 @@ it, record arrival, then complete the choice from the real result. Each step kee
 the actual caller and faces current law. Any refusal rolls back the whole turn.
 The scene's temporary continuation is ordinary staged data, not a Python callback.
 
-Existing containment already implements `plan → admit → arrive`. Two concrete
-gaps need correction: `arrive` returns text while `inputFrom` accepts records;
-synchronous origin records identity/command but not producing program identity.
-Use explicit typed completion records and add the missing authenticated fact when
-exact-code relationships require it. Do not copy a hash into input and call it
-trusted provenance. Merely importing the relation's code cannot replace this join.
+Containment implements `plan → admit → arrive`. `arrive` returns a typed
+`Relations.Arrival {object, destination, actor}` record, which the source route
+book consumes through `inputFrom`. Native `Context.inputOrigin.program` binds
+that outcome to the exact protocol admitted by its producing step. The route
+book checks the placement identity, `arrive` operation, immediate predecessor,
+actor and captured producer program before completing its own intention.
+Copying an equal record grants no such origin. A later producer revision cannot
+retroactively change earlier origin facts; an obsolete captured relationship
+requires an explicit observed reconnection.
+
+The route book resolves only its own bounded `Choice {term, verb, object}`
+relationships. Repeated terms expose their known destination children and a
+source question naming those alternatives. Choosing an identity must resolve
+inside that local set. Its preparation captures declared observations and
+prepares `plan → admit → arrive → complete` as one atomic turn; it reads no
+ambient catalogue and uses no host dispatcher for movement semantics.
 
 An external fact should normally come from a source method on its governing object.
 The current `observe` returns identity/version, not arbitrary domain facts. Use
@@ -58,13 +69,14 @@ Sending means sent, not completed. Source retains correlation and a pending stat
 a recipient decides whether to act; an authenticated later result may complete
 the original intention. Timeout, withdrawal, obsolete generations and abandonment
 are authored policies. A clock supplies recorded logical-time events; a physical
-driver does not decide their meaning. Receive handlers currently cannot emit
-descendants: request/reply chaining therefore needs an explicit bounded causal
-resource policy, not an invisible recursive relay.
+driver does not decide their meaning. Receive handlers can emit bounded
+descendants. Native causal depth, event,
+work and byte ceilings retain the original admitted root and bound request/reply
+continuation. Source policy still decides the meaning of each reply.
 
-Recipient program replacement exposes a present lifecycle hole: old pinned events
-cannot reach source-owned decline because native delivery rejects the new program.
-Add governed terminal settlement which records an explicit declined outcome under
+Recipient program replacement prevents old pinned events from reaching the
+replacement source. Governed terminal settlement records an explicit declined
+outcome under
 recipient current authority, never executes the old payload against replacement
 code, never rewrites old evidence and cannot race a successful consumption. This
 is distinct from recalling an ordinary admitted send. Native consumption exclusion

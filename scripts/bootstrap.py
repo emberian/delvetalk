@@ -26,12 +26,19 @@ room = module('bootstrap_room', 'scene/room.py')
 projection = module('bootstrap_projection', 'scene/projection.py')
 desk_module = module('bootstrap_desk', 'scripts/desk.py')
 history = module('bootstrap_history', 'scripts/history.py')
+source_object = module('bootstrap_source_object', 'scripts/source_object.py')
+scene_handlers = module('bootstrap_scene_handlers', 'scene/handlers.py')
+scene_workshop = module('bootstrap_scene_workshop', 'syntaxes/spween_workshop.py')
 loads, canonical = desk_module.loads, desk_module.canonical
 
 
-def scoped(commands, *, managers=()):
-    return {'profile': 'delvetalk-scoped-law', 'invoke': {command: PARTICIPANTS for command in commands},
-            'reprogram': list(managers), 'law': ['local-operator']}
+def scoped(commands, *, managers=(), panels=('main',)):
+    modules = source_object.read_closure([('ScenarioLaw', ROOT / 'world/lib/prelude/ScenarioLaw.obend'),
+        ('Authority', ROOT / 'world/lib/prelude/Authority.obend')])
+    config = source_object.record({name: source_object.list_data(source_object.data(item) for item in value) for name, value in {
+        'commands': list(commands), 'participants': PARTICIPANTS,
+        'managers': list(managers), 'stewards': ['local-operator'], 'publicPanels': list(panels)}.items()})
+    return source_object.values('decode', [source_object.evaluate(modules, 'configured', [config])])[0]
 
 
 def require(value, message):
@@ -51,8 +58,8 @@ def preserve_dependencies(directory, artifact):
     desk_module.preserve_build_dependencies(Path(directory) / 'artifacts', artifact)
 
 
-def preserve_lowering(directory, source):
-    artifact = desk_module.translate.translate('protocol-json@1', source)
+def preserve_lowering(directory, source, *, syntax='protocol-json@1'):
+    artifact = desk_module.translate.translate(syntax, source)
     identity = history.digest(artifact)
     path = Path(directory) / 'artifacts/lowerings' / (identity + '.json')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -61,6 +68,25 @@ def preserve_lowering(directory, source):
         raise ValueError('stored lowering artifact mismatch')
     preserve_dependencies(directory, artifact)
     return artifact
+
+
+def cafe_proposal_source():
+    """Frame the exact authored scene, handler and migration entry bytes."""
+    return scene_workshop.frame_source((EXAMPLES / 'cafe-improved.scene').read_bytes().decode('utf-8'), [
+        {'name': 'Handler', 'source': (ROOT / 'protocols/spween-handlers/Handler.obend').read_bytes().decode('utf-8')},
+        {'name': 'Scene', 'source': (EXAMPLES / 'CafeWindow.obend').read_bytes().decode('utf-8')}]).encode('utf-8')
+
+
+
+def cafe_migration(source, previous):
+    """Evaluate the proposed source's migration over the captured model."""
+    material = scene_workshop.parse_source(source.decode('utf-8'))
+    document = scene_handlers.bridge({'op': 'parse', 'source': material['scene']})
+    modules = scene_handlers.modules_for(document, handler_modules=material['handlerModules'],
+        runtime_modules=material['runtimeModules'] or None, scene_modules=material['sceneModules'])
+    configured = source_object.load(modules, syntax='objective-bend-object',
+        constructor='migrate', arguments=[source_object.state_data(previous), scene_handlers.scene_data(document)])
+    return configured['initial']
 
 
 def preserve_build(directory, identity):
@@ -74,10 +100,8 @@ def run_bootstrap(directory, *, profile='compiled'):
     if profile != 'compiled':
         raise ValueError('source authoring bootstrap requires compiled admission')
     selected_binary = desk_module.world.PROFILES[profile][0]
-    for name in ('delvetalk-world', selected_binary):
-        require((ROOT / '.lake/build/bin' / name).is_file(), 'Build ' + name + ' first')
-    require(room.lower.BRIDGE.is_file() if hasattr(room.lower, 'BRIDGE') else
-            (ROOT / 'scene/spween-bridge/target/debug/delvetalk-spween').is_file(), 'Build the pinned Spween bridge first')
+    require((ROOT / '.lake/build/bin' / selected_binary).is_file(), 'Build ' + selected_binary + ' first')
+    require(room.parser.BRIDGE.is_file(), 'Build the pinned Spween bridge first')
     directory.mkdir(parents=True, exist_ok=True)
     require(not any(directory.iterdir()), 'bootstrap requires an empty directory; keep existing worlds and receipts')
     runtime = history.runtime(profile)
@@ -99,31 +123,41 @@ def run_bootstrap(directory, *, profile='compiled'):
     def send(label, request, expected='committed'):
         return record(label, desk.exchange(request), expected)
 
+    def check(object_id, requester, intent, pending, label):
+        requested = send(requester.title() + ' requests a check of the retained source and examples', {
+            'op': 'invoke', 'object': object_id, 'principal': requester,
+            'intent': intent, 'expected': pending, 'command': 'requestCheck', 'input': {}})['data']['root']
+        work = desk_module.compiler_work(requested, object_id, 'compiler', desk.database)
+        require(work is not None, 'the requested source compiler work must be offered')
+        return record(label, desk.check(object_id, 'compiler', work['intent'], requested))
+
     def inspect(object_id=CAFE):
         return desk.inspect(object_id)
 
     def view(artifact, filename=None):
         result = room.room_view(inspect(), artifact, CAFE)
-        require(result['mode'] == 'room', str(result))
+        require(result['mode'] == 'projection', str(result))
         if filename:
             save_new(observations / filename, result)
         return result
 
-    initial_artifact = room.compile_artifact((EXAMPLES / 'cafe.scene').read_text())
+    initial_artifact = room.compile_artifact((EXAMPLES / 'cafe.scene').read_bytes().decode('utf-8'))
     initial_id = room.store_artifact(artifacts / 'rooms', initial_artifact)
     preserve_dependencies(directory, initial_artifact)
-    preserve_lowering(directory, (EXAMPLES / 'table.json').read_bytes())
+    table_lowering = preserve_lowering(directory, (ROOT / 'examples/current-objects/Table.obend').read_bytes(),
+                                      syntax='objective-bend-object')
     # Explicit future command grants keep authority unchanged across adoption.
-    command_names = ['start', 'choose:0:0', 'choose:0:1', 'choose:0:2', 'choose:1:0']
+    command_names = ['start', 'choose']
     send('The repair cafe opens', {'op': 'create', 'object': CAFE, 'principal': 'local-operator',
                                   'intent': 'open-cafe', 'protocol': initial_artifact['protocol'],
                                   'law': scoped(command_names, managers=['moss'])})
     send('An empty table reserves a place for another activity', {'op': 'create', 'object': TABLE,
          'principal': 'local-operator', 'intent': 'reserve-table',
-         'protocol': loads((EXAMPLES / 'table.json').read_bytes()), 'law': scoped([], managers=PARTICIPANTS)})
+         'protocol': table_lowering['lowered'], 'law': scoped([], managers=PARTICIPANTS)})
     record('Iris opens a source desk', desk.create(CANDIDATE, 'iris', 'open-source-desk', {
-        'profile': 'delvetalk-scoped-law',
-        'invoke': {'submit': ['iris'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['moss']},
+        'profile': 'delvetalk-scoped-law', 'read': 'public',
+        'invoke': {'submit': ['iris'], 'requestCheck': ['iris'], 'compiled': ['compiler'],
+                   'failed': ['compiler'], 'adopt': ['moss']},
         'reprogram': [], 'law': ['local-operator']}))
     preserve_lowering(directory, canonical(inspect(CANDIDATE)['protocol']))
     send('Iris enters the cafe', room.start_request(view(initial_artifact), 'iris', 'enter-cafe'))
@@ -133,37 +167,37 @@ def run_bootstrap(directory, *, profile='compiled'):
     require(stale['data'] == 'stale read root', 'old view should be refused for its exact root')
     send('Moss reads again and winds the spring', room.choice_request(view(initial_artifact), 1, 'moss', 'wind-fresh'))
     repaired = view(initial_artifact, 'repaired-before-improvement.json')
-    require(repaired['variables']['wing_aligned'] == ['bool', True] and
-            repaired['variables']['spring_wound'] == ['bool', True], 'both repairs must be committed')
-    # This migration is a participant-authored artifact, never an inferred reset.
-    migration = loads((EXAMPLES / 'migration.json').read_bytes())
+    proposed_source = cafe_proposal_source()
+    # The source revision itself defines the migration. Python transports the
+    # exact captured model and native result; it does not reconstruct a session.
+    migration = cafe_migration(proposed_source, repaired['root'])
     pending = record('Iris proposes opening a window', desk.submit(
-        CANDIDATE, 'iris', 'propose-window', inspect(CANDIDATE), 'spween-scene-i64@2',
-        (EXAMPLES / 'cafe-improved.scene').read_bytes(),
-        (EXAMPLES / 'improvement-scenarios.json').read_bytes(), migration, CAFE))['data']['root']
-    compiled = record('The compiler checks the proposal without adopting it',
-                      desk.check(CANDIDATE, 'compiler', 'compile-window', pending))
+        CANDIDATE, 'iris', 'propose-window', inspect(CANDIDATE), 'spween-handler-workshop@1',
+        proposed_source, (EXAMPLES / 'cafe-improvement.examples').read_bytes(), migration, CAFE))['data']['root']
+    compiled = check(CANDIDATE, 'iris', 'request-window-check', pending,
+                     'The compiler checks the proposal without adopting it')
     ready = compiled['data']['root']
     require(desk_module.candidate_state(ready)['status'] == 'ready', 'proposal compilation failed: ' + str(desk_module.candidate_state(ready)['diagnostics']))
     require(inspect()['protocol'] == initial_artifact['protocol'], 'compiling must not change the cafe')
     adopted = record('Moss reviews the migration and adopts the window atomically',
                      desk.adopt(CANDIDATE, CAFE, 'moss', 'adopt-window', ready, repaired['root']))
-    improved_id = desk_module.candidate_state(ready)['roomArtifact']
-    improved_artifact = room.load_artifact(artifacts / 'rooms', improved_id)
+    improved_artifact = room.source_artifact(desk_module.candidate_state(ready)['protocol'])
+    improved_id = room.store_artifact(artifacts / 'rooms', improved_artifact)
+    preserve_dependencies(directory, improved_artifact)
     improved = view(improved_artifact, 'after-adoption.json')
-    require(improved['variables']['wing_aligned'] == ['bool', True] and
-            improved['variables']['spring_wound'] == ['bool', True], 'migration must preserve both repairs')
+    require(improved['root']['state'] == migration, 'the exact source migration must be installed')
     stale_program = send('A pre-improvement view cannot dispatch into the new cafe',
-                         room.choice_request(repaired, 1, 'moss', 'old-program-view'), 'refused')
+                         room.choice_request(shared_before, 1, 'moss', 'old-program-view'), 'refused')
     require(stale_program['data'] == 'stale read root', 'old program root must be refused')
     send('Moss reads the new source-bound view and releases the moth',
          room.choice_request(improved, 2, 'moss', 'release-moth'))
     send('Moss leaves a chalk star using the newly proposed action',
          room.choice_request(view(improved_artifact), 0, 'moss', 'chalk-star'))
     final_view = view(improved_artifact, 'iris-sees-the-chalk-star.json')
-    require(final_view['variables']['chalk_star'] == ['bool', True], 'the second participant must use the improvement')
+    require(final_view['root']['state'] != improved['root']['state'], 'the second participant must use the improvement')
     # A second improvement changes the view program itself, in pure Bend.
-    sign_lowering = preserve_lowering(directory, (ROOT / 'scene/projections/sign-v1.json').read_bytes())
+    sign_lowering = preserve_lowering(directory, (ROOT / 'examples/current-objects/Sign.obend').read_bytes(),
+                                     syntax='objective-bend-object')
     sign_protocol = sign_lowering['lowered']
     sign_created = send('A shared lamp sign joins the cafe', {
         'op': 'create', 'object': SIGN, 'principal': 'local-operator', 'intent': 'create-sign',
@@ -172,15 +206,16 @@ def run_bootstrap(directory, *, profile='compiled'):
     save_new(observations / 'sign-before-improvement.json', sign_before)
     record('Moss opens a proposal to improve the sign itself', desk.create(
         SIGN_CANDIDATE, 'moss', 'open-sign-desk', {
-            'profile': 'delvetalk-scoped-law',
-            'invoke': {'submit': ['moss'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['iris']},
+            'profile': 'delvetalk-scoped-law', 'read': 'public',
+            'invoke': {'submit': ['moss'], 'requestCheck': ['moss'], 'compiled': ['compiler'],
+                       'failed': ['compiler'], 'adopt': ['iris']},
             'reprogram': [], 'law': ['local-operator']}))
     sign_pending = record('Moss proposes a pure Bend view program', desk.submit(
-        SIGN_CANDIDATE, 'moss', 'propose-sign', inspect(SIGN_CANDIDATE), 'protocol-json@1',
-        (ROOT / 'scene/projections/sign-v2.json').read_bytes(),
-        (EXAMPLES / 'sign-scenarios.json').read_bytes(), sign_before['root']['state'], SIGN))['data']['root']
-    sign_ready = record('The compiler checks the sign proposal',
-                        desk.check(SIGN_CANDIDATE, 'compiler', 'compile-sign', sign_pending))['data']['root']
+        SIGN_CANDIDATE, 'moss', 'propose-sign', inspect(SIGN_CANDIDATE), 'objective-bend-object',
+        (ROOT / 'examples/current-objects/TeachingSign.obend').read_bytes(),
+        (EXAMPLES / 'sign.examples').read_bytes(), sign_before['root']['state'], SIGN))['data']['root']
+    sign_ready = check(SIGN_CANDIDATE, 'moss', 'request-sign-check', sign_pending,
+                       'The compiler checks the sign proposal')['data']['root']
     require(desk_module.candidate_state(sign_ready)['status'] == 'ready', 'sign proposal did not compile')
     record('Iris adopts the proposed view program', desk.adopt(
         SIGN_CANDIDATE, SIGN, 'iris', 'adopt-sign', sign_ready, sign_before['root']))
@@ -280,7 +315,7 @@ def entry_objects(metadata):
 
 def bound_room_artifact(directory, root):
     """Resolve only exact admitted bindings; unrelated corrupt files do not select content."""
-    if 'roomArtifact' not in root['protocol']:
+    if 'spweenSource' not in root['protocol']:
         return None
     encoded = canonical(root['protocol'])
     for path in sorted((Path(directory) / 'artifacts/rooms').glob('*.json')):
@@ -299,7 +334,7 @@ def inspect_view(directory, object_id=None, panel='main'):
     metadata = loads((directory / 'manifest.json').read_bytes())
     object_id = object_id or default_object(metadata)
     desk = desk_module.Desk(directory / 'world.json', directory / 'artifacts',
-                           profile=metadata.get('runtime', {}).get('name', 'transactions'))
+                           profile=metadata.get('runtime', {}).get('name', 'compiled'))
     root = desk.inspect(object_id)
     artifact = bound_room_artifact(directory, root)
     return room.inspect_object(root, object_id, artifact, panel=panel,
@@ -325,8 +360,6 @@ def artifact_programs(value):
         elif item.get('format') == 'delvetalk-lowered-v1':
             if item['target'] == 'local-protocol-v1':
                 result.append(item['lowered'])
-            elif item['target'] == 'spween-protocol-bundle-v1':
-                result.append(item['lowered']['protocol'])
     return result
 
 
@@ -434,7 +467,7 @@ def export_bootstrap(directory, bundle, *, extra_attachments=None):
                 continue
             matches = [(path, value) for path, value, programs in artifacts if canonical(protocol) in programs]
             if not matches:
-                if request.get('op') == 'create' or is_reprogram or 'roomArtifact' in protocol:
+                if request.get('op') == 'create' or is_reprogram or 'spweenSource' in protocol:
                     raise ValueError('missing original source artifact for request: ' + str(request.get('intent')))
                 # A generated ordinary child is reproducible from the retained
                 # receiving factory program and exact input. Do not invent a
@@ -445,12 +478,21 @@ def export_bootstrap(directory, bundle, *, extra_attachments=None):
                 paths.append(path)
                 for sha in history.declared_files(value).values():
                     paths.append(history.read_blob(directory / 'artifacts/pins', sha))
-        if (request.get('op') == 'invoke' and request.get('command') in ('compiled', 'failed')
-                and desk_module.is_source_desk_protocol(request.get('expected', {}).get('protocol'))):
-            identity = request.get('input', {}).get('artifact')
-            if identity:
-                artifact = desk_module.load_artifact(directory / 'artifacts', identity)
-                paths.append(directory / 'artifacts/builds' / (identity + '.json'))
+        if request.get('op') == 'invoke' and isinstance(request.get('input'), dict):
+            identity = request['input'].get('artifact')
+            for path, artifact, _ in artifacts:
+                work = artifact.get('compilerWork')
+                if (artifact.get('format') != 'delvetalk-desk-build-v1' or path.stem != identity
+                        or not isinstance(work, dict) or work.get('object') != request.get('object')
+                        or request.get('command') not in work.get('reports', {}).values()):
+                    continue
+                expected = request['expected']
+                desk_module.validate_compiler_work(work, expected, request['object'])
+                if (artifact['candidateRootSha256'] != history.digest(expected)
+                        or work['intent'] != request['intent']
+                        or request['command'] != work['reports']['passed' if artifact['passed'] else 'failed']):
+                    raise ValueError('compiler report source custody differs from retained work/root')
+                paths.append(path)
                 paths.extend(history.read_blob(directory / 'artifacts/pins', sha)
                              for sha in history.declared_files(artifact).values())
         attachments[history.digest(request)] = sorted(set(paths))
@@ -620,7 +662,7 @@ def _restore_contents(bundle, directory, *, expected_genesis, expected_head, bas
     else:
         cafe = inspect_view(directory)
         sign = inspect_view(directory, metadata['sign'], 'details')
-        if cafe['mode'] != 'room' or sign['mode'] != 'projection':
+        if cafe['mode'] != 'projection' or sign['mode'] != 'projection':
             raise ValueError('restored objects cannot render from restored artifact custody')
         with (directory / 'cafe.html').open('x') as stream:
             stream.write(room.html_view(cafe))
@@ -754,7 +796,7 @@ def main():
             if 'runtime' in metadata and canonical(metadata['runtime']) != canonical(history.runtime(metadata['runtime']['name'])):
                 raise ValueError('world runtime pins changed; do not append admissions under an unrecorded runtime')
             desk = desk_module.Desk(args.directory / 'world.json', args.directory / 'artifacts',
-                                    profile=metadata.get('runtime', {}).get('name', 'transactions'))
+                                    profile=metadata.get('runtime', {}).get('name', 'compiled'))
             output = desk.exchange(request)
         sys.stdout.buffer.write(canonical(output) + b'\n')
         return 1 if output.get('kind') == 'refused' else 0

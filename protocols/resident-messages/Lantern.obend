@@ -20,7 +20,7 @@ record Decision:
   state: State
   result: String
 def glow(state: State, input: P.Value, context: Abi.Context, event: E.CausalEvent) -> Decision:
-  let accepted = event.source == state.source && P.text(P.get(input, "chord")) == "C E G"
+  let accepted = event.source == state.source && P.textEquals(P.get(input, "chord"), "C E G")
   {accepted: accepted, reason: if accepted then "" else "This lantern listens for the opening door.", state: if accepted then {source: state.source, glows: state.glows + 1n, lastSource: event.source, lastEmitterActor: event.originatingPrincipal, lastRootPlayer: event.rootPrincipal, lastRelay: context.principal, lastEvent: event.id, lastParent: event.parent, lastRoot: event.root, lastDepth: event.depth} else state, result: if accepted then "The lantern glows." else ""}
 record Description:
   name: String

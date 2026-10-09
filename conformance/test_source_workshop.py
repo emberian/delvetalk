@@ -56,11 +56,12 @@ class SourceWorkshop(unittest.TestCase):
                 nonlocal sequence
                 sequence += 1
                 card = operator.capture(object_id, alias='work-' + str(sequence))
-                self.assertIn('sourcePackages', card['view']['root']['protocol'])
+                self.assertNotIn('root', card.get('view', {}))
                 publication = {'uri': f'at://{ISSUER}/{clerk.FEED}/card-{sequence}', 'cid': 'card-' + str(sequence)}
                 records.records[publication['uri']] = (publication['cid'], {'$type': clerk.FEED, 'text': card['body']})
                 operator.bind(card['alias'], publication['uri'], publication['cid'])
-                action = next(item for item in card['card']['actions'] if item.get('available') and not item.get('inspectOnly'))
+                action = next(item for item in card['card']['actions'] if item.get('available') and not item.get('inspectOnly')
+                    and set(fields) <= {field['name'] for field in item['fields']})
                 text = town_cards.spell(card['alias'], action, fields,
                     selector=town_cards.action_word(action, card['card']['actions']))
                 source = (f'at://{author}/{clerk.FEED}/reply-{sequence}', 'reply-' + str(sequence))
@@ -74,46 +75,52 @@ class SourceWorkshop(unittest.TestCase):
             reply('factory:objects', {'name': 'lantern'})
             child = 'factory:objects/lantern'
             before = client.inspect(child)
-            self.assertEqual(before['law'], [A, B])
+            self.assertEqual(before['law']['invoke']['write'], [A, B])
             reply(child, {'text': 'A light for visitors.'}, author=B)
-            self.assertEqual(source_object.plain(client.inspect(child)['state']['model'])['text'], 'A light for visitors.')
+            self.assertEqual(source_object.plain(source_object.state_data(client.inspect(child)))['text'], 'A light for visitors.')
             reply('factory:desks', {'name': 'variation'})
             candidate = 'factory:desks/variation'
             candidate_root = client.inspect(candidate, principal=A)
-            self.assertTrue(desk.is_source_desk_protocol(candidate_root['protocol']))
+            self.assertIn('sourcePackages', candidate_root['protocol'])
+            self.assertIsNone(desk.compiler_work(candidate_root, candidate, 'compiler', client.database))
             self.assertEqual(desk.candidate_state(candidate_root)['status'], 'empty')
             self.assertEqual(candidate_root['law']['invoke']['compiled'], ['compiler'])
             self.assertEqual(candidate_root['law']['invoke']['adopt'], [A])
             reply('factory:writing', {'name': 'lantern', 'candidate': candidate,
-                'target': child, 'syntax': 'protocol-json@1'})
+                'target': child, 'syntax': 'objective-bend-object'})
             writer = 'factory:writing/lantern'
             # The source Writing participant owns preservation of the captured
             # target state. This fixture submits the exact retained source program.
             scenarios = [{'name': 'write', 'law': [A], 'steps': [
                 {'principal': A, 'command': 'write', 'input': {'text': 'A tested variation.'},
                  'root': 'initial', 'kind': 'committed'}]}]
-            reply(writer, {'source': desk.canonical(before['protocol']).decode(),
+            reply(writer, {'module': 'Object', 'source': (ROOT / 'protocols/factories/Object.obend').read_bytes().decode('utf-8'),
                 'scenarios': desk.canonical(scenarios).decode()})
             pending = client.inspect(candidate, principal=A)
             self.assertEqual(desk.candidate_state(pending)['migration'], client.inspect(child)['state'])
-            denied = client.check(candidate, B, 'not-the-compiler', pending)
-            self.assertEqual(denied['kind'], 'refused', denied)
+            requested = client.exchange({'op': 'invoke', 'object': candidate, 'principal': A,
+                'intent': 'request-variation-check', 'expected': pending, 'command': 'requestCheck', 'input': {}})
+            self.assertEqual(requested['kind'], 'committed', requested)
+            pending = requested['data']['root']
+            with self.assertRaises(ValueError):
+                client.check(candidate, B, 'not-the-compiler', pending)
             self.assertEqual(client.inspect(candidate, principal=A), pending)
             queue = compiler_queue.CompilerQueue(base / 'compiler', client.database, client.artifact_store)
-            job = queue.enqueue(candidate, 'compiler', 'compile-variation', pending)['job']
+            work = desk.compiler_work(pending, candidate, 'compiler', client.database)
+            job = queue.enqueue_offered(candidate, 'compiler', expected=pending)['job']
             self.assertEqual(queue.run()['errors'], [])
             completed = queue.inspect(job)['receipt']
             self.assertEqual(completed['kind'], 'committed', completed)
             ready = client.inspect(candidate, principal=A)
             self.assertEqual(desk.candidate_state(ready)['status'], 'ready', desk.candidate_state(ready))
             expected_target = client.inspect(child)
-            denied = client.adopt(candidate, child, B, 'not-the-reviewer', ready, expected_target)
-            self.assertEqual(denied['kind'], 'refused', denied)
+            with self.assertRaises(ValueError):
+                client.adopt(candidate, child, B, 'not-the-reviewer', ready, expected_target)
             self.assertEqual(client.inspect(candidate, principal=A), ready)
             adopted = client.adopt(candidate, child, A, 'adopt-variation', ready, expected_target)
             self.assertEqual(adopted['kind'], 'committed', adopted)
             self.assertEqual(client.adopt(candidate, child, A, 'adopt-variation', ready, expected_target), adopted)
-            self.assertEqual(client.inspect(child)['state'], expected_target['state'])
+            self.assertEqual(source_object.state_data(client.inspect(child)), source_object.state_data(expected_target))
 
 
 if __name__ == '__main__':

@@ -73,6 +73,15 @@ and ordering. Remaining recipe callers must use that invitation contract. Native
 admission checks every effect. A source plan is a proposal, never authority. See
 [composition](COMPOSITION.md).
 
+**Typed receiving envelopes have their own bound.** The compiled receiver admits
+at most 8 MiB of internal typed argument encoding, matching the source adapter's
+frame ceiling. Recursive record and sum wrappers can expand a small logical
+value substantially. Input bytes measure the representation actually consumed
+by the selected codec. Result extraction stays
+at 1 MiB; mutating world requests stay at 1 MiB; node, work and heap limits are
+unchanged. Compact codecs reduce the internal framing overhead without changing
+the retained source or the admission decision.
+
 **Environment services are explicit.** Compilation, verified specification
 observation, hashing, governed allocation and persistence need a host boundary.
 Give source fixed typed requests/results and authenticated provenance. The host
@@ -189,3 +198,28 @@ with that bound. Callable conversions preserve specification metadata, and
 restricted values cannot become reusable through row normalization. The
 checker constructs the existing composition and fix judgments through checked
 conversion; this does not introduce a new typing rule.
+
+### Explicit source reexports
+
+`export C.submit` exposes an imported ordinary function or lazy constant under
+its existing name; `export C.submit as send` chooses a local name. The import
+must be explicit and locked to an earlier supplied module. Exports may chain
+through imported modules. A missing symbol, unknown alias or local declaration,
+type, import alias or export collision refuses; there is no wildcard or implicit override.
+Ordinary local declarations remain public. Imported definitions become visible
+through the composing module only when explicitly selected.
+
+The composing module emits a direct reference to the original checked value.
+Its parameter quantities, result and lexical type/helper bindings resolve in the
+defining module, even when the composer declares identically named types or
+helpers. It does not reconstruct a signature or generate forwarding lambdas.
+The retained sealed source closure binds both the exporting source and every
+original dependency. Revised origins change the artifact; recompilation refuses
+an artifact claiming different source for an old executable packet.
+
+Unspecialized generic definitions, specs, extensions and type declarations are
+currently refused as export targets. Ordinary definitions may use specialized
+generics internally and remain exportable. Exporting a generic binder itself
+requires preserving its specialization origin and is separate language work.
+ContractCandidate uses explicit exports for Candidate's ordinary interface and
+keeps its authored description and contract preparation beside them.

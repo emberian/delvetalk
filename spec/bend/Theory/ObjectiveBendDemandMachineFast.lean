@@ -22,6 +22,7 @@ counter; the four push sites read the size before pushing. -/
 import Theory.ObjectiveBendDemandMachine
 namespace Minidregg.Theory.ObjectiveBendDemandMachineFast
 open ObjectiveBendOpenRecursion ObjectiveBendDemandMachine
+open ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 /-! ## Allocation and the transition -/
@@ -44,6 +45,9 @@ def stepRawFast (state : State) : State :=
   | ⟨heap,.returned (.closure body captured),.argument argument environment::rest⟩ =>
     let address := heap.size
     ⟨heap.push (.suspended ⟨argument,environment⟩),.evaluate body (address::captured),rest⟩
+  | ⟨heap,.returned (.closure body captured),.nativeArgument argument::rest⟩ =>
+    let address := heap.size
+    ⟨heap.push (.native argument), .evaluate body (address::captured), rest⟩
   | ⟨heap,.returned (.natural (n+1)),.condition _ successorBody environment::rest⟩ =>
     let address := heap.size
     ⟨heap.push (.cached ⟨.nat n,[]⟩ (.natural n)),.evaluate successorBody (address::environment),rest⟩
@@ -65,6 +69,7 @@ def stepRawFast (state : State) : State :=
 theorem stepRawFast_eq_stepRaw (state : State) : stepRawFast state = stepRaw state := by
   unfold stepRawFast
   split
+  · simp [stepRaw]
   · simp [stepRaw]
   · simp [stepRaw]
   · rename_i heap tag payload arms environment rest
@@ -93,6 +98,28 @@ theorem allocateFields_size (heap : Array Cell) (environment : Environment)
   | nil => intro init; simp
   | cons field rest ih => intro init; simp [List.foldl, ih]; omega
 
+theorem allocateNativeFields_size (heap : Array Cell) (fields : List (String × Data)) :
+    (allocateNativeFields heap fields).1.size = heap.size + fields.length := by
+  unfold allocateNativeFields
+  suffices general : ∀ (fields : List (String × Data)) (init : Array Cell × List (String × Address)),
+      (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+        (prior.1.push (.native field.2), (field.1, prior.1.size) :: prior.2)) init).1.size =
+        init.1.size + fields.length by
+    simpa using general fields (heap, [])
+  intro fields
+  induction fields with
+  | nil => intro init; simp
+  | cons field rest ih => intro init; simp [List.foldl, ih]; omega
+
+def nativeChildren : Data → Nat
+  | .record fields => fields.length
+  | .variant _ _ => 1
+  | _ => 0
+
+theorem forceNative_size (heap : Array Cell) (data : Data) :
+    (forceNative heap data).1.size = heap.size + nativeChildren data := by
+  cases data <;> simp [forceNative, nativeChildren, allocateNativeFields_size]
+
 /-- The heap size and stack length `stepRaw` produces, computed without building
 its result; `depth` stands for the pre-state's stack length. -/
 def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
@@ -101,7 +128,9 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
   | .complete _ | .refused _ | .blackhole _ | .yielded _ => (size,depth)
   | .enter address => match state.heap[address]? with
     | some (.suspended _) => (size,depth+1)
+    | some (.native value) => (size + nativeChildren value, depth)
     | _ => (size,depth)
+  | .nativeApplication _ _ _ => (size, depth+1)
   | .evaluate term _ => match term with
     | .fix _ _ | .inject _ _ => (size+1,depth)
     | .specification _ _ | .prototype _ _ => (size+2,depth)
@@ -113,8 +142,8 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
   | .returned value => match state.stack with
     | [] => (size,depth)
     | frame::_ => match frame,value with
-      | .argument _ _,.specification _ _ => (size,depth)
-      | .argument _ _,.closure _ _ => (size+1,depth-1)
+      | .argument _ _,.specification _ _ | .nativeArgument _,.specification _ _ => (size,depth)
+      | .argument _ _,.closure _ _ | .nativeArgument _,.closure _ _ => (size+1,depth-1)
       | .extend fields _,.record _ => (size+fields.length,depth-1)
       | .condition _ _ _,.natural (_+1) => (size+1,depth-1)
       | .case arms _,.variant tag _ => match arms.find? (fun arm => arm.1 == tag) with
@@ -132,7 +161,9 @@ theorem sizesAfter_eq (state : State) :
     simp only [sizesAfter, stepRaw]
     cases h : heap[address]? with
     | none => simp
-    | some cell => cases cell <;> simp
+    | some cell => cases cell <;> simp [forceNative_size]
+  | nativeApplication function argument remaining =>
+    cases remaining <;> simp [sizesAfter, stepRaw]
   | evaluate term environment =>
     cases term <;> simp [sizesAfter, stepRaw, allocateFields_size]
     · rename_i index; cases environment[index]? <;> simp

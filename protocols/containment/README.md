@@ -11,12 +11,15 @@ Rooms contain no second inventory. They are independently programmable admission
 policies. Their capacity counts resident bodies and directly placed things;
 carried things do not consume another place. There are no nested containers.
 
-Use [package.json](package.json) for the relation and
-[room.package.json](room.package.json) for each room, through the existing sealed
-source/desk route with `objective-bend-spell@3`. The checked binding module is last.
+[package.py](package.py) loads explicit Main, Room or Guide source through the
+shared confined closure reader and canonical `objective-bend-object` adapter.
+The manifest entry points [package.json](package.json) and
+[room.package.json](room.package.json) remain available for source/desk custody.
 The initial source names the relation `habitat` and its room registrar `curator`.
 Choose those identities before sealing, or edit those explicit source constants.
-Room policy is `{open,capacity}` and can be revised under each room's own law.
+Room policy is `{placement,open,capacity}` and can be revised under each room's own law.
+`Room.configured` selects the placement relationship explicitly; its ordinary
+initial state uses `habitat`.
 
 Enrollment is a deliberate current-law permission: observe the entity, then invoke
 `habitat.enroll` using the observation's `inputFrom` slot. It registers one portable
@@ -47,6 +50,26 @@ may advance versions but change no relation. A plan cannot be copied into a new
 call as an admission credential. All invocations retain the same caller and each
 checks its own current law; provenance delegates no authority.
 
+`arrive` returns a typed `Relations.Arrival {object,destination,actor}` record.
+[Guide.obend](Guide.obend) uses it to complete a room's own route-book intention:
+its source preparation adds a fourth call to `Guide.complete` with `inputFrom:2`.
+The Guide checks the actual placement producer identity, `arrive` operation,
+immediate predecessor and captured exact producer program in native Origin.
+A copied record cannot complete the Guide; a changed placement program requires
+an explicit observed reconnection, and refusal rolls the whole movement back.
+
+The Guide resolves captured placement and room observations into typed
+`Preparation.ResolvedReference` values before preparing movement. Text and
+unresolved observations refuse; retained root binding and current law remain
+native obligations.
+
+The Guide's configured `Choice {term,verb,object}` collection supplies room-local
+words and verbs. Repeated terms show known destination children and return a
+source question naming alternatives. Choosing an identity resolves only within
+that collection. Source requests observe those declared relationships, and the
+prepared read set contains only the Guide, placement relation and selected room.
+Resolution never searches an ambient catalogue or grants the target's authority.
+
 To drop a thing, use its identifier instead of the body; destination must be the
 holder's current room. Other actions invoke `habitat.act`:
 
@@ -62,7 +85,7 @@ Copying an identifier, possessing an object, and being able to operate it remain
 separate. A designated room's current `admit` program is trusted for its policy;
 reprogramming it changes that policy deliberately, not through a frozen-source pin.
 
-Run `python3 conformance/test_containment.py` with the native host already built.
+Run `python3 -m unittest conformance.test_containment conformance.test_room_composition` with the native host already built.
 The journeys execute actual typed List source, two independent rooms, a portable
 lamp, consent, capacity, current-law denial, forged/stale/repeated placement,
 atomic rollback, room-source revision, and exact history export/replay followed

@@ -16,13 +16,21 @@ import source_offers
 import resident_store
 
 
+def fixture_law(protocol, principals=('iris', 'moss')):
+    return {'profile': 'delvetalk-scoped-law',
+            'invoke': {name: list(principals) for name in protocol['commands']},
+            'read': 'public', 'reprogram': list(principals), 'law': list(principals)}
+
+
 def modules(evening=False):
     paths = [('Abi', 'world/lib/prelude/Abi.obend'),
              ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'),
              ('Encounter', 'world/lib/prelude/Encounter.obend'),
              ('Document', 'world/lib/document/Document.obend'),
-             ('Conversation', 'protocols/conversation/Conversation.obend'),
+             ('Reflection', 'world/lib/prelude/Reflection.obend'),
+             ('Writing', 'protocols/source-desk/Writing.obend'),
              ('Interpretation', 'protocols/interpretation/Interpretation.obend'),
+             ('Conversation', 'protocols/conversation/Conversation.obend'),
              ('ModelEncounter', 'protocols/interpretation/Encounter.obend'),
              ('ConversationModel', 'protocols/interpretation/ConversationModel.obend'),
              ('Notebook', 'protocols/conversation/Notebook.obend'),
@@ -83,9 +91,9 @@ class DocumentConversation(unittest.TestCase):
         self.addCleanup(lambda: self.receiver.close())
         self.serial = 0
         self.exchange({'op': 'create', 'object': 'conversation', 'principal': 'iris',
-            'intent': 'create', 'protocol': self.protocol, 'law': ['iris', 'moss']})
+            'intent': 'create', 'protocol': self.protocol, 'law': fixture_law(self.protocol)})
         for identity in ('moth:amber', 'moth:silver'):
-            self.exchange({'op': 'create', 'object': identity, 'principal': 'iris', 'intent': 'create-' + identity, 'protocol': self.moth, 'law': ['iris', 'moss']})
+            self.exchange({'op': 'create', 'object': identity, 'principal': 'iris', 'intent': 'create-' + identity, 'protocol': self.moth, 'law': fixture_law(self.moth)})
 
     def exchange(self, request, kind='committed'):
         result = self.receiver.exchange(request)
@@ -202,7 +210,7 @@ class DocumentConversation(unittest.TestCase):
         self.answer(target='moth:amber', recipient='moss')
         target = self.root('moth:amber')
         self.exchange({'op': 'law', 'object': 'moth:amber', 'principal': 'iris',
-                       'intent': 'restrict-moth', 'expected': target, 'law': ['moss']})
+                       'intent': 'restrict-moth', 'expected': target, 'law': fixture_law(self.moth, ('moss',))})
         before = self.root()
         request = source_offers.prepare(self.invitation(), 'iris', 'cannot-lend', {})['request']
         refusal = self.exchange(request, 'refused')

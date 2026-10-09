@@ -10,9 +10,11 @@ are not constructors and cannot be minted/copied by this machine.
 Weak-head reference adequacy, graph/capture ownership and new type metatheory
 remain obligations. -/
 import Theory.ObjectiveBendOpenRecursion
+import Theory.ObjectiveBendFiniteData
 import Theory.AxiomPin
 namespace Minidregg.Theory.ObjectiveBendDemandMachine
 open Minidregg.Theory.ObjectiveBendOpenRecursion
+open Minidregg.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 abbrev Address := Nat
@@ -36,9 +38,14 @@ inductive Cell where
   | suspended (origin : Closure)
   | evaluating (origin : Closure)
   | cached (origin : Closure) (value : RuntimeValue)
+  /-- Admitted finite data is already pure. Forcing allocates only its immediate
+  children and caches WHNF in one real transition, without a source update. -/
+  | native (origin : Data)
+  | nativeCached (origin : Data) (value : RuntimeValue)
   deriving Repr
 inductive Frame where
   | argument (term : Term) (environment : Environment)
+  | nativeArgument (value : Data)
   | update (address : Address)
   | field (name : String)
   | reflect | metadata | project
@@ -59,6 +66,9 @@ inductive Refusal where
   deriving Repr
 inductive Control where
   | evaluate (term : Term) (environment : Environment)
+  /-- Nonempty reversed arguments preserve nested application order without
+  constructing applications/literals in the executable source term. -/
+  | nativeApplication (function : Term) (argument : Data) (remaining : List Data)
   | enter (address : Address)
   | blackhole (address : Address)
   | returned (value : RuntimeValue)
@@ -78,6 +88,33 @@ structure Limits where
   deriving Repr
 
 def initial (term : Term) : State := ⟨#[],.evaluate term [],[]⟩
+/-- No input cell is allocated before its function actually binds that argument.
+This preserves laziness for unused large inputs and specification wrappers. -/
+def initialDataArguments (term : Term) (arguments : List Data) : State :=
+  match arguments.reverse with
+  | [] => initial term
+  | argument :: remaining => ⟨#[], .nativeApplication term argument remaining, []⟩
+
+/-- Allocate only one record layer. Child cells retain finite Data, never terms. -/
+def allocateNativeFields (heap : Array Cell) (fields : List (String × Data)) :
+    Array Cell × List (String × Address) :=
+  let pair := fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+    let address := prior.1.size
+    (prior.1.push (.native field.2), (field.1, address) :: prior.2)) (heap, [])
+  (pair.1, pair.2.reverse)
+
+def forceNative (heap : Array Cell) (value : Data) : Array Cell × RuntimeValue :=
+  match value with
+  | .natural n => (heap, .natural n)
+  | .boolean b => (heap, .boolean b)
+  | .label s => (heap, .label s)
+  | .record fields =>
+    let (heap, fields) := allocateNativeFields heap fields
+    (heap, .record fields)
+  | .variant label payload =>
+    let address := heap.size
+    (heap.push (.native payload), .variant label address)
+
 def allocateFields (heap : Array Cell) (environment : Environment)
     (fields : List (String × Term)) : Array Cell × List (String × Address) :=
   let pair := fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
@@ -100,9 +137,17 @@ def stepRaw (state : State) : State :=
   | .enter address => match state.heap[address]? with
     | none => {state with control:=.refused .missingCell}
     | some (.evaluating _) => {state with control:=.blackhole address}
-    | some (.cached _ value) => {state with control:=.returned value}
+    | some (.cached _ value) | some (.nativeCached _ value) => {state with control:=.returned value}
+    | some (.native origin) =>
+      let (heap, value) := forceNative state.heap origin
+      {state with heap := heap.set! address (.nativeCached origin value), control := .returned value}
     | some (.suspended origin) =>
       {state with heap:=state.heap.set! address (.evaluating origin), control:=.evaluate origin.term origin.environment,stack:=.update address::state.stack}
+  | .nativeApplication function argument remaining =>
+    let control := match remaining with
+      | [] => .evaluate function []
+      | next :: rest => .nativeApplication function next rest
+    {state with control, stack := .nativeArgument argument :: state.stack}
   | .evaluate term environment => match term with
     | .bound index => match environment[index]? with
       | some address => {state with control:=.enter address}
@@ -165,6 +210,12 @@ def stepRaw (state : State) : State :=
 
         | .closure body captured => {state with heap:=state.heap.push (.suspended ⟨argument,environment⟩), control:=.evaluate body (state.heap.size::captured),stack:=rest}
         | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .nativeArgument argument => match value with
+        | .specification _ extension => {state with control := .enter extension}
+        | .closure body captured =>
+          let address := state.heap.size
+          {state with heap := state.heap.push (.native argument), control := .evaluate body (address :: captured), stack := rest}
+        | _ => {state with control := .refused .wrongValue, stack := rest}
       | .field name => match value with
         | .record fields => match fields.find? (fun field => field.1 == name) with
           | some (_,address) => {state with control:=.enter address,stack:=rest}

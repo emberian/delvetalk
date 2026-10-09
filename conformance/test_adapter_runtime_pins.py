@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in syntax runtimes share exact translation and source-custody dependencies."""
 import copy
-import importlib.util
+from native_support import load_script
 import io
 from pathlib import Path
 import tempfile
@@ -12,10 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def module(name, path):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
-    result = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(result)
-    return result
+    return load_script(ROOT / path, name)
 
 
 translate = module('runtime_pin_translate', 'scripts/translate.py')

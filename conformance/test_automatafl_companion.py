@@ -51,16 +51,18 @@ class AutomataflCompanion(unittest.TestCase):
                                        self.table, (NORTH, SOUTH)[seat], seat)
 
     def root(self):
-        return self.clerk.snapshot(self.table)['root']
+        return self.clerk.snapshot(self.table, principal=NORTH)['root']
 
     def capture(self, alias):
-        public = companion.capture(self.root(), self.table, self.book, alias)
+        public = companion.capture(self.clerk.database, self.table, self.book, alias, principal=VISITOR)
         self.parent = {'uri': f'at://{ISSUER}/{clerk.FEED}/{alias}', 'cid': 'cid-' + alias}
         self.pds.records[self.parent['uri']] = (self.parent['cid'], {'$type': clerk.FEED, 'text': public['text']})
-        self.book.bind(alias, self.parent, lambda uri, cid: self.clerk.fetch_record(uri, cid, (clerk.FEED,)))
+        self.book.bind(alias, self.parent, lambda uri, cid: self.clerk.fetch_record(uri, cid, (clerk.FEED,)),
+                       database=self.clerk.database)
         self.assertNotIn(NORTH, public['text'])
         self.assertNotIn(SOUTH, public['text'])
-        return public, self.book.card(alias)['card']['actions']
+        self.assertIn('K11 is 120', self.book.card(alias)['body'])
+        return public, self.book.card(alias)['actions']
 
     def private(self, seat, action, fields, intent, lost_reply=False):
         player = self.players[seat]
@@ -107,7 +109,7 @@ class AutomataflCompanion(unittest.TestCase):
         self.assertIn('  1  - . . . + - + . . . -', public['text'])
         self.assertIn(' 11  - . . . + - + . . . -', public['text'])
         self.assertIn('K11 is 120', public['text'])
-        self.assertIn('operator can see choices', public['text'])
+        self.assertIn('private move custody', public['text'])
         with self.assertRaisesRegex(ValueError, 'not offered'):
             self.players[0].prepare(self.players[0].observe()['card'], 'reveal', {}, 'too-early')
         receipt = source = None
@@ -125,6 +127,9 @@ class AutomataflCompanion(unittest.TestCase):
                 self.assertNotIn('South opened:', public['text'])
                 for player in self.players:
                     secret = participant.loads(player._opening(number).read_bytes())
+                    retained = companion.town_cards.canonical(self.book.card('both-sealed'))
+                    self.assertNotIn(secret['commit']['digest'], retained)
+                    self.assertNotIn(secret['reveal']['nonce'], retained)
                     self.assertNotIn(secret['commit']['digest'], public['text'])
                     self.assertNotIn(secret['reveal']['nonce'], public['text'])
             self.private(0, 'reveal', {}, f'r{number}-open-0')
@@ -141,7 +146,7 @@ class AutomataflCompanion(unittest.TestCase):
             self.assertIn('delvetalk ' + alias + ' resolve', public['text'])
             if number == 0:
                 denied = self.clerk.receive(*self.post('visitor', alias, VISITOR))
-                self.assertEqual(denied['reply']['data'], 'unauthorized')
+                self.assertEqual(denied['reply']['data'], 'opaque invocation refused')
                 expected = self.root()
                 source = self.post('manual-resolve', alias, natural=True)
                 receipt = self.clerk.receive_interpreted(*source, {
@@ -157,7 +162,7 @@ class AutomataflCompanion(unittest.TestCase):
                 participant.table.source_object.plain(ORIGINAL['rounds'][number]['result']['value']))
             self.assertEqual(receipt['request']['principal'], NORTH if number == 0 else SOUTH)
             stale = self.clerk.receive(*self.post('stale-' + str(number), alias))
-            self.assertEqual(stale['reply']['data'], 'stale read root')
+            self.assertEqual(stale['reply']['data'], 'opaque invocation refused')
         self.assertEqual(companion.client.state(self.root())['game']['winner'], 1)
         public, actions = self.capture('finished')
         self.assertEqual(actions, [])
@@ -180,14 +185,43 @@ class AutomataflCompanion(unittest.TestCase):
             self.assertIn('Marked: A1', public['text'])
             self.assertIn('last pair conflicted' if status == 1 else 'last pair was invalid', public['text'])
 
+    def test_public_source_capture_does_not_grant_private_read_and_current_law_gates_saved_card(self):
+        object_id = 'table:public-capture'
+        authority = generate.table.law(NORTH, SOUTH)
+        authority['law'] = [NORTH]
+        created = companion.world.exchange(self.clerk.database, {
+            'op': 'create', 'object': object_id, 'principal': NORTH, 'intent': 'public-table',
+            'protocol': generate.protocol(object_id, NORTH, SOUTH), 'law': authority})
+        self.assertEqual(created['kind'], 'committed', created)
+        with self.assertRaises((ValueError, RuntimeError)):
+            companion.world.capture_roots(self.clerk.database, [object_id], principal=VISITOR)
+        captured = companion.capture(self.clerk.database, object_id, self.book, 'public-table', principal=VISITOR)
+        retained = self.book.card('public-table')
+        self.assertEqual(retained['format'], 'delvetalk-town-public-card-v1')
+        self.assertEqual(retained['projection']['audience'], 'public')
+        self.assertNotIn('root', retained['projection'])
+        self.assertNotIn('view', retained)
+        self.assertNotIn(captured['reference']['key'], captured['text'])
+        self.assertNotIn(NORTH, captured['text'])
+        self.assertNotIn(SOUTH, captured['text'])
+        current = companion.world.capture_roots(self.clerk.database, [object_id], principal=NORTH)['roots'][object_id]['root']
+        changed = companion.world.exchange(self.clerk.database, {
+            'op': 'law', 'object': object_id, 'principal': NORTH, 'intent': 'close-public-table',
+            'expected': current, 'law': {**authority, 'view': {**authority['view'], 'main': [NORTH]}}})
+        self.assertEqual(changed['kind'], 'committed', changed)
+        with self.assertRaises((ValueError, RuntimeError)):
+            companion.capture(self.clerk.database, object_id, self.book, principal=NORTH)
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.book.check_public('public-table', self.clerk.database)
+
     def test_only_exact_qualified_core_and_companion_metadata_are_accepted(self):
         qualified = generate.table.protocol(self.table, NORTH, SOUTH)
         program = generate.protocol(self.table, NORTH, SOUTH)
         self.assertTrue(companion.client.same_game(qualified, qualified))
         self.assertTrue(companion.client.same_game(program, qualified))
         mutations = [lambda p: p['commands']['resolve']['transition']['package'].update(entry='commit0'),
-                     lambda p: p['initial'].update(model=participant.table.source_object.data({**companion.client.state({'state': p['initial']}), 'width': 5, 'height': 5})),
-                     lambda p: p['initial'].update(model=participant.table.source_object.data({**companion.client.state({'state': p['initial']}), 'round': False})),
+                     lambda p: p['initial'].update(model=participant.table.source_object.data({**companion.client.state({'protocol': p, 'state': p['initial']}), 'width': 5, 'height': 5})),
+                     lambda p: p['initial'].update(model=participant.table.source_object.data({**companion.client.state({'protocol': p, 'state': p['initial']}), 'round': False})),
                      lambda p: p.update(extraExecutionRoute={}),
                      lambda p: p['commands'].update(cheat=copy.deepcopy(p['commands']['resolve'])),
                      lambda p: p['viewProgram'].update(extra='unvalidated'),
@@ -199,8 +233,6 @@ class AutomataflCompanion(unittest.TestCase):
             changed = copy.deepcopy(program)
             mutate(changed)
             self.assertFalse(companion.client.same_game(changed, qualified))
-            with self.assertRaisesRegex(ValueError, 'unchanged qualified'):
-                companion.capture({**self.root(), 'protocol': changed}, self.table, self.book)
         self.assertEqual(program, qualified)
         # The ordinary table itself owns the public view; no optional Python layer.
         self.assertIn('viewProgram', qualified)

@@ -112,7 +112,7 @@ class TableJourney(unittest.TestCase):
 
         def authored(key,command,input,seat=0,kind='committed',object_id=table_id):
             payload={'object':object_id,'command':command,'input':input,
-                     'expected':receiving.snapshot(object_id)['root']}
+                     'expected':receiving.snapshot(object_id, principal=seats[seat])['root']}
             uri,cid=pds.record(seats[seat],key,payload)
             result=receiving.receive(uri,cid)
             self.assertEqual(result['reply']['kind'],kind,result)
@@ -125,10 +125,10 @@ class TableJourney(unittest.TestCase):
 
         authored('enter-cafe','start',{},object_id=cafe)
         cafe_before=room.room_view(receiving.snapshot(cafe)['root'],artifact,cafe)
-        self.assertEqual(cafe_before['mode'],'room')
+        self.assertEqual(cafe_before['mode'],'projection')
         # A forged content CID is rejected by custody before Lean admission.
         payload={'object':table_id,'command':'commit0','input':{'round':0,'digest':'0'*64},
-                 'expected':receiving.snapshot(table_id)['root']}
+                 'expected':receiving.snapshot(table_id, principal=seats[0])['root']}
         uri,cid=pds.record(seats[0],'bad-cid',payload)
         pds.wrong_cid=True
         with self.assertRaisesRegex(ValueError,'CID mismatch'):
@@ -140,15 +140,15 @@ class TableJourney(unittest.TestCase):
             for seat in (0,1):
                 authored(f'r{number}-commit{seat}','commit'+str(seat),pair[seat]['commit'],seat)
             if number==len(journey.MATCH)-1:
-                before=receiving.snapshot(table_id)['root']
+                before=receiving.snapshot(table_id, principal=seats[0])['root']
                 bad=authored('late-bad-opening','reveal1',
                     {**pair[1]['reveal'],'nonce':'f'*64},seat=1,kind='refused')
-                self.assertEqual(receiving.snapshot(table_id)['root'],before)
-                self.assertEqual(bad['reply']['data'],'precondition failed')
+                self.assertEqual(receiving.snapshot(table_id, principal=seats[0])['root'],before)
+                self.assertEqual(bad['reply']['data'],'source refused: precondition failed')
             for seat in (0,1):
                 authored(f'r{number}-reveal{seat}','reveal'+str(seat),pair[seat]['reveal'],seat)
             authored(f'r{number}-resolve','resolve',{'round':number})
-        final=receiving.snapshot(table_id)
+        final=receiving.snapshot(table_id, principal=seats[0])
         self.assertEqual(journey.client.state(final['root'])['game']['winner'],1)
         self.assertEqual(journey.client.state(final['root'])['game']['automaton'],0)
         self.assertEqual(journey.client.state(final['root'])['round'],len(journey.MATCH))
@@ -163,7 +163,7 @@ class TableJourney(unittest.TestCase):
         for uri,cid,result in receipts:
             self.assertEqual(restarted.receive(uri,cid),result)
         self.assertEqual(len(pds.calls),count)
-        self.assertEqual(restarted.snapshot(table_id),final)
+        self.assertEqual(restarted.snapshot(table_id, principal=seats[0]),final)
         database=clerk.loads(receiving.database.read_text())
         self.assertEqual(set(database['objects']),{cafe,table_id})
 

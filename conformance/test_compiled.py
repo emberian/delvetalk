@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Compiled host receiving path: source binding, shared fuel, hashes and rollback."""
 import hashlib
-import importlib.util
+from native_support import load_script
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('compiled_transport', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'compiled_transport')
 
 
 def source(code, entry='run'):

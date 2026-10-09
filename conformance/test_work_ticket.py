@@ -48,7 +48,7 @@ class WorkTicket(unittest.TestCase):
         return result
 
     def setUp(self):
-        for executable in ('delvetalk-transactions', 'delvetalk-world'):
+        for executable in ('delvetalk-compiled', 'delvetalk-obend'):
             self.assertTrue((ROOT / '.lake/build/bin' / executable).is_file(), 'prebuilt host required')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

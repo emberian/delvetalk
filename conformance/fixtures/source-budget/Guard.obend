@@ -1,0 +1,24 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Work.obend as W
+record State:
+  count: Nat
+record AddInput:
+  amount: Nat
+sum Commands:
+  add: AddInput
+sum OperationInput:
+  none: {}
+  invoke: Commands
+record Facts:
+  object: String
+  principal: String
+  op: String
+  command: String
+  state: State
+  input: OperationInput
+def predicate(facts: Facts, config: P.Value) -> Bool:
+  match P.asNatural(config):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(n): W.burn(n.value)

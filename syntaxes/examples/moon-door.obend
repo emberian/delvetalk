@@ -1,14 +1,49 @@
 edition ObjectiveBend 1
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: {}
+  result: String
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Method:
+  label: String
+  fields: {word: Field}
+record Description:
+  name: String
+  initial: {}
+  methods: {knock: Method}
+  panels: {}
 record Action:
+  visible: Bool
   text: String
   command: String
   input: {}
-record Actions:
-  knock: Action
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
-  actions: Actions
+  actions: {knock: Action}
+  children: Children
 record Door:
   password: String
   opening: String
@@ -19,9 +54,11 @@ extension Paper(self: Door, super: {}) -> Door:
   {password: "please", opening: "The paper door swings open onto a tiny lantern-lit room.", allowed: fn(word: String) -> Bool: word == self.password, knock: fn(word: String) -> String: self.opening, inscription: "A paper door with a brass knocker. Whisper please."}
 extension Moon(self: Door, super: Door) -> Door:
   {password: "moon", opening: "The silver door opens into a room full of small moons.", allowed: super.allowed, knock: super.knock, inscription: "A silver door with a crescent knocker. Whisper moon."}
-def allowed(word: String) -> Bool:
-  fix(compose(Paper, Moon), {}).allowed(word)
-def knock(word: String) -> String:
-  fix(compose(Paper, Moon), {}).knock(word)
+def describe() -> Description:
+  {name: "The moon door", initial: {}, methods: {knock: {label: "Whisper to the door", fields: {word: {type: "string", minLength: 0n, maxLength: 240n}}}}, panels: {}}
+def knock(state: {}, input: {word: String}, context: Context) -> Decision:
+  let door: Door = fix(compose(Paper, Moon), {})
+  let accepted: Bool = door.allowed(input.word)
+  {accepted: accepted, reason: if accepted then "" else "precondition failed", state: state, result: door.knock(input.word)}
 def view(state: {}, panel: String) -> View:
-  {title: "The moon door", prose: fix(compose(Paper, Moon), {}).inscription, actions: {knock: {text: "Whisper to the door", command: "knock", input: {}}}}
+  {title: "The moon door", prose: fix(compose(Paper, Moon), {}).inscription, actions: {knock: {visible: true, text: "Whisper to the door", command: "knock", input: {}}}, children: Children.nil()}

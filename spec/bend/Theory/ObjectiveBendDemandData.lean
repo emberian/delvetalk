@@ -6,11 +6,6 @@ import Theory.ObjectiveBendDemandMachineFast
 import Theory.ObjectiveBendTypes
 namespace Minidregg.Theory.ObjectiveBendDemandData
 open ObjectiveBendDemandMachine
-inductive Data where
-  | natural (value : Nat) | boolean (value : Bool) | label (value : String)
-  | record (fields : List (String × Data))
-  | variant (label : String) (payload : Data)
-  deriving Repr
 def lengthBytes (n : Nat) : List UInt8 := (toString n).toUTF8.toList ++ [0]
 def encoded : Nat → Data → Option (List UInt8)
   | 0,_ => none
@@ -224,20 +219,20 @@ def extractWith (policy : State → Bool) (limits : Limits) (budget : Budget) (s
   | .ok result => .ok ⟨result,equation⟩
 /-- One whole source-and-materialization allowance; native callers do not need
 an untrusted source tick estimate or a fresh budget at WHNF completion. -/
-structure ExecutionWith (policy : State → Bool) (limits : Limits) (budget : Budget)
-    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) where
+structure StateExecutionWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+    (initialState : State) where
   private mk ::
   value : RuntimeValue
   state : State
   remainingTicks : Nat
-  runExact : forceHostedWith policy limits budget.bytes budget.ticks (initial term) =
+  runExact : forceHostedWith policy limits budget.bytes budget.ticks initialState =
     (.finished value state,remainingTicks)
   extraction : ExtractionWith policy limits {budget with ticks:=remainingTicks} state
 
-def executeWith (policy : State → Bool) (limits : Limits) (budget : Budget)
-    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :
-    Except (Failure × State × Budget) (ExecutionWith policy limits budget term) :=
-  match equation : forceHostedWith policy limits budget.bytes budget.ticks (initial term) with
+def executeStateWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+    (initialState : State) :
+    Except (Failure × State × Budget) (StateExecutionWith policy limits budget initialState) :=
+  match equation : forceHostedWith policy limits budget.bytes budget.ticks initialState with
   | (.finished value state,ticks) => do
     let extraction ← extractWith policy limits {budget with ticks:=ticks} state
     pure ⟨value,state,ticks,equation,extraction⟩
@@ -245,6 +240,25 @@ def executeWith (policy : State → Bool) (limits : Limits) (budget : Budget)
   | (.divergent _ state,ticks) => .error (.divergent,state,{budget with ticks := ticks})
   | (.refused _ state,ticks) => .error (.refused,state,{budget with ticks := ticks})
   | (.yielded _ state,ticks) => .error (.yielded,state,{budget with ticks := ticks})
+
+abbrev ExecutionWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :=
+  StateExecutionWith policy limits budget (initial term)
+
+def executeWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :
+    Except (Failure × State × Budget) (ExecutionWith policy limits budget term) :=
+  executeStateWith policy limits budget (initial term)
+
+/-- Native arguments must already have finite-data/type/quantity admission.
+They enter lazily as closed pure data cells; source thunk forcing and activities
+retain their existing semantics. Actual data construction uses one transition,
+so removed AST evaluation/update instructions consume no artificial ticks. -/
+def executeDataArgumentsWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) (arguments : List Data) :=
+  executeStateWith policy limits budget (initialDataArguments term arguments)
+
+def executeDataArguments := executeDataArgumentsWith (fun _ => true)
 /-- Existing clear preview behavior remains the unrestricted raw language. -/
 def force := forceWith (fun _ => true)
 def materialize := materializeWith (fun _ => true)
@@ -287,19 +301,6 @@ def fieldsConform : List (String × Data) → Ty → Bool
       (match rowMember row name with
         | some member => value.conforms member
         | none => false) && fieldsConform rest row
-end
-
-mutual
-/-- A closed Core4 term for decoded data: the response a kernel resumes with. -/
-def Data.term : Data → Minidregg.Theory.ObjectiveBendOpenRecursion.Term
-  | .natural n => .nat n
-  | .boolean b => .boolean b
-  | .label s => .label s
-  | .record fields => .record (fieldsTerm fields)
-  | .variant label payload => .inject label payload.term
-def fieldsTerm : List (String × Data) → List (String × Minidregg.Theory.ObjectiveBendOpenRecursion.Term)
-  | [] => []
-  | (name,value) :: rest => (name,value.term) :: fieldsTerm rest
 end
 
 /-- Extract the Plan of a yielded state through the same budgeted

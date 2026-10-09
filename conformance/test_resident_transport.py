@@ -4,7 +4,7 @@ from contextlib import closing
 from decimal import Decimal
 import fcntl
 import hashlib
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import socket
 import sqlite3
@@ -15,9 +15,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('resident_transport_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'resident_transport_world')
 
 
 def protocol():

@@ -1,9 +1,11 @@
 edition ObjectiveBend 1
+import ./Reflection.obend as R
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Conversation.obend as C
 import ./Notebook.obend as N
 import ./MothNotebook.obend as Example
+import ./Interpretation.obend as I
 import ./ConversationModel.obend as M
 def describe() -> N.Description:
   Example.describe()
@@ -18,8 +20,16 @@ def resolve(state: N.State, input: N.Completion, context: Abi.Context) -> N.Deci
 def prepareResolve(state: N.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
   N.prepareResolve(state, contribution, observations, context)
 def view(state: N.State, panel: String) -> N.View:
-  N.render(state, "The evening desk keeps every voice. Choose a moth by its reference, or bring an interpretation to continue.")
+  N.renderPanel(state, "The evening desk keeps every voice. Choose a moth by its reference, or bring an interpretation to continue.", panel)
 def interpretationRequest(state: N.State, original: String, observations: P.Observations, context: P.Context) -> M.Request:
   N.interpretationRequest(state, original, observations, context)
 def prepareInterpretation(state: N.State, input: M.Response, observations: P.Observations, context: P.Context) -> M.Preparation:
   N.prepareInterpretation(state, input, observations, context)
+
+def reviseInterpretation(state: N.State, input: I.PolicyEdit, context: Abi.Context) -> N.Decision:
+  N.reviseInterpretation(state, input, context)
+
+def prepareInspectTemplates(state: N.State, contribution: P.Value, observations: P.Observations, context: P.Context, definitions: R.Definitions) -> R.Inspection:
+  N.prepareInspectTemplates(state, contribution, observations, context, definitions)
+def prepareReviseTemplates(state: N.State, contribution: P.Value, observations: P.Observations, context: P.Context, definitions: R.Definitions) -> P.Preparation:
+  N.prepareReviseTemplates(state, contribution, observations, context, definitions)

@@ -1,6 +1,6 @@
 """Shipped interpretation domains run inside the unchanged native work budget."""
 import json
-import importlib.util
+from native_support import load_script
 import tempfile
 import os
 from pathlib import Path
@@ -26,7 +26,7 @@ class TextBoundaries(unittest.TestCase):
     def setUpClass(cls):
         modules = [{'name': name, 'source': (ROOT / path).read_text()} for name, path in [
             ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Encounter', 'world/lib/prelude/Encounter.obend'),
-            ('Document', 'world/lib/document/Document.obend'), ('Interpretation', 'protocols/interpretation/Interpretation.obend')]]
+            ('Abi', 'world/lib/prelude/Abi.obend'), ('Document', 'world/lib/document/Document.obend'), ('Interpretation', 'protocols/interpretation/Interpretation.obend')]]
         cls.artifacts = {}
         cls.modules = modules
         for entry in ('route', 'childToken'):
@@ -84,9 +84,7 @@ class TextBoundaries(unittest.TestCase):
             self.assertEqual(result.get('value'), nat(expected), result)
 
     def test_long_route_runs_in_actual_receiving_host(self):
-        spec = importlib.util.spec_from_file_location('text_boundary_world', ROOT / 'scripts/world.py')
-        world = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(world)
+        world = load_script(ROOT / 'scripts/world.py', 'text_boundary_world')
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / 'world.json'
             protocol = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'route': {

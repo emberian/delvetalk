@@ -31,8 +31,11 @@ class MessageRelay:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('message query deadline reached')
-        return desk.world.query(self.database, {'op': operation, 'principal': self.principal, **fields},
-                                profile=self.profile, timeout=remaining)
+        try:
+            return desk.world.query(self.database, {'op': operation, 'principal': self.principal, **fields},
+                                    profile=self.profile, timeout=remaining)
+        except subprocess.TimeoutExpired as error:
+            raise TimeoutError('message query deadline reached') from error
 
     def pins(self):
         return {**runtime_profile.file_hashes(self.profile),

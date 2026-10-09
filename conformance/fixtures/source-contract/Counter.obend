@@ -1,0 +1,39 @@
+edition ObjectiveBend 1
+record State:
+  count: Nat
+record Input:
+  amount: Nat
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Nat
+record Counter:
+  add(state: State, input: Input, context: Context) -> Decision
+spec CounterContract for Counter:
+  def add(state: State, input: Input, context: Context) -> Decision:
+    {accepted: true, reason: "", state: state, result: state.count}
+  claim preservesCount(n: Nat): true
+def contract() -> Specification<Counter>:
+  CounterContract
+def contractMetadata() -> SpecMeta:
+  metadata(contract())
+def add(state: State, input: Input, context: Context) -> Decision:
+  {accepted: true, reason: "", state: {count: state.count + input.amount}, result: state.count + input.amount}
+record BrokenDecision:
+  accepted: Bool
+  reason: String
+  state: {count: String}
+  result: Nat
+def damage(state: State, input: Input, context: Context) -> BrokenDecision:
+  {accepted: true, reason: "", state: {count: "broken"}, result: 0n}

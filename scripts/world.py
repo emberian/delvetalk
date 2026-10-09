@@ -28,13 +28,10 @@ if hasattr(sys, "set_int_max_str_digits"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import process_custody
+import runtime_profile
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILES = {
-    'world': ('delvetalk-world', 'World.lean'),
-    'transactions': ('delvetalk-transactions', 'Transactions.lean'),
-    'compiled': ('delvetalk-compiled', 'Compiled.lean'),
-}
+PROFILES = runtime_profile.PROFILES
 BACKEND_FORMAT = 'delvetalk-resident-backend-v1'
 IPC_FORMAT = 'delvetalk-resident-ipc-v1'
 MAX_IPC_FRAME = 64 * 1024 * 1024
@@ -249,7 +246,7 @@ def retained_reply(database, request, *, timeout=30):
         return _resident_rpc(database, config, 'retained-reply', timeout=timeout, readonly=True, request=request)
     if not Path(database).exists():
         return None
-    executable = ROOT / '.lake/build/bin' / PROFILES['world'][0]
+    executable = ROOT / '.lake/build/bin' / PROFILES['compiled'][0]
     if not executable.is_file():
         raise RuntimeError('prebuilt native receipt lookup required')
     response = process_custody.run_native([str(executable), '--lookup-files', str(Path(database).resolve())],
@@ -291,6 +288,32 @@ def query(database, request, *, profile='compiled', timeout=30):
     if profile != config['profile']:
         raise ValueError('selected resident profile differs from caller')
     return _resident_rpc(database, config, 'query', timeout=timeout, readonly=True, request=request)
+
+
+def opaque_view(database, object_id, *, principal, panel='main', audience=None, expected=None,
+                profile='compiled', timeout=30, receiver=None):
+    """Ask custody for the current source-authored view and exact content guard."""
+    request = {'op': 'opaque-view', 'object': object_id, 'principal': principal, 'panel': panel}
+    if audience is not None:
+        request['audience'] = audience
+    if expected is not None:
+        request['expected'] = expected
+    if receiver is not None and database is not None:
+        raise ValueError('opaque view chooses one physical receiver')
+    if receiver is None:
+        captured = query(database, request, profile=profile, timeout=timeout)
+    else:
+        if receiver.profile != profile:
+            raise ValueError('opaque view receiver profile differs')
+        captured = receiver.query(request)
+    import source_object
+    return {**captured, 'result': source_object.plain(captured['result'])}
+
+
+def opaque_request(object_id, reference, command, input, *, principal, intent):
+    """Frame a caller-selected exact invocation; this grants no authority."""
+    return {'op': 'opaque-invoke', 'object': object_id, 'expected': reference,
+        'command': command, 'input': input, 'principal': principal, 'intent': intent}
 
 
 def catalogue_page(database, *, principal='reader', cursor=None, limit=32,
@@ -389,7 +412,7 @@ def wire_dumps(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
 
 
-def exchange(database, request, *, profile='world', timeout=30):
+def exchange(database, request, *, profile='compiled', timeout=30):
     deadline = time.monotonic() + _timeout(timeout)
     config = resident_config(database)
     if config is not None:
@@ -417,7 +440,7 @@ def exchange(database, request, *, profile='world', timeout=30):
                 time.sleep(min(0.02, remaining))
         executable = ROOT / '.lake/build/bin' / binary
         command = ([str(executable)] if executable.exists() else
-                   ['lake', 'env', 'lean', '--run', 'profiles/' + source])
+                   ['lake', 'env', 'lean', '--run', source])
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(dir=database.parent,
@@ -465,8 +488,8 @@ def exchange(database, request, *, profile='world', timeout=30):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', choices=PROFILES, default='world',
-                        help='opt-in Lean host admission profile (default: world)')
+    parser.add_argument('--profile', choices=PROFILES, default='compiled',
+                        help='current source receiving host (default: compiled)')
     parser.add_argument('database', type=Path)
     parser.add_argument('request', help="request JSON path, or '-' for stdin")
     args = parser.parse_args()

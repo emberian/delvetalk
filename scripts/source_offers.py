@@ -197,12 +197,12 @@ def prepare_fields(invitation, principal, intent, contribution, *, binary=None, 
     invitation = validate(invitation)
     if invitation.get('contributionCodec', 'value') != 'value':
         raise ValueError('typed preparation requires an explicit DataWire contribution')
-    contribution = affordances._validate_values(invitation['fields'], contribution, complete=False)
+    contribution = affordances.physical_values(contribution)
     return prepare_value(invitation, principal, intent, contribution,
         binary=binary, database=database, receiver=receiver)
 
 
-# Existing public form callers retain the explicitly validated path.
+# Public form callers share bounded physical contribution framing.
 prepare = prepare_fields
 
 

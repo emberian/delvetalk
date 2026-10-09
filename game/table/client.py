@@ -18,7 +18,8 @@ def same_game(program, qualified):
         return False
     try:
         if isinstance(qualified, str):
-            initial = table.source_object.plain(program['initial']['model'])
+            initial = table.source_object.plain(table.source_object.state_data(
+                {'protocol': program, 'state': program['initial']}))
             qualified = table.protocol(qualified, initial['seats']['north'], initial['seats']['south'])
         return canonical(program) == canonical(qualified)
     except (KeyError, TypeError, ValueError):
@@ -28,7 +29,7 @@ def same_game(program, qualified):
 def state(root):
     """Decode typed state; old retained receipts retain their historical display."""
     value = root['state']
-    return table.source_object.plain(value['model']) if set(value) == {'model'} else value
+    return table.source_object.plain(table.source_object.state_data(root)) if set(value) == {'model'} else value
 
 
 def canonical(value):

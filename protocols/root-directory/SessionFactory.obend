@@ -56,11 +56,11 @@ def wireField(key: String, value: P.Value) -> P.Value:
 def wireGet(fields: P.Values, key: String) -> P.Value:
   match fields:
     case nil(_): P.Value.none()
-    case cons(c): if P.text(P.get(c.head, "name")) == key then P.get(c.head, "value") else wireGet(c.tail, key)
+    case cons(c): if P.textEquals(P.get(c.head, "name"), key) then P.get(c.head, "value") else wireGet(c.tail, key)
 def wireFields(fields: P.Values, key: String, replacement: P.Value) -> P.Values:
   match fields:
     case nil(_): P.Values.cons({head: wireField(key, replacement), tail: P.Values.nil()})
-    case cons(c): if P.text(P.get(c.head, "name")) == key then P.Values.cons({head: wireField(key, replacement), tail: c.tail}) else P.Values.cons({head: c.head, tail: wireFields(c.tail, key, replacement)})
+    case cons(c): if P.textEquals(P.get(c.head, "name"), key) then P.Values.cons({head: wireField(key, replacement), tail: c.tail}) else P.Values.cons({head: c.head, tail: wireFields(c.tail, key, replacement)})
 def wireWith(record: P.Value, key: String, replacement: P.Value) -> P.Value:
   withField(record, "fields", P.Value.array({values: wireFields(items(P.get(record, "fields")), key, replacement)}))
 def originWire(origin: Session.Origin) -> P.Value:
@@ -73,7 +73,7 @@ def configured(program: P.Value, home: String, origin: Session.Origin) -> P.Valu
 def people(person: String) -> P.Value:
   P.Value.array({values: P.Values.cons({head: text(person), tail: P.Values.nil()})})
 def law(author: String, operator: String) -> P.Value:
-  P.Value.record({fields: pair("profile", text("delvetalk-scoped-law"), pair("invoke", P.Value.record({fields: pair("choose", people(author), pair("setDoor", people(operator), pair("begin", people(operator), P.Fields.nil())))}), pair("reprogram", people(operator), pair("law", people(operator), P.Fields.nil()))))})
+  P.Value.record({fields: pair("profile", text("delvetalk-scoped-law"), pair("view", P.Value.record({fields: pair("main", text("public"), P.Fields.nil())}), pair("invoke", P.Value.record({fields: pair("choose", people(author), pair("setDoor", people(operator), pair("begin", people(operator), P.Fields.nil())))}), pair("reprogram", people(operator), pair("law", people(operator), P.Fields.nil())))))})
 def valid(origin: Session.Origin) -> Bool:
   origin.author != "" && textLength(origin.author) <= 256n && origin.originUri != "" && textLength(origin.originUri) <= 1024n && origin.originCid != "" && textLength(origin.originCid) <= 128n
 record Followup:
@@ -97,15 +97,11 @@ def make(state: State, input: Session.Origin, context: Abi.Context) -> Decision:
   let allowed = valid(input) && state.next <= 64n && D.validDoors(state.doors, 8n)
   let home = identity(state, context.object)
   {accepted: allowed, reason: if allowed then "" else "Supply the verified author and immutable original post URI/CID; this factory retains at most 64 sessions.", state: if allowed then extend(state, {next: state.next + 1n}) else state, result: {session: home, author: input.author, originUri: input.originUri, originCid: input.originCid, followup: {enabled: state.welcome != "", object: state.welcome, offer: "enroll", fields: {did: input.author, proof: input.originCid}}}, allocations: if allowed then A.Allocations.cons({head: {name: name(state), protocol: configured(state.entry, home, input), law: law(input.author, context.principal)}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
-record TextField:
-  type: String
-  minLength: Nat
-  maxLength: Nat
 record Fields:
-  author: TextField
-  originUri: TextField
-  originCid: TextField
-def field(max: Nat) -> TextField:
+  author: Abi.StringField
+  originUri: Abi.StringField
+  originCid: Abi.StringField
+def field(max: Nat) -> Abi.StringField:
   {type: "string", minLength: 1n, maxLength: max}
 def fields() -> Fields:
   {author: field(256n), originUri: field(1024n), originCid: field(128n)}
@@ -126,14 +122,28 @@ def configureDoors(doors: D.Doors, home: String) -> P.Effects:
 def targetsReady(requests: P.Requests, observations: P.Observations) -> Bool:
   match requests:
     case nil(_): true
-    case cons(c): P.observation(observations, c.head.object).object == c.head.object && targetsReady(c.tail, observations)
+    case cons(c): P.observed(observations, c.head.object) && targetsReady(c.tail, observations)
 def targetReads(requests: P.Requests) -> P.Reads:
   match requests:
     case nil(_): P.Reads.nil()
     case cons(c): P.Reads.cons({head: P.Read.existing({object: c.head.object}), tail: targetReads(c.tail)})
-def prepareMake(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let origin: Session.Origin = {author: P.text(P.get(input, "author")), originUri: P.text(P.get(input, "originUri")), originCid: P.text(P.get(input, "originCid"))}
+def prepareOrigin(state: State, input: P.Value, origin: Session.Origin, observations: P.Observations, context: P.Context) -> P.Preparation:
   if D.validDoors(state.doors, 8n) == false then P.Preparation.refused({message: "Configure a bounded list of actual session doors."}) else if targetsReady(D.requests(state.doors), observations) == false then P.Preparation.refused({message: "Capture the configured open doors before opening this session."}) else if valid(origin) == false then P.Preparation.refused({message: "The operator must supply the verified author and original post URI/CID."}) else if state.next > 64n then P.Preparation.refused({message: "This session factory has reached its allocation bound."}) else P.Preparation.ready({summary: "Open a fresh directory session for this verified, retained post.", reads: P.Reads.cons({head: P.Read.existing({object: context.object}), tail: P.Reads.cons({head: P.Read.absent({object: identity(state, context.object)}), tail: targetReads(D.requests(state.doors))})}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "make", input: input}), tail: P.Effects.cons({head: P.Effect.invoke({object: identity(state, context.object), command: "begin", input: P.Value.record({fields: P.Fields.nil()})}), tail: configureDoors(state.doors, identity(state, context.object))})})})
+def prepareCid(state: State, input: P.Value, author: String, uri: String, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.textField(input, "originCid"):
+    case missing(_): P.Preparation.refused({message: "Supply the verified original post CID."})
+    case wrongKind(_): P.Preparation.refused({message: "The original post CID must be text."})
+    case found(cid): prepareOrigin(state, input, {author: author, originUri: uri, originCid: cid.value}, observations, context)
+def prepareUri(state: State, input: P.Value, author: String, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.textField(input, "originUri"):
+    case missing(_): P.Preparation.refused({message: "Supply the verified original post URI."})
+    case wrongKind(_): P.Preparation.refused({message: "The original post URI must be text."})
+    case found(uri): prepareCid(state, input, author, uri.value, observations, context)
+def prepareMake(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.textField(input, "author"):
+    case missing(_): P.Preparation.refused({message: "Supply the verified author."})
+    case wrongKind(_): P.Preparation.refused({message: "The verified author must be text."})
+    case found(author): prepareUri(state, input, author.value, observations, context)
 record Invitation:
   visible: Bool
   text: String

@@ -34,8 +34,8 @@ FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
 TRANSPORT_PIN_PATHS = ['scripts/worker.py', 'scripts/process_custody.py', 'scripts/manual_intake.py', 'scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py',
-                       'scripts/town_cards.py', 'scripts/source_offers.py', 'scripts/composite_offers.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
-                       'scene/room.py', 'scene/lower.py', 'scene/projection.py']
+                       'scripts/town_cards.py', 'scripts/opaque_offers.py', 'scripts/public_board.py', 'scripts/source_offers.py', 'scripts/composite_offers.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
+                       'scene/room.py', 'scene/parser.py', 'scene/projection.py']
 UNCHANGED = object()
 RUNTIME_CHOICES = tuple(world.PROFILES)
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
@@ -78,13 +78,10 @@ def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
-def pins(runtime_profile='world'):
+def pins(runtime_profile='compiled'):
     if runtime_profile not in RUNTIME_CHOICES:
         raise ValueError('unsupported clerk runtime profile')
-    profiles = ('world', 'transactions') if runtime_profile == 'world' else (runtime_profile,)
-    result = {}
-    for profile in profiles:
-        result.update(runtime_profiles.file_hashes(profile))
+    result = runtime_profiles.file_hashes(runtime_profile)
     result.update({path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in TRANSPORT_PIN_PATHS})
     return result
 
@@ -171,17 +168,15 @@ class Clerk:
     def config(self):
         result = loads((self.state / 'clerk.json').read_text())
         if (result['profile']['name'] != PROFILE or result['pds'] != PDS
-                or result.get('runtimeProfile', 'world') not in RUNTIME_CHOICES):
+                or result.get('runtimeProfile', 'compiled') not in RUNTIME_CHOICES):
             raise ValueError('unsupported clerk profile')
         return result
 
     def execution_profile(self, request, config=None):
         config = self.config() if config is None else config
-        if config.get('runtimeProfile', 'world') != 'world':
-            return config['runtimeProfile']
-        return 'transactions' if request['op'] == 'transaction' else 'world'
+        return config.get('runtimeProfile', 'compiled')
 
-    def bootstrap(self, object_id, protocol, law, repositories, runtime_profile='world'):
+    def bootstrap(self, object_id, protocol, law, repositories, runtime_profile='compiled'):
         if not isinstance(object_id, str) or not object_id:
             raise ValueError('object ID must be nonempty')
         if not repositories or any(not isinstance(repo, str) or not DID.fullmatch(repo) for repo in repositories):
@@ -191,8 +186,7 @@ class Clerk:
                   'bootstrap': {'op': 'create', 'principal': 'local-clerk-operator',
                                 'intent': 'bootstrap:' + object_id, 'object': object_id,
                                 'protocol': protocol, 'law': law}}
-        if runtime_profile != 'world':
-            config['runtimeProfile'] = runtime_profile
+        config['runtimeProfile'] = runtime_profile
         with delve.locked(self.state / 'clerk.lock'):
             path = self.state / 'clerk.json'
             if path.exists():
@@ -289,8 +283,7 @@ class Clerk:
             config = {'format': PROFILE, 'pds': PDS, 'repositories': selection['repositories'],
                       'objects': sorted(expected_roots), 'profile': profile, 'database': str(database),
                       'attachment': attachment}
-            if selected_runtime != 'world':
-                config['runtimeProfile'] = selected_runtime
+            config['runtimeProfile'] = selected_runtime
             save(path, config)
             return {'status': 'attached', 'attachment': attachment}
 
@@ -383,7 +376,7 @@ class Clerk:
             raise ValueError('short town replies require explicit cardbook configuration')
         if config['profile'].get('townCards') != digest(selection):
             raise ValueError('town cardbook configuration differs from its pinned profile')
-        self.card_configuration(selection, config.get('runtimeProfile', 'world'))
+        self.card_configuration(selection, config.get('runtimeProfile', 'compiled'))
         cards = module('clerk_town_cards', 'scripts/town_cards.py')
         def fetch_publication(uri, cid):
             issuer, _, _ = parse_uri(uri, (FEED,))
@@ -431,7 +424,14 @@ class Clerk:
         resolved_transaction = None
         if operation == 'transaction':
             payload, resolved_transaction = transaction_intake.resolve(payload, self, config)
-        elif operation == 'invoke':
+        elif operation == 'opaque-transaction':
+            fields = ['op', 'object', 'panel', 'expected', 'key', 'observations', 'contribution']
+            if 'audience' in payload:
+                fields.append('audience')
+            exact(payload, fields, 'requestJson')
+            if not isinstance(payload['contribution'], dict) or not isinstance(payload['observations'], list):
+                raise ValueError('opaque preparation requires physical contribution and observation frames')
+        elif operation in ('invoke', 'opaque-invoke'):
             fields = ['object', 'command', 'input', expected_key]
             if 'op' in payload:
                 fields.append('op')
@@ -549,7 +549,7 @@ class Clerk:
                     entry = self.normalize_payload(interpretation['request'], author, uri, cid, record, config)
                     entry['interpretation'] = evidence
                 # Binding is durable before Lean admission, not after its reply.
-                if config['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
+                if config['profile']['pins'] != pins(config.get('runtimeProfile', 'compiled')):
                     raise ValueError('clerk implementation pins changed; use the pinned checkout')
                 if 'preparation' in entry:
                     receipt = {'format': 'delvetalk-clerk-preparation-v1', 'source': entry['source'],
@@ -561,7 +561,7 @@ class Clerk:
                     return receipt
                 save(path, entry)
             retained = world.retained_reply(self.database, entry['request'])
-            if retained is None and entry['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
+            if retained is None and entry['profile']['pins'] != pins(config.get('runtimeProfile', 'compiled')):
                 raise ValueError('pending request implementation pins changed')
             return self.finish(path, entry, retained)
 
@@ -569,7 +569,7 @@ class Clerk:
         with delve.locked(self.state / 'clerk.lock'):
             config = self.config()
             profile = config['profile']
-            return {'profile': profile, 'sha256': digest(profile), 'runtimeProfile': config.get('runtimeProfile', 'world')}
+            return {'profile': profile, 'sha256': digest(profile), 'runtimeProfile': config.get('runtimeProfile', 'compiled')}
 
     def upgrade(self, from_profile, runtime_profile=None, *, town_cards=UNCHANGED):
         """Explicit local custody transition; never changes or reinterprets a world."""
@@ -579,7 +579,7 @@ class Clerk:
             # The backend supplies an atomic observation; clerk custody serializes configuration.
             config = self.config()
             old = config['profile']
-            prior_runtime = config.get('runtimeProfile', 'world')
+            prior_runtime = config.get('runtimeProfile', 'compiled')
             selected_runtime = prior_runtime if runtime_profile is None else runtime_profile
             new = {'name': PROFILE, 'pins': pins(selected_runtime)}
             cards = config.get('townCards') if town_cards is UNCHANGED else town_cards
@@ -613,10 +613,7 @@ class Clerk:
                 config.pop('townCards', None)
             else:
                 config['townCards'] = cards
-            if selected_runtime == 'world':
-                config.pop('runtimeProfile', None)
-            else:
-                config['runtimeProfile'] = selected_runtime
+            config['runtimeProfile'] = selected_runtime
             config['upgrades'] = history + [transition]
             save(self.state / 'clerk.json', config)
             return {'format': 'delvetalk-clerk-upgrade-v1',
@@ -627,7 +624,7 @@ class Clerk:
             config = self.config()
             if object_id not in config['objects']:
                 raise ValueError('object is not configured for this clerk')
-            if config['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
+            if config['profile']['pins'] != pins(config.get('runtimeProfile', 'compiled')):
                 raise ValueError('clerk implementation pins changed')
             root = world.exchange(self.database, {'op': 'inspect', 'object': object_id,
                                                   'principal': principal}, profile=self.execution_profile({'op': 'inspect'}, config))
@@ -644,11 +641,9 @@ def main():
     init = commands.add_parser('bootstrap')
     init.add_argument('--object', required=True)
     init.add_argument('--protocol', type=Path, required=True)
-    authority = init.add_mutually_exclusive_group()
-    authority.add_argument('--law', action='append', default=[])
-    authority.add_argument('--law-file', type=Path, help='complete law JSON; validated by Lean')
+    init.add_argument('--law-file', type=Path, required=True, help='complete scoped law JSON; validated by Lean')
     init.add_argument('--repository', action='append', required=True)
-    init.add_argument('--runtime-profile', choices=RUNTIME_CHOICES, default='world')
+    init.add_argument('--runtime-profile', choices=RUNTIME_CHOICES, default='compiled')
     attach = commands.add_parser('attach', help='enroll an existing verified workspace without creating objects')
     attach.add_argument('--workspace', required=True, type=Path)
     attach.add_argument('--expected-roots', required=True, type=Path, help='JSON object mapping selected IDs to exact full roots')
@@ -675,7 +670,7 @@ def main():
     try:
         clerk = Clerk(args.state)
         if args.op == 'bootstrap':
-            law = loads(args.law_file.read_bytes()) if args.law_file else args.law
+            law = loads(args.law_file.read_bytes())
             result = clerk.bootstrap(args.object, loads(args.protocol.read_text()), law, args.repository, args.runtime_profile)
         elif args.op == 'attach':
             result = clerk.attach(args.workspace, loads(args.expected_roots.read_bytes()), args.repository,

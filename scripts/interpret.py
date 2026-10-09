@@ -112,10 +112,7 @@ def outcome(status, message, via):
 
 def modules():
     import source_object
-    return source_object.read_modules([
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
-        ('Document', ROOT / 'world/lib/document/Document.obend'),
+    return source_object.read_closure([
         ('Interpretation', ROOT / 'protocols/interpretation/Interpretation.obend')])
 
 
@@ -141,7 +138,8 @@ _ARTIFACTS = {}
 def unpack(wire):
     import source_object
     result = source_object.plain(wire)
-    result['fields'] = source_object.values('decode', [next(f['value'] for f in wire['fields'] if f['name'] == 'fields')])[0]
+    fields = next(f['value'] for f in wire['fields'] if f['name'] == 'fields')
+    result['fields'] = source_object.values('decode', [source_object.variant('record', source_object.record({'fields': fields}))])[0]
     names = result.pop('unresolved')
     unresolved = []
     while names['variant'] == 'cons':
@@ -258,7 +256,10 @@ def main():
     parser.add_argument('text', help='copied do CARD ACTION token or natural-language request')
     parser.add_argument('--custody', type=Path, help='explicit private directory for bounded model job custody')
     parser.add_argument('--anthropic', action='store_true', help='opt into one Haiku request using ANTHROPIC_API_KEY')
+    parser.add_argument('--tokeman-account', help='explicit tokeman account instead of ANTHROPIC_API_KEY; requires --anthropic')
     args = parser.parse_args()
+    if args.tokeman_account is not None and not args.anthropic:
+        parser.error('--tokeman-account requires --anthropic')
     try:
         with args.card.open('rb') as stream:
             raw = stream.read(MAX_CARD + 1)
@@ -269,7 +270,8 @@ def main():
         if args.anthropic and not token_input(args.text):
             if args.custody is None:
                 raise ValueError('--anthropic requires explicit --custody')
-            proposer = AnthropicProposer(os.environ.get('ANTHROPIC_API_KEY'), directory=args.custody)
+            from model_service import configured_credential
+            proposer = AnthropicProposer(configured_credential(args.tokeman_account), directory=args.custody)
         result = interpret(args.text, card, proposer=proposer)
     except (ValueError, TypeError, OSError, RecursionError):
         result = outcome('clarify', 'Provide a valid public card; optional language help requires an explicitly configured API key.', 'none')

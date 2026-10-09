@@ -26,7 +26,7 @@ verb grammar or hidden model request. Private studio access remains an authentic
 service relationship; putting “studio” on a shared page creates no private access.
 
 Supply ordered modules `Abi`, `Preparation`, `Encounter`, `Document`, `Directory`,
-`GSBWelcome` to `objective-bend-spell@3`. The first three come from
+`GSBWelcome` to `objective-bend-object`. The first three come from
 `world/lib/prelude`, Document from `world/lib/document`, and the last two from this
 directory. Use the compiled receiver. Grant `setDoor` only to directory editors;
 grant `choose` to the intended participants separately.

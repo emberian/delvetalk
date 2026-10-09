@@ -19,10 +19,7 @@ OPENING = json.loads((GAME / 'original-opening.json').read_text())
 
 
 def modules():
-    return source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+    return source_object.read_closure([
         ('Automatafl', GAME / 'Automatafl.obend'),
         ('Validated', GAME / 'Validated.obend'),
         ('CommitRevealTable', HERE / 'CommitRevealTable.obend')])
@@ -41,7 +38,7 @@ def evaluate(entry, arguments):
 
 @lru_cache(maxsize=32)
 def _loaded(encoded_modules, encoded_config, pins):
-    return source_object.load(json.loads(encoded_modules), syntax='objective-bend-spell@3',
+    return source_object.load(json.loads(encoded_modules), syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.data(json.loads(encoded_config))])
 
 
@@ -49,7 +46,7 @@ def protocol(table_id, seat0, seat1):
     # Cache physical compilation only, keyed by complete source/config/runtime pins.
     config = {'table': table_id, 'north': seat0, 'south': seat1}
     return deepcopy(_loaded(json.dumps(modules()), json.dumps(config),
-                            json.dumps(source_object.pins('objective-bend-spell@3'), sort_keys=True)))
+                            json.dumps(source_object.pins('objective-bend-object'), sort_keys=True)))
 
 
 def law(seat0, seat1):

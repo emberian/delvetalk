@@ -1,83 +1,12 @@
-"""Explicit Spween parser/lowering adapters; scene source never selects code."""
-import hashlib
+"""Physical pinned Spween parsing adapter; execution belongs to source objects."""
 import importlib.util
-import json
 from pathlib import Path
-import subprocess
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'scripts'))
-import process_custody
-UPSTREAM = '95980f7d1e109138496849a444f28c4b9076a4e2'
-BRIDGE = ROOT / 'scene/spween-bridge/target/debug/delvetalk-spween'
-
-
-def parse(source):
-    if not BRIDGE.is_file():
-        raise ValueError('build the pinned parser: cargo build --locked --manifest-path scene/spween-bridge/Cargo.toml')
-    executable_hash = hashlib.sha256(BRIDGE.read_bytes()).hexdigest()
-    try:
-        result = process_custody.run_native([str(BRIDGE)],
-            input=json.dumps({'op': 'parse', 'source': source}).encode('utf-8'),
-            timeout=15, cpu_seconds=15, stdout_limit=8 * 1024 * 1024, stderr_limit=1024 * 1024)
-        result.check_returncode()
-    except (subprocess.SubprocessError, process_custody.OutputLimitExceeded, OSError) as error:
-        raise ValueError(f'Spween bridge failed: {error}') from error
-    document = json.loads(result.stdout)
-    if document.get('ok') is not True:
-        raise ValueError(f"Spween {document.get('stage', 'parse')}: {document.get('error', 'refused')}")
-    if document.get('source') != source:
-        raise ValueError('Spween bridge did not preserve exact source')
-    if document.get('upstream') != UPSTREAM:
-        raise ValueError('Spween bridge reported an unexpected upstream revision')
-    document['bridge_binary_sha256'] = executable_hash
-    return source_shape(document)
-
-
-def source_shape(document):
-    if not isinstance(document, dict) or document.get('ok') is not True or document.get('upstream') != UPSTREAM:
-        raise ValueError('expected pinned parsed Spween document')
-    if not isinstance(document.get('source'), str) or not isinstance(document.get('ast'), dict):
-        raise ValueError('parsed document requires original source and complete scene AST')
-    if not isinstance(document['ast'].get('meta'), dict) or not isinstance(document['ast'].get('passages'), list):
-        raise ValueError('Spween AST requires metadata and passages')
-    return document
-
-
-def lower(source):
-    """Historical @1 adapter: preserve v1 lowering semantics explicitly."""
-    return _lower(source, 'spween-scene-i64-v1')
-
-
-def lower_v2(source):
-    """@2 derives ordering from exact stored text in the generated Bend program."""
-    return _lower(source, 'spween-scene-i64-v2')
-
-
-def _lower(source, profile):
-    parsed = parse(source)
-    spec = importlib.util.spec_from_file_location('delvetalk_spween_lowering', ROOT / 'scene/lower.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    result = module.lower_document(parsed, profile=profile)
-    if result.get('source') != source or result.get('ast') != parsed['ast']:
-        raise ValueError('Spween lowering must retain exact source and full parsed AST')
-    result['bridge_binary_sha256'] = parsed['bridge_binary_sha256']
-    return result
-
-
-def protocol_shape(document):
-    if not isinstance(document, dict) or document.get('profile') not in ('spween-scene-i64-v1', 'spween-scene-i64-v2'):
-        raise ValueError('expected a named supported Spween lowered bundle')
-    if document.get('upstream') != UPSTREAM or not isinstance(document.get('source'), str) or not isinstance(document.get('ast'), dict):
-        raise ValueError('lowered bundle must preserve pinned upstream, source and AST')
-    if not isinstance(document.get('provenance'), dict):
-        raise ValueError('lowered bundle requires profile provenance')
-    spec = importlib.util.spec_from_file_location('delvetalk_syntax_adapters', ROOT / 'syntaxes/adapters.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.protocol_shape(document.get('protocol'))
-    if document['protocol'].get('sceneProfile') != document['profile']:
-        raise ValueError('Spween bundle and protocol profiles differ')
-    return document
+spec = importlib.util.spec_from_file_location('spween_parser_adapter', ROOT / 'scene/parser.py')
+parser = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(parser)
+UPSTREAM = parser.UPSTREAM
+BRIDGE = parser.BRIDGE
+parse = parser.parse
+source_shape = parser.source_shape

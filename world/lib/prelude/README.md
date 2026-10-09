@@ -61,3 +61,15 @@ checkpoint, restart, exact retry, stale-root refusal and live page projection.
 The opt-in `bench_source_collections.py --representation pages` records source
 work at 8/32/50/200. Chunking solves the measured flat-list depth failure; it does
 not promise unbounded storage or remove the full-root 64 KiB request/view limits.
+
+`Preparation.ResolvedReference` groups an observed object, retained root key and
+exact program identity. `lookupReference` distinguishes missing observations from
+unresolved values and accepts only the retained observation variant, with matching
+object and exact key/program lengths. A string is a selection term, never an
+observed reference. Source `referenceRead` emits `Read.exact {object,key}` so native binding checks
+the saved key against its held observation. A saved reference refuses after the
+root changes, even when a fresh observation is available. `Read.existing` remains
+the deliberate current-observation choice. Its record type does not authenticate
+a caller-supplied value. The native
+held-read binder checks the actual retained preimage, and admission checks current
+law. Copying a reference delegates neither read nor invoke authority.

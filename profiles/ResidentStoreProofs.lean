@@ -190,8 +190,7 @@ theorem indexCorrect_loadCheckpoint (world : Json) (sequence : Nat) (head : Stri
   split at success
   · cases success
   · obtain ⟨base, _, success⟩ := bind_success success
-    obtain ⟨currentObjects, _, success⟩ := bind_success success
-    apply indexCorrect_checkpointFold history { base, head, roots := RetainedRoots.collect {} currentObjects } state ?_ success
+    apply indexCorrect_checkpointFold history { base, head, roots := RetainedRoots.fromWorld world } state ?_ success
     intro key
     change (∅ : Index)[key]? = ([] : List Json).reverse.find? _
     simp

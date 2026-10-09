@@ -1,7 +1,7 @@
 """Compact guards exercise the actual file and persistent native receivers."""
 import copy
 from decimal import Decimal
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import tempfile
 import sys
@@ -10,9 +10,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-spec = importlib.util.spec_from_file_location('retained_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'retained_world')
 
 
 class RetainedRootTests(unittest.TestCase):

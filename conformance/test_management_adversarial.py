@@ -10,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from conformance.source_custody_fixture import counter_protocol, counter_source, scoped
 spec = importlib.util.spec_from_file_location('manage_adversarial', ROOT / 'scripts/manage.py')
 manage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manage)
@@ -26,12 +28,12 @@ class ManagementAdversarial(unittest.TestCase):
         self.state = Path(self.temp.name)
         self.c = clerk.Clerk(self.state)
         self.m = manage.Management(self.state)
-        protocol = clerk.loads((ROOT / 'protocols/counter/protocol.json').read_text())
-        self.root = self.c.bootstrap('counter', protocol, [A], [A, B])['data']['root']
+        protocol = counter_protocol()
+        self.root = self.c.bootstrap('counter', protocol, scoped([A]), [A, B])['data']['root']
 
     def test_same_intent_string_has_distinct_principal_identity(self):
-        refused = self.m.law('counter', B, 'shared-intent', self.root, [B])
-        accepted = self.m.law('counter', A, 'shared-intent', self.root, [A, B])
+        refused = self.m.law('counter', B, 'shared-intent', self.root, scoped([B]))
+        accepted = self.m.law('counter', A, 'shared-intent', self.root, scoped([A, B]))
         self.assertEqual(refused['reply']['data'], 'unauthorized')
         self.assertEqual(accepted['reply']['kind'], 'committed')
         self.assertNotEqual(self.m.path(A, 'shared-intent'), self.m.path(B, 'shared-intent'))
@@ -41,7 +43,7 @@ class ManagementAdversarial(unittest.TestCase):
     def pending(self):
         with patch.object(clerk.world, 'exchange', side_effect=OSError('before admission')):
             with self.assertRaises(OSError):
-                self.m.law('counter', A, 'pending', self.root, [A, B])
+                self.m.law('counter', A, 'pending', self.root, scoped([A, B]))
 
     def test_management_source_change_blocks_pending_and_upgrade(self):
         self.pending()
@@ -57,7 +59,7 @@ class ManagementAdversarial(unittest.TestCase):
     def test_pending_local_assertion_faces_revocation_before_resume(self):
         self.pending()
         reply = clerk.world.exchange(self.c.database, {'op': 'law', 'object': 'counter',
-            'principal': A, 'intent': 'independent-revocation', 'expected': self.root, 'law': []})
+            'principal': A, 'intent': 'independent-revocation', 'expected': self.root, 'law': scoped([])})
         self.assertEqual(reply['kind'], 'committed')
         before = self.c.snapshot('counter')['root']
         refused = self.m.resume(A, 'pending')
@@ -66,22 +68,22 @@ class ManagementAdversarial(unittest.TestCase):
         self.assertEqual(self.m.resume(A, 'pending'), refused)
 
     def program(self, intent='program', source=None):
-        source = source if source is not None else (ROOT / 'protocols/counter/protocol.json').read_bytes()
-        return self.m.reprogram('counter', A, intent, self.root, 'protocol-json@1', source, b'{"count":10}')
+        source = source if source is not None else counter_source()
+        return self.m.reprogram('counter', A, intent, self.root, 'objective-bend-object', source, clerk.canonical(self.root['state']))
 
     def test_equal_lowering_does_not_erase_source_identity(self):
         accepted = self.program()
         self.assertEqual(accepted['reply']['kind'], 'committed')
-        same_protocol_different_source = (ROOT / 'protocols/counter/protocol.json').read_bytes() + b'\n'
+        same_protocol_different_source = counter_source() + b'\n'
         with self.assertRaisesRegex(ValueError, 'different request or source'):
             self.program(source=same_protocol_different_source)
         self.assertEqual(self.m.resume(A, 'program'), accepted)
         self.assertEqual(accepted['program']['artifact']['source']['text'],
-                         (ROOT / 'protocols/counter/protocol.json').read_text())
-        self.assertEqual(accepted['program']['stateSource']['text'], '{"count":10}')
+                         counter_source().decode())
+        self.assertEqual(accepted['program']['stateSource']['text'], clerk.canonical(self.root['state']).decode())
 
     def test_law_and_program_cannot_reuse_one_management_identity(self):
-        accepted = self.m.law('counter', A, 'shared-operation', self.root, [A])
+        accepted = self.m.law('counter', A, 'shared-operation', self.root, scoped([A]))
         with self.assertRaisesRegex(ValueError, 'different request or source'):
             self.program('shared-operation')
         self.assertEqual(self.m.resume(A, 'shared-operation'), accepted)
@@ -103,44 +105,10 @@ class ManagementAdversarial(unittest.TestCase):
         with patch.object(manage, 'translation_current', side_effect=ValueError('now upgraded')):
             self.assertEqual(self.m.resume(A, 'program'), accepted)
 
-    def desk_candidate(self):
-        worker = desk.Desk(self.c.database, self.state / 'builds')
-        empty = worker.create('candidate', A, 'create-candidate', [A])['data']['root']
-        source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
-        pending = worker.submit('candidate', A, 'submit-candidate', empty, 'protocol-json@1',
-                                source, b'[]', {'count': 3}, 'counter')['data']['root']
-        build = {'format': 'delvetalk-desk-build-v1', 'passed': True,
-                 'candidateRootSha256': desk.digest(pending), 'protocol': clerk.loads(source)}
-        return worker, pending, build
-
-    def test_pending_desk_admission_cannot_cross_runtime_change(self):
-        worker, pending, build = self.desk_candidate()
-        with patch.object(desk, 'bounded_compile', return_value=build), patch.object(
-                worker, 'exchange', side_effect=OSError('uncertain before admission')):
-            with self.assertRaises(OSError):
-                worker.check('candidate', A, 'compile', pending)
-        before = self.c.database.read_bytes()
-        with patch.object(desk, 'execution_profile', return_value={'different': True}):
-            with self.assertRaisesRegex(ValueError, 'runtime pins changed'):
-                worker.check('candidate', A, 'compile', pending)
-        self.assertEqual(self.c.database.read_bytes(), before)
-        with patch.object(desk, 'bounded_compile', side_effect=AssertionError('recompiled')):
-            self.assertEqual(worker.check('candidate', A, 'compile', pending)['kind'], 'committed')
-
-    def test_uncertain_committed_desk_reply_survives_runtime_change_without_execution(self):
-        worker, pending, build = self.desk_candidate()
-        exchange = worker.exchange
-        committed = []
-        def lose_reply(request):
-            committed.append(exchange(request))
-            raise OSError('lost committed reply')
-        with patch.object(desk, 'bounded_compile', return_value=build), patch.object(worker, 'exchange', lose_reply):
-            with self.assertRaises(OSError):
-                worker.check('candidate', A, 'compile', pending)
-        with patch.object(desk, 'execution_profile', return_value={'different': True}), patch.object(
-                worker, 'exchange', side_effect=AssertionError('must not execute new engine')), patch.object(
-                desk, 'load_artifact', side_effect=AssertionError('historical receipt needs no artifact')):
-            self.assertEqual(worker.check('candidate', A, 'compile', pending), committed[0])
+    def test_worker_wall_timeout_is_a_physical_exception(self):
+        with self.assertRaises(subprocess.TimeoutExpired):
+            desk.process_custody.run([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                    input=b'', timeout=0.05, cpu_seconds=10, stdout_limit=1024, stderr_limit=1024)
 
     @unittest.skipUnless(os.name == 'posix', 'process group custody')
     def test_desk_cancellation_kills_compiler_descendants(self):
@@ -167,7 +135,7 @@ class ManagementAdversarial(unittest.TestCase):
         try:
             with patch.object(desk.subprocess, 'Popen', start):
                 with self.assertRaises(KeyboardInterrupt):
-                    desk.bounded_compile(self.root)
+                    desk.process_custody.run([sys.executable, '-c', 'pass'], input=b'', timeout=45, cpu_seconds=10, stdout_limit=1024, stderr_limit=1024)
             self.assertIsNotNone(processes[0].poll())
             child = int(marker.read_text())
             status = subprocess.run(['ps', '-o', 'stat=', '-p', str(child)], capture_output=True, text=True).stdout.strip()

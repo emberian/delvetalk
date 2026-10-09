@@ -192,9 +192,9 @@ class TableParticipant(unittest.TestCase):
         before = journey.bootstrap.inspect_view(directory)
         self.assertEqual(host.exchange({'op': 'reprogram', 'object': target,
             'principal': manifest['participants'][0], 'intent': 'participant-install',
-            'expected': host.inspect(target), 'protocol': program, 'state': program['initial']})['kind'], 'committed')
+            'expected': host.inspect(target, principal=manifest['participants'][0]), 'protocol': program, 'state': program['initial']})['kind'], 'committed')
         self.assertEqual(host.exchange({'op': 'law', 'object': target, 'principal': 'local-operator',
-            'intent': 'participant-seats', 'expected': host.inspect(target),
+            'intent': 'participant-seats', 'expected': host.inspect(target, principal='local-operator'),
             'law': p.table.law(*self.seats)})['kind'], 'committed')
         self.players = [p.Participant(directory / 'world.json', directory / ('seat-' + str(seat)),
                                      target, self.seats[seat], seat) for seat in (0, 1)]
@@ -205,7 +205,7 @@ class TableParticipant(unittest.TestCase):
             for seat in (0, 1):
                 self.act(seat, 'reveal', {}, f'round-{number}-reveal-{seat}')
             self.act(0, 'resolve', {}, f'round-{number}-resolve')
-        final = host.inspect(target)
+        final = host.inspect(target, principal=self.seats[0])
         self.assertEqual(p.client.state(final)['game']['winner'], 1)
         self.assertEqual(self.players[0].observe()['actions'], [])
         self.assertIn('game has finished', self.players[0].observe()['prose'])

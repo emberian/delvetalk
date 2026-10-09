@@ -27,9 +27,13 @@ record Decision:
 def configured(config: Config) -> State:
   {owner: config.owner, clock: config.clock, runs: 0n, lastTopic: "", lastTick: 0n, lastId: "", lastGeneration: 0n, lastEvent: ""}
 def wake(state: State, value: P.Value, context: Abi.Context, event: E.CausalEvent) -> Decision:
-  let input = Appointments.readPayload(value)
-  let ok = event.source == state.clock && input.owner == state.owner && input.tick >= input.due && input.tick <= input.deadline
-  {accepted: ok, reason: if ok then "" else "This task accepts its owner's timely appointments from its named clock.", state: {owner: state.owner, clock: state.clock, runs: state.runs + 1n, lastTopic: input.topic, lastTick: input.tick, lastId: input.id, lastGeneration: input.generation, lastEvent: event.id}, result: {action: input.topic, runs: state.runs + 1n}}
+  match Appointments.readPayload(value):
+    case missing(failure): {accepted: false, reason: textConcat("Missing appointment payload field: ", failure.field), state: state, result: {action: "", runs: state.runs}}
+    case wrongKind(failure): {accepted: false, reason: textConcat("Wrong appointment payload field type: ", failure.field), state: state, result: {action: "", runs: state.runs}}
+    case found(parsed):
+      let input = parsed.value
+      let ok = event.source == state.clock && input.owner == state.owner && input.tick >= input.due && input.tick <= input.deadline
+      {accepted: ok, reason: if ok then "" else "This task accepts its owner's timely appointments from its named clock.", state: {owner: state.owner, clock: state.clock, runs: state.runs + 1n, lastTopic: input.topic, lastTick: input.tick, lastId: input.id, lastGeneration: input.generation, lastEvent: event.id}, result: {action: input.topic, runs: state.runs + 1n}}
 record WakeForm:
   label: String
   inputCodec: String

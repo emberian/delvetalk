@@ -48,16 +48,18 @@ only `resolve`, and only after both openings. Current law still decides who may
 act. Conflicts, invalid pairs, marks and terminal results remain the actual game’s
 outcomes. There are no public source/target/nonce entry forms.
 
-For an already configured cardbook and saved exact public root:
+For an already configured cardbook and native world custody database:
 
 ```sh
-python3 protocols/automatafl/companion.py --root /tmp/table-root.json \
+python3 protocols/automatafl/companion.py --database /private/operator/world.json \
+  --principal did:plc:aaaaaaaaaaaaaaaaaaaaaaaa \
   --table table:automatafl --book /private/operator/cardbook --alias game-round0
 ```
 
-This captures a normal town card and prints a coordinate board from that same
-root. Each move appears only after its opening is admitted. The board is
-presentation, not another movement evaluator. No principal,
+This captures a public source card with a coordinate board selected by the same
+exact native reference. Current law must explicitly publish the panel; public
+capture grants no access to private table state. Each move appears only after
+its opening is admitted. The board is presentation, not another movement evaluator. No principal,
 unopened move, nonce or full commitment digest appears in the output. Publishing
 and binding the real post remain explicit operator actions. Residents may then
 use the offered resolve spell or ordinary language interpreted against the exact

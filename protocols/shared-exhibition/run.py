@@ -29,7 +29,7 @@ PROFILE = 'compiled'
 
 
 def law(invoke, reprogram=(), managers=('operator',)):
-    return {'profile': 'delvetalk-scoped-law-v1', 'invoke': invoke,
+    return {'profile': 'delvetalk-scoped-law', 'invoke': invoke,
             'reprogram': list(reprogram), 'law': list(managers)}
 
 
@@ -76,7 +76,7 @@ def run(directory, content=None):
     entries = [{'name': item['name'], 'sourceRef': source_store.store_bytes(desk.artifact_store, item['source'].encode())}
                for item in modules]
     proposal = source_store.prepare_module_proposal(desk.artifact_store, source_store.seal_modules(entries),
-        (HERE / 'exhibition.examples').read_bytes(), syntax='objective-bend-spell@3')
+        (HERE / 'exhibition.examples').read_bytes(), syntax='objective-bend-object')
     pending = record('submit-original-source', desk.submit_refs(CANDIDATE, 'builder', 'source-submit', candidate,
         proposal, program['initial'], TARGET))['data']['root']
     queue = compiler_queue.CompilerQueue(directory / 'queue', desk.database, desk.artifact_store, profile=PROFILE)

@@ -3,7 +3,7 @@
 One resident creates an instrument; another plays it. [Instrument.obend](Instrument.obend)
 retains light and a note count. [Chorus.obend](Chorus.obend) changes the behavior and
 interface while retaining that state. Both are ordinary Objective Bend under
-`objective-bend-spell@2`.
+`objective-bend-object`.
 
 The forge's source ObjectFactory allocates the actual initial instrument with
 explicit `light`/`douse` grants. Candidate and Writing are the same source

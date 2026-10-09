@@ -28,7 +28,7 @@ record Decision:
   result: Result
   emissions: E.Emissions
 def hear(state: State, input: P.Value, context: Abi.Context, event: E.CausalEvent) -> Decision:
-  let chord = P.text(P.get(input, "chord"))
+  let chord = P.textOrEmpty(P.get(input, "chord"))
   let accepted = event.source == state.source && (chord == "C E G" || chord == "decline")
   let decline = chord == "decline"
   let reaction = accepted && decline == false && state.recipientProgram != ""
@@ -39,12 +39,15 @@ record Bound:
   state: State
   result: String
 def bind(state: State, input: P.Value, context: Abi.Context) -> Bound:
-  let target = P.text(P.get(input, "object"))
-  let program = P.text(P.get(input, "program"))
-  let accepted = target == state.recipient && textLength(program) == 64n
+  let target = P.textOrEmpty(P.get(input, "object"))
+  let program = P.textOrEmpty(P.get(input, "program"))
+  let accepted = P.isText(P.get(input, "object")) && P.isText(P.get(input, "program")) && target == state.recipient && textLength(program) == 64n
   {accepted: accepted, reason: if accepted then "" else "Capture this door's chosen light before connecting it.", state: if accepted then extend(state, {recipientProgram: program}) else state, result: target}
 def prepareBind(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let observed = P.observation(observations, state.recipient)
+  match P.lookupObservation(observations, state.recipient):
+    case missing(_): P.Preparation.refused({message: "Capture the selected light before connecting it."})
+    case found(found): prepareCapturedBind(state, found.value, context)
+def prepareCapturedBind(state: State, observed: P.Observation, context: P.Context) -> P.Preparation:
   if observed.object != state.recipient || textLength(observed.program) != 64n then P.Preparation.refused({message: "The selected light is not captured here."}) else P.Preparation.ready({summary: "Let the door light its observed lantern when the bell opens it.", reads: P.Reads.cons({head: P.Read.existing({object: state.recipient}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "bind", input: P.Value.record({fields: P.Fields.cons({head: {name: "object", value: P.Value.text({value: state.recipient})}, tail: P.Fields.cons({head: {name: "program", value: P.Value.text({value: observed.program})}, tail: P.Fields.nil()})})})}), tail: P.Effects.nil()})})
 record Description:
   name: String

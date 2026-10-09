@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
+sys.path.insert(0, str(ROOT))
 import process_custody
 import resident_store
 
@@ -52,15 +53,14 @@ sys.exit(87)
         self.assertEqual(limits['as'], [64 * 1024 * 1024] * 2)
         self.assertEqual(limits['cpu'], list(before))
 
-    @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-world').is_file(), 'prebuilt receiver required')
+    @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-compiled').is_file(), 'prebuilt receiver required')
     def test_killed_receiver_recovers_durable_exact_reply_under_same_configuration(self):
-        request = {'op': 'create', 'object': 'room', 'principal': 'keeper', 'intent': 'create',
-                   'protocol': {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {}},
-                   'law': ['keeper']}
+        from conformance.source_custody_fixture import create
+        request = create()
         configured = LIMIT if LINUX else None
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / 'world.sqlite'
-            with resident_store.Resident(database, profile='world', timeout=5, memory_bytes=configured) as receiver:
+            with resident_store.Resident(database, profile='compiled', timeout=5, memory_bytes=configured) as receiver:
                 self.assertEqual(receiver.memory_bytes, configured)
                 pid = receiver.process.pid
                 def kill(stage):
@@ -81,7 +81,7 @@ sys.exit(87)
                 self.assertEqual(receiver.exchange(request), receipt)
                 self.assertEqual(receiver.sequence, 1)
                 receiver.checkpoint()
-            with resident_store.Resident(database, profile='world', timeout=5, memory_bytes=configured) as receiver:
+            with resident_store.Resident(database, profile='compiled', timeout=5, memory_bytes=configured) as receiver:
                 self.assertEqual(receiver.exchange(request), receipt)
                 self.assertEqual(len(receiver.export_world()['receipts']), 1)
                 if LINUX:

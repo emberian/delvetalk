@@ -23,12 +23,17 @@ expect refusal: stale read root
 as visitor
 send knock
   word: wrong
-expect refusal: precondition failed
+expect refusal: source refused: precondition failed
 
 as outsider
 send knock
   word: moon
   principal: maker
+expect refusal: typed data record fields differ from declared type
+
+as outsider
+send knock
+  word: moon
 expect refusal: unauthorized
 
 case a visitor asks for the moon

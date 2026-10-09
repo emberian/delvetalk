@@ -8,7 +8,15 @@
       {
         "observe": "main",
         "view": {
-          "title": "The courtyard bell"
+          "title": "The courtyard bell",
+          "prose": "A chord travels to door even after its player leaves. C E G opens the listening door; each voice is an independent retained sound.",
+          "actions": {
+            "connect": {
+              "text": "Choose a listener",
+              "command": "connect",
+              "input": {}
+            }
+          }
         }
       },
       {

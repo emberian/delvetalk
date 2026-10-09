@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Small action cards over captured views; no evaluation, admission, or refresh.
 
-Field validation is pure and imports no runtime. Request factories are loaded
-only when a caller asks to construct a request from an already captured view.
+Schema descriptions and physical framing perform no evaluation or admission.
+Request factories load only for requests from an already captured view.
 """
 from __future__ import annotations
 
 import copy
 import importlib.util
+import math
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +89,41 @@ def _normalized_fields(fields):
 def validate_fields_schema(fields):
     """Validate externally supplied normalized field descriptions without values."""
     return _normalized_fields(fields)
+
+
+def physical_values(values):
+    """Frame bounded inert contribution data; source decides its meaning."""
+    if not isinstance(values, dict):
+        raise AffordanceError("contribution fields must be an object")
+    pending = [(values, 0)]
+    count = 0
+    while pending:
+        value, depth = pending.pop()
+        count += 1
+        if count > 4096 or depth > 64:
+            raise AffordanceError("contribution exceeds physical data limits")
+        if isinstance(value, dict):
+            if count + len(pending) + len(value) > 4096:
+                raise AffordanceError("contribution exceeds physical data limits")
+            for key, child in value.items():
+                _string(key, "contribution key")
+                pending.append((child, depth + 1))
+        elif isinstance(value, list):
+            if count + len(pending) + len(value) > 4096:
+                raise AffordanceError("contribution exceeds physical data limits")
+            pending.extend((child, depth + 1) for child in value)
+        elif isinstance(value, str):
+            _string(value, "contribution string")
+        elif isinstance(value, (float, Decimal)):
+            if not (value.is_finite() if isinstance(value, Decimal) else math.isfinite(value)):
+                raise AffordanceError("contribution number must be finite")
+        elif value is not None and type(value) not in (bool, int):
+            raise AffordanceError("contribution requires inert JSON data")
+    # Use the actual transport spelling for the byte boundary, including Decimal.
+    import world
+    if len(world.wire_dumps(values).encode("utf-8")) > 65536:
+        raise AffordanceError("contribution exceeds 64 KiB")
+    return copy.deepcopy(values)
 
 
 def _validate_values(fields, values, *, complete=True):

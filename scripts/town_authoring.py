@@ -77,7 +77,7 @@ def fixture_results(report):
 
 
 def describe(result):
-    heading = {'ready': 'Your spell is checked and ready to offer. It is not installed.',
+    heading = {'ready': 'Your source and examples passed their check. Choose an offered release to install it.',
                'failed': 'Your spell needs another draft.',
                'refused': 'The compiler result was refused. Nothing was installed.',
                'pending': 'Your spell is waiting for a compiler check.',
@@ -146,8 +146,8 @@ class TownAuthoring:
         data, request = receipt['reply']['data'], receipt['request']
         roots = data['roots'] if request['op'] == 'transaction' else {request['object']: data['root'], **data.get('allocated', {})}
         same(roots.get(job['inputs']['object']), job['inputs']['expected'], 'job and original submission candidate root')
-        if desk.candidate_state(job['inputs']['expected'])['status'] != 'pending':
-            raise ValueError('job must retain an exact pending candidate')
+        desk.validate_compiler_work(job['work'], job['inputs']['expected'], job['inputs']['object'])
+        same(job['work']['intent'], job['inputs']['intent'], 'source compiler request intent')
         return receipt
 
     def _completion(self, job, status):
@@ -157,9 +157,10 @@ class TownAuthoring:
             return None
         attempt = loads(path.read_bytes())
         same(attempt['inputs'], inputs, 'compiler attempt inputs')
+        same(attempt['work'], job['work'], 'exact compiler work custody')
         request = attempt['request']
         if (set(request) != {'op', 'object', 'principal', 'intent', 'expected', 'command', 'input'}
-                or request['op'] != 'invoke' or request['command'] not in ('compiled', 'failed')):
+                or request['op'] != 'invoke' or request['command'] not in job['work']['reports'].values()):
             raise ValueError('unsupported compiler completion request')
         same({key: request[key] for key in inputs}, inputs, 'compiler completion request')
         execution = attempt['executionProfile']
@@ -180,11 +181,11 @@ class TownAuthoring:
         compiled = loads((self.queue.state / 'compiled' / (digest(job) + '.json')).read_bytes())
         same(compiled, {'artifact': artifact_id}, 'queued compiled build')
         build = desk.load_artifact(self.queue.artifacts, artifact_id)
-        expected = desk.candidate_state(inputs['expected'])
+        expected = job['work']
         for key, value in {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(inputs['expected']),
                            'proposal': expected['proposal'], 'migration': expected['migration'],
                            'target': expected['target'], 'admissionProfile': job['profile'],
-                           'sourceBindings': job['sourceBindings']}.items():
+                           'sourceBindings': job['sourceBindings'], 'compilerWork': job['work']}.items():
             same(build.get(key), value, 'compiler build ' + key)
         same(build['worker']['scripts/desk.py'], job['runtime']['files']['scripts/desk.py'], 'compiler worker')
         material = build.get('sourceMaterial')
@@ -209,7 +210,7 @@ class TownAuthoring:
                 same(job['runtime']['files'].get(name), sha, 'reported compiler runtime ' + name)
             same(report['passed'], build['passed'], 'reported fixture outcome')
             fixtures = fixture_results(report)
-        same(request['command'], 'compiled' if build['passed'] else 'failed', 'compiler outcome command')
+        same(request['command'], job['work']['reports']['passed' if build['passed'] else 'failed'], 'compiler outcome command')
         if build['passed']:
             same(request['input']['protocol'], build['protocol'], 'compiled protocol')
         else:
@@ -268,22 +269,18 @@ class TownAuthoring:
                 ready = reply['kind'] == 'committed' and completion['build']['passed']
                 evidence = {'completion': completion, 'target': None, 'notices': []}
                 if ready:
-                    candidate = reply['data']['root']
-                    candidate_data = desk.candidate_state(candidate)
-                    same(candidate_data['artifact'], completion['artifact'], 'ready candidate artifact')
-                    for key in ('protocol', 'migration', 'target'):
-                        same(candidate_data[key], completion['build'][key], 'ready candidate ' + key)
-                    if candidate_data['status'] != 'ready':
-                        raise ValueError('compiler admission did not retain a ready candidate')
-                    target = desk.candidate_state(job['inputs']['expected'])['target']
+                    target = job['work']['target']
                     if target not in config['objects'] or job['inputs']['object'] not in config['objects']:
                         evidence['notices'].append('No adoption card: the candidate or target is not enrolled for town replies.')
                     else:
-                        with town._lock(Path(str(self.queue.database) + '.lock')):
-                            snapshot = loads(self.queue.database.read_bytes())
-                        evidence['target'] = snapshot['objects'].get(target)
+                        try:
+                            held = desk.world.capture_roots(self.queue.database, [target],
+                                principal=job['inputs']['principal'], profile=job['profile'])
+                            evidence['target'] = held['roots'][target]['root'] if held['roots'][target] else None
+                        except ValueError:
+                            evidence['target'] = None
                         if evidence['target'] is None:
-                            evidence['notices'].append('No adoption card: the target is currently absent.')
+                            evidence['notices'].append('No release card: the target is absent or unreadable under current authority.')
                 evidence = retain(evidence_path, evidence)  # Exact target survives loss before card allocation.
             completion = evidence['completion']
             reply, build = completion['reply'], completion['build']
@@ -294,8 +291,12 @@ class TownAuthoring:
             if result['status'] == 'refused':
                 result['notices'] = result['notices'] + ['Admission: ' + canonical(reply['data']).decode()]
             if result['status'] == 'ready' and evidence['target'] is not None:
-                result['cards'] = [book.capture_adoption(job['inputs']['object'], reply['data']['root'],
-                    build['target'], evidence['target'], alias='offer-' + identity[:12])]
+                try:
+                    result['cards'] = [self.town.capture_offer(job['inputs']['object'], 'release',
+                        alias='offer-' + identity[:12], principal=job['inputs']['principal'], expected=reply['data']['root'],
+                        expected_observations={build['target']: evidence['target']})]
+                except ValueError as error:
+                    result['notices'] = result['notices'] + ['No current public release offer: ' + str(error)]
             result['body'] = describe(result)
             result['textSha256'] = town_cards.sha(result['body'])
             return retain(terminal, result)

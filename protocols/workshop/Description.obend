@@ -1,0 +1,21 @@
+edition ObjectiveBend 1
+import ./Encounter.obend as E
+record State:
+  title: String
+  prose: String
+record Description:
+  name: String
+  initial: State
+  methods: {}
+  panels: {}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: E.Children
+def configured(config: State) -> State:
+  config
+def describe() -> Description:
+  {name: "An authored workshop place", initial: {title: "Workshop", prose: "An authored place."}, methods: {}, panels: {}}
+def view(state: State, panel: String) -> View:
+  {title: state.title, prose: state.prose, actions: {}, children: E.Children.nil()}

@@ -1,9 +1,16 @@
 edition ObjectiveBend 1
 record State:
   lit: Bool
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
 record Context:
   object: String
   principal: String
+  inputOrigin: Origin
 record Decision:
   accepted: Bool
   reason: String
@@ -22,10 +29,19 @@ record Action:
   text: String
   command: String
   input: {}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
   actions: {light: Action, douse: Action}
+  children: Children
 record Lantern:
   light: State -> Decision
   douse: State -> Decision
@@ -39,4 +55,4 @@ def light(state: State, input: {}, context: Context) -> Decision:
 def douse(state: State, input: {}, context: Context) -> Decision:
   fix(Moth, {}).douse(state)
 def view(state: State, panel: String) -> View:
-  {title: "Moth lantern", prose: fix(Moth, {}).inscription(state), actions: {light: {visible: state.lit == false, text: "Light the lantern", command: "light", input: {}}, douse: {visible: state.lit, text: "Let it sleep", command: "douse", input: {}}}}
+  {title: "Moth lantern", prose: fix(Moth, {}).inscription(state), actions: {light: {visible: state.lit == false, text: "Light the lantern", command: "light", input: {}}, douse: {visible: state.lit, text: "Let it sleep", command: "douse", input: {}}}, children: Children.nil()}

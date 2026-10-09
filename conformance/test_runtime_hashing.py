@@ -1,6 +1,6 @@
 """Dependency captures deduplicate reads without caching across boundaries."""
 import hashlib
-import importlib.util
+from native_support import load_script
 import json
 from pathlib import Path
 import subprocess
@@ -13,10 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def module(name, path):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
-    value = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(value)
-    return value
+    return load_script(ROOT / path, name)
 
 
 runtime = module('hashing_runtime', 'scripts/runtime_profile.py')
@@ -83,7 +80,7 @@ class RuntimeHashingTests(unittest.TestCase):
              patch.object(queue.desk, 'execution_profile', side_effect=AssertionError('already hashed profile')), \
              patch.object(queue.desk.translate, 'closure_paths', return_value=('binary', 'adapter')), \
              patch.object(Path, 'open', observe):
-            pins = queue.compiler_pins('compiled', {'state': {'proposal': {'syntax': 'fixture'}}})
+            pins = queue.syntax_pins('compiled', 'fixture')
         self.assertEqual(set(pins['files']), names)
         self.assertEqual(opened.count(self.root / 'binary'), 1)
         self.assertEqual(pins['files']['binary'], hashlib.sha256(b'fixture').hexdigest())
@@ -91,12 +88,19 @@ class RuntimeHashingTests(unittest.TestCase):
     def project_with_pins(self, before, after):
         binary = '.lake/build/bin/delvetalk-compiled'
         self.write(binary)
-        root = {'protocol': {'commands': {}, 'viewProgram': {'profile': projection.SOURCE_PROFILE,
-                'package': {'modules': [{'name': 'Main', 'source': 'fixture'}], 'entry': 'view'}}}, 'state': {}}
-        reply = {'reply': {'kind': 'committed', 'data': {'result': {'title': 'Title', 'prose': 'Prose', 'actions': {}}}}}
+        root = {'protocol': {'commands': {}, 'viewProgram': {'profile': projection.DATA_MENU_PROFILE,
+                'package': {'modules': [{'name': 'Main', 'source': 'fixture'}], 'entry': 'view'}}},
+                'state': {'model': {'tag': 'record', 'fields': []}}}
+        reply = {'result': {'tag': 'record', 'fields': [
+            {'name': 'title', 'value': {'tag': 'label', 'value': 'Title'}},
+            {'name': 'prose', 'value': {'tag': 'label', 'value': 'Prose'}},
+            {'name': 'actions', 'value': {'tag': 'record', 'fields': []}},
+            {'name': 'children', 'value': {'tag': 'variant', 'label': 'nil',
+                                         'payload': {'tag': 'record', 'fields': []}}}]}}
         with patch.object(projection, 'ROOT', self.root), \
              patch.object(projection.runtime_profile, 'file_hashes', side_effect=[before, after]) as capture, \
-             patch.object(projection.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(reply), '')), \
+             patch.object(projection.world.process_custody, 'run_native',
+                          return_value=subprocess.CompletedProcess([], 0, json.dumps(reply).encode(), b'')), \
              patch.object(Path, 'read_bytes', side_effect=AssertionError('duplicate binary hash')):
             try:
                 return projection.project(root, 'fixture')

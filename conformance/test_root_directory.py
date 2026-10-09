@@ -16,6 +16,7 @@ import portal
 import propose
 import resident_store
 import source_offers
+import opaque_offers
 import town_cards
 import workspace
 import world
@@ -36,7 +37,7 @@ def protocol():
     return obend_object.lower_data_modules(modules())
 
 
-LAW = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {
+LAW = {'profile': 'delvetalk-scoped-law', 'invoke': {
     'setDoor': ['steward'], 'choose': ['iris', 'moss']},
     'reprogram': ['steward'], 'law': ['steward']}
 
@@ -63,7 +64,11 @@ class RootDirectory(unittest.TestCase):
         self.receiver = resident_store.Resident(self.path)
         self.addCleanup(lambda: self.receiver.close())
         self.serial = 0
-        for identity, program, law in [('root', protocol(), LAW), ('garden', garden_protocol(), ['iris', 'moss'])]:
+        garden = garden_protocol()
+        garden_law = {'profile': 'delvetalk-scoped-law',
+            'invoke': {command: ['iris', 'moss'] for command in garden['commands']},
+            'reprogram': ['iris', 'moss', 'steward'], 'law': ['iris', 'moss', 'steward']}
+        for identity, program, law in [('root', protocol(), LAW), ('garden', garden, garden_law)]:
             self.exchange({'op': 'create', 'object': identity, 'principal': 'operator',
                 'intent': 'create-' + identity, 'protocol': program, 'law': law})
 
@@ -161,6 +166,104 @@ class RootDirectory(unittest.TestCase):
     def test_authored_examples(self):
         cases = spell_examples.parse((ROOT / 'protocols/root-directory/root.examples').read_text())
         self.assertEqual([item['failures'] for item in propose.run_scenarios(protocol(), cases, profile='compiled')], [[]])
+
+    def test_private_directory_public_invitation_and_exact_retry(self):
+        self.invoke('setDoor', door())
+        authority = {**LAW, 'read': ['steward'], 'view': {'main': 'public'}}
+        self.exchange({'op': 'law', 'object': 'root', 'principal': 'steward',
+            'intent': 'private-directory', 'expected': self.root(), 'law': authority})
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.receiver.query({'op': 'inspect', 'object': 'root', 'principal': 'iris'})
+        visible = world.opaque_view(None, 'root', principal='iris', audience='public', receiver=self.receiver)
+        invitation = opaque_offers.capture(None, 'root', visible, 'iris', receiver=self.receiver)['choose']
+        with self.assertRaises(source_offers.PreparationOutcome) as missing:
+            opaque_offers.prepare(None, invitation, 'iris', 'missing-door',
+                {'original': 'A silver fern through the source invitation.'}, receiver=self.receiver)
+        self.assertEqual(missing.exception.outcome['kind'], 'question')
+        self.assertEqual(missing.exception.outcome['publicSelection'], invitation['selection'])
+        checked = self.receiver.query({**missing.exception.outcome['publicSelection'],
+            'op': 'opaque-invitation', 'principal': 'iris'})
+        self.assertEqual(checked['selection'], invitation['selection'])
+        request = opaque_offers.prepare(None, invitation, 'iris', 'opaque-door',
+            {'door': 'garden', 'original': 'A silver fern through the source invitation.'}, receiver=self.receiver)
+        self.assertEqual(request['op'], 'opaque-transaction')
+        self.assertNotIn('calls', request)
+        self.assertNotIn('reads', request)
+        for public in (visible, invitation, request):
+            encoded = world.wire_dumps(public)
+            self.assertNotIn('"protocol"', encoded)
+            self.assertNotIn('"state"', encoded)
+        first = self.exchange(request)
+        self.assertEqual(first['data']['results'][0]['door'], 'garden')
+        self.assertEqual(first['data']['results'][0]['by'], 'iris')
+        self.assertEqual(set(first['data']['references']), {'root', 'garden'})
+        self.assertNotIn('"roots"', world.wire_dumps(first))
+        self.assertNotIn('"protocol"', world.wire_dumps(first))
+        witness = missing.exception.outcome['publicSelection']
+        with self.assertRaises((ValueError, RuntimeError)):
+            world.opaque_view(None, witness['object'], principal='iris',
+                panel=witness['panel'], audience='public', expected=witness['expected'], receiver=self.receiver)
+        self.assertEqual(self.receiver.exchange(request), first)
+        stale = {**request, 'intent': 'stale-opaque-door'}
+        self.exchange(stale, 'refused')
+        history_request = {'op': 'object-history', 'object': 'root', 'principal': 'steward',
+            'before': self.receiver.sequence, 'offset': 0, 'limit': 32}
+        history = self.receiver.query(history_request)['history']
+        self.assertTrue(any(row['request'].get('intent') == 'opaque-door' for row in history))
+        garden = self.root('garden')
+        self.exchange({'op': 'law', 'object': 'garden', 'principal': 'iris',
+            'intent': 'private-history-peer', 'expected': garden,
+            'law': {**garden['law'], 'read': ['iris']}})
+        history_request['before'] = self.receiver.sequence
+        history = self.receiver.query(history_request)['history']
+        self.assertFalse(any(row['request'].get('intent') == 'opaque-door' for row in history))
+        self.assertEqual(self.receiver.exchange(request), first)
+        self.receiver.checkpoint()
+        self.receiver.close()
+        self.receiver = resident_store.Resident(self.path)
+        self.assertEqual(self.receiver.exchange(request), first)
+        self.assertIsNone(self.receiver.retained_reply({**request, 'principal': 'moss'}))
+
+    def test_public_invitation_peer_read_revocation_and_dependency_drift(self):
+        self.invoke('setDoor', door())
+        authority = {**LAW, 'read': ['steward'], 'view': {'main': 'public'}}
+        self.exchange({'op': 'law', 'object': 'root', 'principal': 'steward',
+            'intent': 'private-directory', 'expected': self.root(), 'law': authority})
+        visible = world.opaque_view(None, 'root', principal='iris', audience='public', receiver=self.receiver)
+        invitation = opaque_offers.capture(None, 'root', visible, 'iris', receiver=self.receiver)['choose']
+        request = opaque_offers.prepare(None, invitation, 'iris', 'peer-revoked',
+            {'door': 'garden', 'original': 'Keep this exact selected dependency.'}, receiver=self.receiver)
+        garden = self.root('garden')
+        self.exchange({'op': 'law', 'object': 'garden', 'principal': 'iris',
+            'intent': 'close-peer-read', 'expected': garden,
+            'law': {'profile': 'delvetalk-scoped-law', 'read': ['steward'],
+                'invoke': {'plant': ['iris', 'moss']}, 'law': ['steward'],
+                'reprogram': ['steward']}})
+        denied = self.exchange(request, 'refused')
+        self.assertEqual(self.receiver.exchange(request), denied)
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.receiver.query({'op': 'inspect', 'object': 'garden', 'principal': 'iris'})
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.receiver.query({**invitation['selection'], 'op': 'opaque-invitation', 'principal': 'iris'})
+        unavailable = opaque_offers.capture(None, 'root', visible, 'iris', receiver=self.receiver)['choose']
+        self.assertFalse(unavailable['available'])
+        self.assertNotIn('selection', unavailable)
+        with self.assertRaises((ValueError, RuntimeError)):
+            opaque_offers.prepare(None, invitation, 'iris', 'changed-peer',
+                {'door': 'garden', 'original': ''}, receiver=self.receiver)
+        current_garden = self.receiver.query({'op': 'inspect', 'object': 'garden', 'principal': 'steward'})
+        self.exchange({'op': 'law', 'object': 'garden', 'principal': 'steward',
+            'intent': 'restore-peer-read', 'expected': current_garden, 'law': garden['law']})
+        fresh = opaque_offers.capture(None, 'root', visible, 'iris', receiver=self.receiver)['choose']
+        drifted = opaque_offers.prepare(None, fresh, 'iris', 'peer-drift',
+            {'door': 'garden', 'original': ''}, receiver=self.receiver)
+        owner_before = self.receiver.query({'op': 'inspect', 'object': 'root', 'principal': 'steward'})
+        self.invoke('plant', {'seed': 'A dependency that advanced', 'colour': 'silver'}, 'iris', 'garden')
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.receiver.query({**fresh['selection'], 'op': 'opaque-invitation', 'principal': 'iris'})
+        refused = self.exchange(drifted, 'refused')
+        self.assertEqual(self.receiver.exchange(drifted), refused)
+        self.assertEqual(self.receiver.query({'op': 'inspect', 'object': 'root', 'principal': 'steward'}), owner_before)
 
 
 class RootDocumentConsumers(unittest.TestCase):

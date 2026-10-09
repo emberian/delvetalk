@@ -52,7 +52,7 @@ def _validate(data, root):
     if not isinstance(data['actions'], dict) or len(data['actions']) > 64:
         raise ProjectionError('ViewData actions must be a record of at most 64 entries')
     for key, action in data['actions'].items():
-        if not isinstance(key, str) or not key or not isinstance(action, dict) or set(action) != {'text', 'command', 'input'}:
+        if not isinstance(key, str) or not key or not isinstance(action, dict) or set(action) not in ({'text', 'command', 'input'}, {'text', 'command', 'input', 'fields'}):
             raise ProjectionError('invalid action descriptor')
         if not isinstance(action['text'], str) or not isinstance(action['command'], str) or not isinstance(action['input'], dict):
             raise ProjectionError('invalid action descriptor fields')
@@ -74,7 +74,7 @@ def _visible_actions(raw, root):
     actions = {}
     for key, descriptor in raw['actions'].items():
         if (not isinstance(descriptor, dict)
-                or set(descriptor) != {'visible', 'text', 'command', 'input'}
+                or set(descriptor) not in ({'visible', 'text', 'command', 'input'}, {'visible', 'text', 'command', 'input', 'fields'})
                 or type(descriptor['visible']) is not bool):
             raise ProjectionError('menu action requires visible Bool, text, command and input')
         actions[key] = {name: value for name, value in descriptor.items() if name != 'visible'}
@@ -172,7 +172,7 @@ def _typed_actions(value, budget):
             # grants no dispatch authority; command and current law still apply.
             item = item['payload']
         descriptor = _plain_data(item, budget)
-        if not isinstance(descriptor, dict) or set(descriptor) != {'key', 'text', 'command', 'input', 'visible'}:
+        if not isinstance(descriptor, dict) or set(descriptor) not in ({'key', 'text', 'command', 'input', 'visible'}, {'key', 'text', 'command', 'input', 'visible', 'fields'}):
             raise ProjectionError('listed action requires key, text, command, input and visible')
         key = _text_bound(descriptor['key'], 128, 'action key')
         if key in actions:
@@ -183,15 +183,8 @@ def _typed_actions(value, budget):
 
 def _typed_menu(raw, root):
     fields = _wire_record(raw)
-    expected = {'title', 'prose', 'actions', 'children'}
-    if 'invitations' in fields:
-        expected.add('invitations')
-    if 'document' in fields:
-        expected.add('document')
-    if 'interpretation' in fields:
-        expected.add('interpretation')
-    if set(fields) != expected:
-        raise ProjectionError('typed menu fields differ from its declared profile')
+    if not {'title', 'prose', 'actions', 'children'} <= set(fields):
+        raise ProjectionError('typed menu requires title/prose/actions/children')
     budget = [100000]
     values = {name: _plain_data(fields[name], budget) for name in ('title', 'prose')}
     values['actions'] = _typed_actions(fields['actions'], budget)

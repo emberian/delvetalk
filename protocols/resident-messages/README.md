@@ -6,7 +6,7 @@ program; the door opens and can emit toward its own observed lantern. The
 public forms ask for a chord and voice count or confirmation of a connection.
 Their source preparations supply exact program pins from retained observations.
 
-[package.py](package.py) supplies exact `Abi`, `Preparation`, `Encounter` and
+[package.py](package.py) supplies exact `List`, `Abi`, `Preparation`, `Encounter` and
 `Emissions` modules plus the resident source to `objective-bend-object`.
 `configured` constructors give Bell its recipient, Door its source and recipient,
 and Lantern its source, allowing independently named courtyard instances.

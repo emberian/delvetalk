@@ -38,7 +38,7 @@ Garden and the collaborative constellation retain attribution and revisions.
 Two-player [Automatafl](protocols/automatafl/README.md) preserves its original 11×11 rules,
 private commitments and source-owned commit/reveal orchestration.
 
-Interpretation policy, vocabulary and templates are inspectable source. Captured forms
+Interpretation policy, vocabulary and templates are authored in source. Captured forms
 revise stored policy with attribution, invalidate stale encounters and affect the next
 request. Controlled-provider account and authenticated HTTP journeys qualify custody,
 admission and exact replay. The exact Haiku model is available, but bounded real
@@ -51,17 +51,21 @@ further calls are stopped.
 refuting acceptance and scoped evidence. The operational criterion is to strengthen
 every in-world inspection/edit/examples/adoption loop while simplifying the same path.
 
-The current native join still must qualify opaque source-selected outputs, public
-projection/audience and typed settlement facts together. Public read and publication
-permission are distinct. Scene coverage must retain supported guards, requirements,
-implicit end, restart and overflow rollback; configuration must honor the selected
-runtime's initial value. Remaining authoring/service fixture ports and bootstrap
+Direct opaque source-selected output qualifies file/resident and authenticated HTTP,
+including exact receipts after revocation and replacement. Opaque transactions sharing
+one budget with preparation and direct public projection have focused receiving
+checks; Directory/public question and game composition remain pending, alongside
+typed settlement integration. Public read and publication
+permission are distinct. Scene/portal/exchange checks now cover supported guards, requirements, implicit
+end, restart, overflow rollback and the selected runtime's initial value. Typed Editor generations and selfrevision now qualify the closed report/approval
+path. Workshop source export dependencies and bootstrap
 journeys require the matching current source/native closure.
 
 Compiler-report and adoption cost remain active work. Bounded schema graphs, canonical
 codecs, exact digest reuse and native Data handoff remove repeated representation work;
 receiving caching reuses only exact checked artifacts, never authority or state/results.
-The remaining repair connects native admitted Data directly to demand evaluation
+A passive zero-method creation source/schema hash validation repair remains active.
+The remaining evaluation repair connects native admitted Data directly to demand evaluation
 without an AST roundtrip or output-cap increase. Scoped successful checks do not qualify
 all later combinations. At most two local compiler seats use independent writable
 snapshots; installation and hosted rehearsal require the exact joined closure.

@@ -92,7 +92,7 @@ class Participant:
         opening_path = self._opening(public['round'])
         retained_digest = loads(opening_path.read_bytes())['commit']['digest'] if opening_path.exists() else ''
         source_card = table.source_object.plain(table.evaluate('privateCard',
-            [root['state']['model'], table.source_object.data(self.principal),
+            [table.source_object.state_data(root), table.source_object.data(self.principal),
              table.source_object.data(self.seat), table.source_object.data(retained_digest)]))
         bindings = source_card['actions']
         metadata = affordances._metadata({'commands': {key: {} for key in bindings},

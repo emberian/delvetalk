@@ -7,7 +7,7 @@ import source_object
 
 
 def modules():
-    paths = [('Conversation', 'protocols/conversation/Conversation.obend'),
+    paths = [('Writing', 'protocols/source-desk/Writing.obend'), ('Conversation', 'protocols/conversation/Conversation.obend'),
              ('Interpretation', 'protocols/interpretation/Interpretation.obend'),
              ('ModelEncounter', 'protocols/interpretation/Encounter.obend'),
              ('ConversationModel', 'protocols/interpretation/ConversationModel.obend'),

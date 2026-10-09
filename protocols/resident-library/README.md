@@ -20,9 +20,9 @@ four units for the repair board, six for the reading circle.
 
 ## Compose and use
 
-Supply ordered exact modules `Abi`, `Preparation`, `Encounter`, `Emissions` (from `world/lib/prelude`),
+Supply ordered exact modules `List`, `Abi`, `Preparation`, `Encounter`, `Emissions` (from `world/lib/prelude`),
 `Consent`, `Mailbox`, then `RepairBoard` or
-`ReadingCircle` to the existing `objective-bend-spell@3` module adapter. Imports
+`ReadingCircle` to the existing `objective-bend-object` module adapter. Imports
 resolve those supplied bytes. The adapter derives state, methods, forms and
 panels from source. No Python source generator is involved.
 

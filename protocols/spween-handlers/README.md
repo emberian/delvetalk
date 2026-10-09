@@ -3,8 +3,7 @@
 `scene/handlers.py` serializes a pinned Spween scene as typed data for the
 ordinary Objective Bend runtime in `scene/runtime/SceneRuntime.obend`. It installs a native typed object with `start` and `choose` methods and a
 computed menu. `Handler.obend` is executable source, not a Python callback registry.
-The explicit profile is **`spween-obend-handlers-i64-v1`**. Existing
-`spween-scene-i64-v1/v2` retain their fixed membership and call-batch semantics.
+The explicit profile is **`spween-obend-handlers-i64-v1`**. The retired AST-expression lowering profiles have been removed.
 
 ```sh
 python3 scene/handlers.py protocols/spween-handlers/repair.scene \
@@ -23,7 +22,8 @@ and `work == 11`.
 ## One typed relation
 
 The adapter supplies retained `Abi`, `Encounter`, `Kernel`, scene types, the
-reusable `BaseRuntime`, serialized `Score`, and a fixed `Scene` adapter. The
+reusable `BaseRuntime` and a fixed `Scene` adapter. Parsed scene data enters the
+native checked `configure(scene: D.Scene)` constructor and stays in `State.scene`. The
 author explicitly supplies `Handler`, optionally preceded by supporting modules,
 and can select an ordinary `SceneRuntime` extension. Imports resolve
 only in that ordered package. `compile_source(source, handler_modules=[...])`
@@ -31,8 +31,7 @@ accepts exact `{name, source}` records, requires the last module to be `Handler`
 and reserves the library/data/adapter module names. `runtime_modules=[...]`
 selects an explicit ordered runtime ending in `SceneRuntime`; it can import
 `BaseRuntime` and compose its `Default` extension. Native source evaluation owns
-the configuration check and all scene behavior. Python emits data constructors
-and frames the native protocol.
+the configuration check and all scene behavior. Python frames DataWire records and variants; it generates no source module.
 
 The handler ABI is ordinary source definitions:
 
@@ -45,8 +44,8 @@ The handler ABI is ordinary source definitions:
 | `has(state, category, key)` | Current Bool membership. |
 | `begin(state)` | `Step` with a fresh emission accumulator. |
 | `call(step, name, args, context)` | New `Step`; synchronous local source behavior. |
-| `Slots` | The native four-slot emission record described below. |
-| `Step` | `{accepted: Bool, reason: String, state: State, emissions: Slots}`. |
+| `E.Emissions` | Recursive source-owned addressed message collection. |
+| `Step` | `{accepted: Bool, reason: String, state: State, emissions: E.Emissions}`. |
 
 `call` receives the actual host `Context` including object/principal and input
 origin. It gains no additional authority. `get_var`, `set_var` and `has` compose
@@ -57,7 +56,7 @@ call names and wrong argument counts. It exports useful ordinary helper function
 for variables, membership, integer arithmetic and emission accumulation; these
 are reusable source, not extra host opcodes.
 
-The shared source state is `{handler, passage, visited, started, ended}` inside the
+The shared source state is `{scene, handler, passage, visited, started, ended}` inside the
 host's single typed `model`. Each choice checks its guard against that state,
 threads effects in source order, navigates, then executes previously unvisited
 passage entry effects. Later modification observes an earlier handler call's
@@ -73,13 +72,11 @@ traces must record the different rollback boundary, not assert equivalence.
 
 ## Durable addressed effects
 
-`Slots` has exactly `a`, `b`, `c`, `d`. Each slot has
-`{enabled, to, command, recipientProgram, payload}`; payload is a typed plain
-record chosen by the handler. The final method binds to
-`delvetalk-source-data-effects-v1`. The example `send` takes three String
-arguments (recipient, exact recipient program digest, chord), appends a `hear`
-message, and refuses a fifth send within the combined choice-plus-entry turn.
-Disabled slots still need well-formed identifier/digest fields.
+`Step.emissions` is the shared recursive `E.Emissions` collection with a
+`Preparation.Value` payload. The ordinary source handler bounds its addressed
+messages to four per turn. The example `send` takes three String arguments
+(recipient, exact recipient program digest, chord) and appends a `hear` message.
+The current native source transition interprets the typed collection.
 
 These become native durable message records, with source preimage, original
 principal and event identity. They are not inert outbox calls and do not execute

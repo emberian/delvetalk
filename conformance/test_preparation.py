@@ -18,22 +18,22 @@ from conformance.test_view_invitations import SOURCE as BASE
 BINARY = Path(os.environ.get('DELVETALK_PREPARATION_BINARY', ROOT / '.lake/build/bin/delvetalk-compiled'))
 PACKAGE = Path(os.environ.get('DELVETALK_PACKAGE_BINARY', ROOT / '.lake/build/bin/delvetalk-obend'))
 SOURCE = BASE[:BASE.index('def prepareGesture(')] + '''def prepareGesture(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let gesture: String = P.text(P.get(contribution, "gesture"))
+  let gesture: String = P.textOrEmpty(P.get(contribution, "gesture"))
   if gesture == "" then P.Preparation.question({message: "Which gesture would you like?", needs: P.Names.cons({head: "gesture", tail: P.Names.nil()})}) else if gesture == "refuse" then P.Preparation.refused({message: "Choose another gesture."}) else P.Preparation.ready({summary: textConcat("Offer ", gesture), reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.oneField("gesture", P.Value.text({value: gesture}))}), tail: P.Effects.nil()})})
 def prepareUnobserved(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
   P.Preparation.ready({summary: "Unobserved", reads: P.Reads.cons({head: P.Read.existing({object: "secret"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.observe({object: "secret"}), tail: P.Effects.nil()})})
 def prepareData(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  P.Preparation.ready({summary: "Pass exact observed data", reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.observation(observations, "peer").state}), tail: P.Effects.nil()})})
+  P.Preparation.ready({summary: "Pass exact observed data", reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.observationOrEmpty(observations, "peer").state}), tail: P.Effects.nil()})})
 '''
 
 
 SOURCE += """def prepareOwnerArgument(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  if P.observation(observations, context.object).object == "" then P.Preparation.question({message: "Owner state is already an explicit argument.", needs: P.Names.nil()}) else P.Preparation.refused({message: "Owner was explicitly observed."})
+  if P.observationOrEmpty(observations, context.object).object == "" then P.Preparation.question({message: "Owner state is already an explicit argument.", needs: P.Names.nil()}) else P.Preparation.refused({message: "Owner was explicitly observed."})
 """
 
 
 SOURCE += """def prepareManufactured(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  P.Preparation.ready({summary: "Attempt a manufactured retained value", reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.oneField("migration", P.Value.retained({object: P.text(P.get(contribution, "object")), key: P.text(P.get(contribution, "key"))}))}), tail: P.Effects.nil()})})
+  P.Preparation.ready({summary: "Attempt a manufactured retained value", reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.oneField("migration", P.Value.retained({object: P.textOrEmpty(P.get(contribution, "object")), key: P.textOrEmpty(P.get(contribution, "key"))}))}), tail: P.Effects.nil()})})
 """
 
 

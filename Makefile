@@ -1,11 +1,8 @@
-.PHONY: all build check worker-resources core typed packages semantics-check capsules world wiki syntax delve proposals scene-build scene portal
+.PHONY: all build check worker-resources core typed packages semantics-check world wiki syntax delve proposals scene-build scene portal
 all: check
 build:
 	LEAN_NUM_THREADS=1 lake build delvetalk
 	$(MAKE) -C impl/c
-	LEAN_NUM_THREADS=1 lake build delvetalk-world
-	LEAN_NUM_THREADS=1 lake build delvetalk-transactions
-	LEAN_NUM_THREADS=1 lake build delvetalk-typed
 	LEAN_NUM_THREADS=1 lake build delvetalk-obend
 	LEAN_NUM_THREADS=1 lake build delvetalk-compiled
 worker-resources:
@@ -17,17 +14,18 @@ scene-build:
 semantics-check:
 	python3 scripts/check_semantics.py
 	python3 conformance/test_semantics_origin.py
-capsules:
-	python3 scripts/check_capsules.py
 core:
 	python3 scripts/crosscheck.py --no-build
 	python3 conformance/test_python.py
 	node conformance/test_js.mjs
 	python3 conformance/test_c.py
 	python3 conformance/test_adversarial_core.py
+	python3 conformance/test_core_text_wire.py
+	python3 conformance/test_value_codec_fidelity.py
 typed:
+	python3 scripts/build-lean-closure.py spec/Delvetalk/PackageDataAdmission.lean spec/Delvetalk/PackageDataSchemaProofs.lean spec/Delvetalk/PackageDataNormalization.lean spec/bend/Theory/ObjectiveBendFiniteDataTyping.lean spec/bend/Theory/ObjectiveBendNativeDataSimulation.lean
 	LEAN_NUM_THREADS=1 lake env lean profiles/ResidentStoreProofs.lean
-	python3 conformance/test_typed.py
+	LEAN_NUM_THREADS=1 lake env lean profiles/AdmissionProofs.lean
 packages:
 	python3 conformance/test_package_session.py
 	python3 conformance/test_package_adversarial.py
@@ -35,36 +33,44 @@ packages:
 	python3 conformance/test_reflection.py
 	python3 conformance/test_frontend_abstractions.py
 	python3 conformance/test_recursive_record_extend.py
+	python3 conformance/test_source_results.py
+	python3 conformance/test_source_exports.py
 	python3 conformance/test_sha256_text.py
 	python3 conformance/test_generics.py
 	python3 conformance/test_text_primitives.py
 	python3 conformance/test_text_boundaries.py
-	python3 conformance/test_branch_rows.py
+	python3 conformance/test_checked_rows.py
 	python3 conformance/test_open_row_composition.py
-	python3 conformance/test_match_rows.py
 	python3 conformance/test_document_templates.py
 	python3 conformance/test_source_prelude.py
+	python3 conformance/test_source_closure.py
 	python3 conformance/test_automatafl.py
 	python3 conformance/test_automatafl_audit.py
 world:
 	python3 conformance/test_world_wire.py
-	python3 conformance/test_staging.py
-	python3 conformance/test_world.py
 	python3 conformance/test_world_adversarial.py
 	python3 conformance/test_allocation.py
 	python3 conformance/test_allocation_history.py
 	python3 conformance/test_transactions.py
 	python3 conformance/test_observe.py
 	python3 conformance/test_governed_reads.py
-	python3 conformance/test_reprogram.py
-	python3 conformance/test_workshop.py
+	python3 conformance/test_indexed_history.py
+	python3 conformance/test_opaque_interaction.py
 	python3 conformance/test_workshop_seed.py
 	python3 conformance/test_authority.py
 	python3 conformance/test_compiled.py
 	python3 conformance/test_source_packages.py
 	python3 conformance/test_source_contract.py
+	python3 conformance/test_current_source_contract.py
 	python3 conformance/test_source_amendment.py
 	python3 conformance/test_current_boundary.py
+	python3 conformance/test_logical_policy.py
+	python3 conformance/test_source_authority.py
+	python3 conformance/test_compact_policy.py
+	python3 conformance/test_compact_receiving.py
+	python3 conformance/test_typed_allocation.py
+	python3 conformance/test_state_invariant.py
+	python3 conformance/test_source_budget.py
 	LEAN_NUM_THREADS=1 lake env lean profiles/SourceAmendmentChecks.lean
 	python3 conformance/test_preparation.py
 	python3 conformance/test_preparation_accessors.py
@@ -77,7 +83,6 @@ world:
 	python3 conformance/test_resident_messages.py
 	python3 conformance/test_resident_library.py
 	python3 conformance/test_encounter_pages.py
-	python3 conformance/test_state_invariant.py
 	python3 conformance/test_file_custody.py
 	python3 conformance/test_resident_store.py
 	python3 conformance/test_resident_transport.py
@@ -93,10 +98,10 @@ world:
 	python3 conformance/test_automatafl_companion.py
 	python3 conformance/test_desk.py
 	python3 conformance/test_shared_proposal.py
+	python3 conformance/test_behavior_examples.py
 	python3 conformance/test_candidate_custody.py
 	python3 conformance/test_candidate_capacity.py
 	python3 conformance/test_desk_profiles.py
-	python3 conformance/test_projection.py
 	python3 conformance/test_inhabited_bootstrap.py
 	python3 conformance/test_bootstrap_adversarial.py
 	python3 conformance/test_history.py
@@ -105,6 +110,7 @@ world:
 	python3 conformance/test_source_store.py
 	python3 conformance/test_source_history.py
 	python3 conformance/test_workspace.py
+	python3 conformance/test_workspace_modules.py
 	python3 conformance/test_workspace_resident.py
 	python3 conformance/test_source_workshop.py
 	python3 conformance/test_commons.py
@@ -117,6 +123,8 @@ world:
 	python3 conformance/test_containment.py
 	python3 conformance/test_appointments.py
 	python3 conformance/test_evening_courtyard.py
+	python3 conformance/test_source_scene_bootstrap.py
+	python3 conformance/test_source_self_revision.py
 	python3 conformance/test_appointment_physical.py
 	python3 conformance/test_appointment_relationship.py
 	python3 conformance/test_work_ticket.py
@@ -156,8 +164,6 @@ delve:
 	python3 conformance/test_town_forge_custody.py
 	python3 conformance/test_manual_intake.py
 	python3 conformance/test_obend_spell.py
-	python3 conformance/test_obend_view.py
-	python3 conformance/test_obend_menu.py
 	python3 conformance/test_typed_view.py
 	python3 conformance/test_obend_object.py
 	python3 conformance/test_obend_data_object.py
@@ -173,7 +179,6 @@ delve:
 	python3 conformance/test_contract_authoring.py
 	python3 conformance/test_module_desk.py
 	python3 conformance/test_spell_examples.py
-	python3 conformance/test_spween_migration.py
 	python3 conformance/test_service.py
 	python3 conformance/test_message_relay.py
 	python3 conformance/test_receipts.py
@@ -227,4 +232,4 @@ portal:
 	node --check portal/static/app.js
 	node conformance/test_portal_forms.mjs
 	node conformance/test_portal_agent_ui.mjs
-check: build worker-resources scene-build semantics-check capsules core typed packages world wiki syntax delve proposals scene portal
+check: build worker-resources scene-build semantics-check core typed packages world wiki syntax delve proposals scene portal

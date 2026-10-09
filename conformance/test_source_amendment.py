@@ -17,7 +17,7 @@ record Context:
   currentLaw: P.Value
   nextLaw: P.Value
 def configuration(law: P.Value) -> String:
-  P.text(P.get(P.get(law, "amendment"), "config"))
+  P.textOrEmpty(P.get(P.get(law, "amendment"), "config"))
 def amend(context: Context) -> Bool:
   context.object == "counter" && (context.principal == "maker" || context.principal == "service") && configuration(context.currentLaw) == "stable" && configuration(context.nextLaw) == "stable"
 def refuse(context: Context) -> Bool:

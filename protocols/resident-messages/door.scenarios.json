@@ -8,7 +8,9 @@
       {
         "observe": "main",
         "view": {
-          "title": "The listening door"
+          "title": "The listening door",
+          "prose": "The door opens when it hears the courtyard bell sing C E G. Connect its lantern to let the opening carry on.",
+          "actions": {}
         }
       },
       {

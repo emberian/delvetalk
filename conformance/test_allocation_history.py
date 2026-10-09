@@ -1,5 +1,5 @@
 """Allocation/source custody composition through actual Lean admission and replay."""
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import sys
 import tempfile
@@ -13,10 +13,7 @@ import world
 
 
 def load_module(name, path):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(ROOT / path, name)
 
 
 fixture = load_module('allocation_history_fixture', 'conformance/test_allocation.py')

@@ -40,7 +40,7 @@ python3 protocols/spween-handler-workshop/generate.py --source --revision 2
 [Scene](moth.scene), [first handler](Handler.obend), [revision](Chorus.obend), and
 [text examples](moth.examples) are editable source. The compiler supplies a pinned
 ABI, encounter helpers, typed scene data and model, plus the final score and entry
-module. Names `Abi`, `Encounter`, `Kernel`, `SceneData`, `SceneModel`, `Score`,
+module. Names `Abi`, `Encounter`, `Kernel`, `SceneData`, `SceneModel`,
 `BaseRuntime` and `DefaultScene` are reserved; `Scene` may be the final authored
 entry module. Handlers receive `Abi.Context`.
 

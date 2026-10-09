@@ -9,6 +9,7 @@ from pathlib import Path
 
 import clerk
 import source_offers
+import opaque_offers
 import town_cards
 import world
 
@@ -33,7 +34,7 @@ class Summoner:
                    'followups': copy.deepcopy(list(followups))}
         with self.operator.lock():
             config, _ = self.operator._configuration()
-            if config.get('runtimeProfile', 'world') != 'compiled':
+            if config.get('runtimeProfile', 'compiled') != 'compiled':
                 raise ValueError('source session factory requires compiled runtime')
             if factory not in config['objects']:
                 raise ValueError('session factory must already be enrolled')
@@ -171,7 +172,7 @@ class Summoner:
                 if entry['decision'] != decision:
                     raise ValueError('original summon already has a different operator interpretation')
                 if 'response' in entry:
-                    return entry['response']
+                    return self.operator.public_response(entry['response'])
                 # Receipt lookup has no dependency on current source or display pins.
                 # In particular, never re-admit a lost reply merely to recover it.
                 try:
@@ -185,7 +186,7 @@ class Summoner:
             try:
                 config, book = self.operator._configuration()
                 binding = clerk.loads((self.state / 'configuration.json').read_bytes())
-                if config.get('runtimeProfile', 'world') != 'compiled':
+                if config.get('runtimeProfile', 'compiled') != 'compiled':
                     raise ValueError('source session factory requires compiled runtime')
                 pins = {'clerk': config['profile'], 'adapter': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                         'operator': hashlib.sha256(Path(__file__).with_name('town.py').read_bytes()).hexdigest(),
@@ -238,7 +239,7 @@ class Summoner:
                             'publication': 'paused'}
                 entry['response'] = response
                 clerk.save(path, entry)
-                return response
+                return self.operator.public_response(response)
             if 'reply' not in entry:
                 request = prepared['request']
                 try:
@@ -262,32 +263,30 @@ class Summoner:
                     current['repositories'] = sorted(set(current['repositories']) | {author})
                     clerk.save(self.operator.clerk.state / 'clerk.json', current)
             membership = self._followup(entry, path, book) if reply['kind'] == 'committed' else {'status': 'not-requested'}
-            if 'views' not in entry:
-                entry['views'], entry['notices'] = [], []
+            if 'publicViews' not in entry:
+                entry['publicViews'], entry['notices'] = [], []
                 for item in allocated:
                     object_id = item['object']
                     try:
-                        view, capture = self.operator._capture_view(object_id, book.metadata()['runtime'], 'compiled', principal=entry['source']['author'])
-                        if view is None:
-                            raise ValueError('allocated object is currently absent')
-                        entry['views'].append({'view': view, 'capture': capture,
-                            'alias': 'summon-' + str(entry['sequence']) + '-' + str(len(entry['views']) + 1)})
-                    except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
-                        entry['notices'].append({'object': object_id, 'detail': str(error)[:2000]})
+                        projected = self.operator._public_view(object_id, 'compiled', principal=entry['source']['author'])
+                        invitations = opaque_offers.capture(self.operator.clerk.database, object_id,
+                            projected, entry['source']['author'])
+                        entry['publicViews'].append({'object': object_id, 'projection': projected,
+                            'invitations': invitations,
+                            'alias': 'summon-' + str(entry['sequence']) + '-' + str(len(entry['publicViews']) + 1)})
+                    except (ValueError, KeyError, TypeError, OSError, RuntimeError):
+                        entry['notices'].append({'object': object_id, 'reason': 'public-view-unavailable'})
                 clerk.save(path, entry)
             cards, notices = [], copy.deepcopy(entry['notices'])
-            for captured in entry['views']:
+            for captured in entry['publicViews']:
                 try:
-                    cards.append(book.capture(captured['view'], alias=captured['alias'],
-                        **self.operator._capture_parts(captured['capture'])))
-                except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
-                    notices.append({'object': captured['view']['object'], 'detail': str(error)[:2000]})
-            body = book.prepare_outcome(reply, label='Session')['body']
-            body += '\nOperator interpretation: ' + town_cards.canonical(basis)
+                    cards.append(book.capture_public(captured['object'], captured['projection'],
+                        alias=captured['alias'], invitations=captured['invitations']))
+                except (ValueError, KeyError, TypeError, OSError, RuntimeError):
+                    notices.append({'object': captured['object'], 'reason': 'public-card-unavailable'})
+            body = 'Session: ' + reply['kind'] + '.'
             if membership['status'] != 'not-requested':
                 body += '\nShared membership: ' + membership['status'] + '. Session creation is recorded separately.'
-                if 'message' in membership:
-                    body += '\n' + '\n'.join('| ' + line for line in membership['message'].splitlines())
             if cards:
                 body += '\n\n' + '\n\n'.join(card['body'] for card in cards)
             if notices:
@@ -296,8 +295,8 @@ class Summoner:
                 'source': source, 'replyTo': {'uri': uri, 'cid': cid}, 'reply': reply,
                 'request': prepared['request'], 'interpretation': entry['interpretation'],
                 'cards': cards, 'notices': notices, 'membership': membership, 'body': body, 'textSha256': town_cards.sha(body),
-                'publication': 'paused'}
+                'publication': 'paused', 'audience': 'public'}
             if membership['status'] != 'uncertain':
                 entry['response'] = response
                 clerk.save(path, entry)
-            return response
+            return self.operator.public_response(response)

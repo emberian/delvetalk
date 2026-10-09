@@ -18,6 +18,7 @@ import affordances
 import obend_object
 import propose
 import spell_examples
+import source_object
 
 
 def load_driver():
@@ -67,7 +68,7 @@ def entries(xs):
 
 
 def law(commands):
-    return {'profile': 'delvetalk-scoped-law-v1', 'invoke': commands,
+    return {'profile': 'delvetalk-scoped-law', 'invoke': commands,
             'reprogram': ['builder'], 'law': ['steward']}
 
 
@@ -97,7 +98,7 @@ class Appointments(unittest.TestCase):
         return self.call({'op': 'inspect', 'object': name, 'principal': 'reader'})
 
     def state(self, name='clock'):
-        return plain(self.root(name)['state']['model'])
+        return plain(source_object.state_data(self.root(name)))
 
     def active(self):
         queue = self.state()['queue']
@@ -123,7 +124,8 @@ class Appointments(unittest.TestCase):
         config.update(configuration)
         result = native({'op': 'run-data-v1', 'artifact': self.constructors[key], 'arguments': [wire(config)]})
         self.assertIn('value', result, result)
-        protocol['initial']['model'] = result['value']
+        protocol['initial']['model'] = source_object.compact_state(protocol, result['value'],
+            entry=constructor, path=['codomain'])
         return protocol
 
     def setup_world(self, pending_capacity=128, capacity=16, physical=None):
@@ -135,13 +137,9 @@ class Appointments(unittest.TestCase):
                     'cancel': ['moss', 'iris'], 'tick': ['driver'], 'sample': ['driver'], 'page': ['moss', 'iris']}))
         self.create('garden-task', self.program('Task', owner='moss'), law({'wake': ['relay']}))
         self.create('lantern-task', self.program('Task', owner='iris'), law({'wake': ['relay']}))
-        self.create('digest', {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {
-            'hash': {'require': [], 'set': {}, 'result': ['program-digest', ['input', 'protocol']],
-                     'outbox': []}}}, ['reader'])
         self.programs = {}
         for name in ('garden-task', 'lantern-task'):
-            self.programs[name] = self.call(self.invoke('digest', 'hash',
-                {'protocol': self.root(name)['protocol']}, 'reader'), 'committed')['data']['result']
+            self.programs[name] = source_object.values('digest', [self.root(name)['protocol']])[0]
 
     def invoke(self, object, command, input, principal):
         return {'op': 'invoke', 'object': object, 'command': command, 'input': input,
@@ -336,7 +334,7 @@ class Appointments(unittest.TestCase):
         self.assertEqual(view['data']['title'], 'Queued appointments')
         self.assertEqual(view['children'][0]['object'], 'garden-task')
         self.call(self.cancel(), 'committed')
-        self.programs['garden-task'] = self.call(self.invoke('digest', 'hash', {'protocol': changed}, 'reader'), 'committed')['data']['result']
+        self.programs['garden-task'] = source_object.values('digest', [changed])[0]
         self.book()
         self.call(self.delivery(self.tick(5)['data']['messages'][0], 'garden-task'), 'committed')
 

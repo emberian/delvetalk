@@ -35,7 +35,7 @@ def prepareChoose(state: State, contribution: P.Value, observations: P.Observati
 record Description:
   name: String
   initial: State
-  methods: {begin: {label: String, fields: {}}, setDoor: {label: String, fields: {key: D.TextField, label: D.TextField, object: D.TextField, panel: D.TextField, description: D.TextField, example: D.TextField, available: {type: String}, show: {type: String}}}, choose: {label: String, fields: {door: D.TextField, original: D.TextField}}}
+  methods: {begin: {label: String, fields: {}}, setDoor: {label: String, fields: {key: Abi.StringField, label: Abi.StringField, object: Abi.StringField, panel: Abi.StringField, description: Abi.StringField, example: Abi.StringField, available: {type: String}, show: {type: String}}}, choose: {label: String, fields: {door: Abi.StringField, original: Abi.StringField}}}
   panels: {}
 def describe() -> Description:
   {name: "A fresh DelveTalk session", initial: initial(), methods: extend(D.describe(initial().directory).methods, {begin: {label: "Open this retained session", fields: {}}}), panels: {}}

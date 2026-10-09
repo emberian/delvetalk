@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The operator service recognizes exact forge desks and preserves their builds."""
+"""The service accepts source-offered forge work and preserves exact builds."""
 import copy
 import importlib.util
 from pathlib import Path
@@ -20,33 +20,29 @@ AUTHOR = service.clerk.delve.DID
 
 
 class ForgeCustodyTests(unittest.TestCase):
-    def test_reviewed_candidate_body_and_source_pins_are_exact(self):
-        protocol = forge.source_desk()
-        self.assertTrue(desk.is_source_desk_protocol(protocol))
+    def test_compiler_runtime_pins_include_source_custody_dependencies(self):
         pins = desk.execution_profile('compiled')['files']
         for path in desk.SOURCE_CANDIDATE_FILES:
             self.assertEqual(pins[path], service.history.file_hash(ROOT / path))
-        spoof = copy.deepcopy(protocol)
-        spoof['description'] = 'The same name does not confer compiler eligibility.'
-        self.assertFalse(desk.is_source_desk_protocol(spoof))
-        self.assertFalse(desk.is_source_desk_protocol({'name': 'source-desk-v1'}))
-        self.assertFalse(desk.is_source_desk_protocol(None))
 
     def test_service_compiles_forge_and_continuation_restores_exact_builds(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             directory = base / 'world'
-            protocol = forge.source_desk()
-            spoof = copy.deepcopy(protocol)
-            spoof['description'] = 'Changed body, same name; not the reviewed Candidate.'
-            law = forge.scoped({'submit': [AUTHOR], 'compiled': ['compiler'],
+            modules = desk.source_object.read_closure([('Candidate', ROOT / 'protocols/editor/Candidate.obend')])
+            modules[-1]['source'] = modules[-1]['source'].replace(
+                'initial({editorMode: true})', 'initial({editorMode: false})')
+            altered = copy.deepcopy(modules)
+            altered[-1]['source'] = altered[-1]['source'].replace('title: "Candidate"', 'title: "Authored forge candidate"')
+            self.assertNotEqual(altered, modules)
+            law = forge.scoped({'submit': [AUTHOR], 'requestCheck': [AUTHOR], 'compiled': ['compiler'],
                 'failed': ['compiler'], 'adopt': [AUTHOR]})
-            seeds = [{'id': 'target', 'syntax': 'protocol-json@1',
-                      'source': desk.canonical(forge.door(0)),
+            seeds = [{'id': 'target', 'syntax': forge.SPELL_SYNTAX,
+                      'source': (ROOT / 'protocols/town-forge/Chalk.obend').read_bytes(),
                       'law': forge.scoped({'knock': [AUTHOR]}, reprogram=[AUTHOR])}]
-            seeds.extend({'id': name, 'syntax': 'protocol-json@1',
-                          'source': desk.canonical(body), 'law': law}
-                         for name, body in [('ready', protocol), ('failed', protocol), ('lookalike', spoof)])
+            seeds.extend({'id': name, 'syntax': 'objective-bend-object',
+                          'modules': body, 'law': law}
+                         for name, body in [('ready', modules), ('failed', modules), ('lookalike', altered)])
             seed = workspace.initialize(directory, seeds, entry_objects=['target'],
                                         principal='operator', profile='compiled')
             client = desk.Desk(directory / 'world.json', directory / 'artifacts', profile='compiled')
@@ -65,23 +61,27 @@ class ForgeCustodyTests(unittest.TestCase):
                 scenario_texts[name] = fixtures
                 result = client.exchange({'op': 'invoke', 'object': name, 'principal': AUTHOR,
                     'intent': 'submit-' + name, 'expected': client.inspect(name), 'command': 'submit',
-                    'input': {'target': 'target', 'proposal': {'syntax': forge.SPELL_SYNTAX, 'source': source, 'scenarios': scenario_texts[name]}, 'migration': original['state']}})
+                    'input': {'target': 'target', 'proposal': {'syntax': forge.SPELL_SYNTAX, 'source': source, 'scenarios': scenario_texts[name]}, 'migration': {'model': desk.source_object.compact_state(forge.door(), desk.source_object.data({}), entry='describe', path=[{'field': 'initial'}])}}})
                 self.assertEqual(result['kind'], 'committed', result)
-                pending[name] = result['data']['root']
+                requested = client.exchange({'op': 'invoke', 'object': name, 'principal': AUTHOR,
+                    'intent': 'request-' + name, 'expected': result['data']['root'], 'command': 'requestCheck', 'input': {}})
+                self.assertEqual(requested['kind'], 'committed', requested)
+                pending[name] = requested['data']['root']
 
-            result = app.tick(deadline_seconds=60)
+            result = app.tick(deadline_seconds=120)
             self.assertEqual(result['errors'], [], result)
             self.assertEqual(result['status'], 'prepared-offline', result)
             discovered = result['phases']['enqueueCompilers']
-            self.assertEqual(discovered['pendingCandidates'], 2)
-            self.assertEqual(discovered['examined'], 2)
+            self.assertEqual(len(discovered['jobs']), 3)
+            self.assertEqual(discovered['candidateCount'], 4)
+            self.assertEqual(discovered['examined'], 4)
             self.assertEqual(desk.candidate_state(client.inspect('ready'))['status'], 'ready')
             self.assertEqual(desk.candidate_state(client.inspect('failed'))['status'], 'failed')
-            self.assertEqual(client.inspect('lookalike'), pending['lookalike'])
+            self.assertEqual(desk.candidate_state(client.inspect('lookalike'))['status'], 'ready')
             self.assertEqual(client.inspect('target'), original)
             queue = app.compiler(app.config(), 2048)
             jobs = [desk.loads(path.read_bytes()) for path in (queue.state / 'jobs').glob('*.json')]
-            self.assertEqual({job['inputs']['object'] for job in jobs}, {'ready', 'failed'})
+            self.assertEqual({job['inputs']['object'] for job in jobs}, {'ready', 'failed', 'lookalike'})
             for job in jobs:
                 for path in desk.SOURCE_CANDIDATE_FILES:
                     self.assertEqual(job['runtime']['files'][path], service.history.file_hash(ROOT / path))
@@ -97,7 +97,7 @@ class ForgeCustodyTests(unittest.TestCase):
                 expected_genesis=seed['genesis'], expected_head=continuation['head'], base_head=seed['head'])
             self.assertEqual(desk.loads((restored / 'world.json').read_bytes()),
                              desk.loads(client.database.read_bytes()))
-            for name in ('ready', 'failed'):
+            for name in ('ready', 'failed', 'lookalike'):
                 identity = desk.candidate_state(client.inspect(name))['artifact']
                 self.assertIn(identity, evidence['builds'])
                 original_path = directory / 'artifacts/builds' / (identity + '.json')
@@ -106,13 +106,13 @@ class ForgeCustodyTests(unittest.TestCase):
                 build = desk.load_artifact(restored / 'artifacts', identity)
                 self.assertEqual(build['candidateRootSha256'], desk.digest(pending[name]))
                 self.assertEqual(build['sourceMaterial'], {'source': source, 'scenarios': scenario_texts[name]})
-                self.assertEqual(build['report']['passed'], name == 'ready')
+                self.assertEqual(build['report']['passed'], name != 'failed')
                 for sha in service.history.declared_files(build).values():
                     self.assertEqual(service.history.read_blob(restored / 'artifacts/pins', sha).read_bytes(),
                                      service.history.read_blob(directory / 'artifacts/pins', sha).read_bytes())
             # Restart reuses the exact prepared continuation; no new compiler job/admission.
             before = client.database.read_bytes()
-            restarted = service.Service(app.state).tick(deadline_seconds=60)
+            restarted = service.Service(app.state).tick(deadline_seconds=120)
             self.assertEqual(restarted['errors'], [], restarted)
             self.assertEqual(restarted['continuation'], continuation)
             self.assertEqual(client.database.read_bytes(), before)

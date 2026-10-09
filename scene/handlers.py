@@ -133,7 +133,7 @@ def modules_for(document, handler_source=None, *, handler_modules=None, runtime_
             raise LoweringError('ordered distinct handler modules must end in Handler; runtime/data module names are reserved')
     else:
         if handler_source is None:
-            handler_source = (LIBRARY / 'Handler.obend').read_text()
+            handler_source = (LIBRARY / 'Handler.obend').read_bytes().decode('utf-8')
         handler_modules = [{'name': 'Handler', 'source': handler_source}]
     if runtime_modules is not None:
         if runtime_source is not None:
@@ -148,7 +148,7 @@ def modules_for(document, handler_source=None, *, handler_modules=None, runtime_
                 or {m['name'] for m in runtime_modules} & {m['name'] for m in handler_modules}):
             raise LoweringError('ordered distinct runtime modules must end in SceneRuntime')
     else:
-        runtime_modules = [{'name': 'SceneRuntime', 'source': (RUNTIME / 'DefaultRuntime.obend').read_text() if runtime_source is None else runtime_source}]
+        runtime_modules = [{'name': 'SceneRuntime', 'source': (RUNTIME / 'DefaultRuntime.obend').read_bytes().decode('utf-8') if runtime_source is None else runtime_source}]
     if scene_modules is not None:
         if scene_source is not None:
             raise LoweringError('supply scene_source or scene_modules, not both')
@@ -163,16 +163,16 @@ def modules_for(document, handler_source=None, *, handler_modules=None, runtime_
             raise LoweringError('ordered distinct scene entry modules must end in Scene')
     elif scene_source is not None:
         scene_modules = [{'name': 'Scene', 'source': scene_source}]
-    default_scene = (RUNTIME / 'Scene.obend').read_text()
+    default_scene = (RUNTIME / 'Scene.obend').read_bytes().decode('utf-8')
     entry_modules = ([{'name': 'DefaultScene', 'source': default_scene}] + scene_modules
                      if scene_modules is not None else [{'name': 'Scene', 'source': default_scene}])
-    material = ([{'name': name, 'source': (ROOT / path).read_text()}
+    material = ([{'name': name, 'source': (ROOT / path).read_bytes().decode('utf-8')}
                  for name, path in source_closure.LIBRARY]
-            + [             {'name': 'Kernel', 'source': (LIBRARY / 'Kernel.obend').read_text()},
-             {'name': 'SceneData', 'source': (RUNTIME / 'SceneData.obend').read_text()}]
+            + [             {'name': 'Kernel', 'source': (LIBRARY / 'Kernel.obend').read_bytes().decode('utf-8')},
+             {'name': 'SceneData', 'source': (RUNTIME / 'SceneData.obend').read_bytes().decode('utf-8')}]
             + handler_modules
-            + [{'name': 'SceneModel', 'source': (RUNTIME / 'SceneModel.obend').read_text()},
-               {'name': 'BaseRuntime', 'source': (RUNTIME / 'SceneRuntime.obend').read_text()}]
+            + [{'name': 'SceneModel', 'source': (RUNTIME / 'SceneModel.obend').read_bytes().decode('utf-8')},
+               {'name': 'BaseRuntime', 'source': (RUNTIME / 'SceneRuntime.obend').read_bytes().decode('utf-8')}]
             + runtime_modules
             + entry_modules)
 

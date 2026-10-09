@@ -146,6 +146,12 @@ def declared_files(value):
         if item.get('format') == 'delvetalk-lowered-v1':
             translation = item['translation']
             pins = {**translation['files'], 'syntaxes/registry.json': translation['registry_sha256']}
+            if 'configuration' in item:
+                config = item['configuration']
+                if not isinstance(config, dict) or not isinstance(config.get('sourceLowering'), str) or SHA.fullmatch(config['sourceLowering']) is None:
+                    raise ValueError('configured seed requires exact original lowering identity')
+                sha = config['sourceLowering']
+                pins = {**pins, 'artifacts/lowerings/' + sha + '.json': sha}
         elif item.get('format') == 'delvetalk-room-artifact-v1' and 'content' in item:
             pins = item['content']['pins']
         if 'bridge_binary_sha256' in item:
@@ -207,7 +213,10 @@ def program_targets(request, reply):
 
 def lowered_protocol(artifact, bundle):
     """Check source/provenance integrity without executing its claimed adapter."""
-    exact(artifact, ['format', 'syntax', 'source', 'translation', 'target', 'lowered', 'lowered_sha256'], 'lowering artifact')
+    fields = ['format', 'syntax', 'source', 'translation', 'target', 'lowered', 'lowered_sha256']
+    if isinstance(artifact, dict) and 'configuration' in artifact:
+        fields.append('configuration')
+    exact(artifact, fields, 'lowering artifact')
     source = artifact['source']
     import source_store
     source_store.validate_translation_source(source)
@@ -236,6 +245,40 @@ def lowered_protocol(artifact, bundle):
         raise ValueError('translation dependency closure mismatch')
     for sha in translation['files'].values():
         read_blob(bundle, sha)
+    if 'configuration' in artifact:
+        config = artifact['configuration']
+        exact(config, ['sourceLowering', 'initial', 'declaredSourceConfiguration', 'provenance'], 'seed configuration')
+        if artifact['syntax'] != 'objective-bend-object' or artifact['target'] != 'local-protocol-v1':
+            raise ValueError('configured seed requires current ordinary source')
+        source_store.validate_module_material(source)
+        modules = [{'name': item['name'], 'source': item['source']} for item in source['modules']]
+        import source_packages
+        packages = source_packages.validate_tables(artifact['lowered'])
+        if set(packages) != {'resident'} or canonical(packages['resident']['modules']) != canonical(modules):
+            raise ValueError('configured seed differs from its retained source modules')
+        if canonical(config['initial']) != canonical(artifact['lowered']['initial']):
+            raise ValueError('configured seed initial differs from operative state')
+        if canonical(config['declaredSourceConfiguration']) != canonical(artifact['lowered'].get('sourceConfiguration')):
+            raise ValueError('configured seed declaration differs from operative source entry')
+        if not isinstance(config['sourceLowering'], str) or SHA.fullmatch(config['sourceLowering']) is None:
+            raise ValueError('configured seed requires exact original lowering identity')
+        original = loads(read_blob(bundle, config['sourceLowering']).read_bytes())
+        if (not isinstance(original, dict) or original.get('format') != 'delvetalk-lowered-v1'
+                or 'configuration' in original or digest(original) != config['sourceLowering']):
+            raise ValueError('configured seed original lowering identity mismatch')
+        base = lowered_protocol(original, bundle)
+        if (canonical(original['source']) != canonical(source)
+                or canonical(original['translation']) != canonical(translation)
+                or original['syntax'] != artifact['syntax'] or original['target'] != artifact['target']):
+            raise ValueError('configured seed original lowering binds different source')
+        expected = {**base, 'initial': config['initial']}
+        if config['declaredSourceConfiguration'] is not None:
+            expected['sourceConfiguration'] = config['declaredSourceConfiguration']
+        if canonical(expected) != canonical(artifact['lowered']):
+            raise ValueError('configured seed changes more than its declared initial state')
+        # Native replay validates the caller-supplied initial state under the
+        # retained schema when it recreates the object. No constructor execution
+        # is inferred from this configuration declaration or its hashes.
     if artifact['target'] == 'local-protocol-v1':
         return artifact['lowered']
     if artifact['target'] == 'spween-protocol-bundle-v1':
@@ -357,7 +400,7 @@ def replay(manifest, bundle, database, *, expected_genesis, expected_head, base_
             'proofScope': 'exact-artifact-replay' if runtime_policy == 'exact' else 'source-matched-local-replay'}
 
 
-def export_history(database, bundle, *, profile='transactions', attachments=None, journals=None, inline_reprogram=False,
+def export_history(database, bundle, *, profile='compiled', attachments=None, journals=None, inline_reprogram=False,
                    prefix_bundle=None, expected_prefix_genesis=None, expected_prefix_head=None):
     database, bundle = Path(database).resolve(), Path(bundle).resolve()
     if bundle.exists():
@@ -526,7 +569,7 @@ def main():
     export = commands.add_parser('export')
     export.add_argument('database', type=Path)
     export.add_argument('bundle', type=Path)
-    export.add_argument('--profile', choices=world.PROFILES, default='transactions')
+    export.add_argument('--profile', choices=world.PROFILES, default='compiled')
     export.add_argument('--attachments', type=Path, help='JSON map of canonical request SHA256 to exact artifact file paths')
     export.add_argument('--journals', type=Path, help='include exact matching request journals as source artifacts')
     export.add_argument('--inline-reprogram', action='store_true', help='explicitly accept missing original syntax; retain only inline protocol')

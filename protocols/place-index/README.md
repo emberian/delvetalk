@@ -6,7 +6,7 @@ The actual [Bend list module](ExhibitList.obend) stores up to 32 entries; the
 [binding source](Main.obend) owns duplicate rules, order, labels and the view.
 There are no numbered storage slots or Python room rules.
 
-Use the ordered modules and explicit `objective-bend-spell@3` syntax in
+Use the ordered modules and explicit `objective-bend-object` syntax in
 [package.json](package.json). Seal exact source refs, submit through a source desk,
 check the [examples](index.examples), then adopt with the typed empty model supplied
 by `describe()`. Current law separately grants `add`, `caption`, `remove`, `reorder`,

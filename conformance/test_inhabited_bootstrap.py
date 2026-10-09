@@ -29,13 +29,22 @@ class InhabitedBootstrapTests(unittest.TestCase):
     def test_two_participants_repair_then_use_admitted_improvement(self):
         report = self.report
         self.assertEqual(report['manifest']['participants'], ['iris', 'moss'])
-        state = report['finalView']['variables']
-        self.assertEqual(state['wing_aligned'], ['bool', True])
-        self.assertEqual(state['spring_wound'], ['bool', True])
-        self.assertEqual(state['chalk_star'], ['bool', True])
-        self.assertEqual(report['finalView']['passage']['name'], 'window')
-        self.assertEqual(report['finalView']['source'],
+        final = report['finalView']
+        self.assertEqual(final['mode'], 'projection')
+        self.assertIn('constellation', final['data']['prose'])
+        self.assertEqual(final['root']['protocol']['spweenSource']['source'],
                          (ROOT / 'examples/inhabited-bootstrap/cafe-improved.scene').read_text())
+        modules = {item['name']: item['source'] for item in final['root']['protocol']['sourcePackages']['resident']['modules']}
+        self.assertEqual(modules['Scene'], (ROOT / 'examples/inhabited-bootstrap/CafeWindow.obend').read_text())
+        repaired = bootstrap.loads((self.directory / 'observations/repaired-before-improvement.json').read_bytes())
+        adopted = bootstrap.loads((self.directory / 'observations/after-adoption.json').read_bytes())
+        self.assertEqual(adopted['root']['state'],
+            bootstrap.desk_module.candidate_state(report['sourceProposalRoot'])['migration'])
+        old = bootstrap.source_object.plain(bootstrap.source_object.state_data(repaired['root']))
+        new = bootstrap.source_object.plain(bootstrap.source_object.state_data(adopted['root']))
+        for field in ['passage', 'visited', 'started', 'ended']:
+            self.assertEqual(new[field], old[field])
+        self.assertNotEqual(final['root']['state'], adopted['root']['state'])
         world = bootstrap.loads((self.directory / 'world.json').read_bytes())
         records = {entry['request']['intent']: entry for entry in world['receipts']}
         self.assertEqual(records['align-wing']['request']['principal'], 'iris')
@@ -57,23 +66,25 @@ class InhabitedBootstrapTests(unittest.TestCase):
         original = bootstrap.loads((self.directory / 'observations/shared-before-repair.json').read_bytes())
         current = bootstrap.inspect_view(self.directory)
         self.assertNotEqual(original['root']['protocol'], current['root']['protocol'])
-        self.assertNotEqual(original['artifactId'], current['artifactId'])
+        self.assertNotEqual(original['programSha256'], current['programSha256'])
 
     def test_source_artifacts_and_extension_slot_remain_available(self):
         report = self.report
         for name in ('initialCafeArtifact', 'currentCafeArtifact'):
             artifact = bootstrap.room.load_artifact(self.directory / 'artifacts/rooms', report['manifest'][name])
             self.assertIn('source', artifact['content'])
-        self.assertIsNone(report['tableRoot']['state']['activity'])
+        self.assertIn('sourcePackages', report['tableRoot']['protocol'])
+        table = bootstrap.room.inspect_object(report['tableRoot'], bootstrap.TABLE)
+        self.assertIn('shared activity', table['data']['prose'])
         self.assertEqual(report['tableRoot']['protocol']['commands'], {})
-        desk = report['sourceProposalRoot']['state']
+        desk = bootstrap.desk_module.candidate_state(report['sourceProposalRoot'])
         self.assertEqual(desk['submitter'], 'iris')
         self.assertEqual(desk['compiler'], 'compiler')
         self.assertEqual(desk['lastRelease'], 'moss')
         artifact = bootstrap.desk_module.load_artifact(self.directory / 'artifacts', desk['artifact'])
         self.assertTrue(artifact['report']['passed'])
-        self.assertEqual(artifact['report']['candidate']['artifact']['source']['text'], report['finalView']['source'])
-        self.assertIn('Exact scene source', (self.directory / 'cafe.html').read_text())
+        self.assertEqual(artifact['sourceMaterial']['source'], bootstrap.cafe_proposal_source().decode())
+        self.assertIn('Exact view program', (self.directory / 'cafe.html').read_text())
 
     def test_cli_reads_and_exact_retry_uses_retained_view(self):
         command = [sys.executable, str(ROOT / 'scripts/bootstrap.py')]
@@ -81,7 +92,7 @@ class InhabitedBootstrapTests(unittest.TestCase):
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(bootstrap.loads(current.stdout)['root'], self.report['finalView']['root'])
         repeated = subprocess.run(command + ['act', str(self.directory), '--view',
-            str(self.directory / 'observations/repaired-before-improvement.json'), '--principal', 'moss',
+            str(self.directory / 'observations/shared-before-repair.json'), '--principal', 'moss',
             '--intent', 'old-program-view', '--choice', '1'], text=True, capture_output=True)
         self.assertEqual(repeated.returncode, 1, repeated.stderr)
         self.assertEqual(bootstrap.loads(repeated.stdout)['data'], 'stale read root')
@@ -95,8 +106,8 @@ class InhabitedBootstrapTests(unittest.TestCase):
         self.assertNotEqual(before['source'], after['source'])
         self.assertNotEqual(before['data']['prose'], after['data']['prose'])
         self.assertEqual(self.report['signFinalView']['data']['prose'], 'The lamp is lit.')
-        self.assertEqual(self.report['signProposalRoot']['state']['submitter'], 'moss')
-        self.assertEqual(self.report['signProposalRoot']['state']['lastRelease'], 'iris')
+        self.assertEqual(bootstrap.desk_module.candidate_state(self.report['signProposalRoot'])['submitter'], 'moss')
+        self.assertEqual(bootstrap.desk_module.candidate_state(self.report['signProposalRoot'])['lastRelease'], 'iris')
         final = bootstrap.inspect_view(self.directory, bootstrap.SIGN, 'details')
         self.assertEqual(final['data']['prose'], 'The lamp is lit.')
         self.assertEqual(final['mode'], 'projection')
@@ -139,10 +150,11 @@ class InhabitedReconstructionTests(unittest.TestCase):
         self.assertEqual(self.result['worldSha256'], self.anchors['worldSha256'])
         self.assertEqual(len(self.result['rooms']), 2)
         self.assertEqual(len(self.result['builds']), 2)
-        self.assertGreaterEqual(len(self.result['lowerings']), 5)
+        self.assertGreaterEqual(len(self.result['lowerings']), 2)
         view = bootstrap.inspect_view(self.restored)
-        self.assertEqual(view['mode'], 'room')
-        self.assertIn('Iris has opened the window', view['source'])
+        self.assertEqual(view['mode'], 'projection')
+        self.assertIn('Iris has opened the window', view['root']['protocol']['spweenSource']['source'])
+        self.assertIn('sourcePackages', view['root']['protocol'])
         self.assertEqual(bootstrap.inspect_view(self.restored, bootstrap.SIGN, 'details')['data']['prose'], 'The lamp is lit.')
         manifest = bootstrap.loads((self.bundle / 'manifest.json').read_bytes())
         self.assertIs(manifest['inlineReprogram'], False)

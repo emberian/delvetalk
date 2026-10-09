@@ -5,6 +5,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_appointments as appointments
 from test_appointments import ROOT, FIXTURES, native, wire, plain, law
 import world
@@ -12,6 +13,7 @@ import source_offers
 import clock_physical_driver as driver
 import message_relay
 import obend_object
+import source_object
 sys.path.insert(0, str(ROOT))
 from scene import projection
 
@@ -43,8 +45,10 @@ class AppointmentRelationship(unittest.TestCase):
                 self.programs[name] = obend_object.lower_data_modules(modules(name))
         clock = copy.deepcopy(self.programs['Clock'])
         artifact = native({'op': 'compile', 'modules': modules('Clock'), 'entry': 'physical'})['artifact']
-        clock['initial']['model'] = native({'op': 'run-data-v1', 'artifact': artifact,
+        initial = native({'op': 'run-data-v1', 'artifact': artifact,
             'arguments': [wire({'capacity': 16, 'epochMillis': 1000, 'quantumMillis': 1000})]})['value']
+        clock['initial']['model'] = source_object.compact_state(clock, initial,
+            entry='physical', path=['codomain'])
         self.fx.create('clock', clock, law({'quote': ['moss', 'iris'], 'request': ['moss', 'iris'],
             'cancel': ['moss', 'iris'], 'status': ['moss', 'iris'], 'sample': ['driver'], 'tick': ['driver'], 'page': ['moss']}))
         self.fx.create('bell', self.programs['ScheduledBell'], law({'arm': ['moss', 'iris'],
@@ -232,6 +236,19 @@ class AppointmentRelationship(unittest.TestCase):
         self.run_relay()
         self.run_relay()
         self.assertEqual(self.fx.state('door')['heard'], 1)
+
+
+class AppointmentRequiredInputs(unittest.TestCase):
+    def test_source_required_fields_preserve_missing_wrong_kind_and_zero(self):
+        material = modules('ScheduledBell') + [source('AppointmentsRequired',
+            ROOT / 'conformance/fixtures/preparation')]
+        compiled = native({'op': 'compile', 'modules': material, 'entry': 'checks'})
+        self.assertEqual(compiled['status'], 'compiled', compiled)
+        result = native({'op': 'run-data-v1', 'artifact': compiled['artifact'], 'arguments': []})
+        self.assertEqual(result['status'], 'finished', result)
+        for name, value in plain(result['value']).items():
+            with self.subTest(check=name):
+                self.assertTrue(value)
 
 
 if __name__ == '__main__':

@@ -20,6 +20,7 @@ RECEIVE = '''edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Emissions.obend as E
+import ./Encounter.obend as Encounter
 record State:
   count: Nat
   accepting: Bool
@@ -29,7 +30,7 @@ record Decision:
   state: State
   result: E.CausalEvent
 def receive(state: State, input: P.Value, context: Abi.Context, event: E.CausalEvent) -> Decision:
-  {accepted: state.accepting, reason: if state.accepting then "" else "closed", state: {count: state.count + P.natural(P.get(input, "amount")), accepting: state.accepting}, result: event}
+  {accepted: state.accepting, reason: if state.accepting then "" else "closed", state: {count: state.count + P.naturalOrZero(P.get(input, "amount")), accepting: state.accepting}, result: event}
 record Description:
   name: String
   initial: State
@@ -37,11 +38,19 @@ record Description:
   panels: {}
 def describe() -> Description:
   {name: "Relay receiver", initial: {count: 0n, accepting: true}, methods: {receive: {label: "Receive", fields: {}, inputCodec: "value"}}, panels: {}}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Encounter.Children
+def view(state: State, panel: String) -> View:
+  {title: "Relay fixture", prose: "A resident transport fixture.", actions: {}, children: Encounter.Children.nil()}
 '''
 SEND = '''edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Emissions.obend as E
+import ./Encounter.obend as Encounter
 record State:
   count: Nat
 record Input:
@@ -61,13 +70,24 @@ record Description:
   panels: {}
 def describe() -> Description:
   {name: "Relay sender", initial: {count: 0n}, methods: {send: {label: "Send", fields: {program: {type: "string", minLength: 64n, maxLength: 64n}}}}, panels: {}}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Encounter.Children
+def view(state: State, panel: String) -> View:
+  {title: "Relay fixture", prose: "A resident transport fixture.", actions: {}, children: Encounter.Children.nil()}
 '''
 
 
-def protocol(source):
+def source_modules(source):
     modules = [{'name': key, 'source': (ROOT / 'world/lib/prelude' / (key + '.obend')).read_text()}
-               for key in ('List', 'Abi', 'Preparation', 'Emissions')]
-    return obend_object.lower_data_modules(modules + [{'name': 'Actor', 'source': source}])
+               for key in ('List', 'Abi', 'Preparation', 'Emissions', 'Encounter')]
+    return modules + [{'name': 'Actor', 'source': source}]
+
+
+def protocol(source):
+    return obend_object.lower_data_modules(source_modules(source))
 
 
 class MessageRelayTests(unittest.TestCase):
@@ -86,19 +106,11 @@ class MessageRelayTests(unittest.TestCase):
                                  'lineage': 'relay-test', 'pendingLimit': 128})
         self.assertEqual(initialized['kind'], 'committed', initialized)
         recipient = protocol(RECEIVE)
-        hasher = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'digest': {
-            'require': [], 'set': {}, 'result': ['program-digest', ['input', 'program']], 'outbox': []}}}
-        made = self.call({'op': 'create', 'object': 'digest', 'principal': 'owner', 'intent': 'create-digest',
-                         'protocol': hasher, 'law': ['owner']})
-        self.assertEqual(made['kind'], 'committed', made)
-        hashed = self.call({'op': 'invoke', 'object': 'digest', 'principal': 'owner', 'intent': 'recipient-digest',
-            'expected': made['data']['root'], 'command': 'digest', 'input': {'program': recipient}})
-        self.assertEqual(hashed['kind'], 'committed', hashed)
-        self.program = hashed['data']['result']
-        self.law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'receive': ['relay']},
+        self.program = source_object.values('digest', [recipient])[0]
+        self.law = {'profile': 'delvetalk-scoped-law', 'invoke': {'receive': ['relay']},
                     'reprogram': ['owner'], 'law': ['owner']}
         for name, program, law in [('recipient', recipient, self.law),
-                ('sender', protocol(SEND), ['author'])]:
+                ('sender', protocol(SEND), {'profile': 'delvetalk-scoped-law', 'invoke': {'send': ['author']}, 'reprogram': ['owner'], 'law': ['owner']})]:
             made = self.call({'op': 'create', 'object': name, 'principal': 'owner', 'intent': 'create-' + name,
                              'protocol': program, 'law': law})
             self.assertEqual(made['kind'], 'committed', made)
@@ -299,23 +311,16 @@ class ResidentServiceJourneyTests(unittest.TestCase):
         self.directory = self.path / 'workspace'
         self.database = self.directory / 'world.json'
         recipient = protocol(RECEIVE)
-        hasher = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'digest': {
-            'require': [], 'set': {}, 'result': ['program-digest', ['input', 'program']], 'outbox': []}}}
         self.seed = workspace.initialize(self.directory, [
-            {'id': 'recipient', 'syntax': 'protocol-json@1', 'source': relay.canonical(recipient),
-             'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'receive': ['relay']},
+            {'id': 'recipient', 'syntax': 'objective-bend-object', 'modules': source_modules(RECEIVE),
+             'law': {'profile': 'delvetalk-scoped-law', 'invoke': {'receive': ['relay']},
                      'law': ['owner'], 'reprogram': ['owner']}},
-            {'id': 'sender', 'syntax': 'protocol-json@1', 'source': relay.canonical(
-                protocol(SEND)), 'law': [AUTHOR]},
-            {'id': 'digest', 'syntax': 'protocol-json@1', 'source': relay.canonical(hasher), 'law': ['owner']}],
+            {'id': 'sender', 'syntax': 'objective-bend-object', 'modules': source_modules(SEND), 'law': {'profile': 'delvetalk-scoped-law', 'invoke': {'send': [AUTHOR]}, 'reprogram': ['owner'], 'law': ['owner']}}],
             entry_objects=['recipient', 'sender'], principal='owner', profile='compiled',
             backend='resident', messaging=True)
         self.start_resident()
         self.addCleanup(lambda: self.session.__exit__(None, None, None))
-        hashed = self.call({'op': 'invoke', 'object': 'digest', 'principal': 'owner', 'intent': 'digest',
-            'expected': self.root('digest'), 'command': 'digest', 'input': {'program': recipient}})
-        self.assertEqual(hashed['kind'], 'committed', hashed)
-        self.program = hashed['data']['result']
+        self.program = source_object.values('digest', [recipient])[0]
         self.initial_sender = self.root('sender')
         self.pds = PDS()
         self.clerk = service.clerk.Clerk(self.path / 'clerk', self.pds)

@@ -22,13 +22,12 @@ silently change the existing full-root route:
    Its result contains authored prose, fields, offered actions and references,
    never the internal view program, root, state, law or preparation arguments.
    Source-authored outputs are intentional disclosures under that view grant.
-2. The host returns a revision reference tied to this world lineage, object and
-   exact root. Prefer the existing monotone object version plus a checked retained
-   version-to-root index over an unguessable capability token: the reference
-   grants no authority and need not hide that an object changed. Before adopting
-   that representation, establish uniqueness for actual creation/allocation,
-   every update and checkpoint reconstruction. Otherwise retain an opaque native
-   lookup key; do not substitute an unchecked version comparison for exact roots.
+2. The host returns the existing retained-root content reference: object and
+   custody digest, resolved through collision-preserving exact root buckets.
+   It grants no authority. Invocation expansion still compares the complete
+   selected root with the current object. No version uniqueness assumption is
+   needed. A reference copied from another world can select only identical exact
+   content already present in that receiving custody; it supplies no authority.
 3. Invocation carries that reference, command, typed contribution, authenticated
    principal and intent. The receiver checks current invocation policy and exact
    selected preimage, runs the same transition, and retains the full admission
@@ -70,3 +69,67 @@ This is an implementable receiving design, not a claim that opaque interaction
 or a noninterference proof is already present. It depends on DT-07's shared read
 boundary and the single current-law profile; it reuses the actual native
 transition, exact-retry custody, typed codec and authored view/preparation exports.
+
+The first implementation uses `law.view[panel]` with `"public"` or an exact
+principal array, independently of `read` and `invoke`. Missing view grants fall
+back to current full-read authority for existing source objects. `opaque-view`
+executes the installed `viewProgram` privately and returns its typed data plus
+the content reference. `opaque-select` binds object, command, input, principal
+and intent to a current invocation-authorized selection without running a body.
+It returns an exact `opaque-invoke` envelope; selection does not reserve a grant.
+
+The ordinary admission history retains that compact request and its projected
+receipt. Full expanded preimages, native receipts and source diagnostics live
+separately in trusted `opaqueCustody`; checkpoint reconstruction restores their
+retained-root index. Participant history remains current-read guarded and cannot
+select that private field. Projection is fixed at admission, including refusal,
+so retry after revocation or restart never calls the source view or method again.
+The source counter and authenticated Account route pass actual file, resident
+and verified HTTP receiving regressions on the sealed evaluator generation
+(native binary `449ef244b27fc8bc718ef0d5d5eff213bb7ff0a2c016137af6ca2a780dd26f21`,
+2 tests, 10.325 seconds, 2026-10-09). This qualification covers single invocation,
+current public view, stale exact source refusal, denied acquisition/history, and
+original projected reply recovery after revocation and process restart. The
+sealed prepared transaction extension below has its own receiving evidence.
+
+Invitation selection uses `opaque-invitation` with an exact owner reference,
+panel and source invitation key. Custody re-evaluates the granted source view;
+the caller cannot choose a preparation export or substitute observation flags.
+Declared dependencies are captured under the participant's current read grants.
+The particular exposed invitation permits its bounded owner computation only;
+it supplies no ambient authority over private peers.
+
+`opaque-prepare` returns authored questions, refusals, or a summary and compact
+`opaque-transaction` envelope containing the caller's original selection,
+contribution and exact dependency references. Prepared calls and derived inputs
+remain private. Fresh admission deterministically reconstructs those calls
+against the exact selected source and dependencies, then checks current action
+law atomically. View evaluation, typed conversion, preparation and transition
+share the receiving budget. Exact admitted retries recover their retained
+projection before reconstruction; source or dependency drift never refreshes a
+captured invitation. This describes the receiving contract; runtime acceptance
+is separately recorded against its checked source snapshot.
+
+Questions and refusals carry `publicSelection`, the exact source invitation and
+dependency witnesses that authorized their computation. A saved response can
+revalidate that selection through `opaque-invitation` with its observations;
+custody checks current view/read grants and refuses any owner or dependency
+drift before the response is disclosed again. This check does not rerun
+preparation or erase an already admitted caller receipt.
+
+The sealed transaction path passes the ordinary private RootDirectory source
+consumer (2 tests, 13.491 seconds) and source budget/private-derived-input tests
+(2 tests, 5.842 seconds) on native binary
+`75217d1ab992e6dbe67cae9b0e2ef39f2293cfb1656f6d6492f1c98e103c0269`.
+The preparation view, typed conversion, source preparation and transaction body
+consume one receiving allowance. A source-derived secret input remains in
+private custody, while the public reply exposes only invocation results and
+exact resulting references. Current peer read revocation hides the projected
+history row; exact original receipts survive revocation and checkpoint restart.
+Dependency drift refuses without refreshing captured roots. Non-invocation
+transaction result slots are null in the exported projection.
+
+This path grants no blind access to other private objects. Declared dependencies
+and every explicit observation require current read authority. Allocation
+metadata stays private unless the source deliberately returns a child identity;
+subsequent child invocation still needs that child's current invocation grant.

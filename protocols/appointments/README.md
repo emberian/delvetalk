@@ -6,7 +6,7 @@ governed [tasks](Task.obend) receive native messages. Use the `compiled` host an
 initialize its message registry.
 
 Supply sealed modules in order: shared `Abi`, shared `Encounter`, `Preparation`, `Emissions`, `Appointments`,
-then `Clock` or `Task`. The `objective-bend-spell@3` adapter binds authored menus.
+then `Clock` or `Task`. The `objective-bend-object` adapter binds authored menus.
 Evaluate `configured({capacity: 16})` or `configured({owner: "moss", clock: "clock"})`
 for typed initial state; configuration never rewrites source. Grant participants
 `request`, `cancel`, `page`; grant the named driver `tick`, and a relay task `wake`.
@@ -68,3 +68,8 @@ booking; a later event for the retired or older generation is consumed with
 an explicit `declined` result and no sound. A caller-supplied absence claim
 cannot retire the bell. See the [joined relationship tests](../../conformance/test_appointment_relationship.py)
 and [physical custody tests](../../conformance/test_appointment_physical.py).
+
+Required schedule fields and message payload fields use checked source lookups.
+A missing schedule field asks for that field; a wrong type refuses. Zero due,
+deadline or tick values remain valid natural values. Missing captured observations
+refuse preparation; malformed appointment messages refuse before changing state.

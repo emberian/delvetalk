@@ -5,7 +5,7 @@ record State:
 record Context:
   object: String
   principal: String
-  inputOrigin: {kind: String, object: String, command: String, immediatelyPrevious: Bool}
+  inputOrigin: {kind: String, object: String, command: String, program: String, immediatelyPrevious: Bool}
 record Decision:
   accepted: Bool
   reason: String

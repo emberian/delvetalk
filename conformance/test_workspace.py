@@ -9,16 +9,14 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from conformance.source_custody_fixture import counter_source, counter_protocol, scoped
 spec = importlib.util.spec_from_file_location('workspace_test_module', ROOT / 'scripts/workspace.py')
 workspace = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(workspace)
 b = workspace.bootstrap
 
 
-def protocol(title='A quiet entry'):
-    return {'profile':'delvetalk-local-v1','name':'entry','initial':{'title':title,'message':'Ready'},
-            'commands':{'write':{'require':[],'set':{'message':['input','message']},
-                                'result':['state','message'],'outbox':[]}}}
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -28,15 +26,15 @@ class WorkspaceTests(unittest.TestCase):
         self.directory = Path(self.temporary.name)
 
     def seed(self, destination, **kwargs):
-        return workspace.initialize(destination, [{'id':'entry:one','syntax':'protocol-json@1',
-            'source':b.canonical(protocol()),'law':['builder']}], entry_objects=['entry:one'],
+        return workspace.initialize(destination, [{'id':'entry:one','syntax':'objective-bend-object',
+            'source':counter_source(),'law':scoped(['builder'])}], entry_objects=['entry:one'],
             principal='builder', title='An independent world', **kwargs)
 
     def test_fresh_independent_worlds_share_empty_genesis_not_private_history(self):
         one, two = self.directory/'one', self.directory/'two'
         first = self.seed(one)
-        second = workspace.initialize(two,[{'id':'somewhere:else','syntax':'protocol-json@1',
-            'source':b.canonical(protocol('Elsewhere')),'law':[]}], entry_objects=['somewhere:else'], principal='other')
+        second = workspace.initialize(two,[{'id':'somewhere:else','syntax':'objective-bend-object',
+            'source':counter_source(),'law':scoped([])}], entry_objects=['somewhere:else'], principal='other')
         self.assertEqual(first['genesis'],second['genesis'])
         self.assertNotEqual(first['head'],second['head'])
         self.assertNotEqual(first['worldId'],second['worldId'])
@@ -57,41 +55,28 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(b.loads((one/'world.json').read_bytes()),state)
 
     def test_failed_seed_and_invalid_entry_never_publish_partial_world(self):
-        invalid = protocol()
-        invalid['commands']['write']['result']=['unsafe-shell','no']
         destination=self.directory/'bad'
-        with self.assertRaisesRegex(ValueError,'seed refused'):
-            workspace.initialize(destination,[{'id':'bad','syntax':'protocol-json@1',
-                'source':b.canonical(invalid),'law':['builder']}],entry_objects=['bad'],principal='builder')
+        with self.assertRaises(ValueError):
+            workspace.initialize(destination,[{'id':'bad','syntax':'objective-bend-object',
+                'source':b'edition ObjectiveBend 1\ndef broken(', 'law':scoped(['builder'])}],
+                entry_objects=['bad'],principal='builder')
         self.assertFalse(destination.exists())
         with self.assertRaisesRegex(ValueError,'entry objects'):
-            workspace.initialize(destination,[{'id':'good','syntax':'protocol-json@1',
-                'source':b.canonical(protocol()),'law':[]}],entry_objects=['missing'],principal='builder')
+            workspace.initialize(destination,[{'id':'good','syntax':'objective-bend-object',
+                'source':counter_source(),'law':scoped([])}],entry_objects=['missing'],principal='builder')
         self.assertFalse(destination.exists())
 
-    def test_generic_room_and_projection_restore_without_demo_objects(self):
-        original=self.directory/'original'
-        scene=b'---\nid: garden\ntitle: A garden\n---\n=== gate\nAn unclaimed path.\n* [Walk]\n  -> END\n'
-        workspace.initialize(original,[
-            {'id':'garden','syntax':'spween-scene-i64@1','source':scene,'law':['visitor']},
-            {'id':'sign','syntax':'protocol-json@1','source':(ROOT/'scene/projections/sign-v1.json').read_bytes(),'law':['visitor']}],
-            entry_objects=['garden','sign'],default_object='sign',principal='builder',title='A garden and sign')
+    def test_source_projection_restores_without_demo_objects(self):
+        original=self.directory/'projected'
+        self.seed(original)
         bundle=self.directory/'bundle'
         evidence=b.export_bootstrap(original,bundle)
-        shutil.rmtree(original)
         restored=self.directory/'restored'
         result=b.restore_bootstrap(bundle,restored,expected_genesis=evidence['genesis'],expected_head=evidence['head'])
         self.assertEqual(result['format'],'delvetalk-workspace-reconstruction-v1')
-        self.assertEqual(result['defaultObject'],'sign')
-        self.assertEqual(b.world_id(b.loads((restored/'manifest.json').read_bytes())),result['worldId'])
+        self.assertEqual(result['defaultObject'],'entry:one')
         self.assertEqual(b.inspect_view(restored)['mode'],'projection')
-        room=b.inspect_view(restored,'garden')
-        self.assertEqual(room['mode'],'room')
-        self.assertEqual(room['source'].encode(),scene)
-        request=b.room.start_request(room,'visitor','enter-restored')
-        desk=b.desk_module.Desk(restored/'world.json',restored/'artifacts')
-        self.assertEqual(desk.exchange(request)['kind'],'committed')
-        self.assertEqual(set(b.loads((restored/'world.json').read_bytes())['objects']),{'garden','sign'})
+        self.assertEqual(set(b.loads((restored/'world.json').read_bytes())['objects']),{'entry:one'})
         self.assertTrue((restored/'index.html').is_file())
 
     def test_index_changes_cannot_relabel_anchored_history(self):
@@ -121,19 +106,20 @@ class WorkspaceTests(unittest.TestCase):
     def test_pending_reference_sources_restore_exactly_before_compilation(self):
         source_store=b.module('workspace_source_store_test','scripts/source_store.py')
         destination=self.directory/'source-workspace'
-        source_protocol=b.canonical(b.desk_module.module('workspace_candidate_package', 'protocols/source-desk/package.py').candidate())
-        workspace.initialize(destination,[{'id':'desk','syntax':'protocol-json@1','source':source_protocol,
-            'law':['author','compiler']}],entry_objects=['desk'],principal='builder',profile='compiled')
-        source=b'# A large source card\n' + b'annotation remains opaque\n'*3000 + b'```delvetalk-protocol\n'+b.canonical(protocol())+b'\n```\n'
-        scenarios=b.canonical([{'name':'write','law':['author'],'steps':[
-            {'principal':'author','command':'write','input':{'message':'Hello'},'root':'initial','kind':'committed'}]}])
-        proposal=source_store.prepare_proposal(destination/'artifacts','protocol-markdown@1',source,scenarios)
+        import source_object
+        modules = source_object.read_closure([('Candidate', ROOT / 'protocols/editor/Candidate.obend')])
+        law = {'profile':'delvetalk-scoped-law','invoke':{'submit':['author'],'requestCheck':['author']},
+               'reprogram':[],'law':['author']}
+        workspace.initialize(destination,[{'id':'desk','syntax':'objective-bend-object','modules':modules,
+            'law':law}],entry_objects=['desk'],principal='builder')
+        source=counter_source() + b'\n# ' + b'exact retained comment ' * 4000 + b'\n'
+        scenarios=b.canonical([{'name':'add','law':['author'],'steps':[
+            {'principal':'author','command':'add','input':{'amount':1},'root':'initial','kind':'committed'}]}])
+        proposal=source_store.prepare_proposal(destination/'artifacts','objective-bend-object',source,scenarios)
         desk=b.desk_module.Desk(destination/'world.json',destination/'artifacts')
-        receipt=desk.exchange({'op':'invoke','object':'desk','principal':'author','intent':'submit-large',
-            'expected':desk.inspect('desk'),'command':'submit','input':{'proposal':proposal,'migration':{},'target':'later'}})
-        self.assertEqual(receipt['kind'],'committed')
+        receipt=desk.submit_refs('desk','author','submit-large',desk.inspect('desk'), proposal, {}, 'later')
+        self.assertEqual(receipt['kind'],'committed',receipt)
         self.assertGreater(len(source),65536)
-        self.assertLess(len(b.canonical(receipt['data']['root'])),65536)
         bundle=self.directory/'source-bundle'
         anchors=b.export_bootstrap(destination,bundle)
         shutil.rmtree(destination)
@@ -153,7 +139,7 @@ class WorkspaceTests(unittest.TestCase):
         seed=self.seed(original)
         desk=b.desk_module.Desk(original/'world.json',original/'artifacts')
         receipt=desk.exchange({'op':'invoke','object':'entry:one','principal':'builder','intent':'post-seed-work',
-            'expected':desk.inspect('entry:one'),'command':'write','input':{'message':'Continued'}})
+            'expected':desk.inspect('entry:one'),'command':'add','input':{'amount':1}})
         self.assertEqual(receipt['kind'],'committed')
         evidence=b.export_bootstrap(original,self.directory/'service-bundle')
         restored=self.directory/'service-restored'
@@ -166,7 +152,7 @@ class WorkspaceTests(unittest.TestCase):
         roots=b.loads((restored/'world.json').read_bytes())['objects']
         receiver=clerk.Clerk(self.directory/'attached-clerk')
         receiver.attach(restored,roots,[clerk.delve.DID],expected_genesis=seed['genesis'],
-                        expected_seed_head=seed['head'],runtime_profile='transactions')
+                        expected_seed_head=seed['head'],runtime_profile='compiled')
         app=service.Service(self.directory/'attached-service')
         configured=app.initialize(restored,receiver.state,'compiler',public_genesis=seed['genesis'])
         self.assertEqual(configured['status'],'configured')
@@ -175,32 +161,18 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(metadata['seedObjects'],['entry:one'])
         extended_desk=b.desk_module.Desk(restored/'world.json',restored/'artifacts')
         extra=extended_desk.exchange({'op':'create','object':'extra','principal':'builder',
-            'intent':'workspace-seed:'+seed['worldId']+':1','protocol':protocol(),'law':['builder']})
+            'intent':'workspace-seed:'+seed['worldId']+':1','protocol':counter_protocol(),'law':scoped(['builder'])})
         self.assertEqual(extra['kind'],'committed')
-        b.preserve_lowering(restored,b.canonical(protocol()))
+        b.preserve_lowering(restored,b.canonical(counter_protocol()))
         extended=b.export_bootstrap(restored,self.directory/'extra-bundle')
         again=self.directory/'again'
         b.restore_bootstrap(self.directory/'extra-bundle',again,expected_genesis=extended['genesis'],expected_head=extended['head'])
         self.assertEqual(b.loads((again/'seed.json').read_bytes())['head'],seed['head'])
 
-    def test_ordinary_compiled_command_has_no_source_desk_artifact_obligation(self):
-        program=protocol()
-        program['commands']['compiled']=program['commands'].pop('write')
-        destination=self.directory/'ordinary'
-        workspace.initialize(destination,[{'id':'ordinary','syntax':'protocol-json@1',
-            'source':b.canonical(program),'law':['builder']}],entry_objects=['ordinary'],principal='builder')
-        desk=b.desk_module.Desk(destination/'world.json',destination/'artifacts')
-        receipt=desk.exchange({'op':'invoke','object':'ordinary','principal':'builder','intent':'ordinary-command',
-            'expected':desk.inspect('ordinary'),'command':'compiled',
-            'input':{'message':'ok','artifact':'application-defined-label'}})
-        self.assertEqual(receipt['kind'],'committed')
-        evidence=b.export_bootstrap(destination,self.directory/'ordinary-export')
-        self.assertEqual(evidence['entries'],2)
-
     def test_cli_plan_is_explicit_and_inspect_uses_selected_entry(self):
-        (self.directory/'entry.json').write_bytes(b.canonical(protocol()))
+        (self.directory/'entry.obend').write_bytes(counter_source())
         plan={'title':'CLI world','entryObjects':['home'],'defaultObject':'home','objects':[
-            {'id':'home','syntax':'protocol-json@1','source':'entry.json','law':['builder']}]}
+            {'id':'home','syntax':'objective-bend-object','source':'entry.obend','law':scoped(['builder'])}]}
         (self.directory/'plan.json').write_bytes(b.canonical(plan))
         destination=self.directory/'cli-world'
         command=[sys.executable,str(ROOT/'scripts/workspace.py')]

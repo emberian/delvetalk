@@ -6,6 +6,7 @@ import uuid
 
 import workspace
 import references
+import source_object
 
 b = workspace.bootstrap
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,14 +18,29 @@ objects = b.module('workshop_objects', 'protocols/factories/package.py')
 
 
 def scoped(commands, people, *, programmers=(), managers=()):
-    return {'profile': 'delvetalk-scoped-law',
-            'invoke': {command: list(people) for command in commands},
-            'reprogram': list(programmers), 'law': list(managers)}
+    modules = source_object.read_closure([('Authority', ROOT / 'world/lib/prelude/Authority.obend')])
+    names = lambda values: source_object.list_data(source_object.data(item) for item in values)
+    config = source_object.record({'commands': names(commands), 'participants': names(people),
+        'managers': names(programmers), 'stewards': names(managers), 'publicPanels': names(['main'])})
+    return source_object.values('decode', [source_object.evaluate(modules, 'configured', [config])])[0]
+
+
+def ticket_authority(builders, steward):
+    modules = source_object.read_closure([('Authority', ROOT / 'world/lib/prelude/Authority.obend')])
+    names = lambda values: source_object.list_data(source_object.data(item) for item in values)
+    grants = [('post', builders[:1]), ('claim', builders), ('submit', builders),
+              ('accept', builders[:1]), ('reject', builders[:1])]
+    policy = source_object.record({'reading': source_object.value('public'),
+        'invocation': source_object.list_data(source_object.record({'command': source_object.data(command),
+            'principals': names(people)}) for command, people in grants),
+        'reprogramming': names([]), 'management': names([steward]), 'publicPanels': names(['main'])})
+    return source_object.values('decode', [source_object.evaluate(modules, 'assemble', [policy])])[0]
 
 
 def description(title, text):
-    return {'profile': 'delvetalk-local-v1', 'name': title, 'description': text,
-            'initial': {'title': title, 'description': text}, 'commands': {}}
+    modules = source_object.read_closure([('Description', ROOT / 'protocols/workshop/Description.obend')])
+    return source_object.load(modules, syntax='objective-bend-object', constructor='configured',
+        arguments=[source_object.data({'title': title, 'prose': text})])
 
 
 def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', steward='steward', world_id=None):
@@ -37,7 +53,8 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
     seeds = []
 
     def add(identity, program, law):
-        seeds.append({'id': identity, 'syntax': 'protocol-json@1', 'source': b.canonical(program), 'law': law})
+        seeds.append({'id': identity, 'syntax': 'objective-bend-object',
+                      **source_object.seed_material(program), 'law': law})
 
     places = {key: {'title': title, 'description': text, 'reference': ref('places/' + key)}
               for key, title, text in (
@@ -58,10 +75,7 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
     add('factory:desks', desks, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('factory:writing', writing.writing_factory(), scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('ticket:welcome', ticket.build(requester=builders[0], links={'context': ref('commons')}),
-        {'profile': 'delvetalk-scoped-law',
-         'invoke': {'post': [builders[0]], 'claim': list(builders), 'submit': list(builders),
-                    'accept': [builders[0]], 'reject': [builders[0]]},
-         'reprogram': [], 'law': [steward]})
+        ticket_authority(builders, steward))
     add('table:automatafl', table.protocol('table:automatafl', *builders), table.law(*builders))
     return workspace.initialize(directory, seeds,
         entry_objects=['commons', 'factory:objects', 'factory:desks', 'factory:writing', 'ticket:welcome', 'table:automatafl'],

@@ -30,7 +30,7 @@ def put(v: P.Value, name: String, value: P.Value) -> P.Value:
 def contains(xs: P.Values, who: String) -> Bool:
   match xs:
     case nil(_): false
-    case cons(c): P.text(c.head) == who || contains(c.tail, who)
+    case cons(c): P.textEquals(c.head, who) || contains(c.tail, who)
 def append(xs: P.Values, who: String) -> P.Values:
   match xs:
     case nil(_): P.Values.cons({head: P.Value.text({value: who}), tail: P.Values.nil()})
@@ -130,9 +130,9 @@ def equalSame(a: P.Value, b: P.Value) -> Bool:
     case retained(x): equalRetained(x.object, x.key, b)
     case none(_): true
     case boolean(x): x.value == boolean(b)
-    case natural(x): x.value == P.natural(b)
+    case natural(x): P.naturalEquals(b, x.value)
     case number(x): x.encoded == number(b)
-    case text(x): x.value == P.text(b)
+    case text(x): P.textEquals(b, x.value)
     case array(x): equalValues(x.values, values(b))
     case record(x): equalFields(x.fields, fields(b))
 def equal(a: P.Value, b: P.Value) -> Bool:
@@ -157,14 +157,24 @@ def textNames(values: P.Values) -> Bool:
   match values:
     case nil(_): true
     case cons(c): P.isText(c.head) && P.textOrEmpty(c.head) != "" && textNames(c.tail)
-def names(xs: P.Values) -> P.Names:
+sum NamesLookup:
+  invalid: {}
+  found: {value: P.Names}
+def names(xs: P.Values) -> NamesLookup:
   match xs:
-    case nil(_): P.Names.nil()
-    case cons(c): P.Names.cons({head: P.text(c.head), tail: names(c.tail)})
+    case nil(_): NamesLookup.found({value: P.Names.nil()})
+    case cons(c):
+      match P.asText(c.head):
+        case missing(_): NamesLookup.invalid()
+        case wrongKind(_): NamesLookup.invalid()
+        case found(t):
+          match names(c.tail):
+            case invalid(_): NamesLookup.invalid()
+            case found(rest): NamesLookup.found({value: P.Names.cons({head: t.value, tail: rest.value})})
 def singleton(xs: P.Values) -> String:
   match xs:
     case nil(_): ""
-    case cons(c): if emptyValues(c.tail) then P.text(c.head) else ""
+    case cons(c): if emptyValues(c.tail) then P.textOrEmpty(c.head) else ""
 def appendedCons(head: P.Value, tail: P.Values, b: P.Values) -> String:
   match b:
     case nil(_): ""
@@ -195,7 +205,18 @@ record AmendmentContext:
 def amend(context: AmendmentContext) -> Bool:
   let amendment: P.Value = P.get(context.currentLaw, "amendment")
   let config: P.Value = P.get(if tag(amendment) == 6n then amendment else P.get(context.nextLaw, "amendment"), "config")
-  let service: String = P.text(P.get(config, "service"))
-  let methods: P.Names = names(values(P.get(config, "commands")))
+  match P.textField(config, "service"):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(s): amendConfigured(context, config, s.value)
+def amendConfigured(context: AmendmentContext, config: P.Value, service: String) -> Bool:
+  match P.arrayField(config, "commands"):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(commands):
+      match names(commands.value):
+        case invalid(_): false
+        case found(n): amendMethods(context, config, service, n.value)
+def amendMethods(context: AmendmentContext, config: P.Value, service: String, methods: P.Names) -> Bool:
   let who: String = newPrincipal(P.get(context.currentLaw, "invoke"), P.get(context.nextLaw, "invoke"), methods)
   if service == "" || commandNames(P.get(config, "commands")) == false || optionalBoolean(config, "reprogram") == false then false else if context.principal != service then true else if who == "" then equal(context.currentLaw, context.nextLaw) else textLength(who) <= 256n && sameRole(context.currentLaw, context.nextLaw, methods, who, boolean(P.get(config, "reprogram")))

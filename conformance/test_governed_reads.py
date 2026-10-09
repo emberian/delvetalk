@@ -219,12 +219,16 @@ class GovernedReads(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('read_factories', ROOT / 'protocols/factories/package.py')
         package = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(package)
+        forge_spec = importlib.util.spec_from_file_location('read_forge', ROOT / 'protocols/town-forge/generate.py')
+        forge = importlib.util.module_from_spec(forge_spec)
+        forge_spec.loader.exec_module(forge)
         database = self.path / 'factory.json'
-        for name, read in [('open', 'public'), ('private', ['alice']), ('locked', [])]:
+        for name, read in [('open', 'public'), ('private', ['alice']), ('locked', []), ('town', ['alice'])]:
             policy = law()
             policy['invoke'] = {'make': ['alice']}
             created = self.call(database, {'op': 'create', 'object': name, 'principal': 'alice',
-                'intent': 'create-' + name, 'protocol': package.factory(read=read), 'law': policy})
+                'intent': 'create-' + name, 'protocol': (forge.object_factory(package.object(), ['bob'], ['write'], read=read)
+                    if name == 'town' else package.factory(read=read)), 'law': policy})
             self.assertEqual(created['kind'], 'committed', created)
             factory = created['data']['root']
             reply = self.call(database, {'op': 'invoke', 'object': name, 'principal': 'alice',
@@ -239,7 +243,7 @@ class GovernedReads(unittest.TestCase):
             else:
                 root = world.query(database, {'op': 'inspect', 'object': child, 'principal': 'alice'})
                 self.assertEqual(root['law']['read'], read)
-                self.assertEqual(root['law']['invoke']['write'], ['alice'])
+                self.assertEqual(root['law']['invoke']['write'], ['alice', 'bob'] if name == 'town' else ['alice'])
                 if read != 'public':
                     with self.assertRaisesRegex((ValueError, RuntimeError), 'read unauthorized'):
                         world.query(database, {'op': 'inspect', 'object': child, 'principal': 'bob'})

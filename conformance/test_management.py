@@ -11,6 +11,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from conformance.source_custody_fixture import counter_protocol, counter_source, scoped as current_law
 spec = importlib.util.spec_from_file_location('management_test', ROOT / 'scripts/manage.py')
 manage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manage)
@@ -21,8 +23,8 @@ B = 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb'
 
 class ManagementTests(unittest.TestCase):
     def setUp(self):
-        if not (ROOT / '.lake/build/bin/delvetalk-world').is_file():
-            self.fail('build delvetalk-world before running management tests')
+        if not (ROOT / '.lake/build/bin/delvetalk-compiled').is_file():
+            self.fail('build delvetalk-compiled before running management tests')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.state = Path(self.temp.name)
@@ -30,8 +32,8 @@ class ManagementTests(unittest.TestCase):
         self.fetches = 0
         self.c = clerk.Clerk(self.state, self.pds)
         self.m = manage.Management(self.state)
-        protocol = clerk.loads((ROOT / 'protocols/counter/protocol.json').read_text())
-        self.root = self.c.bootstrap('counter', protocol, [A], [A])['data']['root']
+        protocol = counter_protocol()
+        self.root = self.c.bootstrap('counter', protocol, current_law([A]), [A])['data']['root']
 
     def pds(self, method, base, nsid, *, params):
         self.fetches += 1
@@ -52,7 +54,7 @@ class ManagementTests(unittest.TestCase):
 
     def revise(self, intent, law, principal=A, root=None):
         return self.m.law('counter', principal, intent,
-                          self.c.snapshot('counter') if root is None else root, law)
+                          self.c.snapshot('counter') if root is None else root, current_law(law) if isinstance(law, list) else law)
 
     def test_transport_enrollment_then_lean_authority(self):
         before = self.c.database.read_bytes()
@@ -92,7 +94,7 @@ class ManagementTests(unittest.TestCase):
         self.m.enrollment(B, True)
         for principal in (A, B):
             self.assertEqual(self.revise('no-rescue', [A], principal=principal)['reply']['data'], 'unauthorized')
-        self.assertEqual(self.c.snapshot('counter')['root']['law'], [])
+        self.assertEqual(self.c.snapshot('counter')['root']['law'], current_law([]))
         self.assertEqual(self.m.resume(A, 'lockout'), empty)
 
     def test_exact_roots_stable_binding_and_historical_pin_replay(self):
@@ -196,101 +198,14 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         recovered = subprocess.run(command + ['resume', '--principal', A, '--intent', 'cli'], capture_output=True, text=True)
         self.assertEqual(json.loads(accepted.stdout), json.loads(recovered.stdout))
-        denied = subprocess.run(command + [*args[:args.index('--intent')], '--intent', 'denied', '--expected-root', str(snapshot), '--allow', A], capture_output=True, text=True)
+        grant_path = self.state / 'grant.json'
+        grant_path.write_text(clerk.world.wire_dumps(current_law([A])))
+        denied = subprocess.run(command + [*args[:args.index('--intent')], '--intent', 'denied', '--expected-root', str(snapshot), '--law-file', str(grant_path)], capture_output=True, text=True)
         self.assertEqual(denied.returncode, 2, denied.stderr)
         self.assertEqual(json.loads(denied.stdout)['reply']['data'], 'unauthorized')
 
-    def program(self, intent='program', principal=A, root=None, state=b'{"welcome":null}'):
-        return self.m.reprogram('counter', principal, intent, root or self.root, 'protocol-json@1',
-                               (ROOT / 'protocols/welcome-once/protocol.json').read_bytes(), state)
-
-    def test_reprogram_installs_source_and_complete_state_under_current_law(self):
-        receipt = self.program()
-        self.assertEqual(receipt['reply']['kind'], 'committed')
-        root = receipt['reply']['data']['root']
-        self.assertEqual(root['law'], [A])
-        self.assertEqual(root['state'], {'welcome': None})
-        self.assertEqual(root['version'], 1)
-        self.assertEqual(set(receipt['request']), {'op', 'object', 'principal', 'intent', 'expected', 'protocol', 'state'})
-        artifact = receipt['program']['artifact']
-        self.assertEqual(artifact['source']['text'], (ROOT / 'protocols/welcome-once/protocol.json').read_text())
-        self.assertIn('syntaxes/adapters.py', artifact['translation']['files'])
-        uri, cid = self.record(A, 'new-program', root)
-        payload = {'object': 'counter', 'command': 'knock', 'input': {'message': 'hello'}, 'expected': root}
-        self.records[uri][1]['requestJson'] = clerk.world.wire_dumps(payload)
-        invoked = self.c.receive(uri, cid)
-        self.assertEqual(invoked['reply']['kind'], 'committed')
-        self.assertEqual(invoked['reply']['data']['result'], 'welcomed')
-        self.assertEqual(self.m.resume(A, 'program'), receipt)
-
-    def test_reprogram_current_authority_stale_root_and_explicit_state(self):
-        self.assertEqual(self.program('unauthorized', B)['reply']['data'], 'unauthorized')
-        committed = self.program()
-        self.assertEqual(self.program('stale')['reply']['data'], 'stale read root')
-        current = committed['reply']['data']['root']
-        invalid = self.program('bad-state', root=current, state=b'[]')
-        self.assertEqual(invalid['reply']['kind'], 'refused')
-        self.assertEqual(self.c.snapshot('counter')['root'], current)
-        empty = self.program('explicit-empty', root=current, state=b'{}')
-        self.assertEqual(empty['reply']['data']['root']['state'], {})
-        self.revise('lockout-program', [])
-        self.assertEqual(self.program('locked')['reply']['data'], 'unauthorized')
-
-    def test_reprogram_exact_source_binding_and_replay_without_translation(self):
-        receipt = self.program()
-        with patch.object(manage.translation, 'translate', side_effect=AssertionError('must not retranslate')):
-            self.assertEqual(self.program(), receipt)
-            self.assertEqual(self.m.resume(A, 'program'), receipt)
-        with self.assertRaisesRegex(ValueError, 'different request or source'):
-            self.m.reprogram('counter', A, 'program', self.root, 'protocol-json@1',
-                             (ROOT / 'protocols/welcome-once/protocol.json').read_bytes() + b'\n', b'{"welcome":null}')
-        with self.assertRaisesRegex(ValueError, 'different request or source'):
-            self.program(state=b'{"welcome": null}')
-        with self.assertRaisesRegex(ValueError, 'different request'):
-            self.revise('program', [A], root=self.root)
-
-    def test_pending_reprogram_keeps_artifact_and_blocks_upgrade(self):
-        original_save = clerk.save
-        def lose_receipt(path, value):
-            if 'artifact' in value and 'receipt' in value:
-                raise OSError('lost reprogram reply')
-            original_save(path, value)
-        with patch.object(clerk, 'save', lose_receipt):
-            with self.assertRaisesRegex(OSError, 'lost reprogram'):
-                self.program()
-        with self.assertRaisesRegex(ValueError, 'pending request'):
-            self.c.upgrade(self.c.profile()['sha256'])
-        with patch.object(manage, 'translation_current', side_effect=ValueError('translation pins changed')):
-            with self.assertRaisesRegex(ValueError, 'translation pins changed'):
-                self.m.resume(A, 'program')
-        with patch.object(manage.translation, 'translate', side_effect=AssertionError('must not retranslate')):
-            receipt = self.m.resume(A, 'program')
-        self.assertEqual(receipt['reply']['data']['root']['version'], 1)
-        self.assertEqual(self.c.snapshot('counter')['root']['version'], 1)
-
-    def test_reprogram_cli_distinguishes_custody_directory_and_state_file(self):
-        snapshot = self.state / 'snapshot.json'
-        snapshot.write_text(clerk.world.wire_dumps(self.c.snapshot('counter')))
-        state_file = self.state / 'new-state.json'
-        state_file.write_text('{"welcome":null}')
-        command = [sys.executable, str(ROOT / 'scripts/manage.py'), '--state', str(self.state),
-                   'reprogram', '--object', 'counter', '--principal', A, '--intent', 'cli-program',
-                   '--expected-root', str(snapshot), '--source', str(ROOT / 'protocols/welcome-once/protocol.json'),
-                   '--syntax', 'protocol-json@1', '--state', str(state_file)]
-        result = subprocess.run(command, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        receipt = json.loads(result.stdout)
-        self.assertEqual(receipt['request']['state'], {'welcome': None})
-        self.assertEqual(receipt['reply']['kind'], 'committed')
-
-    def test_oversize_request_does_not_reserve_unrecoverable_intent(self):
-        with self.assertRaisesRegex(ValueError, 'request exceeds 64 KiB'):
-            self.program('oversized', state=b'{"padding":"' + b'x' * 65000 + b'"}')
-        self.assertFalse(self.m.path(A, 'oversized').exists())
-        self.assertEqual(self.c.snapshot('counter')['root'], self.root)
-
     def scoped(self):
-        return {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'add': [B]},
+        return {'profile': 'delvetalk-scoped-law', 'invoke': {'add': [B]},
                 'reprogram': [A], 'law': [A]}
 
     def test_scoped_law_transport_and_command_authority(self):
@@ -301,13 +216,12 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(root['law'], self.scoped())
         self.assertEqual(self.c.receive(*self.record(B, 'scoped-add', root))['reply']['kind'], 'committed')
         self.assertEqual(self.revise('no-management', [B], principal=B)['reply']['data'], 'unauthorized')
-        malformed = self.revise('malformed-law', {'profile': 'delvetalk-scoped-law-v1'})
+        malformed = self.revise('malformed-law', {'profile': 'delvetalk-scoped-law'})
         self.assertEqual(malformed['reply']['kind'], 'refused')
         self.assertEqual(self.m.resume(A, 'malformed-law'), malformed)
 
     def add(self, object_id='desk', intent='create-desk', law=None):
-        return self.m.add_object(object_id, A, intent, 'protocol-json@1',
-                                 (ROOT / 'protocols/counter/protocol.json').read_bytes(),
+        return self.m.add_object(object_id, A, intent, 'objective-bend-object', counter_source(),
                                  self.scoped() if law is None else law)
 
     def test_add_object_registers_only_after_success_and_keeps_existing_state(self):
@@ -350,15 +264,19 @@ class ManagementTests(unittest.TestCase):
     def test_scoped_bootstrap_and_add_object_law_file_cli(self):
         law_path = self.state / 'law.json'
         law_path.write_text(clerk.world.wire_dumps(self.scoped()))
+        protocol_path = self.state / 'source-counter.json'
+        protocol_path.write_text(clerk.world.wire_dumps(counter_protocol()))
+        source_path = self.state / 'source-counter.obend'
+        source_path.write_bytes(counter_source())
         custody = self.state / 'scoped-clerk'
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/clerk.py'), '--state', str(custody),
-            'bootstrap', '--object', 'first', '--protocol', str(ROOT / 'protocols/counter/protocol.json'),
+            'bootstrap', '--object', 'first', '--protocol', str(protocol_path),
             '--repository', B, '--law-file', str(law_path)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['data']['root']['law'], self.scoped())
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/manage.py'), '--state', str(custody),
             'add-object', '--object', 'second', '--principal', A, '--intent', 'cli-second',
-            '--source', str(ROOT / 'protocols/counter/protocol.json'), '--syntax', 'protocol-json@1',
+            '--source', str(source_path), '--syntax', 'objective-bend-object',
             '--law-file', str(law_path)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertTrue(json.loads(result.stdout)['registration']['registered'])

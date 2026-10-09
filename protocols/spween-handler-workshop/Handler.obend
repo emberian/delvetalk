@@ -1,32 +1,21 @@
 edition ObjectiveBend 1
 import ./Kernel.obend as K
 import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Emissions.obend as E
 record State:
   variables: K.Variables
   members: K.Members
   repairs: Nat
-record Emission:
-  enabled: Bool
-  to: String
-  command: String
-  recipientProgram: String
-  payload: {}
-record Slots:
-  a: Emission
-  b: Emission
-  c: Emission
-  d: Emission
 record Step:
   accepted: Bool
   reason: String
   state: State
-  emissions: Slots
+  emissions: E.Emissions
 def initial() -> State:
   {variables: K.Variables.nil(), members: K.Members.nil(), repairs: 0n}
-def silent() -> Emission:
-  {enabled: false, to: "unused", command: "hear", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", payload: {}}
 def begin(state: State) -> Step:
-  {accepted: true, reason: "", state: state, emissions: {a: silent(), b: silent(), c: silent(), d: silent()}}
+  {accepted: true, reason: "", state: state, emissions: E.empty()}
 def get_var(state: State, name: String) -> K.Value:
   K.get(state.variables, name)
 def set_var(state: State, name: String, value: K.Value) -> State:

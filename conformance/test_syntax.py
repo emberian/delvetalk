@@ -38,19 +38,13 @@ class Syntax(unittest.TestCase):
         self.assertEqual(translator.translate('core-sexpr@1', b'(boolean #f)')['lowered'], ['boolean', False])
         self.assertEqual(translator.translate('core-sexpr@1', b'(lam (bound 0))')['lowered'], ['lam', ['bound', 0]])
 
-    def test_markdown_and_exact_source(self):
-        protocol = json.loads((ROOT / 'protocols/welcome-once/protocol.json').read_text())
-        raw = ('# Welcome λ\r\nOpaque prose: do not execute me.\r\n```delvetalk-protocol\r\n' + json.dumps(protocol) + '\r\n```\r\n').encode()
-        artifact = translator.translate('protocol-markdown@1', raw)
+    def test_exact_utf8_source_bytes_are_retained(self):
+        raw = '["label", "Welcome λ"]\r\n'.encode()
+        artifact = translator.translate('core-json@1', raw)
         self.assertEqual(artifact['source']['text'].encode(), raw)
         self.assertEqual(artifact['source']['sha256'], translator.digest(raw))
-        self.assertEqual(artifact['lowered'], protocol)
-        self.assertEqual(artifact['target'], 'local-protocol-v1')
+        self.assertEqual(artifact['lowered'], ['label', 'Welcome λ'])
         self.assertIn('impl/python/evaluator.py', artifact['translation']['files'])
-        with self.assertRaises(ValueError):
-            translator.translate('protocol-markdown@1', raw + raw)
-        with self.assertRaises(ValueError):
-            translator.translate('protocol-markdown@1', b'```json\n{}\n```\n')
 
     def test_pinned_spween_source_preserves_ast(self):
         raw = (ROOT / 'syntaxes/examples/greeting.spw').read_bytes()
@@ -66,23 +60,15 @@ class Syntax(unittest.TestCase):
         with self.assertRaises(ValueError):
             translator.translate('spween-source@1', b'this is not a scene')
 
-    def test_spween_executable_subset_is_explicit(self):
+    def test_retired_scene_generators_refuse_without_fallback(self):
         raw = (ROOT / 'syntaxes/examples/greeting.spw').read_bytes()
-        artifact = translator.translate('spween-scene-i64@1', raw)
-        bundle = artifact['lowered']
-        self.assertEqual(bundle['source'].encode(), raw)
-        self.assertEqual(bundle['profile'], 'spween-scene-i64-v1')
-        self.assertEqual(artifact['target'], 'spween-protocol-bundle-v1')
-        self.assertIn('start', bundle['protocol']['commands'])
-        self.assertEqual(bundle['provenance']['compilerSha256'], artifact['translation']['files']['scene/lower.py'])
-        full_source = raw.replace(b'Hello,', b'~ price = 1.5\nHello,')
-        self.assertEqual(translator.translate('spween-source@1', full_source)['target'], 'spween-source-v1')
-        with self.assertRaises(ValueError):
-            translator.translate('spween-scene-i64@1', full_source)
+        for syntax in ('spween-scene-i64@1', 'spween-scene-i64@2'):
+            with self.subTest(syntax=syntax), self.assertRaisesRegex(ValueError, 'unknown|reviewed'):
+                translator.translate(syntax, raw)
 
-    def test_protocol_decimal_precision(self):
-        raw = b'{"profile":"delvetalk-local-v1","initial":{"exact":1.00000000000000000000000000001},"commands":{}}'
-        artifact = translator.translate('protocol-json@1', raw)
+    def test_transport_decimal_precision(self):
+        raw = b'{"exact":1.00000000000000000000000000001}'
+        artifact = translator.load_json(raw)
         encoded = translator.canonical(artifact)
         self.assertIn(b'1.00000000000000000000000000001', encoded)
         self.assertEqual(translator.load_json(encoded), artifact)

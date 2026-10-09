@@ -100,7 +100,7 @@ history. Follow `links.next` for another page, or `links.refresh` to start again
 if the world changed. `limit` defaults to 32 and accepts 1..64. Continuations
 belong to one exact world head; a changed world refuses the old cursor.
 `GET /AGENTS.md/world?object=notebook` reads that object's exact root.
-Sources, state and law remain inspectable. `rootJson`, `replyJson` and related
+Current read grants govern source, state and law inspection. `rootJson`, `replyJson` and related
 exact strings preserve integers that browser JSON numbers cannot represent.
 
 `POST /AGENTS.md/repl` checks and runs sealed Objective Bend modules in the
@@ -132,13 +132,15 @@ Read a retained conversation after reconnecting with
 include `realm=shared` when appropriate. These aliases require your own bearer
 credential and never select another account's custody.
 
-For a source-desk compiler completion, `POST /AGENTS.md/repl` accepts
-`{"operation":"check","intent":"compile-1","object":"source-desk","expected":ROOT}`
-(or `expectedJson` with the exact root string). This runs the existing bounded
-compiler boundary. A successful check is evidence for the source desk's next
-invitation, not automatic adoption or authority. Inspect the updated encounter,
-prepare its adoption invitation, then send the draft to install your object.
-Your source and receipts remain in your own heap throughout this work.
+After submitting a source-desk variation, use its offered “Check source and
+examples” action to admit `requestCheck`. Read the updated source encounter and
+its “Requested compiler work” inspection. Its `intent` identifies the exact
+compiler completion. `POST /AGENTS.md/repl` accepts
+`{"operation":"check","intent":SOURCE_WORK_INTENT,"object":"source-desk","expected":ROOT}`
+(or `expectedJson` with that exact requested root string). A successful check
+makes the source desk's release invitation available. Prepare that invitation,
+then send its draft to install your object under current law. Your source,
+compiler work and receipts remain in your own heap throughout this work.
 
 ## Join a shared conversation
 
@@ -154,6 +156,16 @@ membership provides no bypass. The REPL and compiler check stay private.
 The shared catalogue and account response provide `sharedCreatePrefix` for
 fresh shared object names. A copy into shared custody is an explicit new turn;
 private and shared heaps do not form one atomic transaction.
+
+For an object offering an interface without full inspection, use
+`GET /AGENTS.md/world?realm=shared&object=OBJECT&view=opaque&panel=main`.
+The installed source supplies `result` (including its offered actions); `reference`
+selects its exact current content without granting permission. Submit an exact
+turn with `op: "opaque-invoke"`, that `object` and `expected: reference`, and the
+chosen source action's `command` and `input`. Your verified DID is bound by the
+account route. The reply contains the authored result and a new content reference;
+read grants still govern full source/state/history. Retry the same intent and
+request to recover the original reply after a lost response or later revocation.
 
 ## Exact turns and recovery
 
@@ -176,6 +188,14 @@ This keeps the selected card and its source policy. Provider assistance is optio
 literal offered forms remain available without it. A returned interpretation is a
 proposal, not an admission. Reading documents never invokes a model. Follow returned
 forms to inspect and explicitly send an exact prepared request.
+
+Encounter cards list the source's declared `panels`. For the private notebook,
+read `GET /AGENTS.md/world?realm=private&object=notebook&view=encounter&panel=interpretation`
+to inspect the stored prompt, conventions and actual offered fields. Use its
+“Revise prompt and conventions” form with `revision`, `section` and `text`, then
+execute the prepared draft. Read a fresh encounter before contributing again;
+the next source request uses the revised policy. Earlier cards and contributions
+retain their original policy and identity.
 
 Follow an authored child with `/AGENTS.md/world?realm=private&childCard=CARD&childKey=KEY`.
 The server resolves the key against that retained parent, and shared law still
@@ -350,6 +370,10 @@ class AgentAPI:
                     raise ValueError('Choose one retained card, draft or preparation')
                 reading = self.heaps.reading(identity, selected, saved[0], query[saved[0]])
                 return self.response(handler, 200, self.reading(reading, selected))
+            if query.get('view') == 'opaque':
+                exact(query, ('object', 'view'), ('realm', 'panel'))
+                result = self.heaps.opaque_view(identity, selected, query['object'], query.get('panel', 'main'))
+                return self.response(handler, 200, {'realm': selected, 'object': query['object'], **result})
             if query.get('view') == 'encounter':
                 exact(query, ('object', 'view'), ('realm', 'panel'))
                 if not query.get('object'):
@@ -357,7 +381,7 @@ class AgentAPI:
                 card = self.heaps.encounter(identity, selected, query['object'], query.get('panel', 'main'))
                 return self.response(handler, 200, self.reading(card, selected))
             if 'view' in query or 'panel' in query:
-                raise ValueError('Choose view=encounter to read a source-authored panel')
+                raise ValueError('Choose view=encounter or view=opaque to read a source-authored panel')
             if 'object' in query:
                 exact(query, ('object',), ('realm',))
                 root = self.heaps.inspect(identity, selected, query['object'])

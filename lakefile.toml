@@ -44,6 +44,10 @@ name = "SourceProjection"
 srcDir = "profiles"
 
 [[lean_lib]]
+name = "OpaqueInteraction"
+srcDir = "profiles"
+
+[[lean_lib]]
 name = "SourceReflection"
 srcDir = "profiles"
 
@@ -53,6 +57,10 @@ srcDir = "profiles"
 
 [[lean_lib]]
 name = "Preparation"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "OpaquePreparation"
 srcDir = "profiles"
 
 [[lean_lib]]

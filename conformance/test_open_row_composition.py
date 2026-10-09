@@ -1,6 +1,6 @@
 """Actual source chains whose equivalent row types have different presentations."""
 import json
-import importlib.util
+from native_support import load_script
 import tempfile
 from pathlib import Path
 import subprocess
@@ -40,9 +40,7 @@ class OpenRowComposition(unittest.TestCase):
             self.assertEqual(result.get('value'), {'tag': 'label', 'value': expected}, result)
 
     def test_receiving_host_admits_and_replays_composed_source(self):
-        spec = importlib.util.spec_from_file_location('open_row_world', ROOT / 'scripts/world.py')
-        world = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(world)
+        world = load_script(ROOT / 'scripts/world.py', 'open_row_world')
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / 'world.json'
             protocol = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'render': {

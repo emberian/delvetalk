@@ -59,11 +59,36 @@ def expandRequest (index : Index) (request : Json) : Except String Json := do
     expanded ← put expanded "reads" (obj entries)
   return expanded
 
+-- View refresh/publication guards expand only inside receiving custody. The
+-- query callback sees an exact root; its transport never returns that root.
+def expandView (index : Index) (request : Json) : Except String Json := do
+  match (field request "expected").toOption with
+  | none => return request
+  | some expected =>
+    if !isReference expected then throw "opaque view refused"
+    match resolve index (← str request "object") expected with
+    | .error _ => throw "opaque view refused"
+    | .ok root => put request "expected" root
+
 abbrev Admit := Json → Json → String → Except String (Json × Json)
 -- This callback belongs INSIDE handleWith: retries compare the original compact
 -- request before expansion, and receipts retain that original request.
 def wrap (admit : Admit) (index : Index) : Admit := fun world request principal => do
-  admit world (← expandRequest index request) principal
+  if (str request "op").toOption == some "opaque-transaction" then
+    -- Keep the public selection compact for source preparation. Resolve its
+    -- exact owner locator here without exporting or replacing the envelope.
+    let expected ← field request "expected"
+    if !isReference expected then throw "opaque transaction refused"
+    match resolve index (← str request "object") expected with
+    | .error _ => throw "opaque transaction refused"
+    | .ok _ => admit world request principal
+  else if (str request "op").toOption == some "opaque-invoke" then
+    let expected := (field request "expected").toOption.getD .null
+    if !isReference expected then throw "opaque invocation refused"
+    match expandRequest index request with
+    | .ok expanded => admit world expanded principal
+    | .error _ => throw "opaque invocation refused"
+  else admit world (← expandRequest index request) principal
 
 def admission (index : Index) (entry : Json) : Index := Id.run do
   if (field entry "receipt" >>= fun receipt => str receipt "kind").toOption != some "committed" then
@@ -88,6 +113,10 @@ def fromWorld (world : Json) : Index := Id.run do
   let mut result := collect {} ((field world "objects").toOption.getD (obj []))
   for entry in ((field world "receipts" >>= Json.getArr?).toOption.getD #[]) do
     result := admission result entry
+  -- Private opaque evidence is trusted custody, never participant history.
+  for (_, intents) in ((field world "opaqueCustody" >>= pairs).toOption.getD []) do
+    for (_, entry) in (pairs intents).toOption.getD [] do
+      result := admission result entry
   return result
 
 -- Only changed roots are hashed at an incremental boundary. This includes

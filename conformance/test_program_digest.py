@@ -1,7 +1,7 @@
 """Actual receiving fingerprints: canonical bytes, shared work, and factory edits."""
 import copy
 import hashlib
-import importlib.util
+from native_support import load_script
 import json
 from pathlib import Path
 import subprocess
@@ -114,10 +114,7 @@ class ProgramDigest(unittest.TestCase):
         self.assertIn('budget exhausted', refused['data'])
 
     def test_real_session_factory_configuration_can_be_reprogrammed(self):
-        spec = importlib.util.spec_from_file_location('digest_session_package',
-            ROOT / 'protocols/root-directory/package.py')
-        package = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(package)
+        package = load_script(ROOT / 'protocols/root-directory/package.py', 'digest_session_package')
         child = package.entry()
         original = package.factory(child)
         proposed = package.factory(child, welcome='welcome')

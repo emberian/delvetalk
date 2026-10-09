@@ -59,7 +59,7 @@ def _native(request, deadline):
         reply = json.loads(raw)
     except (ValueError, UnicodeError) as error:
         raise ValueError('Bend object package returned invalid framing') from error
-    if reply.get('status') not in ('compiled', 'finished', 'compared'):
+    if reply.get('status') not in ('compiled', 'finished', 'compared', 'encoded', 'decoded'):
         raise ValueError('Bend object: ' + str(reply.get('message', reply.get('failure', 'package refused'))))
     return reply
 
@@ -158,27 +158,17 @@ def _exact(value, keys, label):
         raise ValueError(label + ' requires exactly ' + ', '.join(keys))
 
 
-def lower(source):
-    if not isinstance(source, str) or not source.strip() or len(source.encode('utf-8')) > 512 * 1024:
-        raise ValueError('Bend object requires nonempty source of at most 512 KiB')
-    return lower_modules([{'name': 'Main', 'source': source}])
-
-
 def lower_data(source):
     if not isinstance(source, str) or not source.strip() or len(source.encode('utf-8')) > 512 * 1024:
         raise ValueError('Bend object requires nonempty source of at most 512 KiB')
     return lower_data_modules([{'name': 'Main', 'source': source}])
 
 
-def lower_modules(modules):
-    return _lower_modules(modules, typed=False)
-
-
 def lower_data_modules(modules):
-    return _lower_modules(modules, typed=True)
+    return _lower_modules(modules)
 
 
-def _lower_modules(modules, *, typed):
+def _lower_modules(modules, *, _capture=None):
     """Compile one ordered, explicitly supplied package; native code owns imports."""
     if not isinstance(modules, list) or not 1 <= len(modules) <= 64:
         raise ValueError('Bend object requires 1..64 supplied modules')
@@ -194,8 +184,14 @@ def _lower_modules(modules, *, typed):
     if total > 1024 * 1024:
         raise ValueError('Bend modules exceed 1 MiB aggregate source')
     modules = deepcopy(modules)
-    pins = runtime_profile.file_hashes('compiled')
-    native = hashlib.sha256(RUNNER.read_bytes()).hexdigest()
+    runtime_paths = (*runtime_profile.paths('compiled'), RUNNER.relative_to(ROOT).as_posix())
+    if _capture is None:
+        pins = runtime_profile.hash_paths(runtime_paths, root=ROOT)
+    else:
+        # Only an enclosing live capture may supply these exact current paths.
+        if any(name not in _capture for name in runtime_paths):
+            raise ValueError('enclosing source capture misses runtime dependency')
+        pins = {name: _capture[name] for name in runtime_paths}
     deadline = time.monotonic() + 30
 
     def compile_entry(name):
@@ -214,7 +210,7 @@ def _lower_modules(modules, *, typed):
         if kind not in contracts:
             names = ['List', 'Preparation'] + (['Allocation'] if kind == 'allocations' else
                                        ['Emissions'] if kind == 'emissions' else [])
-            sources = [{'name': name, 'source': (ROOT / 'world/lib/prelude' / (name + '.obend')).read_text()}
+            sources = [{'name': name, 'source': (ROOT / 'world/lib/prelude' / (name + '.obend')).read_bytes().decode('utf-8')}
                        for name in names]
             source = ('edition ObjectiveBend 1\nimport ./Preparation.obend as P\n'
                       + ('import ./Allocation.obend as A\ndef value() -> A.Allocations:\n  A.Allocations.nil()\n'
@@ -226,25 +222,28 @@ def _lower_modules(modules, *, typed):
                                        'entry': 'value', 'limits': LIMITS}, deadline)['artifact']
         return contracts[kind]
 
-    described = _native({'op': 'run-data-v1' if typed else 'run',
+    described = _native({'op': 'run-data-v1',
                          'artifact': artifact, 'arguments': [], 'limits': LIMITS}, deadline)['value']
-    if typed:
-        description_keys = set(_row_members(artifact['type']))
-        if description_keys not in ({'name', 'initial', 'methods', 'panels'},
-                                    {'name', 'initial', 'methods', 'panels', 'allocation'}):
-            raise ValueError('describe() requires name/initial/methods/panels and optional allocation')
-        values = _wire_record(described, description_keys)
-        initial = deepcopy(values['initial'])
-        if initial.get('tag') != 'record':
-            raise ValueError('describe.initial must have a closed record root')
-        # The selected native route checked every alternative, even unused ones.
-        description = {name: _data(value) for name, value in values.items() if name != 'initial'}
-        description['initial'] = {'model': initial}
-        declared = None
-    else:
-        declared = _type(artifact['type'])
-        description = _data(described)
-    _exact(description, description_keys if typed else ('name', 'initial', 'methods', 'panels'), 'describe()')
+    description_keys = set(_row_members(artifact['type']))
+    if description_keys not in ({'name', 'initial', 'methods', 'panels'},
+                                {'name', 'initial', 'methods', 'panels', 'allocation'}):
+        raise ValueError('describe() requires name/initial/methods/panels and optional allocation')
+    values = _wire_record(described, description_keys)
+    initial = deepcopy(values['initial'])
+    if initial.get('tag') != 'record':
+        raise ValueError('describe.initial must have a closed record root')
+    # The selected native route checked every alternative, even unused ones.
+    description = {name: _data(value) for name, value in values.items() if name != 'initial'}
+    encoded = _native({'op': 'encode-compact',
+        'selection': {'artifact': artifact, 'path': [{'field': 'initial'}]},
+        'value': initial}, deadline)
+    description['initial'] = {'model': {'format': 'delvetalk-compact-state',
+        'value': encoded['value'], 'schema': {
+            'package': source_packages.selector('describe'),
+            'path': [{'field': 'initial'}], 'packetSha256': encoded['schemaPacketSha256'],
+            'sourcesSha256': artifact['sourcesSha256']}}}
+    declared = None
+    _exact(description, description_keys, 'describe()')
     allocation = description.get('allocation')
     if allocation is not None:
         _exact(allocation, ('limit',), 'allocation policy')
@@ -254,24 +253,24 @@ def _lower_modules(modules, *, typed):
     if not isinstance(description['initial'], dict):
         raise ValueError('describe.initial must be a record')
     methods, panels = description['methods'], description['panels']
-    if not isinstance(methods, dict) or not 1 <= len(methods) <= 32:
-        raise ValueError('describe.methods requires 1..32 methods')
+    if not isinstance(methods, dict) or not 0 <= len(methods) <= 32:
+        raise ValueError('describe.methods requires at most32 methods')
     if not isinstance(panels, dict) or len(panels) > 8:
         raise ValueError('describe.panels requires at most eight named labels')
     forms, commands = {}, {}
-    state_type = None if typed else declared['initial']
+    state_type = None
     context1 = {'object': 'label', 'principal': 'label'}
     context2 = {**context1, 'inputOrigin': {'kind': 'label', 'object': 'label',
-                                         'command': 'label', 'immediatelyPrevious': 'boolean'}}
+                                         'command': 'label', 'program': 'label', 'immediatelyPrevious': 'boolean'}}
     for name, form in methods.items():
         if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) or name in ('describe', 'view'):
             raise ValueError('method must name a distinct Bend definition: ' + name)
         if not isinstance(form, dict):
             raise ValueError('method ' + name + ' requires a metadata record')
         codecs = {key: form[key] for key in ('inputCodec', 'resultCodec') if key in form}
-        if codecs and (not typed or any(value not in ('value', 'data') for value in codecs.values())
-                       or codecs.get('resultCodec') == 'data'):
-            raise ValueError(name + ': input codec must be value/data; result codec must be value')
+        if codecs and (any(value not in ('value', 'data', 'compact') for value in codecs.values())
+                       or codecs.get('resultCodec') in ('data', 'compact')):
+            raise ValueError(name + ': input codec must be value/data/compact; result codec must be value')
         _exact(form, ('label', 'fields', *codecs), 'method ' + name)
         form = {key: deepcopy(value) for key, value in form.items() if key not in codecs}
         if not isinstance(form['fields'], dict):
@@ -294,142 +293,127 @@ def _lower_modules(modules, *, typed):
             raw_parameters, raw_decision = _raw_signature(method['type'], 4)
             event_type = {'id': 'label', 'source': 'label', 'sourceProgram': 'label',
                           'originatingPrincipal': 'label'}
-            if typed:
-                event_type.update({'root': 'label', 'parent': 'label', 'depth': 'natural', 'rootPrincipal': 'label'})
+            event_type.update({'root': 'label', 'parent': 'label', 'depth': 'natural', 'rootPrincipal': 'label'})
             if _type(raw_parameters[3]) != event_type:
                 raise ValueError(name + ': receive requires exact authenticated EventFacts argument')
         decision_fields = _row_members(raw_decision)
         effects = 'emissions' in decision_fields
-        if receiving and effects and not typed:
-            raise ValueError(name + ': receive cannot emit new messages in this profile')
         allocating = 'allocations' in decision_fields
-        if allocating and (not typed or allocation is None):
+        if allocating and allocation is None:
             raise ValueError(name + ': typed allocations require a declared allocation policy')
         _exact(decision_fields, ('accepted', 'reason', 'state', 'result')
                + (('emissions',) if effects else ()) + (('allocations',) if allocating else ()), name + ' decision')
         if allocating:
-            compare(method, ['codomain'] * argument_count + [{'field': 'allocations'}],
-                    contract('allocations'), [], name + ' allocations')
-        if effects and typed:
+            reply = _native({'op': 'allocation-data-types-v1',
+                'left': {'artifact': method, 'path': ['codomain'] * argument_count + [{'field': 'allocations'}]},
+                'right': {'artifact': contract('value'), 'path': []}, 'work': '100000'}, deadline)
+            if reply.get('equal') is not True:
+                raise ValueError(name + ' allocations: incompatible serializable state schema')
+        if effects:
             compare(method, ['codomain'] * argument_count + [{'field': 'emissions'}],
                     contract('emissions'), [], name + ' emissions')
-        elif effects:
-            slots = _type(decision_fields['emissions'])
-            _exact(slots, ('a', 'b', 'c', 'd'), name + ' emissions')
-            for slot in slots.values():
-                _exact(slot, ('enabled', 'to', 'command', 'recipientProgram', 'payload'), name + ' emission')
-                if (slot['enabled'] != 'boolean' or any(slot[key] != 'label'
-                        for key in ('to', 'command', 'recipientProgram')) or not isinstance(slot['payload'], dict)):
-                    raise ValueError(name + ': emissions require Bool, String addresses and plain record payload')
-        transition_profile = 'delvetalk-source-transition-v1'
-        if typed:
-            compare(artifact, [{'field': 'initial'}], method, ['domain'], name + ' state input')
-            compare(artifact, [{'field': 'initial'}], method,
-                    ['codomain'] * argument_count + [{'field': 'state'}], name + ' state output')
-            if codecs.get('inputCodec') == 'value':
-                compare(method, ['codomain', 'domain'], contract('value'), [], name + ' input codec')
-            elif codecs.get('inputCodec') == 'data':
-                compare(method, ['codomain', 'domain'], method, ['codomain', 'domain'], name + ' typed input codec')
-            elif _type(raw_parameters[1]) != expected_input:
-                raise ValueError(name + ': input signature differs from describe()')
-            if _type(raw_parameters[2]) != context2:
-                raise ValueError(name + ': context signature differs from describe()')
-            if 'resultCodec' in codecs:
-                compare(method, ['codomain'] * argument_count + [{'field': 'result'}],
-                        contract('value'), [], name + ' result codec')
-            decision = {key: _type(value) for key, value in decision_fields.items()
-                        if key not in ('state', 'emissions', 'allocations') and not (key == 'result' and 'resultCodec' in codecs)}
-            if decision['accepted'] != 'boolean' or decision['reason'] != 'label':
-                raise ValueError(name + ': decision requires accepted Bool and reason String')
-            transition_profile = 'delvetalk-source-transition'
-        else:
-            parameters, decision = _signature(method['type'], argument_count)
-            if parameters[:2] != [state_type, expected_input] or parameters[2] not in (context1, context2):
-                raise ValueError(name + ': state/input/context signature differs from describe()')
-            if (not isinstance(decision, dict)
-                    or decision['accepted'] != 'boolean' or decision['reason'] != 'label' or decision['state'] != state_type):
-                raise ValueError(name + ': decision must preserve the declared state type')
-            if parameters[2] == context2:
-                transition_profile = 'delvetalk-source-transition-v2'
-            if effects or receiving:
-                if parameters[2] != context2:
-                    raise ValueError(name + ': effects and receive require Context2')
-                transition_profile = 'delvetalk-source-receive-v1' if receiving else 'delvetalk-source-effects-v1'
+        compare(artifact, [{'field': 'initial'}], method, ['domain'], name + ' state input')
+        compare(artifact, [{'field': 'initial'}], method,
+                ['codomain'] * argument_count + [{'field': 'state'}], name + ' state output')
+        if codecs.get('inputCodec') == 'value':
+            compare(method, ['codomain', 'domain'], contract('value'), [], name + ' input codec')
+        elif codecs.get('inputCodec') in ('data', 'compact'):
+            compare(method, ['codomain', 'domain'], method, ['codomain', 'domain'], name + ' typed input codec')
+        elif _type(raw_parameters[1]) != expected_input:
+            raise ValueError(name + ': input signature differs from describe()')
+        if _type(raw_parameters[2]) != context2:
+            raise ValueError(name + ': context signature differs from describe()')
+        if 'resultCodec' in codecs:
+            compare(method, ['codomain'] * argument_count + [{'field': 'result'}],
+                    contract('value'), [], name + ' result codec')
+        decision = {key: _type(value) for key, value in decision_fields.items()
+                    if key not in ('state', 'emissions', 'allocations') and not (key == 'result' and 'resultCodec' in codecs)}
+        if decision['accepted'] != 'boolean' or decision['reason'] != 'label':
+            raise ValueError(name + ': decision requires accepted Bool and reason String')
+        transition_profile = 'delvetalk-source-transition'
         forms[name] = form
         commands[name] = {'transition': {'profile': transition_profile,
             'package': source_packages.selector(name), **codecs,
-            **({'messages': {'emit': effects, 'receive': receiving}} if typed and (effects or receiving) else {})}}
+            **({'messages': {'emit': effects, 'receive': receiving}} if effects or receiving else {})}}
     view_artifact = compile_entry('view')
-    if typed:
-        raw_parameters, raw_view = _raw_signature(view_artifact['type'], 2)
-        compare(artifact, [{'field': 'initial'}], view_artifact, ['domain'], 'view state input')
-        if _type(raw_parameters[1]) != 'label':
-            raise ValueError('view requires panel String')
-        members = _row_members(raw_view)
-        if not {'title', 'prose', 'actions', 'children'} <= set(members) or set(members) - {'title', 'prose', 'actions', 'children', 'invitations', 'document', 'interpretation'}:
-            raise ValueError('typed view requires title/prose/actions/children and optional invitations/document/interpretation')
-        if 'interpretation' in members and _type(members['interpretation']) not in (
-                {'request': 'label', 'prepare': 'label'},
-                {'request': 'label', 'prepare': 'label', 'contributionCodec': 'label'}):
-            raise ValueError('view interpretation requires request/prepare String exports and optional contributionCodec')
-        if 'document' in members:
-            document_path = ['codomain', 'codomain', {'field': 'document'}]
-            compare(view_artifact, document_path, view_artifact, document_path, 'view document')
-        if 'invitations' in members:
-            invitations = _row_members(members['invitations'])
-            if len(invitations) > 16:
-                raise ValueError('view invitations require at most 16 entries')
-            requests_contract = contract('requests')
-            for name, raw_invitation in invitations.items():
-                invitation = _row_members(raw_invitation)
-                _exact(invitation, ('visible', 'text', 'prepare', 'fields', 'observations')
-                       + (('contributionCodec',) if 'contributionCodec' in invitation else ()), 'view invitation')
-                if 'contributionCodec' in invitation and _type(invitation['contributionCodec']) != 'label':
-                    raise ValueError('invitation contributionCodec requires String')
-                if (_type(invitation['visible']) != 'boolean' or _type(invitation['text']) != 'label'
-                        or _type(invitation['prepare']) != 'label' or not isinstance(_type(invitation['fields']), dict)):
-                    raise ValueError('view invitation requires visible Bool, text/prepare String and field metadata')
-                compare(view_artifact, ['codomain', 'codomain', {'field': 'invitations'},
-                        {'field': name}, {'field': 'observations'}], requests_contract, [], 'invitation observations')
-        child_contract = _native({'op': 'compile', 'modules': [{'name': 'ChildrenContract', 'source': CHILDREN_SOURCE}],
-                                 'entry': 'children', 'limits': LIMITS}, deadline)['artifact']
-        compare(view_artifact, ['codomain', 'codomain', {'field': 'children'}], child_contract, [], 'view children')
-        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'invitations', 'actions', 'document', 'interpretation')}
-        try:
-            view['actions'] = _type(members['actions'])
-        except ValueError:
-            # Native schema traversal checks every alternative for serializability.
-            # Structural list/descriptor framing is checked on the actual output;
-            # Python does not resolve recursive source aliases or interpret them.
-            actions_path = ['codomain', 'codomain', {'field': 'actions'}]
-            compare(view_artifact, actions_path, view_artifact, actions_path, 'view actions')
-            view['actions'] = {}
-        parameters = [state_type, 'label']
-    else:
-        parameters, view = _signature(view_artifact['type'], 2)
+    raw_parameters, raw_view = _raw_signature(view_artifact['type'], 2)
+    compare(artifact, [{'field': 'initial'}], view_artifact, ['domain'], 'view state input')
+    if _type(raw_parameters[1]) != 'label':
+        raise ValueError('view requires panel String')
+    members = _row_members(raw_view)
+    if not {'title', 'prose', 'actions', 'children'} <= set(members):
+        raise ValueError('typed view requires title/prose/actions/children')
+    # Source can extend its presentation without a host field whitelist. The
+    # native bounded schema traversal rejects functions/activities/owned values;
+    # renderers consume known data components and never execute extensions.
+    output_path = ['codomain', 'codomain']
+    compare(view_artifact, output_path, view_artifact, output_path, 'view data')
+    if 'interpretation' in members and _type(members['interpretation']) not in (
+            {'request': 'label', 'prepare': 'label'},
+            {'request': 'label', 'prepare': 'label', 'contributionCodec': 'label'}):
+        raise ValueError('view interpretation requires request/prepare String exports and optional contributionCodec')
+    if 'document' in members:
+        document_path = ['codomain', 'codomain', {'field': 'document'}]
+        compare(view_artifact, document_path, view_artifact, document_path, 'view document')
+    if 'invitations' in members:
+        invitations = _row_members(members['invitations'])
+        if len(invitations) > 16:
+            raise ValueError('view invitations require at most 16 entries')
+        requests_contract = contract('requests')
+        for name, raw_invitation in invitations.items():
+            invitation = _row_members(raw_invitation)
+            _exact(invitation, ('visible', 'text', 'prepare', 'fields', 'observations')
+                   + (('contributionCodec',) if 'contributionCodec' in invitation else ())
+                   + (('definitions',) if 'definitions' in invitation else ()), 'view invitation')
+            if 'contributionCodec' in invitation and _type(invitation['contributionCodec']) != 'label':
+                raise ValueError('invitation contributionCodec requires String')
+            if (_type(invitation['visible']) != 'boolean' or _type(invitation['text']) != 'label'
+                    or _type(invitation['prepare']) != 'label' or not isinstance(_type(invitation['fields']), dict)):
+                raise ValueError('view invitation requires visible Bool, text/prepare String and field metadata')
+            compare(view_artifact, ['codomain', 'codomain', {'field': 'invitations'},
+                    {'field': name}, {'field': 'observations'}], requests_contract, [], 'invitation observations')
+            if 'definitions' in invitation:
+                path = ['codomain', 'codomain', {'field': 'invitations'},
+                        {'field': name}, {'field': 'definitions'}]
+                compare(view_artifact, path, view_artifact, path, 'invitation definitions')
+    child_contract = _native({'op': 'compile', 'modules': [{'name': 'ChildrenContract', 'source': CHILDREN_SOURCE}],
+                             'entry': 'children', 'limits': LIMITS}, deadline)['artifact']
+    compare(view_artifact, ['codomain', 'codomain', {'field': 'children'}], child_contract, [], 'view children')
+    view = {key: _type(members[key]) for key in ('title', 'prose')}
+    try:
+        view['actions'] = _type(members['actions'])
+    except ValueError:
+        # Native schema traversal checks every alternative for serializability.
+        # Structural list/descriptor framing is checked on the actual output;
+        # Python does not resolve recursive source aliases or interpret them.
+        actions_path = ['codomain', 'codomain', {'field': 'actions'}]
+        compare(view_artifact, actions_path, view_artifact, actions_path, 'view actions')
+        view['actions'] = {}
+    parameters = [state_type, 'label']
     if parameters != [state_type, 'label'] or not isinstance(view, dict) or set(view) != {'title', 'prose', 'actions'}:
         raise ValueError('view must receive the declared state and panel String and return title/prose/actions')
     if view['title'] != 'label' or view['prose'] != 'label' or not isinstance(view['actions'], dict) or len(view['actions']) > 64:
         raise ValueError('view requires text title/prose and at most 64 actions')
     for action in view['actions'].values():
-        if (not isinstance(action, dict) or set(action) != {'visible', 'text', 'command', 'input'}
+        if (not isinstance(action, dict) or set(action) not in ({'visible', 'text', 'command', 'input'}, {'visible', 'text', 'command', 'input', 'fields'})
                 or action['visible'] != 'boolean' or action['text'] != 'label' or action['command'] != 'label'
-                or not isinstance(action['input'], dict)):
+                or not isinstance(action['input'], dict) or ('fields' in action and not isinstance(action['fields'], dict))):
             raise ValueError('view action requires visible Bool, text/command String and record input')
     for name, label in panels.items():
         affordances._string(name, 'panel id', 128, nonempty=True)
         affordances._string(label, 'panel label', 128, nonempty=True)
-    if runtime_profile.file_hashes('compiled') != pins or hashlib.sha256(RUNNER.read_bytes()).hexdigest() != native:
+    after_paths = (*runtime_profile.paths('compiled'), RUNNER.relative_to(ROOT).as_posix())
+    if runtime_profile.hash_paths(after_paths, root=ROOT) != pins:
         raise ValueError('Bend object runtime changed during translation')
     protocol = {'profile': 'delvetalk-local-v1', 'runtimeProfile': 'compiled', 'name': description['name'],
             'sourcePackages': {source_packages.NAME: source_packages.table(modules)},
             'initial': description['initial'], 'commands': commands, 'affordances': forms,
             'viewPanels': [{'id': name, 'label': label} for name, label in sorted(panels.items())],
-            'viewProgram': {'profile': 'delvetalk-obend-data-menu-v1' if typed else 'delvetalk-obend-menu-v1',
+            'viewProgram': {'profile': 'delvetalk-obend-data-menu-v1',
                             'package': source_packages.selector('view')}}
     if allocation is not None:
         protocol['allocation'] = deepcopy(allocation)
-    if typed and 'invitations' in members:
+    if 'invitations' in members:
         protocol['preparation'] = {'profile': 'delvetalk-source-preparation-v1',
             'sourcePackage': source_packages.NAME}
     return protocol

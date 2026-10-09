@@ -1,34 +1,23 @@
 edition ObjectiveBend 1
 import ./Kernel.obend as K
 import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Emissions.obend as E
 record State:
   variables: K.Variables
   members: K.Members
   repairs: Nat
 record Payload:
   chord: String
-record Emission:
-  enabled: Bool
-  to: String
-  command: String
-  recipientProgram: String
-  payload: Payload
-record Slots:
-  a: Emission
-  b: Emission
-  c: Emission
-  d: Emission
 record Step:
   accepted: Bool
   reason: String
   state: State
-  emissions: Slots
+  emissions: E.Emissions
 def initial() -> State:
   {variables: K.Variables.nil(), members: K.Members.nil(), repairs: 0n}
-def silent() -> Emission:
-  {enabled: false, to: "unused", command: "hear", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", payload: {chord: ""}}
 def begin(state: State) -> Step:
-  {accepted: true, reason: "", state: state, emissions: {a: silent(), b: silent(), c: silent(), d: silent()}}
+  {accepted: true, reason: "", state: state, emissions: E.empty()}
 def get_var(state: State, name: String) -> K.Value:
   K.get(state.variables, name)
 def set_var(state: State, name: String, value: K.Value) -> State:
@@ -37,8 +26,8 @@ def has(state: State, category: String, key: String) -> Bool:
   K.has(state.members, category, key)
 def reject(step: Step, reason: String) -> Step:
   {accepted: false, reason: reason, state: step.state, emissions: step.emissions}
-def emit(step: Step, message: Emission) -> Step:
-  if step.emissions.a.enabled == false then {accepted: step.accepted, reason: step.reason, state: step.state, emissions: {a: message, b: step.emissions.b, c: step.emissions.c, d: step.emissions.d}} else if step.emissions.b.enabled == false then {accepted: step.accepted, reason: step.reason, state: step.state, emissions: {a: step.emissions.a, b: message, c: step.emissions.c, d: step.emissions.d}} else if step.emissions.c.enabled == false then {accepted: step.accepted, reason: step.reason, state: step.state, emissions: {a: step.emissions.a, b: step.emissions.b, c: message, d: step.emissions.d}} else if step.emissions.d.enabled == false then {accepted: step.accepted, reason: step.reason, state: step.state, emissions: {a: step.emissions.a, b: step.emissions.b, c: step.emissions.c, d: message}} else reject(step, "at most four addressed messages per turn")
+def emit(step: Step, message: E.Emission) -> Step:
+  if E.within(step.emissions, 3n) then extend(step, {emissions: E.append(step.emissions, E.one(message))}) else reject(step, "at most four addressed messages per turn")
 def text(value: K.Value) -> String:
   match value:
     case null(_): ""
@@ -47,7 +36,7 @@ def text(value: K.Value) -> String:
     case string(c): c.value
 def sendEnd(step: Step, to: String, program: String, chord: String, tail: K.Values) -> Step:
   match tail:
-    case nil(_): if to == "" || program == "" || chord == "" then reject(step, "send arguments must be nonempty strings") else emit(step, {enabled: true, to: to, command: "hear", recipientProgram: program, payload: {chord: chord}})
+    case nil(_): if to == "" || program == "" || chord == "" then reject(step, "send arguments must be nonempty strings") else emit(step, {to: to, command: "hear", recipientProgram: program, payload: P.oneField("chord", P.Value.text({value: chord}))})
     case cons(_): reject(step, "send takes exactly three arguments")
 def sendThird(step: Step, to: String, program: String, tail: K.Values) -> Step:
   match tail:
@@ -67,5 +56,19 @@ def local(step: Step, name: String, args: K.Values) -> Step:
   match args:
     case cons(_): reject(step, "local handler takes no arguments")
     case nil(_): if name == "repair" then withState(step, extend(set_var(step.state, "work", K.Value.integer({value: 9223372036854775818n})), {members: K.grant(step.state.members, "inventory", "moth"), repairs: step.state.repairs + 1n})) else if name == "release" then withState(step, extend(step.state, {members: K.remove(step.state.members, "inventory", "moth")})) else if name == "reject" then reject(step, "handler declined") else reject(step, "unknown handler command")
+def announceText(step: Step, value: K.Value) -> Step:
+  match value:
+    case null(_): reject(step, "announce requires text")
+    case boolean(_): reject(step, "announce requires text")
+    case integer(_): reject(step, "announce requires text")
+    case string(c): if c.value == "" || textLength(c.value) > 512n then reject(step, "announce requires bounded nonempty text") else withState(step, set_var(step.state, "announcement", value))
+def announceValue(step: Step, value: K.Value, tail: K.Values) -> Step:
+  match tail:
+    case cons(_): reject(step, "announce takes one text")
+    case nil(_): announceText(step, value)
+def announce(step: Step, args: K.Values) -> Step:
+  match args:
+    case nil(_): reject(step, "announce requires text")
+    case cons(c): announceValue(step, c.head, c.tail)
 def call(step: Step, name: String, args: K.Values, context: Abi.Context) -> Step:
-  if step.accepted == false then step else if name == "send" then send(step, args) else local(step, name, args)
+  if step.accepted == false then step else if name == "send" then send(step, args) else if name == "announce" then announce(step, args) else local(step, name, args)

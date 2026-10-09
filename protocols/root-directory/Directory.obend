@@ -111,19 +111,15 @@ def document(state: State) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat(state.config.title, textConcat("\n\n", textConcat(state.config.introduction, "\n\n")))), tail: Document.Documents.cons({head: Document.Document.sequence({items: doorItems(state.config.doors)}), tail: Document.Documents.cons({head: Document.text(textConcat("HOW TO CONTINUE\n", textConcat(state.config.closing, "\n"))), tail: Document.Documents.cons({head: if any(state.config.doors) then Document.Document.offer({label: "Choose a door and keep your own words", capture: capture(state)}) else Document.text("Ask the facilitator which doors can be connected here."), tail: Document.Documents.cons({head: Document.text("\n"), tail: Document.Documents.nil()})})})})})})
 def reading(state: State) -> String:
   Document.plain(document(state))
-record TextField:
-  type: String
-  minLength: Nat
-  maxLength: Nat
 record Methods:
-  setDoor: {label: String, fields: {key: TextField, label: TextField, object: TextField, panel: TextField, description: TextField, example: TextField, available: {type: String}, show: {type: String}}}
-  choose: {label: String, fields: {door: TextField, original: TextField}}
+  setDoor: {label: String, fields: {key: Abi.StringField, label: Abi.StringField, object: Abi.StringField, panel: Abi.StringField, description: Abi.StringField, example: Abi.StringField, available: {type: String}, show: {type: String}}}
+  choose: {label: String, fields: {door: Abi.StringField, original: Abi.StringField}}
 record Description:
   name: String
   initial: State
   methods: Methods
   panels: {}
-def text(max: Nat) -> TextField:
+def text(max: Nat) -> Abi.StringField:
   {type: "string", minLength: 0n, maxLength: max}
 def describe(state: State) -> Description:
   {name: state.config.title, initial: state, methods: {setDoor: {label: "Configure a directory door", fields: {key: text(32n), label: text(96n), object: text(128n), panel: text(64n), description: text(512n), example: text(256n), available: {type: "bool"}, show: {type: "bool"}}}, choose: {label: "Choose an open door", fields: {door: text(32n), original: text(512n)}}}, panels: {}}
@@ -131,7 +127,7 @@ record Invitation:
   visible: Bool
   text: String
   prepare: String
-  fields: {door: TextField, original: TextField}
+  fields: {door: Abi.StringField, original: Abi.StringField}
   observations: P.Requests
 record View:
   title: String

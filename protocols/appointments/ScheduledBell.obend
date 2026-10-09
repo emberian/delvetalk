@@ -60,11 +60,15 @@ def retired(state: State, input: Appointments.Result, context: Abi.Context) -> D
   let ok = state.phase == "queued" && context.principal == state.owner && fromClock(context, state.clock, "status") && input.status == "absent" && input.id == context.object && input.generation == state.generation
   {accepted: ok, reason: if ok then "" else "Retirement requires the clock's actual absence result. Cancel work still queued there.", state: extend(state, {phase: "retired"}), result: {status: "retired", generation: state.generation}}
 def wake(state: State, value: P.Value, context: Abi.Context, event: E.CausalEvent) -> Sound:
-  let input = Appointments.readPayload(value)
-  let obsolete = event.source == state.clock && input.owner == state.owner && input.id == context.object && input.generation <= state.generation && (input.generation < state.generation || state.phase != "queued")
-  let ok = state.phase == "queued" && event.source == state.clock && input.owner == state.owner && input.id == context.object && input.generation == state.generation && input.due == state.due && input.deadline == state.deadline && input.topic == state.chord && input.tick >= state.due && input.tick <= state.deadline
-  let played = Bell.sound(state.bell, {to: state.bell.recipient, recipientProgram: state.recipientProgram, chord: state.chord, voices: 1n}, context)
-  {accepted: obsolete || (ok && played.accepted), reason: if obsolete then "" else if ok then played.reason else "This sound requires the retained appointment from the named clock.", state: if obsolete then state else extend(state, {bell: played.state, phase: "rang", lastEvent: event.id, lastRoot: event.root, lastRootPrincipal: event.rootPrincipal}), result: {status: if obsolete then "declined" else "rang", generation: input.generation}, emissions: if ok then played.emissions else E.empty()}
+  match Appointments.readPayload(value):
+    case missing(failure): {accepted: false, reason: textConcat("Missing appointment payload field: ", failure.field), state: state, result: {status: "declined", generation: state.generation}, emissions: E.empty()}
+    case wrongKind(failure): {accepted: false, reason: textConcat("Wrong appointment payload field type: ", failure.field), state: state, result: {status: "declined", generation: state.generation}, emissions: E.empty()}
+    case found(parsed):
+      let input = parsed.value
+      let obsolete = event.source == state.clock && input.owner == state.owner && input.id == context.object && input.generation <= state.generation && (input.generation < state.generation || state.phase != "queued")
+      let ok = state.phase == "queued" && event.source == state.clock && input.owner == state.owner && input.id == context.object && input.generation == state.generation && input.due == state.due && input.deadline == state.deadline && input.topic == state.chord && input.tick >= state.due && input.tick <= state.deadline
+      let played = Bell.sound(state.bell, {to: state.bell.recipient, recipientProgram: state.recipientProgram, chord: state.chord, voices: 1n}, context)
+      {accepted: obsolete || (ok && played.accepted), reason: if obsolete then "" else if ok then played.reason else "This sound requires the retained appointment from the named clock.", state: if obsolete then state else extend(state, {bell: played.state, phase: "rang", lastEvent: event.id, lastRoot: event.root, lastRootPrincipal: event.rootPrincipal}), result: {status: if obsolete then "declined" else "rang", generation: input.generation}, emissions: if ok then played.emissions else E.empty()}
 def text(value: String) -> P.Value:
   P.Value.text({value: value})
 def nat(value: Nat) -> P.Value:
@@ -72,15 +76,36 @@ def nat(value: Nat) -> P.Value:
 def field(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
   P.Fields.cons({head: {name: name, value: value}, tail: tail})
 def prepareSchedule(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let due = P.natural(P.get(input, "due"))
-  let deadline = P.natural(P.get(input, "deadline"))
-  let chord = P.text(P.get(input, "chord"))
-  let clock = P.observation(observations, state.clock)
-  let recipient = P.observation(observations, state.bell.recipient)
-  let self = P.observation(observations, context.object)
-  let armInput = P.Value.record({fields: field("due", nat(due), field("deadline", nat(deadline), field("chord", text(chord), field("recipientProgram", text(recipient.program), P.Fields.nil()))))})
-  let quoteInput = P.Value.record({fields: field("id", text(context.object), field("due", nat(due), field("deadline", nat(deadline), field("to", text(context.object), field("recipientProgram", text(self.program), field("topic", text(chord), P.Fields.nil()))))))})
-  if context.principal != state.owner || state.phase == "queued" then P.Preparation.refused({message: "Only the bell's owner can arrange its next appointment after the previous one finishes or is cancelled."}) else if chord == "" then P.Preparation.question({message: "What chord should this bell play?", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})}) else if clock.object != state.clock || recipient.object != state.bell.recipient || self.object != context.object then P.Preparation.refused({message: "Capture this bell, its clock and its actual listener before booking."}) else P.Preparation.ready({summary: "Book the shared clock's current generation for this bell and retain its actual result.", reads: P.Reads.cons({head: P.Read.existing({object: state.clock}), tail: P.Reads.cons({head: P.Read.existing({object: state.bell.recipient}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "arm", input: armInput}), tail: P.Effects.cons({head: P.Effect.invoke({object: state.clock, command: "quote", input: quoteInput}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: state.clock, command: "request", result: 1n}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "scheduled", result: 2n}), tail: P.Effects.nil()})})})})})
+  match P.naturalField(input, "due"):
+    case missing(_): P.Preparation.question({message: "Supply due for this appointment.", needs: P.Names.cons({head: "due", tail: P.Names.nil()})})
+    case wrongKind(_): P.Preparation.refused({message: "Appointment due has the wrong type."})
+    case found(dueFound):
+      let due = dueFound.value
+      match P.naturalField(input, "deadline"):
+        case missing(_): P.Preparation.question({message: "Supply deadline for this appointment.", needs: P.Names.cons({head: "deadline", tail: P.Names.nil()})})
+        case wrongKind(_): P.Preparation.refused({message: "Appointment deadline has the wrong type."})
+        case found(deadlineFound):
+          let deadline = deadlineFound.value
+          match P.textField(input, "chord"):
+            case missing(_): P.Preparation.question({message: "Supply chord for this appointment.", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})})
+            case wrongKind(_): P.Preparation.refused({message: "Appointment chord has the wrong type."})
+            case found(chordFound):
+              let chord = chordFound.value
+              match P.lookupObservation(observations, state.clock):
+                case missing(_): P.Preparation.refused({message: "Capture this bell, its clock and its actual listener before booking."})
+                case found(clockFound):
+                  let clock = clockFound.value
+                  match P.lookupObservation(observations, state.bell.recipient):
+                    case missing(_): P.Preparation.refused({message: "Capture this bell, its clock and its actual listener before booking."})
+                    case found(recipientFound):
+                      let recipient = recipientFound.value
+                      match P.lookupObservation(observations, context.object):
+                        case missing(_): P.Preparation.refused({message: "Capture this bell, its clock and its actual listener before booking."})
+                        case found(selfFound):
+                          let self = selfFound.value
+                          let armInput = P.Value.record({fields: field("due", nat(due), field("deadline", nat(deadline), field("chord", text(chord), field("recipientProgram", text(recipient.program), P.Fields.nil()))))})
+                          let quoteInput = P.Value.record({fields: field("id", text(context.object), field("due", nat(due), field("deadline", nat(deadline), field("to", text(context.object), field("recipientProgram", text(self.program), field("topic", text(chord), P.Fields.nil()))))))})
+                          if context.principal != state.owner || state.phase == "queued" then P.Preparation.refused({message: "Only the bell's owner can arrange its next appointment after the previous one finishes or is cancelled."}) else if chord == "" then P.Preparation.question({message: "What chord should this bell play?", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})}) else if clock.object != state.clock || recipient.object != state.bell.recipient || self.object != context.object then P.Preparation.refused({message: "Capture this bell, its clock and its actual listener before booking."}) else P.Preparation.ready({summary: "Book the shared clock's current generation for this bell and retain its actual result.", reads: P.Reads.cons({head: P.Read.existing({object: state.clock}), tail: P.Reads.cons({head: P.Read.existing({object: state.bell.recipient}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "arm", input: armInput}), tail: P.Effects.cons({head: P.Effect.invoke({object: state.clock, command: "quote", input: quoteInput}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: state.clock, command: "request", result: 1n}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "scheduled", result: 2n}), tail: P.Effects.nil()})})})})})
 def prepareCancel(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
   if context.principal != state.owner || state.phase != "queued" then P.Preparation.refused({message: "Only the owner can cancel this bell's queued appointment."}) else P.Preparation.ready({summary: "Cancel the queued generation at its actual clock.", reads: P.Reads.cons({head: P.Read.existing({object: state.clock}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.clock, command: "cancel", input: P.Value.record({fields: field("id", text(context.object), field("generation", nat(state.generation), P.Fields.nil()))})}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "cancelled", result: 0n}), tail: P.Effects.nil()})})})
 def prepareRetire(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:

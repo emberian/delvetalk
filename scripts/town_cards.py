@@ -2,7 +2,6 @@
 """Retained typed cards for posts-only worlds. No publishing or admission."""
 import copy
 from contextlib import contextmanager, closing
-import importlib.util
 from decimal import Decimal
 import hashlib
 import json
@@ -15,13 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affordances
 import world
 import references as object_references
-import composite_offers
-import source_offers
-
-_projection_spec = importlib.util.spec_from_file_location('town_projection',
-    Path(__file__).resolve().parents[1] / 'scene/projection.py')
-projection = importlib.util.module_from_spec(_projection_spec)
-_projection_spec.loader.exec_module(projection)
+import opaque_offers
+import public_board
 
 FORMAT = 'delvetalk-town-cardbook-v1'
 FEED = 'town.delve.feed.post'
@@ -148,13 +142,16 @@ def field_words(action):
 def spell(alias, action, fields, *, selector=None):
     """Render a complete literal reply; its caller supplies the captured action."""
     alias_name(alias)
-    values = affordances.validate_fields(action, fields)
+    values = affordances.physical_values(fields)
     selector = action['id'] if selector is None else selector
     if not WORD.fullmatch(selector):
         raise ValueError('invalid offered word')
     lines = ['delvetalk ' + alias + ' ' + selector]
-    for token, name in field_words(action).items():
-        value = values[name]
+    words = {name: token for token, name in field_words(action).items()}
+    for name, value in values.items():
+        token = words.get(name, name)
+        if not WORD.fullmatch(token):
+            raise ValueError('field requires a literal word token')
         value = ('true' if value else 'false') if type(value) is bool else str(value)
         if '\n' in value or value.startswith('<<'):
             delimiter, serial = 'END', 0
@@ -169,10 +166,8 @@ def spell(alias, action, fields, *, selector=None):
 
 def _spell_fields(action, supplied):
     names = field_words(action)
-    if not action.get('preparation') and set(supplied) != set(names):
-        raise ValueError('supply exactly the offered field words')
     schema = {field['name']: field for field in action['fields']}
-    values = {key: value for key, value in supplied.items() if key not in names} if action.get('preparation') else {}
+    values = {key: value for key, value in supplied.items() if key not in names}
     for token, name in names.items():
         if token not in supplied:
             continue
@@ -191,7 +186,7 @@ def _spell_fields(action, supplied):
         values[name] = value
     if action.get('preparation'):
         return values
-    return affordances.validate_fields(action, values)
+    return affordances.physical_values(values)
 
 
 def _field(field, token=None):
@@ -229,90 +224,13 @@ def _example(action):
     return values
 
 
-def _panels(view, expected_runtime):
-    if projection.inspection_only(view):
-        return []  # Do not execute more views while recovering a failed menu.
-    declared = view['root']['protocol'].get('viewPanels', [])
-    if not isinstance(declared, list) or len(declared) > 8:
-        raise ValueError('viewPanels must be an array of at most eight panels')
-    seen, panels = set(), []
-    for entry in declared:
-        if (not isinstance(entry, dict) or set(entry) != {'id', 'label'}
-                or any(not isinstance(entry[k], str) or not entry[k] or len(entry[k].encode('utf-8')) > 128 for k in entry)
-                or entry['id'] in seen):
-            raise ValueError('invalid or duplicate declared view panel')
-        seen.add(entry['id'])
-        if view['mode'] != 'projection':
-            raise ValueError('declared panels require an installed pure view program')
-        spec = importlib.util.spec_from_file_location('town_room', Path(__file__).resolve().parents[1] / 'scene/room.py')
-        room = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(room)
-        panel = room.inspect_object(view['root'], view['object'], panel=entry['id'],
-                                    expected_runtime=expected_runtime)
-        if (panel.get('mode') != 'projection' or panel.get('object') != view['object']
-                or canonical(panel.get('root')) != canonical(view['root'])):
-            raise ValueError('declared panel did not produce a pure view of the captured root')
-        panels.append({**entry, 'view': panel})
-    return panels
-
-
-def render_card(alias, card, view, panels=(), display_names=None):
-    lines = ['[[delvetalk-card ' + alias + ']]', canonical(card['title'])]
-    def prose(text):
-        def display(match):
-            return (display_names or {}).get(match[0], match[0])
-        shown = re.sub(r'did:plc:[a-z2-7]{24}(?![a-z2-7])', display, text)
-        return '\n'.join('| ' + line for line in shown.split('\n'))
-    if card['prose']:
-        lines.append(prose(card['prose']))
-    catalogue = projection.children(view)
-    if catalogue:
-        lines.append('Look around (read only):')
-        lines.extend(str(index) + '. ' + canonical(child['label']) for index, child in enumerate(catalogue, 1))
-        lines.append('Ask to see a named exhibit or its number; we will bring back its current card.')
-    for panel in panels:
-        data = panel['view']['data']
-        if not data['prose'].strip():
-            continue
-        lines.append(canonical(panel['label']) + ':')
-        lines.append(prose(data['prose']))
-    if view['mode'] == 'raw':
-        lines.append('Object ' + canonical(card['object']) + ' · version ' + str(card['version']))
-        lines.append('Choose an offered action below, or ask for a source-authored view of this object.')
-    executable = any(action.get('available') and not action.get('inspectOnly') for action in card['actions'])
-    if executable:
-        lines.append('Reply here: copy a spell and change its values, or describe your intention for us to interpret.')
-    for action in card['actions']:
-        word = action_word(action, card['actions'])
-        lines.append(word + ': ' + canonical(action['label']))
-        if not action.get('available') or action.get('inspectOnly'):
-            lines.append('Look only; no spell offered.')
-            if action.get('reason'):
-                lines.append(action['reason'])
-            continue
-        tokens = {name: token for token, name in field_words(action).items()}
-        lines.extend('  ' + _field(f, tokens[f['name']]) for f in action['fields'])
-        if action.get('children'):
-            chosen = [tokens[child['field']] for child in action['children'] if 'value' not in child]
-            fixed = [canonical(child['value']) for child in action['children'] if 'value' in child]
-            if chosen:
-                lines.append('Choose an unused name.' if chosen == ['name'] else
-                             'Choose unused names for ' + ', '.join(chosen) + '.')
-            if fixed:
-                lines.append('This action requires unused names: ' + ', '.join(fixed) + '.')
-        if action.get('observedAvailable') is False:
-            lines.append('Unavailable in this view.')
-        lines.append(spell(alias, action, _example(action), selector=word))
-    if not card['actions']:
-        lines.append('Look only; no spell offered.')
-    if executable:
-        lines.append('If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.')
-    lines.append('[[/delvetalk-card ' + alias + ']]')
-    body = '\n'.join(lines)
-    if len(body.encode('utf-8')) > MAX_CARD_BYTES:
-        raise ValueError('town card exceeds 12000 bytes; choose a smaller explicit view/projection')
-    _block(body, alias)  # Reject application prose that tries to forge delimiters.
-    return body
+def prose(text, display_names=None):
+    """Quote source text as inert card content, with configured display names."""
+    if not isinstance(text, str):
+        raise ValueError('source card text requires String')
+    shown = re.sub(r'did:plc:[a-z2-7]{24}(?![a-z2-7])',
+        lambda match: (display_names or {}).get(match[0], match[0]), text)
+    return '\n'.join('| ' + line for line in shown.split('\n'))
 
 
 def _block(text, alias):
@@ -391,82 +309,90 @@ class CardBook:
         with self._db() as db:
             return [row[0] for row in db.execute('SELECT alias FROM cards ORDER BY rowid')]
 
-    def capture(self, view, alias=None, *, roots=None, database=None, references=None):
-        """Retain presentation preimages and optionally mint native read references."""
-        metadata = self.metadata()
-        view = copy.deepcopy(view)
-        projection.assert_runtime(view, metadata['runtime'])
-        card = affordances.card(view)
-        available = source_offers.capture_available(view,
-            {view['object']: view['root']} if roots is None else roots, database=database, references=references)
-        offers = {}
-        for key in sorted(set(available['offers']) | set(available['unavailable'])):
-            identity = 'a' + str(len(card['actions']) + 1)
-            if key in available['offers']:
-                offer = available['offers'][key]
-                action = {**composite_offers.action(offer), 'id': identity, 'offer': key}
-                offers[identity] = offer
-            else:
-                detail = available['unavailable'][key]
-                action = {'id': identity, 'command': detail['command'], 'label': detail['label'],
-                          'available': False, 'fields': [], 'reason': detail['reason']}
-            card['actions'].append(action)
-        document = projection.bound_document(view, card['actions'], offers)
-        if document is not None:
-            card['document'] = document
-        interpretation = projection.interpretation(view)
-        if interpretation is not None:
-            card['interpretation'] = interpretation
-        panels = _panels(view, metadata['runtime'])
-        object_ref = object_references.object_reference(metadata['worldId'], view['object'])
+    def capture_public(self, object_id, captured, *, alias=None, action_key=None, invitations=None):
+        """Retain only the native audience-selected source projection and guard."""
+        if captured.get('audience') != 'public':
+            raise ValueError('explicit native public audience required')
+        reference = captured['reference']
+        if reference.get('object') != object_id:
+            raise ValueError('public projection guard names another object')
+        data = captured['result']
+        if not isinstance(data, dict) or not isinstance(data.get('actions'), dict):
+            raise ValueError('public projection requires source actions')
+        actions = []
+        authored = data['actions']
+        if 'variant' in authored:
+            entries = {}
+            while authored.get('variant') == 'cons' and len(entries) < 64:
+                item = authored['payload']['head']
+                if 'variant' in item:
+                    item = item['payload']
+                key = item['key']
+                if key in entries:
+                    raise ValueError('duplicate public action key')
+                entries[key] = {name: value for name, value in item.items() if name != 'key'}
+                authored = authored['payload']['tail']
+            if authored.get('variant') != 'nil':
+                raise ValueError('public action collection exceeds 64 entries')
+            authored = entries
+        for key, offered in authored.items():
+            if action_key is not None and key != action_key:
+                continue
+            if type(offered.get('visible')) is not bool:
+                raise ValueError('public source action requires visible Bool')
+            if not offered['visible']:
+                continue
+            schema = copy.deepcopy(offered.get('fields', {}))
+            for field in schema.values():
+                if isinstance(field.get('options'), dict):
+                    field['options'] = list(field['options'].values())
+            fields = [affordances._normalize_field(name, schema[name]) for name in sorted(schema)]
+            action = {'id': 'a' + str(len(actions) + 1), 'key': key,
+                'command': offered['command'], 'label': offered['text'], 'available': True,
+                'fields': fields, 'bound': copy.deepcopy(offered['input'])}
+            actions.append(action)
+        invitations = {} if invitations is None else invitations
+        for key, offered in invitations.items():
+            if action_key is not None and key != action_key:
+                continue
+            actions.append({'id': 'a' + str(len(actions) + 1), 'key': key,
+                'command': key, 'label': offered['label'], 'available': offered.get('available', True),
+                'fields': offered['fields'], 'bound': {}, 'preparation': True,
+                **({'reason': offered['reason']} if 'reason' in offered else {})})
+        children = []
+        tail = data.get('children', {'variant': 'nil', 'payload': {}})
+        while tail.get('variant') == 'cons' and len(children) < 32:
+            children.append(tail['payload']['head'])
+            tail = tail['payload']['tail']
+        if tail.get('variant') != 'nil':
+            raise ValueError('public child collection exceeds 32 entries')
         def build(name):
-            body = render_card(name, card, view, panels, metadata['displayNames'])
-            result = {'format': 'delvetalk-town-card-v1', 'alias': name, 'view': view,
-                      'card': card, 'runtime': metadata['runtime'],
-                      'objectRef': object_ref, 'panels': panels,
-                      'body': body, 'textSha256': sha(body)}
-            if offers:
-                result['offers'] = offers
-            return result
-        return self._capture(alias, build)
-
-    def capture_source_offer(self, view, roots, key, *, alias=None, database=None, references=None):
-        """Retain one visible authored plan from the same complete observation."""
-        captured = source_offers.capture_available(view, roots, database=database, references=references)
-        if key not in captured['offers']:
-            detail = captured['unavailable'].get(key, {}).get('reason', 'source does not offer this action')
-            raise ValueError(detail)
-        return self.capture_composite(captured['offers'][key], alias=alias)
-
-    def capture_composite(self, offer, *, alias=None):
-        """Retain one pure source invitation and its exact captured observations."""
-        metadata = self.metadata()
-        offer = composite_offers.validate(offer)
-        action = composite_offers.action(offer)
-        def build(name):
-            lines = ['[[delvetalk-card ' + name + ']]', offer['title'], offer['label'],
-                     'The object may ask a question or prepare a turn for your review.',
-                     'Reply here, or describe your intention for us to interpret:',
-                     spell(name, action, _example(action), selector=action['command'])]
-            lines.extend(_field(field, token) for token, field_name in field_words(action).items()
-                         for field in action['fields'] if field['name'] == field_name)
-            lines.extend(['If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.',
-                          '[[/delvetalk-card ' + name + ']]'])
+            display_names = self.metadata()['displayNames']
+            lines = ['[[delvetalk-card ' + name + ']]', prose(data['title'], display_names),
+                prose(data['prose'], display_names)]
+            if 'board' in data:
+                lines.append(public_board.render(data['board']))
+            for child in children:
+                lines.append('Door ' + canonical(child['key']) + ': ' + prose(child['label'], display_names))
+            for action in actions:
+                lines.append(canonical(action['label']))
+                if action['available']:
+                    words = field_words(action)
+                    lines.extend(_field(field, token) for token, field_name in words.items()
+                        for field in action['fields'] if field['name'] == field_name)
+                    lines.append(spell(name, action, _example(action), selector=action_word(action, actions)))
+                else:
+                    lines.append(action.get('reason', 'Look only; no spell offered.'))
+            lines.append('[[/delvetalk-card ' + name + ']]')
             body = '\n'.join(lines)
             if len(body.encode('utf-8')) > MAX_CARD_BYTES:
-                raise ValueError('town composite card exceeds 12000 bytes')
+                raise ValueError('public card exceeds 12000 bytes')
             _block(body, name)
-            return {'format': 'delvetalk-town-composite-card-v1', 'alias': name,
-                    'offer': offer, 'runtime': metadata['runtime'],
-                    'body': body, 'textSha256': sha(body)}
+            return {'format': 'delvetalk-town-public-card-v1', 'alias': name,
+                'object': object_id, 'projection': copy.deepcopy(captured), 'actions': actions,
+                'publicInvitations': copy.deepcopy(invitations),
+                'runtime': self.metadata()['runtime'], 'body': body, 'textSha256': sha(body)}
         return self._capture(alias, build)
-
-    def capture_adoption(self, candidate_id, expected_candidate, target_id, expected_target, *, alias=None):
-        """Capture the candidate's own visible release preparation."""
-        view = projection.project(expected_candidate, candidate_id,
-            expected_runtime=self.metadata()['runtime'])
-        roots = {candidate_id: expected_candidate, target_id: expected_target}
-        return self.capture_source_offer(view, roots, 'release', alias=alias)
 
     def _capture(self, alias, build):
         if alias is not None:
@@ -499,18 +425,6 @@ class CardBook:
         value = loads(row[0])
         if value['alias'] != alias or sha(value['body']) != value['textSha256']:
             raise ValueError('captured card content mismatch')
-        if 'view' in value:
-            projection.children(value['view'])
-            document = projection.bound_document(value['view'], value['card']['actions'], value.get('offers', {}))
-            if canonical(value['card'].get('document')) != canonical(document):
-                raise ValueError('Captured document differs from its source bindings')
-            interpretation = projection.interpretation(value['view'])
-            if canonical(value['card'].get('interpretation')) != canonical(interpretation):
-                raise ValueError('Captured interpretation differs from its source exports')
-            for panel in value.get('panels', []):
-                projection.children(panel['view'])
-                projection.document(panel['view'])
-                projection.interpretation(panel['view'])
         return value
 
     def publication(self, alias):
@@ -531,8 +445,21 @@ class CardBook:
             raise ValueError('published card block differs from immutable captured text')
         return {'source': source, 'record': record, 'textSha256': sha(record['text'])}
 
-    def bind(self, alias, source, fetch_record):
-        """Caller supplies authenticated GET-only URI/CID verification; no posting."""
+    def check_public(self, alias, database, *, profile='compiled'):
+        """Revalidate exact native source and current public audience for draft use."""
+        captured = self.card(alias)
+        if captured['format'] != 'delvetalk-town-public-card-v1' or database is None:
+            raise ValueError('draft requires a native public projection and current world custody')
+        projection = captured['projection']
+        checked = world.opaque_view(database, captured['object'], principal=self.metadata()['issuerDid'],
+            panel=projection['panel'], audience='public', expected=projection['reference'], profile=profile)
+        if canonical(checked) != canonical(projection):
+            raise ValueError('public source projection changed')
+        return captured
+
+    def bind(self, alias, source, fetch_record, *, database=None, profile='compiled'):
+        """Verify an existing post after current native public audience validation."""
+        self.check_public(alias, database, profile=profile)
         verified = self._verified(alias, source, fetch_record)
         encoded = canonical(verified)
         with self._db() as db:
@@ -554,7 +481,10 @@ class CardBook:
             raise ValueError('literal reply requires a feed post')
         parsed = parse_reply(record.get('text'))
         alias = parsed['card']
-        captured, bound = self.card(alias), self.publication(alias)
+        captured = self.card(alias)
+        if captured['format'] != 'delvetalk-town-public-card-v1':
+            raise ValueError('fresh remote replies require a native public projection card')
+        bound = self.publication(alias)
         reply = record.get('reply')
         if not isinstance(reply, dict):
             raise ValueError('reply parent must name the bound card publication')
@@ -564,72 +494,31 @@ class CardBook:
         verified = self._verified(alias, bound['source'], fetch_record)
         if canonical(verified) != canonical(bound):
             raise ValueError('bound publication changed since capture')
-        if captured['format'] == 'delvetalk-town-card-v1':
-            if parsed.get('syntax') == 'delvetalk-town-spell-v1':
-                actions = captured['card']['actions']
-                chosen = next((action for action in actions if parsed['action'] in
-                               (action['id'], action_word(action, actions))), None)
-                if chosen is None:
-                    raise ValueError('word is not offered by this captured card')
-                parsed = {**parsed, 'offeredWord': parsed['action'], 'action': chosen['id'],
-                          'fields': _spell_fields(chosen, parsed['fields'])}
-            if parsed['action'] in captured.get('offers', {}):
-                request = composite_offers.request(captured['offers'][parsed['action']], author,
-                    'delve:' + source['uri'], parsed['fields'], database=database)
+        if captured['format'] == 'delvetalk-town-public-card-v1':
+            actions = captured['actions']
+            chosen = next((action for action in actions if parsed['action'] in
+                (action['id'], action_word(action, actions))), None)
+            if chosen is None or not chosen['available']:
+                raise ValueError('word is not offered by this public source projection')
+            fields = (_spell_fields(chosen, parsed['fields'])
+                if parsed.get('syntax') == 'delvetalk-town-spell-v1' else parsed['fields'])
+            if chosen.get('preparation'):
+                request = opaque_offers.prepare(database, captured['publicInvitations'][chosen['key']],
+                    author, 'delve:' + source['uri'], fields)
             else:
-                request = affordances.request(captured['view'], parsed['action'], author,
-                                              'delve:' + source['uri'], parsed['fields'])
-        elif captured['format'] == 'delvetalk-town-composite-card-v1':
-            action = composite_offers.action(captured['offer'])
-            if parsed['action'] not in ('a1', action['command']):
-                raise ValueError('word is not offered by this captured composite card')
-            fields = (_spell_fields(action, parsed['fields'])
-                      if parsed.get('syntax') == 'delvetalk-town-spell-v1' else parsed['fields'])
-            request = composite_offers.request(captured['offer'], author,
-                                               'delve:' + source['uri'], fields, database=database)
+                values = affordances.physical_values(fields)
+                request = world.opaque_request(captured['object'], captured['projection']['reference'],
+                    chosen['command'], {**chosen['bound'], **values}, principal=author,
+                    intent='delve:' + source['uri'])
         else:
-            raise ValueError('unknown captured card format')
+            raise ValueError('fresh remote replies require a native public projection card')
         wire = {key: value for key, value in request.items() if key not in ('principal', 'intent')}
-        if wire['op'] == 'transaction':
-            # Clerk's transport resolves explicit descriptors before Lean admission.
-            wire['reads'] = {key: {'expected': value} for key, value in wire['reads'].items()}
         if len(canonical(wire).encode('utf-8')) > 1024 * 1024:
             raise ValueError('derived card request exceeds 1 MiB')
         evidence = {'format': 'delvetalk-town-resolution-v1', 'metadata': metadata,
                     'card': captured, 'publication': bound, 'replySource': copy.deepcopy(source),
                     'parsed': parsed, 'wireSha256': sha(canonical(wire))}
         return wire, evidence
-
-    def prepare_outcome(self, receipt, current_views=(), *, label='Turn'):
-        """Render confirmed/refused/uncertain outcomes plus explicitly supplied current views.
-
-        The caller authenticates the receipt and supplies current snapshots; this
-        helper neither refreshes them nor treats a missing reply as failure.
-        """
-        if not isinstance(receipt, dict) or receipt.get('kind') not in ('committed', 'refused', 'uncertain'):
-            raise ValueError('explicit committed, refused or uncertain receipt required')
-        if receipt['kind'] == 'uncertain':
-            body = label + ': outcome unknown. Ask us to check your original reply. Do not repost the command.'
-        elif receipt['kind'] == 'refused':
-            body = label + ': refused. ' + canonical(receipt.get('data')) + '\nNo application changes committed.'
-        else:
-            body = label + ': committed.'
-            data = receipt.get('data')
-            if isinstance(data, dict) and 'result' in data:
-                result = data['result']
-                shown = result if isinstance(result, str) else canonical(result)
-                if len(shown.encode('utf-8')) <= 2048:
-                    body += '\nResult:\n' + '\n'.join('| ' + line for line in shown.split('\n'))
-                else:
-                    body += '\nResult exceeds the inline display limit; ask the operator for the retained result.'
-            children = affordances.allocated_refs(receipt)
-            if children:
-                body += '\nCreated: ' + ', '.join(canonical(child['object']) for child in children)
-        cards = [self.capture(view) for view in current_views]
-        if cards:
-            body += '\n\nCurrent captured views and next actions:\n' + '\n\n'.join(card['body'] for card in cards)
-        return {'body': body, 'textSha256': sha(body), 'cards': cards, 'receipt': copy.deepcopy(receipt),
-                'scope': 'Prepared locally; publication and subsequent binding are separate.'}
 
 
 def resolver(book, record, author, source, fetch_record, issuers, *, database=None):

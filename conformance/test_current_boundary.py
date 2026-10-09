@@ -11,47 +11,16 @@ import source_object
 import world
 from conformance.test_obend_data_object import SOURCE
 
-POLICY = '''edition ObjectiveBend 1
-import ./Preparation.obend as P
-def invariant(facts: P.Value, config: P.Value) -> Bool:
-  match P.textField(facts, "op"):
-    case missing(_): false
-    case wrongKind(_): false
-    case found(op):
-      if op.value == "create" || op.value == "law" then true else if op.value == "invoke" then
-        match P.lookupField(facts, "input"):
-          case missing(_): false
-          case wrongKind(_): false
-          case found(input):
-            match P.asText(config):
-              case missing(_): false
-              case wrongKind(_): false
-              case found(expected):
-                match P.textField(input.value, "object"):
-                  case missing(_): false
-                  case wrongKind(_): false
-                  case found(actual): actual.value != expected.value
-      else false
-def predicate(facts: P.Value, config: P.Value) -> Bool:
-  match P.asText(config):
-    case missing(_): false
-    case wrongKind(_): false
-    case found(expected):
-      match P.textField(facts, "principal"):
-        case missing(_): false
-        case wrongKind(_): false
-        case found(actual): actual.value != expected.value
-def refuse(facts: P.Value, config: P.Value) -> Bool:
-  false
-def wrong(facts: P.Value, config: P.Value) -> Nat:
-  1n
-'''
+from conformance.test_compact_policy import POLICY as CANONICAL_POLICY
+
+POLICY = CANONICAL_POLICY + '\ndef predicate(facts: Facts, config: P.Value) -> Bool:\n  match P.asText(config):\n    case missing(_): false\n    case wrongKind(_): false\n    case found(expected): facts.principal != expected.value\ndef refuse(facts: CandidateFacts, config: P.Value) -> Bool:\n  false\ndef wrong(facts: CandidateFacts, config: P.Value) -> Nat:\n  1n\n'
+
 
 
 def policy(entry, config):
     return {'package': {'modules': [
         {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()},
-        {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+        {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
         {'name': 'Policy', 'source': POLICY}], 'entry': entry}, 'config': config}
 
 
@@ -115,10 +84,12 @@ class CurrentBoundary(unittest.TestCase):
             authority['invariant'] = policy(entry, '')
             reply = self.call({'op': 'create', 'object': entry, 'protocol': self.program, 'law': authority})
             self.assertEqual(reply['kind'], 'refused', reply)
+            self.assertEqual(reply['data'], 'source policy refused' if entry == 'refuse' else 'source policy must return Bool')
         malformed = copy.deepcopy(self.authority)
         malformed['invariant']['extra'] = True
         reply = self.call({'op': 'create', 'object': 'malformed', 'protocol': self.program, 'law': malformed})
         self.assertEqual(reply['kind'], 'refused', reply)
+        self.assertEqual(reply['data'], 'source policy requires exactly package and config')
 
 
 if __name__ == '__main__':

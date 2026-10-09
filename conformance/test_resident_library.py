@@ -26,6 +26,7 @@ world = module('resident_library_world', 'scripts/world.py')
 adapter = module('resident_library_adapter', 'syntaxes/obend_object.py')
 projection = module('resident_library_projection', 'scene/projection.py')
 relay_module = module('resident_library_relay', 'scripts/message_relay.py')
+source_object = module('resident_library_values', 'scripts/source_object.py')
 
 
 def prelude():
@@ -88,12 +89,7 @@ class ResidentLibrary(unittest.TestCase):
         for name, program in self.programs.items():
             self.call({'op': 'create', 'principal': 'bootstrap', 'intent': 'create-' + name,
                        'object': name, 'protocol': program, 'law': policy(name)})
-        self.call({'op': 'create', 'principal': 'bootstrap', 'intent': 'digest-create', 'object': 'digest',
-                   'protocol': {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'hash': {
-                       'require': [], 'set': {}, 'outbox': [], 'result': ['program-digest', ['input', 'program']]}}},
-                   'law': ['reader']})
-        self.digests = {name: self.invoke('digest', 'hash', {'program': protocol}, principal='reader')['data']['result']
-                        for name, protocol in self.programs.items()}
+        self.digests = dict(zip(self.programs, source_object.values('digest', list(self.programs.values()))))
 
     def identity(self):
         self.serial += 1
@@ -259,8 +255,7 @@ class ResidentLibrary(unittest.TestCase):
     def test_multiple_sources_reenroll_without_invalidating_other_slots_or_reusing_epochs(self):
         self.call({'op': 'create', 'principal': 'bootstrap', 'intent': 'create-annex',
                    'object': 'annex', 'protocol': self.programs['circle'], 'law': policy('annex')})
-        self.digests['annex'] = self.invoke('digest', 'hash', {'program': self.programs['circle']},
-                                           principal='reader')['data']['result']
+        self.digests['annex'] = source_object.values('digest', [self.programs['circle']])[0]
         self.connect('repair', 'circle', generation=1, listen_slot=1)
         self.connect('annex', 'circle', generation=2, listen_slot=2)
         # Advancing the global epoch does not expire another still-active slot.
@@ -444,10 +439,18 @@ class ResidentLibrary(unittest.TestCase):
                 action = next(item for item in card['actions'] if item.get('offer') == 'configure')
                 request = app.captured_request(app._read('cards', card['card']), action['id'],
                     source + '-keeper', self.identity(), {})
-            self.call(request)
+            receipt = self.call(request)
+            self.assertEqual(self.call(request), receipt)
         event = self.announce('repair')[0]
         self.deliver('circle', event)
         self.assertEqual(notes(self.root('circle'))[-1]['source'], 'repair')
+        before = self.root('repair')
+        for wrong in ({'side': 'send', 'slot': 1, 'enabled': True, 'object': 'circle',
+                       'generation': 1},
+                      {'side': 'send', 'slot': '1', 'enabled': True, 'object': 'circle',
+                       'program': self.digests['circle'], 'generation': 1}):
+            self.invoke('repair', 'configure', wrong, principal='repair-keeper', kind='refused')
+            self.assertEqual(self.root('repair'), before)
 
     def test_authored_examples_use_real_source_receiving(self):
         proposal = module('resident_library_proposal', 'scripts/propose.py')

@@ -66,7 +66,7 @@ def run(directory):
     completed=custody/'report.json'
     if completed.exists():
         report=bootstrap.loads(completed.read_bytes())
-        if desk.inspect(target)!=report['finalRoot']:
+        if desk.inspect(target, principal=SEATS[0])!=report['finalRoot']:
             raise ValueError('completed table root changed; inspect existing evidence')
         return report
     custody.mkdir(exist_ok=True,mode=0o700)
@@ -89,14 +89,14 @@ def run(directory):
         return reply
 
     step('install',lambda:{'op':'reprogram','object':target,'principal':manifest['participants'][0],
-        'intent':'table-journey:install','expected':desk.inspect(target),
+        'intent':'table-journey:install','expected':desk.inspect(target, principal=manifest['participants'][0]),
         'protocol':program,'state':program['initial']})
     step('seat-law',lambda:{'op':'law','object':target,'principal':'local-operator',
-        'intent':'table-journey:seat-law','expected':desk.inspect(target),'law':table.law(*SEATS)})
+        'intent':'table-journey:seat-law','expected':desk.inspect(target, principal='local-operator'),'law':table.law(*SEATS)})
 
     def invoke(key, command, input, seat=0, expected='committed'):
         return step(key,lambda:{'op':'invoke','object':target,'principal':SEATS[seat],
-            'intent':'table-journey:'+key,'expected':desk.inspect(target),
+            'intent':'table-journey:'+key,'expected':desk.inspect(target, principal=SEATS[seat]),
             'command':command,'input':input},expected)
 
     rounds=[]
@@ -112,7 +112,7 @@ def run(directory):
             invoke(f'{number}-reveal-{seat}','reveal'+str(seat),pair[seat]['reveal'],seat)
         resolved=invoke(f'{number}-resolve','resolve',{'round':number})
         rounds.append(client.public_view(resolved['data']['root']))
-    final=desk.inspect(target)
+    final=desk.inspect(target, principal=SEATS[0])
     if client.state(final)['game']['winner']!=1 or client.state(final)['round']!=len(MATCH):
         raise RuntimeError('authored match did not finish with the qualified game result')
     after=bootstrap.inspect_view(directory)

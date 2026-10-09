@@ -2,6 +2,7 @@
 """Exact bounded child output, threaded launch, and whole-group termination."""
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
+from native_support import load_script
 import json
 import os
 from pathlib import Path
@@ -13,9 +14,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('test_process_custody_module', ROOT / 'scripts/process_custody.py')
-custody = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(custody)
+custody = load_script(ROOT / 'scripts/process_custody.py', 'test_process_custody_module')
 
 
 class ProcessCustodyTests(unittest.TestCase):

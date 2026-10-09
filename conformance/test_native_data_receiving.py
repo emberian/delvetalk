@@ -1,14 +1,12 @@
 """Bounds and atomicity at the native Data-to-source-transition receiving join."""
 import copy
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('native_data_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'native_data_world')
 
 
 class NativeDataReceiving(unittest.TestCase):

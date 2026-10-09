@@ -174,7 +174,7 @@ def loadCheckpoint (world : Json) (sequence : Nat) (head : String) : Except Stri
   let history ← (← field world "receipts").getArr?
   if history.size != sequence then throw "checkpoint sequence differs from retained history"
   let base ← put world "receipts" (.arr #[])
-  let roots := RetainedRoots.collect {} (← field world "objects")
+  let roots := RetainedRoots.fromWorld world
   history.foldlM checkedAppend { base, head, roots }
 
 abbrev Query := Json → Json → Except String Json
@@ -214,6 +214,8 @@ def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable
           else if operation == "prepare-retained" then do
             let captured ← put request "op" (.str "prepare")
             RetainedRoots.prepareCaptured session.committed.roots session.committed.base capturedPreparation captured
+          else if operation == "opaque-view" then do
+            query session.committed.base (← RetainedRoots.expandView session.committed.roots request)
           else query session.committed.base request)
         pure (obj [("status", .str "query"), ("reply", reply)])
       else if op == "export" then

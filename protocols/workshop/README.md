@@ -2,8 +2,11 @@
 
 **Build a place, change its program, and let another participant use it.**
 This seed combines ordinary factories, a presence registry, a work ticket and
-the stabilized two-player Automatafl table. It starts with public source and an
-empty genesis; no previous world or private participant custody is copied.
+the original two-player Automatafl table. Every seed is an ordinary Bend source
+object with an explicitly supplied typed initial state and an empty genesis; no
+previous world or private participant custody is copied. Places and entity
+descriptions are source objects too. The main encounters have explicit public
+panel grants; raw object reads and actions remain governed separately.
 
 ```sh
 python3 scripts/workshop.py /tmp/shared-workshop
@@ -33,3 +36,10 @@ participant's private custody.
 
 This is an explicitly configured workshop, not a universal world ontology.
 Its objects, rules and grants remain inspectable ordinary programs.
+
+Seed custody retains each exact module closure, the original source lowering,
+and the configured initial state. Native decoding checks the retained state
+schema, and creation and replay decide whether that state is admissible. A
+declared constructor name records provenance supplied by the seed author; it
+does not prove that an arbitrary supplied state was produced by executing that
+constructor. Export and restoration retain these source and configuration bytes.

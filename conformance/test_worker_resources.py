@@ -38,28 +38,27 @@ print(json.dumps({'memory': memory, 'cpu': resource.getrlimit(resource.RLIMIT_CP
                 self.assertEqual(result['cpu'], [10, 10])
                 self.assertTrue(result['denied'])
 
-    @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-transactions').is_file(), 'built transactions host required')
+    @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-compiled').is_file(), 'built compiled source host required')
     def test_real_lean_admission_under_default_worker_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
-            request = {'op': 'create', 'object': 'bounded-counter', 'principal': 'owner',
-                       'intent': 'create', 'protocol': json.loads((ROOT / 'protocols/counter/protocol.json').read_text()),
-                       'law': ['owner']}
+            from conformance.source_custody_fixture import create
+            request = create()
             request_path = directory / 'request.json'
             request_path.write_text(json.dumps(request))
-            reply = worker.command([str(ROOT / 'scripts/world.py'), '--profile', 'transactions',
+            reply = worker.command([str(ROOT / 'scripts/world.py'), '--profile', 'compiled',
                                     str(directory / 'world.json'), str(request_path)], 15)
             self.assertEqual(reply['kind'], 'committed')
             self.assertEqual(reply['data']['root']['state'], request['protocol']['initial'])
             self.assertTrue((directory / 'world.json').is_file())
             inspected = worker.command([str(ROOT / 'scripts/desk.py'), '--database', str(directory / 'world.json'),
-                                        '--artifacts', str(directory / 'artifacts'), '--profile', 'transactions',
-                                        'inspect', '--object', 'bounded-counter'], 15)
+                                        '--artifacts', str(directory / 'artifacts'), '--profile', 'compiled',
+                                        'inspect', '--object', 'room'], 15)
             self.assertEqual(inspected, reply['data']['root'])
             if sys.platform.startswith('linux'):
                 before = (directory / 'world.json').read_bytes()
                 with self.assertRaises(RuntimeError):
-                    worker.command([str(ROOT / 'scripts/world.py'), '--profile', 'transactions',
+                    worker.command([str(ROOT / 'scripts/world.py'), '--profile', 'compiled',
                                     str(directory / 'world.json'), str(request_path)], 15, memory_mib=1024)
                 self.assertEqual((directory / 'world.json').read_bytes(), before)
 

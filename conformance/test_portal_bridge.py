@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
+sys.path.insert(0, str(ROOT))
+from conformance.source_custody_fixture import counter_protocol, scoped, count
 import clerk
 import delve
 import portal
@@ -38,20 +40,17 @@ class ReadOnlyPDS:
 
 class PortalBridgeTest(unittest.TestCase):
     def setUp(self):
-        if not (ROOT / '.lake/build/bin/delvetalk-world').is_file():
-            self.fail('Build delvetalk-world before running receiving-path tests')
+        if not (ROOT / '.lake/build/bin/delvetalk-compiled').is_file():
+            self.fail('Build delvetalk-compiled before running receiving-path tests')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
         self.pds = ReadOnlyPDS()
         self.receiver = clerk.Clerk(self.base / 'receiver', self.pds)
-        protocol = clerk.loads((ROOT / 'protocols/counter/protocol.json').read_bytes())
-        protocol['affordances'] = {'add': {'label': 'Add an amount',
-            'fields': {'amount': {'type': 'nat', 'maximum': 100}}}}
-        self.receiver.bootstrap('counter', protocol, [delve.DID], [delve.DID, OTHER])
+        self.receiver.bootstrap('counter', counter_protocol(), scoped([delve.DID]), [delve.DID, OTHER])
         # The portal is an explicitly pinned read-only view of this receiving world.
         clerk.save(self.receiver.state / 'manifest.json',
-                   {'runtime': portal.bootstrap.history.runtime('world'), 'cafe': 'counter'})
+                   {'runtime': portal.bootstrap.history.runtime('compiled'), 'cafe': 'counter'})
         self.app = portal.Portal(self.receiver.state)
         self.bridge = portal_bridge.Bridge(self.app)
 
@@ -87,7 +86,7 @@ class PortalBridgeTest(unittest.TestCase):
         self.assertEqual(receipt['request']['intent'], 'delve:' + source[0])
         outcome = self.bridge.reconcile(draft, self.receiver)
         self.assertEqual(outcome['kind'], 'committed')
-        self.assertEqual(outcome['reply']['data']['root']['state']['count'], 3)
+        self.assertEqual(count(outcome['reply']['data']['root']), 3)
         self.assertEqual(outcome['receipt'], receipt)
         self.pds.records.clear()
         with patch.object(clerk, 'pins', side_effect=AssertionError('historical recovery must not repin')), \
@@ -105,7 +104,7 @@ class PortalBridgeTest(unittest.TestCase):
         outcome = self.bridge.reconcile(stale, self.receiver)
         self.assertEqual(outcome['kind'], 'refused')
         self.assertEqual(self.bridge.prepare(stale)['wire'], stale_wire)
-        self.assertEqual(self.app.snapshot()['objects']['counter']['state']['count'], 1)
+        self.assertEqual(count(self.app.snapshot()['objects']['counter']), 1)
 
     def test_forged_repository_identity_and_wire_identity_refuse(self):
         draft = self.draft()

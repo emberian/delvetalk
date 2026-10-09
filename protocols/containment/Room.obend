@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./Encounter.obend as E
 import ./Relations.obend as R
 record State:
+  placement: String
   open: Bool
   capacity: Nat
 record Decision:
@@ -11,7 +12,7 @@ record Decision:
   state: State
   result: R.Transfer
 def admit(s: State, i: R.Transfer, c: Abi.Context) -> Decision:
-  let allowed = R.follows(c, "habitat", "plan") && i.destination == c.object && i.actor == c.principal && s.open && i.occupancy < s.capacity
+  let allowed = R.follows(c, s.placement, "plan") && i.destination == c.object && i.actor == c.principal && s.open && i.occupancy < s.capacity
   {accepted: allowed, reason: if allowed then "" else "Room closed, full, or admission not planned here.", state: s, result: i}
 record Method:
   label: String
@@ -22,7 +23,9 @@ record Description:
   methods: {admit: Method}
   panels: {}
 def describe() -> Description:
-  {name: "A room", initial: {open: true, capacity: 4n}, methods: {admit: {label: "Admit a planned arrival", fields: {object: R.textField(), destination: R.textField(), previous: R.textField(), holder: R.textField(), occupancy: R.natField(), actor: R.textField()}}}, panels: {}}
+  {name: "A room", initial: {placement: "habitat", open: true, capacity: 4n}, methods: {admit: {label: "Admit a planned arrival", fields: {object: R.textField(), destination: R.textField(), previous: R.textField(), holder: R.textField(), occupancy: R.natField(), actor: R.textField()}}}, panels: {}}
+def configured(config: {placement: String, open: Bool, capacity: Nat}) -> State:
+  {placement: config.placement, open: config.open, capacity: config.capacity}
 record View:
   title: String
   prose: String

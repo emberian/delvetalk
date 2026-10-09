@@ -55,7 +55,7 @@ def run(manager, identity, realm, payload):
         codec = descriptor.get('contributionCodec', 'value')
         if 'sourceRequest' not in memo:
             empty = source_object.variant('nil', source_object.record({}))
-            native = interpret.native(descriptor['request'], [root['state']['model'],
+            native = interpret.native(descriptor['request'], [source_object.state_data(root),
                 source_object.data(payload['text']), empty,
                 source_object.data({'object': saved['view']['object'], 'principal': identity['did']})], modules=modules)
             fields = {field['name']: field['value'] for field in native['fields']}

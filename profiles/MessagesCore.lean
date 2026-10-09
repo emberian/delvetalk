@@ -285,11 +285,12 @@ def deliverWith (runtime : Runtime) (world request : Json) (principal : String) 
     ("root", .str causeId), ("parent", ← field causal "parent"), ("depth", ← field causal "depth"),
     ("rootPrincipal", ← field (← field ledger "origin") "principal")]
   let execution : Evaluation (Json × Json) := do
-    let semanticInvocation ← prepareInvocation runtime preimage invocation
+    let prepared ← prepareInvocation runtime preimage invocation
+    let semanticInvocation := prepared.request
     authorizeRequestWith runtime preimage semanticInvocation principal
     if (← ProgramDigest.digest (← field preimage "protocol")) != (← str evidence "recipientProgram") then
       throw "message recipient program changed"
-    let produced ← executeCommandWith runtime preimage semanticInvocation principal noInputOrigin (some facts) (some (← field evidence "payload"))
+    let produced ← executeCommandWith runtime preimage semanticInvocation principal noInputOrigin (some facts) (some (← field evidence "payload")) prepared.nativeInput
     if !produced.allocations.isEmpty then throw "message delivery cannot allocate children"
     let version ← counter preimage "version"
     let nextObject ← put (← put preimage "state" produced.state) "version" (toJson (version + 1))
@@ -333,8 +334,18 @@ def settleWith (runtime : Runtime) (world request : Json) (principal : String) :
   let governed := obj [("op", .str "invoke"), ("object", .str target),
     ("command", .str "$messages-settle"), ("input", input)]
   let decision : Evaluation Unit := do
-    authorizeRequestWith runtime preimage governed principal
-    checkCandidateWith runtime preimage preimage governed principal
+    let reference ← field request "event"
+    let causal ← field evidence "causal"
+    let metadata : Minidregg.Theory.ObjectiveBendDemandData.Data := .record [
+      ("event", .record [("lineage", .label (← str reference "lineage")), ("id", .label (← str reference "id"))]),
+      ("reason", .label reason), ("source", .label (← str evidence "source")),
+      ("sourceProgram", .label (← str evidence "sourceProgram")),
+      ("originatingPrincipal", .label (← str evidence "originatingPrincipal")),
+      ("causal", .record [("root", .label (← str causal "root")),
+        ("parent", .label (← str causal "parent")), ("depth", .natural (← counter causal "depth"))])]
+    charge 12
+    authorizeRequestWith runtime preimage governed principal (some metadata)
+    checkCandidateWith runtime preimage preimage governed principal (some metadata)
   discard (decision.run runtime.budget)
   let consumption := obj [("principal", .str principal), ("intent", ← field request "intent"),
     ("reason", .str reason)]

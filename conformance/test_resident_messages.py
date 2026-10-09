@@ -73,9 +73,6 @@ class ResidentMessages(unittest.TestCase):
         self.create('door', source_protocol('Door'), {**law('hear', ['relay']), 'invoke': {'hear': ['relay'], 'bind': ['builder']}})
         self.create('bell', source_protocol('Bell'), {**law('play', ['moss', 'iris']), 'invoke': {'play': ['moss', 'iris'], 'connect': ['builder']}})
         self.create('lantern', source_protocol('Lantern'), law('glow', ['relay']))
-        digest = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'hash': {
-            'require': [], 'set': {}, 'outbox': [], 'result': ['program-digest', ['input', 'program']]}}}
-        self.create('digest', digest, ['reader'])
         self.door_program = self.program_digest(self.root('door')['protocol'])
 
     def create(self, name, protocol, policy):
@@ -83,9 +80,7 @@ class ResidentMessages(unittest.TestCase):
                           'object': name, 'protocol': protocol, 'law': policy}, 'committed')['data']['root']
 
     def program_digest(self, protocol):
-        return self.call({'op': 'invoke', 'principal': 'reader', 'intent': self.intent(),
-            'object': 'digest', 'expected': self.root('digest'), 'command': 'hash',
-            'input': {'program': protocol}}, 'committed')['data']['result']
+        return source_object.values('digest', [protocol])[0]
 
     def ring_request(self, voices=1, chord='C E G', principal='moss'):
         return {'op': 'invoke', 'principal': principal, 'intent': self.intent(), 'object': 'bell',
@@ -173,6 +168,7 @@ class ResidentMessages(unittest.TestCase):
         _, _, refs = self.ring()
         changed = source_protocol('Door') | {'revision': 2}
         self.reprogram('door', changed)
+        self.policy('door', law('hear', ['relay']))
         self.assertIn('program changed', self.call(self.delivery(refs[0]), 'refused')['data'])
         self.assertIn(refs[0]['id'], self.snapshot()['messages']['pending'])
 
@@ -305,6 +301,30 @@ class ResidentMessages(unittest.TestCase):
                                        self.intent(), fields)
         return card, action, request
 
+    def test_preparation_checks_required_kinds_and_accepts_zero_voices(self):
+        import time
+        adapter = residents.obend_object
+        artifact = adapter._native({'op': 'compile', 'modules': residents.sources('Bell'),
+            'entry': 'preparePlay', 'limits': adapter.LIMITS}, time.monotonic() + 30)['artifact']
+        initial = source_protocol('Bell')['initial']['model']
+        none = source_object.variant('none', source_object.record({}))
+        absent = source_object.variant('nil', source_object.record({}))
+        captured = source_object.variant('cons', source_object.record({
+            'head': source_object.record({'object': source_object.data('door'),
+                'version': source_object.data(0), 'program': source_object.data('0' * 64),
+                'state': none, 'law': none}), 'tail': absent}))
+        for value, observations, expected in [({}, absent, 'question'),
+                ({'chord': 1, 'voices': 0}, absent, 'refused'),
+                ({'chord': 'C E G'}, absent, 'refused'),
+                ({'chord': 'C E G', 'voices': '0'}, absent, 'refused'),
+                ({'chord': 'C E G', 'voices': 0}, absent, 'refused'),
+                ({'chord': 'C E G', 'voices': 0}, captured, 'ready')]:
+            prepared = adapter._native({'op': 'run-data-v1', 'artifact': artifact,
+                'arguments': [initial, source_object.value(value), observations,
+                    source_object.data({'object': 'bell', 'principal': 'iris'})],
+                'limits': adapter.LIMITS}, time.monotonic() + 30)['value']
+            self.assertEqual(prepared['label'], expected, prepared)
+
     def test_configured_residents_use_namespaced_source_identities(self):
         self.call({'op': 'messages-init', 'principal': 'bootstrap', 'intent': 'init',
                    'lineage': 'namespaced-courtyard', 'pendingLimit': 128}, 'committed')
@@ -416,9 +436,9 @@ class ResidentMessages(unittest.TestCase):
             entries = [{'name': n, 'sourceRef': store.store_bytes(worker.artifact_store, p.read_bytes(), kind='source')} for n, p in paths]
             manifest = store.seal_modules(entries)
             material = store.resolve_modules(worker.artifact_store, manifest)
-            authored = translate.translate_modules('objective-bend-spell@3', material)['lowered']
+            authored = translate.translate_modules('objective-bend-object', material)['lowered']
             proposal = store.prepare_module_proposal(worker.artifact_store, manifest,
-                (FIXTURES / (identity + '.scenarios.json')).read_bytes(), syntax='objective-bend-spell@3')
+                (FIXTURES / (identity + '.scenarios.json')).read_bytes(), syntax='objective-bend-object')
             root = worker.create(candidate, 'builder', 'create-' + candidate, ['builder'])['data']['root']
             pending = worker.submit_refs(candidate, 'builder', 'submit-' + candidate, root,
                 proposal, authored['initial'], identity)['data']['root']

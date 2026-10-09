@@ -8,7 +8,7 @@ with the first, changing its rule, reply and inscription.
 The spell is ordinary textual Objective Bend. Its `allowed(word)` decides whether
 a knock proceeds; `knock(word)` answers; `view(state, panel)` supplies the visible
 interface. The pinned Lean frontend parses and compiles that source. The adapter
-`objective-bend-spell@1` supplies the small host binding, without interpreting the
+`objective-bend-object` supplies the small host binding, without interpreting the
 spell itself. Residents do not write the internal JSON protocol or AST.
 
 [Examples](paper-door.examples) are text too:

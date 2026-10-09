@@ -29,7 +29,7 @@ def sound(state: State, input: Input, context: Abi.Context) -> Decision:
   let allowed = input.voices <= 16n && input.to != "" && textLength(input.to) <= 128n && textLength(input.recipientProgram) == 64n && input.chord != "" && textLength(input.chord) <= 128n
   {accepted: allowed, reason: if allowed then "" else "Supply a bounded chord, an observed listener and at most sixteen voices.", state: if allowed then extend(state, {notes: state.notes + 1n, lastBy: context.principal}) else state, result: {playedBy: context.principal, notes: if allowed then state.notes + 1n else state.notes}, emissions: if allowed then E.repeat(input.voices, voice(input)) else E.empty()}
 def play(state: State, input: P.Value, context: Abi.Context) -> Decision:
-  if P.isText(P.get(input, "to")) && P.isText(P.get(input, "recipientProgram")) && P.isText(P.get(input, "chord")) && P.isNatural(P.get(input, "voices")) then sound(state, {to: P.text(P.get(input, "to")), recipientProgram: P.text(P.get(input, "recipientProgram")), chord: P.text(P.get(input, "chord")), voices: P.natural(P.get(input, "voices"))}, context) else {accepted: false, reason: "Supply the complete source-prepared sound.", state: state, result: {playedBy: context.principal, notes: state.notes}, emissions: E.empty()}
+  if P.isText(P.get(input, "to")) && P.isText(P.get(input, "recipientProgram")) && P.isText(P.get(input, "chord")) && P.isNatural(P.get(input, "voices")) then sound(state, {to: P.textOrEmpty(P.get(input, "to")), recipientProgram: P.textOrEmpty(P.get(input, "recipientProgram")), chord: P.textOrEmpty(P.get(input, "chord")), voices: P.naturalOrZero(P.get(input, "voices"))}, context) else {accepted: false, reason: "Supply the complete source-prepared sound.", state: state, result: {playedBy: context.principal, notes: state.notes}, emissions: E.empty()}
 record Connected:
   accepted: Bool
   reason: String
@@ -55,9 +55,20 @@ def describe() -> Description:
 def configured(config: {recipient: String}) -> State:
   extend(describe().initial, {recipient: config.recipient})
 def preparePlay(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let chord = P.text(P.get(input, "chord"))
-  let voices = P.natural(P.get(input, "voices"))
-  let recipient = P.observation(observations, state.recipient)
+  match P.textField(input, "chord"):
+    case missing(_): P.Preparation.question({message: "What chord shall we play? The courtyard door listens for C E G.", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})})
+    case wrongKind(_): P.Preparation.refused({message: "Choose a text chord."})
+    case found(chord): prepareVoices(state, input, observations, context, chord.value)
+def prepareVoices(state: State, input: P.Value, observations: P.Observations, context: P.Context, chord: String) -> P.Preparation:
+  match P.naturalField(input, "voices"):
+    case missing(_): P.Preparation.refused({message: "Choose a natural voice count."})
+    case wrongKind(_): P.Preparation.refused({message: "Choose a natural voice count."})
+    case found(voices): prepareListener(state, observations, context, chord, voices.value)
+def prepareListener(state: State, observations: P.Observations, context: P.Context, chord: String, voices: Nat) -> P.Preparation:
+  match P.lookupObservation(observations, state.recipient):
+    case missing(_): P.Preparation.refused({message: "Capture the chosen listener before playing."})
+    case found(found): prepareCapturedPlay(state, chord, voices, found.value, context)
+def prepareCapturedPlay(state: State, chord: String, voices: Nat, recipient: P.Observation, context: P.Context) -> P.Preparation:
   if chord == "" then P.Preparation.question({message: "What chord shall we play? The courtyard door listens for C E G.", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})}) else if textLength(chord) > 128n || voices > 16n then P.Preparation.refused({message: "Choose a bounded chord and at most sixteen voices."}) else if recipient.object != state.recipient || textLength(recipient.program) != 64n then P.Preparation.refused({message: "Capture the chosen listener before playing."}) else P.Preparation.ready({summary: textConcat("Play toward ", state.recipient), reads: P.Reads.cons({head: P.Read.existing({object: state.recipient}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "play", input: P.Value.record({fields: P.Fields.cons({head: {name: "to", value: P.Value.text({value: state.recipient})}, tail: P.Fields.cons({head: {name: "recipientProgram", value: P.Value.text({value: recipient.program})}, tail: P.Fields.cons({head: {name: "chord", value: P.Value.text({value: chord})}, tail: P.Fields.cons({head: {name: "voices", value: P.Value.natural({value: voices})}, tail: P.Fields.nil()})})})})})}), tail: P.Effects.nil()})})
 record Invitation:
   visible: Bool

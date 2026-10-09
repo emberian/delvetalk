@@ -122,12 +122,17 @@ references; their rows are checked/indexed once, rather than once per value node
 inductive Schema where
   | natural | boolean | label
   | record (fields : List (String × Ty × Schema))
-  | variant (fields : Std.HashMap String (Ty × Schema))
+  | variant (index : Nat)
   | reference (index : Nat)
+
+structure VariantSchema where
+  row : Ty
+  members : Std.HashMap String (Ty × Schema)
 
 structure SchemaState where
   seen : Std.HashSet Nat := {}
   aliases : Std.HashMap Nat Schema := {}
+  variants : Std.HashMap Nat VariantSchema := {}
 
 abbrev SchemaBuild := StateT SchemaState Work
 
@@ -140,10 +145,20 @@ def buildSchema (a : Assumptions) (canonical : Bool) : Nat → Ty → SchemaBuil
     | .natural => pure .natural
     | .boolean => pure .boolean
     | .label => pure .label
-    | .emptyRow | .field .. => return .record (← buildMembers a canonical depth {} ty)
+    | .emptyRow | .field .. =>
+      let fields ← buildMembers a canonical depth {} ty
+      if canonical then
+        spend (fields.length * (fields.length.log2 + 1))
+        return .record (fields.mergeSort (fun x y => x.1 ≤ y.1))
+      return .record fields
     | .variant row =>
       let fields ← buildMembers a canonical depth {} row
-      return .variant (fields.foldl (fun map (name, member, schema) => map.insert name (member, schema)) {})
+      spend fields.length
+      let state ← get
+      let index := state.variants.size
+      let indexed := fields.foldl (fun map (name, member, schema) => map.insert name (member, schema)) ({} : Std.HashMap String (Ty × Schema))
+      set { state with variants := state.variants.insert index ⟨row, indexed⟩ }
+      return .variant index
     | .variable index =>
       let state ← get
       if !state.seen.contains index then
@@ -163,10 +178,6 @@ def buildMembers (a : Assumptions) (canonical : Bool) : Nat → Std.HashSet Stri
       if names.contains name then throw "duplicate typed data field"
       let child ← buildSchema a canonical depth member
       let fields ← buildMembers a canonical depth (names.insert name) tail
-      if canonical then
-        -- Insertion into the canonical static row is charged before allocation.
-        spend fields.length
-        return (name, member, child) :: fields |>.mergeSort (fun x y => x.1 ≤ y.1)
       return (name, member, child) :: fields
     | _ => throw "typed data requires a finite closed row"
 end
@@ -174,12 +185,141 @@ end
 structure SchemaGraph where
   root : Schema
   aliases : Std.HashMap Nat Schema
+  variants : Std.HashMap Nat VariantSchema
+
+/-- Metadata work includes complete compared type trees, not just graph nodes. -/
+def typeMetadataWork : Ty → Nat
+  | .natural | .boolean | .label | .emptyRow => 1
+  | .variable index | .custody index => 1 + (toString index).utf8ByteSize
+  | .arrow _ _ domain result => 1 + typeMetadataWork domain + typeMetadataWork result
+  | .field name member tail => 1 + name.utf8ByteSize + typeMetadataWork member + typeMetadataWork tail
+  | .specification metadata extension | .prototype metadata extension =>
+    1 + typeMetadataWork metadata + typeMetadataWork extension
+  | .variant row => 1 + typeMetadataWork row
+  | .computation plan response result =>
+    1 + typeMetadataWork plan + typeMetadataWork response + typeMetadataWork result
+
+
+mutual
+/-- A final-graph check: references are associated with their actual completed
+alias targets, without recursively traversing a cycle. -/
+def schemaCertificate (a : Assumptions) (graph : SchemaGraph) : Nat → Schema → Ty → Bool
+  | 0, _, _ => false
+  | depth + 1, schema, ty => match schema, ty with
+    | .natural, .natural | .boolean, .boolean | .label, .label => true
+    | .record fields, row => fieldsCertificate a graph depth fields row
+    | .variant index, .variant row => match graph.variants[index]? with
+      | none => false
+      | some types => decide (types.row = row)
+    | .reference index, .variable expected =>
+      decide (index = expected) && graph.aliases.contains index
+    | _, _ => false
+
+def fieldsCertificate (a : Assumptions) (graph : SchemaGraph) :
+    Nat → List (String × Ty × Schema) → Ty → Bool
+  | 0, _, _ => false
+  | _ + 1, [], .emptyRow => true
+  | depth + 1, (name,member,child)::rest, .field expected domain tail =>
+    decide (name = expected) && decide (member = domain) &&
+      !member.isComputation && schemaCertificate a graph depth child member &&
+      fieldsCertificate a graph depth rest tail
+  | _, _, _ => false
+end
+
+mutual
+/-- Prepay both the certificate walk and the metadata walk used to count it.
+No claim of linear work hides equality on a deeply nested type. -/
+def schemaCertificateWork (a : Assumptions) (graph : SchemaGraph) : Nat → Schema → Ty → Nat
+  | 0, _, _ => 1
+  | depth + 1, schema, ty => 1 + match schema, ty with
+    | .record fields, row => fieldsCertificateWork a graph depth fields row
+    | .variant index, .variant row => typeMetadataWork row + match graph.variants[index]? with
+      | none => 1
+      | some types => typeMetadataWork types.row
+    | .reference index, .variable expected =>
+      (toString index).utf8ByteSize + (toString expected).utf8ByteSize + 1
+    | _, _ => 1
+
+def fieldsCertificateWork (a : Assumptions) (graph : SchemaGraph) :
+    Nat → List (String × Ty × Schema) → Ty → Nat
+  | 0, _, _ => 1
+  | _ + 1, [], _ => 1
+  | depth + 1, (name,member,child)::rest, .field expected domain tail =>
+    1 + name.utf8ByteSize + expected.utf8ByteSize + typeMetadataWork member + typeMetadataWork domain +
+      schemaCertificateWork a graph depth child member + fieldsCertificateWork a graph depth rest tail
+  | _, _, _ => 1
+end
+
+/-- Alias identity and completion are checked once, independently of recursive
+occurrences. Local schema certificates only require this certified index. -/
+def aliasCertificate (a : Assumptions) (graph : SchemaGraph) (index : Nat) : Bool :=
+  match a.alias index, graph.aliases[index]? with
+  | some (.variant row), some (.variant target) => match graph.variants[target]? with
+    | some types => decide (types.row = row)
+    | none => false
+  | _, _ => false
+
+def aliasCertificateWork (a : Assumptions) (graph : SchemaGraph) (index : Nat) : Nat :=
+  1 + (toString index).utf8ByteSize + a.bounds.length + a.rigid.length +
+    match a.alias index, graph.aliases[index]? with
+    | some (.variant row), some (.variant target) => typeMetadataWork row +
+        match graph.variants[target]? with
+        | none => 1
+        | some types => typeMetadataWork types.row
+    | _, _ => 1
+
+/-- Each finite declared row is indexed once. Duplicate or open row fields
+refuse; indexed checks never rescan a row for each alternative. -/
+def rowTypeIndex : Nat → Ty → Option (Std.HashMap String Ty)
+  | 0, _ => none
+  | _ + 1, .emptyRow => some {}
+  | depth + 1, .field name member tail => do
+    let indexed ← rowTypeIndex depth tail
+    if indexed.contains name then none else some (indexed.insert name member)
+  | _, _ => none
+
+def rowTypeIndexWork : Nat → Ty → Nat
+  | 0, _ => 1
+  | _ + 1, .emptyRow => 1
+  | depth + 1, .field name _ tail => 1 + 2 * name.utf8ByteSize + rowTypeIndexWork depth tail
+  | _, _ => 1
+
+def graphCertificate (a : Assumptions) (graph : SchemaGraph) (depth : Nat) : Bool :=
+  graph.variants.toList.all (fun (_, types) => match rowTypeIndex depth types.row with
+    | none => false
+    | some declared => types.members.toList.all (fun (label, member, schema) =>
+      decide (declared[label]? = some member) && !member.isComputation &&
+        schemaCertificate a graph depth schema member)) &&
+  graph.aliases.toList.all (fun (index, _) => aliasCertificate a graph index)
+
+def graphCertificateWork (a : Assumptions) (graph : SchemaGraph) (depth : Nat) (ty : Ty) : Nat :=
+  2 * (1 + schemaCertificateWork a graph depth graph.root ty +
+    graph.variants.toList.foldl (fun total (_, types) => total + 1 + rowTypeIndexWork depth types.row +
+      match rowTypeIndex depth types.row with
+      | none => 1
+      | some declared => types.members.toList.foldl (fun subtotal (label, member, schema) => subtotal +
+        1 + label.utf8ByteSize + typeMetadataWork member +
+          (match declared[label]? with | some actual => typeMetadataWork actual | none => 1) +
+          schemaCertificateWork a graph depth schema member) 0) 0 +
+    graph.aliases.toList.foldl (fun total (index, _) => total + 1 + aliasCertificateWork a graph index) 0)
+
+/-- Finalization checks the immutable completed graph, including every forward
+reference target. No value traversal occurs here. -/
+def certifyGraph (a : Assumptions) (depth : Nat) (ty : Ty) (graph : SchemaGraph) : Work SchemaGraph := do
+  spend (graphCertificateWork a graph depth ty)
+  if schemaCertificate a graph depth graph.root ty && graphCertificate a graph depth then
+    pure graph
+  else throw "typed data schema certificate refusal"
 
 def schemaGraph (a : Assumptions) (canonical : Bool) (depth : Nat) (ty : Ty) : Work SchemaGraph := do
   let (root, state) ← (buildSchema a canonical depth ty).run {}
-  return ⟨root, state.aliases⟩
+  let graph : SchemaGraph := ⟨root, state.aliases, state.variants⟩
+  -- Canonical compact codecs sort records; the literal/native admission bridge
+  -- uses declaration order and receives this exact final-graph certificate.
+  if canonical then return graph
+  certifyGraph a (depth + 1) ty graph
 
-private def dereference (graph : SchemaGraph) (schema : Schema) : Work Schema := do
+def dereference (graph : SchemaGraph) (schema : Schema) : Work Schema := do
   match schema with
   | .reference index =>
     spend
@@ -187,6 +327,15 @@ private def dereference (graph : SchemaGraph) (schema : Schema) : Work Schema :=
     pure schema
   | schema => pure schema
 
+def indexRecordFields (fields : List (String × Data)) : Work (Std.HashMap String Data) := do
+  let mut indexed : Std.HashMap String Data := {}
+  for (name, field) in fields do
+    spend
+    if indexed.contains name then throw "typed data record fields differ from declared type"
+    indexed := indexed.insert name field
+  return indexed
+
+mutual
 def quoteSchema {α : Type} (sink : QuoteSink α) (graph : SchemaGraph) : Nat → Data → Ty → Schema → Work α
   | 0, _, _, _ => failDepth
   | depth + 1, value, declared, schema => do
@@ -197,24 +346,28 @@ def quoteSchema {α : Type} (sink : QuoteSink α) (graph : SchemaGraph) : Nat �
     | .label s, .label => return sink.label s
     | .record fields, .record types =>
       if fields.length != types.length then throw "typed data record fields differ from declared type"
-      let mut indexed : Std.HashMap String Data := {}
-      for (name, field) in fields do
-        spend
-        if indexed.contains name then throw "typed data record fields differ from declared type"
-        indexed := indexed.insert name field
-      let mut result := sink.emptyRecord
-      for (name, ty, childSchema) in types do
-        spend
-        let some field := indexed[name]? | throw "typed data record is missing a declared field"
-        let child ← quoteSchema sink graph depth field ty childSchema
-        result := sink.field result name child
-      return result
-    | .variant label payload, .variant types =>
-      spend
-      let some (ty, childSchema) := types[label]? | throw "typed data variant label is undeclared"
+      let indexed ← indexRecordFields fields
+      quoteRecordFields sink graph depth indexed types sink.emptyRecord
+    | .variant label payload, .variant index =>
+      spend 2
+      let some types := graph.variants[index]? | throw "unresolved variant schema row"
+      let some (ty, childSchema) := types.members[label]? | throw "typed data variant label is undeclared"
       let child ← quoteSchema sink graph depth payload ty childSchema
       return sink.variant label ty declared child
     | _, _ => throw "typed data value does not conform to declared type"
+
+termination_by depth _ _ _ => (depth, 0, 0)
+def quoteRecordFields {α : Type} (sink : QuoteSink α) (graph : SchemaGraph) (depth : Nat)
+    (indexed : Std.HashMap String Data) (types : List (String × Ty × Schema)) (result : α) : Work α :=
+  match types with
+  | [] => pure result
+  | (name,ty,childSchema)::rest => do
+    spend
+    let some field := indexed[name]? | throw "typed data record is missing a declared field"
+    let child ← quoteSchema sink graph depth field ty childSchema
+    quoteRecordFields sink graph depth indexed rest (sink.field result name child)
+termination_by (depth, 1, types.length)
+end
 
 /-- Static preprocessing and actual value visits share one bounded allowance.
 The same sink-independent traversal owns validation and quotation. -/
@@ -244,6 +397,25 @@ def validationSink : QuoteSink Unit where
   field _ _ _ := ()
   variant _ _ _ _ := ()
 
+/-- Record builders are reversed until attached to their parent. This preserves
+the checked declaration's field order without allocating a literal term. -/
+def finishNative : Data → Data
+  | .record fields => .record fields.reverse
+  | other => other
+
+def nativeSink : QuoteSink Data where
+  natural := .natural
+  boolean := .boolean
+  label := .label
+  emptyRecord := .record []
+  field prior name child := match prior with
+    | .record fields => .record ((name, finishNative child) :: fields)
+    | other => other
+  variant name _ _ child := .variant name (finishNative child)
+
+def normalizeNative (a : Assumptions) (depth : Nat) (value : Data) (type : Ty) : Work Data := do
+  return finishNative (← quoteWith nativeSink a depth value type)
+
 /-- Input quotation retains injection annotations and canonical field order. -/
 def quote (a : Assumptions) (depth : Nat) (value : Data) (declared : Ty) : Work Quoted :=
   quoteWith termSink a depth value declared
@@ -259,26 +431,6 @@ def apply (source : AnnotatedTerm) (argument : Quoted) : AnnotatedTerm :=
                   | 0 :: rest => source.annotations rest
                   | 1 :: rest => argument.annotations.lookup rest
                   | _ => none }
-
-/-- Native values share the strict decoder's depth, duplicate checks and work
-charges without encoding a JSON tree merely to decode it again. -/
-def admitValue : Nat → Data → Work Data
-  | 0, _ => failDepth
-  | depth + 1, value => do
-    spend
-    match value with
-    | .natural _ | .boolean _ | .label _ => return value
-    | .variant _ payload =>
-      let _ ← admitValue depth payload
-      return value
-    | .record fields =>
-      let mut names : Std.HashSet String := {}
-      for (name, child) in fields do
-        spend
-        if names.contains name then throw "duplicate typed data field"
-        names := names.insert name
-        let _ ← admitValue depth child
-      return value
 
 /-- A physical compact value is meaningful only relative to this exact checked
 schema. Records carry canonical positional members; sums retain their label.
@@ -303,12 +455,13 @@ def decodeCompactSchema (graph : SchemaGraph) : Nat → Schema → Json → Work
         spend
         fields := (name, ← decodeCompactSchema graph depth schema child) :: fields
       return .record fields.reverse
-    | .variant types =>
+    | .variant index =>
       let values ← wire.getArr?
       unless values.size == 2 do throw "compact variant requires label and payload"
       let label ← values[0]!.getStr?
-      spend
-      let some (_, schema) := types[label]? | throw "compact variant label is undeclared"
+      spend 2
+      let some types := graph.variants[index]? | throw "unresolved variant schema row"
+      let some (_, schema) := types.members[label]? | throw "compact variant label is undeclared"
       return .variant label (← decodeCompactSchema graph depth schema values[1]!)
     | .reference _ => throw "unresolved compact schema alias"
 
@@ -333,9 +486,10 @@ def encodeCompactSchema (graph : SchemaGraph) : Nat → Schema → Data → Work
         let some child := indexed[name]? | throw "compact record is missing a declared field"
         values := values.push (← encodeCompactSchema graph depth schema child)
       return .arr values
-    | .variant label payload, .variant types =>
-      spend
-      let some (_, schema) := types[label]? | throw "compact variant label is undeclared"
+    | .variant label payload, .variant index =>
+      spend 2
+      let some types := graph.variants[index]? | throw "unresolved variant schema row"
+      let some (_, schema) := types.members[label]? | throw "compact variant label is undeclared"
       return .arr #[toJson label, ← encodeCompactSchema graph depth schema payload]
     | _, _ => throw "typed data value does not conform to declared type"
 
@@ -370,7 +524,52 @@ def prepare (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) := do
   prepareWith (fun _ _ => decode 256) packet (do return ← arguments.getArr?)
 
 def prepareValues (packet : Json) (arguments : Array Data) : Work (AnnotatedTerm × Ty × Nat) :=
-  prepareWith (fun _ _ => admitValue 256) packet (pure arguments)
+  -- Quotation is itself the complete bounded native value/type admission.
+  -- Repeating an untyped native walk first validates no additional fact.
+  prepareWith (fun _ _ value => pure value) packet (pure arguments)
+
+structure NativePreparation where
+  source : AnnotatedTerm
+  resultType : Ty
+  arguments : Array Data
+  fuel : Nat
+
+/-- Every argument retains the core callable/quantity gate, then one shared
+finite-data normalization allowance. No applied source syntax is constructed. -/
+def prepareNativeArguments {α : Type} (read : Assumptions → Ty → α → Work Data)
+    (a : Assumptions) (type : Ty) : List α → Work (Ty × List Data)
+  | [] => pure (type, [])
+  | argument :: rest => do
+    let .arrow _ quantity domain codomain := callable type
+      | throw "typed package argument requires a function"
+    unless argumentAllowed a quantity [] domain [] do
+      throw "applied typed package refused by Mini type checker"
+    let value ← read a domain argument
+    let normalized ← normalizeNative a 256 value domain
+    let (resultType, values) ← prepareNativeArguments read a codomain rest
+    return (resultType, normalized :: values)
+
+/-- Check the closed source once, then admit finite native arguments against
+each selected domain and the same quantity gate used by core application.
+The machine receives actual values rather than reconstructed literal syntax. -/
+def prepareNativeWith {α : Type} (read : Assumptions → Ty → α → Work Data)
+    (packet : Json) (arguments : Work (Array α)) : Work NativePreparation := do
+  let decoded ← decodePacket packet
+  unless decoded.context.isEmpty do throw "package must have a closed context"
+  let source := decoded.source
+  let some initial := check source [] decoded.fuel | throw "typed package refused by Mini type checker"
+  let (type, normalized) ← prepareNativeArguments read source.assumptions initial.type (← arguments).toList
+  shape source.assumptions 256 [] type
+  return ⟨source, type, normalized.toArray, decoded.fuel⟩
+
+def prepareNative (packet : Json) (arguments : Array Data) : Work NativePreparation :=
+  prepareNativeWith (fun _ _ value => pure value) packet (pure arguments)
+
+def prepareNativeWire (packet arguments : Json) : Work NativePreparation :=
+  prepareNativeWith (fun _ _ => decode 256) packet (do return ← arguments.getArr?)
+
+def prepareNativeCompact (packet arguments : Json) : Work NativePreparation :=
+  prepareNativeWith (fun a ty => decodeCompact a 256 ty) packet (do return ← arguments.getArr?)
 
 def prepareCompact (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) :=
   prepareWith (fun a ty => decodeCompact a 256 ty) packet (do return ← arguments.getArr?)

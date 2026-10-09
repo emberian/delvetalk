@@ -28,6 +28,7 @@ affordances = module('garden_source_affordances', 'scripts/affordances.py')
 def modules():
     return [{'name': name, 'source': (directory / (name + '.obend')).read_text()}
             for directory, name in [(ROOT / 'world/lib/prelude', 'Abi'),
+                                    (ROOT / 'world/lib/prelude', 'List'),
                                     (ROOT / 'world/lib/prelude', 'Encounter'),
                                     (PACKAGE, 'Blooms'), (PACKAGE, 'Garden')]]
 

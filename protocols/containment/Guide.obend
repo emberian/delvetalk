@@ -1,0 +1,126 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Encounter.obend as E
+import ./Relations.obend as R
+# A room's own vocabulary names explicit relationships. Resolving words never
+# searches the world or inherits authority from the object named by a word.
+record Choice:
+  term: String
+  verb: String
+  object: String
+sum Choices:
+  nil: {}
+  cons: {head: Choice, tail: Choices}
+record State:
+  placement: String
+  placementProgram: String
+  body: String
+  choices: Choices
+  term: String
+  verb: String
+  arrivals: Nat
+  lastRoom: String
+record Config:
+  placement: String
+  body: String
+  choices: Choices
+def configured(config: Config) -> State:
+  {placement: config.placement, placementProgram: "", body: config.body, choices: config.choices, term: "", verb: "", arrivals: 0n, lastRoom: ""}
+def matches(items: Choices, term: String, verb: String) -> Choices:
+  match items:
+    case nil(_): items
+    case cons(c): if c.head.term == term && c.head.verb == verb then Choices.cons({head: c.head, tail: matches(c.tail, term, verb)}) else matches(c.tail, term, verb)
+def count(items: Choices) -> Nat:
+  match items:
+    case nil(_): 0n
+    case cons(c): 1n + count(c.tail)
+def selected(items: Choices, object: String) -> String:
+  match items:
+    case nil(_): ""
+    case cons(c): if c.head.object == object then object else selected(c.tail, object)
+def first(items: Choices) -> String:
+  match items:
+    case nil(_): ""
+    case cons(c): c.head.object
+def alternatives(items: Choices) -> String:
+  match items:
+    case nil(_): ""
+    case cons(c): textConcat(c.head.object, if count(c.tail) == 0n then "" else textConcat(", ", alternatives(c.tail)))
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+def choose(state: State, input: {term: String, verb: String}, context: Abi.Context) -> Decision:
+  let local = matches(state.choices, input.term, input.verb)
+  let allowed = input.verb == "enter" && count(local) > 0n && count(state.choices) <= 8n
+  {accepted: allowed, reason: if allowed then "" else "This room offers no such local word and verb.", state: if allowed then extend(state, {term: input.term, verb: input.verb}) else state, result: if allowed then alternatives(local) else ""}
+def bind(state: State, input: P.Value, context: Abi.Context) -> Decision:
+  match P.textField(input, "program"):
+    case missing(_): {accepted: false, reason: "Capture the placement relation first.", state: state, result: ""}
+    case wrongKind(_): {accepted: false, reason: "Capture the placement relation first.", state: state, result: ""}
+    case found(program):
+      let allowed = textLength(program.value) == 64n
+      {accepted: allowed, reason: if allowed then "" else "Capture the placement relation first.", state: if allowed then extend(state, {placementProgram: program.value}) else state, result: state.placement}
+def prepareBind(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.lookupReference(observations, state.placement):
+    case missing(_): P.Preparation.refused({message: "Capture this room's placement relation."})
+    case unresolved(_): P.Preparation.refused({message: "The placement needs a retained exact reference."})
+    case found(found): prepareResolvedBind(found.value, context)
+def prepareResolvedBind(placement: P.ResolvedReference, context: P.Context) -> P.Preparation:
+  P.Preparation.ready({summary: "Use this observed placement program for completed arrivals.", reads: P.Reads.cons({head: P.referenceRead(placement), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "bind", input: P.oneField("program", P.Value.text({value: placement.program}))}), tail: P.Effects.nil()})})
+def prepareMove(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let local = matches(state.choices, state.term, state.verb)
+  match P.textField(input, "object"):
+    case wrongKind(_): P.Preparation.refused({message: "Choose a local destination identity."})
+    case missing(_): prepareSelection(state, local, "", observations, context)
+    case found(object): prepareSelection(state, local, object.value, observations, context)
+def prepareSelection(state: State, local: Choices, choice: String, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let target = if choice != "" then selected(local, choice) else if count(local) == 1n then first(local) else ""
+  if count(local) == 0n || count(local) > 8n then P.Preparation.refused({message: "Choose a word offered in this room."}) else if target == "" then P.Preparation.question({message: textConcat("Choose one of this room's destinations: ", alternatives(local)), needs: P.Names.cons({head: "object", tail: P.Names.nil()})}) else preparePlacement(state, target, observations, context)
+def preparePlacement(state: State, target: String, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.lookupReference(observations, state.placement):
+    case missing(_): P.Preparation.refused({message: "Capture this room's placement relation."})
+    case unresolved(_): P.Preparation.refused({message: "The placement needs a retained exact reference."})
+    case found(placement): if placement.value.program != state.placementProgram || state.placementProgram == "" then P.Preparation.refused({message: "Reconnect this room to the current observed placement program."}) else prepareRoom(state, placement.value, target, observations, context)
+def prepareRoom(state: State, placement: P.ResolvedReference, target: String, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.lookupReference(observations, target):
+    case missing(_): P.Preparation.refused({message: "Capture the selected room before arriving."})
+    case unresolved(_): P.Preparation.refused({message: "The selected room needs a retained exact reference."})
+    case found(room): prepareResolvedMove(state, placement, room.value, context)
+def prepareResolvedMove(state: State, placement: P.ResolvedReference, room: P.ResolvedReference, context: P.Context) -> P.Preparation:
+  P.Preparation.ready({summary: textConcat("Enter ", room.object), reads: P.Reads.cons({head: P.referenceRead(placement), tail: P.Reads.cons({head: P.referenceRead(room), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: placement.object, command: "plan", input: P.Value.record({fields: P.Fields.cons({head: {name: "object", value: P.Value.text({value: state.body})}, tail: P.Fields.cons({head: {name: "to", value: P.Value.text({value: room.object})}, tail: P.Fields.nil()})})})}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: room.object, command: "admit", result: 0n}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: placement.object, command: "arrive", result: 1n}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "complete", result: 2n}), tail: P.Effects.nil()})})})})})
+def complete(state: State, input: R.Arrival, context: Abi.Context) -> Decision:
+  let allowed = R.follows(context, state.placement, "arrive") && context.inputOrigin.program == state.placementProgram && state.placementProgram != "" && input.actor == context.principal && input.object == state.body && selected(matches(state.choices, state.term, state.verb), input.destination) != ""
+  {accepted: allowed, reason: if allowed then "" else "A current authenticated placement completion is required.", state: if allowed then extend(state, {arrivals: state.arrivals + 1n, lastRoom: input.destination}) else state, result: if allowed then textConcat("Arrived in ", input.destination) else ""}
+def children(items: Choices) -> E.Children:
+  match items:
+    case nil(_): E.Children.nil()
+    case cons(c): E.Children.cons({head: {key: c.head.object, label: textConcat(c.head.verb, textConcat(" ", c.head.term)), object: c.head.object, panel: "main"}, tail: children(c.tail)})
+def requests(items: Choices) -> P.Requests:
+  match items:
+    case nil(_): P.Requests.nil()
+    case cons(c): P.Requests.cons({head: {object: c.head.object, inspectState: false, inspectLaw: false}, tail: requests(c.tail)})
+record Description:
+  name: String
+  initial: State
+  methods: {choose: {label: String, fields: {term: Abi.StringField, verb: Abi.StringField}}, bind: {label: String, fields: {}, inputCodec: String}, complete: {label: String, fields: {object: Abi.StringField, destination: Abi.StringField, actor: Abi.StringField}}}
+  panels: {}
+def describe() -> Description:
+  {name: "This room's route book", initial: configured({placement: "habitat", body: "", choices: Choices.nil()}), methods: {choose: {label: "Choose a local word and verb", fields: {term: R.textField(), verb: R.textField()}}, bind: {label: "Connect observed placement", fields: {}, inputCodec: "value"}, complete: {label: "Record admitted arrival", fields: {object: R.textField(), destination: R.textField(), actor: R.textField()}}}, panels: {}}
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {object: Abi.StringField}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {choose: R.Action}
+  children: E.Children
+  invitations: {bind: {visible: Bool, text: String, prepare: String, fields: {}, observations: P.Requests}, move: Invitation}
+def view(state: State, panel: String) -> View:
+  let local = matches(state.choices, state.term, state.verb)
+  {title: "This room's route book", prose: if count(local) == 0n then "Choose a local word and verb to see this room's destinations." else textConcat("Local alternatives: ", alternatives(local)), actions: {choose: {visible: true, text: "Choose a local word and verb", command: "choose", input: {}}}, children: children(local), invitations: {bind: {visible: true, text: "Connect the placement relation", prepare: "prepareBind", fields: {}, observations: P.Requests.cons({head: {object: state.placement, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})}, move: {visible: count(local) > 0n, text: "Enter the selected room", prepare: "prepareMove", fields: {object: R.textField()}, observations: P.Requests.cons({head: {object: state.placement, inspectState: false, inspectLaw: false}, tail: requests(local)})}}}

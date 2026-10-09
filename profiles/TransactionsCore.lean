@@ -69,7 +69,8 @@ def reprogramCandidate (call : Json) (results : Array Json) : Except String Json
   discard (field candidate "state")
   return candidate
 
-def transitionWith (runtime : World.Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
+def transitionWith (runtime : World.Runtime) (world request : Json) (principal : String)
+    (opaqueOwner : Option String := none) : Except String (Json × Json) := do
   if (← str request "op") != "transaction" then
     return ← World.transitionWith runtime world request principal
   let objects ← field world "objects"
@@ -82,7 +83,9 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
     if id.isEmpty then throw "empty object id"
     if expected == .null then
       if (field objects id).isOk then throw "stale absence root"
-    else if (← readObject objects id principal) != expected then throw "stale read root"
+    else
+      let current ← if opaqueOwner == some id then field objects id else readObject objects id principal
+      if current != expected then throw "stale read root"
   let absent := (reads.filter (fun entry => entry.2 == .null)).map Prod.fst |>.toArray
   let execution : Evaluation (Json × Json × Array Json × Array Json × Json × Array Json) := do
     let mut staged := objects
@@ -106,7 +109,8 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         | none => pure "invoke"
       if op != "invoke" && op != "reprogram" && op != "law" && op != "observe" then
         throw "unsupported transaction operation"
-      let o ← readObject staged id principal
+      let o ← if opaqueOwner == some id && op != "observe" then
+        field staged id else readObject staged id principal
       if op == "observe" then
         if (← pairs call).map Prod.fst != ["object", "op"] then
           throw "observe requires exactly op and object"
@@ -157,9 +161,10 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
             pure publicInput
         let inputOrigin ← callInputOrigin runtime call calls producerPrograms results.size
         let invocation ← put (← put call "input" input) "op" (.str op)
-        let semanticInvocation ← prepareInvocation runtime o invocation nativeInput
+        let prepared ← prepareInvocation runtime o invocation nativeInput
+        let semanticInvocation := prepared.request
         authorizeRequestWith runtime o semanticInvocation principal
-        let produced ← executeCommandWith runtime o semanticInvocation principal inputOrigin none (some input)
+        let produced ← executeCommandWith runtime o semanticInvocation principal inputOrigin none (some input) prepared.nativeInput
         let n ← (← field o "version").getNat?
         let nextObj ← put (← put o "state" produced.state) "version" (toJson (n + 1))
         checkCandidateWith runtime o nextObj semanticInvocation principal

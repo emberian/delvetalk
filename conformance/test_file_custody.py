@@ -5,7 +5,7 @@ The large-history case is a synthetic transport fixture, not a replay proof.
 """
 import copy
 from decimal import Decimal
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,9 +13,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('file_custody_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'file_custody_world')
 
 
 def protocol():

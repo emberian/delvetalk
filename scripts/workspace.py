@@ -9,12 +9,15 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bootstrap
+import source_store
+import source_object
+from copy import deepcopy
 
 FORMAT = 'delvetalk-workspace-v1'
 loads, canonical = bootstrap.loads, bootstrap.canonical
 
 
-def initialize(directory, objects, *, entry_objects, principal, profile='transactions',
+def initialize(directory, objects, *, entry_objects, principal, profile='compiled',
                title='A shared world', default_object=None, world_id=None,
                backend='file', messaging=False, pending_limit=128):
     """Admit explicit creation requests in private staging, then publish custody once."""
@@ -31,10 +34,20 @@ def initialize(directory, objects, *, entry_objects, principal, profile='transac
         raise ValueError('supply at least one explicit seed object')
     ids = []
     for seed in objects:
-        if not isinstance(seed, dict) or set(seed) != {'id', 'syntax', 'source', 'law'}:
-            raise ValueError('seed object requires exactly id, syntax, source bytes and law')
-        if not isinstance(seed['id'], str) or not seed['id'] or not isinstance(seed['source'], bytes):
-            raise ValueError('seed id must be nonempty and source must be exact bytes')
+        if (not isinstance(seed, dict) or not {'id', 'syntax', 'law'} <= set(seed)
+                or set(seed) - {'id', 'syntax', 'source', 'modules', 'law', 'initial', 'sourceConfiguration'}
+                or ('source' in seed) == ('modules' in seed)
+                or ('initial' in seed and 'modules' not in seed)
+                or ('sourceConfiguration' in seed and 'initial' not in seed)):
+            raise ValueError('seed object requires id, syntax, law and exactly source bytes or explicit modules')
+        if not isinstance(seed['id'], str) or not seed['id']:
+            raise ValueError('seed id must be nonempty')
+        if 'modules' in seed:
+            if seed['syntax'] != 'objective-bend-object':
+                raise ValueError('module seeds require current source object syntax')
+            source_store.inline_module_material(seed['modules'])
+        elif not isinstance(seed['source'], bytes):
+            raise ValueError('seed source must be exact bytes')
         ids.append(seed['id'])
     if len(set(ids)) != len(ids):
         raise ValueError('seed object IDs must be distinct')
@@ -70,16 +83,34 @@ def initialize(directory, objects, *, entry_objects, principal, profile='transac
                 if receipt['kind'] != 'committed':
                     raise ValueError('message bootstrap refused by Lean: ' + str(receipt['data']))
             for index, seed in enumerate(objects):
-                artifact = bootstrap.desk_module.translate.translate(seed['syntax'], seed['source'])
-                if artifact['target'] == 'local-protocol-v1':
-                    protocol = artifact['lowered']
-                elif artifact['target'] == 'spween-protocol-bundle-v1':
-                    wrapped = bootstrap.room.wrap_bundle(artifact['lowered'])
-                    bootstrap.room.store_artifact(staging / 'artifacts/rooms', wrapped)
-                    bootstrap.preserve_dependencies(staging, wrapped)
-                    protocol = wrapped['protocol']
+                if 'modules' in seed:
+                    material = source_store.inline_module_material(seed['modules'], staging / 'artifacts')
+                    artifact = bootstrap.desk_module.translate.translate_modules(seed['syntax'], material)
                 else:
-                    raise ValueError('seed syntax must lower to an executable local protocol or Spween bundle')
+                    artifact = bootstrap.desk_module.translate.translate(seed['syntax'], seed['source'])
+                if artifact['target'] == 'local-protocol-v1':
+                    protocol = deepcopy(artifact['lowered'])
+                    if 'initial' in seed:
+                        protocol['initial'] = deepcopy(seed['initial'])
+                        if 'sourceConfiguration' in seed:
+                            protocol['sourceConfiguration'] = deepcopy(seed['sourceConfiguration'])
+                        # Resolve the held schema against these exact sealed sources.
+                        # Native create still decides admission of this caller state.
+                        source_object.state_data({'protocol': protocol, 'state': protocol['initial']})
+                        source_lowering = bootstrap.history.digest(artifact)
+                        pins = staging / 'artifacts/pins'
+                        (pins / 'blobs').mkdir(parents=True, exist_ok=True)
+                        if bootstrap.history.store_bytes(pins, canonical(artifact)) != source_lowering:
+                            raise ValueError('original source lowering changed during custody')
+                        bootstrap.desk_module.immutable(staging / 'artifacts/lowerings' / (source_lowering + '.json'), artifact)
+                        artifact = {**artifact, 'lowered': protocol,
+                            'lowered_sha256': bootstrap.history.digest(protocol),
+                            'configuration': {'sourceLowering': source_lowering,
+                                'initial': seed['initial'],
+                                'declaredSourceConfiguration': seed.get('sourceConfiguration'),
+                                'provenance': 'Caller-supplied typed initial state; constructor execution is not asserted.'}}
+                else:
+                    raise ValueError('seed syntax must lower to an ordinary source object')
                 identity = bootstrap.history.digest(artifact)
                 bootstrap.desk_module.immutable(staging / 'artifacts/lowerings' / (identity + '.json'), artifact)
                 bootstrap.preserve_dependencies(staging, artifact)
@@ -109,7 +140,7 @@ def initialize(directory, objects, *, entry_objects, principal, profile='transac
     return {**seed, 'directory': str(destination), 'view': str(destination / 'index.html')}
 
 
-def initialize_plan(directory, plan, *, base, principal, profile='transactions', world_id=None,
+def initialize_plan(directory, plan, *, base, principal, profile='compiled', world_id=None,
                     backend='file', messaging=False, pending_limit=128):
     if not isinstance(plan, dict) or set(plan) != {'title', 'entryObjects', 'defaultObject', 'objects'}:
         raise ValueError('plan requires exactly title, entryObjects, defaultObject and objects')
@@ -136,7 +167,7 @@ def main():
     init.add_argument('--plan', required=True, type=Path)
     init.add_argument('--principal', required=True)
     init.add_argument('--world-id', help='optional explicit immutable namespace; otherwise a fresh urn:uuid')
-    init.add_argument('--profile', choices=bootstrap.desk_module.world.PROFILES, default='transactions')
+    init.add_argument('--profile', choices=bootstrap.desk_module.world.PROFILES, default='compiled')
     init.add_argument('--backend', choices=('file', 'resident'), default='file')
     init.add_argument('--messaging', action='store_true', help='initialize native message lineage before seeds (compiled only)')
     init.add_argument('--pending-limit', type=int, default=128)

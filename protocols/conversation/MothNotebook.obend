@@ -1,9 +1,11 @@
 edition ObjectiveBend 1
+import ./Reflection.obend as R
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Encounter.obend as E
 import ./Document.obend as D
 import ./Conversation.obend as C
+import ./Interpretation.obend as I
 import ./ConversationModel.obend as M
 import ./Notebook.obend as N
 # Example configuration, not the reusable notebook's reference policy.
@@ -31,3 +33,11 @@ def interpretationRequest(state: N.State, original: String, observations: P.Obse
   N.interpretationRequest(state, original, observations, context)
 def prepareInterpretation(state: N.State, input: M.Response, observations: P.Observations, context: P.Context) -> M.Preparation:
   N.prepareInterpretation(state, input, observations, context)
+
+def reviseInterpretation(state: N.State, input: I.PolicyEdit, context: Abi.Context) -> N.Decision:
+  N.reviseInterpretation(state, input, context)
+
+def prepareInspectTemplates(state: N.State, contribution: P.Value, observations: P.Observations, context: P.Context, definitions: R.Definitions) -> R.Inspection:
+  N.prepareInspectTemplates(state, contribution, observations, context, definitions)
+def prepareReviseTemplates(state: N.State, contribution: P.Value, observations: P.Observations, context: P.Context, definitions: R.Definitions) -> P.Preparation:
+  N.prepareReviseTemplates(state, contribution, observations, context, definitions)

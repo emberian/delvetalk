@@ -1,16 +1,14 @@
 """Atomic native root/reference observations avoid full-preimage uploads."""
 from contextlib import nullcontext
 from decimal import Decimal
-import importlib.util
+from native_support import load_script
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('capture_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'capture_world')
 
 
 class RootCaptureTests(unittest.TestCase):

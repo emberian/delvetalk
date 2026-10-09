@@ -21,7 +21,7 @@ def ordinary(object: P.Value) -> State:
 def without(values: P.Values, maker: String) -> P.Values:
   match values:
     case nil(_): P.Values.nil()
-    case cons(c): if P.text(c.head) == maker then without(c.tail, maker) else P.Values.cons({head: c.head, tail: without(c.tail, maker)})
+    case cons(c): if P.textEquals(c.head, maker) then without(c.tail, maker) else P.Values.cons({head: c.head, tail: without(c.tail, maker)})
 def people(state: State, maker: String) -> P.Value:
   match state.participants:
     case array(a): P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: without(a.values, maker)})})
@@ -95,5 +95,7 @@ record View:
 def view(state: State, panel: String) -> View:
   {title: "Object workshop", prose: if panel == "last" then state.last else "Create an object, then teach it a new program. Its maker and the configured participants may use and govern it.", actions: {}, children: E.Children.nil(), invitations: {make: {visible: true, text: "Make an object", prepare: "prepareMake", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}}, observations: P.Requests.nil()}}}
 def prepareMake(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let name: String = P.text(P.get(contribution, "name"))
-  if name == "" then P.Preparation.question({message: "Name the object.", needs: P.Names.cons({head: "name", tail: P.Names.nil()})}) else C.make(context.object, name, P.oneField("name", P.Value.text({value: name})), "Make an object with its captured workshop and absence roots.")
+  match P.textField(contribution, "name"):
+    case missing(_): P.Preparation.question({message: "Name the object.", needs: P.Names.cons({head: "name", tail: P.Names.nil()})})
+    case wrongKind(_): P.Preparation.refused({message: "The object name must be text."})
+    case found(t): if t.value == "" then P.Preparation.question({message: "Name the object.", needs: P.Names.cons({head: "name", tail: P.Names.nil()})}) else C.make(context.object, t.value, P.oneField("name", P.Value.text({value: t.value})), "Make an object with its captured workshop and absence roots.")

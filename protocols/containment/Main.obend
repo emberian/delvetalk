@@ -42,9 +42,15 @@ def plan(s: State, i: Move, c: Abi.Context) -> Planned:
   let m = R.get(s.members, i.object)
   let allowed = movable(s, i.object, i.to, c.principal)
   {accepted: allowed, reason: if allowed then "" else "Cannot move or drop there.", state: s, result: {object: i.object, destination: i.to, previous: m.place, holder: m.holder, occupancy: R.occupancy(s.members, i.to), actor: c.principal}}
-def arrive(s: State, i: R.Transfer, c: Abi.Context) -> Decision:
+record Arrived:
+  accepted: Bool
+  reason: String
+  state: State
+  result: R.Arrival
+def arrive(s: State, i: R.Transfer, c: Abi.Context) -> Arrived:
   let m = R.get(s.members, i.object)
-  if R.follows(c, i.destination, "admit") == false || i.actor != c.principal || movable(s, i.object, i.destination, c.principal) == false || m.place != i.previous || m.holder != i.holder || R.occupancy(s.members, i.destination) != i.occupancy then no(s, "A fresh room admission is required.") else yes(s, R.member(m.object, m.owner, "", i.destination, "", m.role))
+  let allowed = R.follows(c, i.destination, "admit") && i.actor == c.principal && movable(s, i.object, i.destination, c.principal) && m.place == i.previous && m.holder == i.holder && R.occupancy(s.members, i.destination) == i.occupancy
+  {accepted: allowed, reason: if allowed then "" else "A fresh room admission is required.", state: if allowed then {members: R.put(s.members, R.member(m.object, m.owner, "", i.destination, "", m.role))} else s, result: {object: i.object, destination: i.destination, actor: c.principal}}
 record EnrollMethod:
   label: String
   fields: {object: Abi.StringField, version: Abi.NatField}

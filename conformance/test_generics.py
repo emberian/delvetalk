@@ -285,7 +285,7 @@ def entry() -> {count: Nat, found: Bool, removed: Nat, renamed: E.Entries}:
 
     def test_protocol_collections_share_traversals_and_keep_domain_rules(self):
         files = [('List', 'world/lib/prelude/List.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
-                 ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Encounter', 'world/lib/prelude/Encounter.obend'),
+                 ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Authority', 'world/lib/prelude/Authority.obend'), ('Encounter', 'world/lib/prelude/Encounter.obend'),
                  ('Emissions', 'world/lib/prelude/Emissions.obend'), ('Document', 'world/lib/document/Document.obend'),
                  ('Relations', 'protocols/containment/Relations.obend'), ('Consent', 'protocols/resident-library/Consent.obend'),
                  ('Directory', 'protocols/root-directory/Directory.obend'), ('Commons', 'protocols/commons/Commons.obend')]

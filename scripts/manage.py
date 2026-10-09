@@ -81,9 +81,9 @@ class Management:
             return entry['receipt']
         config = self.clerk.config()
         selected = self.clerk.execution_profile(entry['request'], config)
-        if entry.get('admissionProfile', 'world') != selected:
+        if entry.get('admissionProfile', 'compiled') != selected:
             raise ValueError('pending management admission profile changed')
-        if entry['profile']['pins'] != clerk.pins(config.get('runtimeProfile', 'world')):
+        if entry['profile']['pins'] != clerk.pins(config.get('runtimeProfile', 'compiled')):
             raise ValueError('pending management clerk implementation pins changed')
         if entry['managementProfile'] != management_profile():
             raise ValueError('pending management implementation pins changed')
@@ -124,7 +124,7 @@ class Management:
         else:
             if request['op'] != 'create' and request['object'] not in config['objects']:
                 raise ValueError('object is not configured for this clerk')
-            if config['profile']['pins'] != clerk.pins(config.get('runtimeProfile', 'world')):
+            if config['profile']['pins'] != clerk.pins(config.get('runtimeProfile', 'compiled')):
                 raise ValueError('clerk implementation pins changed')
             # Reject oversized transport before reserving an intent: the host's
             # request envelope errors have no retained semantic receipt to recover.
@@ -227,7 +227,6 @@ def main():
     revise.add_argument('--intent', required=True, help='stable identity for this attempt; retain across retries')
     revise.add_argument('--expected-root', required=True, type=Path, help='exact root JSON or clerk snapshot envelope')
     authority = revise.add_mutually_exclusive_group(required=True)
-    authority.add_argument('--allow', action='append', help='complete new law; repeat for every allowed DID')
     authority.add_argument('--empty-law', action='store_true', help='deliberately remove all authority, including management')
     authority.add_argument('--law-file', type=Path, help='complete law JSON; Lean validates its structure and authority')
     create = commands.add_parser('add-object', help='create a local object and recoverably register clerk custody')
@@ -237,7 +236,6 @@ def main():
     create.add_argument('--source', required=True, type=Path)
     create.add_argument('--syntax', required=True)
     initial_law = create.add_mutually_exclusive_group(required=True)
-    initial_law.add_argument('--allow', action='append')
     initial_law.add_argument('--empty-law', action='store_true')
     initial_law.add_argument('--law-file', type=Path)
     program = commands.add_parser('reprogram', help='submit a translated program and complete state to Lean')
@@ -263,7 +261,7 @@ def main():
         elif args.command == 'add-object':
             result = manager.add_object(args.object, args.principal, args.intent, args.syntax,
                                         args.source.read_bytes(),
-                                        clerk.loads(args.law_file.read_bytes()) if args.law_file else args.allow or [])
+                                        clerk.loads(args.law_file.read_bytes()) if args.law_file else {'profile': 'delvetalk-scoped-law', 'invoke': {}, 'reprogram': [], 'law': []})
         elif args.command == 'reprogram':
             result = manager.reprogram(args.object, args.principal, args.intent,
                                        clerk.loads(args.expected_root.read_text()), args.syntax,
@@ -271,7 +269,7 @@ def main():
         else:
             result = manager.law(args.object, args.principal, args.intent,
                                  clerk.loads(args.expected_root.read_text()),
-                                 clerk.loads(args.law_file.read_bytes()) if args.law_file else args.allow or [])
+                                 clerk.loads(args.law_file.read_bytes()) if args.law_file else {'profile': 'delvetalk-scoped-law', 'invoke': {}, 'reprogram': [], 'law': []})
         print(clerk.world.wire_dumps(result))
     except (ValueError, RuntimeError, OSError) as exc:
         print(clerk.world.wire_dumps({'management_error': str(exc)}), file=sys.stderr)

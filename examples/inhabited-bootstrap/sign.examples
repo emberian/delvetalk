@@ -1,0 +1,6 @@
+examples DelveTalk 1
+case a visitor lights the shared lamp
+law iris moss
+as iris
+send light
+expect result (String): lit

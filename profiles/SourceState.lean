@@ -64,13 +64,11 @@ def readWith (compile : Json → m Json) (protocol model : Json) : m Data := do
     throw "compact state schema differs from retained program"
   unless (← schema.getObjValAs? String "sourcesSha256") == (← selected.artifact.getObjValAs? String "sourcesSha256") do
     throw "compact state source differs from retained program"
-  let data ← Delvetalk.PackageData.decodeCompact selected.assumptions 256 selected.type (← model.getObjVal? "value")
-  Delvetalk.PackageData.validate selected.assumptions 256 data selected.type
-  return data
+  -- The selected codec checks every node against this exact schema itself.
+  Delvetalk.PackageData.decodeCompact selected.assumptions 256 selected.type (← model.getObjVal? "value")
 
 def writeWith (compile : Json → m Json) (protocol descriptor path : Json) (data : Data) : m Json := do
   let selected ← resolveWith compile protocol descriptor path
-  Delvetalk.PackageData.validate selected.assumptions 256 data selected.type
   let value ← Delvetalk.PackageData.encodeCompact selected.assumptions 256 selected.type data
   return Json.mkObj [("format", toJson format), ("value", value), ("schema", Json.mkObj [
     ("package", descriptor), ("path", path), ("packetSha256", ← selected.artifact.getObjVal? "packetSha256"),
@@ -89,6 +87,38 @@ def initialSchema (protocol : Json) : Except String (Json × Json) := do
     let some (_, command) := commands.toList.head? | throw "child has no selected state schema"
     return (← (← command.getObjVal? "transition").getObjVal? "package", Json.arr #[.str "domain"])
 
+/-- Bind an initial envelope's claimed schema to the exact retained artifact.
+This checks the claim without decoding a default model that configuration replaces. -/
+def checkedInitialSchemaWith (compile : Json → m Json) (protocol : Json) : m (Json × Json) := do
+  let selection ← initialSchema protocol
+  let initial ← (← protocol.getObjVal? "initial").getObjVal? "model"
+  if (initial.getObjValAs? String "format").toOption == some format then
+    exact initial ["format", "schema", "value"]
+    let schema ← initial.getObjVal? "schema"
+    exact schema ["package", "path", "packetSha256", "sourcesSha256"]
+    let selected ← resolveWith compile protocol selection.1 selection.2
+    unless (← schema.getObjValAs? String "packetSha256") == (← selected.artifact.getObjValAs? String "packetSha256") do
+      throw "compact state schema differs from retained program"
+    unless (← schema.getObjValAs? String "sourcesSha256") == (← selected.artifact.getObjValAs? String "sourcesSha256") do
+      throw "compact state source differs from retained program"
+  return selection
+
+/-- A retained initial schema must describe the state actually consumed by
+all current views and commands, not merely another valid export in the table. -/
+def coherentInitialWith (compile : Json → m Json) (protocol : Json) : m Resolved := do
+  let (descriptor, path) ← checkedInitialSchemaWith compile protocol
+  let initial ← resolveWith compile protocol descriptor path
+  let check (descriptor : Json) (kind : String) : m Unit := do
+    let consumed ← resolveWith compile protocol descriptor (Json.arr #[.str "domain"])
+    unless (← Delvetalk.PackageData.equivalent initial.assumptions consumed.assumptions 256 [] initial.type consumed.type) do
+      throw ("initial state schema differs from " ++ kind ++ " state domain")
+  if let some view := (protocol.getObjVal? "viewProgram").toOption then
+    check (← view.getObjVal? "package") "view"
+  let commands ← (← protocol.getObjVal? "commands").getObj?
+  for (_, command) in commands.toList do
+    check (← (← command.getObjVal? "transition").getObjVal? "package") "command"
+  return initial
+
 /-- A typed source effect never authors envelope encoding. Frame its already
 checked Data against the observed recipient's actual exported input schema. -/
 def inputWireWith (compile : Json → m Json) (protocol : Json) (command : String) (data : Data) : m Json := do
@@ -98,7 +128,6 @@ def inputWireWith (compile : Json → m Json) (protocol : Json) (command : Strin
   unless (descriptor.getObjValAs? String "profile").toOption == some "delvetalk-source-transition" do
     throw "unknown source transition profile"
   let selected ← resolveWith compile protocol (← descriptor.getObjVal? "package") (.arr #[.str "codomain", .str "domain"])
-  Delvetalk.PackageData.validate selected.assumptions 256 data selected.type
   let value ← Delvetalk.PackageData.encodeCompact selected.assumptions 256 selected.type data
   return Json.mkObj [("schemaPacketSha256", ← selected.artifact.getObjVal? "packetSha256"), ("value", value)]
 

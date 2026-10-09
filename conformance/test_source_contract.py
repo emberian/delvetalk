@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Law-held source specification bounds constrain actual receiving programs."""
 import copy
-import importlib.util
+from native_support import load_script
 import json
 from pathlib import Path
 import subprocess
@@ -9,9 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('source_contract_world', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
+world = load_script(ROOT / 'scripts/world.py', 'source_contract_world')
 SOURCE = (ROOT / 'protocols/source-contract/Counter.obend').read_text()
 
 

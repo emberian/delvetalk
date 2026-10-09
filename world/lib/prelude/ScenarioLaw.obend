@@ -30,7 +30,16 @@ def authorityWithRead(commands: P.Value, principals: P.Value, reading: P.Value) 
     case record(_): P.Value.none()
 
 def authority(commands: P.Value, principals: P.Value) -> P.Value:
-  authorityWithRead(commands, principals, P.Value.text({value: "public"}))
+  let base: P.Value = authorityWithRead(commands, principals, P.Value.text({value: "public"}))
+  match base:
+    case record(r): P.Value.record({fields: pair("view", P.Value.record({fields: pair("main", P.Value.text({value: "public"}), P.Fields.nil())}), r.fields)})
+    case none(_): P.Value.none()
+    case retained(_): P.Value.none()
+    case boolean(_): P.Value.none()
+    case natural(_): P.Value.none()
+    case number(_): P.Value.none()
+    case text(_): P.Value.none()
+    case array(_): P.Value.none()
 def privateAuthority(commands: P.Value, principal: String) -> P.Value:
   let people: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: principal}), tail: P.Values.nil()})})
   authorityWithRead(commands, people, people)

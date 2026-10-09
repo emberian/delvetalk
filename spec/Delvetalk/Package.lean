@@ -244,22 +244,56 @@ private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × T
       return .finished result.value type (nodes - result.remaining.nodes)
         ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
 
-def executeDataValue (packet arguments limits : Json) : Except String DataExecution :=
+/-- Native finite arguments retain lazy demand cells instead of literal syntax.
+Their preparation and extraction still consume the shared execution allowance. -/
+private def executePreparedNative (prepared : PackageData.Work PackageData.NativePreparation)
+    (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
+  let bytes ← bounded limits "bytes" 1048576 16777216
+  let inputBytes ← bounded limits "inputBytes" bytes 16777216
+  if argumentBytes > inputBytes then throw "typed data input byte capacity"
+  let ticks ← bounded limits "ticks" 100000 1000000
+  let work ← bounded limits "work" ticks 1000000
+  let allowance := min ticks work
+  let (preparation, remaining) ← prepared.run allowance
+  let source := preparation.source
+  let type := preparation.resultType
+  let before := allowance - remaining
+  let heap ← bounded limits "heap" 100000 1000000
+  let stack ← bounded limits "stack" 10000 100000
+  let nodes ← bounded limits "nodes" 100000 1000000
+  let budget : Budget := ⟨nodes, ticks - before, bytes⟩
+  match executeDataArguments ⟨heap, stack⟩ budget source.term preparation.arguments.toList with
+  | .error (failure, state, rest) =>
+      return .refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩
+  | .ok execution =>
+      let result := execution.extraction.result
+      -- Recursive aliases and the complete returned value are checked, including
+      -- payloads which a later source Decision may explicitly refuse.
+      let outputAllowance := min remaining result.remaining.ticks
+      let (_, after) ← (PackageData.validate source.assumptions 256 result.value type).run outputAllowance
+      return .finished result.value type (nodes - result.remaining.nodes)
+        ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
+
+/-- Conformance reference only; no physical operation dispatch selects it. -/
+def executeQuotedDataValue (packet arguments limits : Json) : Except String DataExecution :=
   executePreparedData (PackageData.prepare packet arguments) arguments.compress.utf8ByteSize limits
 
-/-- Exact same checked execution, work and physical wire byte cap for native
-arguments. Keep Data through this internal boundary rather than roundtripping. -/
+def executeDataValue (packet arguments limits : Json) : Except String DataExecution :=
+  executePreparedNative (PackageData.prepareNativeWire packet arguments) arguments.compress.utf8ByteSize limits
+
+/-- Checked native execution retains the physical wire byte cap. Finite values
+use lazy native demand cells; their first force avoids source-literal machinery. -/
 def executeDataValues (packet : Json) (arguments : Array Data) (limits : Json) : Except String DataExecution :=
   let argumentBytes := 2 + arguments.foldl (fun n value => n + dataJsonBytes value) 0
     + (arguments.size - 1)
-  executePreparedData (PackageData.prepareValues packet arguments) argumentBytes limits
+  executePreparedNative (PackageData.prepareNative packet arguments) argumentBytes limits
 
 /-- A native receiving caller supplies the exact size of its retained physical
 argument frames; it must not replace compact physical bytes with an expanded
 internal DataWire representation when enforcing the transport cap. -/
 def executeDataValuesSized (packet : Json) (arguments : Array Data) (physicalBytes : Nat)
     (limits : Json) : Except String DataExecution :=
-  executePreparedData (PackageData.prepareValues packet arguments) physicalBytes limits
+  executePreparedNative (PackageData.prepareNative packet arguments) physicalBytes limits
 
 /-- All-compact physical package boundary: input and output interpretation is
 bound to the exact checked packet carried by the verified artifact. -/
@@ -267,7 +301,7 @@ def runCompactDataVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   let packet ← artifact.getObjVal? "packet"
   let arguments ← j.getObjVal? "arguments"
-  let execution ← executePreparedData (PackageData.prepareCompact packet arguments)
+  let execution ← executePreparedNative (PackageData.prepareNativeCompact packet arguments)
     arguments.compress.utf8ByteSize (getLimits j)
   match execution with
   | .refused _ _ => return execution.wire

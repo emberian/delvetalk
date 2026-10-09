@@ -2,6 +2,8 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Document.obend as D
+import ./Interpretation.obend as I
+import ./List.obend as Lists
 record Interpretation:
   original: String
   policy: String
@@ -12,18 +14,16 @@ record Interpretation:
 record Contribution:
   actor: String
   proposal: Interpretation
-sum Contributions:
-  nil: {}
-  cons: {head: Contribution, tail: Contributions}
+type Contributions = Lists.List<Contribution>
 record Outcome:
   actor: String
   status: String
   content: D.Document
-sum Outcomes:
-  nil: {}
-  cons: {head: Outcome, tail: Outcomes}
+type Outcomes = Lists.List<Outcome>
 record State:
   focus: String
+  interpreter: I.Policy
+  interpretationEdits: Nat
   capture: D.Capture
   bindings: P.Fields
   unresolved: P.Names
@@ -43,7 +43,7 @@ record Decision:
   state: State
   result: String
 def initial(focus: String, capture: D.Capture, needs: P.Names) -> State:
-  {focus: focus, capture: capture, bindings: P.Fields.nil(), unresolved: needs, contributions: Contributions.nil(), outcomes: Outcomes.nil(), count: 0n, closed: false}
+  {focus: focus, interpreter: I.defaultPolicy(), interpretationEdits: 0n, capture: capture, bindings: P.Fields.nil(), unresolved: needs, contributions: Contributions.nil(), outcomes: Outcomes.nil(), count: 0n, closed: false}
 def merge(older: P.Fields, newer: P.Fields) -> P.Fields:
   match newer:
     case nil(_): older
@@ -73,6 +73,10 @@ def outcomeWindow(items: Outcomes, limit: Nat) -> D.Documents:
   match items:
     case nil(_): D.Documents.nil()
     case cons(c): if limit == 0n then D.Documents.nil() else D.Documents.cons({head: D.Document.result({status: c.head.status, body: c.head.content}), tail: outcomeWindow(c.tail, limit - 1n)})
+# Model context selects the current intention; attributed outcome archives remain
+# available in render and never become quoted instructions for another turn.
+def interpretationContext(state: State) -> D.Document:
+  D.concat(D.text(state.focus), D.concat(D.Document.fields({capture: state.capture, values: state.bindings, needs: state.unresolved}), D.Document.sequence({items: contributionWindow(state.contributions, 0n, 4n)})))
 def render(policy: Policy, state: State, after: Nat, limit: Nat) -> D.Document:
   let bound = if limit > policy.window then policy.window else limit
   let history = D.Document.sequence({items: contributionWindow(state.contributions, after, bound)})
@@ -112,3 +116,14 @@ def recordSource(policy: Policy, state: State, language: String, source: String,
   let contribution = contribute(policy, state, literal(state, source, P.Fields.nil()), context)
   let cell = D.concat(D.Document.source({language: language, code: source, revision: revision}), D.Document.result({status: "recorded", body: D.text(result)}))
   if contribution.accepted then decided(extend(contribution.state, {outcomes: Outcomes.cons({head: {actor: context.principal, status: "recorded", content: cell}, tail: state.outcomes})}), true, result) else contribution
+
+# Native admission governs this ordinary method. A policy edit rotates the
+# captured meaning, clears only active bindings, and retains attributed history.
+def reviseInterpretation(state: State, input: I.Policy, needs: P.Names, context: Abi.Context) -> Decision:
+  let next = extend(state, {interpreter: input, interpretationEdits: state.interpretationEdits + 1n, capture: extend(state.capture, {revision: state.capture.revision + 1n}), bindings: P.Fields.nil(), unresolved: needs, outcomes: Outcomes.cons({head: {actor: context.principal, status: "interpretation-revised", content: D.concat(D.quote("Previous interpretation policy", I.inspect(state.interpreter)), D.quote("New interpretation policy", I.inspect(input)))}, tail: state.outcomes})})
+  if state.interpretationEdits >= 32n then decided(state, false, "This notebook has retained its 32 interpretation revisions; inspect or revise its source to continue.") else if I.validPolicy(input) == false then decided(state, false, "Use bounded prompt text, a model name, and positive model/context limits.") else if input.revision == state.interpreter.revision then decided(state, false, "Give the revised interpretation policy a new revision.") else decided(next, true, "Prompt and conventions revised; choose fields under the new capture.")
+
+def editInterpretation(state: State, input: I.PolicyEdit, needs: P.Names, context: Abi.Context) -> Decision:
+  match I.edited(state.interpreter, input):
+    case invalid(_): decided(state, false, "Choose an actual prompt or conventions section.")
+    case found(p): reviseInterpretation(state, p.value, needs, context)

@@ -68,8 +68,40 @@ def normalize(queue: Queue) -> Queue:
     case cons(c): queue
 def field(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
   P.Fields.cons({head: {name: name, value: value}, tail: tail})
-def readPayload(value: P.Value) -> Payload:
-  {owner: P.text(P.get(value, "owner")), id: P.text(P.get(value, "id")), generation: P.natural(P.get(value, "generation")), due: P.natural(P.get(value, "due")), deadline: P.natural(P.get(value, "deadline")), tick: P.natural(P.get(value, "tick")), topic: P.text(P.get(value, "topic"))}
+sum PayloadLookup:
+  missing: {field: String}
+  wrongKind: {field: String}
+  found: {value: Payload}
+def readPayload(value: P.Value) -> PayloadLookup:
+  match P.textField(value, "owner"):
+    case missing(_): PayloadLookup.missing({field: "owner"})
+    case wrongKind(_): PayloadLookup.wrongKind({field: "owner"})
+    case found(owner):
+      match P.textField(value, "id"):
+        case missing(_): PayloadLookup.missing({field: "id"})
+        case wrongKind(_): PayloadLookup.wrongKind({field: "id"})
+        case found(id):
+          match P.naturalField(value, "generation"):
+            case missing(_): PayloadLookup.missing({field: "generation"})
+            case wrongKind(_): PayloadLookup.wrongKind({field: "generation"})
+            case found(generation):
+              match P.naturalField(value, "due"):
+                case missing(_): PayloadLookup.missing({field: "due"})
+                case wrongKind(_): PayloadLookup.wrongKind({field: "due"})
+                case found(due):
+                  match P.naturalField(value, "deadline"):
+                    case missing(_): PayloadLookup.missing({field: "deadline"})
+                    case wrongKind(_): PayloadLookup.wrongKind({field: "deadline"})
+                    case found(deadline):
+                      match P.naturalField(value, "tick"):
+                        case missing(_): PayloadLookup.missing({field: "tick"})
+                        case wrongKind(_): PayloadLookup.wrongKind({field: "tick"})
+                        case found(tick):
+                          match P.textField(value, "topic"):
+                            case missing(_): PayloadLookup.missing({field: "topic"})
+                            case wrongKind(_): PayloadLookup.wrongKind({field: "topic"})
+                            case found(topic):
+                              PayloadLookup.found({value: {owner: owner.value, id: id.value, generation: generation.value, due: due.value, deadline: deadline.value, tick: tick.value, topic: topic.value}})
 def disabled() -> E.Emissions:
   E.empty()
 def send(item: Item, now: Nat) -> E.Emissions:
