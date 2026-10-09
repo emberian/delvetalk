@@ -1,7 +1,6 @@
 """world-turn: activities run against the durable store and commit once.
 
-Counter is the real world/objects/Counter.obend (plus the `initial` entry that
-names its state type); the other objects are fixtures that each isolate one rule.
+Counter and Bell are the real world/objects files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """
 import json
 import os
@@ -13,6 +12,8 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BINARY = os.path.join(ROOT, ".lake", "build", "bin", "delvetalk-obend")
+if not os.path.exists(BINARY):  # lane worktrees do not build; use the read-only foundation checker
+    BINARY = os.environ.get("DELVETALK_OBEND", "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend")
 IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 
 
@@ -47,13 +48,8 @@ def closure(name, seen=None, out=None, override=None):
     return out
 
 
-COUNTER_INITIAL = "\ndef initial() -> State:\n  {count: 0n}\n"
-
-
 def counter_modules():
-    with open(ON_DISK["Counter"]) as handle:
-        source = handle.read() + COUNTER_INITIAL
-    return closure("Counter", override={"Counter": source})
+    return closure("Counter")
 
 
 FIXTURE_HEAD = """edition ObjectiveBend 1
@@ -331,13 +327,13 @@ class Plans(TurnWorld):
 
 
 class ListEdits(TurnWorld):
-    @unittest.skip("recursive state types (List<T>) are not first-order data to the checker yet; unskip when the turn lane lands them")
+    # Waiting on the kernel/host: world-create answers
+    #   'package entry type must be a closed record of first-order data (a
+    #    zero-argument definition returning the state record)'
+    # for any state holding a List. The unexpected success will flip this.
+    @unittest.expectedFailure
     def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
-        with open(ON_DISK["Bell"]) as handle:
-            source = handle.read() + (
-                '\ndef initial() -> State:\n  {planter: "glm", colour: Colour.silver({}), seed: "s", '
-                'rains: Lists.List::<Rain>.nil(), rung: false}\n')
-        modules = closure("Bell", override={"Bell": source})
+        modules = closure("Bell")
         empty = {"tag": "record", "fields": []}
         seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
                       seed=label("s"), rains={"tag": "variant", "label": "nil", "payload": empty},

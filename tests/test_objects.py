@@ -102,6 +102,18 @@ def run_pure(name, entry, *arguments, probe=None, limits=None):
     return check(request)
 
 
+BIG = {"ticks": "1000000"}
+
+DOC_PROBE = """edition ObjectiveBend 1
+import ./Document.obend as Document
+def leaves(n: Nat) -> Document.Documents:
+  match n:
+    case 0: Document.Documents.nil()
+    case 1+p: Document.Documents.cons({head: Document.text("abcdefgh"), tail: leaves(p)})
+def flat(n: Nat) -> Nat:
+  textLength(Document.plain(Document.Document.sequence({items: leaves(n)})))
+"""
+
 PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./%s.obend as O\n"
 
 BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
@@ -204,16 +216,34 @@ class Objects(unittest.TestCase):
                 if name == "Anthology":
                     self.assertIn("[proposed] glm: moths", reply["value"]["value"])
 
-    def test_maximum_bell(self):
-        """A Bell with 1,025 rains does NOT render under the default budget.
+    def test_every_object_exports_initial(self):
+        for name in ("Counter", "Garden", "Bell", "Cistern", "Anthology"):
+            with self.subTest(object=name):
+                self.assertIn(("initial", False), [(d[0], d[1]) for d in definitions(name)])
+                reply = compile_job(closure(name), "initial")
+                self.assertEqual(reply["status"], "compiled", reply)
 
-        Measured: the card Document (built and measured with the linear
-        Document.size) costs about 310 ticks per rain, so the default 100,000
-        ticks is exhausted between 256 and 512 rains. The test pins both sides:
-        256 fits, 1,025 is a tickExhausted refusal under the default limits and
-        finishes under a 1,000,000-tick limit, whose exact cost is printed.
-        Document.plain, the flat text projection, is quadratic and exhausts the
-        default budget below 64 rains."""
+    def test_plain_is_not_quadratic(self):
+        """Document.plain flattens the leaves once and joins them in rounds of
+        adjacent pairs. Measured on a sequence of 256 eight-byte text leaves
+        (generation included, about 30,000 ticks): 555,890 ticks with the old
+        accumulating fold, 72,085 now."""
+        probe = DOC_PROBE
+        flat = run_pure("Document", "flat", nat(256), probe=probe)
+        print("plain over 256 leaves:", flat.get("ticksUsed"), "ticks")
+        self.assertEqual(flat["status"], "finished", flat)
+        self.assertEqual(flat["value"]["value"], "2048")
+        self.assertLess(flat["ticksUsed"], 100000)
+        self.assertEqual(run_pure("Document", "flat", nat(256), probe=probe, limits=BIG)["ticksUsed"], flat["ticksUsed"])
+
+    def test_maximum_bell(self):
+        """A Bell with 1,025 rains does not render under the default budget.
+
+        The card Document (built and measured with the linear Document.size)
+        costs about 310 ticks per rain: 256 rains fit, 1,025 cost 316,764 ticks
+        and exhaust the default 100,000. The flat text card (Document.plain) is
+        linear-ish now: 1,025 rains cost 848,680 ticks, 64 rains 43,000 (this
+        was refused before the plain rewrite). Both finish under 1,000,000."""
         line = len("author: a line of rain\n")
         header = len("A silver bell planted by glm: a bell for lost moths (silent)\n")
         fits = run_pure("Bell", "weight", nat(256), probe=BELL_PROBE)
@@ -222,14 +252,16 @@ class Objects(unittest.TestCase):
         default = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE)
         self.assertEqual(default["status"], "refused", default)
         self.assertTrue(default["failure"].endswith("tickExhausted"), default)
-        raised = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE,
-                          limits={"ticks": "1000000"})
-        print("1025 rains: default budget %s; at 1,000,000 ticks: %s ticks, %s heap cells" %
-              (default["failure"].rsplit(".", 1)[-1], raised.get("ticksUsed"), raised.get("heapCells")))
+        raised = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE, limits=BIG)
         self.assertEqual(raised["status"], "finished", raised)
         self.assertEqual(raised["value"]["value"], str(header + 1025 * line))
-        flat = run_pure("Bell", "many", nat(64), probe=BELL_PROBE)
-        self.assertEqual(flat["status"], "refused", flat)
+        flat64 = run_pure("Bell", "many", nat(64), probe=BELL_PROBE)
+        self.assertEqual(flat64["status"], "finished", flat64)
+        flat = run_pure("Bell", "many", nat(1025), probe=BELL_PROBE, limits=BIG)
+        self.assertEqual(flat["status"], "finished", flat)
+        self.assertTrue(flat["value"]["value"].endswith("author: a line of rain\n"))
+        print("1025 rains: Document.size %s ticks, %s heap cells; plain card %s ticks; default budget refuses the first" %
+              (raised["ticksUsed"], raised["heapCells"], flat["ticksUsed"]))
 
 
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1
@@ -302,22 +334,23 @@ def bad(count: Nat) -> Activity<Plan, Response, Nat>:
     case refused(_): 0n
 """, "bad", "nullary-activity")
 
-    def test_recursive_plan_is_refused(self):
-        """Not a named refusal: recorded so a checker upgrade shows up here."""
-        reply = compile_job([{"name": "Bad", "source": """edition ObjectiveBend 1
+    def test_recursive_types_in_plans_and_responses_are_admitted(self):
+        """The first checker refused any recursive type inside a Plan or Response
+        with 'the checker refused the front end's typed packet'. The current
+        binary admits them; this pins the new behaviour."""
+        reply = compile_job([{"name": "Rec", "source": """edition ObjectiveBend 1
 sum L:
   nil: {}
   cons: {head: Nat, tail: L}
 sum P:
   a: {l: L}
 sum R:
-  ok: {}
+  ok: {l: L}
 def f(n: Nat) -> Activity<P, R, Nat>:
   match perform(P.a({l: L.nil({})})):
     case ok(_): n
 """}], "f")
-        self.assertEqual(reply["status"], "error")
-        self.assertIn("typed packet", reply["message"])
+        self.assertEqual(reply["status"], "compiled", reply)
 
 
 if __name__ == "__main__":
