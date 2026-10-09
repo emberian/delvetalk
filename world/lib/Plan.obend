@@ -58,12 +58,17 @@ sum Edit<T, D>:
   add: {delta: D}
 # A list-valued field: append an item, replace the item at an index by `change`
 # (the host stores the change as the item, so U is the item type), or remove
-# the item at an index (later items shift down by one).
+# the item at an index (later items shift down by one). amendItem and removeItem
+# address the first item whose canonical bytes equal `item` (refused absentItem
+# when none does); the index forms go after one release. A write of only keep,
+# add and append commits even if its object moved since the turn read it.
 sum Entries<D, U>:
   keep: {}
   append: {item: D}
   amend: {index: Nat, change: U}
   remove: {index: Nat}
+  amendItem: {item: D, change: U}
+  removeItem: {item: D}
 # The identity of a turn, (principal, intent): what an await names.
 record Slot:
   principal: String
@@ -95,7 +100,11 @@ record Offering:
 # grant is used by naming its id as `via` in callVia or sendVia: the callee then runs with
 # request.subject = the grantor and request.caller = the calling object. Without a grant
 # that stands the Plan is answered refused {clause: "noGrant"}. (Records have no optional
-# fields, so a call or send under a grant is its own constructor.)
+# fields, so a call or send under a grant is its own constructor.) grantWith attenuates:
+# `fixed` (Data.of a record of some of the callee's input fields) is merged into every
+# use's argument (a use giving such a field otherwise is refused grantConflict), and the
+# grant serves `uses` (at least 1) admitted calls or sends, then grantSpent. The grantor
+# may also revoke with the op world-revoke, outside any object.
 record Grant:
   to: String
   object: Reference
@@ -115,21 +124,26 @@ sum Plan<E>:
   call: {object: Reference, method: String, argument: Data}
   send: {object: Reference, method: String, argument: Data}
   create: {package: String, seed: Data, law: String, requireAbsent: Reference}
+  createUnder: {package: String, seed: Data, law: String, requireAbsent: Reference, supervisor: Reference}
   await: Await
   awaitUntil: {slot: Slot, until: Nat}
   interpret: Interpret
   offer: Offering
   publish: Publish
   reprogram: {object: Reference, package: String, migration: String}
+  extend: {object: Reference, package: String, migration: String}
   amend: {object: Reference, law: String}
   inspect: {object: Reference}
   check: {package: String}
   grant: Grant
+  grantWith: {to: String, object: Reference, method: String, until: Nat, fixed: Data, uses: Nat}
   revoke: {id: String}
   callVia: {object: Reference, method: String, argument: Data, via: String}
   sendVia: {object: Reference, method: String, argument: Data, via: String}
   objects: {prefix: String, after: String}
   card: {object: Reference}
+  run: {object: Reference, method: String, argument: Data, handler: Reference}
+  judge: {edits: E}
 sum Response<S, R>:
   viewed: {version: Nat, state: S}
   denied: {}
@@ -148,12 +162,18 @@ sum Response<S, R>:
   published: {post: String}
   reprogrammed: {pin: String}
   amended: {}
-  inspected: {pin: String, law: String, source: String}
+  inspected: {pin: String, law: String, source: String, methods: Forms}
   checked: {diagnostics: Document.Names}
   granted: {id: String}
   revoked: {}
   listed: {ids: Document.Names, more: Bool}
   carded: {document: Document.Document}
+  judged: {admitted: Bool, clause: String}
+# What a handler's `handle(state, plan, context)` answers for a Plan the callee of a `run`
+# yields: pass it on to the host, or answer it with a response of the callee's type.
+sum Handled<R>:
+  pass: {}
+  answer: {response: R}
 # The reference of the running object, in the world the context carries (the
 # empty world is the world the turn runs in).
 # The empty payload, for a method that takes no input.
