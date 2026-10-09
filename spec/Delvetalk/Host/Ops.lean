@@ -144,6 +144,9 @@ structure Written where
   method : String := ""
   /-- The grant the change was made under ("" for none): its grantor is the law's subject. -/
   via : String := ""
+  /-- The argument of the method run that made the change: the Bend law's `request.argument`.
+      Journaled (`arguments`) only for an object whose package declares a Bend law. -/
+  argument : Data := .record []
 
 structure Proposal where
   principal : String
@@ -186,7 +189,9 @@ def writtenFields (ws : List Written) : List (String × Json) :=
   [("edits", stepsJson (ws.map (·.edits))), ("callers", toJson (ws.map (·.caller))),
    ("kinds", toJson (ws.map (·.kind)))] ++
   (if ws.all (·.method.isEmpty) then [] else [("methods", toJson (ws.map (·.method)))]) ++
-  (if ws.all (·.via.isEmpty) then [] else [("vias", toJson (ws.map (·.via)))])
+  (if ws.all (·.via.isEmpty) then [] else [("vias", toJson (ws.map (·.via)))]) ++
+  (if ws.all (fun w => match w.argument with | .record [] => true | _ => false) then []
+   else [("arguments", Json.arr (ws.toArray.map (dataJson ·.argument)))])
 
 def writesJson (writes : List (String × List Written)) : Json :=
   Json.arr (writes.toArray.map fun (o, ws) => Json.mkObj (("object", toJson o) :: writtenFields ws))
@@ -230,11 +235,14 @@ def parseRecordedWrites (j : Json) : Except String (List (String × List Written
       | .error _ => pure (steps.map fun _ => "")
     let methods ← optional "methods"
     let vias ← optional "vias"
+    let arguments ← match w.getObjVal? "arguments" with
+      | .ok a => (← a.getArr?).toList.mapM (decodeData Limits.dataDepth)
+      | .error _ => pure (steps.map fun _ => Data.record [])
     unless callers.length == steps.length && kinds.length == steps.length && methods.length == steps.length &&
-        vias.length == steps.length do
-      throw "a write's callers, kinds, methods and vias must match its edits"
-    out := out ++ [(object, (steps.zip (callers.zip (kinds.zip (methods.zip vias)))).map
-      fun (step, caller, kind, method, via) => { caller, kind, edits := step, method, via })]
+        vias.length == steps.length && arguments.length == steps.length do
+      throw "a write's callers, kinds, methods, vias and arguments must match its edits"
+    out := out ++ [(object, (steps.zip (callers.zip (kinds.zip (methods.zip (vias.zip arguments))))).map
+      fun (step, caller, kind, method, via, argument) => { caller, kind, edits := step, method, via, argument })]
   return out
 
 /-- A direct proposal. A write must name an object among its roots; `turn` is the
@@ -781,6 +789,107 @@ def attenuate (g : Grant) (argument : Data) : Except String Data := do
   | f, .record [] => return f
   | f, a => if same f a then return a else throw "grantConflict"
 
+/-! ## The two-tier law
+
+A package may declare `def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict` (the
+artifact's `law.present`) and `def lawReads() -> List<String>` (`law.reads`). After the law text
+admits an ordinary write (kind 0), the host runs the current code's `law` on the object's state
+before and after, with `request = {context, method, argument, kind, pin, reads}`, under
+`Bounds.lawTicks`; `reads` are the objects `lawReads()` names, as `{object, version, state}`, each
+a root of the turn. Reprograms and amendments are judged by the law text alone: the amendment
+metarule is decided on the fragment, and no predicate, budget or bug can seal out the hand that
+may amend or reprogram. -/
+
+/-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
+def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
+
+/-- An object's definition `name`, compiled and prepared (from the world's cache when warm). -/
+def compileDef (w : World) (o : Object) (name : String) : Except String Compiled := do
+  if let some c := w.compiled[defKey o name]? then return c
+  let (artifact, ty, _) ← Package.compileKeepingLaws (← resolveInputs w ((delegate o.inputs name).setObjVal! "entry" (toJson name)))
+  let packet ← artifact.getObjVal? "packet"
+  let prepared ← Run.prepare packet (← artifact.getObjValAs? String "packetSha256")
+  return ⟨packet, ty, prepared.source.assumptions.bounds, prepared.source.assumptions.rigid, some prepared⟩
+
+/-- Compile the Bend law (and its reads) of the objects a proposal writes, into the world's
+    cache, so the pure `judge` finds them. -/
+def warmLaws (w : World) (ids : List String) : World :=
+  ids.foldl (fun w id => match w.objects[id]? with
+    | some o =>
+      if !o.predicate then w else
+      (["law"] ++ (if o.predicateReads then ["lawReads"] else [])).foldl (fun w name =>
+        if w.compiled.contains (defKey o name) then w else
+        match compileDef w o name with
+        | .ok c =>
+          let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
+          { w with compiled := cache.insert (defKey o name) c }
+        | .error _ => w) w
+    | none => w) w
+
+def lawBudgets : Except String Delvetalk.Turn.Budgets :=
+  Delvetalk.Turn.budgets (Json.mkObj [("ticks", toJson (toString Delvetalk.Bounds.lawTicks))])
+
+/-- The labels of a `List<String>` value. -/
+partial def labels (acc : List String) : Data → Option (List String)
+  | .variant "nil" _ => some acc.reverse
+  | .variant "cons" (.record f) => match f.lookup "head", f.lookup "tail" with
+    | some (.label s), some tail => labels (s :: acc) tail
+    | _, _ => none
+  | _ => none
+
+/-- The objects an object's `lawReads()` names. -/
+def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
+  if !o.predicateReads then return []
+  let c ← compileDef w o "lawReads"
+  let some p := c.prepared | throw "lawReads is not prepared"
+  match ← Run.evaluate p [] (← lawBudgets) with
+  | .finished value _ _ => match labels [] value with
+    | some ids => return ids.eraseDups.take Limits.maxRoots
+    | none => throw "lawReads must return a List<String>"
+  | _ => throw "lawReads did not finish"
+
+/-- The proposal with the objects the Bend laws of its written objects read added as roots. -/
+def withLawReads (w : World) (p : Proposal) : Proposal :=
+  p.writes.foldl (fun p (id, _) => match w.objects[id]? with
+    | some o => match lawReadsOf w o with
+      | .ok ids => ids.foldl (fun p r =>
+          if p.roots.any (·.1 == r) then p else match w.objects[r]? with
+          | some ro => { p with roots := p.roots ++ [(r, ro.version)] }
+          | none => p) p
+      | .error _ => p
+    | none => p) p
+
+/-- An object's Bend law on one ordinary write: none when it admits. -/
+def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (subject caller method : String)
+    (argument : Data) (kind : Nat) (pin : String) : Option Refusal := Id.run do
+  let refuse := fun (clause : String) => some ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
+  let .ok c := compileDef w o "law" | return refuse "law"
+  let some prepared := c.prepared | return refuse "law"
+  let .ok ids := lawReadsOf w o | return refuse "lawReads"
+  let mut reads : List Data := []
+  for r in ids do
+    match w.objects[r]? with
+    | some ro =>
+      unless p.roots.any (·.1 == r) do return refuse "lawReads"
+      reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
+    | none => pure ()
+  let context := Data.record [("world", .label ""), ("object", .label id), ("principal", .label subject),
+    ("caller", .label caller), ("intent", .label p.intent), ("height", .natural w.height),
+    ("inputOrigin", .record [("kind", .label "law"), ("object", .label caller), ("command", .label method),
+      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
+  let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
+    ("kind", .natural kind), ("pin", .label pin),
+    ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
+  let .ok budgets := lawBudgets | return refuse "law"
+  match Run.evaluate prepared [o.state, new, request] budgets with
+  | .ok (.finished (.variant "admitted" _) _ _) => return none
+  | .ok (.finished (.variant "refused" (.record f)) _ _) =>
+    match f.lookup "clause" with
+    | some (.label clause) => return refuse clause
+    | _ => return refuse "law"
+  | .ok (.exhausted resource _) => return some { cls := "budget", reason := some s!"law {resource}", object := some id }
+  | _ => return refuse "law"
+
 /-- Every change of `id` in the writes is an ordinary write made only of commuting edits. -/
 def commutesAt (writes : List (String × List Written)) (id : String) : Bool :=
   match writes.lookup id with
@@ -874,6 +983,14 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind, method⟩
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id }
+    -- The Bend law, after the text admits: once for each ordinary change, with its argument.
+    if o.predicate then
+      let seen := (changes.filter (·.kind == 0)).foldl (fun (acc : List (String × Written)) c =>
+        let key := (Json.arr #[toJson c.caller, toJson c.method, toJson c.via, dataJson c.argument]).compress
+        if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
+      for (_, c) in seen do
+        let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
+        if let some r := bendLaw w p id o state subject c.caller c.method c.argument 0 next.pin then throw r
     if let some text := p.laws.lookup id then
       let refuse := fun (clause : String) => Refusal.mk "lawRefused" (some clause) (some id) none
       let law ← match parseLawText text with
@@ -1023,6 +1140,11 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     (forced : Option Refusal := none)
     (onAdmit : List (String × Object) → List (String × Json) := fun _ => [])
     (onEnd : Nat → Json → List (String × Json) := fun _ _ => []) : World × Json :=
+  -- Arguments are kept only where a Bend law reads them; its reads are roots; its code is warm.
+  let p := { p with writes := p.writes.map fun (id, ws) =>
+    if ((w.objects[id]?).map (·.predicate)).getD false then (id, ws) else (id, ws.map fun x => { x with argument := .record [] }) }
+  let w := warmLaws w (p.writes.map (·.1))
+  let p := withLawReads w p
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
   | none =>
@@ -1490,6 +1612,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
                           absent, creates, grants, revokes, spent, layered }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
+    let w := warmLaws w (p.writes.map (·.1))
     match judge w (w.height + 1) p with
     | .error r => throw s!"admitted entry would be refused ({r.cls})"
     | .ok judged =>

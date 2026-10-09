@@ -395,6 +395,19 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `def ended(state, input: {receipt: Plans.Receipt, how: String}, context)`; another input is refused
    `typeMismatch` at delivery. Snapshots keep `supervisor`; `world-inspect` shows it.
 
+20. **The two-tier law (host4).** For an object whose artifact has `law.present` (`Object.predicate`), `judge`
+   runs, after the law text admits, the current code's `law(old, new, request)` once per distinct ordinary
+   (kind 0) change (`bendLaw`), with `request = {context, method, argument: Data, kind, pin, reads}` (`Abi.Request`:
+   context as the changing frame saw it with `inputOrigin.kind = "law"` and the world's height; `argument` the
+   changing method's, journaled per change as `arguments` only for such objects; `reads` = `[{object, version,
+   state}]` for the ids `lawReads()` returns, which `commit` adds to the proposal's roots before its digest
+   (`withLawReads`) and `bendLaw` requires among them). It runs through `Run.evaluate` under
+   `Bounds.lawTicks`: `admitted` admits, `refused {clause}` is `lawRefused clause`, exhaustion is class `budget`
+   reason `law ticks` (transient), anything else fails closed as `lawRefused law`/`lawReads`. Reprograms and
+   amendments are the text's alone (the metarule stays on the fragment, and a predicate cannot seal out the
+   reprogramming hand either). `warmLaws` compiles `law`/`lawReads` into `world.compiled` before `judge`
+   (commit and replay), since `judge` is pure. A package with `law.present` was never refused at creation.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

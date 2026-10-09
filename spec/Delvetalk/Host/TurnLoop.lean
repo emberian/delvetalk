@@ -90,6 +90,8 @@ structure TurnState where
   subject : String
   method : String := ""
   via : String := ""
+  /-- The running frame's argument: a change it makes carries it to the Bend law. -/
+  argument : Data := .record []
   /-- A turn a principal asked for directly (not a delivery): only such a turn may grant. -/
   direct : Bool := true
   grants : List Grant := []
@@ -239,7 +241,7 @@ def addWrite (id caller : String) (step : Step) : M Unit := do
   if step.length > Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
   let prior := (s.writes.lookup id).getD []
   if prior.length ≥ Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
-  let steps := prior ++ [({ caller, edits := step, method := s.method, via := s.via } : Written)]
+  let steps := prior ++ [({ caller, edits := step, method := s.method, via := s.via, argument := s.argument } : Written)]
   if !s.writes.any (·.1 == id) && s.writes.length ≥ Limits.maxWrites then
     evaluation "turn exceeds the write capacity"
   let writes := if s.writes.any (·.1 == id) then
@@ -251,7 +253,7 @@ def addWrite (id caller : String) (step : Step) : M Unit := do
     amends (kind 2) itself. False when the write set is full. -/
 def ensureWrite (id caller : String) (kind : Nat) : M Bool := do
   let s ← get
-  let change : Written := { caller, kind, edits := [], method := s.method, via := s.via }
+  let change : Written := { caller, kind, edits := [], method := s.method, via := s.via, argument := s.argument }
   if s.writes.any (·.1 == id) then
     set { s with writes := s.writes.map fun (k, ws) => if k == id then (k, ws ++ [change]) else (k, ws) }
     return true
@@ -433,9 +435,9 @@ mutual
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
     (subject : String) (via : String := "") : M Data := do
   let outer ← get
-  set { outer with subject, method, via }
+  set { outer with subject, method, via, argument }
   let result ← runFrame depth id method argument caller
-  modify fun s => { s with subject := outer.subject, method := outer.method, via := outer.via }
+  modify fun s => { s with subject := outer.subject, method := outer.method, via := outer.via, argument := outer.argument }
   return result
 
 /-- The body of `runMethod`, inside the frame it set. -/
@@ -1126,6 +1128,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       subject := principal
       method := method
       via := via
+      argument := argument
       direct := delivery.isNone
       grants := grants
       revokes := strings (act.getObjVal? "revokes").toOption

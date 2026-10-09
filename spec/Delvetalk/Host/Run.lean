@@ -70,8 +70,9 @@ def conclude (p : Prepared) (binding : Delvetalk.Turn.Binding) (bounds : DataBou
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
       | none => .error ("turn refused: " ++ failureName failure)
 
-/-- The applied source and its activity shape, as `prepareStart` gives them. -/
-def applied (p : Prepared) (arguments : List Data) : Except String (AnnotatedTerm × Ty × Ty × Ty) := do
+/-- The source applied to data arguments, each conforming to its arrow's domain, and the type
+    left after them. -/
+def apply (p : Prepared) (arguments : List Data) : Except String (AnnotatedTerm × Ty) := do
   let bounds := p.source.assumptions.bounds
   let mut source := p.source
   let mut entryType := p.entryType
@@ -84,8 +85,24 @@ def applied (p : Prepared) (arguments : List Data) : Except String (AnnotatedTer
     let (term, extras) ← argumentAt bounds domain v
     source := applyArgument source term extras
     entryType := rest
+  return (source, entryType)
+
+/-- The applied source and its activity shape, as `prepareStart` gives them. -/
+def applied (p : Prepared) (arguments : List Data) : Except String (AnnotatedTerm × Ty × Ty × Ty) := do
+  let (source, entryType) ← apply p arguments
   let (plan, response, result) ← activityShape p.source.assumptions entryType
   return (source, plan, response, result)
+
+/-- A pure definition applied to data arguments and run to its value under the budgets: the
+    outcome is `finished` or `exhausted` (a pure definition never yields). -/
+def evaluate (p : Prepared) (arguments : List Data) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
+  let (source, result) ← apply p arguments
+  unless result.isDataUnder p.source.assumptions.bounds p.source.assumptions.rigid Ty.dataFuel [] do
+    throw "the definition does not return data"
+  let capacities : Limits := ⟨b.heap, b.stack⟩
+  let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
+    fun e => (e.extraction.result.value, e.extraction.result.remaining)
+  conclude p ⟨"", "", "", ""⟩ source.assumptions.bounds .emptyRow .emptyRow result b capacities outcome
 
 def start (p : Prepared) (arguments : List Data) (binding : Delvetalk.Turn.Binding) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
   let (source, plan, response, result) ← applied p arguments
