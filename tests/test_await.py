@@ -46,7 +46,7 @@ class Create(Await):
                          principal=who, identity=post)
 
     def test_a_planted_bell_appears_with_its_planter_and_only_the_overlaid_fields(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         self.assertEqual(self.plant()["status"], "admitted")
         bell = self.state("garden/bell/1")
         self.assertEqual(get(bell, "planter"), label("glm"))
@@ -56,7 +56,7 @@ class Create(Await):
         self.assertEqual(self.state("garden")["fields"][0]["value"], nat(1))
 
     def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         r = self.plant()
         self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/1")
         before = self.state("garden/bell/1")
@@ -68,7 +68,7 @@ class Create(Await):
         self.assertEqual(again["status"], "admitted", again)
 
     def test_a_second_create_of_one_id_is_refused_naming_the_root_and_creates_nothing(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         first = self.turn("garden", "cistern", record(), principal="kimik3")
         self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "made"))
         second = self.turn("garden", "cistern", record(), principal="glm")
@@ -116,7 +116,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         self.assertEqual(again, kid)
 
     def test_an_existing_object_makes_the_create_fail_even_if_made_by_world_create(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         self.make("garden/cistern/1", closure("Cistern"), record(entries=nil()))
         r = self.turn("garden", "cistern", record(), principal="glm")
         self.assertEqual(r["receipt"]["outcome"]["class"], "requiredAbsence")

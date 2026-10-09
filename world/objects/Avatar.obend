@@ -112,6 +112,6 @@ def card(state: State) -> String:
   Document.plain(render(state))
 # Who you are, what you carry, what has been said to you.
 def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({document: render(state)})):
+  match perform(Plan.offer({to: "", document: render(state)})):
     case offered(_): true
     case _: false

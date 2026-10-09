@@ -86,7 +86,7 @@ def holding(state: State) -> String:
 def render(state: State) -> Document.Document:
   Document.text(textConcat(state.name, textConcat("\n", textConcat(state.description, textConcat("\n", textConcat(holding(state), "\n"))))))
 def inspect(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({document: render(state)})):
+  match perform(Plan.offer({to: "", document: render(state)})):
     case offered(_): true
     case _: false
 def card(state: State) -> String:

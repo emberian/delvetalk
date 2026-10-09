@@ -29,7 +29,7 @@ def door(label_, description, to):
 
 class Cards(Chain):
     def garden(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
 
     def say(self, text, who="glm", post="at://glm/post/1", obj="garden", method="receive"):
         return self.turn(obj, method, record(text=label(text), who=label(who), post=label(post)), principal=who)
@@ -58,7 +58,7 @@ class Cards(Chain):
         cases = {
             "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted: colour is one of: amber, violet, silver\n",
             "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted: Unknown field smell\n",
-            "Could we plant a silver fern?": "Not planted: The reply has no delvetalk line.\n",
+            "Could we plant a silver fern?": "Not planted: The garden has no interpretation policy.\n",
             "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted: This card offers garden plant\n",
         }
         for spell, expected in cases.items():

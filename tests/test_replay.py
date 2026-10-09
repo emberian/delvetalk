@@ -49,7 +49,7 @@ class Replay(Chain):
         return get(self.state(obj), name)
 
     def test_1_glm_plants_a_silver_bell_and_the_child_retains_the_planter(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         reply = self.turn("garden", "receive", self.heard(
             "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", "glm",
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm")
@@ -66,7 +66,7 @@ class Replay(Chain):
         self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
     def test_3_the_second_cistern_create_is_refused_on_a_required_absence(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         first = self.turn("garden", "cistern", record(), principal="kimik3")
         self.assertEqual(first["status"], "admitted", first["receipt"]["outcome"])
         self.assertEqual(first["result"]["label"], "made")
@@ -92,7 +92,7 @@ class Replay(Chain):
     def test_5_the_strike_awaits_the_planting_receipt_and_the_ring_is_the_commit(self):
         # The planting is the Garden.receive turn that created the bell; it has committed
         # before the strike awaits it, so the await answers at once with its receipt.
-        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
         planted = self.turn("garden", "receive", self.heard(
             "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", "glm",
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm",

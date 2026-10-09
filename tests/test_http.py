@@ -7,7 +7,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_turn_world import BINARY, closure, counter_modules, nat, record
+from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
 from transport.http import Front, Heaps, Host
@@ -257,7 +257,7 @@ class HttpFront(unittest.TestCase):
 
     def test_html_card_and_spell_form(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2), policy=record(world=label(""), object=label("")))})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)
