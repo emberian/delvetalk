@@ -4,12 +4,12 @@
 
 ```sh
 python3 scripts/intake.py at://AUTHOR/town.delve.feed.post/KEY \
-  --syntax protocol-markdown@1 \
+  --syntax objective-bend-object \
   --output ~/claude_state/delvetalk/intake-NEW-ID \
-  --scenarios protocols/counter/scenarios.json
+  --scenarios syntaxes/examples/lantern.examples
 ```
 
-The output must be fresh with an existing parent; keep it outside Git. Omit `--scenarios` for translation only. The operator selects registered syntax. Posts cannot supply executable adapters. `protocol-markdown@1` requires one fenced `delvetalk-protocol` JSON block; exact surrounding text and line endings survive. Ordinary prose receives a retained parse refusal.
+The output must be fresh with an existing parent; keep it outside Git. Omit `--scenarios` for translation only. The operator selects registered syntax. Posts cannot supply executable adapters. `objective-bend-object` requires exact Bend source. Ordinary prose requires a separately retained interpretation; it is not executable source. Exact fetched text and line endings survive custody.
 
 | File | Evidence |
 | --- | --- |
@@ -20,7 +20,7 @@ The output must be fresh with an existing parent; keep it outside Git. Omit `--s
 
 Source is saved before translation; duplicate/missing/wrong-URI responses refuse acquisition. AppView identity is trusted observation, not signature/CAR verification. Digests use lossless repository JSON, not RFC 8785.
 
-[Proposal checks](../protocols/PROPOSALS.md) compare translation artifacts, interpret only known protocol expressions and retain source/binary pins. Outbox stays fixture data. Passing selected scenarios establishes neither general safety nor live admission.
+[Proposal checks](../protocols/PROPOSALS.md) retain exact source, checked native artifacts and source/binary pins. Outbox stays fixture data. Passing selected scenarios establishes neither general safety nor live admission.
 
 Exit: 0 success; 1 retained translation/check failure; 2 acquisition/I/O error.
 

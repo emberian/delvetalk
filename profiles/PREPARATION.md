@@ -90,7 +90,6 @@ legitimate empty string, zero, or false remains `found`. `lookupObservation`
 returns `missing` or the actual captured observation, including version zero.
 Consumers choose their own question or refusal; the codec supplies no authority.
 `textOrEmpty`, `naturalOrZero`, `booleanOrFalse`, and `observationOrEmpty` are
-explicitly lossy optional projections. The historical `text`, `natural`, and
-`observation` exports retain that same compatibility behavior and must not
-validate required fields. Typed conversation/model envelopes are checked as
+explicitly lossy optional projections. The ambiguous historical `text`, `natural`, and
+`observation` shorthand exports have been removed. Typed conversation/model envelopes are checked as
 their exported source type and do not need dynamic envelope decoding.

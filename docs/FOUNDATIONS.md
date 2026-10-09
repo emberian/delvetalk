@@ -46,7 +46,7 @@ A shareable component type does not make an affine captured binding unrestricted
 Reusable closures must also satisfy capture-use checks. Both affine and linear
 quantities enforce at-most-once use; neither promises eventual discharge. Direct
 activities in specification/prototype components refuse; no automatic “else linear”
-fallback exists. [Typed boundary](../profiles/TYPED.md).
+fallback exists. [Source typing boundary](../profiles/TYPED-SOURCE-OBJECTS.md).
 
 Raw evaluation can get stuck on nonfunctions, missing fields or wrong operand
 kinds. Lazy record fields may remain unforced; `stuck` has no completeness proof.

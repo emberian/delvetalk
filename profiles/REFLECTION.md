@@ -56,3 +56,31 @@ constructor or reflective `self` inside the recursive knot remains a separate de
 
 [Native tests](../conformance/test_reflection.py) ·
 [observer](../spec/Delvetalk/Reflection.lean)
+
+## Captured installed definitions
+
+A source preparation invitation can additionally declare `definitions`, a bounded
+list of `{object, package}` selectors. Each object must already be declared in the
+invitation's observations. Custodians capture those roots under the actual caller's
+current read law. Native preparation rechecks current reads and selects the exact
+source table of that captured revision; it never refreshes modules from the current
+object or reads host source files.
+
+Such an export receives a fifth `Reflection.Definitions` argument. Ordinary
+preparation exports keep their four arguments. A definition contains object,
+version, program digest, package name and the table's ordered exact `{name, source}`
+modules. Selection is limited to sixteen tables, sixty-four modules per table and
+one MiB of aggregate source. Selection grants no effect or management authority.
+
+The Writing card's `prepareInspect` uses this data to produce an `inspection`
+response: source-authored message, logical Value and the existing Document ABI.
+Module contents appear as `Document.source` nodes. The generic client renders this
+read-only document; it does not supply an application-specific source inspector.
+The retained source may then be revised, checked with authored examples and released
+through the ordinary Candidate and current-law adoption pipeline. A source edit
+invalidates earlier action roots. Current read revocation also blocks a retained
+inspection, even when its earlier source revision remains admitted history.
+
+This is source-environment reflection. The trusted compiler and admission boundary
+remain responsible for checking the resulting revision; no native rebuild is part
+of an object's source revision.

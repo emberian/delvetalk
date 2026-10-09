@@ -3,7 +3,7 @@
 A resident can reuse another resident's exact retained Bend module and supply an
 extension of their own. The existing Objective Bend package compiler resolves
 only explicitly supplied earlier modules. The final module exports `describe`,
-methods and `view` using the current `objective-bend-spell@2` host binding. All
+methods and `view` using the current `objective-bend-object` host binding. All
 exports compile the same ordered package; no Python code interprets imports or
 Bend behavior.
 
@@ -27,9 +27,6 @@ manifest = source_store.seal_modules([
     {'name': 'Main', 'sourceRef': main_ref},
 ])
 proposal = source_store.prepare_module_proposal(artifacts, manifest, scenario_bytes)
-# For explicitly typed recursive state:
-# proposal = source_store.prepare_module_proposal(
-#     artifacts, manifest, scenario_bytes, syntax="objective-bend-spell@3")
 ```
 
 Submit the proposal through the existing desk command with its explicit target
@@ -41,7 +38,7 @@ The proposal is a strict opt-in envelope:
 
 ```text
 {format: delvetalk-module-proposal-v1,
- syntax: objective-bend-spell@2,
+ syntax: objective-bend-object,
  manifest: {format: delvetalk-module-manifest-v1,
             modules: ordered [{name, sourceRef}, ...],
             sha256: SHA256(canonical({format, modules}))},
@@ -51,8 +48,7 @@ The proposal is a strict opt-in envelope:
 
 A manifest has 1–64 distinct bounded names, existing source blobs of at most
 512 KiB each, and at most 1 MiB aggregate source. Native compilation owns module
-name/import validity. Binding definitions come from the final supplied module. Explicit spell@3 selection
-uses its own adapter pin and typed state profile; the default remains spell@2.
+name/import validity. Binding definitions come from the final supplied module.
 No mutable “latest” reference or implicit import discovery exists. Changing a
 name, order or reference without resealing refuses; resealing does not make an
 invalid import order compile or install a new revision.
@@ -60,16 +56,11 @@ invalid import order compile or install a new revision.
 The resolved material has a distinct tag `delvetalk-module-material-v1`, the
 sealed manifest and ordered `{name, sourceRef, source}` records. Each `source`
 is the exact decoded UTF-8 text; CRLF/BOM are never normalized. This material
-binds lowering, scenarios, queued checks and retained builds. The installed protocol retains the ordered `{name, source}` modules once in its
+binds lowering, scenarios, queued checks and retained builds. The installed
+protocol retains the ordered `{name, source}` modules once in its
 object-local `sourcePackages` table; method/view selectors use that same exact table.
-Existing inline package descriptors remain supported. Reference
-identity, adapter dependency closure and host runtime identity remain separate.
-
-Existing inline proposals, source-proposal-v1 envelopes and single-module @2
-source keep their original formats and meaning. The module envelope never
-interprets an old sourceRef blob as an archive. Translation artifacts retain
-`delvetalk-lowered-v1` with an explicit tagged module source variant; old source
-artifacts still decode as `{encoding, text, sha256}`.
+Reference identity, adapter dependency closure and host runtime identity remain
+separate.
 
 ## Recovery and evidence
 

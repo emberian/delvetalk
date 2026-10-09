@@ -9,13 +9,13 @@ which omits whole inaccessible admissions and makes no full-replay claim.
 
 ```sh
 python3 scripts/history.py export /PRIVATE/world.json /PRIVATE/history-001 \
-  --profile transactions --journals /PRIVATE/clerk/requests
+  --profile compiled --journals /PRIVATE/clerk/requests
 python3 scripts/history.py verify /PRIVATE/history-001 \
   --genesis KNOWN_GENESIS_SHA256 --head EXPECTED_HEAD_SHA256 \
   --output /PRIVATE/reconstructed-world.json
 ```
 
-Build the selected world/transactions/compiled binary first. Destinations must
+Run `make build` for the source host first. Destinations must
 be new; import fsyncs and publishes under lock without clobbering. Failed export
 directories are unusable until verified. Obtain genesis/head through a trusted
 channel: self-consistent hashes authenticate neither authors nor external events.

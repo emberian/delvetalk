@@ -47,6 +47,13 @@ also omitted. A page is not a redacted replay bundle. Arbitrary authored data is
 not automatically taint-tracked; copying secret data into a readable object is an
 author's disclosure.
 
+Resident custody indexes admissions by their retained ordinal. Append and
+checkpoint restoration populate this index; a page performs only its bounded
+ordinal lookups, without reversing or copying the full history. `scanned` reports
+the lookups performed, including omitted private entries. Full export still
+materializes the retained sequence. The index lemmas establish that append places
+the new admission at its ordinal and preserves earlier indexed admissions.
+
 Saved derived payloads also reacquire their dependencies when served. Draft wires
 check their object and every existing transaction peer; source preparation and
 interpretation records check the originating card and its source-declared peers.
@@ -60,6 +67,9 @@ The array is used exactly, without automatically inserting the maker. Child
 invoke grants name its existing commands, while maker/participant management
 grants remain separate. Teaching a new command requires a corresponding current
 law grant before that command can run.
+A factory root contains its configured child template. Restrict factory reads as
+well when that template is private; an allocated child ACL cannot recall a
+template already disclosed by a readable factory.
 
 Full backup/export and replay remain trusted physical custodian operations. A
 read-only OS custody socket is not an authenticated participant endpoint: it can
@@ -74,3 +84,7 @@ result-only invocation/view path, preserving current authority and exact retry.
 Check: `conformance/test_governed_reads.py`; message evidence cases accompany the
 actual source messaging suite. These are receiving-path checks, not a general
 noninterference theorem.
+`conformance/test_indexed_history.py` exercises 8,192 trusted checkpoint fixture
+rows, bounded page work, private-entry omission, a fresh receiver refusal, and
+checkpoint/restart receipt recovery. Fixture rows are custody premises rather
+than claims of source execution.

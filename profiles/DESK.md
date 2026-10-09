@@ -1,11 +1,11 @@
 # Source desk
 
 **A desk stores proposals; atomic adoption installs their exact results.**
-The [ordinary protocol](../protocols/source-desk/protocol.json) is one-shot:
+The [source candidate](../protocols/editor/Candidate.obend) is one-shot:
 `empty → pending → ready|failed`. `adopt` leaves it ready and records the releasing
 principal. Only the transaction receipt and target root establish installation.
 
-Build world/transactions first; Spween also needs its pinned Rust bridge.
+Run `make build`; Spween also needs its pinned Rust bridge.
 Run `python3 scripts/desk.py --database WORLD --artifacts DIR COMMAND`:
 
 | Command | Additional flags |
@@ -18,8 +18,8 @@ Run `python3 scripts/desk.py --database WORLD --artifacts DIR COMMAND`:
 
 Every command takes `--object`; mutations take `--principal --intent`, and all
 except creation take `--expected-root`. Files contain JSON except exact
-source/scenario bytes. Operator-selected `--profile` defaults to `transactions`;
-`compiled` enables packages. Proposals cannot select runtime.
+source/scenario bytes. The only host is `compiled`; proposals cannot select
+another runtime.
 
 `submit --references` retains source/scenario bytes in immutable local custody
 and submits compact `delvetalk-source-proposal-v1` metadata. References bind
@@ -27,7 +27,6 @@ SHA-256, byte length, UTF-8 encoding and reviewed adapter pins; resolution only
 uses the explicitly selected artifact store. No URL/path lookup is accepted.
 [Source store](../scripts/source_store.py) exposes `prepare_proposal`, `store_bytes`,
 `read_bytes`, and `ref_for`; `Desk.submit_refs` admits a prepared proposal.
-Legacy inline `submit` remains supported.
 
 Source is bounded to 512 KiB, scenarios to 1 MiB; source custody retains at most
 10,000 blobs/128 MiB without automatic pruning. Original adapter dependencies
@@ -44,12 +43,12 @@ remain caller assertions.
 
 Immutable `builds/` retain source material/results/diagnostics; `attempts/` retain
 requests before admission. Exact historical receipts recover before missing
-sources/artifacts or changed runtime checks. Spween `rooms/` bind source/AST.
-The direct compiler has 45-second wall, 30-second CPU and 8 MiB file bounds;
+sources/artifacts or changed runtime checks. The direct compiler has 45-second
+wall, 30-second CPU and 8 MiB file bounds;
 [compiler queue](COMPILER-QUEUE.md) adds durable bounded scheduling.
 
-**References do not enlarge compiled-output limits:** roots, protocols and
-adoption still face 64 KiB requests. Only the legacy whole-world framed CLI
-has a 16 MiB frame cap; normal local custody uses request-only transport.
+Source custody and source-package admission have separate bounded limits. Use the
+actual host and codec limits rather than assuming a source reference bypasses
+request, work or storage bounds.
 
 Checks: [desk](../conformance/test_desk.py), [references](../conformance/test_source_store.py).

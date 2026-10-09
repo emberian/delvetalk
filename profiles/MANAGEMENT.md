@@ -15,33 +15,33 @@ python3 scripts/manage.py --state "$STATE" register AUTHOR_DID
 python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/root.json
 python3 scripts/manage.py --state "$STATE" law \
   --object counter:live --principal OPERATOR_DID --intent grant-1 \
-  --expected-root /tmp/root.json --allow OPERATOR_DID --allow AUTHOR_DID
+  --expected-root /tmp/root.json --law-file /tmp/law.json
 ```
 
-Use actual `did:plc` identifiers. `--allow` is the entire replacement law. Enrollment and law are separate commits: inspect `status`, recover uncertainty, then revise with a fresh intent/root or explicitly unregister. Revocation changes law first; unregister separately if desired. Expected roots may be raw roots or intact matching clerk snapshots; the CLI never refreshes them. Lean checks authority before preimage.
+Use actual `did:plc` identifiers. Enrollment and law are separate commits: inspect `status`, recover uncertainty, then revise with a fresh intent/root or explicitly unregister. Revocation changes law first; unregister separately if desired. Expected roots may be raw roots or intact matching clerk snapshots; the CLI never refreshes them. Lean checks authority before preimage.
 
-`--law-file FILE` replaces `--allow`/`--empty-law` and accepts:
+`--law-file FILE` supplies the complete scoped law:
 
 ```json
-{"profile":"delvetalk-scoped-law-v1","invoke":{"add":["AUTHOR_DID"]},"reprogram":["OPERATOR_DID"],"law":["OPERATOR_DID"]}
+{"profile":"delvetalk-scoped-law","invoke":{"add":["AUTHOR_DID"]},"reprogram":["OPERATOR_DID"],"law":["OPERATOR_DID"]}
 ```
 
-Missing command grants deny. Legacy arrays grant invocation and management together. Proposed grants cannot authorize their own installation. `--empty-law` removes all authority; removing every scoped `law` principal locks future law revision. **No owner recovery bypass exists.**
+Missing command grants deny. Proposed grants cannot authorize their own installation. `--empty-law` removes all authority; removing every scoped `law` principal locks future law revision. **No owner recovery bypass exists.**
 
 ```sh
 python3 scripts/manage.py --state "$STATE" add-object \
   --object desk:source --principal OPERATOR_DID --intent create-1 \
-  --source protocols/counter/protocol.json --syntax protocol-json@1 \
+  --source /path/to/Counter.obend --syntax objective-bend-object \
   --law-file /tmp/desk-law.json
 python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/root.json
 python3 scripts/manage.py --state "$STATE" reprogram \
   --object counter:live --principal OPERATOR_DID --intent program-1 \
   --expected-root /tmp/root.json \
-  --source protocols/welcome-once/protocol.json --syntax protocol-json@1 \
-  --state /tmp/welcome-state.json
+  --source /path/to/Counter.obend --syntax objective-bend-object \
+  --state /tmp/counter-state.json
 ```
 
-Creation uses protocol `initial`; existing names refuse. Reprogramming requires complete state (`{"welcome":null}` for this example), never implicit reset/migration. The global `--state` selects custody; the subcommand's selects replacement data. Explicit reviewed syntax lowers the protocol; Lean validates and atomically installs protocol/state with one version increment. Source caps at 512 KiB, state at 64 KiB, and the complete request at 64 KiB before intent reservation.
+Creation uses protocol `initial`; existing names refuse. Reprogramming requires the complete source object state in its declared DataWire representation; read and explicitly migrate that state before preparing the request. The global `--state` selects custody; the subcommand's selects replacement data. Explicit reviewed syntax lowers the protocol; Lean validates and atomically installs protocol/state with one version increment. Source caps at 512 KiB, state at 64 KiB, and the complete request at 64 KiB before intent reservation.
 
 ## Recovery
 

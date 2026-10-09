@@ -30,23 +30,35 @@ a retained root locator grants neither read access nor mutation authority.
 A `predicate` restricts an existing mutation grant. An `invariant` checks every
 candidate state independently of replaceable command code. Their source form is
 `{package: {modules, entry}, config: JSON}`. The complete law-owned source export
-has type `(facts: Preparation.Value, config: Preparation.Value) -> Bool`.
-Predicate facts contain actual `object`, `principal`, `op`, `command`, staged
-`state` and resolved `input`. Invariant facts additionally contain `nextState`.
-The Value bridge preserves JSON arrays, typed model state and decimal spelling;
-source interprets its configuration. Only Boolean true admits. Wrong types,
-source failures, effects and exhausted resources refuse the whole turn.
+takes a concrete checked facts record and `config: Preparation.Value`, returning
+Bool. Predicate facts contain actual `object`, `principal`, `op`, `command`,
+logical typed `state` and an `input` sum; invariants also contain logical typed
+`nextState`. A guard declares its actual source record/state/input types, and the
+native checker validates that complete schema. Only Boolean true admits. Wrong
+types, source failures, effects and exhausted resources refuse the whole turn.
 
-A pure core Bend term remains an explicit operator representation for these two
-fields. Its context conversion supports Nat, Bool, String and records only; it
-refuses incompatible JSON even when a field is unused. Source guards support the
-complete bounded Value representation and avoid this restriction on typed state.
+Invocation input is `invoke(command(payload))`: the inner variant names the
+actual command and carries its normalized typed input. A guard declares the
+finite command sum it understands; an unknown command alternative refuses before
+the body runs. Administrative operations use `none({})`. Reserved message
+settlement uses `settlement` with native-authored event, reason, source/program,
+originating principal and causal metadata. It remains operation `invoke`, command
+`$messages-settle`; callers cannot supply the native settlement context, and the
+guard must explicitly admit that variant.
+
+Physical input codec choice does not change these logical facts. Configuration
+retains exact heterogeneous `Preparation.Value`, including decimal spelling.
+The original physical request owns identity, expected roots, byte accounting and
+retry. Typed policy construction is implemented in [SourcePolicy](SourcePolicy.lean);
+its source-interface checks and matching receiving qualification are separate.
+This contract does not claim every policy callback already bypasses physical
+DataWire framing.
 
 Invocation checks the installed invariant against actual staged and proposed
 state. Programming checks its explicit replacement state; new code cannot erase
 law-held restrictions. Creation and factory children use `state = nextState =
 initial`, the child's identity and actual caller. Creation and management use
-command `""` and input `{}`. Law revision checks both old and proposed invariants
+command `""` and input `none({})`. Law revision checks both old and proposed invariants
 against unchanged state after old authority admits revision. An authorized
 steward can remove an invariant when the old invariant allows that change.
 
@@ -65,10 +77,9 @@ objects, children and outboxes, including earlier transaction effects. Retained
 exact retries recover their original receipt before mutation policy reevaluation;
 a formerly refused operation needs a new intent.
 
-The current cutover keeps older validation/adapter seams temporarily while
-actual source consumers move. Those seams are not a second current source ABI.
-Fresh previews use the current schema; persisted invitations are never silently
-refreshed or reinterpreted. Receiving checks live in
+Only the current source ABI and law schema are admitted. Retired prototype
+expression commands, principal-array laws and versioned source adapters refuse.
+Persisted invitations are never silently refreshed or reinterpreted. Receiving checks live in
 `conformance/test_current_boundary.py`, `test_authority.py`,
 `test_state_invariant.py`, `test_source_amendment.py` and `test_governed_reads.py`.
 Source checks and immutable native snapshots establish different evidence;

@@ -1,38 +1,22 @@
 # Governed programming
 
-**`reprogram` atomically replaces protocol and complete state under current law.**
-World and transaction hosts share [the implementation](WorldCore.lean).
+`reprogram` atomically replaces an object’s program and complete state under its
+current law and exact expected root. The native source host checks the actual
+candidate source interface and held invariants. Success preserves identity and
+law and advances the version. State replaces rather than merges; migration must
+be explicit. No old invocation reruns under the new source.
 
-```json
-{"op":"reprogram","object":"document","principal":"alice","intent":"v2",
- "expected":"<complete current JSON root>",
- "protocol":"<valid delvetalk-local-v1 protocol>","state":{"body":"preserved"}}
-```
+Programming authority differs from compiler and invocation authority. An empty
+management law can deliberately lock out future changes; there is no owner
+recovery bypass. A refusal retains its outcome without modifying the object.
+Exact `(principal,intent)` retries recover the original receipt before checking
+changed source or authority; changed bytes under that identity refuse.
 
-Replace placeholders with JSON values. Only these seven fields are accepted.
-Lean checks current authority, exact root, every proposed command (including
-unused bodies), and record-valued state. Success preserves identity/law,
-increments version once, and returns `{root,result:null,outbox:[]}` in the
-ordinary committed receipt.
+An ordered [transaction](TRANSACTIONS.md) may consume an earlier exact
+`{protocol,state}` result using `inputFrom`. Source Candidate release and target
+replacement commit together under both current laws. A late failure rolls the
+whole batch back. [Source authoring](AUTHORING.md) and
+[authority](AUTHORITY.md) describe the corresponding offered workflow and rules.
 
-State replaces rather than merges; `{}` clears it. Required `protocol.initial`
-does not initialize existing objects. No migration code, command or outbox runs.
-Validation establishes neither migration invariants nor termination or client
-compatibility. Command preconditions cannot veto management; scoped laws can.
-
-Failures preserve the object and retain refusal. Exact `(principal,intent)`
-retries recover history before current checks; changed requests refuse. Earlier
-invocations never rerun under new code. Upgrades stale old roots/read sets.
-Transactions may consume an earlier exact `{protocol,state}` result through
-`inputFrom`; see [TRANSACTIONS](TRANSACTIONS.md).
-
-Build serially and check both paths:
-
-```sh
-LEAN_NUM_THREADS=1 lake build delvetalk-world
-LEAN_NUM_THREADS=1 lake build delvetalk-transactions
-python3 conformance/test_reprogram.py
-```
-
-[Tests](../conformance/test_reprogram.py) cover execution after upgrade, atomic
-refusal, exact decimal preimages, preserved authority and historical receipts.
+Build with `make build`; check [reprogram cases](../conformance/test_current_boundary.py)
+against the matching native/source closure.
