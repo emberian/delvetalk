@@ -79,6 +79,10 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), renderFor(state, context))
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), textConcat("'s seat, round ", textConcat(natText(state.round), textConcat(": ", textConcat(if state.opened then textConcat("opened ", textConcat(natText(state.source), textConcat(" to ", natText(state.target)))) else if state.digest != "" then "sealed" else "choosing", "\n")))))))
+# The card for the host's `card {object}` until the host passes the reader's context.
 def render(state: State) -> Document.Document:
-  Document.text(textConcat(Card.handle(state.owner), textConcat("'s seat, round ", textConcat(natText(state.round), textConcat(": ", textConcat(if state.opened then textConcat("opened ", textConcat(natText(state.source), textConcat(" to ", natText(state.target)))) else if state.digest != "" then "sealed" else "choosing", "\n"))))))
+  renderFor(state, Card.stranger())

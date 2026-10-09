@@ -9,9 +9,12 @@ record Door:
   description: String
   to: Plans.Reference
 record State:
+  owner: String
   doors: Lists.List<Door>
-# A creator supplies a Seed; seeded makes the child's State from it.
-type Seed = {}
+# A creator supplies a Seed; seeded makes the child's State from it. The owner is the
+# DID (or principal) who curates the doors.
+record Seed:
+  owner: String
 record Edits:
   doors: Plans.Entries<Door, {}>
 type Plan = Plans.Plan<Edits>
@@ -19,14 +22,18 @@ type Response = Plans.Response<State, {}>
 sum Answer:
   done: {}
   refused: {reason: String}
+# Only the owner adds or removes a door: the law judges every write (a stranger's add is
+# refused with clause owner), and a law in source means a Directory is made with
+# world-create, never by a creator that imports it.
+law owner: request.subject == new.owner
 def defaultSeed() -> Seed:
-  {}
+  {owner: ""}
 def seeded(seed: Seed) -> State:
-  {doors: Lists.List::<Door>.nil()}
+  {owner: seed.owner, doors: Lists.List::<Door>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
-def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Nat>:
-  Lists.indexWhere::<Door>(doors, fn(door: Door) -> Bool: door.label == label)
+def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Door>:
+  Lists.find::<Door>(doors, fn(door: Door) -> Bool: door.label == label)
 def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answer>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Answer.done({})
@@ -39,11 +46,12 @@ def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Pla
 def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
   match position(state.doors, input.label):
     case none(_): Answer.refused({reason: textConcat("There is no door called ", input.label)})
-    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.remove({index: a.value})})
+    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.removeItem({item: a.value})})
 def doorLine(door: Door) -> Document.Document:
   Document.text(textConcat(door.label, textConcat("\n", textConcat(door.description, "\n\n"))))
 # Affordances first, since readers clip near 1,400 characters; then the doors.
-def render(state: State) -> Document.Document:
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat::<Document.Document>(Lists.map::<Door, Document.Document>(state.doors, doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
 def forms() -> Card.Forms:
   Card.Forms.nil()
@@ -51,4 +59,7 @@ def door() -> Card.Door:
   {word: "directory", blurb: "The doors of DelveTalk."}
 # A summon: whatever was said, the menu is the answer.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  Card.tell::<Edits, State, {}, Nat>(Lists.length::<Door>(state.doors), render(state))
+  Card.tell::<Edits, State, {}, Nat>(Lists.length::<Door>(state.doors), renderFor(state, context))
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

@@ -130,6 +130,25 @@ class Parse(unittest.TestCase):
             with self.subTest(bad=bad):
                 self.assertTrue(parse(bad).startswith("not a spell"), parse(bad))
 
+    def test_a_card_name_may_carry_a_did_and_a_path(self):
+        self.assertEqual(parse("delvetalk env/did:plc:abc123 seen\nat: 3"), "spell env/did:plc:abc123 seen at=3;")
+        self.assertEqual(parse("delvetalk did:web:town.example set\nhandle: glm"), "spell did:web:town.example set handle=glm;")
+        self.assertEqual(propose("delvetalk env/did:plc:abc plant\nseed: fern\ncolour: silver", card="env/did:plc:abc"),
+                         "proposal env/did:plc:abc plant colour=silver;seed=fern;")
+        self.assertEqual(parse("delvetalk garden-1 ?"), "spell garden-1 ? ")
+
+    def test_the_longest_card_name_is_160_bytes(self):
+        name = "env/did:plc:" + "a" * 148
+        self.assertEqual(parse("delvetalk %s seen" % name), "spell %s seen " % name)
+        self.assertTrue(parse("delvetalk %sa seen" % name).startswith("not a spell"))
+
+    def test_only_the_card_name_gains_colon_slash_and_dot(self):
+        for bad in ("delvetalk env/DID:plc:x seen", "delvetalk env/did:plc:x? seen", "delvetalk env_did seen",
+                    "delvetalk env/did:plc:x se:en", "delvetalk env/x see/n", "delvetalk env/x seen\na.b: 1"):
+            with self.subTest(bad=bad):
+                self.assertNotEqual(propose(bad, card="env/x").split(" ")[0], "proposal", bad)
+        self.assertTrue(parse("delvetalk env/x ??").startswith("not a spell"))
+
     def test_unicode_values_survive(self):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: 🌙 é “moths” 蛾\ncolour: silver"),
                          "proposal garden-1 plant colour=silver;seed=🌙 é “moths” 蛾;")

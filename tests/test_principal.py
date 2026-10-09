@@ -48,7 +48,10 @@ class Principal(Chain):
         self.assertEqual([get(r, "author") for r in items(get(self.state("bell"), "rains"))], [label(ACTOR)])
 
     def test_a_submission_is_authored_by_the_turns_principal(self):
-        self.make("anthology", closure("Anthology"), record())
+        # Anthology declares a law, so it is made with world-create (whole state) by its owner.
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("ember"), proposals={"tag": "list", "items": []}))
+        self.assertEqual(r["status"], "created", r)
         argument = record(line=label("lamps"))
         self.forged("anthology", "submit", argument, "author")
         self.acted("anthology", "submit", argument)

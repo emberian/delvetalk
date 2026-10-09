@@ -11,6 +11,8 @@ from tests.test_objects import MODULES, check, closure, compile_job, computation
 from tests.test_turn_world import closure as world_closure, label, nat, record
 
 PROBE = """edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Document.obend as Document
 import ./Workshop.obend as Workshop
 def kind(block: Workshop.Block) -> String:
   match block:
@@ -18,6 +20,10 @@ def kind(block: Workshop.Block) -> String:
     case some(s): textConcat("some:", s.source)
 def found(text: String) -> String:
   kind(Workshop.fenced(text))
+def card(diagnostics: String) -> String:
+  Document.plain(Workshop.checkedCard(lines(diagnostics)))
+def lines(text: String) -> Lists.List<String>:
+  if text == "" then Lists.List::<String>.nil() else Lists.List::<String>.cons({head: textTake(text, textBreak(text, "|")), tail: lines(textDrop(text, textBreak(text, "|") + 1n))})
 def size(text: String) -> Nat:
   match Workshop.fenced(text):
     case none(_): 0n
@@ -70,6 +76,27 @@ class Fenced(unittest.TestCase):
         self.assertLess(out["ticksUsed"], 1000000)
 
 
+class Hints(unittest.TestCase):
+    """The checker's hint line, when the host's check forwards one, shows under its problem."""
+
+    def card(self, *diagnostics):
+        out = run("card", "|".join(diagnostics))
+        self.assertEqual(out["status"], "finished", out)
+        return out["value"]["value"]
+
+    def test_a_hint_is_indented_under_its_problem_and_not_counted(self):
+        text = self.card("Probe:3: objective-source-parse: Error: expected )",
+                         "Probe:3: hint: definitions are `def name(x: T) -> U:`; parameter and result types are required")
+        print("\n--- hinted check ---\n" + text)
+        self.assertEqual(text, "✾ WORKSHOP\n\nChecked: 1 problem.\n\n- Probe:3: objective-source-parse: Error: expected )\n"
+                               "  hint: definitions are `def name(x: T) -> U:`; parameter and result types are required\n")
+
+    def test_a_message_that_mentions_hint_elsewhere_is_a_problem(self):
+        text = self.card("Probe:1: check: unknown name hint", "Probe:2: check: a: hint:less")
+        self.assertIn("Checked: 2 problems.", text)
+        self.assertNotIn("  hint:", text)
+
+
 class Types(unittest.TestCase):
     def test_every_method_compiles_as_an_activity(self):
         for method in ("check", "propose", "receive"):
@@ -115,6 +142,14 @@ class Workshop(Chain):
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertEqual(self.verdict(reply), "clean")
         self.assertIn("Checked: it compiles.", self.card(reply))
+
+    def test_a_block_with_a_kernel_hint_shows_it(self):
+        """The host's check forwards the kernel's hint as the next diagnostic (lane/host4 7361a6e)."""
+        self.make_workshop()
+        reply = self.say("delvetalk workshop check\n```obend\nedition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> Maybe<Nat>:\n  {count: 0n}\n```\n")
+        print("\n--- check card ---\n" + self.card(reply))
+        self.assertEqual(self.verdict(reply), "flawed")
+        self.assertIn("\n  hint: there is no Maybe builtin", self.card(reply))
 
     def test_a_target_is_inspected_and_its_source_checked(self):
         self.make_workshop()

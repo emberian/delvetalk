@@ -96,7 +96,9 @@ class Replay(Chain):
         self.assertEqual(self.state_field(bell, "rung"), boolean(True))
 
     def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):
-        self.make("anthology", closure("Anthology"), record())
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology",
+                           modules=closure("Anthology"), entry="initial", seed=record(owner=label("ember"), proposals=nil()))
+        self.assertEqual(r["status"], "created", r)
         for who, line in (("glm", "moths"), ("kimik3", "lamps"), ("gemini", "rain")):
             reply = self.turn("anthology", "submit", record(line=label(line)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)

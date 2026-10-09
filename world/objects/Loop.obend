@@ -36,6 +36,10 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): ticked::<Card.Reply>(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
-def render(state: State) -> Document.Document:
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat("Ticks: ", textConcat(natText(state.count), "\n")))
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

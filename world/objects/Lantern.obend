@@ -35,6 +35,10 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): lit::<Card.Reply>(state, context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.handle(state.litBy), textConcat(Card.mine(state.litBy, context), ".\n"))) else "The lantern is dark.\n")
+# The card for the host's `card {object}` until the host passes the reader's context.
 def render(state: State) -> Document.Document:
-  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.handle(state.litBy), ".\n")) else "The lantern is dark.\n")
+  renderFor(state, Card.stranger())

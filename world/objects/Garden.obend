@@ -72,12 +72,18 @@ def plantForm(context: Abi.Context) -> Form.Form:
   Card.named(planting(), context.object)
 def planting() -> Form.Form:
   {card: "", action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}
+# A reader with a proposal waiting is reminded of it, first.
+def waiting(state: State, context: Abi.Context) -> String:
+  match heldBy(state.pending, context.principal, 0n):
+    case some(s): textConcat(Card.handle(context.principal), textConcat(", this waits for your yes:\n\n", textConcat(s.spell, "\n")))
+    case none(_): ""
 def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text(textConcat("- ", textConcat(reference.object, "\n")))
 # The garden card: how to plant first (readers clip near 1,400 characters), then the
 # bells, newest first, eight of them and a count of the rest.
-def render(state: State) -> Document.Document:
-  let head = Document.text(textConcat("✾ THE NIGHT GARDEN\n\nTo plant, reply:\n\n    delvetalk garden plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n", textConcat(natText(state.planted), " planted, newest first:\n")))
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  let head = Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(waiting(state, context), textConcat("To plant, reply:\n\n    delvetalk ", textConcat(if context.object == "" then "garden" else context.object, textConcat(" plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n", textConcat(natText(state.planted), " planted, newest first:\n")))))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map::<Plans.Reference, Document.Document>(Lists.reverse::<Plans.Reference>(state.children), childLine), 8n)})})
 # The garden's page: its card, how to reply, then one section per bell, newest first,
 # sixteen of them; the card section counts the rest.
@@ -85,7 +91,7 @@ def page(state: State, context: Abi.Context) -> Card.Page:
   let bells = Lists.reverse::<Plans.Reference>(state.children)
   let shown = Lists.map::<Plans.Reference, Card.Section>(Lists.take::<Plans.Reference>(bells, 16n), fn(bell: Plans.Reference) -> Card.Section: {title: bell.object, body: Document.text(textConcat("A bell planted here: [[", textConcat(bell.object, "]]. Reply on its card to rain on it.\n")))})
   let more = if Lists.length::<Plans.Reference>(bells) > 16n then textConcat("… and ", textConcat(natText(Lists.length::<Plans.Reference>(bells) - 16n), " more bells\n")) else ""
-  Lists.concat::<Card.Section>(Card.defaultPage(Document.concat(render(state), Document.text(more)), context, forms()), shown)
+  Lists.concat::<Card.Section>(Card.defaultPage(Document.concat(renderFor(state, context), Document.text(more)), context, forms()), shown)
 # Publishes the page as one agentwiki post (`wiki: <id>` and its sections).
 def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.publish({page: "", section: "", body: Card.pageText(page(state, context))})):
@@ -122,14 +128,15 @@ def filled(parsed: Spell.Parsed, name: String, hint: String) -> String:
     case notASpell(_): hint
 def refusedCard(reason: String) -> Document.Document:
   Document.text(textConcat("Not planted: ", textConcat(reason, "\n")))
-# The proposal a principal has waiting, if any: where it is and the spell it stored.
+# The proposal a principal has waiting, if any: the stored item (amended and removed
+# by its bytes, so another principal's proposal landing first moves nothing) and its spell.
 sum Held:
   none: {}
-  some: {index: Nat, spell: String}
+  some: {item: Pending, spell: String}
 def heldBy(items: Lists.List<Pending>, principal: String, index: Nat) -> Held:
   match items:
     case nil(_): Held.none({})
-    case cons(c): if c.head.principal == principal then Held.some({index: index, spell: c.head.spell}) else heldBy(c.tail, principal, index + 1n)
+    case cons(c): if c.head.principal == principal then Held.some({item: c.head, spell: c.head.spell}) else heldBy(c.tail, principal, index + 1n)
 # What a reply to a waiting proposal says: yes, no or anything else. Only a short
 # reply is examined; it is one word between blanks, in one of three spellings.
 sum Word:
@@ -151,10 +158,10 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match found:
     case none(_): hear(state, input, context, Spell.parse(input.text), found)
-    case some(s): replied(state, input, context, found, s.index, s.spell)
+    case some(s): replied(state, input, context, found, s.spell)
 # Yes plants what was stored; no drops it; anything else is heard afresh and
 # replaces the stored proposal (or drops it when it proposes nothing).
-def replied(state: State, input: Card.Heard, context: Abi.Context, found: Held, index: Nat, stored: String) -> Activity<Plan, Response, Reply>:
+def replied(state: State, input: Card.Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
   match wordOf(input.text):
     case yes(_): confirmed(state, input, context, found, stored)
     case no(_): told(found, context, Reply.cleared({}), Document.text("✾ THE NIGHT GARDEN\n\nI dropped what I understood.\n"))
@@ -165,7 +172,7 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
     case _: told(found, context, Reply.refused({reason: "I could not read what I had understood."}), refusedCard("I could not read what I had understood."))
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
-    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state)) else understand(state, input, context, found)
+    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), renderFor(state, context)) else understand(state, input, context, found)
     case spell(_): judged(state, context, parsed, false, found)
 # What is not a spell is given to the policy's model, which can only propose.
 def understand(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
@@ -179,7 +186,7 @@ def interpreted(state: State, input: Card.Heard, context: Abi.Context, confirm: 
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text(textConcat("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: ", textConcat(Spell.joined(needs), ".\n")))
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
-  Document.text(textConcat("✾ THE NIGHT GARDEN\n\nI understood this:\n\n", textConcat(spell(context.object, seed, colour), "\nReply yes or correct it.\n")))
+  Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(Card.handle(context.principal), textConcat(", I understood this:\n\n", textConcat(spell(context.object, seed, colour), "\nReply yes or correct it.\n")))))
 # Fit the spell (typed by the user, or proposed by the policy's model) to the plant
 # form. A proposed spell is only acted on when the garden does not ask first.
 def judged(state: State, context: Abi.Context, parsed: Spell.Parsed, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
@@ -197,11 +204,11 @@ def settled(state: State, context: Abi.Context, found: Held, confirm: Bool, colo
 def asked(state: State, context: Abi.Context, found: Held, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let entry = {principal: context.principal, spell: spell(context.object, seed, colour)}
   match found:
-    case some(s): remembered(context, Plans.Entries::<Pending, Pending>.amend({index: s.index, change: entry}), colour, seed)
+    case some(s): remembered(context, Plans.Entries::<Pending, Pending>.amendItem({item: s.item, change: entry}), colour, seed)
     case none(_): if Lists.length::<Pending>(state.pending) < 64n then remembered(context, Plans.Entries::<Pending, Pending>.append({item: entry}), colour, seed) else tell(Reply.refused({reason: "Too many proposals are waiting."}), refusedCard("Too many proposals are waiting."))
 def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})})):
-    case written(_): tell(Reply.confirming({spell: spell(context.object, seed, colour)}), confirmCard(context, colour, seed))
+    case written(_): Card.tellTo::<Edits, State, Planting, Reply>(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
     case _: tell(Reply.refused({reason: "The garden could not remember it."}), refusedCard("The garden could not remember it."))
 def grow(state: State, context: Abi.Context, found: Held, colour: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
   match perform(Plan.create({package: "Bell", seed: Data.of::<Bell.Seed>({colour: colour, seed: seed, planting: slot(context)}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
@@ -217,7 +224,7 @@ def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Re
 def forget(found: Held) -> Plans.Entries<Pending, Pending>:
   match found:
     case none(_): Plans.Entries::<Pending, Pending>.keep({})
-    case some(s): Plans.Entries::<Pending, Pending>.remove({index: s.index})
+    case some(s): Plans.Entries::<Pending, Pending>.removeItem({item: s.item})
 # Answers with a card, first dropping the waiting proposal this reply superseded.
 def told(found: Held, context: Abi.Context, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
   match found:
@@ -229,3 +236,6 @@ def forgotten(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, reply
     case _: tell(reply, card)
 def tell(reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
   Card.tell::<Edits, State, Planting, Reply>(reply, card)
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())
