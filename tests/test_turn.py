@@ -619,6 +619,16 @@ class KnotTests(TurnCase):
         ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(5)]})
         self.assertEqual((ran["status"], ran["value"]), ("finished", nat(15)), ran)
 
+    def test_an_entry_reaching_600_definitions_compiles(self):
+        # Refuted if a row's length still counts as type nesting (the old cap was 254 reached).
+        h = self.host()
+        source = "edition ObjectiveBend 1\n" + "".join(
+            f"def f{i}(n: Nat) -> Nat:\n  {'f%d(n + 1n)' % (i + 1) if i < 599 else 'n'}\n" for i in range(600))
+        r = h.send({"op": "compile", "entry": "f0", "modules": [{"name": "Package", "source": source}]})
+        self.assertEqual(r["status"], "compiled", r)
+        ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(0)]})
+        self.assertEqual((ran["status"], ran["value"]), ("finished", nat(599)), ran)
+
     def test_an_unreached_definition_is_absent_and_a_reached_recursive_one_present(self):
         h = self.host()
         source = ("edition ObjectiveBend 1\ndef count(n: Nat) -> Nat:\n  match n:\n    case 0: 0n\n"

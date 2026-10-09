@@ -479,6 +479,11 @@ structure Ctx where
 
 structure St where
   globalTypes : List (String × Option PTy) := []
+  /-- Resolved source types, keyed by (module, text), for resolutions made outside any
+  recursive unfolding (`seen = []`) and outside a template's `Self`/`Super` bindings. Once a
+  recursive type is registered its variable is stable, so such a resolution is a function of
+  its key; failures are not cached (their type errors are reported where they occur). -/
+  typeMemo : Std.HashMap (String × String) PTy := {}
   inferring : List String := []
   typeErrors : Array String := #[]
   sumVariables : List (String × Nat) := []
@@ -705,6 +710,19 @@ def withTypes {α : Type} (bindings : List (String × PTy)) (k : M α) : M α :=
 
 mutual
 def sourceType (c : Ctx) : Nat → String → String → List String → M (Option PTy)
+  | 0, _, _, _ => fail "type resolution fuel"
+  | fuel + 1, raw, moduleName, seen => do
+    let memo := seen.isEmpty && (← get).typeBindings.isEmpty
+    if memo then
+      if let some t := (← get).typeMemo[(moduleName, raw)]? then return some t
+    let result ← sourceTypeUncached c fuel raw moduleName seen
+    if memo then
+      if let some t := result then
+        if (← get).typeBindings.isEmpty then
+          modify fun st => { st with typeMemo := st.typeMemo.insert (moduleName, raw) t }
+    return result
+
+def sourceTypeUncached (c : Ctx) : Nat → String → String → List String → M (Option PTy)
   | 0, _, _, _ => fail "type resolution fuel"
   | fuel + 1, raw, moduleName, seen => do
     let name := trimStr raw
