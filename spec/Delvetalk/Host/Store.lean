@@ -304,6 +304,9 @@ structure World where
       when none was named): it alone may create an object for a named owner. -/
   opener : String := ""
   settled : Bool := false
+  /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
+      entry's `replyTo`), which `awaitPost` settles on. -/
+  replies : Std.HashMap String (String × String) := {}
   /-- The principal registry: display handle by principal, from `principal` entries. -/
   handles : Std.HashMap String String := {}
   /-- Source modules by CID, from `module` entries: the journal carries each source once and

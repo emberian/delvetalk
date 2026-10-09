@@ -1155,6 +1155,10 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
           ((e.getObj?.toOption.map (·.toList)).getD []))]).getD #[])
     height := w.height + 1, head := hash, entries := w.entries.push entry
+    replies := match (entry.getObjValAs? String "replyTo").toOption,
+        identity.getObjValAs? String "principal", identity.getObjValAs? String "intent" with
+      | some post, .ok p, .ok i => if w.replies.contains post then w.replies else w.replies.insert post (p, i)
+      | _, _, _ => w.replies
     handles := if tagOf entry == "principal" then
         match (entry.getObjVal? "outcome").toOption with
         | some o => match o.getObjValAs? String "did", o.getObjValAs? String "handle" with
@@ -1719,6 +1723,12 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
   checkRootCids w entry
+  -- A turn answers only a post recorded for the object it ran on (its first root).
+  if let some post := (entry.getObjValAs? String "replyTo").toOption then
+    let first := ((entry.getObjVal? "roots").toOption.bind (·.getArr?.toOption)).bind (·[0]?)
+      |>.bind (·.getObjValAs? String "object" |>.toOption)
+    unless (w.posts[post]?).map (some ·.object) == some first do
+      throw s!"a turn answers {post}, which is not a post recorded for its object"
   checkResumes w entry principal intent
   checkEnded w entry principal intent
   match ← outcome.getObjValAs? String "tag" with
@@ -1757,7 +1767,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         (← checkpoint.getObjValAs? String "principal") (← checkpoint.getObjValAs? String "intent")
         (← checkpoint.getObjValAs? String "rootsDigest") tokens do
       throw "checkpoint digest does not match its tokens"
-    discard <| outcome.getObjVal? "slot"
+    -- A suspension waits on a slot, or on the reply that answers a post.
+    if (outcome.getObjValAs? String "post").toOption.isNone then discard <| outcome.getObjVal? "slot"
     discard <| natField outcome "deadline"
     return record w entry key []
   | "library" =>

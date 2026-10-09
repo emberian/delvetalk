@@ -470,6 +470,14 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
      `rootCidsAt` fills client proposals and law reads at the current version; `checkRootCids` in `replayEntry`.
      A root that moved since (commuting writes) is not checkable on replay: no past states are kept.
 
+23. **Reply-is-address (host6).** `world-turn {…, replyTo: <parent uri>}` (in the digest when given): when the parent
+   is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` (built by `record`)
+   maps the post to the first such turn's identity; replay checks the post is recorded for the entry's first root.
+   Plan `awaitPost {post, patience}` / `awaitPostUntil {post, until}` waits for that turn's receipt (`reply`), or
+   `timedOut`; the suspension records `post` instead of `slot`. `receive`'s `slot` is the host's
+   (`receiveArgument`): dropped for an object declaring `{text, post}`, filled from the recorded post's slot
+   (compressed JSON, "" for none) for one still declaring it.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
