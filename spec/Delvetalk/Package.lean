@@ -182,12 +182,15 @@ structure PreparedRequest where
   prepared : FrontEnd.Prepared
   sources : Json
   limits : Json
+  /-- `sourcesSha256` of every artifact compiled from it (the CID of `sources`). -/
+  sourcesCid : String
 
 def prepareRequest (j : Json) : Except Diagnostic PreparedRequest :=
   (bare j).mapError (withHint j)
 where bare (j : Json) : Except Diagnostic PreparedRequest := do
   let (modules, sources, asts) ← modulesAndAsts j
-  return ⟨← FrontEnd.prepareParsed modules asts (getLimits j), sources, getLimits j⟩
+  return ⟨← FrontEnd.prepareParsed modules asts (getLimits j), sources, getLimits j,
+    Delvetalk.Canonical.cidJson sources⟩
 
 /-- One compiled entry: the artifact, the entry decoded and checked (no re-decoding needed
 to run it), its type and the entry module's laws. -/
@@ -212,7 +215,7 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
     ("modules", request.sources),
-    ("sourcesSha256", toJson (Delvetalk.Canonical.cidJson request.sources)),
+    ("sourcesSha256", toJson request.sourcesCid),
     ("entry", toJson entry), ("genericInstances", prepared.instances), ("limits", request.limits), ("packet", packet),
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
