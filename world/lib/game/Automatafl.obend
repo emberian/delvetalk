@@ -1,0 +1,117 @@
+edition ObjectiveBend 1
+# Two players, column rule, two-cycles stationary. No n-player variants.
+# Pure transition over REVEALED moves. Secrecy/admission belong to the host.
+# Board: row-major base-4 Nat; 0 vacuum, 1 attractor, 2 repulsor, 3 automaton.
+# Marks: row-major base-2 Nat. Player 0 owns y=0 corners, player 1 y=h-1.
+# Result status: 0 completed, 1 conflict/retry, 2 invalid/unchanged, 3 game over.
+# Winner: 0 none, 1 player 0, 2 player 1. Coordinates are row-major indices.
+
+record Ray:
+  piece: Nat
+  distance: Nat
+record Decision:
+  rank: Nat
+  near: Nat
+  far: Nat
+  direction: Nat
+record Result:
+  board: Nat
+  automaton: Nat
+  marks: Nat
+  status: Nat
+  winner: Nat
+
+def power(base: Nat, n: Nat) -> Nat:
+  if n == 0n then 1n else let p = power(base, n / 2n) in p * p * (if n % 2n == 0n then 1n else base)
+def cell(board: Nat, at: Nat) -> Nat:
+  (board / power(4n, at)) % 4n
+def put(board: Nat, at: Nat, value: Nat) -> Nat:
+  let unit = power(4n, at)
+  board - cell(board, at) * unit + value * unit
+def marked(marks: Nat, at: Nat) -> Bool:
+  (marks / power(2n, at)) % 2n == 1n
+def mark(marks: Nat, at: Nat) -> Nat:
+  if marked(marks, at) then marks else marks + power(2n, at)
+def sameRow(w: Nat, a: Nat, b: Nat) -> Bool:
+  a / w == b / w
+def sameColumn(w: Nat, a: Nat, b: Nat) -> Bool:
+  a % w == b % w
+def valid(w: Nat, h: Nat, a: Nat, marks: Nat, s: Nat, t: Nat) -> Bool:
+  s < w * h && t < w * h && s != t && s != a && t != a && (sameRow(w, s, t) || sameColumn(w, s, t)) && marked(marks, s) == false && marked(marks, t) == false
+
+# 1 +x, 2 -x, 3 +y, 4 -y; 0 stays.
+def inside(w: Nat, h: Nat, at: Nat, d: Nat) -> Bool:
+  if d == 1n then at % w + 1n < w else if d == 2n then 0n < at % w else if d == 3n then at / w + 1n < h else if d == 4n then 0n < at / w else false
+def advance(w: Nat, at: Nat, d: Nat) -> Nat:
+  if d == 1n then at + 1n else if d == 2n then at - 1n else if d == 3n then at + w else if d == 4n then at - w else at
+def direction(w: Nat, s: Nat, t: Nat) -> Nat:
+  if sameRow(w, s, t) then (if s < t then 1n else 2n) else (if s < t then 3n else 4n)
+def ray(w: Nat, h: Nat, b: Nat, at: Nat, d: Nat, distance: Nat) -> Ray:
+  let next = advance(w, at, d)
+  if inside(w, h, at, d) then (if cell(b, next) == 0n then ray(w, h, b, next, d, distance + 1n) else {piece: cell(b, next), distance: distance}) else {piece: 0n, distance: distance}
+def decision(rank: Nat, near: Nat, far: Nat, d: Nat) -> Decision:
+  {rank: rank, near: near, far: far, direction: d}
+def axis(p: Ray, n: Ray, plus: Nat, minus: Nat) -> Decision:
+  if p.piece == 1n && n.piece == 2n && p.distance > 1n then decision(3n, p.distance, n.distance, plus) else if p.piece == 2n && n.piece == 1n && n.distance > 1n then decision(3n, n.distance, p.distance, minus) else if p.piece == 2n && n.piece == 2n && p.distance != n.distance then if p.distance < n.distance then decision(2n, p.distance, 0n, minus) else decision(2n, n.distance, 0n, plus) else if p.piece == 2n && n.piece == 0n && n.distance > 1n then decision(2n, p.distance, 0n, minus) else if p.piece == 0n && n.piece == 2n && p.distance > 1n then decision(2n, n.distance, 0n, plus) else if p.piece == 1n && n.piece == 1n && p.distance != n.distance then if p.distance < n.distance && p.distance > 1n then decision(1n, p.distance, 0n, plus) else if n.distance < p.distance && n.distance > 1n then decision(1n, n.distance, 0n, minus) else decision(0n, 0n, 0n, 0n) else if p.piece == 1n && n.piece == 0n && p.distance > 1n then decision(1n, p.distance, 0n, plus) else if p.piece == 0n && n.piece == 1n && n.distance > 1n then decision(1n, n.distance, 0n, minus) else decision(0n, 0n, 0n, 0n)
+
+def better(x: Decision, y: Decision) -> Bool:
+  x.rank > y.rank || (x.rank == y.rank && (x.near < y.near || (x.near == y.near && x.far < y.far)))
+def automaton(w: Nat, h: Nat, b: Nat, a: Nat) -> Nat:
+  let x = axis(ray(w, h, b, a, 1n, 1n), ray(w, h, b, a, 2n, 1n), 1n, 2n)
+  let y = axis(ray(w, h, b, a, 3n, 1n), ray(w, h, b, a, 4n, 1n), 3n, 4n)
+  advance(w, a, if better(x, y) then x.direction else y.direction)
+
+# Obstruction includes the destination. An enabled source is provisionally empty.
+# If its move fails it blocks other moves again. With two edges two passes suffice.
+def clear(w: Nat, b: Nat, at: Nat, t: Nat, d: Nat, s0: Nat, s1: Nat, e0: Bool, e1: Bool) -> Bool:
+  let next = advance(w, at, d)
+  let empty = cell(b, next) == 0n || (next == s0 && e0) || (next == s1 && e1)
+  if at == t then true else if empty then clear(w, b, next, t, d, s0, s1, e0, e1) else false
+def path(w: Nat, b: Nat, s: Nat, t: Nat, s0: Nat, s1: Nat, e0: Bool, e1: Bool) -> Bool:
+  clear(w, b, s, t, direction(w, s, t), s0, s1, e0, e1)
+def destination(b: Nat, s: Nat, t: Nat, otherS: Nat, otherT: Nat, enabled: Bool) -> Nat:
+  if enabled && t == otherS then (if otherT == s then s else if cell(b, otherS) == 0n then otherT else t) else t
+def movePair(w: Nat, b: Nat, s0: Nat, t0: Nat, s1: Nat, t1: Nat) -> Nat:
+  let p0 = path(w, b, s0, t0, s0, s1, true, true)
+  let p1 = path(w, b, s1, t1, s0, s1, true, true)
+  let e0 = p0 && path(w, b, s0, t0, s0, s1, p0, p1)
+  let e1 = p1 && path(w, b, s1, t1, s0, s1, p0, p1)
+  let d0 = destination(b, s0, t0, s1, t1, e1)
+  let d1 = destination(b, s1, t1, s0, t0, e0)
+  let take0 = e0 && cell(b, s0) != 0n
+  let take1 = e1 && cell(b, s1) != 0n && s0 != s1
+  let lifted0 = if take0 then put(b, s0, 0n) else b
+  let lifted1 = if take1 then put(lifted0, s1, 0n) else lifted0
+  let placed0 = if take0 then put(lifted1, d0, cell(b, s0)) else lifted1
+  if take1 then put(placed0, d1, cell(b, s1)) else placed0
+def winner(w: Nat, h: Nat, a: Nat) -> Nat:
+  if a % w == 0n || a % w == w - 1n then (if a / w == 0n then 1n else if a / w == h - 1n then 2n else 0n) else 0n
+def result(b: Nat, a: Nat, marks: Nat, status: Nat, win: Nat) -> Result:
+  {board: b, automaton: a, marks: marks, status: status, winner: win}
+def finish(w: Nat, h: Nat, b: Nat, a: Nat, s0: Nat, t0: Nat, s1: Nat, t1: Nat) -> Result:
+  let moved = movePair(w, b, s0, t0, s1, t1)
+  let next = automaton(w, h, moved, a)
+  let board = put(put(moved, a, 0n), next, 3n)
+  result(board, next, 0n, 0n, winner(w, h, next))
+def revealed(w: Nat, h: Nat, b: Nat, a: Nat, marks: Nat, s0: Nat, t0: Nat, s1: Nat, t1: Nat) -> Result:
+  if s0 == s1 && t0 != t1 then result(b, a, mark(marks, s0), 1n, 0n) else if t0 == t1 && s0 != s1 && cell(b, s0) != 0n && cell(b, s1) != 0n then result(b, a, mark(marks, t0), 1n, 0n) else finish(w, h, b, a, s0, t0, s1, t1)
+def resolveRound(w: Nat, h: Nat, b: Nat, a: Nat, marks: Nat, s0: Nat, t0: Nat, s1: Nat, t1: Nat) -> Result:
+  if w < 2n || h < 2n || a >= w * h then result(b, a, marks, 2n, 0n) else if winner(w, h, a) != 0n then result(b, a, marks, 3n, winner(w, h, a)) else if valid(w, h, a, marks, s0, t0) && valid(w, h, a, marks, s1, t1) then revealed(w, h, b, a, marks, s0, t0, s1, t1) else result(b, a, marks, 2n, 0n)
+
+# A real specification supplies replaceable rules without changing consumers.
+record Turn:
+  w: Nat
+  h: Nat
+  b: Nat
+  a: Nat
+  marks: Nat
+  s0: Nat
+  t0: Nat
+  s1: Nat
+  t1: Nat
+record Rules:
+  resolve(turn: Turn) -> Result
+extension TwoPlayer(self: Rules, super: {}) -> Rules:
+  {resolve: fn(turn: Turn) -> Result: resolveRound(turn.w, turn.h, turn.b, turn.a, turn.marks, turn.s0, turn.t0, turn.s1, turn.t1)}
+def play(w: Nat, h: Nat, b: Nat, a: Nat, marks: Nat, s0: Nat, t0: Nat, s1: Nat, t1: Nat) -> Result:
+  fix(TwoPlayer, {}).resolve({w: w, h: h, b: b, a: a, marks: marks, s0: s0, t0: t0, s1: s1, t1: t1})

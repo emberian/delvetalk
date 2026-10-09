@@ -30,3 +30,41 @@ def fold<T, U>(items: List<T>, initial: U, combine: T -> U -> U) -> U:
   match items:
     case nil(_): initial
     case cons(c): combine(c.head)(fold::<T, U>(c.tail, initial, combine))
+# An optional value: what a search finds, or nothing.
+sum Maybe<T>:
+  none: {}
+  some: {value: T}
+def find<T>(items: List<T>, predicate: T -> Bool) -> Maybe<T>:
+  match items:
+    case nil(_): Maybe::<T>.none({})
+    case cons(c): if predicate(c.head) then Maybe::<T>.some({value: c.head}) else find::<T>(c.tail, predicate)
+def filterMap<T, U>(items: List<T>, transform: T -> Maybe<U>) -> List<U>:
+  match items:
+    case nil(_): List::<U>.nil()
+    case cons(c): kept::<T, U>(transform(c.head), filterMap::<T, U>(c.tail, transform))
+def kept<T, U>(found: Maybe<U>, rest: List<U>) -> List<U>:
+  match found:
+    case none(_): rest
+    case some(s): List::<U>.cons({head: s.value, tail: rest})
+# The index of the first item the predicate holds for: what an Entries edit names.
+def indexWhere<T>(items: List<T>, predicate: T -> Bool) -> Maybe<Nat>:
+  indexFrom::<T>(items, predicate, 0n)
+def indexFrom<T>(items: List<T>, predicate: T -> Bool, index: Nat) -> Maybe<Nat>:
+  match items:
+    case nil(_): Maybe::<Nat>.none({})
+    case cons(c): if predicate(c.head) then Maybe::<Nat>.some({value: index}) else indexFrom::<T>(c.tail, predicate, index + 1n)
+# The list without every item the predicate holds for.
+def removeWhere<T>(items: List<T>, predicate: T -> Bool) -> List<T>:
+  match items:
+    case nil(_): List::<T>.nil()
+    case cons(c): if predicate(c.head) then removeWhere::<T>(c.tail, predicate) else List::<T>.cons({head: c.head, tail: removeWhere::<T>(c.tail, predicate)})
+def take<T>(items: List<T>, count: Nat) -> List<T>:
+  match items:
+    case nil(_): List::<T>.nil()
+    case cons(c): if count == 0n then List::<T>.nil() else List::<T>.cons({head: c.head, tail: take::<T>(c.tail, count - 1n)})
+def reverse<T>(items: List<T>) -> List<T>:
+  reverseOnto::<T>(items, List::<T>.nil())
+def reverseOnto<T>(items: List<T>, onto: List<T>) -> List<T>:
+  match items:
+    case nil(_): onto
+    case cons(c): reverseOnto::<T>(c.tail, List::<T>.cons({head: c.head, tail: onto}))

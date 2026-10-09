@@ -2,13 +2,15 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+# The reference activity the host's own suites time: it stays outside the card protocol
+# (no receive), since every module in a closure costs every turn.
 record State:
   count: Nat
 # A creator supplies a Seed; seeded makes the child's State from it.
 type Seed = {}
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def defaultSeed() -> Seed:
   {}

@@ -1,18 +1,14 @@
 """The workshop: a model takes the reins from a post.
 
-The host does not implement `check`, `inspect` or the reprogram path of these
-turns yet; a turn that performs them is refused as
-
-    {'class': 'evaluation', 'reason': 'plan not supported: check'}
-    {'class': 'evaluation', 'reason': 'plan not supported: inspect'}
-
-so the paths that reach the host are expected failures and flip when it lands.
+The host answers `check`, `inspect` and a `reprogram` of another object, judged by the
+target's own law with request.caller = the workshop. A block must be a package with
+`initial` (the host checks entry `initial`).
 """
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_objects import check, closure, compile_job, computation, row_names
-from tests.test_turn_world import label, nat, record
+from tests.test_objects import MODULES, check, closure, compile_job, computation, row_names
+from tests.test_turn_world import closure as world_closure, label, nat, record
 
 PROBE = """edition ObjectiveBend 1
 import ./Workshop.obend as Workshop
@@ -27,7 +23,7 @@ def size(text: String) -> Nat:
     case none(_): 0n
     case some(s): textLength(s.source)
 """
-BLOCK = "edition ObjectiveBend 1\ndef bump(count: Nat) -> Nat:\n  count + 1n\n"
+BLOCK = "edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> State:\n  {count: 0n}\n"
 
 
 def run(entry, text, limits=None):
@@ -76,7 +72,7 @@ class Fenced(unittest.TestCase):
 
 class Types(unittest.TestCase):
     def test_every_method_compiles_as_an_activity(self):
-        for method in ("check", "propose", "receive", "describe"):
+        for method in ("check", "propose", "receive"):
             with self.subTest(method=method):
                 reply = compile_job(closure("Workshop"), method)
                 self.assertEqual(reply["status"], "compiled", reply)
@@ -88,7 +84,7 @@ class Workshop(Chain):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
 
     def say(self, text, obj="workshop"):
-        return self.turn(obj, "receive", record(text=label(text), who=label("glm"), post=label("at://glm/p/1")), principal="glm")
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1"), slot=label("")), principal="glm")
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
@@ -102,7 +98,7 @@ class Workshop(Chain):
         reply = self.say("please make my bell louder")
         self.assertEqual(self.verdict(reply), "refused")
         self.assertIn("delvetalk workshop check", self.card(reply))
-        self.assertEqual(self.card(self.turn("workshop", "describe", principal="glm")), self.card(reply))
+        self.assertEqual(self.card(self.say("")), self.card(reply))
 
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):
         self.make_workshop()
@@ -113,7 +109,6 @@ class Workshop(Chain):
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
 
-    @unittest.expectedFailure
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check\n```obend\n%s```\n" % BLOCK)
@@ -123,19 +118,43 @@ class Workshop(Chain):
 
     def test_a_target_is_inspected_and_its_source_checked(self):
         self.make_workshop()
-        self.make("bell-1", closure("Counter"), record(count=nat(0)))
+        self.make("bell-1", closure("Counter"), record())
         reply = self.say("delvetalk workshop check\ntarget: bell-1")
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertIn(self.verdict(reply), ("clean", "flawed"))
 
-    @unittest.expectedFailure
-    def test_a_clean_proposal_reprograms_the_target_and_offers_the_receipt_card(self):
+    def counter(self, owner="glm"):
+        """A Counter whose law names its proposer: glm creates it, so the law admits glm's
+        amendment and reprogram, and anyone's ordinary writes."""
+        law = 'law owner: request.kind == 0 or request.subject == "%s"\n' % owner
+        source = open(MODULES["Counter"]).read().replace("record State:", law + "record State:", 1)
+        modules = world_closure("Counter", override={"Counter": source})
+        r = self.host.send(op="world-create", principal=owner, identity="mk-bell-1", object="bell-1", modules=modules,
+                           entry="initial", seed=record(count=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+        return self.host.send(op="world-view", principal=owner, object="bell-1")["pin"]
+
+    def test_a_clean_proposal_reprograms_another_object_under_its_law(self):
         self.make_workshop()
-        self.make("bell-1", closure("Counter"), record(count=nat(0)))
-        reply = self.say("delvetalk workshop propose\ntarget: bell-1\nmigration: keep\n```obend\n%s```\n" % BLOCK)
+        before = self.counter()
+        reply = self.say("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK)
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertEqual(self.verdict(reply), "reprogrammed")
+        after = self.host.send(op="world-view", principal="glm", object="bell-1")["pin"]
+        self.assertNotEqual(after, before)
+        print("\n--- reprogrammed card ---\n" + self.card(reply))
         self.assertIn("Reprogrammed bell-1.", self.card(reply))
+        writes = {w["object"]: w for w in reply["receipt"]["outcome"]["writes"]}
+        self.assertEqual((writes["bell-1"]["callers"], writes["bell-1"]["kinds"]), (["workshop"], [1]))
+
+    def test_a_strangers_proposal_is_refused_by_the_targets_law(self):
+        self.make_workshop()
+        before = self.counter()
+        reply = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
+                                                         post=label("at://kim/p/1"), slot=label("")), principal="kimik3")
+        self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], reply["receipt"]["outcome"]["clause"]),
+                         ("refused", "lawRefused", "owner"), reply)
+        self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
 
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):
         self.make_workshop()

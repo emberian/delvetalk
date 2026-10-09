@@ -32,7 +32,8 @@ class Model(unittest.TestCase):
             self.assertEqual(r['usage'], {'input_tokens': 3, 'output_tokens': 4})
 
     def test_failure_reasons(self):
-        self.assertEqual(self.ask(200, body('no json here'))['reason'], 'malformed')
+        text_only = self.ask(200, body('no json here'))  # a plain-text reply is a reply; the host fits raw
+        self.assertEqual((text_only['status'], text_only['json'], text_only['raw']), ('replied', None, 'no json here'))
         self.assertEqual(self.ask(200, b'not json')['reason'], 'malformed')
         self.assertEqual(self.ask(429, b'{}')['reason'], 'rate')
         self.assertEqual(self.ask(0, b'')['reason'], 'transport')

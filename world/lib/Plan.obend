@@ -5,35 +5,38 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 # The Plan vocabulary of docs/FOUNDATION.md section 3, as typed first-order sums.
 #
-# Design choice: the library is generic and the object supplies its own types.
-#   Plan<E, A>      E is the object's edits record, one field per state field,
-#                   each an Edit<T, D> (scalars) or Entries<D, U> (lists). A is
-#                   the payload for call, send and create: a call argument, a
-#                   message, a child's Seed.
+# The library is generic and the object supplies its own types.
+#   Plan<E>         E is the object's edits record, one field per state field,
+#                   each an Edit<T, D> (scalars) or Entries<D, U> (lists).
 #   Response<S, R>  S is the full state type of the object a view reads; R is
 #                   the result type of the methods the object calls (the host
 #                   answers a call with returned {result} of the callee's type)
 #                   and of an interpreted proposal.
 # An object fixes them once, for example
-#   type Plan = Plans.Plan<Edits, Arg>
+#   type Plan = Plans.Plan<Edits>
 #   type Response = Plans.Response<State, Nat>
 # and writes Activity<Plan, Response, Out>. A write is a record of per-field
-# edits, never a whole state: an object can only say what it changes, and the
-# host judges each field against the law. The alternative (a generic Write<S>
-# record) is refused outright: generic records do not parse
-# ("unsupported Objective Bend declaration"), only generic sums do.
+# edits, never a whole state: the host judges each field against the law.
+# Generic records do not parse ("unsupported Objective Bend declaration"), only
+# generic sums do, so payloads are inline records.
 #
-# "Any data" is not expressible in rank-1 generics, so a payload that must carry
-# several shapes is a sum the object declares; there is no dynamic Value
-# universe. One A serves call, send and create of a single object.
+# Payloads are Data. What a call, send or create carries (an argument, a message, a
+# child's Seed) is `Data.of::<T>(value)`: first-order data that Bend never takes apart
+# and the host checks against the callee's input or the child's state. One object
+# may call and send any shapes. A Data field in a State is not admitted yet (schema
+# certificates); keep Data to Plan payloads.
 #
 # The Seed rule. A creator supplies a Seed; the child's `seeded` makes its State.
 # Every object exports `Seed`, `defaultSeed()`, `seeded(seed: Seed) -> State` and
-# `initial() = seeded(defaultSeed())`. The host's create calls the child's
-# `seeded` with the supplied seed, so create's `seed: A` is the child's Seed type.
-# A creator of several kinds of child declares A as a sum with one constructor per
-# package, named like the package in lower case; the host unwraps the one the
-# `package` field names.
+# `initial() = seeded(defaultSeed())`. The host's create lays the seed (a record of
+# some of the State's fields) over the child's initial(); `seeded` is for creators in
+# Bend and for tests.
+#
+# Effects are never in a closure. An activity inside a lambda (a send in List.map or a
+# fold, the town's List.foreach) is refused (effect-in-let, effect-as-argument): fan-out
+# is explicit recursion in the activity, as Card.broadcast does it. An activity composes
+# only in tail position, so a method that another activity reuses takes its finish as a
+# pure function `then: Result -> T`.
 #
 # Writes are staged. A `write` is answered `written` always; whether the law
 # admits it is decided once, at commit, and a refusal there ends the whole turn.
@@ -87,17 +90,33 @@ record Interpret:
 record Offering:
   to: String
   document: Document.Document
+# Delegation. `to` (a principal, or an object id) may run `method` of `object` as the
+# principal of the direct turn that grants it, while the clock is at most `until`. The
+# grant is used by naming its id as `via` in callVia or sendVia: the callee then runs with
+# request.subject = the grantor and request.caller = the calling object. Without a grant
+# that stands the Plan is answered refused {clause: "noGrant"}. (Records have no optional
+# fields, so a call or send under a grant is its own constructor.)
+record Grant:
+  to: String
+  object: Reference
+  method: String
+  until: Nat
+# Listing and cards. `objects` answers one page (64) of the ids the principal may view,
+# starting with `prefix`, after `after` in byte order. `card` runs the target's pure
+# `render(state)` under the reader's read authority (`denied` otherwise), so an object
+# shows one of another state type without viewing its state.
 record Publish:
   page: String
   section: String
   body: String
-sum Plan<E, A>:
+sum Plan<E>:
   view: View
   write: {object: Reference, edits: E}
-  call: {object: Reference, method: String, argument: A}
-  send: {object: Reference, method: String, argument: A}
-  create: {package: String, seed: A, law: String, requireAbsent: Reference}
+  call: {object: Reference, method: String, argument: Data}
+  send: {object: Reference, method: String, argument: Data}
+  create: {package: String, seed: Data, law: String, requireAbsent: Reference}
   await: Await
+  awaitUntil: {slot: Slot, until: Nat}
   interpret: Interpret
   offer: Offering
   publish: Publish
@@ -105,6 +124,12 @@ sum Plan<E, A>:
   amend: {object: Reference, law: String}
   inspect: {object: Reference}
   check: {package: String}
+  grant: Grant
+  revoke: {id: String}
+  callVia: {object: Reference, method: String, argument: Data, via: String}
+  sendVia: {object: Reference, method: String, argument: Data, via: String}
+  objects: {prefix: String, after: String}
+  card: {object: Reference}
 sum Response<S, R>:
   viewed: {version: Nat, state: S}
   denied: {}
@@ -125,8 +150,15 @@ sum Response<S, R>:
   amended: {}
   inspected: {pin: String, law: String, source: String}
   checked: {diagnostics: Document.Names}
+  granted: {id: String}
+  revoked: {}
+  listed: {ids: Document.Names, more: Bool}
+  carded: {document: Document.Document}
 # The reference of the running object, in the world the context carries (the
 # empty world is the world the turn runs in).
+# The empty payload, for a method that takes no input.
+def nothing() -> Data:
+  Data.of::<{}>({})
 def self(context: Abi.Context) -> Reference:
   {world: context.world, object: context.object}
 # References compare by world and object. The empty reference (object "") names
@@ -137,12 +169,6 @@ def same(left: Reference, right: Reference) -> Bool:
   left.world == right.world && left.object == right.object
 def isNobody(reference: Reference) -> Bool:
   reference.object == ""
-sum Position:
-  absent: {}
-  at: {index: Nat}
-def indexOf(items: Lists.List<Reference>, target: Reference) -> Position:
-  indexFrom(items, target, 0n)
-def indexFrom(items: Lists.List<Reference>, target: Reference, index: Nat) -> Position:
-  match items:
-    case nil(_): Position.absent({})
-    case cons(c): if same(c.head, target) then Position.at({index: index}) else indexFrom(c.tail, target, index + 1n)
+# The index of a reference in a list, by world and object; none when absent.
+def indexOf(items: Lists.List<Reference>, target: Reference) -> Lists.Maybe<Nat>:
+  Lists.indexWhere::<Reference>(items, fn(item: Reference) -> Bool: same(item, target))

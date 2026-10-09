@@ -1,13 +1,10 @@
 """The message chains: bell rings, door opens, lantern lights; and a cycle.
 
-Both tests drive the host's `send` machinery (`world-turn` answers a send with a
-delivery id; `world-deliver {limit}` runs the queued deliveries; `world-pending`
-lists them). The host lane has not landed it, so both are expected failures.
-Against the foundation binary today the first turn that sends is refused:
-
-    receipt outcome {'class': 'evaluation', 'reason': 'plan not supported: send'}
-
-When the host merges, the unexpected success flips these to ordinary passes.
+Both tests drive the host's `send` machinery: `world-turn` answers a send with a
+delivery id, and the settling pass after every durable op runs pending deliveries
+(up to 64 per op; the reply carries them as `delivered`). `world-deliver {limit}`
+runs any that remain; `world-pending` lists them. The chain is wired with
+Card's observers.
 """
 import json
 import unittest
@@ -31,15 +28,58 @@ def reference(name):
     return record(world=label(""), object=label(name))
 
 
+def garden_seed(policy="", pending=(), confirm=True):
+    """A Garden Seed: its policy object, whether prose waits for "yes", and the proposals already waiting."""
+    wire = {"tag": "list", "items": [record(principal=label(principal), spell=label(spell))
+                                     for principal, spell in pending]}
+    return record(policy=reference(policy), confirm=boolean(confirm), pending=wire)
+
+
+def garden_state(planted=0):
+    """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
+    return record(planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirm=boolean(True),
+                  pending=nil(), children=nil())
+
+
 def field(state, name):
     return [f["value"] for f in state["fields"] if f["name"] == name][0]
 
 
+# Objects are born the way the world makes them: a creator performs `create` with a
+# Seed and the host lays it over the child's initial(). The host's own world-create
+# still takes a whole state, so a test that wants a Seed borrows a one-method creator.
+MAKER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./PACKAGE.obend as Child
+record State:
+  made: Nat
+record Edits:
+  made: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {made: 0n}
+def make(state: State, input: {id: String, seed: Child.Seed}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.create({package: "PACKAGE", seed: Data.of::<Child.Seed>(input.seed), law: "", requireAbsent: {world: "", object: input.id}})):
+    case created(_): "created"
+    case refused(r): r.clause
+    case _: "no answer"
+"""
+
+
 class Chain(TurnWorld):
     def make(self, name, modules, seed):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                           modules=modules, entry="initial", seed=seed)
+        """Create object `name` from the last module of `modules` with a Seed, through a creator."""
+        package = modules[-1]["name"]
+        maker = "maker-" + name
+        creator = modules + [{"name": "Maker", "source": MAKER.replace("PACKAGE", package)}]
+        r = self.host.send(op="world-create", principal="ember", identity="mk-" + maker, object=maker,
+                           modules=creator, entry="initial", seed=record(made=nat(0)))
         self.assertEqual(r["status"], "created", r)
+        made = self.host.send(op="world-turn", principal="ember", object=maker, method="make",
+                              argument=record(id=label(name), seed=seed), identity="make-" + name)
+        self.assertEqual((made["status"], made.get("result")), ("admitted", label("created")), made)
 
     def state(self, name):
         view = self.host.send(op="world-view", principal="ember", object=name)
@@ -55,31 +95,31 @@ class Chain(TurnWorld):
         return replies
 
     def test_ring_then_open_then_light(self):
-        self.make("lantern", closure("Lantern"), record(lit=boolean(False), litBy=label("")))
-        self.make("door", closure("Door"), record(
-            open=boolean(False), openedBy=label(""), knocks=nil(),
-            lantern=reference("none"), lastDelivery=label("")))
+        self.make("lantern", closure("Lantern"), record())
+        self.make("door", closure("Door"), record())
         silver = {"tag": "variant", "label": "silver", "payload": empty()}
         self.make("bell", closure("Bell"), record(
-            planter=label("glm"), colour=silver, seed=label("s"), rains=nil(), rung=boolean(False),
-            door=reference("none"), lastDelivery=label(""),
-            planting=record(principal=label(""), intent=label(""))))
-        # The placeholders are overwritten through the objects' own configure methods.
-        for obj, argument in (("door", record(lantern=reference("lantern"))), ("bell", record(door=reference("door")))):
-            self.assertEqual(self.turn(obj, "configure", argument)["status"], "admitted")
-        ring = self.turn("bell", "ring", record(who=label("gemini")))
+            colour=silver, seed=label("s"), planting=record(principal=label("glm"), intent=label("p"))))
+        # The chain is wired by observers: the door observes the bell, the lantern the door.
+        for obj, watcher, method in (("door", "lantern", "light"), ("bell", "door", "open")):
+            w = self.turn(obj, "observe", record(object=reference(watcher), method=label(method)))
+            self.assertEqual((w["status"], w["result"]["label"]), ("admitted", "edit"), w)
+        again = self.turn("bell", "observe", record(object=reference("door"), method=label("open")))
+        self.assertEqual(again["result"]["label"], "unchanged")
+        ring = self.turn("bell", "ring", principal="gemini")
         self.assertEqual(ring["status"], "admitted", ring)
+        self.assertEqual(ring["result"], nat(1))  # one observer, one send
         self.assertEqual(field(self.state("bell"), "rung"), boolean(True))
-        self.assertNotEqual(field(self.state("bell"), "lastDelivery"), label(""))
-        self.assertEqual(field(self.state("lantern"), "lit"), boolean(False))
-        self.deliver_all()
+        # Deliveries run in the settling pass of the same durable op: the ring's reply carries them.
+        self.assertEqual([d["status"] for d in ring["delivered"]], ["admitted", "admitted"], ring)
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
         self.assertEqual(field(self.state("door"), "open"), boolean(True))
         self.assertEqual(field(self.state("door"), "openedBy"), label("gemini"))
         self.assertEqual(field(self.state("lantern"), "lit"), boolean(True))
         self.assertEqual(field(self.state("lantern"), "litBy"), label("gemini"))
 
     def test_a_tick_cycle_ends_in_a_budget_exhausted_refusal(self):
-        self.make("loop", closure("Loop"), record(count=nat(0)))
+        self.make("loop", closure("Loop"), record())
         first = self.turn("loop", "tick")
         self.assertEqual(first["status"], "admitted", first)
         replies = self.deliver_all(rounds=200)

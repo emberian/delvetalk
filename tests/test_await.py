@@ -5,7 +5,7 @@ The clock is `world-advance`; the host never reads wall time.
 import time
 import unittest
 
-from tests.test_chain import Chain, boolean, nil, reference
+from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_replay import get, silver
 from tests.test_turn_world import TurnWorld, label, nat, record
@@ -16,8 +16,7 @@ def planting(post):
 
 
 def bell_seed(post="post-1"):
-    return record(planter=label("glm"), colour=silver(), seed=label("a bell for lost moths"), rains=nil(),
-                  rung=boolean(False), door=reference(""), lastDelivery=label(""), planting=planting(post))
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=planting(post))
 
 
 class Await(Chain):
@@ -42,21 +41,21 @@ class Create(Await):
     GARDEN = "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver"
 
     def plant(self, who="glm", post="at://glm.delve.town/app.bsky.feed.post/3m-plant"):
-        return self.turn("garden", "receive", record(text=label(self.GARDEN), who=label(who), post=label(post)),
+        return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post), slot=label("")),
                          principal=who, identity=post)
 
     def test_a_planted_bell_appears_with_its_planter_and_only_the_overlaid_fields(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
         self.assertEqual(self.plant()["status"], "admitted")
         bell = self.state("garden/bell/1")
-        self.assertEqual(get(bell, "planter"), label("glm"))
+        self.assertEqual(get(get(bell, "planting"), "principal"), label("glm"))
         self.assertEqual(get(bell, "rung"), boolean(False))                 # default from initial()
         v = self.host.send(op="world-view", principal="e", object="garden/bell/1")
         self.assertEqual((v["status"], v["version"]), ("viewed", 0))
         self.assertEqual(self.state("garden")["fields"][0]["value"], nat(1))
 
     def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
         r = self.plant()
         self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/1")
         before = self.state("garden/bell/1")
@@ -64,11 +63,11 @@ class Create(Await):
         self.assertEqual(self.state("garden/bell/1"), before)
         # The creator is the owner of what it made (the default law names the planter's turn).
         again = self.host.send(op="world-turn", principal="glm", object="garden/bell/1", method="rain",
-                               argument=record(author=label("kimik3"), text=label("rain")), identity="r1")
+                               argument=record(text=label("rain")), identity="r1")
         self.assertEqual(again["status"], "admitted", again)
 
     def test_a_second_create_of_one_id_is_refused_naming_the_root_and_creates_nothing(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
         first = self.turn("garden", "cistern", record(), principal="kimik3")
         self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "made"))
         second = self.turn("garden", "cistern", record(), principal="glm")
@@ -89,12 +88,12 @@ record Edits:
 sum Seed:
   good: {n: Nat}
   bad: {ghost: Nat}
-type Plan = Plans.Plan<Edits, Seed>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
   {made: 0n}
 def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "Child", seed: if input.bad then Seed.bad({ghost: 1n}) else Seed.good({n: 5n}), law: "", requireAbsent: {world: "", object: input.kid}})):
+  match perform(Plan.create({package: "Child", seed: Data.of::<Seed>(if input.bad then Seed.bad({ghost: 1n}) else Seed.good({n: 5n})), law: "", requireAbsent: {world: "", object: input.kid}})):
     case created(_): "created"
     case refused(r): r.clause
     case _: "other"
@@ -116,8 +115,8 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         self.assertEqual(again, kid)
 
     def test_an_existing_object_makes_the_create_fail_even_if_made_by_world_create(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
-        self.make("garden/cistern/1", closure("Cistern"), record(entries=nil()))
+        self.make("garden", closure("Garden"), garden_seed())
+        self.make("garden/cistern/1", closure("Cistern"), record())
         r = self.turn("garden", "cistern", record(), principal="glm")
         self.assertEqual(r["receipt"]["outcome"]["class"], "requiredAbsence")
 
@@ -190,7 +189,7 @@ class Suspend(Await):
     def test_a_suspended_turn_whose_bell_was_written_meanwhile_is_refused_stale_on_resume(self):
         self.bell()
         self.strike()
-        rain = self.turn("bell", "rain", record(author=label("kimik3"), text=label("drip")), principal="kimik3")
+        rain = self.turn("bell", "rain", record(text=label("drip")), principal="kimik3")
         self.assertEqual(rain["status"], "admitted")
         settled = self.settle()
         out = settled["resumed"][0]["receipt"]["outcome"]
@@ -237,7 +236,7 @@ class Suspend(Await):
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")
-        self.assertIn("height 2", r["message"])
+        self.assertIn("height 3", r["message"])  # the Maker creator costs two entries before the strike
 
 
 class Seeds(TurnWorld):

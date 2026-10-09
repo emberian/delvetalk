@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 record Exit:
   label: String
   to: Plans.Reference
@@ -12,13 +13,6 @@ record State:
   exits: Lists.List<Exit>
   present: Lists.List<Plans.Reference>
   things: Lists.List<Plans.Reference>
-# Who is acting, on enter and leave.
-record Who:
-  who: Plans.Reference
-# A thing and who handles it, on take and put.
-record Handling:
-  thing: Plans.Reference
-  by: Plans.Reference
 # Every method that can refuse answers with this sum.
 sum Done:
   done: {}
@@ -27,15 +21,19 @@ sum Done:
 record Seed:
   name: String
   description: String
+  exits: Lists.List<Exit>
+  present: Lists.List<Plans.Reference>
+  things: Lists.List<Plans.Reference>
 record Edits:
   present: Plans.Entries<Plans.Reference, {}>
   things: Plans.Entries<Plans.Reference, {}>
-type Plan = Plans.Plan<Edits, {}>
+# No call carries an argument: who is acting is the context's business.
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {name: "", description: ""}
+  {name: "", description: "", exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
 def seeded(seed: Seed) -> State:
-  {name: seed.name, description: seed.description, exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
+  {name: seed.name, description: seed.description, exits: seed.exits, present: seed.present, things: seed.things}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
@@ -44,45 +42,58 @@ def written(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Done
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Done.done({})
     case _: Done.refused({reason: "The write was not answered."})
+# Whoever enters or leaves is the calling object, or, in a direct turn, the avatar
+# of the principal (an avatar's id is its principal's DID).
+def actor(context: Abi.Context) -> Plans.Reference:
+  if context.caller == "" then {world: context.world, object: context.principal} else {world: context.world, object: context.caller}
+def caller(context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: context.caller}
 # Join the people here. Law decides whether the subject may enter.
-def enter(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match Plans.indexOf(state.present, input.who):
-    case at(_): Done.refused({reason: "Already here."})
-    case absent(_): written(context, extend(keep(), {present: Plans.Entries::<Plans.Reference, {}>.append({item: input.who})}))
-def leave(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match Plans.indexOf(state.present, input.who):
-    case absent(_): Done.refused({reason: "Not here."})
-    case at(a): written(context, extend(keep(), {present: Plans.Entries::<Plans.Reference, {}>.remove({index: a.index})}))
-# A thing leaves the floor into the hands of someone who is here.
-def take(state: State, input: Handling, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match Plans.indexOf(state.present, input.by):
-    case absent(_): Done.refused({reason: "Only someone here can take things."})
-    case at(_): takeThing(state, input, context)
-def takeThing(state: State, input: Handling, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match Plans.indexOf(state.things, input.thing):
-    case absent(_): Done.refused({reason: "That is not lying here."})
-    case at(a): written(context, extend(keep(), {things: Plans.Entries::<Plans.Reference, {}>.remove({index: a.index})}))
-def put(state: State, input: Handling, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match Plans.indexOf(state.present, input.by):
-    case absent(_): Done.refused({reason: "Only someone here can put things down."})
-    case at(_): putThing(state, input, context)
-def putThing(state: State, input: Handling, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match Plans.indexOf(state.things, input.thing):
-    case at(_): Done.refused({reason: "That is already lying here."})
-    case absent(_): written(context, extend(keep(), {things: Plans.Entries::<Plans.Reference, {}>.append({item: input.thing})}))
+def enter(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match Plans.indexOf(state.present, actor(context)):
+    case some(_): Done.refused({reason: "Already here."})
+    case none(_): written(context, extend(keep(), {present: Plans.Entries::<Plans.Reference, {}>.append({item: actor(context)})}))
+def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match Plans.indexOf(state.present, actor(context)):
+    case none(_): Done.refused({reason: "Not here."})
+    case some(a): written(context, extend(keep(), {present: Plans.Entries::<Plans.Reference, {}>.remove({index: a.value})}))
+# A thing leaves the floor into the hands of the principal, who must be here. Only
+# the thing itself (the calling object) takes itself off the floor.
+def person(context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: context.principal}
+def take(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  if context.caller == "" then Done.refused({reason: "Only a thing can take itself."}) else takeFrom(state, context)
+def takeFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match Plans.indexOf(state.present, person(context)):
+    case none(_): Done.refused({reason: "Only someone here can take things."})
+    case some(_): takeThing(state, context)
+def takeThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match Plans.indexOf(state.things, caller(context)):
+    case none(_): Done.refused({reason: "That is not lying here."})
+    case some(a): written(context, extend(keep(), {things: Plans.Entries::<Plans.Reference, {}>.remove({index: a.value})}))
+def put(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  if context.caller == "" then Done.refused({reason: "Only a thing can put itself down."}) else putFrom(state, context)
+def putFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match Plans.indexOf(state.present, person(context)):
+    case none(_): Done.refused({reason: "Only someone here can put things down."})
+    case some(_): putThing(state, context)
+def putThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match Plans.indexOf(state.things, caller(context)):
+    case some(_): Done.refused({reason: "That is already lying here."})
+    case none(_): written(context, extend(keep(), {things: Plans.Entries::<Plans.Reference, {}>.append({item: caller(context)})}))
 def line(prefix: String, suffix: String) -> Document.Document:
   Document.text(textConcat(prefix, textConcat(suffix, "\n")))
 def reference(prefix: String) -> Plans.Reference -> Document.Document:
-  fn(item: Plans.Reference) -> Document.Document: line(prefix, item.object)
+  fn(item: Plans.Reference) -> Document.Document: line(prefix, Card.handle(item.object))
 def exit(item: Exit) -> Document.Document:
   line("Exit ", textConcat(item.label, textConcat(" to ", item.to.object)))
 def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: "))), Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: "))), Lists.map::<Exit, Document.Document>(state.exits, exit))})
-# The room card: description, who is here, what lies here, exits. The host takes
-# a pure method to return the state record, so a card is shown by offering it.
-def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({to: "", document: render(state)})):
-    case offered(_): true
-    case _: false
-def card(state: State) -> String:
-  Document.plain(render(state))
+  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: ")), 8n)), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: ")), 8n)), Lists.map::<Exit, Document.Document>(state.exits, exit))})
+# A room is entered and left by an avatar's move, and things take and put themselves:
+# its card offers no spell of its own.
+def forms() -> Card.Forms:
+  Card.Forms.nil()
+def door() -> Card.Door:
+  {word: "place", blurb: "A room: who is here, what lies here, the exits."}
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))

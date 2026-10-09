@@ -1,5 +1,8 @@
 """send and the causal ledger: deliveries run as later turns, budgets only shrink.
 
+Deliveries run in the settling pass after every durable op (at most 64 per op), so a
+sending turn's reply carries them as `delivered`; `world-deliver` runs what is left.
+
 The Bell/Door/Lantern shapes are one fixture package instantiated three times;
 Loop is the same package sending to itself.
 """
@@ -22,14 +25,14 @@ record Arg:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   lit: Plans.Edit<Bool, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 %(law)sdef initial() -> State:
   {count: 0n, lit: false}
 def keep() -> Edits:
   {count: Plans.Edit::<Nat, Nat>.keep({}), lit: Plans.Edit::<Bool, {}>.keep({})}
 def sendTo(target: String, method: String, argument: Arg) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.send({object: {world: "", object: target}, method: method, argument: argument})):
+  match perform(Plan.send({object: {world: "", object: target}, method: method, argument: Data.of::<Arg>(argument)})):
     case delivery(_): 1n
     case _: 0n
 def tally(context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -66,7 +69,7 @@ def fanOut(target: String, left: Nat) -> Activity<Plan, Response, Nat>:
   match left:
     case 0: 1n
     case 1+previous:
-      match perform(Plan.send({object: {world: "", object: target}, method: "light", argument: {target: "", left: 0n}})):
+      match perform(Plan.send({object: {world: "", object: target}, method: "light", argument: Data.of::<Arg>({target: "", left: 0n})})):
         case delivery(_): fanOut(target, previous)
         case _: 0n
 """
@@ -94,13 +97,21 @@ class Deliveries(TurnWorld):
         v = self.host.send(op="world-view", principal="e", object=obj)["state"]["fields"]
         return {f["name"]: f["value"]["value"] for f in v}
 
+    def turn(self, *args, **kwargs):
+        r = super().turn(*args, **kwargs)
+        self.settled = getattr(self, "settled", []) + r.get("delivered", [])
+        return r
+
     def deliver_all(self, limit=16, rounds=64):
-        receipts = []
+        """Every delivery since the last call: those the settling passes ran, then the rest."""
+        receipts, self.settled = getattr(self, "settled", []), []
+        if not self.pending()["count"]:
+            return receipts
         for _ in range(rounds):
             r = self.host.send(op="world-deliver", limit=limit)
             self.assertEqual(r["status"], "delivered", r)
-            receipts += r["receipts"]
-            if r["pending"] == 0:
+            receipts += r["receipts"] + r.get("delivered", [])
+            if r["pending"] == 0 and not self.pending()["count"]:
                 break
         return receipts
 
@@ -119,8 +130,7 @@ class Chain(Deliveries):
             self.make(name)
         r = self.turn("bell", "ring", arg("door"), principal="glm", identity="ring-1")
         self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.pending()["count"], 1)
-        self.assertEqual(self.fields("lantern")["lit"], False)
+        self.assertEqual(self.pending()["count"], 0)
         receipts = self.deliver_all()
         self.assertEqual([x["status"] for x in receipts], ["admitted", "admitted"])
         self.assertEqual(self.fields("lantern")["lit"], True)
@@ -215,32 +225,30 @@ class Exhaustion(Deliveries):
 
 
 class Restart(Deliveries):
-    def test_restart_between_turn_and_deliver_resumes_the_queue_and_delivers_each_id_once(self):
-        for name in ("bell", "door", "lantern"):
-            self.make(name)
-        self.turn("bell", "ring", arg("door"), principal="glm")
+    def test_restart_with_deliveries_left_over_resumes_the_queue_and_delivers_each_id_once(self):
+        self.make("loop")
+        first = self.turn("loop", "spin", arg("loop"), principal="glm")
+        self.assertEqual(len(first["delivered"]), 64)    # the settling pass's share
         before = self.pending()
-        self.reopen()
+        self.assertEqual(before["count"], 1)
+        self.reopen()                                    # as after a crash with the queue non-empty
         self.assertEqual(self.pending(), before)
-        one = self.host.send(op="world-deliver", limit=1)
-        self.assertEqual(len(one["receipts"]), 1)
-        self.reopen()                                    # as after a crash mid-delivery
+        self.settled = []
         rest = self.deliver_all()
-        self.assertEqual(len(rest), 1)
+        self.assertEqual(len(rest), MAX_DEPTH - 64)
         self.assertEqual(self.deliver_all(), [])         # a retry delivers nothing twice
         self.reopen()
         self.assertEqual(self.pending()["count"], 0)
-        self.assertEqual(self.deliver_all(), [])
         ids = [e["delivery"]["id"] for e in self.entries() if "delivery" in e]
-        self.assertEqual(len(ids), 2)
-        self.assertEqual(len(set(ids)), 2)
-        self.assertEqual((self.fields("door")["count"], self.fields("lantern")["lit"]), ("1", True))
+        self.assertEqual(len(ids), MAX_DEPTH)
+        self.assertEqual(len(set(ids)), MAX_DEPTH)
+        self.assertEqual(self.fields("loop")["count"], str(MAX_DEPTH))
 
     def test_the_ledger_is_in_the_journal_so_restart_cannot_mint_capacity(self):
         self.make("loop")
         self.turn("loop", "spin", arg("loop"))
-        self.host.send(op="world-deliver", limit=3)
         self.reopen()
+        self.settled = []
         receipts = self.deliver_all()
         self.assertEqual(int(self.fields("loop")["count"]), MAX_DEPTH)
         self.assertEqual(receipts[-1]["receipt"]["outcome"]["reason"], "depth")
@@ -251,7 +259,7 @@ class Restart(Deliveries):
         self.release()
         with open(self.path) as f:
             lines = f.read().splitlines()
-        lines[-1] = lines[-1].replace('"depth":99', '"depth":999')
+        lines[1] = lines[1].replace('"depth":99', '"depth":999')     # the sending entry, height 2
         with open(self.path, "w") as f:
             f.write("\n".join(lines) + "\n")
         h = self.spawn()

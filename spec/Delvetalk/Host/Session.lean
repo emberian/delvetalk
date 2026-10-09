@@ -38,8 +38,16 @@ def loadLibrary (path : String) : IO (Except String Library) := do
     return sealLibrary modules
   catch e => return .error s!"library unreadable: {e}"
 
-def openWorld (path : String) : IO (Except String Open) := do
+/-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
+    `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
+    (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
+def openWorld (path : String) (held : Option IO.FS.Handle := none) : IO (Except String Open) := do
   try
+    let handle ← match held with
+      | some h => pure h
+      | none => IO.FS.Handle.mk path IO.FS.Mode.append
+    if held.isNone then
+      unless ← handle.tryLock (exclusive := true) do return .error "journal is open in another process"
     let exists_ ← System.FilePath.pathExists path
     let content ← if exists_ then do
         let info ← System.FilePath.metadata path
@@ -49,23 +57,27 @@ def openWorld (path : String) : IO (Except String Open) := do
       else pure ""
     match replay content with
     | .error e => return .error e
-    | .ok world =>
-      let handle ← IO.FS.Handle.mk path IO.FS.Mode.append
-      return .ok { world, path, handle }
+    | .ok world => return .ok { world, path, handle }
   catch e => return .error s!"journal unreadable: {e}"
 
 /-- Run a pure world step and make its entry durable before the reply exists. -/
 def durable (s : Open) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
   -- A step, then whatever it let go on: resumptions follow in the same durable write.
-  let settled := fun (w : World) => w.suspended.isEmpty
+  let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
   match (do
       let (w', r) ← step s.world
-      if settled w' then return (w', r, #[])
-      let (w'', resumed) ← settle w'
-      return (w'', r, resumed) : Except String (World × Json × Array Json)) with
+      if settled w' then return (w', r, #[], #[])
+      let (w'', resumed, delivered) ← settleAll w'
+      return (w'', r, resumed, delivered) : Except String (World × Json × Array Json × Array Json)) with
   | .error e => return (some s, .error e)
-  | .ok (w', r0, resumed) =>
-    let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr resumed)
+  | .ok (w', r0, resumed, delivered) =>
+    -- Turns the settling pass ran belong to their own principals: their offers are read with
+    -- `world-offers` by their addressees, never handed to whoever caused the pass.
+    let quiet := fun (rs : Array Json) => rs.map fun x => match x.getObj? with
+      | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "offers"))
+      | .error _ => x
+    let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr (quiet resumed))
+    let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr (quiet delivered))
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
     let fresh := w'.entries.extract s.world.height w'.height
     if fresh.any (·.compress.utf8ByteSize > Limits.maxEntryBytes) then
@@ -86,9 +98,26 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
     match request.getObjValAs? String "path" with
     | .error e => return (session, .error e)
     | .ok path =>
-      match ← openWorld path with
+      let held := match session with
+        | some o => if o.path == path then some o.handle else none
+        | none => none
+      match ← openWorld path held with
       | .error e => return (session, .error e)
       | .ok o =>
+        -- The first open naming a clock principal or a posting quota journals them.
+        let o ← match (do
+            let quota ← match request.getObjVal? "postQuota" with
+              | .ok q => some <$> natOf q
+              | .error _ => pure none
+            return ((request.getObjValAs? String "clock").toOption, quota) : Except String _) with
+          | .error e => return (session, .error e)
+          | .ok (none, none) => pure o
+          | .ok (clock, quota) =>
+            let (s', r) ← durable o (fun w => settingsOp w clock quota)
+            match r, s' with
+            | .ok _, some o' => pure o'
+            | .error e, _ => return (session, .error e)
+            | _, none => return (session, .error "world-open failed")
         let opened := fun (o : Open) (extra : List (String × Json)) => Json.mkObj ([("status", toJson "opened"),
           ("height", toJson o.world.height), ("head", toJson o.world.head),
           ("objects", toJson o.world.objects.size)] ++ extra ++
@@ -124,9 +153,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-create" => durable s (fun w => create w request)
       | "world-turn" => durable s (fun w => do runTurn w (← parseTurn request))
       | "world-deliver" => durable s (fun w => do
-          let limit := match request.getObjVal? "limit" with
-            | .ok l => (natOf l).toOption.getD Limits.deliveriesPerCall
-            | .error _ => Limits.deliveriesPerCall
+          let limit := (← optNat request "limit").getD Limits.deliveriesPerCall
+          if limit == 0 || limit > Limits.deliveriesPerCall then
+            throw s!"limit must be 1..{Limits.deliveriesPerCall}"
           deliver w limit)
       | "world-pending" => return (session, .ok (pendingReply s.world))
       | "world-library" => do
@@ -153,7 +182,13 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
-          ("objects", toJson s.world.objects.size)]))
+          ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true)]))
+      | "world-posted" => durable s (fun w => postedOp w request)
+      | "world-addressee" => return (session, addressee s.world request)
+      | "world-objects" => return (session, objectsOp s.world request)
+      | "world-offers" => return (session, offersOp s.world request)
+      | "world-card" => return (session, cardOp s.world request)
       | _ => return (session, .error s!"unknown world operation {op}")
 
 end Delvetalk.Host

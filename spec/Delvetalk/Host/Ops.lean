@@ -24,6 +24,21 @@ def natOf (j : Json) : Except String Nat :=
 
 def natField (j : Json) (key : String) : Except String Nat := do natOf (← j.getObjVal? key)
 
+/-- A request's optional text field, refused by name when present and not text. -/
+def optText (j : Json) (key : String) : Except String (Option String) :=
+  match j.getObjVal? key with
+  | .ok (.str s) => pure (some s)
+  | .ok _ => throw s!"{key} must be text"
+  | .error _ => pure none
+
+/-- A request's optional natural field, refused by name when present and malformed. -/
+def optNat (j : Json) (key : String) : Except String (Option Nat) :=
+  match j.getObjVal? key with
+  | .ok v => match natOf v with
+    | .ok n => pure (some n)
+    | .error _ => throw s!"{key} must be a natural number"
+  | .error _ => pure none
+
 def boundedText (what : String) (cap : Nat) (s : String) : Except String String := do
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
@@ -106,6 +121,10 @@ structure Written where
   caller : String
   kind : Nat := 0
   edits : Step
+  /-- The method whose run made the change ("" for an op), the law's `request.method`. -/
+  method : String := ""
+  /-- The grant the change was made under ("" for none): its grantor is the law's subject. -/
+  via : String := ""
 
 structure Proposal where
   principal : String
@@ -121,6 +140,9 @@ structure Proposal where
   /-- Objects the turn required absent, and objects it creates (a subset). -/
   absent : List String := []
   creates : List (String × CreateRec) := []
+  /-- Grants the turn makes and grant ids it revokes; they take effect with the commit. -/
+  grants : List Grant := []
+  revokes : List String := []
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
     amendment that no write of the proposal already names. -/
@@ -130,8 +152,8 @@ def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
     let have_ := ((acc.lookup id).getD []).any (·.kind == kind)
     if have_ then acc
     else if acc.any (·.1 == id) then
-      acc.map fun (i, ws) => if i == id then (i, ws ++ [⟨"", kind, []⟩]) else (i, ws)
-    else acc ++ [(id, [⟨"", kind, []⟩])]) p.writes
+      acc.map fun (i, ws) => if i == id then (i, ws ++ [{ caller := "", kind, edits := [] }]) else (i, ws)
+    else acc ++ [(id, [{ caller := "", kind, edits := [] }])]) p.writes
 
 def rootsJson (roots : List (String × Nat)) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
@@ -139,7 +161,9 @@ def rootsJson (roots : List (String × Nat)) : Json :=
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
   [("edits", stepsJson (ws.map (·.edits))), ("callers", toJson (ws.map (·.caller))),
-   ("kinds", toJson (ws.map (·.kind)))]
+   ("kinds", toJson (ws.map (·.kind)))] ++
+  (if ws.all (·.method.isEmpty) then [] else [("methods", toJson (ws.map (·.method)))]) ++
+  (if ws.all (·.via.isEmpty) then [] else [("vias", toJson (ws.map (·.via)))])
 
 def writesJson (writes : List (String × List Written)) : Json :=
   Json.arr (writes.toArray.map fun (o, ws) => Json.mkObj (("object", toJson o) :: writtenFields ws))
@@ -163,7 +187,7 @@ def parseWrites (j : Json) : Except String (List (String × List Written)) := do
   for w in raw do
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← w.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate write"
-    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step => ⟨"", 0, step⟩)]
+    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step => { caller := "", edits := step })]
   return out
 
 /-- Writes as the journal records them: steps with their callers and kinds. -/
@@ -177,9 +201,17 @@ def parseRecordedWrites (j : Json) : Except String (List (String × List Written
     let steps ← parseSteps (← w.getObjVal? "edits")
     let callers ← (← (← w.getObjVal? "callers").getArr?).toList.mapM (·.getStr?)
     let kinds ← (← (← w.getObjVal? "kinds").getArr?).toList.mapM natOf
-    unless callers.length == steps.length && kinds.length == steps.length do
-      throw "a write's callers and kinds must match its edits"
-    out := out ++ [(object, (steps.zip (callers.zip kinds)).map fun (step, caller, kind) => ⟨caller, kind, step⟩)]
+    let optional := fun (key : String) => do
+      match w.getObjVal? key with
+      | .ok a => (← a.getArr?).toList.mapM (·.getStr?)
+      | .error _ => pure (steps.map fun _ => "")
+    let methods ← optional "methods"
+    let vias ← optional "vias"
+    unless callers.length == steps.length && kinds.length == steps.length && methods.length == steps.length &&
+        vias.length == steps.length do
+      throw "a write's callers, kinds, methods and vias must match its edits"
+    out := out ++ [(object, (steps.zip (callers.zip (kinds.zip (methods.zip vias)))).map
+      fun (step, caller, kind, method, via) => { caller, kind, edits := step, method, via })]
   return out
 
 /-- A direct proposal. A write must name an object among its roots; `turn` is the
@@ -205,7 +237,9 @@ def Proposal.digest (p : Proposal) : String :=
     (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++
     (if p.creates.isEmpty then [] else [("creates", Json.arr (p.creates.toArray.map fun (id, c) => Json.mkObj
       [("object", toJson id), ("pin", toJson c.object.pin), ("seed", toJson (Journal.bodyHash c.seed.compress)),
-       ("law", toJson c.object.lawText)]))])))
+       ("law", toJson c.object.lawText)]))]) ++
+    (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
+    (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)])))
 
 /-! ## Judging -/
 
@@ -295,10 +329,19 @@ def tyVariables : Minidregg.Theory.ObjectiveBendTypes.Ty → List Nat
 
 /-- The bounds a type actually uses (transitively): what makes two state types
     the same, ignoring the rest of a package's bounds table. -/
-def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : DataBounds :=
-  let used := (List.range 8).foldl (fun used _ =>
-    (used ++ used.flatMap fun i => ((bounds.lookup i).map tyVariables).getD []).eraseDups) (tyVariables ty).eraseDups
-  bounds.filter fun (i, _) => used.contains i
+def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String DataBounds := do
+  -- The closure of the variables `ty` reaches through the table; each round adds one or stops,
+  -- so `bounds.length + 1` rounds reach the fixpoint. Not reaching it refuses by name.
+  let mut used := (tyVariables ty).eraseDups
+  let mut closed := false
+  for _ in [0:bounds.length + 2] do
+    let next := (used ++ used.flatMap fun i => ((bounds.lookup i).map tyVariables).getD []).eraseDups
+    if next.length == used.length then
+      closed := true
+      break
+    used := next
+  unless closed do throw "type too deep to compare"
+  return bounds.filter fun (i, _) => used.contains i
 
 def inputsKeyOf (inputs : Json) : String :=
   Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
@@ -402,10 +445,20 @@ def checkSource (w : World) (source : String) : List String :=
   if source.utf8ByteSize > Limits.maxPackageBytes then
     [s!"Checked:0: package-request: package source exceeds {Limits.maxPackageBytes} bytes"]
   else
+    -- The front end elaborates every declaration of every module whatever entry is selected,
+    -- so the entry only has to exist: `initial` when declared, else the first `def`, else a
+    -- definition appended after the source (which moves no line of it).
+    let defs := (source.splitOn "\n").filterMap fun line =>
+      (line.dropPrefix? "def ").map fun rest => (rest.toString.takeWhile fun c => c.isAlphanum || c == '_').toString
+    let (checked, entry) :=
+      if defs.contains "initial" then (source, "initial")
+      else match defs.find? (!·.isEmpty) with
+        | some name => (source, name)
+        | none => (source ++ "\ndef checkedEntry() -> Nat:\n  0n\n", "checkedEntry")
     let modules := (match w.library with
-      | some lib => libraryClosure lib [source]
-      | none => []) ++ [("Checked", source)]
-    match Package.checkPackage modules "initial" with
+      | some lib => libraryClosure lib [checked]
+      | none => []) ++ [("Checked", checked)]
+    match Package.checkPackage modules entry with
     | .ok _ => []
     | .error d =>
       -- A package that declares laws compiles; only the pure profile has no adapter for them.
@@ -436,7 +489,7 @@ def parseLawText (text : String) : Except String Law := do
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
     amendment (the state unchanged) by the principal who proposes it. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Bool :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2⟩ (some state) state).isNone
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, ""⟩ (some state) state).isNone
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
   match inputs.getObjVal? "modules" with
@@ -465,7 +518,9 @@ def prepareProgram (w : World) (o : Object) (source migration : String) : Except
   unless stateTypeOk assumptions ty do
     throw ("compile", "initial() must return a closed record of first-order data")
   let pin ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
-  let same := ty == o.stateType && relevantBounds assumptions.bounds ty == relevantBounds o.bounds o.stateType
+  let same := ty == o.stateType &&
+    (← (relevantBounds assumptions.bounds ty).mapError (("stateType", ·))) ==
+      (← (relevantBounds o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
@@ -494,9 +549,71 @@ def cacheProgram (w : World) (o : Object) (source migration : String) (p : Progr
     { w with programs := w.programs.insert (programKey o source migration) p }
   else w
 
+/-! ## Sources by CID
+
+The journal carries each source module once: the first entry whose compile inputs need a
+source carries it in its `sources [{cid, source}]` field, and compile inputs in every entry
+name it as `{name, cid}` (or `sourceCid`). Objects keep the full inputs in memory. -/
+
+def sourceCid (source : String) : String := Journal.bodyHash (toJson source)
+
+/-- The sources an object's compile inputs carry. -/
+def inputSources (inputs : Json) : List String :=
+  let modules := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => ms.toList.filterMap fun m => (m.getObjValAs? String "source").toOption
+    | _ => []
+  modules ++ ((inputs.getObjValAs? String "source").toOption.map ([·])).getD []
+
+/-- Compile inputs as journaled: every source replaced by its CID. -/
+def compactInputs (inputs : Json) : Json :=
+  let inputs := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => inputs.setObjVal! "modules" (.arr (ms.map fun (m : Json) =>
+        match m.getObjValAs? String "source" with
+        | .ok src => Json.mkObj [("name", (m.getObjVal? "name").toOption.getD Json.null), ("cid", toJson (sourceCid src))]
+        | .error _ => m))
+    | _ => inputs
+  match inputs.getObjValAs? String "source", inputs.getObj? with
+  | .ok src, .ok fields =>
+    Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "source") ++ [("sourceCid", toJson (sourceCid src))])
+  | _, _ => inputs
+
+/-- The `sources` field an entry needs: each source the world has not recorded, once. -/
+def newSources (w : World) (sources : List String) : List (String × Json) :=
+  let fresh := (sources.map fun src => (sourceCid src, src)).foldl (fun acc (cid, src) =>
+    if w.modules.contains cid || acc.any (·.1 == cid) then acc else acc ++ [(cid, src)]) []
+  if fresh.isEmpty then [] else
+    [("sources", Json.arr (fresh.toArray.map fun (cid, src) => Json.mkObj [("cid", toJson cid), ("source", toJson src)]))]
+
+/-- The sources an entry carries, checked against their CIDs. -/
+def entrySources (entry : Json) : Except String (List (String × String)) := do
+  let some raw := (entry.getObjVal? "sources").toOption | return []
+  (← raw.getArr?).toList.mapM fun m => do
+    let cid ← m.getObjValAs? String "cid"
+    let src ← m.getObjValAs? String "source"
+    unless sourceCid src == cid do throw "a journaled source is not its CID's"
+    return (cid, src)
+
+/-- Compile inputs from an entry: every CID resolved to the source a `module` entry recorded. -/
+def expandInputs (w : World) (inputs : Json) : Except String Json := do
+  let resolve := fun (cid : String) => match w.modules[cid]? with
+    | some src => pure src
+    | none => throw s!"compile inputs name module {cid}, which no module entry recorded"
+  let inputs ← match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => do
+      let expanded ← ms.mapM fun m => do
+        match m.getObjValAs? String "cid" with
+        | .ok cid => pure (Json.mkObj [("name", (m.getObjVal? "name").toOption.getD Json.null), ("source", toJson (← resolve cid))])
+        | .error _ => pure m
+      pure (inputs.setObjVal! "modules" (.arr expanded))
+    | _ => pure inputs
+  match inputs.getObjValAs? String "sourceCid", inputs.getObj? with
+  | .ok cid, .ok fields =>
+    return Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "sourceCid") ++ [("source", toJson (← resolve cid))])
+  | _, _ => return inputs
+
 def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin), ("sourcesSha256", toJson c.sources),
-    ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", c.object.inputs),
+    ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)]
 
 structure Judged where
@@ -505,6 +622,24 @@ structure Judged where
   amendments : List Json
   creations : List (String × Object) := []
   creates : List Json := []
+
+/-- The id of the `ordinal`th grant of the turn with this identity. -/
+def grantId (principal intent : String) (ordinal : Nat) : String :=
+  Journal.bodyHash (Json.arr #[toJson "grant", toJson principal, toJson intent, toJson ordinal])
+
+/-- The grant `id`, if it can stand behind running `method` of `object` now: made, not
+    revoked, the clock not past its `until`, and naming that object and method. -/
+def grantStands (w : World) (id object method : String) : Option Grant :=
+  match w.grants[id]? with
+  | some g => if !g.revoked && w.clock ≤ g.expires && g.object == object && g.method == method then some g else none
+  | none => none
+
+/-- Install a commit's grants and mark its revocations. -/
+def applyGrants (w : World) (grants : List Grant) (revokes : List String) : World :=
+  let w := grants.foldl (fun w g => { w with grants := w.grants.insert g.id g }) w
+  revokes.foldl (fun w id => match w.grants[id]? with
+    | some g => { w with grants := w.grants.insert id { g with revoked := true } }
+    | none => w) w
 
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
@@ -525,6 +660,16 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
   if w.objects.size + p.creates.length > Limits.maxObjects then
     throw { cls := "evaluation", reason := some "object capacity reached" }
+  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
+  for g in p.grants do
+    if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
+  -- A revocation needs the grantor's turn, or a turn that read the object holding the grant.
+  for id in p.revokes do
+    match w.grants[id]? with
+    | some g =>
+      unless g.grantor == p.principal || p.roots.any (·.1 == g.holder) do
+        throw { cls := "lawRefused", clause := some "notGrantor", object := some g.holder }
+    | none => throw { cls := "evaluation", reason := some "a revocation names an unknown grant" }
   let mut out : List (String × Object) := []
   let mut reprograms : List Json := []
   let mut amendments : List Json := []
@@ -560,9 +705,15 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- kind of change the object undergoes in this turn is judged, once for each object
     -- that called the running one to make it: the subject is the principal, the caller
     -- is the object whose call it was (empty when the turn's own method wrote).
-    let judgments := (changes.map fun c => (c.caller, c.kind)).eraseDups
-    for (caller, kind) in (if judgments.isEmpty then [("", 0)] else judgments) do
-      let facts : Law.Facts := ⟨p.principal, caller, height, p.turn, next.pin, kind⟩
+    -- A change made under a grant is judged with the grantor as its subject, if the grant
+    -- still stands for this object and method; otherwise the turn is refused `noGrant`.
+    let judgments := (changes.map fun c => (c.caller, c.kind, c.method, c.via)).eraseDups
+    for (caller, kind, method, via) in (if judgments.isEmpty then [("", 0, "", "")] else judgments) do
+      let subject ← if via.isEmpty then pure p.principal else
+        match grantStands w via id method with
+        | some g => pure g.grantor
+        | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
+      let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind, method⟩
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id }
     if let some text := p.laws.lookup id then
@@ -593,6 +744,14 @@ def tagOf (entry : Json) : String :=
   | .ok tag => tag
   | .error _ => "unknown"
 
+/-- Refusals a retry may outrun: a root moved, a machine budget ran out, an evaluation
+    failed. They are journaled but do not bind the identity's outcome. -/
+def transientClasses : List String := ["staleRoot", "budget", "evaluation"]
+
+def isTransient (entry : Json) : Bool :=
+  tagOf entry == "refused" &&
+    ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)).any transientClasses.contains
+
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.entries.size
@@ -600,11 +759,24 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let sent := match (entry.getObjVal? "outcome").toOption.bind (fun o => (o.getObjValAs? String "tag").toOption),
       (entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) with
-    | some "admitted", some sends => sends.map fun s => Json.mkObj
-        ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
-          (s.getObj?.toOption.map (·.toList) |>.getD []))
+    | some "admitted", some sends => sends.map fun s =>
+        -- A send under a grant is delivered as its grantor (the send's own `principal`).
+        let fields := s.getObj?.toOption.map (·.toList) |>.getD []
+        Json.mkObj ([("from", identity)] ++
+          (if fields.any (·.1 == "principal") then [] else
+            [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
+  let sources := (entrySources entry).toOption.getD []
+  -- Offers of an admitted entry are retained for their addressees.
+  let offered := if tagOf entry != "admitted" then #[] else
+    (((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).getD #[]).zipIdx.filterMap fun (o, i) =>
+      (o.getObjValAs? String "to").toOption.map (·, i)
+  let publications := if tagOf entry != "admitted" then #[] else
+    (((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).zipIdx.map fun (_, i) => (index, i)
   { w with
+    published := w.published ++ publications
+    outbox := offered.foldl (fun box (to, i) => box.insert to ((box.getD to #[]).push (index, i))) w.outbox
+    modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
       | none => w.pending) ++ sent
@@ -613,10 +785,12 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
     suspended := (match (entry.getObjValAs? String "resumes").toOption with
         | some h => w.suspended.filter fun s => (s.getObjValAs? String "hash").toOption != some h
         | none => w.suspended) ++ (if tagOf entry == "suspended" then #[entry] else #[])
-    -- A suspended identity is not settled: its final entry takes over the receipt.
+    -- A suspended identity is not settled, nor one refused transiently: its next entry takes
+    -- over the receipt.
     receipts := match w.receipts[key]? with
       | none => w.receipts.insert key index
-      | some i => if tagOf w.entries[i]! == "suspended" then w.receipts.insert key index else w.receipts
+      | some i => if tagOf w.entries[i]! == "suspended" || isTransient w.entries[i]! then w.receipts.insert key index
+          else w.receipts
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched }
 
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
@@ -645,8 +819,11 @@ def retained (w : World) (principal intent digest : String) : Option Json :=
   | none => none
   | some index =>
     let entry := w.entries[index]!
+    let same := (entry.getObjValAs? String "request").toOption == some digest
     if tagOf entry == "suspended" then none
-    else if (entry.getObjValAs? String "request").toOption == some digest then some (reply entry)
+    -- A transient refusal does not bind the identity: the retry runs (and is judged) again.
+    else if isTransient entry then none
+    else if same then some (reply entry)
     else some (duplicate principal intent entry)
 
 /-- The commit rule. Pure: the turn loop calls this with the roots it recorded and
@@ -677,15 +854,20 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := applyGrants w p.grants p.revokes
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) ::
           writtenFields ((p.allWrites.lookup id).getD [])))
       let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
         (if judged.reprograms.isEmpty then [] else [("reprograms", Json.arr judged.reprograms.toArray)]) ++
         (if judged.amendments.isEmpty then [] else [("amendments", Json.arr judged.amendments.toArray)]) ++
-        (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]))
-      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates)
-        (updates.map (·.1) ++ judged.creations.map (·.1))
+        (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]) ++
+        (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
+        (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]))
+      let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
+      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
+          newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs))
+        (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
       (w', reply entry)
 
 /-! ## Creation -/
@@ -736,14 +918,10 @@ def defaultLaw (creator : String) : Except String Law := do
     s!"request.kind == 0 or request.subject == \"{creator}\""
   return [("owner", clause)]
 
-/-- A package compiled as an object's code: artifact, entry type, declared laws. -/
-structure Built where
-  artifact : Json
-  ty : Minidregg.Theory.ObjectiveBendTypes.Ty
-  laws : Law
-  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
 def compileObject (w : World) (inputs : Json) : Except String Built := do
+  if let some b := w.builds[buildKey inputs]? then return b
   let (artifact, ty, laws) ← Package.compileKeepingLaws (← resolveInputs w inputs)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
@@ -769,9 +947,21 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs }, sources)
 
+def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
+  if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
+
+/-- Build an object and remember its compiled package in the world. -/
+def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
+    (creator : String := "") (height : Nat := 1) (lawText : Option String := none) :
+    Except String (Object × String × World) := do
+  let built ← compileObject w inputs
+  let (o, sources) ← makeObject built inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
+  return (o, sources, cacheBuild w inputs built)
+
 def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) : Except String (Object × String) := do
-  makeObject (← compileObject w inputs) inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
+  let (o, sources, _) ← buildObjectIn w inputs seed read chain creator height lawText
+  return (o, sources)
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
@@ -789,12 +979,12 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
   let seed ← j.getObjVal? "seed"
-  let (o, sources) ← buildObject w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
+  let (o, sources, w) ← buildObjectIn w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
-  let outcome := createOutcome id o sources inputs seed
+  let outcome := createOutcome id o sources (compactInputs inputs) seed
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
-    [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
-     ("request", toJson digest), ("outcome", outcome)] [id]
+    ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
   return (w', reply entry)
 
 /-! ## The library as a journaled fact
@@ -813,7 +1003,7 @@ def libraryLawText (opener : String) : Except String String := do
 def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
   match parseLawText lawText with
   | .error _ => some "law syntax"
-  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1⟩ (some (.record [])) (.record [])
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, ""⟩ (some (.record [])) (.record [])
 
 def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
   { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }
@@ -845,6 +1035,74 @@ def libraryOp (w : World) (principal intent : String) (lib : Library) (lawArg : 
     let (w', entry) := push (installLibrary w lib lawText) key (base ++ [("outcome", outcome)]) []
     return (w', reply entry)
 
+/-! ## Settings and posts
+
+The first open that names a clock principal or a posting quota journals a `settings` entry;
+after that both are fixed. `posted` entries record what transport published for an object,
+so a reply to that post can be routed back (`world-addressee`). -/
+
+def settingsOp (w : World) (clock : Option String) (quota : Option Nat) : Except String (World × Json) := do
+  if clock.isNone && quota.isNone then return (w, Json.null)
+  let clockP := clock.getD ""
+  if w.settled then
+    if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) then
+      throw s!"the journal records clock {w.clockPrincipal} and postQuota {w.postQuota}; the settings differ"
+    return (w, Json.null)
+  if let some c := clock then discard <| boundedText "clock principal" Limits.maxPrincipalBytes c
+  let q := quota.getD 16
+  let intent := "settings"
+  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, settled := true }
+    (identityKey "world" intent)
+    [("identity", identityJson "world" intent), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (Json.mkObj [("clock", toJson clockP), ("postQuota", toJson q)]))),
+     ("outcome", Json.mkObj [("tag", toJson "settings"), ("clock", toJson clockP), ("postQuota", toJson q)])] []
+  return (w', reply entry)
+
+def parseSlot (j : Json) : Except String Json := do
+  let principal ← boundedText "slot principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let intent ← boundedText "slot intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
+  return identityJson principal intent
+
+def postIndex (w : World) (uri object : String) (slot : Option Json) : World :=
+  { w with posts := w.posts.insert uri (object, slot) }
+
+/-- `world-posted {principal, uri, cid, object, slot?}`: transport confirms a post it made for
+    `object` (and for an awaited `slot`). Only the world's clock principal, when one is named. -/
+def postedOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let uri ← boundedText "uri" Limits.maxUriBytes (← j.getObjValAs? String "uri")
+  let cid ← boundedText "cid" Limits.maxUriBytes (← j.getObjValAs? String "cid")
+  let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
+  let slot ← match j.getObjVal? "slot" with
+    | .ok (.null) | .error _ => pure none
+    | .ok s => pure (some (← parseSlot s))
+  unless uri.startsWith "at://" do throw "uri must be an at:// URI"
+  if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
+    throw s!"posts are confirmed only by {w.clockPrincipal}"
+  unless w.objects.contains object do throw s!"unknown object {object}"
+  let fields := [("tag", toJson "posted"), ("uri", toJson uri), ("cid", toJson cid), ("object", toJson object)] ++
+    (slot.map fun s => [("slot", s)]).getD []
+  let digest := Journal.bodyHash (Json.mkObj fields)
+  let answer := fun (entry : Json) => Json.mkObj [("status", toJson "posted"),
+    ("height", (entry.getObjVal? "height").toOption.getD Json.null), ("receipt", entry)]
+  let intent := "posted:" ++ uri
+  match retained w principal intent digest with
+  | some r => return (w, match r.getObjVal? "receipt" with | .ok e => answer e | .error _ => r)
+  | none =>
+    if w.posts.contains uri then throw s!"post {uri} is already recorded"
+    let (w', entry) := push (postIndex w uri object slot) (identityKey principal intent)
+      [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
+       ("request", toJson digest), ("outcome", Json.mkObj fields)] [object]
+    return (w', answer entry)
+
+/-- `world-addressee {parent}`: the object (and slot) a post at `parent` was made for. -/
+def addressee (w : World) (j : Json) : Except String Json := do
+  let uri ← j.getObjValAs? String "parent"
+  match w.posts[uri]? with
+  | none => return Json.mkObj [("status", toJson "unknown")]
+  | some (object, slot) => return Json.mkObj ([("status", toJson "addressee"), ("object", toJson object)] ++
+      (slot.map fun s => [("slot", s)]).getD [])
+
 /-! ## Replay -/
 
 /-- The id of the `ordinal`th send of the turn with this identity. -/
@@ -866,6 +1124,8 @@ def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcom
   unless (p.getObjValAs? String "principal").toOption == some principal && intent == id do
     throw "delivery runs under another principal than its sender's"
   unless (d.getObjVal? "from").toOption == (p.getObjVal? "from").toOption do throw "delivery names another sender"
+  unless (d.getObjValAs? String "via").toOption == (p.getObjValAs? String "via").toOption do
+    throw "delivery names another grant than its send"
   if (outcome.getObjValAs? String "class").toOption == some "budgetExhausted" then
     let ledger ← ledgerOf (← p.getObjVal? "ledger")
     unless ledger.exhausted == (outcome.getObjValAs? String "reason").toOption do
@@ -873,10 +1133,15 @@ def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcom
   else if (← ledgerOf (← p.getObjVal? "ledger")).exhausted.isSome then
     throw "a delivery with an exhausted ledger ran"
 
-def checkSends (entry : Json) (principal intent : String) : Except String Unit := do
+def checkSends (w : World) (entry : Json) (principal intent : String) : Except String Unit := do
   let some sends := (entry.getObjVal? "sends").toOption | return ()
   let mut ordinal := 0
   for s in ← sends.getArr? do
+    if let .ok via := s.getObjValAs? String "via" then
+      let some g := grantStands w via (← s.getObjValAs? String "to") (← s.getObjValAs? String "method")
+        | throw "a send names a grant that does not stand"
+      unless (s.getObjValAs? String "principal").toOption == some g.grantor do
+        throw "a send under a grant is not delivered as its grantor"
     unless (s.getObjValAs? String "id").toOption == some (deliveryId principal intent ordinal) do
       throw "send id does not match its ordinal"
     discard <| s.getObjValAs? String "to"
@@ -895,14 +1160,33 @@ def checkResumes (w : World) (entry : Json) (principal intent : String) : Except
       (id.getObjValAs? String "intent").toOption == some intent do
     throw "resumes a suspension of another identity"
 
+/-- The objects an admitted entry created, rebuilt from their journaled inputs. -/
+def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
+    Except String (World × List (String × CreateRec)) := do
+  let mut w := w
+  let mut creates : List (String × CreateRec) := []
+  for r in recorded do
+    let id ← r.getObjValAs? String "object"
+    let seed ← r.getObjVal? "seed"
+    let (o, sources, w') ← buildObjectIn w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
+      (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+    w := w'
+    creates := creates ++ [(id, ({ object := o, sources, seed } : CreateRec))]
+  return (w, creates)
+
 def replayEntry (w : World) (entry : Json) : Except String World := do
   let identity ← entry.getObjVal? "identity"
   let principal ← identity.getObjValAs? String "principal"
   let intent ← identity.getObjValAs? String "intent"
   let key := identityKey principal intent
   let outcome ← entry.getObjVal? "outcome"
+  -- The sources an entry introduces are known before its compile inputs are read.
+  let introduced ← entrySources entry
+  for (cid, _) in introduced do
+    if w.modules.contains cid then throw "a source is journaled twice"
+  let w := { w with modules := introduced.foldl (fun m (cid, src) => m.insert cid src) w.modules }
   checkDelivery w entry principal intent outcome
-  checkSends entry principal intent
+  checkSends w entry principal intent
   checkResumes w entry principal intent
   match ← outcome.getObjValAs? String "tag" with
   | "advanced" =>
@@ -910,6 +1194,20 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let to ← natField outcome "to"
     unless before == w.clock && to > before do throw "clock advance out of sequence"
     return record w entry key []
+  | "settings" =>
+    if w.settled then throw "settings recorded twice"
+    return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
+                           postQuota := ← natField outcome "postQuota", settled := true } entry key []
+  | "posted" =>
+    let uri ← outcome.getObjValAs? String "uri"
+    let object ← outcome.getObjValAs? String "object"
+    if w.posts.contains uri then throw "post recorded twice"
+    unless w.objects.contains object do throw "post for an unknown object"
+    if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post confirmed by another principal"
+    let slot ← match outcome.getObjVal? "slot" with
+      | .ok s => pure (some (← parseSlot s))
+      | .error _ => pure none
+    return record (postIndex w uri object slot) entry key [object]
   | "suspended" =>
     let activity ← outcome.getObjVal? "activity"
     let checkpoint ← activity.getObjVal? "checkpoint"
@@ -947,7 +1245,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
-    let (o, sources) ← buildObject w (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
+    let inputs ← expandInputs w (← outcome.getObjVal? "compile")
+    let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     return record { w with objects := w.objects.insert id o } entry key [id]
@@ -966,15 +1265,15 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let laws ← recordedLaws.toList.mapM fun r => do
       return (← r.getObjValAs? String "object", ← r.getObjValAs? String "new")
     let recordedCreates := (outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption) |>.getD #[]
-    let creates ← recordedCreates.toList.mapM fun r => do
-      let id ← r.getObjValAs? String "object"
-      let seed ← r.getObjVal? "seed"
-      let (o, sources) ← buildObject w (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
-        (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
-      return (id, ({ object := o, sources, seed } : CreateRec))
+    let (w, creates) ← rebuildCreates w principal recordedCreates
     let absent := ((entry.getObjVal? "absent").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
       fun a => a.getStr?.toOption
-    let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws, absent, creates }
+    let grants ← ((outcome.getObjVal? "grants").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Grant.ofJson
+    let revokes ← ((outcome.getObjVal? "revokes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM (·.getStr?)
+    for (g, i) in grants.zipIdx do
+      unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
+    let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws,
+                          absent, creates, grants, revokes }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     match judge w (w.height + 1) p with
@@ -990,7 +1289,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1))
+      let w := applyGrants w grants revokes
+      let holders := (grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
+      return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
   | other => throw s!"unknown outcome {other}"
 
 def replay (content : String) : Except String World := do
@@ -1016,6 +1317,9 @@ def replay (content : String) : Except String World := do
     replay is deterministic; moving it to or before now is a no-op. -/
 def advance (w : World) (j : Json) : Except String (World × Json) := do
   let to ← natField j "height"
+  if !w.clockPrincipal.isEmpty then
+    let who := (← optText j "principal").getD ""
+    if who != w.clockPrincipal then throw s!"the clock is moved only by {w.clockPrincipal}"
   if to ≤ w.clock then
     return (w, Json.mkObj [("status", toJson "advanced"), ("clock", toJson w.clock)])
   let intent := s!"advance:{to}"
@@ -1026,6 +1330,23 @@ def advance (w : World) (j : Json) : Except String (World × Json) := do
   return (w', Json.mkObj [("status", toJson "advanced"), ("clock", toJson to), ("receipt", entry)])
 
 /-! ## Reads -/
+
+/-- Ids the reader may view, starting with `prefix`, after `after` in byte order: one page,
+    and whether more follow. -/
+def listIds (w : World) (reader pfx after : String) : List String × Bool :=
+  let ids := (w.objects.toList.filterMap fun (id, o) =>
+    if id.startsWith pfx && decide (after < id) && o.read.permits reader then some id else none).toArray.qsort (· < ·)
+  ((ids.extract 0 Limits.listPage).toList, ids.size > Limits.listPage)
+
+/-- `world-objects {principal, prefix?, after?}`. -/
+def objectsOp (w : World) (j : Json) : Except String Json := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let text := fun (k : String) => match j.getObjVal? k with
+    | .ok (.str s) => pure s
+    | .ok _ => throw s!"{k} must be text"
+    | .error _ => pure ""
+  let (ids, more) := listIds w principal (← text "prefix") (← text "after")
+  return Json.mkObj [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
 
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
@@ -1038,26 +1359,106 @@ def view (w : World) (j : Json) : Except String Json := do
     return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
+/-- The public projection of a refusal: observed, not committed, the class and the root it
+    names, and nothing else. -/
+def publicRefusal (entry : Json) : Json :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  Json.mkObj [("status", toJson "refused"),
+    ("class", (outcome.getObjVal? "class").toOption.getD (toJson "unknown")),
+    ("root", toJson ((outcome.getObjValAs? String "object").toOption.getD ""))]
+
+/-- A reader may see an object's changes if it may view the object (an object no longer in
+    the world is not viewable). -/
+def viewable (w : World) (reader id : String) : Bool :=
+  match w.objects[id]? with
+  | some o => o.read.permits reader
+  | none => false
+
+/-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else
+    sees a refusal only as its public projection, and any other entry as its chain fields,
+    identity, turn and outcome tag, with the roots and writes of objects it may view; the rest
+    is elided and counted. Results, offers, sends, sources and checkpoints never show. -/
+def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
+  let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+  if owner == reader && !reader.isEmpty then entry
+  else if tagOf entry == "refused" then
+    (publicRefusal entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)
+      |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
+  else
+    let objectOf := fun (x : Json) => (x.getObjValAs? String "object").toOption.getD ""
+    let arr := fun (x : Option Json) => ((x.bind (·.getArr?.toOption)).getD #[])
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let roots := arr (entry.getObjVal? "roots").toOption
+    let writes := arr (outcome.getObjVal? "writes").toOption
+    let shownRoots := roots.filter fun r => viewable w reader (objectOf r)
+    let shownWrites := writes.filter fun x => viewable w reader (objectOf x)
+    let elided := (roots.size - shownRoots.size) + (writes.size - shownWrites.size)
+    Json.mkObj ((["height", "previous", "hash", "identity", "turn"].filterMap fun k =>
+        (entry.getObjVal? k).toOption.map (k, ·)) ++
+      [("roots", Json.arr shownRoots),
+       ("outcome", Json.mkObj ([("tag", toJson (tagOf entry))] ++
+         (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
+       ("elided", toJson elided)])
+
+/-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
+def readerOf (j : Json) : Except String String := do
+  let p ← j.getObjValAs? String "principal"
+  if p.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  return p
+
+/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
+    reader, `identity`), projected under the reader's authority. -/
 def receipt (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let reader ← readerOf j
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  match w.receipts[identityKey principal intent]? with
+  let owner := (← optText j "of").getD reader
+  match w.receipts[identityKey owner intent]? with
   | none => return Json.mkObj [("status", toJson "unknown")]
-  | some index => return Json.mkObj [("status", toJson "receipt"), ("receipt", w.entries[index]!)]
+  | some index =>
+    let entry := w.entries[index]!
+    let shown := projectEntry w reader entry
+    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
+    return Json.mkObj [("status", toJson "receipt"), ("receipt", shown)]
 
 def history (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
-  let after := match j.getObjVal? "after" with
-    | .ok a => (natOf a).toOption.getD 0
-    | .error _ => 0
-  let limit := min Limits.maxHistoryLimit (match j.getObjVal? "limit" with
-    | .ok l => (natOf l).toOption.getD Limits.maxHistoryLimit
-    | .error _ => Limits.maxHistoryLimit)
+  let after := (← optNat j "after").getD 0
+  let asked := (← optNat j "limit").getD Limits.maxHistoryLimit
+  if asked == 0 || asked > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   if !w.objects.contains id then return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  if !viewable w reader id then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
   let all := (w.touched.getD id #[]).filter fun index => index + 1 > after
-  let page := all.extract 0 limit
+  let page := all.extract 0 asked
   return Json.mkObj [("status", toJson "history"), ("object", toJson id),
-    ("entries", Json.arr (page.map fun index => w.entries[index]!)),
-    ("more", toJson (decide (all.size > limit)))]
+    ("entries", Json.arr (page.map fun index => projectEntry w reader w.entries[index]!)),
+    ("more", toJson (decide (all.size > asked)))]
+
+/-- The principal transport reads publications as: the world's clock principal, or "transport". -/
+def publisher (w : World) : String := if w.clockPrincipal.isEmpty then "transport" else w.clockPrincipal
+
+/-- `world-offers {principal, after?}`: the offers addressed to the principal, oldest first,
+    after journal height `after`; one page. The publisher also gets the `publications`
+    (`{height, ordinal, id, object, page, section, text}`) to post. -/
+def offersOp (w : World) (j : Json) : Except String Json := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let after := (← optNat j "after").getD 0
+  let all := (w.outbox.getD principal #[]).filter fun (index, _) => index + 1 > after
+  let page := all.extract 0 Limits.maxHistoryLimit
+  let items := page.filterMap fun (index, i) => do
+    let entry ← w.entries[index]?
+    let offer ← ((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
+    pure (Json.mkObj [("height", toJson (index + 1)), ("ordinal", toJson i),
+      ("identity", (entry.getObjVal? "identity").toOption.getD Json.null),
+      ("text", (offer.getObjVal? "text").toOption.getD Json.null)])
+  let pubs := if principal != publisher w then #[] else
+    let mine := w.published.filter fun (index, _) => index + 1 > after
+    (mine.extract 0 Limits.maxHistoryLimit).filterMap fun (index, i) => do
+      let entry ← w.entries[index]?
+      let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
+      let fields ← p.getObj?.toOption
+      pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i)] ++ fields.toList))
+  return Json.mkObj ([("status", toJson "offers"), ("offers", Json.arr items), ("more", toJson (decide (all.size > page.size)))] ++
+    (if principal == publisher w then [("publications", Json.arr pubs)] else []))
 
 end Delvetalk.Host

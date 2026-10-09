@@ -60,7 +60,7 @@ record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {count: 5n}
@@ -101,15 +101,17 @@ def other(target: String, seen: Nat) -> Activity<Plan, Response, Nat>:
     case written(_): seen
     case _: 998n
 def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: {}})):
+  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()})):
     case returned(r): finish(context, r.result)
     case _: 997n
 def finish(context: Abi.Context, result: Nat) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 10n})}})):
     case written(_): result
     case _: 996n
-def shout(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.publish({page: "p", section: "s", body: "b"})):
+sum Odd:
+  shout: {text: String}
+def shout(state: State, input: {target: String}, context: Abi.Context) -> Activity<Odd, Response, Nat>:
+  match perform(Odd.shout({text: "b"})):
     case _: 0n
 def grow(state: State, input: {by: Nat}, context: Abi.Context) -> State:
   {count: state.count + input.by}
@@ -292,7 +294,7 @@ class Plans(TurnWorld):
         r = self.turn("a", "shout", self.target("b"))
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"], out["reason"]),
-                         ("refused", "evaluation", "plan not supported: publish"))
+                         ("refused", "evaluation", "plan not supported: shout"))
         self.assertEqual((self.count("a"), self.count("b")), ((0, "1"), (0, "7")))
 
     def test_a_pure_method_commits_its_result_as_a_set_of_every_field(self):
@@ -309,7 +311,7 @@ record State:
   names: Lists.List<String>
 record Edits:
   names: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
   {names: Lists.List::<String>.nil()}
@@ -396,16 +398,15 @@ class BellList(TurnWorld):
     def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
         modules = closure("Bell")
         empty = {"tag": "record", "fields": []}
-        seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
-                      seed=label("s"), rains={"tag": "list", "items": []},
-                      rung={"tag": "boolean", "value": False},
-                      door=record(world=label(""), object=label("")), lastDelivery=label(""),
-                      planting=record(principal=label(""), intent=label("")))
+        nil = {"tag": "list", "items": []}
+        seed = record(colour={"tag": "variant", "label": "silver", "payload": empty},
+                      seed=label("s"), rains=nil, rung={"tag": "boolean", "value": False},
+                      planting=record(principal=label("glm"), intent=label("")), observers=nil)
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
                            modules=modules, entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
         for who, text in (("kimik3", "one"), ("gemini", "two")):
-            r = self.turn("bell", "rain", record(author=label(who), text=label(text)))
+            r = self.turn("bell", "rain", record(text=label(text)), principal=who)
             self.assertEqual(r["status"], "admitted", r)
         before = self.host.send(op="world-view", principal="e", object="bell")["state"]
 

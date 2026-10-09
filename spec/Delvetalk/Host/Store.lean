@@ -46,6 +46,8 @@ def chainWork : Nat := 10000000
 /-- Bytes of state a chain may add. -/
 def chainStorage : Nat := 1048576
 def deliveriesPerCall : Nat := 16
+/-- Deliveries the settling pass after one durable op runs; the rest wait for the next op. -/
+def deliveriesPerSettle : Nat := 64
 def sendsPerTurn : Nat := 32
 /-- Undelivered sends held by the world. -/
 def maxPending : Nat := 4096
@@ -71,6 +73,8 @@ def maxPackageBytes : Nat := 32768
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
+/-- Compiled packages kept in memory (`World.builds`). -/
+def maxBuilds : Nat := 1024
 /-- Prepared reprograms kept in memory. -/
 def maxPreparedPrograms : Nat := 16
 /-- Modules and bytes of the sealed standard library. -/
@@ -87,7 +91,17 @@ def maxOffersBytes : Nat := 65536
 def maxReplyBytes : Nat := 262144
 /-- Nesting of the plain JSON argument of a proposal. -/
 def plainDepth : Nat := 64
+/-- Grants one turn may make, and grants (live or revoked) a world holds. -/
+def grantsPerTurn : Nat := 8
+def maxGrants : Nat := 4096
 def genesis : String := "".pushn '0' 64
+/-- `publish` Plans one turn may make; bytes of a page title and a section name. -/
+def publishesPerTurn : Nat := 4
+def maxTitleBytes : Nat := 256
+/-- Ids one `objects` listing answers. -/
+def listPage : Nat := 64
+/-- Bytes of a post's AT URI and CID. -/
+def maxUriBytes : Nat := 512
 end Limits
 
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
@@ -165,6 +179,37 @@ structure Library where
   pin : String
   modules : List (String × String)
 
+/-- A delegation: `grantor` (the principal of the direct turn that made it) lets `to` (a
+    principal or an object id) run `method` of `object` as the grantor, while the clock is at
+    most `expires` (the Plan's `until`). `holder` is the object whose method granted it; it and the grantor may revoke. -/
+structure Grant where
+  id : String
+  grantor : String
+  holder : String
+  to : String
+  object : String
+  method : String
+  expires : Nat
+  revoked : Bool := false
+  deriving BEq
+
+def Grant.json (g : Grant) : Json :=
+  Json.mkObj [("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
+    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)]
+
+def Grant.ofJson (j : Json) : Except String Grant := do
+  return { id := ← j.getObjValAs? String "id", grantor := ← j.getObjValAs? String "grantor",
+           holder := ← j.getObjValAs? String "holder", to := ← j.getObjValAs? String "to",
+           object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
+           expires := ← j.getObjValAs? Nat "until" }
+
+/-- A package compiled as an object's code: artifact, entry type, declared laws. -/
+structure Built where
+  artifact : Json
+  ty : Ty
+  laws : Law
+  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -191,6 +236,26 @@ structure World where
   clock : Nat := 0
   /-- Suspension entries still waiting, in journal order. -/
   suspended : Array Json := #[]
+  /-- Every grant an admitted turn made, by id; a revocation marks it. -/
+  grants : Std.HashMap String Grant := {}
+  /-- Posts transport confirmed, by AT URI: the object the post speaks for and, when it was
+      made for an awaited slot, that slot as `{principal, intent}`. -/
+  posts : Std.HashMap String (String × Option Json) := {}
+  /-- The principal that alone moves the clock and confirms posts ("" = anyone), and the
+      hourly posting cap; both set by the `settings` entry of the first open that names them. -/
+  clockPrincipal : String := ""
+  postQuota : Nat := 16
+  settled : Bool := false
+  /-- Source modules by CID, from `module` entries: the journal carries each source once and
+      compile inputs name it by `cid`. -/
+  modules : Std.HashMap String String := {}
+  /-- Offers admitted turns retained, by addressee: (entry index, ordinal in the entry). -/
+  outbox : Std.HashMap String (Array (Nat × Nat)) := {}
+  /-- Publications admitted turns retained, for transport to post: (entry index, ordinal). -/
+  published : Array (Nat × Nat) := #[]
+  /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
+      repeated creation compile each distinct package once. -/
+  builds : Std.HashMap String Built := {}
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress

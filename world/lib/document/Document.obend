@@ -29,8 +29,6 @@ def concat(left: Document, right: Document) -> Document:
   Document.sequence({items: Documents.cons({head: left, tail: Documents.cons({head: right, tail: Documents.nil()})})})
 def quote(attribution: String, body: Document) -> Document:
   Document.quote({attribution: attribution, body: body})
-def sameCapture(left: Capture, right: Capture) -> Bool:
-  left.object == right.object && left.revision == right.revision && left.meaning == right.meaning && left.entry == right.entry && left.token == right.token
 # Read-only text projection; callers retain the original structured value.
 # The leaves are flattened once (linear) and joined by the textJoin primitive,
 # which appends onto one accumulator and is charged by the bytes it adds:

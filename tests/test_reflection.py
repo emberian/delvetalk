@@ -24,7 +24,7 @@ record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
@@ -51,7 +51,6 @@ PROBE = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Spell.obend as Spell
 import ./Form.obend as Form
 record Arg:
   n: Nat
@@ -61,7 +60,7 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   seen: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Arg>
 def initial() -> State:
   {count: 0n, seen: ""}
@@ -97,7 +96,7 @@ def ask(state: State, input: {utterance: String, policy: String}, context: Abi.C
 def offered() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
 def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: {n: 0n}})):
+  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: Data.of::<Arg>({n: 0n})})):
     case delivery(_): note(context, 0n, "sent")
     case _: note(context, 0n, "other")
 """
@@ -269,7 +268,7 @@ class Inspect(Reflection):
         mine = self.host.send(op="world-inspect", principal="ember", object="secret")
         self.assertEqual(mine["status"], "inspected", mine)
         self.assertEqual(mine["source"], PACKAGE)
-        self.assertTrue(mine["pin"].startswith("bafyrei") and len(mine["pin"]) == 59, mine["pin"])   # a CID
+        self.assertRegex(mine["pin"], r"^bafyrei[a-z2-7]{52}$")  # CIDv1, dag-cbor, sha2-256
         self.assertIn("owner", mine["law"])
         stranger = self.host.send(op="world-inspect", principal="kim", object="secret")
         self.assertEqual(stranger["status"], "denied")
@@ -305,6 +304,16 @@ class Check(Reflection):
         self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
         self.assertEqual(self.host.send(op="world-status")["objects"], objects)
         self.assertNotIn("def initial", self.lines()[-1])
+
+    def test_a_module_without_initial_is_checked_whole_not_refused_for_its_entry(self):
+        plain = "edition ObjectiveBend 1\ndef bump(count: Nat) -> Nat:\n  count + 1n\n"
+        self.assertEqual(self.turn("probe", "checkIt", record(package=label(plain)))["result"], label("clean"))
+        types = "edition ObjectiveBend 1\nrecord Pair:\n  left: Nat\n  right: Nat\n"
+        self.assertEqual(self.turn("probe", "checkIt", record(package=label(types)))["result"], label("clean"))
+        # A broken definition after the first is still found: the entry does not limit the check.
+        later = plain + "def later() -> Nat:\n  missing\n"
+        self.assertRegex(self.turn("probe", "checkIt", record(package=label(later)))["result"]["value"],
+                         r"^Checked:\d+: .*missing")
 
     def test_a_package_that_declares_a_law_checks_clean(self):
         law = PACKAGE.replace("def initial", "law ceiling: new.count <= 5\ndef initial")
@@ -434,15 +443,91 @@ class CallerAcrossSend(Reflection):
         self.assertEqual((direct["status"], direct["receipt"]["outcome"]["clause"]), ("refused", "only"))
         sent = self.turn("garden", "fire", record(target=label("bell")))
         self.assertEqual(sent["status"], "admitted", sent)
-        self.assertEqual(self.host.send(op="world-pending")["count"], 1)
-        delivered = self.host.send(op="world-deliver", limit=4)
-        [receipt] = delivered["receipts"]
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
+        [receipt] = sent["delivered"]
         self.assertEqual(receipt["status"], "admitted", receipt)
         self.assertEqual(receipt["receipt"]["outcome"]["writes"][0]["callers"], ["garden"])
         self.assertEqual(field(self.state("bell"), "count"), nat(1))
         before = self.host.send(op="world-view", principal="ember", object="bell")
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="bell"), before)
+
+
+FORGE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {note: ""}
+def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+    case _: text
+def rework(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.reprogram({object: {world: "", object: input.target}, package: input.package, migration: ""})):
+    case reprogrammed(r): said(context, r.pin)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+def relaw(state: State, input: {target: String, law: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.amend({object: {world: "", object: input.target}, law: input.law})):
+    case amended(_): said(context, "amended")
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+"""
+
+REWORKED = PACKAGE.replace("case _: 0n", "case _: 7n")
+
+
+class ReprogramAnother(Reflection):
+    """A reprogram or amend of another object is a change the target's own law judges, with
+    request.caller = the proposing object and kind 1 or 2 (a write stays self-only)."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("forge", FORGE, record(note=label("")))
+
+    def rework(self, target, principal="ember", obj="forge"):
+        return self.turn(obj, "rework", record(target=label(target), package=label(REWORKED)), principal=principal)
+
+    def test_the_creator_reprograms_a_target_through_a_forge_and_the_journal_names_the_forge(self):
+        before = self.make("c", PACKAGE, source_seed())["receipt"]["outcome"]["pin"]
+        r = self.rework("c")
+        self.assertEqual(r["status"], "admitted", r)
+        writes = {w["object"]: w for w in r["receipt"]["outcome"]["writes"]}
+        self.assertEqual((writes["c"]["callers"], writes["c"]["kinds"]), (["forge"], [1]))
+        after = self.host.send(op="world-view", principal="ember", object="c")["pin"]
+        self.assertNotEqual(after, before)
+        self.assertEqual(after, r["result"]["value"])
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="c")["pin"], after)
+
+    def test_the_default_law_refuses_a_stranger_reprogramming_through_a_forge(self):
+        self.make("c", PACKAGE, source_seed())
+        r = self.rework("c", principal="kim")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]),
+                         ("refused", "lawRefused", "owner"), r)
+
+    def test_a_law_naming_the_forge_admits_anyone_through_it_and_no_other_object(self):
+        law = 'law forge: request.kind == 0 or request.caller == "forge" or request.subject == "ember"\n'
+        self.make("c", PACKAGE.replace("def initial", law + "def initial", 1), source_seed())
+        self.make("other", FORGE, record(note=label("")))
+        self.assertEqual(self.rework("c", principal="kim")["status"], "admitted")
+        refused = self.rework("c", principal="kim", obj="other")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "forge"))
+
+    def test_an_amend_of_another_object_is_judged_by_its_law(self):
+        self.make("c", PACKAGE, source_seed())
+        text = 'law owner: request.kind == 0 or request.subject == "ember"\nlaw small: new.count <= 3'
+        r = self.turn("forge", "relaw", record(target=label("c"), law=label(text)))
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("amended")), r)
+        self.assertIn("small", self.host.send(op="world-inspect", principal="ember", object="c")["law"])
+        kim = self.turn("forge", "relaw", record(target=label("c"), law=label(text)), principal="kim")
+        self.assertEqual((kim["status"], kim["receipt"]["outcome"]["clause"]), ("refused", "owner"))
 
 
 class Maximum(Reflection):
