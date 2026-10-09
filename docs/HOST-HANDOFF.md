@@ -87,6 +87,14 @@ compressed entry without `hash`. Genesis `previous` is 64 zeros. `identityKey` =
 `[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except a suspension is
 replaced by the identity's final entry).
 
+Sources by CID: compile inputs in `created.compile`, `creates[].compile` and suspended activities name each
+module as `{name, cid}` (`sourceCid` for a bare source); the first entry that needs a source carries it in a
+top-level `sources [{cid, source}]` field (checked against its CID on replay; `world.modules`). Objects keep
+full inputs in memory (`expandInputs` on replay). Compiled packages are cached in memory by the digest of their
+inputs (`world.builds`, `buildKey`, `maxBuilds` 1024), so creation and replay compile each distinct package once:
+500 library Bells went from create 135 s / reopen 133 s / 3.14 MB to 4.3 s / 0.5 s / 0.82 MB. (The
+coordinator asked for separate `module` entries; a field on the introducing entry keeps every height and
+turn number unchanged and needs no ordering against judging.) Reprogram `source` fields are still verbatim.
 Optional top-level fields, all inside the hash: `absent [id]` (objects required absent), `turnRequest`
 (digest of the original turn request), `ticksUsed`, `ledger {depth, work, storage}`, `result` (Data wire),
 `sends [{id,to,method,argument,ledger}]`, `delivery {id, from}`, `resumes` (hash of the suspension it
@@ -274,8 +282,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   write. A resumed turn that re-suspends gets a new entry with `resumes` = the old hash.
 - **Deliveries and work**: work is charged after the fact (a turn may overshoot the chain's `work` by at
   most one turn); `budgetExhausted` requires a ledger field to be exactly zero.
-- **Replay recompile cost**: `world-open` recompiles each created object and each reprogram/creation
-  record, and re-runs `judge`; a Bell/Garden chain costs ~0.2 to 1 s per object. Method packets are
+- **Replay recompile cost**: `world-open` compiles each distinct package once (`world.builds`) and each
+  reprogram record, and re-runs `judge`. Method packets are
   compiled lazily and cached in memory only. 1000 plain proposals replay in ~0.08 s.
 - **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fcntl(F_FULLFSYNC)`
   (macOS) / `fsync`; this made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s. One sync per

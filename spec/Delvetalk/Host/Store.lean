@@ -73,6 +73,8 @@ def maxPackageBytes : Nat := 32768
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
+/-- Compiled packages kept in memory (`World.builds`). -/
+def maxBuilds : Nat := 1024
 /-- Prepared reprograms kept in memory. -/
 def maxPreparedPrograms : Nat := 16
 /-- Modules and bytes of the sealed standard library. -/
@@ -198,6 +200,13 @@ def Grant.ofJson (j : Json) : Except String Grant := do
            object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
            expires := ← j.getObjValAs? Nat "until" }
 
+/-- A package compiled as an object's code: artifact, entry type, declared laws. -/
+structure Built where
+  artifact : Json
+  ty : Ty
+  laws : Law
+  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -234,6 +243,12 @@ structure World where
   clockPrincipal : String := ""
   postQuota : Nat := 16
   settled : Bool := false
+  /-- Source modules by CID, from `module` entries: the journal carries each source once and
+      compile inputs name it by `cid`. -/
+  modules : Std.HashMap String String := {}
+  /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
+      repeated creation compile each distinct package once. -/
+  builds : Std.HashMap String Built := {}
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress

@@ -523,9 +523,71 @@ def cacheProgram (w : World) (o : Object) (source migration : String) (p : Progr
     { w with programs := w.programs.insert (programKey o source migration) p }
   else w
 
+/-! ## Sources by CID
+
+The journal carries each source module once: the first entry whose compile inputs need a
+source carries it in its `sources [{cid, source}]` field, and compile inputs in every entry
+name it as `{name, cid}` (or `sourceCid`). Objects keep the full inputs in memory. -/
+
+def sourceCid (source : String) : String := Journal.bodyHash (toJson source)
+
+/-- The sources an object's compile inputs carry. -/
+def inputSources (inputs : Json) : List String :=
+  let modules := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => ms.toList.filterMap fun m => (m.getObjValAs? String "source").toOption
+    | _ => []
+  modules ++ ((inputs.getObjValAs? String "source").toOption.map ([·])).getD []
+
+/-- Compile inputs as journaled: every source replaced by its CID. -/
+def compactInputs (inputs : Json) : Json :=
+  let inputs := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => inputs.setObjVal! "modules" (.arr (ms.map fun (m : Json) =>
+        match m.getObjValAs? String "source" with
+        | .ok src => Json.mkObj [("name", (m.getObjVal? "name").toOption.getD Json.null), ("cid", toJson (sourceCid src))]
+        | .error _ => m))
+    | _ => inputs
+  match inputs.getObjValAs? String "source", inputs.getObj? with
+  | .ok src, .ok fields =>
+    Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "source") ++ [("sourceCid", toJson (sourceCid src))])
+  | _, _ => inputs
+
+/-- The `sources` field an entry needs: each source the world has not recorded, once. -/
+def newSources (w : World) (sources : List String) : List (String × Json) :=
+  let fresh := (sources.map fun src => (sourceCid src, src)).foldl (fun acc (cid, src) =>
+    if w.modules.contains cid || acc.any (·.1 == cid) then acc else acc ++ [(cid, src)]) []
+  if fresh.isEmpty then [] else
+    [("sources", Json.arr (fresh.toArray.map fun (cid, src) => Json.mkObj [("cid", toJson cid), ("source", toJson src)]))]
+
+/-- The sources an entry carries, checked against their CIDs. -/
+def entrySources (entry : Json) : Except String (List (String × String)) := do
+  let some raw := (entry.getObjVal? "sources").toOption | return []
+  (← raw.getArr?).toList.mapM fun m => do
+    let cid ← m.getObjValAs? String "cid"
+    let src ← m.getObjValAs? String "source"
+    unless sourceCid src == cid do throw "a journaled source is not its CID's"
+    return (cid, src)
+
+/-- Compile inputs from an entry: every CID resolved to the source a `module` entry recorded. -/
+def expandInputs (w : World) (inputs : Json) : Except String Json := do
+  let resolve := fun (cid : String) => match w.modules[cid]? with
+    | some src => pure src
+    | none => throw s!"compile inputs name module {cid}, which no module entry recorded"
+  let inputs ← match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => do
+      let expanded ← ms.mapM fun m => do
+        match m.getObjValAs? String "cid" with
+        | .ok cid => pure (Json.mkObj [("name", (m.getObjVal? "name").toOption.getD Json.null), ("source", toJson (← resolve cid))])
+        | .error _ => pure m
+      pure (inputs.setObjVal! "modules" (.arr expanded))
+    | _ => pure inputs
+  match inputs.getObjValAs? String "sourceCid", inputs.getObj? with
+  | .ok cid, .ok fields =>
+    return Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "sourceCid") ++ [("source", toJson (← resolve cid))])
+  | _, _ => return inputs
+
 def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin), ("sourcesSha256", toJson c.sources),
-    ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", c.object.inputs),
+    ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)]
 
 structure Judged where
@@ -670,7 +732,9 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
           (if fields.any (·.1 == "principal") then [] else
             [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
+  let sources := (entrySources entry).toOption.getD []
   { w with
+    modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
       | none => w.pending) ++ sent
@@ -754,7 +818,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
         (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]))
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
-      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates)
+      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
+          newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs))
         (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
       (w', reply entry)
 
@@ -806,14 +871,10 @@ def defaultLaw (creator : String) : Except String Law := do
     s!"request.kind == 0 or request.subject == \"{creator}\""
   return [("owner", clause)]
 
-/-- A package compiled as an object's code: artifact, entry type, declared laws. -/
-structure Built where
-  artifact : Json
-  ty : Minidregg.Theory.ObjectiveBendTypes.Ty
-  laws : Law
-  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
 def compileObject (w : World) (inputs : Json) : Except String Built := do
+  if let some b := w.builds[buildKey inputs]? then return b
   let (artifact, ty, laws) ← Package.compileKeepingLaws (← resolveInputs w inputs)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
@@ -839,9 +900,21 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs }, sources)
 
+def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
+  if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
+
+/-- Build an object and remember its compiled package in the world. -/
+def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
+    (creator : String := "") (height : Nat := 1) (lawText : Option String := none) :
+    Except String (Object × String × World) := do
+  let built ← compileObject w inputs
+  let (o, sources) ← makeObject built inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
+  return (o, sources, cacheBuild w inputs built)
+
 def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) : Except String (Object × String) := do
-  makeObject (← compileObject w inputs) inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
+  let (o, sources, _) ← buildObjectIn w inputs seed read chain creator height lawText
+  return (o, sources)
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
@@ -859,12 +932,12 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
   let seed ← j.getObjVal? "seed"
-  let (o, sources) ← buildObject w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
+  let (o, sources, w) ← buildObjectIn w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
-  let outcome := createOutcome id o sources inputs seed
+  let outcome := createOutcome id o sources (compactInputs inputs) seed
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
-    [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
-     ("request", toJson digest), ("outcome", outcome)] [id]
+    ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
   return (w', reply entry)
 
 /-! ## The library as a journaled fact
@@ -1040,12 +1113,31 @@ def checkResumes (w : World) (entry : Json) (principal intent : String) : Except
       (id.getObjValAs? String "intent").toOption == some intent do
     throw "resumes a suspension of another identity"
 
+/-- The objects an admitted entry created, rebuilt from their journaled inputs. -/
+def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
+    Except String (World × List (String × CreateRec)) := do
+  let mut w := w
+  let mut creates : List (String × CreateRec) := []
+  for r in recorded do
+    let id ← r.getObjValAs? String "object"
+    let seed ← r.getObjVal? "seed"
+    let (o, sources, w') ← buildObjectIn w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
+      (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+    w := w'
+    creates := creates ++ [(id, ({ object := o, sources, seed } : CreateRec))]
+  return (w, creates)
+
 def replayEntry (w : World) (entry : Json) : Except String World := do
   let identity ← entry.getObjVal? "identity"
   let principal ← identity.getObjValAs? String "principal"
   let intent ← identity.getObjValAs? String "intent"
   let key := identityKey principal intent
   let outcome ← entry.getObjVal? "outcome"
+  -- The sources an entry introduces are known before its compile inputs are read.
+  let introduced ← entrySources entry
+  for (cid, _) in introduced do
+    if w.modules.contains cid then throw "a source is journaled twice"
+  let w := { w with modules := introduced.foldl (fun m (cid, src) => m.insert cid src) w.modules }
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
   checkResumes w entry principal intent
@@ -1106,7 +1198,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
-    let (o, sources) ← buildObject w (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
+    let inputs ← expandInputs w (← outcome.getObjVal? "compile")
+    let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     return record { w with objects := w.objects.insert id o } entry key [id]
@@ -1125,12 +1218,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let laws ← recordedLaws.toList.mapM fun r => do
       return (← r.getObjValAs? String "object", ← r.getObjValAs? String "new")
     let recordedCreates := (outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption) |>.getD #[]
-    let creates ← recordedCreates.toList.mapM fun r => do
-      let id ← r.getObjValAs? String "object"
-      let seed ← r.getObjVal? "seed"
-      let (o, sources) ← buildObject w (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
-        (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
-      return (id, ({ object := o, sources, seed } : CreateRec))
+    let (w, creates) ← rebuildCreates w principal recordedCreates
     let absent := ((entry.getObjVal? "absent").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
       fun a => a.getStr?.toOption
     let grants ← ((outcome.getObjVal? "grants").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Grant.ofJson

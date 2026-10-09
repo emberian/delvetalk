@@ -278,7 +278,7 @@ def mergeSeed (initial seed : Data) (bounds : DataBounds) (ty : Ty) : Except Str
   | _, _ => throw "the seed is not a record"
 
 def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
-    (height : Nat) : Except (String × String) CreateRec := do
+    (height : Nat) : Except (String × String) (CreateRec × Built) := do
   let inputs ← creationInputs creator package
   let built ← (compileObject w inputs).mapError (("compile", ·))
   let packet ← (built.artifact.getObjVal? "packet").mapError (("compile", ·))
@@ -290,7 +290,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
     (fun e => (if e == noAmendmentClause then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
-  return { object, sources, seed := dataJson state }
+  return ({ object, sources, seed := dataJson state }, built)
 
 /-- The subject a call or send of `method` on `callee` by the running object `self` acts
     with: the running frame's own when `via` is empty, else the grantor of grant `via` if it
@@ -566,8 +566,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
       match buildCreated s.world creator package seed lawArg s.principal (s.world.height + 1) with
       | .error (clause, _) => refusedWith bounds responseType clause
-      | .ok rec =>
-        set { note s with creates := s.creates ++ [(id, rec)] }
+      | .ok (rec, built) =>
+        set { note s with creates := s.creates ++ [(id, rec)], world := cacheBuild s.world rec.object.inputs built }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) | .variant "sendVia" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed send plan"
@@ -717,7 +717,7 @@ def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
 def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
     Except String (World × Json) := do
-  let w := { w with compiled := st.world.compiled, programs := st.world.programs }
+  let w := { w with compiled := st.world.compiled, programs := st.world.programs, builds := st.world.builds }
   let used := ctx.usedBefore + (ctx.ticksStart - st.ticks)
   let proposal : Proposal :=
     { principal := ctx.principal
@@ -764,7 +764,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
       ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots),
-        ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)]) []
+        ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
+        newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs)) []
     return (w', turnReply (reply entry))
   | .ok value =>
     match st.violation with
@@ -898,7 +899,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
   let creates ← ((← (← act.getObjVal? "creates").getArr?).toList.mapM fun r => do
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
-    let (o, sources) ← buildObject w (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
+    let (o, sources) ← buildObject w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     return (id, ({ object := o, sources, seed } : CreateRec)))
   let programs ← ((← (← act.getObjVal? "programs").getArr?).toList.mapM fun r => do
