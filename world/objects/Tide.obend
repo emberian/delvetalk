@@ -33,6 +33,19 @@ type Response = Plans.Response<State, {}>
 #   self: request.method == "tick" or request.subject == <the appended item's who>
 law clock: monotone(ticks)
 law height: monotone(last)
+# The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): a tick
+# sooner than gap after the last is tooSoon; a subscription that changed must be the
+# requesting principal's own.
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if new.ticks > old.ticks && old.ticks > 0n && request.context.height < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon"}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self"})
+def ownSubs(old: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
+  match new:
+    case nil(_): true
+    case cons(n): changedSub(old, n.head, n.tail, principal)
+def changedSub(old: Lists.List<Sub>, head: Sub, rest: Lists.List<Sub>, principal: String) -> Bool:
+  match old:
+    case nil(_): head.who == principal && ownSubs(old, rest, principal)
+    case cons(o): (o.head.who == head.who && o.head.every == head.every && o.head.note == head.note && o.head.since == head.since || head.who == principal) && ownSubs(o.tail, rest, principal)
 def defaultSeed() -> Seed:
   {gap: 1n}
 def seeded(seed: Seed) -> State:

@@ -190,3 +190,62 @@ def Card_handle(did):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+LAW_PROBE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./Tide.obend as Tide
+import ./Wake.obend as Wake
+def request(principal: String, height: Nat) -> Abi.Request:
+  {context: {world: "", object: "tide", principal: principal, caller: "", intent: "t", height: height, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
+def verdict(v: Abi.Verdict) -> String:
+  match v:
+    case admitted(_): "admitted"
+    case refused(r): textConcat("refused ", r.clause)
+def subs(who: String) -> Lists.List<Tide.Sub>:
+  Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n}, tail: Lists.List::<Tide.Sub>.nil()})
+def tide(ticks: Nat, last: Nat, who: String) -> Tide.State:
+  {ticks: ticks, last: last, gap: 3n, subs: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)}
+def tickAt(height: Nat) -> String:
+  verdict(Tide.law(tide(1n, 10n, ""), tide(2n, height, ""), request("zero", height)))
+def subscribeAs(principal: String) -> String:
+  verdict(Tide.law(tide(0n, 0n, ""), tide(0n, 0n, "kimik3"), request(principal, 5n)))
+def wakeBy(principal: String) -> String:
+  verdict(Wake.law({owner: "inkling", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.nil(), nextId: 1n}, {owner: "inkling", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.cons({head: {id: 1n, event: Wake.On.keyword({term: "moth"}), action: Wake.Action.notify({})}, tail: Lists.List::<Wake.Trigger>.nil()}), nextId: 2n}, request(principal, 5n)))
+"""
+
+
+class LawPredicates(unittest.TestCase):
+    """Tide's and Wake's Bend law predicates, run as pure functions; the host records their
+    presence in the artifact and has not yet run them on a turn."""
+
+    def run_probe(self, entry, argument):
+        from tests.test_objects import check, compile_job
+        from tests.test_turn_world import closure as world_closure
+        modules, seen = [], set()
+        for name in ("Tide", "Wake"):
+            world_closure(name, seen, modules)
+        compiled = compile_job(modules + [{"name": "Probe", "source": LAW_PROBE}], entry)
+        self.assertEqual(compiled["status"], "compiled", compiled)
+        out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [argument]})
+        self.assertEqual(out["status"], "finished", out)
+        return out["value"]["value"]
+
+    def test_the_artifacts_record_a_law_predicate(self):
+        from tests.test_objects import compile_job
+        for name in ("Tide", "Wake"):
+            self.assertEqual(compile_job(closure(name), "initial")["artifact"]["law"], {"present": True, "reads": False})
+
+    def test_a_tick_sooner_than_the_gap_is_refused_tooSoon(self):
+        self.assertEqual(self.run_probe("tickAt", nat(12)), "refused tooSoon")
+        self.assertEqual(self.run_probe("tickAt", nat(13)), "admitted")
+
+    def test_a_subscription_is_only_ever_the_requesters_own(self):
+        self.assertEqual(self.run_probe("subscribeAs", label("kimik3")), "admitted")
+        self.assertEqual(self.run_probe("subscribeAs", label("glm")), "refused self")
+
+    def test_wake_triggers_change_only_by_the_owner(self):
+        self.assertEqual(self.run_probe("wakeBy", label("inkling")), "admitted")
+        self.assertEqual(self.run_probe("wakeBy", label("mimo")), "refused owner")

@@ -42,6 +42,10 @@ type Response = Plans.Response<State, {}>
 # owner's env alone: owner: request.method == "sense" or request.subject == new.owner
 law owner: new.owner == request.subject
 law ids: monotone(nextId)
+# The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): the
+# triggers change only by the owner's request.
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if new.nextId == old.nextId && Lists.length::<Trigger>(new.triggers) == Lists.length::<Trigger>(old.triggers) || request.context.principal == old.owner then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "owner"})
 def defaultSeed() -> Seed:
   {owner: "", env: Plans.nobody()}
 def seeded(seed: Seed) -> State:
