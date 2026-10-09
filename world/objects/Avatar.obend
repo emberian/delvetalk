@@ -80,9 +80,9 @@ def release(state: State, context: Abi.Context) -> Activity<Plan, Response, Plac
 def releaseThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(state.holding, thing(context)):
     case none(_): Place.Done.done({})
-    case some(a): released(a.value, context)
-def released(index: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.remove({index: index})})})):
+    case some(_): released(context)
+def released(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.removeItem({item: thing(context)})})})):
     case _: Place.Done.done({})
 def find(exits: Lists.List<Place.Exit>, label: String) -> Found:
   match exits:

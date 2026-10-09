@@ -69,15 +69,15 @@ def same(done: Done) -> Done:
   done
 def watch(state: State, input: {event: On, action: Action}, context: Abi.Context) -> Activity<Plan, Response, Done>:
   watched::<Done>(state, input.event, input.action, context, same)
-# Unwatch by id: the index is found here, in Bend, and removed by index.
+# Unwatch by id: the trigger is found here, in Bend, and removed by its bytes.
 def unwatched<T>(state: State, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if context.principal != state.owner then then(notOwner(state)) else removing::<T>(Lists.indexWhere::<Trigger>(state.triggers, fn(t: Trigger) -> Bool: t.id == id), id, context, then)
-def removing<T>(found: Lists.Maybe<Nat>, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if context.principal != state.owner then then(notOwner(state)) else removing::<T>(Lists.find::<Trigger>(state.triggers, fn(t: Trigger) -> Bool: t.id == id), id, context, then)
+def removing<T>(found: Lists.Maybe<Trigger>, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match found:
     case none(_): then(Done.refused({reason: textConcat("No trigger ", natText(id))}))
     case some(s): removed::<T>(s.value, id, context, then)
-def removed<T>(index: Nat, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {triggers: Plans.Entries::<Trigger, {}>.remove({index: index})})})):
+def removed<T>(trigger: Trigger, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {triggers: Plans.Entries::<Trigger, {}>.removeItem({item: trigger})})})):
     case _: then(Done.watching({id: id}))
 def unwatch(state: State, input: {id: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
   unwatched::<Done>(state, input.id, context, same)

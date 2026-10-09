@@ -213,9 +213,9 @@ def observing(observers: Observers, input: Observer) -> Change:
 def adding(count: Nat, input: Observer) -> Change:
   if count < 16n then Change.edit({entries: Plans.Entries::<Observer, {}>.append({item: input}), count: count + 1n}) else Change.refused({reason: "Too many observers."})
 def unobserving(observers: Observers, input: Observer) -> Change:
-  match Lists.indexWhere::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)):
+  match Lists.find::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)):
     case none(_): Change.refused({reason: "Not observing."})
-    case some(s): Change.edit({entries: Plans.Entries::<Observer, {}>.remove({index: s.value}), count: Lists.length::<Observer>(observers) - 1n})
+    case some(s): Change.edit({entries: Plans.Entries::<Observer, {}>.removeItem({item: s.value}), count: Lists.length::<Observer>(observers) - 1n})
 # broadcast sends the argument to every observer by its method, then finishes with `then` of
 # how many sends the host accepted (an activity composes only in tail position).
 def broadcast<E, S, R, T>(observers: Observers, argument: Data, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:

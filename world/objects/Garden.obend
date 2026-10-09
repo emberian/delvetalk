@@ -128,14 +128,15 @@ def filled(parsed: Spell.Parsed, name: String, hint: String) -> String:
     case notASpell(_): hint
 def refusedCard(reason: String) -> Document.Document:
   Document.text(textConcat("Not planted: ", textConcat(reason, "\n")))
-# The proposal a principal has waiting, if any: where it is and the spell it stored.
+# The proposal a principal has waiting, if any: the stored item (amended and removed
+# by its bytes, so another principal's proposal landing first moves nothing) and its spell.
 sum Held:
   none: {}
-  some: {index: Nat, spell: String}
+  some: {item: Pending, spell: String}
 def heldBy(items: Lists.List<Pending>, principal: String, index: Nat) -> Held:
   match items:
     case nil(_): Held.none({})
-    case cons(c): if c.head.principal == principal then Held.some({index: index, spell: c.head.spell}) else heldBy(c.tail, principal, index + 1n)
+    case cons(c): if c.head.principal == principal then Held.some({item: c.head, spell: c.head.spell}) else heldBy(c.tail, principal, index + 1n)
 # What a reply to a waiting proposal says: yes, no or anything else. Only a short
 # reply is examined; it is one word between blanks, in one of three spellings.
 sum Word:
@@ -157,10 +158,10 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match found:
     case none(_): hear(state, input, context, Spell.parse(input.text), found)
-    case some(s): replied(state, input, context, found, s.index, s.spell)
+    case some(s): replied(state, input, context, found, s.spell)
 # Yes plants what was stored; no drops it; anything else is heard afresh and
 # replaces the stored proposal (or drops it when it proposes nothing).
-def replied(state: State, input: Card.Heard, context: Abi.Context, found: Held, index: Nat, stored: String) -> Activity<Plan, Response, Reply>:
+def replied(state: State, input: Card.Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
   match wordOf(input.text):
     case yes(_): confirmed(state, input, context, found, stored)
     case no(_): told(found, context, Reply.cleared({}), Document.text("✾ THE NIGHT GARDEN\n\nI dropped what I understood.\n"))
@@ -203,7 +204,7 @@ def settled(state: State, context: Abi.Context, found: Held, confirm: Bool, colo
 def asked(state: State, context: Abi.Context, found: Held, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let entry = {principal: context.principal, spell: spell(context.object, seed, colour)}
   match found:
-    case some(s): remembered(context, Plans.Entries::<Pending, Pending>.amend({index: s.index, change: entry}), colour, seed)
+    case some(s): remembered(context, Plans.Entries::<Pending, Pending>.amendItem({item: s.item, change: entry}), colour, seed)
     case none(_): if Lists.length::<Pending>(state.pending) < 64n then remembered(context, Plans.Entries::<Pending, Pending>.append({item: entry}), colour, seed) else tell(Reply.refused({reason: "Too many proposals are waiting."}), refusedCard("Too many proposals are waiting."))
 def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})})):
@@ -223,7 +224,7 @@ def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Re
 def forget(found: Held) -> Plans.Entries<Pending, Pending>:
   match found:
     case none(_): Plans.Entries::<Pending, Pending>.keep({})
-    case some(s): Plans.Entries::<Pending, Pending>.remove({index: s.index})
+    case some(s): Plans.Entries::<Pending, Pending>.removeItem({item: s.item})
 # Answers with a card, first dropping the waiting proposal this reply superseded.
 def told(found: Held, context: Abi.Context, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
   match found:

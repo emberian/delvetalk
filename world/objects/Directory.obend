@@ -32,8 +32,8 @@ def seeded(seed: Seed) -> State:
   {owner: seed.owner, doors: Lists.List::<Door>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
-def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Nat>:
-  Lists.indexWhere::<Door>(doors, fn(door: Door) -> Bool: door.label == label)
+def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Door>:
+  Lists.find::<Door>(doors, fn(door: Door) -> Bool: door.label == label)
 def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answer>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Answer.done({})
@@ -46,7 +46,7 @@ def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Pla
 def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
   match position(state.doors, input.label):
     case none(_): Answer.refused({reason: textConcat("There is no door called ", input.label)})
-    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.remove({index: a.value})})
+    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.removeItem({item: a.value})})
 def doorLine(door: Door) -> Document.Document:
   Document.text(textConcat(door.label, textConcat("\n", textConcat(door.description, "\n\n"))))
 # Affordances first, since readers clip near 1,400 characters; then the doors.

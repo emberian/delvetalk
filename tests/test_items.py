@@ -74,3 +74,37 @@ class Items(TurnWorld):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ObjectsWriteByItem(TurnWorld):
+    """Every object that amends or removes a list item now addresses it by bytes: the receipt
+    carries removeItem/amendItem with the item, never an index. Refuted by an index form in any
+    receipt below, or by the wrong item going."""
+
+    def labels(self, reply):
+        import json
+        text = json.dumps(reply["receipt"]["outcome"]["writes"])
+        return {l for l in ("removeItem", "amendItem", "remove", "amend") if '"label": "%s"' % l in text}
+
+    def test_a_place_removes_who_leaves_by_item(self):
+        from tests.test_chain import Chain
+        from tests.test_places import place_seed
+        Chain.make(self, "porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3", "gemini"]))
+        r = self.turn("porch", "leave", principal="kimik3")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(self.labels(r), {"removeItem"})
+        state = self.host.send(op="world-view", principal="ember", object="porch")["state"]
+        self.assertEqual([get(p, "object")["value"] for p in items(get(state, "present"))], ["glm", "gemini"])
+
+    def test_a_tide_resubscription_amends_the_subscribers_own_item(self):
+        from tests.test_chain import nil as empty
+        from tests.test_turn_world import nat
+        r = self.host.send(op="world-create", principal="ember", identity="mk-tide", object="tide", modules=closure("Tide"),
+                           entry="initial", seed=record(ticks=nat(0), last=nat(0), gap=nat(1), subs=empty()))
+        self.assertEqual(r["status"], "created", r)
+        for who in ("glm", "kimik3"):
+            self.turn("tide", "subscribe", record(every=nat(2), note=label("hi " + who)), principal=who)
+        again = self.turn("tide", "subscribe", record(every=nat(3), note=label("again")), principal="glm")
+        self.assertEqual(self.labels(again), {"amendItem"})
+        subs = items(get(self.host.send(op="world-view", principal="ember", object="tide")["state"], "subs"))
+        self.assertEqual([(get(s, "who")["value"], get(s, "note")["value"]) for s in subs], [("glm", "again"), ("kimik3", "hi kimik3")])

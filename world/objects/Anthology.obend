@@ -46,14 +46,14 @@ def at(items: Lists.List<Proposal>, index: Nat) -> Found:
   match items:
     case nil(_): Found.none({})
     case cons(c): if index == 0n then Found.some({proposal: c.head}) else at(c.tail, index - 1n)
-# The host replaces the item at the index by the change, so admission rewrites
-# the proposal with its status flipped.
+# The admitted proposal is addressed by its bytes, so a submission landing first
+# shifts nothing; admission rewrites it with its status flipped.
 def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match at(state.proposals, input.index):
     case none(_): false
     case some(s): admitted(context, input.index, s.proposal)
 def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amend({index: index, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
     case _: true
 def forms() -> Card.Forms:
   Card.Forms.cons({head: {card: "", action: "submit", fields: Form.Fields.cons({head: {name: "line", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})
