@@ -105,6 +105,23 @@ class Wakes(Chain):
         self.assertEqual(out["value"], label("env/" + OWNER), out)
         self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
 
+    def test_each_principal_creates_and_amends_their_own_env_and_wake(self):
+        """Rehearsal finding 10: Env and Wake belong to their principal from creation (GENESIS):
+        the owner creates them and may amend their laws; ember cannot seed them for another."""
+        env = self.env()
+        wake = self.wake()
+        for obj in (env, wake):
+            version = self.version(obj)
+            r = self.host.send(op="world-amend", principal=OWNER, identity="am-" + obj, object=obj, version=version,
+                               law="law owner: request.subject == new.owner")
+            self.assertEqual(r["status"], "admitted", (obj, r))
+            r = self.host.send(op="world-amend", principal=OTHER, identity="steal-" + obj, object=obj, version=version + 1,
+                               law="law open: request.kind == 0 or request.subject == \"%s\"" % OTHER)
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), (obj, r))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-w2", object="wake/x", modules=closure("Wake"), entry="initial",
+                           seed=record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        self.assertEqual(r, {"status": "error", "message": "law has no amendment clause"})
+
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
                            entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))

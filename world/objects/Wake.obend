@@ -38,9 +38,9 @@ record Edits:
 # Every send carries a line of text: a note's text, or what woke the trigger.
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
-# Only the owner changes its triggers. With request.method, sense could be opened to the
-# owner's env alone: owner: request.method == "sense" or request.subject == new.owner
-law owner: new.owner == request.subject
+# Only the owner changes its triggers, reprograms or amends it; as with Env, the creator
+# must be the owner, so each principal creates their own Wake (docs/GENESIS.md).
+law owner: request.subject == new.owner
 law ids: monotone(nextId)
 # The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): the
 # triggers change only by the owner's request.
