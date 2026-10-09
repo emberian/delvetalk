@@ -10,7 +10,8 @@ Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 `make check` runs everything in parallel (~2 min); `make smoke` the fast pair. Two wall-clock bounds
 (`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
 loaded box; alone they take 3.3 s and pass. `test_snapshot`'s reopen under 1 s takes 0.2 to 0.4 s alone and
-has measured 1.08 s inside the parallel suite on hbox at load 30.
+measured 1.08 s inside the parallel suite on hbox at load 30 while every open read the whole binary for its
+pin; since `binaryPin` reads 1 MiB and only beside a snapshot, reopen is 0.10 s (full replay 0.16 s).
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
@@ -309,15 +310,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    modules, pending, suspended, clock) is rebuilt by `recordAll`, a bookkeeping-only pass over the entries up
    to the height. `openContent`: parse and hash-walk every entry from genesis (`entriesOf`), then for each
    snapshot newest first check: CID over the stored bytes, edition, `binary` (= `binaryPin`, the CID of the
-   executable's size and 256 evenly spaced 4 KiB pages, computed once per process; the whole 100 MB file would
-   cost a second per open), height within the journal, `head` = the journal's hash at that height, the derived
+   executable's size and its first 1 MiB, computed once per process and only when a snapshot is read or
+   written; Lean handles cannot seek, and reading the whole 127 MB file cost every open 0.45 s on hbox), height within the journal, `head` = the journal's hash at that height, the derived
    copies, each object's version and pin against what the entries record (`expectedObjects`), every law
    reading back from its text, and finally that every later entry replays on it. The first failure refuses
    the snapshot by name in the report and the next older is tried, then full replay. A forger who recomputes
    the CID and keeps versions and pins can change a state unnoticed by a plain open; `world-open {verify:
    true}` replays everything and refuses, by name, each snapshot whose body differs from the replayed store's
-   at its height ("it disagrees with replay at its height"). 500 creates of one package: reopen 0.16 s from
-   the snapshot, 0.21 s by full replay (the build cache already makes that cheap; the snapshot pays off with
+   at its height ("it disagrees with replay at its height"). 500 creates of one package (hbox): reopen 0.10 s from
+   the snapshot, 0.16 s by full replay (the build cache already makes that cheap; the snapshot pays off with
    many packages, reprograms and judged turns), snapshot ~4 KB per object type plus ~1 KB per object.
 
 14. **Commutative edits (host4, FOUNDATION 13 row 1).** `judge` accepts a root `(id, seen)` whose object has moved

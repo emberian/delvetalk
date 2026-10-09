@@ -28,20 +28,21 @@ def edition : String := "delvetalk.snapshot.v1"
 
 initialize binaryPinCache : IO.Ref (Option String) ← IO.mkRef none
 
-/-- A fingerprint of the running executable: the CID of its size and 256 evenly spaced 4 KiB
-    pages (the whole file is about 100 MB; hashing all of it would cost every open a second).
-    Computed once per process. -/
+/-- A fingerprint of the running executable: the CID of its size and its first 1 MiB (the
+    file is over 100 MB and Lean's handles cannot seek, so reading or hashing all of it would cost
+    an open up to half a second; a rebuild that changes code changes the size or the leading
+    pages, in practice). Computed once per process, and only when a snapshot is read or written. -/
 def binaryPin : IO String := do
   if let some p := ← binaryPinCache.get then return p
-  let bytes ← IO.FS.readBinFile (← IO.appPath)
-  let block := 4096
-  let blocks := 256
-  let size := bytes.size
-  let mut sample := (toString size).toUTF8
-  for i in [0:blocks] do
-    let start := if size ≤ block then 0 else (size - block) * i / (blocks - 1)
-    sample := sample ++ bytes.extract start (start + block)
-  let pin := Delvetalk.Canonical.cid sample
+  let path ← IO.appPath
+  let size := (← System.FilePath.metadata path).byteSize.toNat
+  let h ← IO.FS.Handle.mk path IO.FS.Mode.read
+  let mut head := ByteArray.empty
+  while head.size < 1048576 do
+    let chunk ← h.read (USize.ofNat (1048576 - head.size))
+    if chunk.isEmpty then break
+    head := head ++ chunk
+  let pin := Delvetalk.Canonical.cid ((toString size).toUTF8 ++ head)
   binaryPinCache.set (some pin)
   return pin
 
@@ -431,8 +432,8 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
   let entries ← match entriesOf content with
     | .ok e => pure e
     | .error e => return .error e
-  let binary ← binaryPin
   let snaps ← files journal
+  let binary ← if snaps.isEmpty then pure "" else binaryPin
   let mut report : Report := {}
   if verify then
     let heights := snaps.map (·.1)
