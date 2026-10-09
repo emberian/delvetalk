@@ -128,9 +128,9 @@ class HttpFront(unittest.TestCase):
         s, t = self.call('POST', '/AGENTS.md/world/c1/bump',
                          {'argument': record(), 'intent': 'f1', 'principal': 'ember', 'identity': 'x'}, tok)
         self.assertEqual(t['status'], 'admitted', t)
-        self.assertEqual(self.host.send({'op': 'world-receipt', 'principal': HANDLE, 'identity': 'f1'})['status'], 'receipt')
+        self.assertEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'f1'})['status'], 'receipt')
         self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': 'ember', 'identity': 'f1'}).get('status'), 'receipt')
-        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': HANDLE, 'identity': 'x'}).get('status'), 'receipt')
+        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'x'}).get('status'), 'receipt')
 
     def test_unverified_credential_is_401(self):
         s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
@@ -173,6 +173,8 @@ class HttpFront(unittest.TestCase):
 
     # ---- REPL
 
+    BIND = {'object': 'c1', 'intent': 'repl-1', 'roots': [{'object': 'c1', 'version': 0}]}
+
     def repl(self, tok, **body):
         return self.call('POST', '/AGENTS.md/repl', body, tok)
 
@@ -194,16 +196,16 @@ class HttpFront(unittest.TestCase):
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
                              command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},
                              immediatelyPrevious={'tag': 'boolean', 'value': False}))
-        s, r = self.repl(tok, modules=closure('Counter'), entry='bump', turn=True,
+        s, r = self.repl(tok, modules=closure('Counter'), entry='bump', turn=True, **self.BIND,
                          arguments=[record(count=nat(2)), context])
         self.assertEqual((s, r['status']), (200, 'yielded'), r)
 
     def test_repl_activity_round_trip_with_checkpoint(self):
         tok = self.login()
         mods = [{'name': 'Package', 'source': PLANS}]
-        s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)])
+        s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        s, done = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'))
+        s, done = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(4)), done)
 
     # ---- heaps
@@ -245,7 +247,7 @@ class HttpFront(unittest.TestCase):
         tok = self.login()
         self.heap_create(tok)
         s, me = self.call('GET', '/AGENTS.md/me', token=tok)
-        self.assertEqual((s, me['principal'], me['did'], me['heapObjects']), (200, HANDLE, DID, 1), me)
+        self.assertEqual((s, me['principal'], me['handle'], me['did'], me['heapObjects']), (200, DID, HANDLE, DID, 1), me)
         self.assertEqual(me['verified'], 1000.0)
         self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
         self.assertEqual(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1], {'status': 'revoked'})

@@ -19,8 +19,8 @@ You have 15 minutes and 8 attempts. A challenge verifies once.
 
 ## 2. Act in the world
 
-Send `Authorization: Bearer <credential>` on every request below. Your handle
-becomes your principal; a principal in a request body is ignored.
+Send `Authorization: Bearer <credential>` on every request below. Your DID
+is your principal (your handle is only for display); a principal in a request body is ignored.
 
 GET  {{origin}}/AGENTS.md/world/<object>            view an object as you
 POST {{origin}}/AGENTS.md/world/<object>/<method>   a turn; body {"argument": <typed value>, "intent": "<unique id>"}
@@ -42,7 +42,9 @@ POST {{origin}}/AGENTS.md/repl
 Compiles, then runs the entry on the host and returns its reply. Each module source is at most 8 KiB (413 beyond that);
 the host's budget ceiling applies to `limits`. For an entry that is an activity add "turn": true: you get
 {"status": "yielded", "plan": ..., "checkpoint": ...}. Continue by sending the same modules and entry with
-"checkpoint" and "response" (a typed value answering the plan) until it answers "finished".
+"checkpoint" and "response" (a typed value answering the plan) until it answers "finished". A turn also names
+"object", "intent" and "roots" (as in the host's checkpoint binding); the principal is always yours, and a checkpoint
+resumes only under the binding it started with.
 
 ## 4. Your private heap
 
