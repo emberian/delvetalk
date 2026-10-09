@@ -111,12 +111,15 @@ def Proposal.digest (p : Proposal) : String :=
 
 /-- The closed set of refusal classes. -/
 def refusalClasses : List String :=
-  ["staleRoot", "unreadWrite", "typeMismatch", "lawRefused", "unknownObject", "duplicateIdentity"]
+  ["staleRoot", "unreadWrite", "typeMismatch", "lawRefused", "unknownObject", "duplicateIdentity",
+   "evaluation"]
 
 structure Refusal where
   cls : String
   clause : Option String := none
   object : Option String := none
+  /-- Named reason for an `evaluation` refusal. -/
+  reason : Option String := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -202,18 +205,22 @@ def retained (w : World) (principal intent digest : String) : Option Json :=
 
 /-- The commit rule. Pure: the turn loop calls this with the roots it recorded and
     the writes it produced. Returns the next world and the reply (a receipt). -/
-def commit (w : World) (p : Proposal) : World × Json :=
+def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
+    (forced : Option Refusal := none) : World × Json :=
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
   | none =>
     let key := identityKey p.principal p.intent
     let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots),
-      ("turn", toJson p.turn), ("request", toJson p.digest)]
-    match judge w (w.height + 1) p with
+      ("turn", toJson p.turn), ("request", toJson p.digest)] ++ extra
+    let verdict : Except Refusal (List (String × Object)) :=
+      match forced with | some r => .error r | none => judge w (w.height + 1) p
+    match verdict with
     | .error r =>
       let outcome := Json.mkObj ([("tag", toJson "refused"), ("class", toJson r.cls)] ++
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
-        (r.object.map fun o => [("object", toJson o)]).getD [])
+        (r.object.map fun o => [("object", toJson o)]).getD [] ++
+        (r.reason.map fun o => [("reason", toJson o)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)]) []
       (w', reply entry)
     | .ok updates =>
@@ -255,7 +262,9 @@ def buildObject (inputs seed : Json) : Except String (Object × String) := do
   if (dataJson state).compress.utf8ByteSize > Limits.maxStateBytes then throw "seed exceeds state byte capacity"
   let pin ← artifact.getObjValAs? String "packetSha256"
   let sources ← artifact.getObjValAs? String "sourcesSha256"
-  return ({ pin, law := laws, version := 0, state, stateType := ty }, sources)
+  let inputsKey := Journal.bodyHash (Json.mkObj
+    (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
+  return ({ pin, law := laws, version := 0, state, stateType := ty, inputs, inputsKey }, sources)
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("object", toJson id), ("pin", toJson o.pin),
@@ -268,6 +277,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let digest := Journal.bodyHash (Json.mkObj
     (j.getObj?.toOption.map (·.toList.filter (·.1 != "op")) |>.getD []))
   if let some r := retained w principal intent digest then return (w, r)
+  if id == "self" then throw "object id self is reserved for the running object"
   if w.objects.contains id then throw s!"object {id} already exists"
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← compileInputs j
@@ -365,76 +375,5 @@ def history (w : World) (j : Json) : Except String Json := do
   return Json.mkObj [("status", toJson "history"), ("object", toJson id),
     ("entries", Json.arr (page.map fun index => w.entries[index]!)),
     ("more", toJson (decide (all.size > limit)))]
-
-/-! ## Session and journal file -/
-
-structure Open where
-  world : World
-  path : String
-  handle : IO.FS.Handle
-
-abbrev Session := Option Open
-
-def isWorldOp (op : String) : Bool := op.startsWith "world-"
-
-def openWorld (path : String) : IO (Except String Open) := do
-  try
-    let exists_ ← System.FilePath.pathExists path
-    let content ← if exists_ then do
-        let info ← System.FilePath.metadata path
-        if info.byteSize.toNat > Limits.maxJournalBytes then
-          return .error "journal exceeds byte capacity"
-        IO.FS.readFile path
-      else pure ""
-    match replay content with
-    | .error e => return .error e
-    | .ok world =>
-      let handle ← IO.FS.Handle.mk path IO.FS.Mode.append
-      return .ok ⟨world, path, handle⟩
-  catch e => return .error s!"journal unreadable: {e}"
-
-/-- Run a pure world step and make its entry durable before the reply exists. -/
-def durable (s : Open) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
-  match step s.world with
-  | .error e => return (some s, .error e)
-  | .ok (w', r) =>
-    if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
-    let line := w'.entries.back!.compress
-    if line.utf8ByteSize > Limits.maxEntryBytes then
-      return (some s, .error "journal entry exceeds capacity")
-    if w'.height > Limits.maxJournalEntries then
-      return (some s, .error "journal is full")
-    try
-      s.handle.putStr (line ++ "\n")
-      s.handle.flush
-      return (some { s with world := w' }, .ok r)
-    catch e => return (some s, .error s!"journal write failed: {e}")
-
-def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
-  let op ← match request.getObjValAs? String "op" with
-    | .ok op => pure op
-    | .error _ => return (session, .error "missing op")
-  if op == "world-open" then
-    match request.getObjValAs? String "path" with
-    | .error e => return (session, .error e)
-    | .ok path =>
-      match ← openWorld path with
-      | .error e => return (session, .error e)
-      | .ok o => return (some o, .ok (Json.mkObj [("status", toJson "opened"),
-          ("height", toJson o.world.height), ("head", toJson o.world.head),
-          ("objects", toJson o.world.objects.size)]))
-  else match session with
-    | none => return (none, .error "no world is open; send world-open first")
-    | some s =>
-      match op with
-      | "world-create" => durable s (fun w => create w request)
-      | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
-      | "world-view" => return (session, view s.world request)
-      | "world-receipt" => return (session, receipt s.world request)
-      | "world-history" => return (session, history s.world request)
-      | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
-          ("height", toJson s.world.height), ("head", toJson s.world.head),
-          ("objects", toJson s.world.objects.size)]))
-      | _ => return (session, .error s!"unknown world operation {op}")
 
 end Delvetalk.Host
