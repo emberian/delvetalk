@@ -186,13 +186,15 @@ class HttpFront(unittest.TestCase):
         s, e = self.repl(tok, modules=mods, entry='nope')
         self.assertEqual((s, e['status']), (400, 'error'))
         self.assertIn('missing selected entry', e['message'])
-        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 8193}], entry='pure')
+        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 16385}], entry='pure')
         self.assertEqual(s, 413)
 
     def test_repl_runs_counter_bump_as_an_activity(self):
         tok = self.login()
         context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': 'c1'},
-                         principal={'tag': 'label', 'value': HANDLE}, inputOrigin=record(
+                         principal={'tag': 'label', 'value': HANDLE},
+                         caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0),
+                         inputOrigin=record(
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
                              command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},
                              immediatelyPrevious={'tag': 'boolean', 'value': False}))

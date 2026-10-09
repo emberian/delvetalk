@@ -1,9 +1,11 @@
-# Host handoff (lane/host, after milestone 4)
+# Host handoff (lane/host2, after the authority model and program reflection)
 
-For the lane that builds the authority model (FOUNDATION section 11 rows 1 to 3).
+For the lane that continues the host. The authority model (FOUNDATION section 11 rows 1 to 3) and
+program reflection (row 5: inspect, check, the sealed library, interpret) are built; section 5 says how.
 Everything is in `spec/Delvetalk/Host/`. Line numbers drift; grep the names.
 Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
-`test_deliveries.py`, `test_reprogram.py`, `test_await.py`, `test_replay.py`.
+`test_deliveries.py`, `test_reprogram.py`, `test_await.py`, `test_replay.py`, `test_authority.py`,
+`test_reflection.py`.
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
@@ -58,9 +60,13 @@ def durable (s : Open) (step : World -> Except String (World x Json)) : IO (Sess
 abbrev M := ExceptT Abort (StateM TurnState)
 ```
 
-Session ops (`stepWorld`): `world-open {path}` (replay), `world-create`, `world-turn`, `world-propose`,
+Session ops (`stepWorld`): `world-open {path, library?, principal?, libraryLaw?}` (replay; with `library` it seals
+that directory, journals it on first open or refuses by name if the bytes differ from the journal's pin), `world-create`, `world-turn`, `world-propose`,
 `world-view {principal, object}`, `world-receipt {principal, identity}`, `world-history`, `world-status`,
-`world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`.
+`world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
+`world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
+a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
+`turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
 Every journaling op goes through `durable`: step, then `settle` (resume what the step released),
 then append ALL new entries, one fsync. A reply exists only after the bytes are durable.
 Request errors (`Except.error`) journal nothing; refusals are receipts.
@@ -83,7 +89,9 @@ Outcomes:
 - **created** (`world-create`): `{tag, object, pin, sourcesSha256, compile (inputs), seed (Data wire),
   read, chain}`. `roots []`, `turn 0`. Replay: `buildObject` recompiles, pin and sources hash must match,
   the amendment-clause dry run must pass at `height = entry height`, creator = identity principal.
-- **admitted**: `{tag, writes [{object, version (new), edits [Data wire of Edits records]}],
+- **admitted**: `{tag, writes [{object, version (new), edits [Data wire of Edits records],
+  callers [string], kinds [0|1|2]}]` (parallel to `edits`: the object that called the writing method, "" for the
+  turn's own; kind 0 write, 1 reprogram, 2 amend; a reprogram or amend is an empty-edits step),
   reprograms?, amendments?, creates?}`.
   - `reprograms [{object, oldPin, newPin, source, migration, result}]` (result = new state Data).
   - `amendments [{object, old, new}]` (law texts).
@@ -93,7 +101,8 @@ Outcomes:
   `amendments`, `creates` equal the recorded JSON exactly and that each recorded write version equals
   the replayed new version. So admitted entries are re-judged, not trusted.
 - **refused**: `{tag, class, clause?, object?, reason?}`. Classes (`refusalClasses`): staleRoot,
-  unreadWrite, typeMismatch, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation,
+  typeMismatch (conformance), capacity (byte or count limit), outOfRange (index past the end), lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation,
+  budget (reason = the exhausted machine resource: ticks, heap, stack, nodes, bytes),
   budgetExhausted (reason = exhausted ledger field), programRefused (clause = packageBytes, compile,
   stateType, migration, law syntax), requiredAbsence. Replay checks only that the class is known (and
   delivery/resume consistency); refusals are not re-judged.
@@ -115,17 +124,19 @@ Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes` in Ops):
 
 ## 3. Turn state while running
 
-`TurnState` (TurnLoop.lean:60) lives in `M`; Abort is `request | evaluation | suspend`.
+`TurnState` lives in `M`; Abort is `request | evaluation | budget | suspend`.
 
 - `roots : (id, version)` : set by `recordRoot` (runMethod on entry, a permitted `view`). Capacity
   `maxRoots`. Validated at commit by `judge` (stale), at resume by `resumeOne`.
 - `absent : id list` : set by `create` (the id it needs free). `judge` throws staleRoot if one exists.
 - `violation : Option id` : a `create` found its id taken; the turn is later journaled refused
   `requiredAbsence` naming it (the Plan is answered `refused {clause: "requiredAbsence"}` first).
-- `writes : (id, List Step)` : `addWrite` (needs the id in `roots`, else the Plan is answered
-  `refused unreadWrite`), `ensureWrite` (reprogram/amend). A Step is one Edits record.
+- `writes : (id, List Written)` : `addWrite id caller step` (the running object only; any other target is answered
+  `refused {clause: notSelf}` before it gets here), `ensureWrite id caller kind` (reprogram/amend, self only).
+  `Written {caller, kind, edits}`; a Step is one Edits record.
+- `checks` : `check` Plans run (at most `checksPerTurn`); the journal keeps the count.
 - `programs` / `laws` : reprogram/amend requests; prepared programs are cached in `world.programs`.
-- `sends : (to, method, argument)` : `send` Plan; ids derive from ordinal at commit (`sendsJson`).
+- `sends : (to, method, argument, sender)` : `send` Plan (the sender is the running object, the delivered turn's `caller`); ids derive from ordinal at commit (`sendsJson`).
   `sendsPerTurn`, `maxPending` checked when the Plan is answered.
 - `creates : (id, CreateRec)` : built in-turn by `buildCreated` (compile, evaluate `initial()`, overlay the
   partial seed with `mergeSeed`, `makeObject`), installed by `commit` via `Judged.creations`.
@@ -156,50 +167,38 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - Programs/laws: `maxPackageBytes` 32 KiB (reprogram), `maxLawBytes` 4096, `maxLawClauses` 16,
   `maxPreparedPrograms` 16 (memory cache), `maxCompiledPackets` 256 (memory cache), `maxReaders` 256.
 
-## 5. Where the authority model changes things
+## 5. The authority model and reflection, as built
 
-Today any object's method can `write` any object that is in the turn's roots (it viewed it or ran it).
-Law is the only gate, and the law sees `subject = caller = the turn's principal`.
-
-1. **Restrict `write` to the running object.** `answer` case `.variant "write"` (TurnLoop ~346) calls
-   `addWrite id step`; `addWrite` (TurnLoop:157) only checks `roots`. Change: `answer` already has
-   `self` (the running object's id): refuse with `refusedWith ... "unreadWrite"` (or a new clause) when
-   `id != self`, unless an explicit grant is modelled. `runMethod` for `call` passes the callee as `self`,
-   so a callee writes itself and the caller never writes through it. `runMethod`'s pure-method branch
-   calls `addWrite id` with its own id (fine). `reprogram`/`amend` use `ensureWrite` and a roots check
-   (TurnLoop ~370 and ~385); restrict them the same way if reprogramming is to be self-only. Note
-   `judge` has no notion of "who wrote": it takes the Proposal, so any restriction must be enforced
-   while building it (or add the writer to the Proposal, e.g. `writes : (id, writer, steps)`, and
-   journal it, then re-check in `judge` so replay enforces it too).
-2. **Law facts.** `judge` (Ops ~398) builds `Law.Facts := <p.principal, p.principal, height, p.turn,
-   next.pin, kind>`; subject and caller are the same string. To add `caller` as the calling object:
-   put a `caller : String` per write in the Proposal (the object whose method wrote), journal it (admitted
-   entry `writes[].caller`), include it in `Proposal.digest`, and pass it as `Facts.caller`; keep
-   `subject` = principal. `kinds` is computed right there (`[1]` reprogram, `[2]` amend, else `[0]`):
-   each present kind is already judged separately (loop `for kind in ...`); keep that. The amendment
-   dry run is `amendable` (Ops:285), which hard-codes `caller = principal`, kind 2; creation uses it too
-   (`makeObject`, Ops ~585); update both and the default law text in `defaultLaw` if `caller` matters.
-   `resumeOne` and replay rebuild Proposals, so any new Proposal field must be parsed in
-   `replayEntry` (admitted branch) and in `resumeOne`, and stored in the `suspended` activity JSON.
-3. **Context.** `contextData` (TurnLoop:180) builds `Abi.Context {world, object, principal, inputOrigin
-   {kind, object, command, program, immediatelyPrevious}}`; `runMethod` (TurnLoop:259) calls it with
-   `origin` = the calling object ("" at depth 0) and kind `request`/`call`. To add caller, intent,
-   height: extend the record here AND `world/lib/prelude/Abi.obend` `record Context` (same commit),
-   then every object that pattern-matches Context literally (they only read fields, so adding fields is
-   safe). `s.intent` is in `TurnState`; height is `s.world.height + 1` (the entry's height) but note a
-   resumed turn commits at a later height than it started; decide which one the object should see.
-   Checkpoints store machine state that already contains the Context value, so a suspended activity
-   keeps its original Context on resume.
-4. **Law evaluation.** `Law.denote` (Law.lean:66) is a total match over `LawExpr`; `eqS` already compares
-   text against `subject`, `caller`, `pin` (raw strings, not the numeric reading). To add
-   `appendOnly(FIELD)` and `unchanged(FIELD)`: add constructors to `LawExpr` in
-   `spec/bend/Compiler/ObjectiveBendLaw.lean` (and `fields`, `fieldsPlain`, `compile` (use
-   `Pred.any []`), `render`, `parseUnary` next to `monotone`/`writeOnce`, plus a `parse_*` theorem
-   if you like), then add cases to `denote`. `fieldOf` reads only the FIRST scalar field of a record
-   (naturals and booleans), so `appendOnly` on a list field needs a new reader over `Data` (a cons
-   list is `variant cons {head, tail}`; "old is a prefix of new" is a walk of both) and `unchanged` is
-   `Data` equality of the named field in old and new. `Law.refusedBy` returns the first failing clause
-   name; keep clause names stable, tests assert them.
+1. **Write is self-only.** `answer` case `write` applies only to `self`; a Reference to another object is answered
+   `refused {clause: notSelf}` in-turn (same for `reprogram` and `amend`). Cross-object change is a `call`: the callee
+   runs as its own `self`, so its writes are its own, judged by its own law. `judge` has no `unreadWrite`; a
+   `world-propose` that writes an object it does not name as a root is a request error.
+2. **Law facts.** `Facts {subject = principal, caller, height, turn, pin, kind}`. `caller` is the object whose method
+   wrote ("" for the turn's own method and for client proposals; for a delivered turn, the sending object).
+   `judge` judges every distinct (caller, kind) of an object's changes, so a bundled reprogram does not skip kind 0.
+   `new.F == request.subject` compares a text field; `appendOnly(F)` (new list = old list plus appended items, by canonical
+   Data) and `unchanged(F)` are in `Law.lean`; syntax in `spec/bend/Compiler/ObjectiveBendLaw.lean`.
+   The default law `owner: request.kind == 0 or request.subject == "<creator>"` therefore means: anyone may invoke my
+   methods, only my creator may reprogram or amend me (documented at `defaultLaw`).
+3. **Context.** `contextData` is the single constructor: `{world, object, principal, caller, intent, height, inputOrigin}`;
+   `height` is the height the turn read (a resumed turn keeps the one it started with).
+4. **Clauses.** `typeMismatch`, `capacity`, `outOfRange`, and the in-turn `notSelf`, `unknownObject`, `capacity`.
+5. **Library.** `Library {pin, modules}` (Store.lean) sealed by `sealLibrary` (dependency order, then name; <= 256
+   modules, 768 KiB). Objects' compile inputs carry `"library": pin` and only their own modules; `resolveInputs`
+   prepends the imported library closure whenever it compiles (create, reprogram, method packets, replay), so every
+   object stays compiled under the library it was created with (`world.libraries` by pin). A reprogram compiles against the
+   world's current library. A library change is a `library` entry `{pin, previous, modules, law?}` judged by the
+   world law (default `opener: request.subject == "<opening principal>"`, kind 1 facts); replay re-seals and re-judges.
+6. **inspect / check.** `inspect` answers pin, law text and the entry module's source under the reader's `ReadPolicy`
+   (`denied` otherwise). `check` runs `Package.checkPackage` over the library closure and answers
+   `"<module>:<line>: <stage>: <message>"` strings; it installs nothing and the entry keeps a `checks` count.
+7. **interpret.** The Plan suspends like `await` with outcome field `interpretation {id, object, policy, utterance, offers}`
+   (id = hash of principal, intent, ordinal). `world-interpretations` lists the pending ones with the Policy object's state as
+   `{model, system, examples}` and offers as plain JSON; `world-interpretation {id, reply}` journals an `interpreted` entry
+   (identity `interpretation`/id, verdict `proposal {method, argument}` or `unclear {needs}`) and the settle pass resumes the turn.
+   A verdict is `proposal` only if the method exists, is one of the offered actions, its argument conforms to the method's input
+   type and the object's Response can carry the proposal; a failed reply is `unclear`. Deadline is `interpretationPatience`
+   (64 clock units) from the clock, resuming `timedOut`.
 
 ## 6. Gotchas
 
@@ -223,6 +222,7 @@ Law is the only gate, and the law sees `subject = caller = the turn's principal`
 - **create semantics**: `package` is a module NAME in the creator's sealed chain (Garden says "Bell"), or
   source starting `edition`; `law` is only used if it starts `law `; the seed is a PARTIAL record
   overlaid on `initial()` (a variant wrapper is unwrapped). Full-conforming seeds pass as is.
+- **Hand-built Contexts in tests** must carry caller, intent and height or the method does not type.
 - **Names and keywords**: `meta`, `from`, `seal` are Lean keywords (use `how`, `sender`, `sealEntry`).
   Structure-instance continuation lines must be indented past the first field, or use the
   one-field-per-line form; `{ principal, x := ...}` mixing abbreviations and `:=` failed to parse.
@@ -244,6 +244,6 @@ Law is the only gate, and the law sees `subject = caller = the turn's principal`
 - **Tests**: never run an unfiltered package suite on a loop; `tests.test_replay` and `test_await` each
   take ~12 to 40 s because every `world-create` compiles. `python3 -W error` turns leaked subprocess
   warnings into failures; close hosts in `tearDown`.
-- **Not done**: `interpret`, `publish`, `offer` to a real transport are out of the kernel (`offer` renders
+- **Not done**: `publish` and `offer` to a real transport are out of the kernel (`offer` renders
   text on the reply only); history/receipt reads do not apply `ReadPolicy`; `world-reprogram`/`amend`
   are gated only by the object's law; foreign worlds (`Reference.world != ""`) are always refused.

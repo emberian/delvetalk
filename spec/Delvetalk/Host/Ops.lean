@@ -303,6 +303,115 @@ def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTyp
 def inputsKeyOf (inputs : Json) : String :=
   Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
 
+/-! ## The standard library
+
+A world opened with a library seals `world/lib/**/*.obend` as a closure: module name
+(file name without `.obend`), source, dependency order. An object's compile inputs
+name it by `"library": pin`; the modules the package imports (transitively) are
+prepended to the package's own modules when it is compiled, so a package can
+`import ./Plan.obend as Plans` without carrying the source. -/
+
+/-- The module names a source imports (`import ./Name.obend as X` lines). -/
+def importsOf (source : String) : List String :=
+  (source.splitOn "\n").filterMap fun line =>
+    (line.dropPrefix? "import ./").bind fun rest => ((rest.toString.splitOn ".obend").head?)
+
+def libraryDigest (modules : List (String × String)) : String :=
+  Journal.bodyHash (Json.arr (modules.toArray.map fun (n, src) =>
+    Json.mkObj [("name", toJson n), ("source", toJson src)]))
+
+def modulesJson (modules : List (String × String)) : Json :=
+  Json.arr (modules.toArray.map fun (n, src) => Json.mkObj [("name", toJson n), ("source", toJson src)])
+
+def parseModules (j : Json) : Except String (List (String × String)) := do
+  (← j.getArr?).toList.mapM fun m => do return (← m.getObjValAs? String "name", ← m.getObjValAs? String "source")
+
+/-- Seal files `(name, source)` into a library: names unique identifiers, every import
+    present, no cycle; order is by rounds of ready modules, each in name order. -/
+def sealLibrary (files : List (String × String)) : Except String Library := do
+  if files.length > Limits.maxLibraryModules then
+    throw s!"library has {files.length} modules, more than {Limits.maxLibraryModules}"
+  let bytes := files.foldl (fun n (name, src) => n + name.utf8ByteSize + src.utf8ByteSize) 0
+  if bytes > Limits.maxLibraryBytes then throw s!"library exceeds {Limits.maxLibraryBytes} bytes"
+  let names := files.map (·.1)
+  for n in names do
+    unless Minidregg.Compiler.ObjectiveBendParse.isIdent n.toList do throw s!"library module name `{n}` is not an identifier"
+  if names.eraseDups.length != names.length then throw "library has two modules of one name"
+  for (n, src) in files do
+    for i in importsOf src do
+      unless names.contains i do throw s!"library module {n} imports {i}, which is not in the library"
+  let sorted := (files.toArray.qsort fun a b => a.1 < b.1).toList
+  let mut placed : List (String × String) := []
+  let mut rest := sorted
+  for _ in [0:files.length + 1] do
+    if rest.isEmpty then break
+    let ready := rest.filter fun (_, src) => (importsOf src).all fun i => placed.any (·.1 == i)
+    if ready.isEmpty then throw "library modules import each other in a cycle"
+    placed := placed ++ ready
+    rest := rest.filter fun (n, _) => !ready.any (·.1 == n)
+  unless rest.isEmpty do throw "library modules import each other in a cycle"
+  return { pin := libraryDigest placed, modules := placed }
+
+/-- The library modules a set of module sources needs, transitively, in library order. -/
+def libraryClosure (lib : Library) (sources : List String) : List (String × String) :=
+  let wanted := (List.range (lib.modules.length + 1)).foldl (fun need _ =>
+    (need ++ need.flatMap fun n => ((lib.modules.lookup n).map importsOf).getD []).eraseDups)
+    (sources.flatMap importsOf).eraseDups
+  lib.modules.filter fun (n, _) => wanted.contains n
+
+/-- Compile inputs with the library modules prepended; inputs without `"library"` are as given.
+    The result is for the compiler only; the object keeps the inputs it was given. -/
+def resolveInputs (w : World) (inputs : Json) : Except String Json := do
+  let some pin := (inputs.getObjValAs? String "library").toOption | return inputs
+  let some lib := w.libraries[pin]? | throw s!"unknown library pin {pin}"
+  let own ← match inputs.getObjVal? "modules" with
+    | .ok m => parseModules m
+    | .error _ => pure [("Main", ← inputs.getObjValAs? String "source")]
+  for (n, src) in own do
+    if let some libSrc := lib.modules.lookup n then
+      unless libSrc == src do throw s!"module {n} shadows the library module of that name"
+  let own := own.filter fun (n, _) => (lib.modules.lookup n).isNone
+  let modules := libraryClosure lib (own.map (·.2)) ++ own
+  let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) =>
+    k != "library" && k != "source" && k != "modules"
+  return Json.mkObj (("modules", modulesJson modules) :: fields)
+
+/-- Name the world's current library in compile inputs (a package of one `source` becomes
+    the module `Main`). Without a library the inputs are as given. -/
+def attachLibrary (w : World) (inputs : Json) : Except String Json := do
+  let some lib := w.library | return inputs
+  let own ← match inputs.getObjVal? "modules" with
+    | .ok m => parseModules m
+    | .error _ => pure [("Main", ← inputs.getObjValAs? String "source")]
+  let own := own.filter fun (n, src) => lib.modules.lookup n != some src
+  let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) =>
+    k != "source" && k != "modules" && k != "library"
+  let attached := Json.mkObj (("modules", modulesJson own) :: ("library", toJson lib.pin) :: fields)
+  discard <| resolveInputs w attached
+  return attached
+
+/-- The source of an object's entry module: the last of its own modules. -/
+def entrySource (o : Object) : String :=
+  match o.inputs.getObjVal? "modules" with
+  | .ok (.arr modules) => ((modules.back?.bind fun m => (m.getObjValAs? String "source").toOption)).getD ""
+  | _ => (o.inputs.getObjValAs? String "source").toOption.getD ""
+
+/-- Dry-run compile of `source` as an entry module over the library: the diagnostics as
+    `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
+def checkSource (w : World) (source : String) : List String :=
+  if source.utf8ByteSize > Limits.maxPackageBytes then
+    [s!"Checked:0: package-request: package source exceeds {Limits.maxPackageBytes} bytes"]
+  else
+    let modules := (match w.library with
+      | some lib => libraryClosure lib [source]
+      | none => []) ++ [("Checked", source)]
+    match Package.checkPackage modules "initial" with
+    | .ok _ => []
+    | .error d =>
+      -- A package that declares laws compiles; only the pure profile has no adapter for them.
+      if (d.message.splitOn "package laws require").length > 1 then []
+      else [s!"{d.sourceModule.getD "Checked"}:{(d.span.map (·.line)).getD 0}: {d.stage}: {d.message}"]
+
 def noAmendmentClause : String := "law has no amendment clause"
 
 def renderLaw (law : Law) : String :=
@@ -339,11 +448,17 @@ def replaceSource (inputs : Json) (source : String) : Except String Json := do
 
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
-def prepareProgram (o : Object) (source migration : String) : Except (String × String) Program := do
+def prepareProgram (w : World) (o : Object) (source migration : String) : Except (String × String) Program := do
   if source.utf8ByteSize > Limits.maxPackageBytes then
     throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
-  let inputs ← (replaceSource o.inputs source).mapError (("compile", ·))
-  let (artifact, ty, _) ← (Package.compileKeepingLaws (inputs.setObjVal! "entry" (toJson "initial"))).mapError (("compile", ·))
+  let replaced ← (replaceSource o.inputs source).mapError (("compile", ·))
+  -- A reprogram is compiled against the library the world has now.
+  let inputs ← (match w.library with
+    | some lib => if (replaced.getObjVal? "library").toOption.isSome then
+        pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
+    | none => pure replaced)
+  let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
+  let (artifact, ty, _) ← (Package.compileKeepingLaws (← resolved "initial")).mapError (("compile", ·))
   let decoded ← (do
     Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
   let assumptions := decoded.source.assumptions
@@ -355,7 +470,7 @@ def prepareProgram (o : Object) (source migration : String) : Except (String × 
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
       unless Minidregg.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
-      let (art, mty, _) ← (Package.compileKeepingLaws (inputs.setObjVal! "entry" (toJson migration))).mapError (("migration", ·))
+      let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError (("migration", ·))
       let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
       let md ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
       match mty with
@@ -372,7 +487,7 @@ def programKey (o : Object) (source migration : String) : String :=
 def programFor (w : World) (o : Object) (source migration : String) : Except (String × String) Program :=
   match w.programs[programKey o source migration]? with
   | some p => pure p
-  | none => prepareProgram o source migration
+  | none => prepareProgram w o source migration
 
 def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) : World :=
   if w.programs.size < Limits.maxPreparedPrograms then
@@ -465,6 +580,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/
+
+/-- The principal under which a settled interpretation is journaled. -/
+def interpretationPrincipal : String := "interpretation"
 
 def identityJson (principal intent : String) : Json :=
   Json.mkObj [("principal", toJson principal), ("intent", toJson intent)]
@@ -625,8 +743,8 @@ structure Built where
   laws : Law
   assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
 
-def compileObject (inputs : Json) : Except String Built := do
-  let (artifact, ty, laws) ← Package.compileKeepingLaws inputs
+def compileObject (w : World) (inputs : Json) : Except String Built := do
+  let (artifact, ty, laws) ← Package.compileKeepingLaws (← resolveInputs w inputs)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
@@ -651,9 +769,9 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs }, sources)
 
-def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
+def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) : Except String (Object × String) := do
-  makeObject (← compileObject inputs) inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
+  makeObject (← compileObject w inputs) inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
@@ -669,15 +787,63 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if id == "self" then throw "object id self is reserved for the running object"
   if w.objects.contains id then throw s!"object {id} already exists"
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
-  let inputs ← compileInputs j
+  let inputs ← attachLibrary w (← compileInputs j)
   let seed ← j.getObjVal? "seed"
-  let (o, sources) ← buildObject inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
+  let (o, sources) ← buildObject w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   let outcome := createOutcome id o sources inputs seed
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
     [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] [id]
   return (w', reply entry)
+
+/-! ## The library as a journaled fact
+
+The first `library` entry records the library's pin, its modules and the world law that
+judges every later change; a change is another `library` entry naming the pin it
+replaces. Replay re-seals the recorded modules and re-judges the change. -/
+
+/-- The default law of library change: only the principal who opened the world. -/
+def libraryLawText (opener : String) : Except String String := do
+  if opener.any (fun c => c == '"' || c == '\\' || c.toNat < 32) then
+    throw "the opener handle cannot be named in the library law"
+  return s!"law opener: request.subject == \"{opener}\""
+
+/-- The first clause of the world law that refuses `principal` installing library `pin`. -/
+def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
+  match parseLawText lawText with
+  | .error _ => some "law syntax"
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1⟩ (some (.record [])) (.record [])
+
+def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
+  { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }
+
+/-- Journal the library as the world's own (`lawArg` only on the first), or a change of it.
+    The world law judges the principal; a refusal is a `lawRefused` entry naming `library`. -/
+def libraryOp (w : World) (principal intent : String) (lib : Library) (lawArg : Option String) :
+    Except String (World × Json) := do
+  let digest := Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson lib.pin])
+  if let some r := retained w principal intent digest then return (w, r)
+  let first := w.library.isNone
+  let lawText ← if first then (match lawArg with | some t => pure t | none => libraryLawText principal)
+    else pure w.libraryLaw
+  if !first && w.library.map (·.pin) == some lib.pin then
+    return (w, Json.mkObj [("status", toJson "library"), ("pin", toJson lib.pin), ("changed", toJson false)])
+  let key := identityKey principal intent
+  let base := [("identity", identityJson principal intent), ("roots", rootsJson []),
+    ("turn", toJson (w.height + 1)), ("request", toJson digest)]
+  match libraryRefusal lawText principal (w.height + 1) lib.pin with
+  | some clause =>
+    let outcome := Json.mkObj [("tag", toJson "refused"), ("class", toJson "lawRefused"),
+      ("clause", toJson clause), ("object", toJson "library")]
+    let (w', entry) := push w key (base ++ [("outcome", outcome)]) []
+    return (w', reply entry)
+  | none =>
+    let outcome := Json.mkObj ([("tag", toJson "library"), ("pin", toJson lib.pin),
+      ("previous", toJson ((w.library.map (·.pin)).getD "")), ("modules", modulesJson lib.modules)] ++
+      (if first then [("law", toJson lawText)] else []))
+    let (w', entry) := push (installLibrary w lib lawText) key (base ++ [("outcome", outcome)]) []
+    return (w', reply entry)
 
 /-! ## Replay -/
 
@@ -756,10 +922,32 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     discard <| outcome.getObjVal? "slot"
     discard <| natField outcome "deadline"
     return record w entry key []
+  | "library" =>
+    let recorded ← parseModules (← outcome.getObjVal? "modules")
+    let lib ← sealLibrary recorded
+    unless lib.modules == recorded && lib.pin == (← outcome.getObjValAs? String "pin") do
+      throw "library entry is not the seal of its modules"
+    unless (← outcome.getObjValAs? String "previous") == ((w.library.map (·.pin)).getD "") do
+      throw "library entry does not replace the current library"
+    let lawText ← if w.library.isNone then outcome.getObjValAs? String "law" else pure w.libraryLaw
+    if let some clause := libraryRefusal lawText principal (w.height + 1) lib.pin then
+      throw s!"library change would be refused by the world law ({clause})"
+    return record (installLibrary w lib lawText) entry key []
+  | "interpreted" =>
+    let id ← outcome.getObjValAs? String "id"
+    unless principal == interpretationPrincipal && intent == id do
+      throw "interpretation runs under another identity than its request's"
+    unless w.suspended.any (fun s => ((s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption
+        |>.bind fun i => (i.getObjValAs? String "id").toOption) == some id) do
+      throw "interpretation of an unknown or already settled request"
+    discard <| outcome.getObjVal? "reply"
+    let verdict ← outcome.getObjVal? "verdict"
+    unless ["proposal", "unclear"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
+    return record w entry key []
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
-    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
+    let (o, sources) ← buildObject w (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     return record { w with objects := w.objects.insert id o } entry key [id]
@@ -781,7 +969,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let creates ← recordedCreates.toList.mapM fun r => do
       let id ← r.getObjValAs? String "object"
       let seed ← r.getObjVal? "seed"
-      let (o, sources) ← buildObject (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
+      let (o, sources) ← buildObject w (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
         (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
       return (id, ({ object := o, sources, seed } : CreateRec))
     let absent := ((entry.getObjVal? "absent").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap

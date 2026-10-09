@@ -153,13 +153,10 @@ class Interpret(unittest.TestCase):
         interpret.run(self.state, self.host, lambda req: model.failed('rate'))
         self.assertEqual(self.settled()[0]['reply'], {'status': 'failed', 'reason': 'rate', 'detail': ''})
 
-    @unittest.expectedFailure
     def test_end_to_end_against_the_real_host(self):
         from tests.host import Host as RealHost, binary
         host = Host(str(Path(self.tmp.name) / 'real.journal'), binary())
         self.addCleanup(host.close)
-        # Until the host2 lane lands the ops the host answers:
-        #   {'status': 'error', 'message': 'unknown world operation world-interpretations'}
         r = interpret.run(self.state, host, self.ask)
         self.assertEqual(r['failed'], [])
 
