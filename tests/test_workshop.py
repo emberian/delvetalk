@@ -84,7 +84,7 @@ class Workshop(Chain):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
 
     def say(self, text, obj="workshop"):
-        return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1")), principal="glm")
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1"), slot=label("")), principal="glm")
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)

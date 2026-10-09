@@ -15,7 +15,7 @@ ARTIST, GALLERY, CURATOR = "did:plc:glm", "did:plc:inkling", "did:plc:gemini"
 
 
 def say(text, post):
-    return record(text=label(text), post=label(post))
+    return record(text=label(text), post=label(post), slot=label(""))
 
 
 class Deals(Chain):

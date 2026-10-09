@@ -9,7 +9,7 @@ import ./Event.obend as Events
 # mimo's reflex arc: an owner's triggers, each an event to match and an action to take.
 # The owner's Env sends every event to `sense`; a matching trigger notifies the owner's
 # Avatar (its id is the owner's DID), asks the Env to show itself, or calls a card.
-# The universal message is receive {text, post}, so the Env's deliveries arrive at
+# The universal message is receive {text, post, slot}, so the Env's deliveries arrive at
 # sense {event} (the town's sketch named it receive).
 sum On:
   mention: {actor: String}

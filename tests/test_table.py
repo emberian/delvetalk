@@ -89,7 +89,7 @@ class Table(Chain):
         self.assertEqual(get(self.state("table"), "round"), nat(1))
         for seat in ("north", "south"):
             self.assertEqual((get(self.state(seat), "round"), get(self.state(seat), "digest")), (nat(1), label("")))
-        card = self.turn("table", "receive", record(text=label(""), post=label("")), principal="did:plc:zero")["offers"][0]["text"]
+        card = self.turn("table", "receive", record(text=label(""), post=label(""), slot=label("")), principal="did:plc:zero")["offers"][0]["text"]
         print("--- table card ---\n" + card)
         self.assertTrue(card.endswith("-.+..-+...-\n"), card)    # row 10: the attractor moved from x=4 to x=2
         self.assertIn("\n-.+..-+...-\n-...+-+...-\n", card)      # row 0 likewise

@@ -1,4 +1,4 @@
-"""The uniform card protocol (world/lib/Card.obend): receive {text, post} routes a spell
+"""The uniform card protocol (world/lib/Card.obend): receive {text, post, slot} routes a spell
 naming the object to one of its forms, and answers anything else with the card and its
 forms. Lantern is the smallest object that follows it."""
 import unittest
@@ -7,7 +7,7 @@ from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 
 def heard(text, post="at://glm/p/1"):
-    return record(text=label(text), post=label(post))
+    return record(text=label(text), post=label(post), slot=label(""))
 
 
 class Receive(TurnWorld):

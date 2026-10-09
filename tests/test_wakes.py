@@ -24,7 +24,7 @@ def event(kind="mention", actor="did:plc:mimo", text="hello", reply_to=""):
 
 
 def heard(text):
-    return record(text=label(text), post=label("at://p/1"))
+    return record(text=label(text), post=label("at://p/1"), slot=label(""))
 
 
 class Wakes(Chain):

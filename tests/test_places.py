@@ -74,7 +74,7 @@ class Floor(Chain):
 
     def card(self, name, principal="glm"):
         """The card is what receive offers for an empty reply."""
-        reply = self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)
+        reply = self.turn(name, "receive", record(text=label(""), post=label(""), slot=label("")), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["offers"][0]["text"]
 
@@ -183,7 +183,7 @@ class Floor(Chain):
     def test_a_place_with_64_things_renders_under_the_default_budget(self):
         things = ["thing%02d" % i for i in range(64)]
         self.make("hall", closure("Place"), place_seed("Hall", [("out", "porch")], present=["glm", "kimik3"], things=things))
-        reply = self.turn("hall", "receive", record(text=label(""), post=label("")), principal="glm")
+        reply = self.turn("hall", "receive", record(text=label(""), post=label(""), slot=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("Lying here: "), 8)
@@ -201,7 +201,7 @@ class Floor(Chain):
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
         self.assertEqual(over["status"], "admitted", over)  # the wire now decodes lists to depth 8192; the cap is bytes, not count
-        reply = self.turn("glm", "receive", record(text=label(""), post=label("")), principal="glm")
+        reply = self.turn("glm", "receive", record(text=label(""), post=label(""), slot=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest

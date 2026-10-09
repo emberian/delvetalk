@@ -7,16 +7,18 @@ import ./Spell.obend as Spell
 import ./Plan.obend as Plans
 # The uniform card protocol. Every object has a pure render(state) -> Document,
 # exports forms() (the actions its card offers, as data) and door() (its line in a
-# directory), and takes receive {text, post} as the one message the town sends.
+# directory), and takes receive {text, post, slot} as the one message the town sends.
 # route reads a reply: a spell naming this object and one of its forms becomes
 # `act` with typed fields; the object matches the action to its own method. What
 # is not acted on is answered by `answer`, which offers the card with its forms.
 #
 # A form's card is "" in forms(): the card a spell names is the object's id, which
 # route and usage take from the context.
+# slot names the awaiting post a reply answers, "" when it answers none.
 record Heard:
   text: String
   post: String
+  slot: String
 record Door:
   word: String
   blurb: String

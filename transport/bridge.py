@@ -116,10 +116,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
             continue
         obj, slot = target
         handle, did = obs['author']['handle'], obs['author']['did']
-        # Every card's receive takes exactly {text, post} (world/lib/Card.obend Heard): the author is
-        # the turn's principal. TODO(objects): an addressee's slot has no field in Heard yet.
+        # Every card's receive takes exactly {text, post, slot} (world/lib/Card.obend Heard); the
+        # author is the turn's principal; slot is "" when the reply answers no awaiting post.
         fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},
-                  {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
+                  {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}},
+                  {'name': 'slot', 'value': {'tag': 'label', 'value': '' if slot is None else slot if isinstance(slot, str) else json.dumps(slot)}}]
         reply = host.send({'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
                            'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']})
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run

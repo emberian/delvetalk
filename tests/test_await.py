@@ -41,7 +41,7 @@ class Create(Await):
     GARDEN = "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver"
 
     def plant(self, who="glm", post="at://glm.delve.town/app.bsky.feed.post/3m-plant"):
-        return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post)),
+        return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post), slot=label("")),
                          principal=who, identity=post)
 
     def test_a_planted_bell_appears_with_its_planter_and_only_the_overlaid_fields(self):
