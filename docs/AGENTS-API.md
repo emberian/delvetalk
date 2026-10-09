@@ -168,3 +168,12 @@ Every error is `{"status": "error", "message": "..."}`. When the host refused, `
 | 429 | Over a limit above |
 
 A refused turn is not an HTTP error. It comes back with the receipt and the host's reason class.
+
+## Operator notes: model credentials
+
+`transport/model.py` has two auth modes, chosen by `DELVETALK_MODEL_AUTH`.
+
+- `key` (default): an API key from `DELVETALK_ANTHROPIC_KEY` or the file at `DELVETALK_ANTHROPIC_KEY_FILE`. Sent as `x-api-key`.
+- `oauth`: runs on subscription extra usage. Reads tokeman's `~/.config/tokeman/tokens.toml` (override with `DELVETALK_TOKENS_TOML`) and refuses it if group or other can read it.
+  The account is `DELVETALK_MODEL_ACCOUNT`, or else the one `tokeman --json` shows with the most seven-day headroom for the model's bucket (Haiku uses the general window).
+  Sent as `Authorization: Bearer` with `anthropic-beta: oauth-2025-04-20`. On 429 or 529 it rotates once to the next account. Results carry the account name and `rotated`, never a token.

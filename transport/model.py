@@ -9,7 +9,10 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
+import time
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -18,6 +21,8 @@ from transport.delve import _NoRedirect, canonical
 
 URL = 'https://api.anthropic.com/v1/messages'
 DEFAULT_MODEL = 'claude-haiku-5-5'
+TOKENS_TOML = '~/.config/tokeman/tokens.toml'
+BETA = 'oauth-2025-04-20'
 TIMEOUT, DEFAULT_TOKENS, MAX_TOKENS, MAX_INPUT, MAX_RESPONSE = 30, 1024, 4096, 256 * 1024, 4 * 1024 * 1024
 
 
@@ -88,7 +93,7 @@ def interpret_body(status, raw, model):
         return failed('malformed')
 
 
-def ask(request, mock=None, transport=http):
+def ask(request, mock=None, transport=http, tokeman=None):
     req = normalise(request)
     if len(req['system'].encode()) > MAX_INPUT or len(req['user'].encode()) > MAX_INPUT:
         return failed('refused', 'input too large')
@@ -97,13 +102,74 @@ def ask(request, mock=None, transport=http):
         if not path.exists():
             return failed('transport', 'no fixture ' + path.name)
         return interpret_body(200, path.read_bytes(), req['model'])
+    wire = json.dumps({'model': req['model'], 'max_tokens': req['maxTokens'], 'system': req['system'],
+                       'messages': [{'role': 'user', 'content': req['user']}]}).encode()
+    base = {'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
+    if os.environ.get('DELVETALK_MODEL_AUTH', 'key') == 'oauth':
+        return ask_oauth(req, wire, base, transport, tokeman)
     secret = key()
     if not secret:
         return failed('refused', 'no key: set DELVETALK_ANTHROPIC_KEY or DELVETALK_ANTHROPIC_KEY_FILE')
-    wire = {'model': req['model'], 'max_tokens': req['maxTokens'], 'system': req['system'],
-            'messages': [{'role': 'user', 'content': req['user']}]}
-    headers = {'x-api-key': secret, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
-    return interpret_body(*transport('POST', URL, headers, json.dumps(wire).encode()), req['model'])
+    return interpret_body(*transport('POST', URL, {**base, 'x-api-key': secret}, wire), req['model'])
+
+
+def load_accounts():
+    """-> {name: token} from tokeman's toml, or a failed() result. Never copied, never logged."""
+    path = Path(os.environ.get('DELVETALK_TOKENS_TOML') or TOKENS_TOML).expanduser()
+    try:
+        if path.stat().st_mode & 0o077:
+            return failed('refused', f'{path.name} is group/other-readable; chmod 600')
+        data = tomllib.loads(path.read_text())
+    except (OSError, ValueError):
+        return failed('refused', f'cannot read {path.name}')
+    rows = next((v for v in data.values() if isinstance(v, list) and v and isinstance(v[0], dict)), [])
+    now_ms = time.time() * 1000
+    accounts = {}
+    for row in rows:
+        token = row.get('key') or (row.get('access_token') if row.get('expires_at', now_ms + 1) > now_ms else '')
+        if row.get('name') and token:
+            accounts[row['name']] = token
+    return accounts or failed('refused', 'no usable account in ' + path.name)
+
+
+def run_tokeman():
+    try:
+        out = subprocess.run(['tokeman', '--json'], capture_output=True, text=True, timeout=60).stdout
+        data = json.loads(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    return data if isinstance(data, list) else next((v for v in data.values() if isinstance(v, list)), [])
+
+
+def headroom(probe, model):
+    """Seven-day remaining fraction for the model's bucket; Haiku and unknown models use the general window."""
+    usage = (probe.get('quota') or {}).get('weekly') or {}
+    for bucket in ((probe.get('model_usage') or {}).get('scoped_weekly') or []):
+        label = (bucket.get('key', '') + ' ' + bucket.get('label', '')).lower()
+        family = next((f for f in ('opus', 'sonnet', 'fable') if f in model.lower()), None)
+        if family and family in label:
+            usage = bucket.get('window') or usage
+            break
+    return 1.0 - usage['utilization'] if 'utilization' in usage else -1.0
+
+
+def ask_oauth(req, wire, base, transport, tokeman):
+    accounts = load_accounts()
+    if 'status' in accounts:
+        return accounts
+    probes = {p['token_name']: p for p in (tokeman or run_tokeman)() if p.get('token_name') in accounts and not p.get('error')}
+    ranked = sorted(probes, key=lambda n: -headroom(probes[n], req['model']))
+    ranked += [n for n in accounts if n not in ranked]
+    chosen = os.environ.get('DELVETALK_MODEL_ACCOUNT')
+    order = ([chosen] + [n for n in ranked if n != chosen]) if chosen in accounts else ranked
+    for i, name in enumerate(order[:2]):
+        headers = {**base, 'Authorization': 'Bearer ' + accounts[name], 'anthropic-beta': BETA}
+        status, raw = transport('POST', URL, headers, wire)
+        if status in (429, 529) and i == 0 and len(order) > 1:
+            continue
+        out = interpret_body(status, raw, req['model'])
+        return {**out, 'account': name, 'rotated': i == 1}
+    return failed('rate', 'no account')
 
 
 def main(argv=None, out=None):
