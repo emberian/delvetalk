@@ -54,6 +54,16 @@ partial def listItems (acc : List String) : Data → Option (List String)
     listItems (canon head :: acc) tail
   | _ => none
 
+/-- The empty value of a field, whatever its type: 0, false, "", the empty list, or a record of
+    empty values. `writeOnce(F)` admits exactly one change of F, away from it. -/
+partial def emptyValue : Data → Bool
+  | .natural n => n == 0
+  | .boolean b => !b
+  | .label s => s.isEmpty
+  | .variant "nil" _ => true
+  | .record fields => fields.all fun (_, v) => emptyValue v
+  | _ => false
+
 /-- `old` is a prefix of `new`. -/
 def isPrefix : List String → List String → Bool
   | [], _ => true
@@ -115,9 +125,11 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
   | .monotone field => match old.bind (fieldOf field), fieldOf field new with
       | some before, some after => decide (before ≤ after)
       | _, _ => false
-  | .writeOnce field => match old.bind (fieldOf field) with
+  | .writeOnce field => match old with
       | none => true
-      | some before => before == 0 || fieldOf field new == some before
+      | some before => match rawField field before, rawField field new with
+        | some a, some b => emptyValue a || canon a == canon b
+        | _, _ => false
   | .appendOnly field => match old with
       | none => (listItems [] ((rawField field new).getD (.boolean false))).isSome
       | some before => match (rawField field before).bind (listItems []),
@@ -166,6 +178,11 @@ private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, ""⟩
 #guard denote facts none (rec1 2) (parsed "writeOnce(count)")
 #guard !denote facts (some (rec1 3)) (rec1 4) (parsed "writeOnce(count)")
 #guard denote facts (some (rec1 0)) (rec1 4) (parsed "writeOnce(count)")
+#guard denote facts (some (.record [("name", .label "")])) (.record [("name", .label "ann")]) (parsed "writeOnce(name)")
+#guard !denote facts (some (.record [("name", .label "ann")])) (.record [("name", .label "bob")]) (parsed "writeOnce(name)")
+#guard denote facts (some (.record [("name", .label "ann")])) (.record [("name", .label "ann")]) (parsed "writeOnce(name)")
+#guard !denote facts (some (.record [("name", .label "ann")])) (.record [("name", .label "")]) (parsed "writeOnce(name)")
+#guard !denote facts (some (.record [("x", .natural 1)])) (.record [("y", .natural 1)]) (parsed "writeOnce(x)")
 #guard denote facts none (rec1 2) (parsed "new.count <= 2")
 #guard !denote facts none (rec1 3) (parsed "new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count in [1, 3]")

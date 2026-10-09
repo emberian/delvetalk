@@ -343,6 +343,12 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    grantor's own write to the grant outside any object (admitted entry with `revokes`; anyone else
    `lawRefused notGrantor`; an unknown grant is a request error).
 
+16. **Objects-lane asks (host4).** `check` answers the kernel's dialect hint, when the diagnostic has one, as the
+   next line `"<module>:<line>: hint: <text>"` after the refusal it explains. `writeOnce(F)` admits exactly one
+   change of F away from its empty value, for every type (`Law.emptyValue`: 0, false, "", the empty list, a
+   record of empty values; any other value is never empty), and a field missing from the old state fails
+   closed; it used to admit any change of a text field.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

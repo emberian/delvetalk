@@ -508,7 +508,10 @@ def checkSource (w : World) (source : String) : List String :=
     | .error d =>
       -- A package that declares laws compiles; only the pure profile has no adapter for them.
       if (d.message.splitOn "package laws require").length > 1 then []
-      else [s!"{d.sourceModule.getD "Checked"}:{(d.span.map (·.line)).getD 0}: {d.stage}: {d.message}"]
+      else
+        let at_ := s!"{d.sourceModule.getD "Checked"}:{(d.span.map (·.line)).getD 0}"
+        -- The kernel's dialect hint, when it has one, is the next line at the same place.
+        [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
 
 def noAmendmentClause : String := "law has no amendment clause"
 

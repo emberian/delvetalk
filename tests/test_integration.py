@@ -55,6 +55,14 @@ def kind(k: Form.Kind) -> String:
     case choice(_): "choice"
 def paint(state: State, input: {colour: Colour, note: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
   said(context, input.note)
+def checkAll(state: State, input: {package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.check({package: input.package})):
+    case checked(c): said(context, lines(c.diagnostics))
+    case _: said(context, "other")
+def lines(items: Lists.List<String>) -> String:
+  match items:
+    case nil(_): ""
+    case cons(c): textConcat(c.head, textConcat("|", lines(c.tail)))
 def tally(state: State, input: {items: Lists.List<String>}, context: Abi.Context) -> Activity<Plan, Response, String>:
   said(context, "tally")
 """
@@ -126,6 +134,14 @@ class Integration(Reflection):
         forms = op["forms"]
         self.assertEqual(forms["tag"], "variant")
 
+    def test_check_carries_the_kernels_hint_line(self):
+        bad = "edition ObjectiveBend 1\ndef one(n: Nat) -> Nat:\n  [n]\n"
+        r = self.turn("caller", "checkAll", record(package=label(bad)))
+        lines = r["result"]["value"].split("|")[:-1]
+        self.assertEqual(len(lines), 2, lines)
+        self.assertRegex(lines[1], r"^Checked:\d+: hint: .*there are no list literals")
+        self.assertEqual(lines[0].split(":")[:2], lines[1].split(":")[:2])
+
     def test_methods_survive_replay(self):
         before = self.host.send(op="world-inspect", principal="ember", object="caller")
         self.reopen()
@@ -135,3 +151,25 @@ class Integration(Reflection):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WriteOnce(unittest.TestCase):
+    """`writeOnce(F)` admits exactly one change of F away from its empty value, for every type."""
+
+    def test_a_text_field_changes_once(self):
+        from tests.test_world import COUNTER, WorldCase, put, root, seed, write
+        case = WorldCase("run")
+        case.setUp()
+        self.addCleanup(case.tearDown)
+        source = COUNTER.replace("def initial", "law once: writeOnce(name)\ndef initial")
+        r = case.host.send(op="world-create", principal="ember", identity="mk", object="o", source=source,
+                           entry="initial", seed=seed(name=""))
+        self.assertEqual(r["status"], "created", r)
+        first = case.propose("p1", [root("o", 0)], [write("o", put("name", label("ann")))])
+        self.assertEqual(first["status"], "admitted", first)
+        second = case.propose("p2", [root("o", 1)], [write("o", put("name", label("bob")))])
+        self.assertEqual((second["status"], second["receipt"]["outcome"]["clause"]), ("refused", "once"), second)
+        back = case.propose("p3", [root("o", 1)], [write("o", put("name", label("")))])
+        self.assertEqual(back["status"], "refused", back)
+        same = case.propose("p4", [root("o", 1)], [write("o", put("name", label("ann")))])
+        self.assertEqual(same["status"], "admitted", same)
