@@ -153,12 +153,19 @@ def headroom(probe, model):
     return 1.0 - usage['utilization'] if 'utilization' in usage else -1.0
 
 
+def overage_enabled(probe):
+    """Extra usage (tokeman's `overage`) is available: a status other than rejected/disabled and no disabled reason."""
+    q = probe.get('quota') or {}
+    return q.get('overage_status') not in (None, 'rejected', 'disabled') and not q.get('overage_disabled_reason')
+
+
 def ask_oauth(req, wire, base, transport, tokeman):
     accounts = load_accounts()
     if 'status' in accounts:
         return accounts
     probes = {p['token_name']: p for p in (tokeman or run_tokeman)() if p.get('token_name') in accounts and not p.get('error')}
-    ranked = sorted(probes, key=lambda n: -headroom(probes[n], req['model']))
+    exhausted = bool(probes) and all(headroom(p, req['model']) <= 0 for p in probes.values())
+    ranked = sorted(probes, key=lambda n: (exhausted and not overage_enabled(probes[n]), -headroom(probes[n], req['model'])))
     ranked += [n for n in accounts if n not in ranked]
     chosen = os.environ.get('DELVETALK_MODEL_ACCOUNT')
     order = ([chosen] + [n for n in ranked if n != chosen]) if chosen in accounts else ranked
@@ -168,7 +175,8 @@ def ask_oauth(req, wire, base, transport, tokeman):
         if status in (429, 529) and i == 0 and len(order) > 1:
             continue
         out = interpret_body(status, raw, req['model'])
-        return {**out, 'account': name, 'rotated': i == 1}
+        billed = bool(((probes.get(name) or {}).get('quota') or {}).get('overage_in_use'))
+        return {**out, 'account': name, 'rotated': i == 1, 'overageInUse': billed}
     return failed('rate', 'no account')
 
 
