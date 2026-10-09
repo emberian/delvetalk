@@ -84,6 +84,106 @@ def entry() -> Nest<Nat>:
             self.assertEqual(result['status'], 'error', result)
             self.assertIn(reason, result['message'])
 
+    def test_method_rows_and_spec_parameters_preserve_lexical_scope(self):
+        source = '''edition ObjectiveBend 1
+import ./List.obend as Lists
+type Names = Lists.List<String>
+type self = Lists.List<String>
+type super = Lists.List<String>
+record Door:
+  answer(Names: Nat) -> Nat
+spec Base for Door:
+  def answer(Names: Nat) -> Nat:
+    Names + 1n
+  claim positive(Names: Nat): Names >= 0n
+spec Grow for Door:
+  def answer(Names: Nat) -> Nat:
+    super.answer(Names) + 10n
+def apply(worker: {m(x: Nat) -> Nat}) -> Nat:
+  worker.m(4n)
+def entry() -> Nat:
+  apply({m: fn(x: Nat) -> Nat: x}) + fix(compose(Base, Grow), {answer: fn(Names: Nat) -> Nat: Names}).answer(2n)
+'''
+        result = self.compile(source)
+        self.assertEqual(result['status'],'compiled',result)
+        run = call({'op':'run-data-v1','artifact':result['artifact'],'arguments':[]})
+        self.assertEqual(run['value']['value'],'17')
+
+    def test_open_type_arguments_refuse_instead_of_escaping_rigid_binders(self):
+        source = '''edition ObjectiveBend 1
+def identity<T>(value: T) -> T:
+  value
+spec Open[Self has {value: Nat}, Super has {}]:
+  def echo() -> Self:
+    identity::<Self>(self)
+def entry() -> Nat:
+  0n
+'''
+        result = self.compile(source)
+        self.assertEqual(result['status'],'error',result)
+        self.assertIn('cannot lift open Self/Super',result['message'])
+
+    def test_changing_recursive_arguments_refuse_in_both_discovery_orders(self):
+        for expression in ('f::<Nat>(0n) + f::<String>("x")', 'f::<String>("x") + f::<Nat>(0n)'):
+            source = '''edition ObjectiveBend 1
+def f<T>(value: T) -> Nat:
+  if false then f::<Nat>(0n) else 1n
+def entry() -> Nat:
+  ''' + expression + '\n'
+            result = self.compile(source)
+            self.assertEqual(result['status'],'error',result)
+            self.assertIn('recursion changes type arguments',result['message'])
+
+    def test_sealed_import_revision_changes_generic_identity(self):
+        generic = '''edition ObjectiveBend 1
+import ./Helper.obend as H
+def chosen<T>(value: T) -> Nat:
+  H.value()
+'''
+        source = '''edition ObjectiveBend 1
+import ./Generic.obend as G
+def entry() -> Nat:
+  G.chosen::<Nat>(0n)
+'''
+        identities=[]
+        for value in ('1n','2n'):
+            helper = 'edition ObjectiveBend 1\ndef value() -> Nat:\n  ' + value + '\n'
+            result = self.compile(source,modules=[{'name':'Helper','source':helper},{'name':'Generic','source':generic}])
+            self.assertEqual(result['status'],'compiled',result)
+            identities.append(result['artifact']['genericInstances'][0]['declaration'])
+        self.assertNotEqual(*identities)
+
+    def test_nested_concrete_type_identity_size_stays_bounded(self):
+        nested='Nat'
+        for _ in range(16): nested='L.List<' + nested + '>'
+        source = 'edition ObjectiveBend 1\nimport ./List.obend as L\ndef entry() -> ' + nested + ':\n  L.List::<' + nested[len('L.List<'):-1] + '>.nil()\n'
+        result = self.compile(source)
+        self.assertEqual(result['status'],'compiled',result)
+        instances=result['artifact']['genericInstances']
+        self.assertEqual(len(instances),16)
+        self.assertLess(len(json.dumps(instances)),20000)
+
+    def test_instance_and_expanded_syntax_caps_refuse_before_typing(self):
+        # Repetition here is adversarial compiler input, not application behavior.
+        def workload(function, count, result='Nat'):
+            return 'edition ObjectiveBend 1\n' + function + ''.join(
+                f'record Element{i}:\n  value: Nat\ndef element{i}() -> {result}:\n'
+                f'  expand::<Element{i}>({{value: 0n}})\n' for i in range(count))
+        instance_source = workload('def expand<T>(value: T) -> Nat:\n  0n\n', 257)
+        expression = '0n'
+        for _ in range(10): expression = f'({expression} + {expression})'
+        syntax_source = workload('def expand<T>(value: T) -> Nat:\n  ' + expression + '\n', 24)
+        literal_body = ''.join(f'  let text{i} = "' + 'x' * 8192 + '"\n' for i in range(16))
+        string_source = workload('def expand<T>(value: T) -> String:\n' + literal_body + '  text15\n', 80, 'String')
+        for source, reason in [(instance_source, 'exceeds instance budget'),
+                               (syntax_source, 'exceeds expanded AST node budget'),
+                               (string_source, 'exceeds expanded string byte budget')]:
+            result = call({'op':'compile','source':source,'entry':'element0'})
+            self.assertEqual(result['status'],'error',result)
+            diagnostic = json.loads(result['message'])
+            self.assertEqual(diagnostic['stage'],'source-specialization')
+            self.assertIn(reason,diagnostic['message'])
+
     def test_checker_preserves_payload_and_quantity_refusals(self):
         source = '''edition ObjectiveBend 1
 import ./List.obend as L
@@ -165,8 +265,8 @@ def entry(items: Names) -> Names:
                  ('Preparation','world/lib/prelude/Preparation.obend'),
                  ('Encounter','world/lib/prelude/Encounter.obend'),
                  ('Document','world/lib/document/Document.obend'),
-                 ('Conversation','protocols/conversation/Conversation.obend'),
                  ('Interpretation','protocols/interpretation/Interpretation.obend'),
+                 ('Conversation','protocols/conversation/Conversation.obend'),
                  ('ModelEncounter','protocols/interpretation/Encounter.obend'),
                  ('ConversationModel','protocols/interpretation/ConversationModel.obend'),
                  ('Notebook','protocols/conversation/Notebook.obend'),

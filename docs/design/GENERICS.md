@@ -3,7 +3,10 @@
 **Implemented in source, 2026-10-09; native qualification is snapshot-scoped.**
 The native hosted frontend specializes user-defined generic sums and functions
 into ordinary Bend declarations. `Generics.lean` enforces 256 instances, 262144
-expanded AST visits and nesting depth 256. Instance identities bind the defining
+expanded AST visits, 8 MiB of expanded string payload, and nesting depth 256.
+Instance keys are fixed-size SHA-256 fingerprints, preventing nested JSON key
+escaping from amplifying type identities. Open Self/Super specializations refuse;
+regular concrete recursive instances remain supported. Instance identities bind the defining
 module's exact source hash and resolved type argument declaration identities.
 `genericInstances` records definition identity, arguments and source span in
 package artifacts; source and locked import transcripts retain original bytes.
@@ -12,10 +15,13 @@ package artifacts; source and locked import transcripts retain original bytes.
 Preparation.Names, Encounter.Children and Document.Documents now alias its
 instances; source membership/capacity/paging rules remain in their consumers.
 Document's plainItems uses a generic fold, including the mutual Document/list
-cycle. Private generic-development native qualification passes eight generic tests
-and eleven existing template tests, including typed offers, quotations, native
+cycle. Private generic-development native qualification qualifies the concrete generic/list and eleven existing template tests, including typed offers, quotations, native
 old/new list wire and type compatibility, and the actual conversation renderer
-after serializing its retained contribution state.
+after serializing its retained contribution state. Concise test-local adversarial source
+workloads also exercise instance, expanded syntax, and expanded string payload
+capacity refusal before typing or evaluation. Scholar regressions cover method
+rows and spec lexical binders, rigid open argument refusal, revised imported
+helpers, recursive discovery-order symmetry, and sixteen nested list types.
 Combined receiving-path and retained conversation qualification must use the
 matching combined native build; the earlier shared binaries do not establish it.
 
@@ -104,3 +110,12 @@ compilation and governed adoption.
 The main risks are instance explosion, recursive-type identity canonicalization,
 name capture, row conversion and weakening quantity checks. These two consumer
 cuts are the qualification gate before a broad collection rewrite.
+
+## Ownership scope
+
+The current List API uses ordinary unrestricted parameters and matches whose
+payload must be shareable. It is a collection API for shareable data and reusable
+functions, not a generic affine container interface. Specializations still pass
+the existing quantity checker: affine/linear duplication refuses. Supporting
+owned payload traversal needs a deliberate core match/interface change; generic
+syntax does not grant that capability.

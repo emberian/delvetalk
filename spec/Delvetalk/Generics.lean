@@ -10,6 +10,7 @@ set_option autoImplicit false
 
 def maxInstances : Nat := 256
 def maxExpansionNodes : Nat := 262144
+def maxExpansionStringBytes : Nat := 8388608
 def maxNesting : Nat := 256
 
 def field (j : Json) (key : String) : Json := (j.getObjVal? key).toOption.getD .null
@@ -50,6 +51,14 @@ partial def GType.identity : GType → Json
   | .row fields => Json.mkObj [("row", toJson (fields.map fun (n, t) => toJson [toJson n, t.identity]))]
   | .overlay a b => Json.mkObj [("overlay", toJson [a.identity, b.identity])]
 
+partial def GType.isClosed : GType → Bool
+  | .atom n => n != "Self" && n != "Super"
+  | .named _ _ _ => true
+  | .applied _ args => args.all GType.isClosed
+  | .arrow a b => a.isClosed && b.isClosed
+  | .row fields => fields.all (fun p => p.2.isClosed)
+  | .overlay a b => a.isClosed && b.isClosed
+
 structure Instance where
   key : String
   declaration : String
@@ -61,6 +70,7 @@ structure Instance where
 structure State where
   sources : Array Source
   declarations : List Declaration
+  sealedIdentities : Array String
   generatedModule : String
   generatedAlias : String
   aliases : List (String × String)
@@ -69,6 +79,7 @@ structure State where
   instances : Array Instance := #[]
   active : List (String × String) := []
   remaining : Nat := maxExpansionNodes
+  remainingStringBytes : Nat := maxExpansionStringBytes
 
 abbrev M := StateT State (Except String)
 
@@ -76,6 +87,12 @@ def spend : M Unit := do
   let s ← get
   if s.remaining == 0 then throw "generic specialization exceeds expanded AST node budget"
   set { s with remaining := s.remaining - 1 }
+
+def spendString (text : String) : M Unit := do
+  let s ← get
+  let bytes := text.utf8ByteSize
+  if bytes > s.remainingStringBytes then throw "generic specialization exceeds expanded string byte budget"
+  set { s with remainingStringBytes := s.remainingStringBytes - bytes }
 
 def fresh : M String := do
   let s ← get
@@ -94,7 +111,8 @@ def originModule (origin : Nat) : M SourceModule := do
 
 def declarationKey (d : Declaration) : M String := do
   let m ← originModule d.origin
-  return (toJson [m.name, m.sha256, d.name]).compress
+  let some sealedIdentity := (← get).sealedIdentities[d.origin]? | throw "generic sealed module identity missing"
+  return (toJson [m.name, m.sha256, sealedIdentity, d.name]).compress
 
 def resolve (origin : Nat) (name : String) : M (Option Declaration) := do
   let m ← originModule origin
@@ -130,6 +148,8 @@ def ref (module name : String) (original : Json) : M Json := do
     match s.aliases.find? (·.2 == module) with
     | some (a, _) => pure a
     | none => throw "generic reference module missing"
+  spendString alias
+  spendString name
   return Json.mkObj [("kind", toJson "member"),
     ("target", Json.mkObj [("kind", toJson "var"), ("name", toJson alias), ("span", field original "span")]),
     ("name", toJson name), ("span", field original "span")]
@@ -166,6 +186,18 @@ def typeOf : Nat → Nat → List (String × GType) → String → M GType
       let contents := trim (inner text)
       if contents.isEmpty then return .row []
       let fields ← (split contents ",").mapM fun f => do
+        let arrows := split f "->"
+        let head := trim (arrows.headD "")
+        if arrows.length > 1 && head.endsWith ")" && (head.splitOn "(").length > 1 then
+          let name := trim ((head.splitOn "(").headD "")
+          if ObjectiveBendParse.isIdent name.toList then
+            let paramsText := String.ofList (head.toList.drop (name.length + 1) |>.dropLast)
+            let mut result ← typeOf fuel origin bindings (String.intercalate "->" arrows.tail)
+            for parameter in (if (trim paramsText).isEmpty then [] else split paramsText ",").reverse do
+              let parts := split parameter ":"
+              if parts.length < 2 then throw ("generic method row parameter needs a type: " ++ parameter)
+              result := .arrow (← typeOf fuel origin bindings (String.intercalate ":" parts.tail)) result
+            return (name, result)
         let parts := split f ":"
         if parts.length < 2 then throw ("generic type row requires field: GType: " ++ f)
         return (trim parts.head!, ← typeOf fuel origin bindings (String.intercalate ":" parts.tail))
@@ -195,12 +227,17 @@ def instantiate : Nat → Declaration → List GType → M GType
     if binders.isEmpty then throw ("declaration is not generic: " ++ declaration.name)
     if binders.length != arguments.length then throw ("generic type arity: " ++ declaration.name)
     let declarationId ← declarationKey declaration
-    let argumentId := (toJson (arguments.map GType.identity)).compress
-    let key := (toJson [declarationId, argumentId]).compress
+    spendString declarationId
+    if arguments.any (fun t => !t.isClosed) then
+      throw ("generic specialization cannot lift open Self/Super type arguments: " ++ declaration.name)
+    let argumentIdentity := (toJson (arguments.map GType.identity)).compress
+    spendString argumentIdentity
+    let argumentId := Minidregg.Compiler.Sha256.hexString argumentIdentity
+    let key := Minidregg.Compiler.Sha256.hexString (toJson [declarationId, argumentId]).compress
     let state ← get
-    if let some priorInstance := state.instances.find? (·.key == key) then return .named state.generatedModule priorInstance.name priorInstance.key
     if state.active.any (fun p => p.1 == declarationId && p.2 != argumentId) then
       throw ("generic recursion changes type arguments: " ++ declaration.name)
+    if let some priorInstance := state.instances.find? (·.key == key) then return .named state.generatedModule priorInstance.name priorInstance.key
     if state.instances.size >= maxInstances then throw "generic specialization exceeds instance budget"
     let name ← fresh
     let index := (← get).instances.size
@@ -225,8 +262,14 @@ def rewrite : Nat → Nat → String → List (String × GType) → List String 
   | 0, _, _, _, _, _, _ => throw "generic AST nesting capacity"
   | fuel + 1, origin, target, bindings, locals, lifted, j => do
     spend
-    let recur := rewrite fuel origin target bindings locals lifted
-    let rewriteType := fun raw => do render target (← typeOf fuel origin bindings raw)
+    let parameterNames := (array j "parameters").toList.map (fun parameter => string parameter "name")
+    if let .str text := j then spendString text
+    let implicitNames := if kind j == "spec" then ["self", "super"] else []
+    let recur := rewrite fuel origin target bindings (parameterNames ++ implicitNames ++ locals) lifted
+    let rewriteType := fun raw => do
+      let rendered ← render target (← typeOf fuel origin bindings raw)
+      spendString rendered
+      return rendered
     if kind j == "specialize" then
       let some name := path locals (field j "target") | throw "generic specialization requires an unshadowed declaration"
       let some declaration ← resolve origin name | throw ("unknown generic declaration: " ++ name)
@@ -308,7 +351,14 @@ def run (sources : Array Source) : Except String Output := do
   for index in [:sources.size] do
     for ast in array sources[index]!.ast "declarations" do
       declarations := declarations ++ [⟨index, declName ast, ast⟩]
-  let initial : State := { sources, declarations, generatedModule := "", generatedAlias := "", aliases := [], names }
+  let mut sealedIdentities : Array String := #[]
+  for source in sources do
+    let imports ← source.module.imports.mapM fun edge => do
+      let some identity := sealedIdentities[edge.target]? | throw "generic import must target an earlier sealed module"
+      return toJson [edge.moduleName, edge.sha256, identity]
+    sealedIdentities := sealedIdentities.push (Minidregg.Compiler.Sha256.hexString
+      (toJson [toJson source.module.name, toJson source.module.sha256, toJson imports]).compress)
+  let initial : State := { sources, declarations, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names }
   let action : M Output := do
     let moduleName ← fresh
     let moduleAlias ← fresh
