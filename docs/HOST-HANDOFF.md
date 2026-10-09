@@ -520,9 +520,16 @@ Queued, none started:
 4. **Snapshot verification by default.** A plain open trusts a snapshot whose CID, head, binary pin, derived
    copies, versions and pins check; only `verify: true` catches a consistently forged state. If snapshots ever
    leave the host's directory, journal the snapshot's CID (a `snapshot` entry) and check it on open.
-5. **Pure methods.** A state-returning method and `render` still go through `Package.executeDataValues` (packet
-   JSON); move them to `executeDataEntry` with `compiledMethod`'s held entry.
-6. **Transport asks** (from host3, unchanged): `receive {text, post, slot?}` with a missing `slot`.
+5. **Pure methods.** A state-returning method still goes through `Package.executeDataValues` (packet JSON); move
+   it to `executeDataEntry` with `compiledMethod`'s held entry (cards moved in lane/host5).
+
+lane/host5 (based on foundation 7d90f1b) did: journal durability modes (`sync: "none" | "fsync" | "full"`, default
+fsync); cards with a point of view (5.9); `publish` end to end (5.11: `world-publications`, page-aware `posted`, the
+bridge's publication drafts, `post.py --record` as the clock principal); and closed the transport ask: `receive` takes
+exactly `{text, post, slot}`, the bridge and the HTML front always send all three, nothing in Host or transport
+tolerates two fields (a missing or forged field is refused `typeMismatch`, `tests/test_receive.py`).
+Still open from transport: `post.py --slot` passes text while `world-posted` takes a slot `{principal, intent}`,
+so `--record --slot` is refused by the host; no object reads `slot` or acts on `merge` yet (objects lane).
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
 as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).
