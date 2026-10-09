@@ -17,10 +17,11 @@ previous tree.
 Lean 4.34.1 through elan. From the repository root:
 
 ```sh
-lake build
+make build
 ```
 
-produces `.lake/build/bin/delvetalk-obend`, the source host. It reads one JSON
+produces `.lake/build/bin/delvetalk-obend`, the source host, and checks the five
+proof-only modules the executable does not import. It reads one JSON
 job per line on stdin and writes one reply per line:
 
 ```sh
