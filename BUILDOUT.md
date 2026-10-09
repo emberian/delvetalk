@@ -73,7 +73,9 @@ were replaced with links to executable contracts.
   allocator arenas. Caller-selected ceilings remain exact. The actual transactions
   host, linked in an independent Linux snapshot, passes both resource tests and all
   nine compiler-queue tests. Native worker/queue/exhibition checks pass 22 methods
-  with one Linux-only skip. The full Linux suite remains the final convergence check.
+  with one Linux-only skip. The full Linux suite subsequently passed at `ff450a4`:
+  [run 37870358359](https://github.com/emberian/delvetalk/actions/runs/37870358359),
+  56 Python groups/459 methods, no skips.
 - Full local `make check` at `19d0dae` passes: 56 Python groups/459 methods, one Linux-only
   skip, plus core/JS/Rust/package/source checks. Browser
   acceptance confirms exact repository-record preparation leaves the draft unsent.
@@ -104,6 +106,10 @@ these optimizations add no semantic equivalence or compiler-adequacy theorem.
 Joined local `make check` passes **59 Python groups/475 methods**, one Linux-only
 skip, plus core/JS/Rust/package/source checks. A fresh compiled portal exports
 five objects and replays all 20 admissions into an offline continuation.
+The efficiency checkpoint `d3f3828` also passes
+[full Linux CI](https://github.com/emberian/delvetalk/actions/runs/37871472304).
+Browser acceptance then prepares, reloads, commits and recovers a retained receipt;
+the resulting 21-admission continuation replays through Lean.
 
 ## Scope
 
