@@ -44,6 +44,21 @@ def write_atomic(path, value):
     os.replace(tmp, path)
 
 
+def slot_arg(slot):
+    """A route slot as post.py's --slot argument (principal:intent), or None."""
+    if isinstance(slot, dict) and slot.get('principal') and slot.get('intent'):
+        return f"{slot['principal']}:{slot['intent']}"
+    return slot if isinstance(slot, str) and ':' in slot else None
+
+
+def post_command(path, d):
+    """The one command that posts a draft and records it with the host, then marks it posted."""
+    obj = f" --object {d['object']}" if d.get('object') else ''
+    slot = f" --slot {d['slot']}" if d.get('slot') else ''
+    return (f"=== post: python3 -m transport.post --state STATE post --draft {path} --intent draft-{Path(path).stem}"
+            f" --host-socket SOCKET{obj}{slot} --i-am-ember-and-authorize-posting && python3 -m transport.bridge mark-posted {path}")
+
+
 def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
@@ -94,6 +109,7 @@ def offer_drafts(state, host):
             w = mine[uri]
             write_atomic(outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                'object': w.get('object'), 'slot': w.get('slot'),
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
                 'text': '\n'.join(o['text'] for o in offers), 'posted': False})
             drafted.append(uri)
@@ -205,11 +221,12 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
             continue
         if reply.get('status') == 'suspended' or reply['receipt'].get('outcome', {}).get('tag') == 'suspended':
             # Nothing was committed and nothing is offered yet: no draft until the interpretation settles.
-            write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle,
+            write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot),
                                                            'height': reply['receipt']['height']})
             continue
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+            'object': obj, 'slot': slot_arg(slot),
             'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})
         done.append(obs['uri'])
     for _ in range(rounds):
@@ -285,9 +302,9 @@ def main(argv=None, out=None):
                 where = f"--reply-to {d['replyTo']} " if d['replyTo'] else ''
                 need = '' if d['replyTo'] or not d['section'] else '=== needs: the page post first (post and --record the whole page)\n'
                 out.write(f"=== publish for: {p['object']}  file: {path}\n{need}=== post: python3 -m transport.post --state STATE post "
-                          f"--text-file TEXT {where}--intent {p['id']} --host-socket SOCKET --record {p['object']}\n{d['text'].rstrip()}\n\n")
+                          f"--text-file TEXT {where}--intent {p['id']} --host-socket SOCKET --object {p['object']}\n{d['text'].rstrip()}\n\n")
                 continue
-            out.write(f"=== reply to: {d['replyTo']}\n=== web: {web_url(d['replyTo'], d['replyHandle'])}\n=== as: {d['replyHandle']} {d['principal']} (unverified)  file: {path}\n{d['text'].rstrip()}\n\n")
+            out.write(f"=== reply to: {d['replyTo']}\n=== web: {web_url(d['replyTo'], d['replyHandle'])}\n=== as: {d['replyHandle']} {d['principal']} (unverified)  file: {path}\n{post_command(path, d)}\n{d['text'].rstrip()}\n\n")
     elif a.cmd == 'mark-posted':
         mark_posted(a.file)
     else:

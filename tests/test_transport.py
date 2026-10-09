@@ -416,6 +416,17 @@ class Posting(unittest.TestCase):
             self.assertEqual(req['request']['body']['record']['text'], 'Planted.\n@mimo.delve.town')
             self.assertEqual(len(req['request']['body']['record']['facets']), 1)
 
+    def test_a_draft_posts_and_records_in_one_command_and_a_posted_draft_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            draft = Path(d) / 'd.json'
+            draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': f'{DID}:ask-1', 'posted': False}))
+            code, req = self.dry(d, ['--draft', str(draft), '--host-socket', str(Path(d) / 'nope.sock')], delve.Client(Script()))
+            self.assertEqual(code, 2)
+            self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': {'principal': DID, 'intent': 'ask-1'}})
+            self.assertEqual(req['request']['body']['record']['text'], 'Planted.')
+            draft.write_text(json.dumps({'text': 'x', 'posted': True}))
+            self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
+
     def test_rate_limit(self):
         with tempfile.TemporaryDirectory() as d:
             for _ in range(post.LIMIT):
