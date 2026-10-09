@@ -915,6 +915,74 @@ def libraryOp (w : World) (principal intent : String) (lib : Library) (lawArg : 
     let (w', entry) := push (installLibrary w lib lawText) key (base ++ [("outcome", outcome)]) []
     return (w', reply entry)
 
+/-! ## Settings and posts
+
+The first open that names a clock principal or a posting quota journals a `settings` entry;
+after that both are fixed. `posted` entries record what transport published for an object,
+so a reply to that post can be routed back (`world-addressee`). -/
+
+def settingsOp (w : World) (clock : Option String) (quota : Option Nat) : Except String (World × Json) := do
+  if clock.isNone && quota.isNone then return (w, Json.null)
+  let clockP := clock.getD ""
+  if w.settled then
+    if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) then
+      throw s!"the journal records clock {w.clockPrincipal} and postQuota {w.postQuota}; the settings differ"
+    return (w, Json.null)
+  if let some c := clock then discard <| boundedText "clock principal" Limits.maxPrincipalBytes c
+  let q := quota.getD 16
+  let intent := "settings"
+  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, settled := true }
+    (identityKey "world" intent)
+    [("identity", identityJson "world" intent), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (Json.mkObj [("clock", toJson clockP), ("postQuota", toJson q)]))),
+     ("outcome", Json.mkObj [("tag", toJson "settings"), ("clock", toJson clockP), ("postQuota", toJson q)])] []
+  return (w', reply entry)
+
+def parseSlot (j : Json) : Except String Json := do
+  let principal ← boundedText "slot principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let intent ← boundedText "slot intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
+  return identityJson principal intent
+
+def postIndex (w : World) (uri object : String) (slot : Option Json) : World :=
+  { w with posts := w.posts.insert uri (object, slot) }
+
+/-- `world-posted {principal, uri, cid, object, slot?}`: transport confirms a post it made for
+    `object` (and for an awaited `slot`). Only the world's clock principal, when one is named. -/
+def postedOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let uri ← boundedText "uri" Limits.maxUriBytes (← j.getObjValAs? String "uri")
+  let cid ← boundedText "cid" Limits.maxUriBytes (← j.getObjValAs? String "cid")
+  let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
+  let slot ← match j.getObjVal? "slot" with
+    | .ok (.null) | .error _ => pure none
+    | .ok s => pure (some (← parseSlot s))
+  unless uri.startsWith "at://" do throw "uri must be an at:// URI"
+  if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
+    throw s!"posts are confirmed only by {w.clockPrincipal}"
+  unless w.objects.contains object do throw s!"unknown object {object}"
+  let fields := [("tag", toJson "posted"), ("uri", toJson uri), ("cid", toJson cid), ("object", toJson object)] ++
+    (slot.map fun s => [("slot", s)]).getD []
+  let digest := Journal.bodyHash (Json.mkObj fields)
+  let answer := fun (entry : Json) => Json.mkObj [("status", toJson "posted"),
+    ("height", (entry.getObjVal? "height").toOption.getD Json.null), ("receipt", entry)]
+  let intent := "posted:" ++ uri
+  match retained w principal intent digest with
+  | some r => return (w, match r.getObjVal? "receipt" with | .ok e => answer e | .error _ => r)
+  | none =>
+    if w.posts.contains uri then throw s!"post {uri} is already recorded"
+    let (w', entry) := push (postIndex w uri object slot) (identityKey principal intent)
+      [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
+       ("request", toJson digest), ("outcome", Json.mkObj fields)] [object]
+    return (w', answer entry)
+
+/-- `world-addressee {parent}`: the object (and slot) a post at `parent` was made for. -/
+def addressee (w : World) (j : Json) : Except String Json := do
+  let uri ← j.getObjValAs? String "parent"
+  match w.posts[uri]? with
+  | none => return Json.mkObj [("status", toJson "unknown")]
+  | some (object, slot) => return Json.mkObj ([("status", toJson "addressee"), ("object", toJson object)] ++
+      (slot.map fun s => [("slot", s)]).getD [])
+
 /-! ## Replay -/
 
 /-- The id of the `ordinal`th send of the turn with this identity. -/
@@ -987,6 +1055,20 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let to ← natField outcome "to"
     unless before == w.clock && to > before do throw "clock advance out of sequence"
     return record w entry key []
+  | "settings" =>
+    if w.settled then throw "settings recorded twice"
+    return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
+                           postQuota := ← natField outcome "postQuota", settled := true } entry key []
+  | "posted" =>
+    let uri ← outcome.getObjValAs? String "uri"
+    let object ← outcome.getObjValAs? String "object"
+    if w.posts.contains uri then throw "post recorded twice"
+    unless w.objects.contains object do throw "post for an unknown object"
+    if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post confirmed by another principal"
+    let slot ← match outcome.getObjVal? "slot" with
+      | .ok s => pure (some (← parseSlot s))
+      | .error _ => pure none
+    return record (postIndex w uri object slot) entry key [object]
   | "suspended" =>
     let activity ← outcome.getObjVal? "activity"
     let checkpoint ← activity.getObjVal? "checkpoint"
@@ -1100,6 +1182,9 @@ def replay (content : String) : Except String World := do
     replay is deterministic; moving it to or before now is a no-op. -/
 def advance (w : World) (j : Json) : Except String (World × Json) := do
   let to ← natField j "height"
+  if !w.clockPrincipal.isEmpty then
+    let who := (j.getObjValAs? String "principal").toOption.getD ""
+    if who != w.clockPrincipal then throw s!"the clock is moved only by {w.clockPrincipal}"
   if to ≤ w.clock then
     return (w, Json.mkObj [("status", toJson "advanced"), ("clock", toJson w.clock)])
   let intent := s!"advance:{to}"

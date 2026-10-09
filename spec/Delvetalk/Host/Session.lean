@@ -89,6 +89,19 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       match ← openWorld path with
       | .error e => return (session, .error e)
       | .ok o =>
+        -- The first open naming a clock principal or a posting quota journals them.
+        let o ← match (do
+            let quota ← match request.getObjVal? "postQuota" with
+              | .ok q => some <$> natOf q
+              | .error _ => pure none
+            return ((request.getObjValAs? String "clock").toOption, quota) : Except String _) with
+          | .error e => return (session, .error e)
+          | .ok (clock, quota) =>
+            let (s', r) ← durable o (fun w => settingsOp w clock quota)
+            match r, s' with
+            | .ok _, some o' => pure o'
+            | .error e, _ => return (session, .error e)
+            | _, none => return (session, .error "world-open failed")
         let opened := fun (o : Open) (extra : List (String × Json)) => Json.mkObj ([("status", toJson "opened"),
           ("height", toJson o.world.height), ("head", toJson o.world.head),
           ("objects", toJson o.world.objects.size)] ++ extra ++
@@ -153,7 +166,10 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
-          ("objects", toJson s.world.objects.size)]))
+          ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
+          ("postQuota", toJson s.world.postQuota)]))
+      | "world-posted" => durable s (fun w => postedOp w request)
+      | "world-addressee" => return (session, addressee s.world request)
       | _ => return (session, .error s!"unknown world operation {op}")
 
 end Delvetalk.Host

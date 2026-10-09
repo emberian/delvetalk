@@ -66,6 +66,11 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
+`world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
+uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
+either journals a `settings` entry, and a later open with other values is refused by name.
+`world-posted {principal, uri, cid, object, slot?}` journals a `posted` entry (identity `posted:<uri>`) and indexes
+`world.posts`; `world-addressee {parent}` answers `{status: "addressee", object, slot?}` or `{status: "unknown"}`.
 `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
 Every journaling op goes through `durable`: step, then `settle` (resume what the step released),
 then append ALL new entries, one fsync. A reply exists only after the bytes are durable.

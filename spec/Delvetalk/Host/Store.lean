@@ -91,6 +91,8 @@ def plainDepth : Nat := 64
 def grantsPerTurn : Nat := 8
 def maxGrants : Nat := 4096
 def genesis : String := "".pushn '0' 64
+/-- Bytes of a post's AT URI and CID. -/
+def maxUriBytes : Nat := 512
 end Limits
 
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
@@ -220,6 +222,14 @@ structure World where
   suspended : Array Json := #[]
   /-- Every grant an admitted turn made, by id; a revocation marks it. -/
   grants : Std.HashMap String Grant := {}
+  /-- Posts transport confirmed, by AT URI: the object the post speaks for and, when it was
+      made for an awaited slot, that slot as `{principal, intent}`. -/
+  posts : Std.HashMap String (String × Option Json) := {}
+  /-- The principal that alone moves the clock and confirms posts ("" = anyone), and the
+      hourly posting cap; both set by the `settings` entry of the first open that names them. -/
+  clockPrincipal : String := ""
+  postQuota : Nat := 16
+  settled : Bool := false
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress
