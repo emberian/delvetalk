@@ -1,6 +1,7 @@
 /- The IO layer: the journal file and the session ops. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Host.TurnLoop
+import Delvetalk.Host.Snapshot
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -17,6 +18,14 @@ structure Open where
   handle : IO.FS.Handle
   /-- The directory the library was loaded from, for `world-library`. -/
   libraryPath : Option String := none
+  /-- Height of the newest snapshot written or resumed from; the next is written once the
+      journal is `Limits.snapshotEvery` entries past it. -/
+  snapshotAt : Nat := 0
+  /-- What the open did with snapshots, for the `world-open` reply. -/
+  report : Snapshot.Report := {}
+  /-- Whether appends are made durable with `syncHandle` (F_FULLFSYNC / fsync); `world-open
+      {sync: false}` only flushes, for test journals. Per process, never journaled. -/
+  sync : Bool := true
 
 abbrev Session := Option Open
 
@@ -41,7 +50,7 @@ def loadLibrary (path : String) : IO (Except String Library) := do
 /-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
     `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
     (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
-def openWorld (path : String) (held : Option IO.FS.Handle := none) : IO (Except String Open) := do
+def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) : IO (Except String Open) := do
   try
     let handle ← match held with
       | some h => pure h
@@ -55,10 +64,16 @@ def openWorld (path : String) (held : Option IO.FS.Handle := none) : IO (Except 
           return .error "journal exceeds byte capacity"
         IO.FS.readFile path
       else pure ""
-    match replay content with
+    match ← Snapshot.openContent path content verify with
     | .error e => return .error e
-    | .ok world => return .ok { world, path, handle }
+    | .ok (world, report) => return .ok { world, path, handle, report, snapshotAt := report.resumed }
   catch e => return .error s!"journal unreadable: {e}"
+
+/-- Write a snapshot of the open world now: `{height}`, or `{refused}` naming why not. -/
+def snapshotNow (s : Open) : IO (Open × Json) := do
+  match ← Snapshot.write s.path s.world with
+  | .ok h => return ({ s with snapshotAt := h }, Json.mkObj [("height", toJson h)])
+  | .error e => return ({ s with snapshotAt := s.world.height }, Json.mkObj [("refused", toJson e)])
 
 /-- Run a pure world step and make its entry durable before the reply exists. -/
 def durable (s : Open) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
@@ -86,9 +101,12 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
       return (some s, .error "journal is full")
     try
       for entry in fresh do s.handle.putStr (entry.compress ++ "\n")
-      syncHandle s.handle
-      return (some { s with world := w' }, .ok r)
+      if s.sync then syncHandle s.handle else s.handle.flush
     catch e => return (some s, .error s!"journal write failed: {e}")
+    -- The entries are durable; a snapshot is derived from them and its failure refuses nothing.
+    if w'.height < s.snapshotAt + Limits.snapshotEvery then return (some { s with world := w' }, .ok r)
+    let (o, note) ← snapshotNow { s with world := w' }
+    return (some o, .ok (r.setObjVal! "snapshot" note))
 
 def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
   let op ← match request.getObjValAs? String "op" with
@@ -101,9 +119,18 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       let held := match session with
         | some o => if o.path == path then some o.handle else none
         | none => none
-      match ← openWorld path held with
+      let verify ← match request.getObjVal? "verify" with
+        | .ok (.bool b) => pure b
+        | .ok _ => return (session, .error "verify must be true or false")
+        | .error _ => pure false
+      let sync ← match request.getObjVal? "sync" with
+        | .ok (.bool b) => pure b
+        | .ok _ => return (session, .error "sync must be true or false")
+        | .error _ => pure true
+      match ← openWorld path held verify with
       | .error e => return (session, .error e)
       | .ok o =>
+        let o := { o with sync }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
@@ -120,7 +147,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             | _, none => return (session, .error "world-open failed")
         let opened := fun (o : Open) (extra : List (String × Json)) => Json.mkObj ([("status", toJson "opened"),
           ("height", toJson o.world.height), ("head", toJson o.world.head),
-          ("objects", toJson o.world.objects.size)] ++ extra ++
+          ("objects", toJson o.world.objects.size), ("snapshot", o.report.json)] ++ extra ++
           (o.world.library.map fun l => [("library", toJson l.pin)]).getD [])
         match request.getObjValAs? String "library" with
         | .error _ => return (some o, .ok (opened o []))
@@ -158,6 +185,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             throw s!"limit must be 1..{Limits.deliveriesPerCall}"
           deliver w limit)
       | "world-pending" => return (session, .ok (pendingReply s.world))
+      | "world-snapshot" =>
+        let (o, note) ← snapshotNow s
+        return (some o, .ok ((note.setObjVal! "status" (toJson "snapshot"))))
       | "world-library" => do
         let path? := (request.getObjValAs? String "library").toOption <|> s.libraryPath
         let some libPath := path? | return (session, .error "this world was opened without a library")
@@ -175,6 +205,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-interpretation" => durable s (fun w => interpretationOp w request)
       | "world-reprogram" => durable s (fun w => reprogramOp w request)
       | "world-amend" => durable s (fun w => amendOp w request)
+      | "world-revoke" => durable s (fun w => revokeOp w request)
       | "world-advance" => durable s (fun w => advance w request)
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
@@ -183,7 +214,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("locked", toJson true)]))
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

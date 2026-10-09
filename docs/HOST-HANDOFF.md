@@ -1,20 +1,23 @@
-# Host handoff (lane/host3, after grants, the outbound channel, time, and journal weight)
+# Host handoff (lane/host4: kernel integration, snapshots, FOUNDATION section 13)
 
 For the lane that continues the host. The authority model (FOUNDATION section 11 rows 1 to 3) and
 program reflection (row 5: inspect, check, the sealed library, interpret) are built; section 5 says how.
 Everything is in `spec/Delvetalk/Host/`. Line numbers drift; grep the names.
 Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 `test_deliveries.py`, `test_reprogram.py`, `test_await.py`, `test_replay.py`, `test_authority.py`,
-`test_reflection.py`, `test_grants.py`, `test_outbound.py`, `test_journal.py`, `test_workshop.py`.
+`test_reflection.py`, `test_grants.py`, `test_outbound.py`, `test_journal.py`, `test_workshop.py`,
+`test_integration.py`.
 `make check` runs everything in parallel (~2 min); `make smoke` the fast pair. Two wall-clock bounds
 (`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
-loaded box; alone they take 3.3 s and pass.
+loaded box; alone they take 3.3 s and pass. `test_snapshot`'s reopen under 1 s takes 0.2 to 0.4 s alone and
+measured 1.08 s inside the parallel suite on hbox at load 30 while every open read the whole binary for its
+pin; since `binaryPin` reads 1 MiB and only beside a snapshot, reopen is 0.10 s (full replay 0.16 s).
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Ops, TurnLoop, Session; `PackageSession.lean`
+Import order: Store, Journal, Law, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
 - **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
@@ -32,6 +35,7 @@ imports Session and `PackageMain.lean` drives it.
 - **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
+- **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
 
@@ -70,6 +74,10 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
+`world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
+`world-open {sync: false}` appends with a flush and no F_FULLFSYNC/fsync for that process (default true, never
+journaled, reported by `world-status` as `sync`); `tests/host.py` opens every test journal so, deploy and hostd keep
+the default. `world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.
@@ -273,6 +281,144 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    adds `publications`. Transport posts the text, confirms with `world-posted {uri, cid, object}`, and routes a
    reply (`merge` from the page's owner) by `world-addressee` to the object's `receive` (bridge work).
 
+12. **Kernel integration (host4).** An argument that does not conform to the method's input type
+   (`argumentFits`: at `Data` well-formed, at a data type `conformsUnder` the packet's bounds; the kernel's
+   own "turn refused: argument does not conform to its type" from `startActivity` is mapped the same way by
+   `kernelRefusal`) refuses the turn with the journaled class `typeMismatch` (`object` = the turn's object;
+   it binds, it is not transient); in a `call` the Plan is answered `refused {clause: typeMismatch}` and the
+   callee does not run. `world-turn {…, profile: true}` sums `Delvetalk.Profile` over every activity
+   segment the turn ran (start and each resume, nested calls included; pure methods have none) and returns it
+   as `profile [{kind, steps, ticks}]`, heaviest first; it is not in the digest and never journaled, and a
+   retry or a later resumption carries none. `Object.methods` is the artifact's method table (reprogram
+   replaces it); `world-inspect` answers it raw as `methods` plus `forms`; the `inspect` Plan answers
+   `inspected {pin, law, source, methods: Forms}` (Plan.obend line changed) where each form is
+   `{card: object, action: method, fields}` for every method that takes a context and whose input is a
+   record of `String` (text 0..`formTextMax` 1400), `Nat` (natural 0..`formNaturalMax`) or a closed sum of
+   empty payloads (choice); a method with any other input field (a list, a nested record, a sum held as a
+   bounds variable) is not listed. An object whose Response predates the field gets the old three-field form.
+   `Object.predicate`/`predicateReads` record the artifact's `law: {present, reads}` for item 3(e).
+
+13. **Snapshots (host4).** `durable` writes `<journal>.snapshot.<height>.cbor` after the fsync whenever the height is
+   `Limits.snapshotEvery` (1000) past the last snapshot written or resumed from (`Open.snapshotAt`), so the
+   height is the first durable boundary at or past each thousand; the reply that crossed it carries
+   `snapshot {height}` (or `{refused}`; a failed snapshot refuses nothing). The newest three are kept. File:
+   the DAG-CBOR map `{cid, body: bytes}`, `cid` the CID of the canonical body bytes (an independent Python
+   encoder agrees, `tests/test_snapshot.py`). The body holds what replay pays for: objects (state, law text,
+   version, read policy, ledger, compile inputs by CID), their types, method tables and law shapes by pin
+   (`types`), libraries, grants (with `revoked`), posts, settings; plus `clock`, `pending` ids and
+   `suspended` hashes as cross-checks. Everything `record` derives (receipts, touched, outbox, published,
+   modules, pending, suspended, clock) is rebuilt by `recordAll`, a bookkeeping-only pass over the entries up
+   to the height. `openContent`: parse and hash-walk every entry from genesis (`entriesOf`), then for each
+   snapshot newest first check: CID over the stored bytes, edition, `binary` (= `binaryPin`, the CID of the
+   executable's size and its first 1 MiB, computed once per process and only when a snapshot is read or
+   written; Lean handles cannot seek, and reading the whole 127 MB file cost every open 0.45 s on hbox), height within the journal, `head` = the journal's hash at that height, the derived
+   copies, each object's version and pin against what the entries record (`expectedObjects`), every law
+   reading back from its text, and finally that every later entry replays on it. The first failure refuses
+   the snapshot by name in the report and the next older is tried, then full replay. A forger who recomputes
+   the CID and keeps versions and pins can change a state unnoticed by a plain open; `world-open {verify:
+   true}` replays everything and refuses, by name, each snapshot whose body differs from the replayed store's
+   at its height ("it disagrees with replay at its height"). 500 creates of one package (hbox): reopen 0.10 s from
+   the snapshot, 0.16 s by full replay (the build cache already makes that cheap; the snapshot pays off with
+   many packages, reprograms and judged turns), snapshot ~4 KB per object type plus ~1 KB per object.
+
+14. **Commutative edits (host4, FOUNDATION 13 row 1).** `judge` accepts a root `(id, seen)` whose object has moved
+   (`seen < version now`; a future version stays stale) when every change of `id` in the proposal is a kind-0 write
+   made only of `keep`, `add`, `append` (`EditKind.commutes`, `commutesAt`): `applyEdits` already runs on the
+   current state, and the law judges old = now. The entry keeps the roots as read, so `writes[].version` is past
+   `seen + 1`; replay applies the same rule. A moved root that is only read, or changed by anything else
+   (set, amend, remove, reprogram, amend-law), is `staleRoot`. `resumeOne` refuses at resume only a moved root
+   whose staged changes already include a non-commuting one; anything else resumes and `judge` decides at the
+   end (so a strike that awaits and then adds commits after rains moved its bell). List items by bytes:
+   `Entries.amendItem {item, change}` and `removeItem {item}` (Plan.obend; `amend`/`remove` with an `item`
+   payload are accepted too) address the first item whose canonical DAG-CBOR equals `item`'s; none is the new
+   refusal class `absentItem`. The index forms stay for one release (`world/objects` still use them).
+
+15. **Grants completed (host4, FOUNDATION 13).** Plan `grantWith {to, object, method, until, fixed: Data, uses: Nat}`
+   (Plan.obend) makes a grant that fixes part of the callee's argument and serves `uses` (>= 1; 0 is answered
+   `refused {clause: uses}`); plain `grant` is unlimited and fixes nothing. `Grant.fixed` (Data wire) and
+   `Grant.uses` (left) are in `Grant.json`. At each `callVia`/`sendVia`, `grantFor` checks the grant stands, the
+   grantee, a use left (`grantSpent`), and `attenuate`s: a fixed record's fields are added to the caller's
+   record, a field the caller gives with other canonical bytes is `grantConflict` (a non-record fixed value must
+   be the whole argument, or the caller gives `{}`); the callee and its law see the merged argument, and a send
+   journals it merged. A use is spent (`spendGrant`, `TurnState.spent`) only when the call runs or the send is
+   staged; the admitted entry records `spent [{id, uses}]` (in the digest), `judge` re-checks the uses are still
+   there (`lawRefused grantSpent`), `applyGrants` decrements, replay re-derives. `grantStands` ignores uses, so
+   a delivery whose send spent the last use still runs. `world-revoke {principal, identity, grant}` is the
+   grantor's own write to the grant outside any object (admitted entry with `revokes`; anyone else
+   `lawRefused notGrantor`; an unknown grant is a request error).
+
+16. **Objects-lane asks (host4).** `check` answers the kernel's dialect hint, when the diagnostic has one, as the
+   next line `"<module>:<line>: hint: <text>"` after the refusal it explains. `writeOnce(F)` admits exactly one
+   change of F away from its empty value, for every type (`Law.emptyValue`: 0, false, "", the empty list, a
+   record of empty values; any other value is never empty), and a field missing from the old state fails
+   closed; it used to admit any change of a text field.
+
+17. **Held entries (host4).** `compiledMethod` (and `compileDef` for `law`/`lawReads`) compiles a definition with
+   `compileEntryIn`: the package's closure is prepared once (`Package.prepareRequest`, cached in `world.requests`
+   by the digest of the resolved inputs) and each definition compiled from it (`Package.compileEntryFrom`); the
+   `Compiled` keeps the decoded, checked `CheckedEntry` (`Compiled.entry`), cached per `inputsKey/method`. Turns
+   run `Turn.startEntry`/`Turn.resumeEntry`; pure definitions (the Bend law, `lawReads`, a handler's `handle`)
+   run `Package.executeDataEntry` through `runPure`. Nothing on the turn path decodes, re-checks or re-hashes a
+   packet. A full `compiled` cache is emptied and refilled rather than bypassed. Measured before the kernel's
+   entries landed, with the host's own interim cache (since replaced by these): 200 Counter bumps 3.36 s ->
+   1.42 s, a warm Garden `receive` 285 ms -> 21 ms (5,541 ticks either way); the first call of a method still
+   compiles it.
+18. **Extend, not replace (host4, FOUNDATION 13 row 3).** `world-reprogram {…, mode: "extend"}` (`mode` is
+   `replace` by default; anything else is a request error) and Plan `extend {object, package, migration}`
+   (Plan.obend; `reprogram` with a `mode: "extend"` field is honoured too) add the source as a module `Layer<n>`
+   over the object's modules (`extendInputs`; `inputs.layers` counts them). Bend's `extension X(self, super)`
+   composes records under `fix`; an object's package is a module of top-level methods, so the host realizes the
+   extension at module level: the layer sees the code below as `Super` (the host adds
+   `import ./<module below>.obend as Super` after the `edition` line unless present, so the layer's diagnostics
+   are one line later than its author's), and `delegate` compiles each method from the highest layer that
+   defines it, everything else from below (no late binding: a method below that calls another sees its own
+   module's). A layer that declares `type State = Super.State` gets its methods in the method table (the
+   compiler lists only `state: State` methods); the object's table is the layer's rows plus the rows below it
+   does not override. The new pin is the CID of `["extend", old pin, source CID]`; the state type must be the
+   same or a migration named, as for replace; the target's law judges kind 1 as for any reprogram; the
+   recorded reprogram carries `mode: "extend"` and `Proposal.layered` replays it. Snapshots keep whole any
+   source no entry carries by CID (`knownByCid`; reprogrammed and extended objects' modules), which also fixed
+   snapshots of reprogrammed objects.
+
+19. **Supervisors (host4, FOUNDATION 13 row 5).** `Object.supervisor` (an object id, "" for none) is fixed at
+   creation: `world-create {…, supervisor?}` (it must be an object; journaled as `supervisor` on the created
+   outcome) or Plan `createUnder {package, seed, law, requireAbsent, supervisor: Reference}` (Plan.obend;
+   `refused {clause: supervisor}` when it is not an object; recorded on the `creates[]` record). An activity of
+   a supervised object *ends* `broken` when its turn is refused `evaluation` (including a delivered or resumed
+   turn's request error), `budget` when a machine budget ran out, and `timedOut` when a segment resumed past its
+   await's deadline ends in any way. `commit`'s `onEnd` then puts an `ended {id, to, method: "ended", argument,
+   sender, ledger}` field in that entry (`endedField`; id = `endedId principal intent height`); `record` makes
+   it a pending delivery whatever the entry's outcome, run as the activity's principal with the object as
+   `caller`, argument `{receipt: Receipt, how}` (Plan.obend's `Receipt` of the entry itself), under the ledger
+   the activity ran with, depth one less and work less what it spent, so a ring of supervisors stops when the
+   depth runs out. A ledger refusal (`budgetExhausted`) tells nobody: it has no causal budget to tell with.
+   Replay checks the id and that `to` is the object's supervisor (`checkEnded`). The supervisor declares
+   `def ended(state, input: {receipt: Plans.Receipt, how: String}, context)`; another input is refused
+   `typeMismatch` at delivery. Snapshots keep `supervisor`; `world-inspect` shows it.
+
+20. **The two-tier law (host4).** For an object whose artifact has `law.present` (`Object.predicate`), `judge`
+   runs, after the law text admits, the current code's `law(old, new, request)` once per distinct ordinary
+   (kind 0) change (`bendLaw`), with `request = {context, method, argument: Data, kind, pin, reads}` (`Abi.Request`:
+   context as the changing frame saw it with `inputOrigin.kind = "law"` and the world's height; `argument` the
+   changing method's, journaled per change as `arguments` only for such objects; `reads` = `[{object, version,
+   state}]` for the ids `lawReads()` returns, which `commit` adds to the proposal's roots before its digest
+   (`withLawReads`) and `bendLaw` requires among them). It runs through `Run.evaluate` under
+   `Bounds.lawTicks`: `admitted` admits, `refused {clause}` is `lawRefused clause`, exhaustion is class `budget`
+   reason `law ticks` (transient), anything else fails closed as `lawRefused law`/`lawReads`. Reprograms and
+   amendments are the text's alone (the metarule stays on the fragment, and a predicate cannot seal out the
+   reprogramming hand either). `warmLaws` compiles `law`/`lawReads` into `world.compiled` before `judge`
+   (commit and replay), since `judge` is pure. A package with `law.present` was never refused at creation.
+
+21. **Handlers and judge (host4, FOUNDATION 13 row 4).** Plan `run {object, method, argument, handler}` runs the
+   callee as `call` does (argument checked, depth counted; no grant), but every Plan the callee's own frame
+   yields is first offered to the handler's pure `handle(state, plan[, context]) -> Handled<R>` (Plan.obend
+   `sum Handled<R>: pass {} | answer {response: R}`): `answer` is the callee's response (it must conform to the
+   callee's response type), `pass`, or a plan that does not conform to `handle`'s input type, goes to the host.
+   The handler must be readable by the frame's subject (`refused {clause: handler}`) and is a root; its ticks
+   come from the turn's. `TurnState.handlers` maps the frame depth to the handler; nested calls of the callee are
+   not offered. Plan `judge {edits: E}` answers `judged {admitted, clause}`: `judge` (with the Bend laws warmed
+   and law reads added) on the turn so far plus this write of the running object, committing nothing.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -329,47 +475,34 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **Not done**: `world-reprogram`/`amend` are gated only by the object's law;
   foreign worlds (`Reference.world != ""`) are always refused.
 
-## 7. Where lane/host3 stopped, and the queue
+## 7. Where lane/host4 stopped, and the queue
 
-lane/host3 is based on foundation e7faa87; foundation has since moved (kernel batch e0b46f3, transport 40d3ee0,
-FOUNDATION section 13 in c6e5586). The root merges. Done here, each with tests: the merge fix, grants, reprogram and
-amend of another object, posted/addressee/settings, listing and cards, deliveries in the settling pass and
-`awaitUntil`, `request.method` and list membership, sources by CID and the build cache, the journal lock, the
-outbound channel and projections, transient refusals, no silent defaults, publish. Test files of this lane:
-`tests/test_grants.py`, `tests/test_outbound.py`, `tests/test_journal.py`.
+lane/host4 is based on foundation a5287f4 and has merged foundation a08cb38 (objects2) and 81ea9ec (kernel2).
+Done here, each with tests (`test_integration`, `test_snapshot`, `test_commute`, `test_grants` Attenuation,
+`test_extend`, `test_supervisors`, `test_law`, `test_handlers`): the kernel batch (typeMismatch, profiles, methods
+as forms), snapshots, all of FOUNDATION section 13's host items (commutative edits and item-addressed entries,
+attenuated and counted grants with `world-revoke`, extension layers, supervisors, the two-tier law, `run` and
+`judge`), the objects lane's asks (the check hint, `writeOnce` for every type), held entries on the turn path,
+`sync: false`, and the one-variant seed unwrap deleted (`mergeSeed`: payloads are Data). Build and test on hbox
+(`~/scratch/dt-host4`, `swarm-build lake build`; the full suite there is about 65 s).
 
-Queued, in the coordinator's order (none started):
+Queued, none started:
 
-1. **Snapshots.** Every `Limits.snapshotEvery` (1,000) entries write `<journal>.snapshot.<height>.cbor`: the
-   canonical store (objects with state, pins, laws, read policies; suspended; pending; grants; posts; outbox;
-   modules) and the chain head, plus the binary pin (new checkpoint tags in the kernel batch mean an older binary
-   cannot resume a newer snapshot). `world-open` verifies the hash walk from genesis (cheap), loads the newest valid
-   snapshot, replays only later entries; a snapshot that disagrees with replay at its height is refused by name and
-   the previous one used. `Object` holds `Ty`/`DataBounds`, so a snapshot either serializes those or recompiles by
-   pin from `world.builds` (the build cache already makes that one compile per distinct package). Test: 500 creates,
-   snapshot, reopen under 1 s.
-2. **FOUNDATION section 13**, in order: (1) commutative edits commit against moved roots (`add`/`append`-only roots
-   are checked present, steps re-applied on the current state, law re-judged; `Entries.amend/remove` by item
-   equality; test: two agents rain on one bell in one settle pass, both admit). (2) grants completed: attenuation
-   (fixed argument fields merged, conflict refused), `uses` decremented per admitted use, revocation as a write to a
-   grant object (today a grant is a record in `world.grants`, see 5.8). (3) `reprogram {mode: extend}`.
-   (4) `inspected.methods` from the artifact's `methods` table (the kernel now emits
-   `methods: [{name, input, result, activity}]`). (5) supervisors (`create {supervisor?}`, `ended {receipt}`
-   delivery on timedOut, broken, budget). (6) two-tier law (`def law(old, new, request)` under `Limits.lawTicks`,
-   reads from `lawReads()` recorded as roots; the artifact's `law: {present, reads}`). (7) `run` and `judge` Plans.
-3. **Kernel batch integration** (after the root merges e0b46f3): map "turn refused: argument does not conform to its
-   type" from `startActivity` to the journaled class `typeMismatch`; pass `profile: true` through `world-turn`;
-   when the objects lane moves `call`/`send`/`create` payloads to `Data`, delete the one-variant unwrap in
-   `mergeSeed`; a State with a `Data` field is refused by the PackageData certificate path until the kernel extends
-   it (note, do not work around).
-4. **Transport asks.** `receive {text, post, slot?}` must tolerate a missing or empty `slot`: that is the objects'
-   method signature (a record argument with a field the method's input lacks does not conform); either the objects
-   take `slot: String` always and the bridge sends "", or the host learns to drop fields an input type lacks (a
-   silent default; not done). The bridge still formats the refusal text itself from class and hash; the host's
-   `publicRefusal` is what `world-receipt {of}` returns.
+1. **Late binding across layers.** `delegate` resolves a method to the highest layer defining it, but a method
+   below calling another sees its own module's: real open recursion needs the kernel's `extension`/`fix` over a
+   record of methods, i.e. packages written as a methods record. Decide with the kernel and objects lanes.
+2. **Forms for every input.** `methodForms` lists only methods whose input is text, naturals and closed sums of
+   empty payloads; a sum held as a bounds variable (most declared sums) has no form yet. Resolve variables
+   through the packet bounds (the artifact's `type` table) or have the kernel inline them in the method table.
+3. **Handlers for nested frames and activities.** `run` offers only the callee's own frame's plans to a pure
+   `handle`; an activity handler (a card that asks before answering) and handlers over the callee's own calls
+   are open.
+4. **Snapshot verification by default.** A plain open trusts a snapshot whose CID, head, binary pin, derived
+   copies, versions and pins check; only `verify: true` catches a consistently forged state. If snapshots ever
+   leave the host's directory, journal the snapshot's CID (a `snapshot` entry) and check it on open.
+5. **Pure methods.** A state-returning method and `render` still go through `Package.executeDataValues` (packet
+   JSON); move them to `executeDataEntry` with `compiledMethod`'s held entry.
+6. **Transport asks** (from host3, unchanged): `receive {text, post, slot?}` with a missing `slot`.
 
-What was wrong in the previous version of this file: the module map line counts; section 5.1 said `reprogram` and
-`amend` of another object were `notSelf` (now judged by the target's law); section 6 said offers live on the reply
-only and history/receipt ignore read policy (both changed here); the test list omitted `test_workshop`, whose
-propose case is still an expected failure for its fixture (see its docstring); `check` refused any module without
-`initial` ("missing selected entry"), fixed in the merge commit.
+What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
+as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).

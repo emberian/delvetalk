@@ -201,8 +201,9 @@ class Commit(WorldCase):
         self.create("c2")
 
     def test_stale_root_is_refused_and_the_receipt_commits_to_the_version_it_saw(self):
+        # A `set` does not commute; two `add`s against one root both commit (tests/test_commute.py).
         self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        r = self.propose("p2", [root("c1", 0)], [write("c1", add("count", 1))])
+        r = self.propose("p2", [root("c1", 0)], [write("c1", put("count", nat(5)))])
         self.assertEqual(r["status"], "refused")
         out = r["receipt"]["outcome"]
         self.assertEqual((out["class"], out["object"]), ("staleRoot", "c1"))
@@ -334,7 +335,7 @@ class History(WorldCase):
         self.create("c2")
         for i in range(5):
             self.propose(f"a{i}", [root("c1", i)], [write("c1", add("count", 1))])
-        self.propose("stale", [root("c1", 0)], [write("c1", add("count", 1))])
+        self.propose("stale", [root("c1", 0)], [write("c1", put("count", nat(1)))])
         self.propose("other", [root("c2", 0)], [write("c2", add("count", 1))])
         h = self.host.send(op="world-history", principal="ember", object="c1", limit=3)
         heights = [e["height"] for e in h["entries"]]
@@ -361,7 +362,7 @@ class Restart(WorldCase):
         self.create("c2")
         receipts = {}
         receipts["p1"] = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 2))])
-        receipts["p2"] = self.propose("p2", [root("c1", 0)], [write("c1", add("count", 2))])  # stale
+        receipts["p2"] = self.propose("p2", [root("c1", 0)], [write("c1", put("count", nat(4)))])  # stale
         receipts["p3"] = self.propose("p3", [root("c1", 1)], [write("c1", put("count", nat(0)))])  # law
         receipts["p4"] = self.propose("p4", [root("c1", 1), root("c2", 0)],
                                       [write("c2", put("name", {"tag": "label", "value": "q"}))])
