@@ -1,0 +1,106 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+# The Plan vocabulary of docs/FOUNDATION.md section 3, as typed first-order sums.
+#
+# Design choice: the library is generic and the object supplies its own types.
+#   Plan<E, A>      E is the object's edits record, one field per state field,
+#                   each an Edit<T, D> (scalars) or Entries<D, U> (lists). A is
+#                   the payload sum for call, send and create: a call argument,
+#                   a message, a seed state.
+#   Response<S, R>  S is the public summary a view returns; R is the result type
+#                   of a call and of an interpreted proposal.
+# An object fixes them once, for example
+#   type Plan = Plans.Plan<Edits, Arg>
+#   type Response = Plans.Response<Summary, Result>
+# and writes Activity<Plan, Response, Out>. A write is a record of per-field
+# edits, never a whole state: an object can only say what it changes, and the
+# host judges each field against the law. The alternative (a generic Write<S>
+# record) is refused outright: generic records do not parse
+# ("unsupported Objective Bend declaration"), only generic sums do.
+#
+# "Any data" is not expressible in rank-1 generics, so a payload that must carry
+# several shapes is a sum the object declares; there is no dynamic Value
+# universe. One A serves call, send and create of a single object.
+#
+# What the checker forced. A recursive type (a List, a Document, any sum that
+# mentions itself) anywhere inside a Plan or a Response type is refused with the
+# bare message "the checker refused the front end's typed packet" (stage
+# objective-typed-check). It is accepted as an activity's result type A. So:
+#   - a view returns a non-recursive summary S, never a list-bearing state;
+#   - list fields are edited by Entries (append / amend one item by index),
+#     never replaced by a whole list;
+#   - offer carries plain text (Document.plain), not a Document;
+#   - interpret offers one form; unclear names one need.
+# Generic records are replaced by inline sum payloads, and the phantom type
+# parameters of keep/append need explicit instantiation: Plans.Edit::<T, D>.keep({}).
+record Reference:
+  world: String
+  object: String
+sum Edit<T, D>:
+  keep: {}
+  set: {value: T}
+  add: {delta: D}
+# A list-valued field: append an item, or change the item at an index.
+sum Entries<D, U>:
+  keep: {}
+  append: {item: D}
+  amend: {index: Nat, change: U}
+# The identity of a turn, (principal, intent): what an await names.
+record Slot:
+  principal: String
+  intent: String
+sum Outcome:
+  admitted: {}
+  refused: {class: String, root: String}
+record Receipt:
+  slot: Slot
+  height: Nat
+  outcome: Outcome
+record Offer:
+  label: String
+  method: String
+record View:
+  object: Reference
+record Await:
+  slot: Slot
+  patience: Nat
+record Interpret:
+  utterance: String
+  offer: Offer
+record Offering:
+  title: String
+  body: String
+record Publish:
+  page: String
+  section: String
+  body: String
+sum Plan<E, A>:
+  view: View
+  write: {object: Reference, edits: E}
+  call: {object: Reference, method: String, argument: A}
+  send: {object: Reference, method: String, argument: A}
+  create: {package: String, seed: A, law: String, requireAbsent: Reference}
+  await: Await
+  interpret: Interpret
+  offer: Offering
+  publish: Publish
+sum Response<S, R>:
+  viewed: {version: Nat, state: S}
+  denied: {}
+  written: {}
+  refused: {clause: String}
+  returned: {result: R}
+  delivery: {id: String}
+  created: {object: Reference}
+  reply: {receipt: Receipt}
+  unknown: {}
+  timedOut: {}
+  broken: {}
+  proposal: {method: String, argument: R}
+  unclear: {need: String}
+  offered: {}
+  published: {post: String}
+# The reference of the running object. Abi.Context names the object but not its
+# world; the empty world means the world the turn runs in.
+def self(context: Abi.Context) -> Reference:
+  {world: "", object: context.object}

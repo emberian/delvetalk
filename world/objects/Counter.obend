@@ -1,0 +1,18 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, {}>
+def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case written(_): state.count + 1n
+    case _: state.count
+def render(state: State) -> Document.Document:
+  Document.text(textConcat("Count: ", natText(state.count)))
+def card(state: State) -> String:
+  Document.plain(render(state))

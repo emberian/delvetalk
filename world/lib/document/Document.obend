@@ -1,6 +1,5 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-import ./Preparation.obend as P
 import ./Encounter.obend as Encounter
 # Source-owned offer identity; revision/meaning are authored metadata, not native
 # root versions or authenticated program hashes. The host retains exact roots.
@@ -16,11 +15,12 @@ sum Document:
   quote: {attribution: String, body: Document}
   reference: Encounter.Child
   offer: {label: String, capture: Capture}
-  fields: {capture: Capture, values: P.Fields, needs: P.Names}
+  fields: {capture: Capture, needs: Names}
   source: {language: String, code: String, revision: String}
   result: {status: String, body: Document}
   continuation: {key: String, after: Nat, limit: Nat, label: String}
 type Documents = Lists.List<Document>
+type Names = Lists.List<String>
 def empty() -> Document:
   Document.sequence({items: Documents.nil()})
 def text(value: String) -> Document:
@@ -45,3 +45,18 @@ def plain(document: Document) -> String:
     case continuation(c): c.label
 def plainItems(items: Documents) -> String:
   Lists.fold::<Document, String>(items, "", fn(document: Document) -> String -> String: fn(rest: String) -> String: textConcat(plain(document), rest))
+# Linear measure of the text a document carries; unlike plain, it never copies
+# the accumulated text, so it stays cheap on long sequences.
+def size(document: Document) -> Nat:
+  match document:
+    case text(t): textLength(t.value)
+    case sequence(s): sizeItems(s.items)
+    case quote(q): textLength(q.attribution) + size(q.body)
+    case reference(r): textLength(r.label)
+    case offer(o): textLength(o.label)
+    case fields(_): 0n
+    case source(s): textLength(s.code)
+    case result(r): size(r.body)
+    case continuation(c): textLength(c.label)
+def sizeItems(items: Documents) -> Nat:
+  Lists.fold::<Document, Nat>(items, 0n, fn(document: Document) -> Nat -> Nat: fn(rest: Nat) -> Nat: size(document) + rest)

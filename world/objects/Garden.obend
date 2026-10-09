@@ -1,0 +1,42 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+import ./Bell.obend as Bell
+import ./Cistern.obend as Cistern
+record State:
+  planted: Nat
+record Edits:
+  planted: Plans.Edit<Nat, Nat>
+# The seeds the garden may hand to a create, one constructor per child package.
+sum Seed:
+  bell: Bell.Seed
+  cistern: Cistern.Seed
+type Plan = Plans.Plan<Edits, Seed>
+type Response = Plans.Response<{}, {}>
+sum Made:
+  made: {object: Plans.Reference}
+  refused: {clause: String}
+def child(context: Abi.Context, kind: String, serial: Nat) -> Plans.Reference:
+  {world: "", object: textConcat(context.object, textConcat("/", textConcat(kind, textConcat("/", natText(serial)))))}
+def planted(context: Abi.Context, reference: Plans.Reference) -> Activity<Plan, Response, Made>:
+  match perform(Plan.write({object: Plans.self(context), edits: {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case written(_): Made.made({object: reference})
+    case _: Made.refused({clause: "garden count"})
+# The create names the reference the bell will occupy; the host refuses it if taken.
+def plant(state: State, input: {colour: Bell.Colour, seed: String}, context: Abi.Context) -> Activity<Plan, Response, Made>:
+  let reference = child(context, "bell", state.planted + 1n)
+  match perform(Plan.create({package: "Bell", seed: Seed.bell({planter: context.principal, colour: input.colour, seed: input.seed}), law: "Bell", requireAbsent: reference})):
+    case created(c): planted(context, c.object)
+    case refused(r): Made.refused({clause: r.clause})
+    case _: Made.refused({clause: "no creation"})
+# One cistern per garden: the second create finds its reference occupied.
+def cistern(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, Made>:
+  match perform(Plan.create({package: "Cistern", seed: Seed.cistern({empty: true}), law: "Cistern", requireAbsent: child(context, "cistern", 1n)})):
+    case created(c): Made.made({object: c.object})
+    case refused(r): Made.refused({clause: r.clause})
+    case _: Made.refused({clause: "no creation"})
+def render(state: State) -> Document.Document:
+  Document.text(textConcat("The Night Garden: ", textConcat(natText(state.planted), " planted\n")))
+def card(state: State) -> String:
+  Document.plain(render(state))
