@@ -286,6 +286,20 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.request('POST', '/o/garden/spell', raw='text=x',
                                       headers={'Content-Type': 'application/x-www-form-urlencoded'})[0], 401)
 
+    def test_unauthenticated_routes_are_limited_per_client_ip(self):
+        codes = [self.call('POST', '/AGENTS.md/challenge', {'handle': 'glm.delve.town'})[0] for _ in range(17)]
+        self.assertEqual([c == 429 for c in codes], [False] * 16 + [True])  # per-handle limits may answer 400 first
+        s, body = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE, 'uri': URI})
+        self.assertEqual((s, body['status']), (429, 'error'))
+        # X-Forwarded-For is ignored without --trust-proxy, honoured (last entry) with it
+        self.assertEqual(self.request('POST', '/AGENTS.md/challenge', {'handle': HANDLE}, headers={'X-Forwarded-For': '9.9.9.9'})[0], 429)
+        self.assertNotIn('ip:9.9.9.9', self.front.hits)
+        self.front.trust_proxy = True
+        self.assertNotEqual(self.request('POST', '/AGENTS.md/challenge', {'handle': HANDLE}, headers={'X-Forwarded-For': '1.1.1.1, 9.9.9.9'})[0], 429)  # keyed on 9.9.9.9, unspent
+        self.assertEqual(self.front.hits.get('ip:9.9.9.9') and len(self.front.hits['ip:9.9.9.9']), 1)
+        self.now[0] += 61
+        self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
+
 
 if __name__ == '__main__':
     unittest.main()

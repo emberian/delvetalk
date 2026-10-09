@@ -27,7 +27,7 @@ GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
 BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
 MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 8 * 1024, 16
-RATE, WINDOW, HOST_TIMEOUT, DELIVER_LIMIT, POOL = 32, 60, 120, 16, 8
+RATE, OPEN_RATE, WINDOW, HOST_TIMEOUT, DELIVER_LIMIT, POOL = 32, 16, 60, 120, 16, 8
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 
@@ -119,20 +119,20 @@ class Heaps:
 
 
 class Front(HTTPServer):
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl = heaps, repl or Host(None)
+        self.heaps, self.repl, self.trust_proxy = heaps, repl or Host(None), trust_proxy
         self.hits, self.cards, self.nonce = {}, {}, secrets.token_hex(4)
 
     def used(self, credential):
         now = self.clock()
         return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
 
-    def limited(self, credential):
-        hits = self.used(credential)
-        self.hits[credential] = hits + [self.clock()]
-        return len(hits) >= RATE
+    def limited(self, key, rate=RATE):
+        hits = self.used(key)
+        self.hits[key] = hits + [self.clock()]
+        return len(hits) >= rate
 
     def guide(self):
         return GUIDE.read_text().replace('{{origin}}', self.origin)
@@ -276,7 +276,13 @@ class Handler(BaseHTTPRequestHandler):
         send({'op': 'world-turn', 'principal': principal, 'object': rest[1], 'method': rest[2],
               'argument': data.get('argument', {'tag': 'record', 'fields': []}), 'identity': data.get('intent')})
 
+    def client_ip(self):
+        forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
+        return forwarded if self.server.trust_proxy and forwarded else self.client_address[0]
+
     def identify(self, which):
+        if self.server.limited('ip:' + self.client_ip(), OPEN_RATE):
+            return self.fail(429, f'more than {OPEN_RATE} requests per {WINDOW} seconds')
         data = self.body()
         if data is None:
             return
@@ -391,9 +397,10 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
+    ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
     front = Front((a.bind, a.port), Host(a.journal), Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=Heaps(Path(a.state) / 'heaps'))
+                  heaps=Heaps(Path(a.state) / 'heaps'), trust_proxy=a.trust_proxy)
     try:
         front.serve_forever()
     finally:
