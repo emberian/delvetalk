@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 import ./Preparation.obend as P
 # Source data for the receiving host's bounded addressed-message capability.
 # Empty collection means no emission; no padded or disabled slots.
@@ -7,9 +8,7 @@ record Emission:
   command: String
   recipientProgram: String
   payload: P.Value
-sum Emissions:
-  nil: {}
-  cons: {head: Emission, tail: Emissions}
+type Emissions = Lists.List<Emission>
 # These roles stay distinct: originatingPrincipal admitted the immediate source
 # emission; rootPrincipal admitted the root turn. Context.principal is the caller
 # asking to deliver this event under the recipient's current law.
@@ -27,17 +26,13 @@ def empty() -> Emissions:
 def one(emission: Emission) -> Emissions:
   Emissions.cons({head: emission, tail: Emissions.nil()})
 def length(items: Emissions) -> Nat:
-  match items:
-    case nil(_): 0n
-    case cons(c): 1n + length(c.tail)
+  Lists.length::<Emission>(items)
 def within(items: Emissions, budget: Nat) -> Bool:
   match items:
     case nil(_): true
     case cons(c): if budget == 0n then false else within(c.tail, budget - 1n)
 def append(left: Emissions, right: Emissions) -> Emissions:
-  match left:
-    case nil(_): right
-    case cons(c): Emissions.cons({head: c.head, tail: append(c.tail, right)})
+  Lists.concat::<Emission>(left, right)
 # The caller owns its smaller musical/workflow bound; native admission independently
 # bounds collection size and cumulative descendants. No truncation on overflow.
 def repeat(count: Nat, emission: Emission) -> Emissions:

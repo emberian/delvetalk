@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Encounter.obend as E
 record Member:
@@ -8,9 +9,7 @@ record Member:
   place: String
   offer: String
   role: String
-sum Members:
-  nil: {}
-  cons: {head: Member, tail: Members}
+type Members = Lists.List<Member>
 def member(object: String, owner: String, holder: String, place: String, offer: String, role: String) -> Member:
   {object: object, owner: owner, holder: holder, place: place, offer: offer, role: role}
 def empty() -> Member:
@@ -24,17 +23,13 @@ def body(xs: Members, principal: String) -> Member:
     case nil(_): empty()
     case cons(c): if c.head.role == "resident" && c.head.owner == principal then c.head else body(c.tail, principal)
 def size(xs: Members) -> Nat:
-  match xs:
-    case nil(_): 0n
-    case cons(c): 1n + size(c.tail)
+  Lists.length::<Member>(xs)
 def put(xs: Members, m: Member) -> Members:
   match xs:
     case nil(_): Members.cons({head: m, tail: Members.nil()})
     case cons(c): if c.head.object == m.object then Members.cons({head: m, tail: c.tail}) else Members.cons({head: c.head, tail: put(c.tail, m)})
 def occupancy(xs: Members, place: String) -> Nat:
-  match xs:
-    case nil(_): 0n
-    case cons(c): (if c.head.place == place && c.head.holder == "" && c.head.role != "room" then 1n else 0n) + occupancy(c.tail, place)
+  Lists.fold::<Member, Nat>(xs, 0n, fn(m: Member) -> Nat -> Nat: fn(total: Nat) -> Nat: (if m.place == place && m.holder == "" && m.role != "room" then 1n else 0n) + total)
 def located(xs: Members, m: Member) -> String:
   if m.holder == "" then m.place else body(xs, m.holder).place
 def follows(ctx: Abi.Context, object: String, command: String) -> Bool:
@@ -47,9 +42,7 @@ record Transfer:
   occupancy: Nat
   actor: String
 def children(xs: Members) -> E.Children:
-  match xs:
-    case nil(_): E.Children.nil()
-    case cons(c): E.Children.cons({head: {key: c.head.object, label: c.head.object, object: c.head.object, panel: "main"}, tail: children(c.tail)})
+  Lists.map::<Member, E.Child>(xs, fn(m: Member) -> E.Child: {key: m.object, label: m.object, object: m.object, panel: "main"})
 record Action:
   visible: Bool
   text: String
@@ -59,3 +52,10 @@ def textField() -> Abi.StringField:
   {type: "string", minLength: 0n, maxLength: 128n}
 def natField() -> Abi.NatField:
   {type: "nat", minimum: 0n, maximum: 9007199254740991n}
+
+# The committed placement outcome is an ordinary typed source value. Its
+# producer program is authenticated separately in the receiving context.
+record Arrival:
+  object: String
+  destination: String
+  actor: String

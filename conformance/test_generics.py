@@ -233,6 +233,86 @@ def entry() -> {count: Nat, pages: Nat, first: Nat, second: Nat, duplicate: Bool
         fields = {f['name']:f['value']['value'] for f in run['value']['fields']}
         self.assertEqual(fields, {'count':'18','pages':'2','first':'16','second':'2','duplicate':False,'full':False})
 
+    def test_shared_preparation_allocation_and_emission_lists(self):
+        modules = [module(name, 'world/lib/prelude/' + name + '.obend')
+                   for name in ('List', 'Preparation', 'Allocation', 'Emissions')]
+        source = '''edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Allocation.obend as A
+import ./Emissions.obend as E
+def entry() -> {value: P.Value, allocations: A.Allocations, requests: P.Requests, observations: P.Observations, reads: P.Reads, effects: P.Effects, count: Nat, bounded: Bool}:
+  let value = P.oneField("nested", P.Value.array({values: P.Values.cons({head: P.Value.text({value: "kept"}), tail: P.Values.nil()})}))
+  let emissions = E.append(E.one({to: "a", command: "hear", recipientProgram: "", payload: value}), E.one({to: "b", command: "hear", recipientProgram: "", payload: value}))
+  {value: value, allocations: A.Allocations.cons({head: {name: "child", protocol: value, law: value}, tail: A.Allocations.nil()}), requests: P.Requests.nil(), observations: P.Observations.nil(), reads: P.Reads.nil(), effects: P.Effects.nil(), count: E.length(emissions), bounded: E.within(emissions, 1n)}
+'''
+        result = self.compile(source, modules=modules)
+        self.assertEqual(result['status'], 'compiled', result)
+        run = call({'op': 'run-data-v1', 'artifact': result['artifact'], 'arguments': []})
+        self.assertEqual(run['status'], 'finished', run)
+        fields = {field['name']: field['value'] for field in run['value']['fields']}
+        self.assertEqual(fields['count']['value'], '2')
+        self.assertFalse(fields['bounded']['value'])
+        self.assertEqual(fields['value']['label'], 'record')
+        self.assertEqual(fields['allocations']['label'], 'cons')
+        for name in ('requests', 'observations', 'reads', 'effects'):
+            self.assertEqual(fields[name]['label'], 'nil')
+
+    def test_exhibit_list_shared_traversals_preserve_domain_rules(self):
+        modules = [module('List', 'world/lib/prelude/List.obend'),
+                   module('ExhibitList', 'protocols/place-index/ExhibitList.obend')]
+        source = '''edition ObjectiveBend 1
+import ./ExhibitList.obend as E
+def entry() -> {count: Nat, found: Bool, removed: Nat, renamed: E.Entries}:
+  let entry = {object: "same", label: "before", addedBy: "author", observedVersion: 1n}
+  let entries = E.append(E.append(E.Entries.nil(), entry), entry)
+  {count: E.length(entries), found: E.contains(entries, "same"), removed: E.length(E.remove(entries, "same")), renamed: E.caption(entries, "same", "after")}
+'''
+        result = self.compile(source, modules=modules)
+        self.assertEqual(result['status'], 'compiled', result)
+        run = call({'op': 'run-data-v1', 'artifact': result['artifact'], 'arguments': []})
+        self.assertEqual(run['status'], 'finished', run)
+        fields = {field['name']: field['value'] for field in run['value']['fields']}
+        self.assertEqual(fields['count']['value'], '2')
+        self.assertTrue(fields['found']['value'])
+        self.assertEqual(fields['removed']['value'], '1')
+        renamed = fields['renamed']
+        for _ in range(2):
+            cell = {field['name']: field['value'] for field in renamed['payload']['fields']}
+            entry = {field['name']: field['value'] for field in cell['head']['fields']}
+            self.assertEqual(entry['label']['value'], 'after')
+            renamed = cell['tail']
+        self.assertEqual(renamed['label'], 'nil')
+
+    def test_protocol_collections_share_traversals_and_keep_domain_rules(self):
+        files = [('List', 'world/lib/prelude/List.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
+                 ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Encounter', 'world/lib/prelude/Encounter.obend'),
+                 ('Emissions', 'world/lib/prelude/Emissions.obend'), ('Document', 'world/lib/document/Document.obend'),
+                 ('Relations', 'protocols/containment/Relations.obend'), ('Consent', 'protocols/resident-library/Consent.obend'),
+                 ('Directory', 'protocols/root-directory/Directory.obend'), ('Commons', 'protocols/commons/Commons.obend')]
+        source = '''edition ObjectiveBend 1
+import ./Relations.obend as R
+import ./Consent.obend as C
+import ./Directory.obend as D
+import ./Commons.obend as W
+def entry() -> {members: Nat, occupancy: Nat, peers: Nat, first: Nat, unique: Bool, doors: Nat, available: Bool, moved: String, edge: Bool}:
+  let member = R.member("a", "owner", "", "room", "", "resident")
+  let members = R.Members.cons({head: member, tail: R.Members.cons({head: extend(member, {object: "b", holder: "owner"}), tail: R.Members.nil()})})
+  let peers = C.insert(C.insert(C.Peers.nil(), {slot: 9n, object: "nine", program: "", generation: 1n}), {slot: 2n, object: "two", program: "", generation: 1n})
+  let first = C.page({epoch: 1n, inbound: C.Peers.nil(), outbound: peers}, 0n, 1n).next
+  let unique = C.unique(peers, {side: "listen", slot: 3n, enabled: true, object: "two", program: "", generation: 1n})
+  let doors = D.Doors.cons({head: extend(D.blank(), {key: "a", object: "a", show: true, available: true}), tail: D.Doors.nil()})
+  let people = W.Participants.cons({head: {principal: "p", entity: {format: "ref", world: "world", object: "p"}, location: "before"}, tail: W.Participants.nil()})
+  let paths = W.Paths.cons({head: {source: "before", target: "after"}, tail: W.Paths.nil()})
+  {members: R.size(members), occupancy: R.occupancy(members, "room"), peers: C.length(C.remove(peers, 9n)), first: first, unique: unique, doors: D.count(doors), available: D.any(doors), moved: W.participant(W.moved(people, "p", "after"), "p").location, edge: W.edge(paths, "before", "after")}
+'''
+        result = self.compile(source, modules=[module(name, path) for name, path in files])
+        self.assertEqual(result['status'], 'compiled', result)
+        run = call({'op': 'run-data-v1', 'artifact': result['artifact'], 'arguments': []})
+        self.assertEqual(run['status'], 'finished', run)
+        fields = {field['name']: field['value']['value'] for field in run['value']['fields']}
+        self.assertEqual(fields, {'members': '2', 'occupancy': '1', 'peers': '1', 'first': '2',
+                                  'unique': False, 'doors': '1', 'available': True, 'moved': 'after', 'edge': True})
+
     def test_previous_list_wire_is_accepted_by_generic_codec(self):
         previous = call({'op':'compile','source':'''edition ObjectiveBend 1
 sum Names:

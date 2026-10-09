@@ -79,7 +79,7 @@ class EncounterPagesTests(unittest.TestCase):
             state = self.run_source('remove', state, text(f'k{index}'))
         self.assertEqual(page_keys(state), ['k16'])
         result = fields(self.run_source('add', state, child(17), natural(200)))
-        self.assertEqual(child_keys(fields(result['pages']['payload'])['items']), ['k16', 'k17'])
+        self.assertEqual(child_keys(fields(result['pages']['payload'])['head']), ['k16', 'k17'])
 
     def test_gallery_persists_pages_projects_and_retries_after_restart(self):
         protocol = adapter.lower_data_modules(gallery_modules())

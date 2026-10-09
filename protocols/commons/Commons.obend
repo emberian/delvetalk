@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Encounter.obend as E
@@ -11,31 +12,23 @@ record Participant:
   principal: String
   entity: Reference
   location: String
-sum Participants:
-  nil: {}
-  cons: {head: Participant, tail: Participants}
+type Participants = Lists.List<Participant>
 record Place:
   name: String
   title: String
   description: String
   reference: Reference
-sum Places:
-  nil: {}
-  cons: {head: Place, tail: Places}
+type Places = Lists.List<Place>
 record Path:
   source: String
   target: String
-sum Paths:
-  nil: {}
-  cons: {head: Path, tail: Paths}
+type Paths = Lists.List<Path>
 record Gate:
   source: String
   target: String
   object: String
   command: String
-sum Gates:
-  nil: {}
-  cons: {head: Gate, tail: Gates}
+type Gates = Lists.List<Gate>
 record Config:
   participants: Participants
   places: Places
@@ -55,9 +48,7 @@ def participant(items: Participants, principal: String) -> Participant:
     case nil(_): {principal: "", entity: {format: "", world: "", object: ""}, location: ""}
     case cons(c): if c.head.principal == principal then c.head else participant(c.tail, principal)
 def sameEntity(items: Participants, reference: Reference) -> Bool:
-  match items:
-    case nil(_): false
-    case cons(c): (c.head.entity.world == reference.world && c.head.entity.object == reference.object) || sameEntity(c.tail, reference)
+  Lists.any::<Participant>(items, fn(item: Participant) -> Bool: item.entity.world == reference.world && item.entity.object == reference.object)
 def participantsValid(items: Participants, places: Places, remaining: Nat) -> Bool:
   match items:
     case nil(_): true
@@ -71,25 +62,19 @@ def placesValid(items: Places, remaining: Nat) -> Bool:
     case nil(_): true
     case cons(c): remaining > 0n && named(c.head.name) && referenceValid(c.head.reference) && textLength(c.head.title) <= 128n && textLength(c.head.description) <= 512n && place(c.tail, c.head.name).name == "" && placesValid(c.tail, remaining - 1n)
 def edge(items: Paths, source: String, target: String) -> Bool:
-  match items:
-    case nil(_): false
-    case cons(c): (c.head.source == source && c.head.target == target) || edge(c.tail, source, target)
+  Lists.any::<Path>(items, fn(item: Path) -> Bool: item.source == source && item.target == target)
 def pathsValid(items: Paths, places: Places, remaining: Nat) -> Bool:
   match items:
     case nil(_): true
     case cons(c): remaining > 0n && place(places, c.head.source).name != "" && place(places, c.head.target).name != "" && (edge(c.tail, c.head.source, c.head.target) == false) && pathsValid(c.tail, places, remaining - 1n)
 def contains(items: P.Names, name: String) -> Bool:
-  match items:
-    case nil(_): false
-    case cons(c): c.head == name || contains(c.tail, name)
+  Lists.any::<String>(items, fn(item: String) -> Bool: item == name)
 def entriesValid(items: P.Names, places: Places, remaining: Nat) -> Bool:
   match items:
     case nil(_): true
     case cons(c): remaining > 0n && place(places, c.head).name != "" && (contains(c.tail, c.head) == false) && entriesValid(c.tail, places, remaining - 1n)
 def gated(items: Gates, source: String, target: String) -> Bool:
-  match items:
-    case nil(_): false
-    case cons(c): (c.head.source == source && c.head.target == target) || gated(c.tail, source, target)
+  Lists.any::<Gate>(items, fn(item: Gate) -> Bool: item.source == source && item.target == target)
 def gatesValid(items: Gates, paths: Paths, remaining: Nat) -> Bool:
   match items:
     case nil(_): true
@@ -111,9 +96,7 @@ def valid(config: Config) -> Bool:
 def initial(config: Config) -> State:
   {config: config, valid: valid(config)}
 def moved(items: Participants, principal: String, destination: String) -> Participants:
-  match items:
-    case nil(_): Participants.nil()
-    case cons(c): Participants.cons({head: if c.head.principal == principal then {principal: c.head.principal, entity: c.head.entity, location: destination} else c.head, tail: moved(c.tail, principal, destination)})
+  Lists.map::<Participant, Participant>(items, fn(item: Participant) -> Participant: if item.principal == principal then {principal: item.principal, entity: item.entity, location: destination} else item)
 def gateAllows(items: Gates, source: String, target: String, origin: Abi.Origin) -> Bool:
   match items:
     case nil(_): true
@@ -125,9 +108,7 @@ def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
 def referenceValue(value: Reference) -> P.Value:
   P.Value.record({fields: pair("format", text(value.format), pair("world", text(value.world), pair("object", text(value.object), P.Fields.nil())))})
 def locations(items: Participants) -> P.Fields:
-  match items:
-    case nil(_): P.Fields.nil()
-    case cons(c): pair(c.head.principal, text(c.head.location), locations(c.tail))
+  Lists.map::<Participant, P.Field>(items, fn(item: Participant) -> P.Field: {name: item.principal, value: text(item.location)})
 def exits(paths: Paths, places: Places, source: String) -> P.Fields:
   match paths:
     case nil(_): P.Fields.nil()
@@ -145,17 +126,16 @@ def movement(state: State, destination: String, context: Abi.Context, allowed: B
   let accepted: Bool = valid(state.config) && caller.principal != "" && allowed
   let people: Participants = moved(state.config.participants, context.principal, destination)
   {accepted: accepted, reason: if accepted then "" else "precondition failed", state: if accepted then extend(state, {config: extend(state.config, {participants: people})}) else state, result: P.Value.record({fields: pair("principal", text(context.principal), pair("entity", referenceValue(caller.entity), pair("from", text(caller.location), pair("to", text(destination), pair("locations", P.Value.record({fields: locations(people)}), pair("place", placeValue(state.config, destination), P.Fields.nil()))))))})}
-def enter(state: State, input: P.Value, context: Abi.Context) -> Decision:
-  movement(state, P.text(P.get(input, "place")), context, participant(state.config.participants, context.principal).location == "" && contains(state.config.entries, P.text(P.get(input, "place"))))
-def move(state: State, input: P.Value, context: Abi.Context) -> Decision:
+def enter(state: State, input: {place: String}, context: Abi.Context) -> Decision:
+  movement(state, input.place, context, participant(state.config.participants, context.principal).location == "" && contains(state.config.entries, input.place))
+def move(state: State, input: {place: String}, context: Abi.Context) -> Decision:
   let current: String = participant(state.config.participants, context.principal).location
-  movement(state, P.text(P.get(input, "place")), context, edge(state.config.paths, current, P.text(P.get(input, "place"))) && gateAllows(state.config.gates, current, P.text(P.get(input, "place")), context.inputOrigin))
+  movement(state, input.place, context, edge(state.config.paths, current, input.place) && gateAllows(state.config.gates, current, input.place, context.inputOrigin))
 def leave(state: State, input: {}, context: Abi.Context) -> Decision:
   movement(state, "", context, participant(state.config.participants, context.principal).location != "")
 record Method:
   label: String
   fields: {place: Abi.StringField}
-  inputCodec: String
   resultCodec: String
 record LeaveMethod:
   label: String
@@ -167,7 +147,7 @@ record Description:
   methods: {enter: Method, move: Method, leave: LeaveMethod}
   panels: {}
 def describe() -> Description:
-  {name: "The commons", initial: initial({participants: Participants.nil(), places: Places.nil(), paths: Paths.nil(), entries: P.Names.nil(), gates: Gates.nil()}), methods: {enter: {label: "Enter the commons", fields: {place: {type: "string", minLength: 1n, maxLength: 64n}}, inputCodec: "value", resultCodec: "value"}, move: {label: "Move to a place", fields: {place: {type: "string", minLength: 1n, maxLength: 64n}}, inputCodec: "value", resultCodec: "value"}, leave: {label: "Leave the commons", fields: {}, resultCodec: "value"}}, panels: {}}
+  {name: "The commons", initial: initial({participants: Participants.nil(), places: Places.nil(), paths: Paths.nil(), entries: P.Names.nil(), gates: Gates.nil()}), methods: {enter: {label: "Enter the commons", fields: {place: {type: "string", minLength: 1n, maxLength: 64n}}, resultCodec: "value"}, move: {label: "Move to a place", fields: {place: {type: "string", minLength: 1n, maxLength: 64n}}, resultCodec: "value"}, leave: {label: "Leave the commons", fields: {}, resultCodec: "value"}}, panels: {}}
 record Action:
   visible: Bool
   text: String

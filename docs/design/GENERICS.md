@@ -12,8 +12,12 @@ module's exact source hash and resolved type argument declaration identities.
 package artifacts; source and locked import transcripts retain original bytes.
 
 `List.obend` supplies length, append, concat, any, filter, map and fold.
-Preparation.Names, Encounter.Children and Document.Documents now alias its
-instances; source membership/capacity/paging rules remain in their consumers.
+Preparation Names/Values/Fields/Requests/Observations/Reads/Effects, Allocation.Allocations,
+Emissions.Emissions, Encounter.Children, EncounterPages.Pages, ExhibitList.Entries,
+Document.Documents, containment Relations.Members, Consent.Peers, Directory.Doors,
+and Commons Participants/Places/Paths/Gates now alias its instances. Source membership, capacity,
+first-match removal, and paging rules remain in their consumers. Paged encounters
+use the canonical cons head/tail shape with a child list as each head.
 Document's plainItems uses a generic fold, including the mutual Document/list
 cycle. Private generic-development native qualification qualifies the concrete generic/list and eleven existing template tests, including typed offers, quotations, native
 old/new list wire and type compatibility, and the actual conversation renderer

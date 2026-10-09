@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Emissions.obend as E
@@ -7,9 +8,7 @@ record Peer:
   object: String
   program: String
   generation: Nat
-sum Peers:
-  nil: {}
-  cons: {head: Peer, tail: Peers}
+type Peers = Lists.List<Peer>
 record Links:
   epoch: Nat
   inbound: Peers
@@ -44,21 +43,15 @@ record Page:
 def initial() -> Links:
   {epoch: 0, inbound: Peers.nil(), outbound: Peers.nil()}
 def length(xs: Peers) -> Nat:
-  match xs:
-    case nil(_): 0
-    case cons(c): 1 + length(c.tail)
+  Lists.length::<Peer>(xs)
 def within(xs: Peers, work: Nat) -> Bool:
   match xs:
     case nil(_): true
     case cons(c): if work == 0 then false else within(c.tail, work - 1)
 def contains(xs: Peers, slot: Nat) -> Bool:
-  match xs:
-    case nil(_): false
-    case cons(c): c.head.slot == slot || contains(c.tail, slot)
+  Lists.any::<Peer>(xs, fn(peer: Peer) -> Bool: peer.slot == slot)
 def unique(xs: Peers, input: Configure) -> Bool:
-  match xs:
-    case nil(_): true
-    case cons(c): (c.head.slot == input.slot || c.head.object != input.object) && unique(c.tail, input)
+  Lists.any::<Peer>(xs, fn(peer: Peer) -> Bool: peer.slot != input.slot && peer.object == input.object) == false
 def fits(xs: Peers, input: Configure, limits: Limits) -> Bool:
   if within(xs, limits.work) == false then false else input.enabled == false || contains(xs, input.slot) || (length(xs) < limits.capacity && length(xs) < limits.work)
 def valid(links: Links, input: Configure, limits: Limits) -> Bool:
@@ -80,9 +73,7 @@ def update(links: Links, input: Configure) -> Links:
 def matches(peer: Peer, payload: Payload, event: E.CausalEvent) -> Bool:
   peer.object == event.source && peer.program == event.sourceProgram && peer.generation == payload.generation
 def any(xs: Peers, payload: Payload, event: E.CausalEvent) -> Bool:
-  match xs:
-    case nil(_): false
-    case cons(c): matches(c.head, payload, event) || any(c.tail, payload, event)
+  Lists.any::<Peer>(xs, fn(peer: Peer) -> Bool: matches(peer, payload, event))
 def allows(links: Links, payload: Payload, event: E.CausalEvent) -> Bool:
   any(links.inbound, payload, event)
 def obsolete(links: Links, payload: Payload, event: E.CausalEvent) -> Bool:
@@ -110,8 +101,6 @@ def tail(xs: Peers) -> Peers:
 def payload(topic: String, units: Nat, generation: Nat) -> P.Value:
   P.Value.record({fields: P.Fields.cons({head: {name: "topic", value: P.Value.text({value: topic})}, tail: P.Fields.cons({head: {name: "units", value: P.Value.natural({value: units})}, tail: P.Fields.cons({head: {name: "generation", value: P.Value.natural({value: generation})}, tail: P.Fields.nil()})})})})
 def emit(items: Peers, topic: String, units: Nat) -> E.Emissions:
-  match items:
-    case nil(_): E.empty()
-    case cons(c): E.Emissions.cons({head: {to: c.head.object, command: "receive", recipientProgram: c.head.program, payload: payload(topic, units, c.head.generation)}, tail: emit(c.tail, topic, units)})
+  Lists.map::<Peer, E.Emission>(items, fn(peer: Peer) -> E.Emission: {to: peer.object, command: "receive", recipientProgram: peer.program, payload: payload(topic, units, peer.generation)})
 def sending(links: Links) -> Bool:
   nonempty(links.outbound)

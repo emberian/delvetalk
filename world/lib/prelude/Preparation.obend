@@ -10,38 +10,28 @@ sum Value:
   text: {value: String}
   array: {values: Values}
   record: {fields: Fields}
-sum Values:
-  nil: {}
-  cons: {head: Value, tail: Values}
+type Values = Lists.List<Value>
 record Field:
   name: String
   value: Value
-sum Fields:
-  nil: {}
-  cons: {head: Field, tail: Fields}
+type Fields = Lists.List<Field>
 type Names = Lists.List<String>
 record ObservationRequest:
   object: String
   inspectState: Bool
   inspectLaw: Bool
-sum Requests:
-  nil: {}
-  cons: {head: ObservationRequest, tail: Requests}
+type Requests = Lists.List<ObservationRequest>
 record Observation:
   object: String
   version: Nat
   program: String
   state: Value
   law: Value
-sum Observations:
-  nil: {}
-  cons: {head: Observation, tail: Observations}
+type Observations = Lists.List<Observation>
 sum Read:
   existing: {object: String}
   absent: {object: String}
-sum Reads:
-  nil: {}
-  cons: {head: Read, tail: Reads}
+type Reads = Lists.List<Read>
 sum Effect:
   invoke: {object: String, command: String, input: Value}
   invokeResult: {object: String, command: String, result: Nat}
@@ -49,9 +39,7 @@ sum Effect:
   reprogram: {object: String, protocol: Value, state: Value}
   reprogramResult: {object: String, result: Nat}
   law: {object: String, law: Value}
-sum Effects:
-  nil: {}
-  cons: {head: Effect, tail: Effects}
+type Effects = Lists.List<Effect>
 record Turn:
   summary: String
   reads: Reads
@@ -77,7 +65,7 @@ def get(value: Value, name: String) -> Value:
     case number(_): Value.none()
     case text(_): Value.none()
     case array(_): Value.none()
-def text(value: Value) -> String:
+def textOrEmpty(value: Value) -> String:
   match value:
     case text(t): t.value
     case retained(_): ""
@@ -87,7 +75,7 @@ def text(value: Value) -> String:
     case number(_): ""
     case array(_): ""
     case record(_): ""
-def natural(value: Value) -> Nat:
+def naturalOrZero(value: Value) -> Nat:
   match value:
     case natural(n): n.value
     case retained(_): 0n
@@ -97,10 +85,10 @@ def natural(value: Value) -> Nat:
     case text(_): 0n
     case array(_): 0n
     case record(_): 0n
-def observation(xs: Observations, object: String) -> Observation:
+def observationOrEmpty(xs: Observations, object: String) -> Observation:
   match xs:
     case nil(_): {object: "", version: 0n, program: "", state: Value.none(), law: Value.none()}
-    case cons(c): if c.head.object == object then c.head else observation(c.tail, object)
+    case cons(c): if c.head.object == object then c.head else observationOrEmpty(c.tail, object)
 def oneField(name: String, value: Value) -> Value:
   Value.record({fields: Fields.cons({head: {name: name, value: value}, tail: Fields.nil()})})
 # Required access keeps missing, wrong-kind and legitimate zero/false distinct.
@@ -203,15 +191,61 @@ def isBoolean(value: Value) -> Bool:
     case missing(_): false
     case wrongKind(_): false
 # Deliberately lossy optional projections. Do not use them to validate required
-# fields. Existing text/natural/observation exports remain compatibility aliases.
-def textOrEmpty(value: Value) -> String:
-  text(value)
-def naturalOrZero(value: Value) -> Nat:
-  natural(value)
+# fields. Required consumers must use checked lookup results.
 def booleanOrFalse(value: Value) -> Bool:
   match asBoolean(value):
     case found(b): b.value
     case missing(_): false
     case wrongKind(_): false
-def observationOrEmpty(xs: Observations, object: String) -> Observation:
-  observation(xs, object)
+sum ArrayLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Values}
+sum RecordLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Fields}
+def asArray(value: Value) -> ArrayLookup:
+  match value:
+    case array(a): ArrayLookup.found({value: a.values})
+    case none(_): ArrayLookup.wrongKind()
+    case retained(_): ArrayLookup.wrongKind()
+    case boolean(_): ArrayLookup.wrongKind()
+    case natural(_): ArrayLookup.wrongKind()
+    case number(_): ArrayLookup.wrongKind()
+    case text(_): ArrayLookup.wrongKind()
+    case record(_): ArrayLookup.wrongKind()
+def asRecord(value: Value) -> RecordLookup:
+  match value:
+    case record(r): RecordLookup.found({value: r.fields})
+    case none(_): RecordLookup.wrongKind()
+    case retained(_): RecordLookup.wrongKind()
+    case boolean(_): RecordLookup.wrongKind()
+    case natural(_): RecordLookup.wrongKind()
+    case number(_): RecordLookup.wrongKind()
+    case text(_): RecordLookup.wrongKind()
+    case array(_): RecordLookup.wrongKind()
+def arrayField(value: Value, name: String) -> ArrayLookup:
+  match lookupField(value, name):
+    case missing(_): ArrayLookup.missing()
+    case wrongKind(_): ArrayLookup.wrongKind()
+    case found(f): asArray(f.value)
+def recordField(value: Value, name: String) -> RecordLookup:
+  match lookupField(value, name):
+    case missing(_): RecordLookup.missing()
+    case wrongKind(_): RecordLookup.wrongKind()
+    case found(f): asRecord(f.value)
+def textEquals(value: Value, expected: String) -> Bool:
+  match asText(value):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(t): t.value == expected
+def naturalEquals(value: Value, expected: Nat) -> Bool:
+  match asNatural(value):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(n): n.value == expected
+def observed(xs: Observations, object: String) -> Bool:
+  match lookupObservation(xs, object):
+    case missing(_): false
+    case found(_): true

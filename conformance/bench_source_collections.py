@@ -203,7 +203,7 @@ def child(i):
 def pages(size):
     value = variant('nil', record())
     for start in reversed(range(0, size, 16)):
-        value = variant('cons', record(items=children(min(16, size - start), start), tail=value))
+        value = variant('cons', record(head=children(min(16, size - start), start), tail=value))
     return value
 
 
@@ -220,7 +220,7 @@ def page_keys(value):
     result = []
     while value['label'] == 'cons':
         row = fields(value['payload'])
-        keys = child_keys(row['items'])
+        keys = child_keys(row['head'])
         assert 0 < len(keys) <= 16
         result.extend(keys)
         value = row['tail']

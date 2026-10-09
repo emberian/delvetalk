@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Encounter.obend as E
@@ -12,9 +13,7 @@ record Door:
   example: String
   available: Bool
   show: Bool
-sum Doors:
-  nil: {}
-  cons: {head: Door, tail: Doors}
+type Doors = Lists.List<Door>
 record Config:
   title: String
   introduction: String
@@ -41,9 +40,7 @@ record Decision:
 def blank() -> Door:
   {key: "", label: "", object: "", panel: "main", description: "", example: "", available: false, show: false}
 def count(doors: Doors) -> Nat:
-  match doors:
-    case nil(_): 0n
-    case cons(c): 1n + count(c.tail)
+  Lists.length::<Door>(doors)
 def find(doors: Doors, key: String) -> Door:
   match doors:
     case nil(_): blank()
@@ -51,9 +48,7 @@ def find(doors: Doors, key: String) -> Door:
 def enabled(door: Door) -> Bool:
   door.show && door.available && door.object != ""
 def any(doors: Doors) -> Bool:
-  match doors:
-    case nil(_): false
-    case cons(c): enabled(c.head) || any(c.tail)
+  Lists.any::<Door>(doors, fn(door: Door) -> Bool: enabled(door))
 def replace(doors: Doors, door: Door) -> Doors:
   match doors:
     case nil(_): Doors.cons({head: door, tail: Doors.nil()})
@@ -84,18 +79,24 @@ def childrenInto(doors: Doors, found: E.Children) -> E.Children:
 def children(doors: Doors) -> E.Children:
   childrenInto(doors, E.Children.nil())
 def hasObject(doors: Doors, object: String) -> Bool:
-  match doors:
-    case nil(_): false
-    case cons(c): (enabled(c.head) && c.head.object == object) || hasObject(c.tail, object)
+  Lists.any::<Door>(doors, fn(door: Door) -> Bool: enabled(door) && door.object == object)
 def requests(doors: Doors) -> P.Requests:
   match doors:
     case nil(_): P.Requests.nil()
     case cons(c): if enabled(c.head) && hasObject(c.tail, c.head.object) == false then P.Requests.cons({head: {object: c.head.object, inspectState: false, inspectLaw: false}, tail: requests(c.tail)}) else requests(c.tail)
-def prepareChoose(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let key = P.text(P.get(contribution, "door"))
+def prepareSelected(state: State, key: String, original: String, observations: P.Observations, context: P.Context) -> P.Preparation:
   let door = find(state.config.doors, key)
-  let original = P.text(P.get(contribution, "original"))
-  if key == "" then P.Preparation.question({message: "Which open door would you like to try? Keep your words in the original field; a facilitator can help choose.", needs: P.Names.cons({head: "door", tail: P.Names.nil()})}) else if enabled(door) == false then P.Preparation.refused({message: "That door is not open in this directory. Choose one of its actual references."}) else if textLength(original) > 512n then P.Preparation.refused({message: "Keep this first contribution within 512 characters."}) else if P.observation(observations, door.object).object != door.object then P.Preparation.refused({message: "Capture the configured door's current object before choosing it."}) else P.Preparation.ready({summary: textConcat("Choose ", textConcat(door.label, "; its own encounter offers the next contribution.")), reads: P.Reads.cons({head: P.Read.existing({object: door.object}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "choose", input: P.Value.record({fields: P.Fields.cons({head: {name: "door", value: P.Value.text({value: key})}, tail: P.Fields.cons({head: {name: "original", value: P.Value.text({value: original})}, tail: P.Fields.nil()})})})}), tail: P.Effects.nil()})})
+  if key == "" then P.Preparation.question({message: "Which open door would you like to try? Keep your words in the original field; a facilitator can help choose.", needs: P.Names.cons({head: "door", tail: P.Names.nil()})}) else if enabled(door) == false then P.Preparation.refused({message: "That door is not open in this directory. Choose one of its actual references."}) else if textLength(original) > 512n then P.Preparation.refused({message: "Keep this first contribution within 512 characters."}) else if P.observed(observations, door.object) == false then P.Preparation.refused({message: "Capture the configured door's current object before choosing it."}) else P.Preparation.ready({summary: textConcat("Choose ", textConcat(door.label, "; its own encounter offers the next contribution.")), reads: P.Reads.cons({head: P.Read.existing({object: door.object}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "choose", input: P.Value.record({fields: P.Fields.cons({head: {name: "door", value: P.Value.text({value: key})}, tail: P.Fields.cons({head: {name: "original", value: P.Value.text({value: original})}, tail: P.Fields.nil()})})})}), tail: P.Effects.nil()})})
+def prepareWords(state: State, key: String, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.textField(contribution, "original"):
+    case missing(_): prepareSelected(state, key, "", observations, context)
+    case wrongKind(_): P.Preparation.refused({message: "The original contribution must be text."})
+    case found(t): prepareSelected(state, key, t.value, observations, context)
+def prepareChoose(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.textField(contribution, "door"):
+    case missing(_): P.Preparation.question({message: "Which open door would you like to try?", needs: P.Names.cons({head: "door", tail: P.Names.nil()})})
+    case wrongKind(_): P.Preparation.refused({message: "Choose a door by its text key."})
+    case found(t): prepareWords(state, t.value, contribution, observations, context)
 def capture(state: State) -> Document.Capture:
   {object: state.home, revision: 1n, meaning: "choose-an-explicit-directory-reference", entry: "prepareChoose", token: "choose"}
 # One bounded sequence per section. Keeping section boundaries avoids repeated
