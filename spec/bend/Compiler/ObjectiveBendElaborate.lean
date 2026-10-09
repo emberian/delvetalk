@@ -1077,7 +1077,7 @@ def synthBody (c : Ctx) : Nat → Body → List Binding → Module → M (Option
     let ty ← if type == "_" then synth c fuel value env m else sourceType c fuel type m.name []
     synthBody c fuel rest (⟨name, ty, "unrestricted"⟩ :: env) m
   | fuel + 1, .cases scrutinee branches, env, m => do
-    if branches.any (fun b => match b.1 with | .ctor .. | .bool _ => true | _ => false) then
+    if branches.any (fun b => match b.1 with | .ctor .. | .bool _ | .wildcard => true | _ => false) then
       let scrutineeTy ← synth c fuel scrutinee env m
       let row := variantRowOf (← get) scrutineeTy
       let mut types : List (Option PTy) := []
@@ -1814,23 +1814,32 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
         let ft ← body c fuel fb env m
         return .ifBool ct tt ft
       | _, _ => fail "Bool match requires exactly true and false branches"
-    if branches.any (fun b => match b.1 with | .ctor .. => true | _ => false) then
-      if !branches.all (fun b => match b.1 with | .ctor .. => true | _ => false) then
-        fail "a sum match takes only label(binder) cases; wildcards are refused (no default arm)"
-      let labels := branches.map (fun b => match b.1 with | .ctor l _ => l | _ => "")
+    if branches.any (fun b => match b.1 with | .ctor .. | .wildcard => true | _ => false) then
+      if !branches.all (fun b => match b.1 with | .ctor .. | .wildcard => true | _ => false) then
+        fail "a sum match takes label(binder) cases and an optional final wildcard"
+      let labels := branches.filterMap (fun b => match b.1 with | .ctor l _ => some l | _ => none)
       if duplicate labels then fail "duplicate sum case"
+      let defaults := branches.filter (fun b => b.1 == .wildcard)
+      if defaults.length > 1 then fail "duplicate sum wildcard"
+      if !defaults.isEmpty && !(branches.getLast?.map (·.1 == .wildcard)).getD false then
+        fail "sum wildcard must be the final case"
       let row := variantRowOf (← get) (← synth c fuel scrutinee env m)
-      if let some r := row then
-        let rowLabels := rowNames r
-        let missing := rowLabels.filter (fun l => !labels.contains l)
-        let extra := labels.filter (fun l => !rowLabels.contains l)
-        if !missing.isEmpty || !extra.isEmpty then
-          fail ("sum match is not exhaustive: missing [" ++ String.intercalate ", " missing ++ "], unknown [" ++ String.intercalate ", " extra ++ "]")
+      let some r := row | fail "sum match needs a resolved variant type"
+      let rowLabels := rowNames r
+      let missing := rowLabels.filter (fun l => !labels.contains l)
+      let extra := labels.filter (fun l => !rowLabels.contains l)
+      if (!missing.isEmpty && defaults.isEmpty) || !extra.isEmpty then
+        fail ("sum match is not exhaustive: missing [" ++ String.intercalate ", " missing ++ "], unknown [" ++ String.intercalate ", " extra ++ "]")
       let st ← expression c fuel scrutinee env m
       let mut arms : List (String × ATerm) := []
       for (pattern, b) in branches do
         match pattern with
         | .ctor l binder => arms := arms ++ [(l, ← body c fuel b (⟨binder, lookupRow row l, "unrestricted"⟩ :: env) m)]
+        | .wildcard =>
+          for l in missing do
+            -- A core arm always binds one payload. Use an inaccessible name so
+            -- source scope is preserved while outer de Bruijn references shift.
+            arms := arms ++ [(l, ← body c fuel b (⟨"", lookupRow row l, "unrestricted"⟩ :: env) m)]
         | _ => pure ()
       return .case st arms
     let zero := branches.find? (fun b => b.1 == .zero)
@@ -2035,7 +2044,17 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
     | .function _ params resultType b => do
       let result ← if resultType == "_" then do pure (ResultSpec.given (resultOf (← globalType c fuel key) params.length))
         else pure (ResultSpec.source resultType)
-      abstract c fuel params outerEnv (fun next => body c fuel b next m) d.name result m.name
+      let value ← abstract c fuel params outerEnv (fun next => body c fuel b next m) d.name result m.name
+      if params.isEmpty then
+        -- Convert the declared result before nesting it in the global record.
+        -- A nullary constant is still a shared lazy value; this closed identity
+        -- uses the existing checked application conversion, not deeper equality.
+        let target ← match result with
+          | .source text => sourceType c fuel text m.name []
+          | .given ty => pure ty
+        let reason := if target.isNone then some ("nullary result type of " ++ key ++ " is not resolvable") else none
+        pure (.app (.lam ⟨target, target, "unrestricted", "reusable", reason⟩ (.bound 0)) value)
+      else pure value
     | .extension _ params targetType b binders =>
       if binders.isEmpty then abstract c fuel params outerEnv (fun next => body c fuel b next m) d.name (.source targetType) m.name
       else do

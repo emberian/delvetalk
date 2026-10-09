@@ -148,6 +148,20 @@ parser. Model-assisted interpretation can use the same finite set of affordances
 Physical clock drivers and bounded receive-to-send chains connect this library to
 the durable collaboration design in [composition](COMPOSITION.md).
 
+### Declared constants and variant defaults
+
+A nullary definition remains a shared lazy constant. Its declared result is
+checked before the value becomes a global record field, including a recursive
+record alias. The frontend uses a closed typed identity application and the
+existing one-head alias conversion; no dummy source argument is needed.
+
+A sum match may end with one `case _: body`. The frontend expands that body
+into the remaining labels of the resolved finite variant. Explicit labels must
+be known and distinct; a wildcard cannot precede another arm. Each generated
+arm binds its payload with the existing unrestricted quantity, so the same
+shareability and branch usage checks apply. The wildcard introduces no source
+binder and preserves access to surrounding lexical variables.
+
 ### Conditional record updates
 
 A conditional may return an existing record on one branch and `extend(record,
