@@ -93,6 +93,62 @@ def ring(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Respo
 """
 
 
+ROSTER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+  members: Lists.List<String>
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+  members: Plans.Entries<String, String>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, Nat>
+law members: request.kind == 0 implies (request.subject in new.members or request.subject == "ember")
+law rings: request.kind == 0 implies (request.method == "ring" or request.method == "admit")
+def initial() -> State:
+  {count: 0n, members: Lists.List::<String>.nil({})}
+def ring(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), members: Plans.Entries::<String, String>.keep({})}})):
+    case _: 1n
+def toll(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), members: Plans.Entries::<String, String>.keep({})}})):
+    case _: 1n
+def admit(state: State, input: {who: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.keep({}), members: Plans.Entries::<String, String>.append({item: input.who})}})):
+    case _: 0n
+"""
+
+
+class LawFacts(Reflection):
+    """`request.subject in new.F` reads membership from state; `request.method` names the method."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("roster", ROSTER, record(count=nat(0), members={"tag": "variant", "label": "nil", "payload": record()}))
+
+    def clause(self, r):
+        return r["receipt"]["outcome"].get("clause") if r["status"] == "refused" else r["status"]
+
+    def test_membership_comes_from_state_not_a_hard_coded_principal(self):
+        self.assertEqual(self.clause(self.turn("roster", "ring", principal="kim")), "members")
+        self.assertEqual(self.clause(self.turn("roster", "admit", record(who=label("kim")))), "admitted")
+        self.assertEqual(self.clause(self.turn("roster", "ring", principal="kim")), "admitted")
+        self.assertEqual(self.clause(self.turn("roster", "ring", principal="bob")), "members")
+
+    def test_the_law_reads_the_method_that_made_the_change(self):
+        self.assertEqual(self.clause(self.turn("roster", "ring")), "admitted")
+        self.assertEqual(self.clause(self.turn("roster", "toll")), "rings")
+
+    def test_a_list_membership_of_a_number_fact_is_refused_at_compile(self):
+        bad = ROSTER.replace("request.subject in new.members", "request.height in new.members")
+        r = self.host.send(op="world-create", principal="ember", identity="bad", object="bad", source=bad,
+                           entry="initial", seed=record(count=nat(0), members={"tag": "variant", "label": "nil", "payload": record()}))
+        self.assertEqual(r["status"], "error", r)
+
+
 class Grants(Reflection):
     def setUp(self):
         super().setUp()

@@ -183,7 +183,10 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    judges it (a Forge/Workshop names itself in the target's law: `request.caller == "forge"`). Cross-object change is a `call`: the callee
    runs as its own `self`, so its writes are its own, judged by its own law. `judge` has no `unreadWrite`; a
    `world-propose` that writes an object it does not name as a root is a request error.
-2. **Law facts.** `Facts {subject = principal, caller, height, turn, pin, kind}`. `caller` is the object whose method
+2. **Law facts.** `Facts {subject = principal, caller, height, turn, pin, kind, method}`; `method` is the method whose
+   run made the change ("" for ops; journaled per change as `methods`). `request.subject in new.F` / `request.caller in
+   new.F` is membership in a `List<String>` field (`LawExpr.member`, parsed in `spec/bend/Compiler/ObjectiveBendLaw.lean`,
+   which the kernel lane owns: the host extensions there are `pin`, `kind`, `method`, text constants, `member`). `caller` is the object whose method
    wrote ("" for the turn's own method and for client proposals; for a delivered turn, the sending object).
    `judge` judges every distinct (caller, kind) of an object's changes, so a bundled reprogram does not skip kind 0.
    `new.F == request.subject` compares a text field; `appendOnly(F)` (new list = old list plus appended items, by canonical

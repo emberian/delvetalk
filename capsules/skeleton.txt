@@ -17,7 +17,8 @@ record Form: card, action, fields: List<{name, kind: text{min,max} | natural{min
 sum Document: text | sequence | quote | reference | offer | fields | source | result | continuation
 law NAME: EXPR;  EXPR ::= EXPR implies|or|and EXPR | not EXPR | (EXPR) | ATOM
   ATOM ::= REF ==|<= INT | REF in [INT..] | REF == REF | REF <= REF + INT | REF == "TEXT" | monotone|writeOnce|appendOnly|unchanged(F)
-  REF ::= new.F | request.subject|caller|height|turn|pin|kind  (kind 0 write,1 reprogram,2 amend)
+    | request.subject|caller in new.F  (F a List<String>)
+  REF ::= new.F | request.subject|caller|height|turn|pin|kind|method  (kind 0 write,1 reprogram,2 amend; method "" for ops)
 turn: write only self; others change via call under their own law; commit iff every root read is current and the law
   admits every write; a refusal names its clause; silences: reply | refused | unknown | timedOut | broken; retry = same receipt
 spell: "delvetalk CARD ACTION" then "field: value" lines (# and after --- ignored); fit(parse(text), form) -> proposal | unclear | refused

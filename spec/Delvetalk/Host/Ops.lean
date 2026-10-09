@@ -465,7 +465,7 @@ def parseLawText (text : String) : Except String Law := do
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
     amendment (the state unchanged) by the principal who proposes it. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Bool :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2⟩ (some state) state).isNone
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, ""⟩ (some state) state).isNone
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
   match inputs.getObjVal? "modules" with
@@ -625,7 +625,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         match grantStands w via id method with
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
-      let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind⟩
+      let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind, method⟩
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id }
     if let some text := p.laws.lookup id then
@@ -883,7 +883,7 @@ def libraryLawText (opener : String) : Except String String := do
 def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
   match parseLawText lawText with
   | .error _ => some "law syntax"
-  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1⟩ (some (.record [])) (.record [])
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, ""⟩ (some (.record [])) (.record [])
 
 def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
   { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }
