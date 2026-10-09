@@ -298,16 +298,6 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     if package.startsWith "edition" then return finish [("source", toJson package)]
     else throw ("unknownPackage", "the creator has no sealed modules to name")
 
-/-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
-    come from `initial()`). -/
-def mergeSeed (initial seed : Data) (bounds : DataBounds) (ty : Ty) : Except String Data := do
-  if seed.conformsUnder bounds ty then return seed
-  match seed, initial with
-  | .record given, .record base =>
-    if given.any fun (k, _) => !base.any (·.1 == k) then throw "the seed names a field the state does not have"
-    return .record (base.map fun (k, v) => (k, (given.lookup k).getD v))
-  | _, _ => throw "the seed is not a record"
-
 def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
     (height : Nat) : Except (String × String) (CreateRec × Built) := do
   let inputs ← creationInputs creator package

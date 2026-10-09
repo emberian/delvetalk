@@ -494,6 +494,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   `delivery {id}`, `created {object}`, `reply {receipt}`, `timedOut`, `broken`, `reprogrammed {pin}`,
   `amended`. `respond` picks the first payload that conforms to the object's own Response type; an
   object whose Response sum lacks the label gets "response type cannot carry <label>". Text is `.label`.
+- **world-create seeds** are laid over `initial()` like the create Plan's (`mergeSeed`, Ops): a record of some fields,
+  `{}` for `initial()` itself; a field the state lacks is `typeMismatch: …`. The created entry journals the whole state.
 - **create semantics**: `package` is a module NAME in the creator's sealed chain (Garden says "Bell"), or
   source starting `edition`; `law` is only used if it starts `law `; the seed is a PARTIAL record
   overlaid on `initial()` (a variant wrapper is unwrapped). Full-conforming seeds pass as is.
