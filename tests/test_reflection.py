@@ -454,6 +454,83 @@ class CallerAcrossSend(Reflection):
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="bell"), before)
 
 
+FORGE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {note: ""}
+def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+    case _: text
+def rework(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.reprogram({object: {world: "", object: input.target}, package: input.package, migration: ""})):
+    case reprogrammed(r): said(context, r.pin)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+def relaw(state: State, input: {target: String, law: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.amend({object: {world: "", object: input.target}, law: input.law})):
+    case amended(_): said(context, "amended")
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+"""
+
+REWORKED = PACKAGE.replace("case _: 0n", "case _: 7n")
+
+
+class ReprogramAnother(Reflection):
+    """A reprogram or amend of another object is a change the target's own law judges, with
+    request.caller = the proposing object and kind 1 or 2 (a write stays self-only)."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("forge", FORGE, record(note=label("")))
+
+    def rework(self, target, principal="ember", obj="forge"):
+        return self.turn(obj, "rework", record(target=label(target), package=label(REWORKED)), principal=principal)
+
+    def test_the_creator_reprograms_a_target_through_a_forge_and_the_journal_names_the_forge(self):
+        before = self.make("c", PACKAGE, source_seed())["receipt"]["outcome"]["pin"]
+        r = self.rework("c")
+        self.assertEqual(r["status"], "admitted", r)
+        writes = {w["object"]: w for w in r["receipt"]["outcome"]["writes"]}
+        self.assertEqual((writes["c"]["callers"], writes["c"]["kinds"]), (["forge"], [1]))
+        after = self.host.send(op="world-view", principal="ember", object="c")["pin"]
+        self.assertNotEqual(after, before)
+        self.assertEqual(after, r["result"]["value"])
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="c")["pin"], after)
+
+    def test_the_default_law_refuses_a_stranger_reprogramming_through_a_forge(self):
+        self.make("c", PACKAGE, source_seed())
+        r = self.rework("c", principal="kim")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]),
+                         ("refused", "lawRefused", "owner"), r)
+
+    def test_a_law_naming_the_forge_admits_anyone_through_it_and_no_other_object(self):
+        law = 'law forge: request.kind == 0 or request.caller == "forge" or request.subject == "ember"\n'
+        self.make("c", PACKAGE.replace("def initial", law + "def initial", 1), source_seed())
+        self.make("other", FORGE, record(note=label("")))
+        self.assertEqual(self.rework("c", principal="kim")["status"], "admitted")
+        refused = self.rework("c", principal="kim", obj="other")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "forge"))
+
+    def test_an_amend_of_another_object_is_judged_by_its_law(self):
+        self.make("c", PACKAGE, source_seed())
+        text = 'law owner: request.kind == 0 or request.subject == "ember"\nlaw small: new.count <= 3'
+        r = self.turn("forge", "relaw", record(target=label("c"), law=label(text)))
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("amended")), r)
+        self.assertIn("small", self.host.send(op="world-inspect", principal="ember", object="c")["law"])
+        kim = self.turn("forge", "relaw", record(target=label("c"), law=label(text)), principal="kim")
+        self.assertEqual((kim["status"], kim["receipt"]["outcome"]["clause"]), ("refused", "owner"))
+
+
 class Maximum(Reflection):
     def test_a_128_module_library_seals_under_two_seconds_and_its_modules_import(self):
         with tempfile.TemporaryDirectory() as scratch:

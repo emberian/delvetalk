@@ -170,7 +170,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 ## 5. The authority model and reflection, as built
 
 1. **Write is self-only.** `answer` case `write` applies only to `self`; a Reference to another object is answered
-   `refused {clause: notSelf}` in-turn (same for `reprogram` and `amend`). Cross-object change is a `call`: the callee
+   `refused {clause: notSelf}` in-turn. `reprogram` and `amend` of ANOTHER object are allowed: the proposer reads the
+   target (a root) and the change is recorded with `callers = [proposing object]`, kind 1 or 2, so the target's own law
+   judges it (a Forge/Workshop names itself in the target's law: `request.caller == "forge"`). Cross-object change is a `call`: the callee
    runs as its own `self`, so its writes are its own, judged by its own law. `judge` has no `unreadWrite`; a
    `world-propose` that writes an object it does not name as a root is a request error.
 2. **Law facts.** `Facts {subject = principal, caller, height, turn, pin, kind}`. `caller` is the object whose method

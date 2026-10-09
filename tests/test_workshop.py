@@ -1,10 +1,11 @@
 """The workshop: a model takes the reins from a post.
 
-The host answers `check` and `inspect`. Reprogramming another object is not the
-workshop's to do: under the authority model a `reprogram` of any object but the
-running one is answered `refused {clause: notSelf}`, so the propose path stays an
-expected failure until the target adopts a package through its own method (or a
-grant names the workshop).
+The host answers `check`, `inspect` and a `reprogram` of another object (judged by
+the target's own law with request.caller = the workshop). The propose case stays an
+expected failure for a reason in the fixture, not the host: its BLOCK has no `initial`
+or `keep`, so the replacement cannot compile as a Counter (programRefused compile),
+and this Chain world has no sealed library, so a block that imported the Plan library
+would not check clean. tests/test_reflection.py ReprogramAnother covers the host path.
 """
 import unittest
 

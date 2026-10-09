@@ -468,15 +468,18 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some target := f.lookup "object" | evaluation "malformed reprogram plan"
     let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
     let some migration := (f.lookup "migration").bind labelOf | evaluation "malformed reprogram plan"
-    let some id := referenceId target | refusedWith bounds responseType "notSelf"
+    let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
     let s ← get
     let some o := s.world.objects[id]? | refusedWith bounds responseType "unknownObject"
-    if id != self then refusedWith bounds responseType "notSelf"
-    else if s.programs.any (·.1 == id) then refusedWith bounds responseType "duplicate"
+    -- Reprogramming another object is a change of it proposed by the running object: it reads
+    -- the target, and the target's own law judges it with request.caller = the proposer.
+    let proposer := if id == self then caller else self
+    if s.programs.any (·.1 == id) then refusedWith bounds responseType "duplicate"
     else match programFor s.world o source migration with
       | .error (clause, _) => refusedWith bounds responseType clause
       | .ok prog =>
-        if !(← ensureWrite id caller 1) then refusedWith bounds responseType "capacity"
+        recordRoot id o.version
+        if !(← ensureWrite id proposer 1) then refusedWith bounds responseType "capacity"
         else
           modify fun s => { s with world := cacheProgram s.world o source migration prog,
                                    programs := s.programs ++ [(id, (source, migration))] }
@@ -484,14 +487,16 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"
-    let some id := referenceId target | refusedWith bounds responseType "notSelf"
+    let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
     let s ← get
-    if id != self then refusedWith bounds responseType "notSelf"
-    else if s.laws.any (·.1 == id) then refusedWith bounds responseType "duplicate"
+    let some o := s.world.objects[id]? | refusedWith bounds responseType "unknownObject"
+    let proposer := if id == self then caller else self
+    if s.laws.any (·.1 == id) then refusedWith bounds responseType "duplicate"
     else match parseLawText text with
       | .error _ => refusedWith bounds responseType "law syntax"
       | .ok _ =>
-        if !(← ensureWrite id caller 2) then refusedWith bounds responseType "capacity"
+        recordRoot id o.version
+        if !(← ensureWrite id proposer 2) then refusedWith bounds responseType "capacity"
         else
           modify fun s => { s with laws := s.laws ++ [(id, text)] }
           respond bounds responseType "amended" [emptyRecord]
