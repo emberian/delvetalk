@@ -133,7 +133,7 @@ class SceneEntry(unittest.TestCase):
                    'protocol': helper, 'law': ['player']}, 'committed')
         digest = self.invoke('hash', {'program': self.protocol}, name='digest')['data']['result']
         bell = obend_object.lower_data_modules([{'name': n, 'source': (handlers.PRELUDE / (n + '.obend')).read_text()}
-            for n in ('Abi', 'Encounter')] + [{'name': 'Bell', 'source': (ROOT / 'protocols/resident-messages/Bell.obend').read_text()}])
+            for n in ('List', 'Abi', 'Preparation', 'Encounter', 'Emissions')] + [{'name': 'Bell', 'source': (ROOT / 'protocols/resident-messages/Bell.obend').read_text()}])
         self.call({'op': 'create', 'object': 'bell', 'principal': 'author', 'intent': self.intent(),
                    'protocol': bell, 'law': ['player']}, 'committed')
         sent = self.invoke('play', {'to': 'scene', 'recipientProgram': digest, 'chord': 'C E G', 'voices': 1}, name='bell')

@@ -3,6 +3,7 @@
 import WorldCore
 import FileCustody
 import Compiler.Sha256
+import ProgramDigest
 open Lean World
 
 namespace Messages
@@ -42,181 +43,327 @@ def hashShape (value : Json) : Except String String := do
     throw "message program must be an exact SHA256 digest"
   return hash
 
+-- Operator-selected limits are immutable lineage configuration. These named
+-- host ceilings bound one causal admission, not the number of independent turns.
+def maxDepth : Nat := 8
+def maxFanout : Nat := 16
+def maxEvents : Nat := 64
+def maxWork : Nat := 1000000
+def maxBytes : Nat := 1048576
+def terminalReserve : Nat := 8192
+
+def defaultLimits : Json := obj [("depth", toJson maxDepth), ("fanout", toJson maxFanout),
+  ("events", toJson maxEvents), ("work", toJson maxWork), ("bytes", toJson maxBytes)]
+
+def validateCapabilities (transition : Json) : Except String Unit := do
+  if let some value := (field transition "messages").toOption then
+    exact value ["emit", "receive"] "message capabilities"
+    discard ((← field value "emit").getBool?)
+    discard ((← field value "receive").getBool?)
+
+def capability (transition : Json) (name : String) : Bool :=
+  (((field transition "messages").bind (fun flags => field flags name)).bind Json.getBool?).toOption.getD false
+
+def emits (transition : Json) : Bool := capability transition "emit"
+def receives (transition : Json) : Bool := capability transition "receive"
+
+def validateLimits (limits : Json) : Except String Unit := do
+  exact limits ["depth", "fanout", "events", "work", "bytes"] "causal limits"
+  for (key, ceiling) in [("depth", maxDepth), ("fanout", maxFanout), ("events", maxEvents),
+      ("work", maxWork), ("bytes", maxBytes)] do
+    let value ← (← field limits key).getNat?
+    if value == 0 || value > ceiling then throw ("causal limit outside host ceiling: " ++ key)
+
 def registry (world : Json) : Except String Json := do
   let value ← field world "messages"
-  exact value ["profile", "lineage", "pendingLimit", "pending", "events"] "message registry"
+  exact value ["profile", "lineage", "pendingLimit", "pending", "events", "captures", "causes", "limits"] "message registry"
   if (← str value "profile") != registryProfile then throw "unknown message registry profile"
   discard (component (← field value "lineage"))
   let pending ← (← field value "pendingLimit").getNat?
-  if pending == 0 || pending > 128 then
-    throw "message capacity must satisfy 1 <= pending <= 128"
-  discard ((← field value "events").getObj?)
-  if (← pairs (← field value "pending")).length > pending then
-    throw "message pending index exceeds capacity"
+  if pending == 0 || pending > 128 then throw "message capacity must satisfy 1 <= pending <= 128"
+  for key in ["events", "captures", "causes"] do discard ((← field value key).getObj?)
+  if (← pairs (← field value "pending")).length > pending then throw "message pending index exceeds capacity"
+  validateLimits (← field value "limits")
   return value
 
 def initializeRegistry (world request : Json) : Except String (Json × Json) := do
-  exact request ["op", "principal", "intent", "lineage", "pendingLimit"] "messages-init"
+  exact request (["op", "principal", "intent", "lineage", "pendingLimit"] ++
+    if (field request "limits").isOk then ["limits"] else []) "messages-init"
   if (field world "messages").isOk then throw "message lineage is already initialized"
-  if !(← pairs (← field world "objects")).isEmpty then
-    throw "messages-init requires empty-world bootstrap"
+  if !(← pairs (← field world "objects")).isEmpty then throw "messages-init requires empty-world bootstrap"
   let value := obj [("profile", .str registryProfile),
     ("lineage", ← field request "lineage"), ("pendingLimit", ← field request "pendingLimit"),
-    ("pending", obj []), ("events", obj [])]
+    ("limits", (field request "limits").toOption.getD defaultLimits),
+    ("pending", obj []), ("events", obj []), ("captures", obj []), ("causes", obj [])]
   let next ← put world "messages" value
   discard (registry next)
   return (next, receipt request "committed" value)
 
--- Every emission slot is validated before enabled flags are considered. Payload
--- is ordinary bounded record data; there is no executable expression in it.
+-- The typed source boundary decodes Prelude.Value once. Routing and payload
+-- remain plain bounded data here, never expressions. An empty collection is pure.
 def descriptor (value : Json) : Evaluation Unit := do
-  exact value ["enabled", "to", "command", "recipientProgram", "payload"] "message emission"
-  discard ((← field value "enabled").getBool?)
+  exact value ["to", "command", "recipientProgram", "payload"] "message emission"
   discard (component (← field value "to"))
   discard (component (← field value "command"))
   discard (hashShape (← field value "recipientProgram"))
   let payload ← field value "payload"
   discard (pairs payload)
   if (FileCustody.encode payload).utf8ByteSize > 4096 then throw "message payload exceeds 4096 bytes"
-  discard (toTerm 64 payload)
   charge (FileCustody.encode value).utf8ByteSize
 
--- This hook is called at the actual invocation position, while the admission is
--- still staged. Ordinary outboxes and matching-looking data never enter it.
-def stage (world admission invocation preimage : Json) (call : Nat)
-    (emitted : Array Json) : Evaluation (Json × Array Json × Array Json) := do
+def counter (value : Json) (key : String) : Except String Nat := (field value key).bind Json.getNat?
+
+def withinLedger (config ledger : Json) : Except String Unit := do
+  let limits ← field config "limits"
+  for key in ["events", "work", "bytes"] do
+    if (← counter ledger key) > (← counter limits key) then throw ("causal " ++ key ++ " capacity exhausted")
+
+-- A capture is retained once per emitting call. Events carry only its reference;
+-- authenticated facts and query projections are resolved by the receiver.
+def resolvedEvidence (config evidence : Json) : Except String Json := do
+  let capture ← field (← field config "captures") (← str evidence "capture")
+  for key in ["source", "sourceProgram", "originatingPrincipal", "admission", "call"] do
+    if (← field capture key) != (← field evidence key) then throw "message capture differs from evidence"
+  put evidence "sourcePreimage" (← field capture "sourcePreimage")
+
+def resolvedEvent (config event : Json) : Except String Json := do
+  put event "evidence" (← resolvedEvidence config (← field event "evidence"))
+
+def stageCausal (world admission invocation preimage : Json) (call : Nat)
+    (emitted : Array Json) (parent : Option Json) (workStart : Option Nat := none) : Evaluation (Json × Array Json × Array Json) := do
   let command ← field (← field (← field preimage "protocol") "commands") (← str invocation "command")
-  let profile := ((field command "transition").bind (fun value => str value "profile")).toOption
-  if !(isEffects (profile.getD "")) then return (world, #[], emitted)
-  if emitted.size != 4 then throw "source effects require exactly four emission slots"
-  for value in emitted do descriptor value
-  -- A pure branch of an effects-capable command needs no delivery custody.
-  -- Validation remains eager: disabling a malformed slot cannot hide it.
-  if emitted.all (fun value => ((field value "enabled").bind Json.getBool?).toOption == some false) then
+  let some transition := (field command "transition").toOption | return (world, #[], emitted)
+  validateCapabilities transition
+  if !emits transition then
+    if !emitted.isEmpty then throw "message emission capability missing"
     return (world, #[], #[])
+  if emitted.size > maxFanout then throw "message fanout exceeds host ceiling"
+  for value in emitted do descriptor value
+  if emitted.isEmpty then return (world, #[], #[])
   let config ← registry world
+  let limits ← field config "limits"
+  if emitted.size > (← counter limits "fanout") then throw "causal fanout capacity exhausted"
   let mut events ← field config "events"
+  let mut captures ← field config "captures"
+  let mut causes ← field config "causes"
   let mut pendingIndex ← field config "pending"
   let mut pending := (← pairs pendingIndex).length
   let source ← component (← field invocation "object")
   let principal ← component (← field admission "principal")
   let intent ← component (← field admission "intent")
+  let lineage ← field config "lineage"
+  let origin := obj [("principal", .str principal), ("intent", .str intent)]
+  let (causeId, parentId, depth) ← match parent with
+    | none => pure (digest (obj [("lineage", lineage), ("admission", origin)]), "", 0)
+    | some evidence => do
+      let causal ← field evidence "causal"
+      pure (← str causal "root", ← str (← field evidence "ref") "id", (← counter causal "depth") + 1)
+  if depth > (← counter limits "depth") then throw "causal depth capacity exhausted"
+  let mut ledger ← match (field causes causeId).toOption with
+    | some value => pure value
+    | none => do
+      if parent.isSome then throw "message causal ledger missing"
+      pure (obj [("origin", origin), ("events", toJson (0 : Nat)),
+        ("work", toJson (0 : Nat)), ("bytes", toJson (0 : Nat))])
   let program ← field preimage "protocol"
   let sourceBytes := (FileCustody.encode preimage).utf8ByteSize
   if sourceBytes > 65536 then throw "message source preimage exceeds 64 KiB"
-  let programBytes := FileCustody.encode program
-  charge (sourceBytes + programBytes.utf8ByteSize)
-  let sourceProgram := Minidregg.Compiler.Sha256.hexString programBytes
-  -- Source capture is one immutable Json value shared by every slot. Recipient
-  -- roots cannot change inside this staging call: resolve and hash each once.
+  charge sourceBytes
+  let sourceProgram ← ProgramDigest.digest program
+  let captureId := digest (obj [("lineage", lineage), ("admission", origin), ("call", toJson call)])
+  if (field captures captureId).isOk then throw "message capture identity collision"
+  let captureHead := obj [("source", .str source), ("sourceProgram", .str sourceProgram),
+    ("originatingPrincipal", .str principal), ("admission", origin), ("call", toJson call)]
+  let headBytes := (FileCustody.encode captureHead).utf8ByteSize
+  charge headBytes
+  -- Exact encoded size after adding one member to this nonempty JSON object;
+  -- reuse the already encoded preimage instead of traversing it a second time.
+  let captureBytes := headBytes + sourceBytes + (FileCustody.encode (.str "sourcePreimage")).utf8ByteSize + 2
+  captures ← put captures captureId (← put captureHead "sourcePreimage" preimage)
+  ledger ← put ledger "bytes" (toJson ((← counter ledger "bytes") + captureBytes))
   let mut targets : Array (String × Json × String) := #[]
   let mut references := #[]
   for slot in [:emitted.size] do
     let value := emitted[slot]!
-    if !(← (← field value "enabled").getBool?) then continue
-    if pending >= (← (← field config "pendingLimit").getNat?) then
-      throw "message pending capacity exhausted"
+    if pending >= (← counter config "pendingLimit") then throw "message pending capacity exhausted"
     let recipient ← str value "to"
-    let currentRows ← (← pairs pendingIndex).mapM fun row => do
-      return (row.1, ← field events row.1)
+    let currentRows ← (← pairs pendingIndex).mapM fun row => do return (row.1, ← field events row.1)
     charge currentRows.length
     let fromSource := currentRows.countP (fun row =>
-      (str row.2 "status").toOption == some "pending" &&
       ((field row.2 "evidence").bind (fun e => str e "source")).toOption == some source)
     let toRecipient := currentRows.countP (fun row =>
-      (str row.2 "status").toOption == some "pending" &&
       ((field row.2 "evidence").bind (fun e => str e "to")).toOption == some recipient)
-    if fromSource >= 32 || toRecipient >= 32 then
-      throw "message emitter or recipient pending capacity exhausted"
+    if fromSource >= 32 || toRecipient >= 32 then throw "message emitter or recipient pending capacity exhausted"
     let (targetProgram, targetDigest) ← match targets.find? (fun row => row.1 == recipient) with
       | some (_, program, hash) => pure (program, hash)
       | none => do
         let target ← field (← field world "objects") recipient
         let program ← field target "protocol"
-        let bytes := FileCustody.encode program
-        charge bytes.utf8ByteSize
-        let hash := Minidregg.Compiler.Sha256.hexString bytes
+        let hash ← ProgramDigest.digest program
         targets := targets.push (recipient, program, hash)
         pure (program, hash)
-    if targetDigest != (← str value "recipientProgram") then
-      throw "message recipient program changed before emission"
+    if targetDigest != (← str value "recipientProgram") then throw "message recipient program changed before emission"
     let targetCommand ← field (← field targetProgram "commands") (← str value "command")
-    if !isReceive (((field targetCommand "transition").bind (fun t => str t "profile")).toOption.getD "") then
-      throw "message target must be a receive-only source command"
-    let identity := obj [("lineage", ← field config "lineage"), ("principal", .str principal),
+    let targetTransition ← field targetCommand "transition"
+    validateCapabilities targetTransition
+    if !receives targetTransition then throw "message target must be a receive-only source command"
+    let identity := obj [("lineage", lineage), ("principal", .str principal),
       ("intent", .str intent), ("call", toJson call), ("slot", toJson slot)]
     let id := digest identity
     if (field events id).isOk then throw "message identity collision"
-    let reference := obj [("lineage", ← field config "lineage"), ("id", .str id)]
-    let evidence := obj [("ref", reference), ("source", .str source), ("sourcePreimage", preimage),
+    let reference := obj [("lineage", lineage), ("id", .str id)]
+    let evidence := obj [("ref", reference), ("capture", .str captureId), ("source", .str source),
       ("sourceProgram", .str sourceProgram), ("originatingPrincipal", .str principal),
-      ("admission", obj [("principal", .str principal), ("intent", .str intent)]),
-      ("call", toJson call), ("slot", toJson slot), ("to", .str recipient),
+      ("admission", origin), ("call", toJson call), ("slot", toJson slot), ("to", .str recipient),
       ("command", ← field value "command"), ("recipientProgram", ← field value "recipientProgram"),
-      ("payload", ← field value "payload")]
-    events ← put events id (obj [("evidence", evidence), ("status", .str "pending")])
+      ("payload", ← field value "payload"), ("causal", obj [("root", .str causeId),
+        ("parent", .str parentId), ("depth", toJson depth)])]
+    let row := obj [("evidence", evidence), ("status", .str "pending")]
+    let rowBytes := (FileCustody.encode row).utf8ByteSize
+    charge rowBytes
+    ledger ← put (← put ledger "events" (toJson ((← counter ledger "events") + 1))) "bytes"
+      (toJson ((← counter ledger "bytes") + rowBytes + terminalReserve))
+    withinLedger config ledger
+    events ← put events id row
     pendingIndex ← put pendingIndex id (.bool true)
     references := references.push reference
     pending := pending + 1
-  let updated ← put (← put config "events" events) "pending" pendingIndex
+  if let some start := workStart then
+    let remaining ← get
+    ledger ← put ledger "work" (toJson ((← counter ledger "work") + start - remaining))
+    withinLedger config ledger
+  causes ← put causes causeId ledger
+  let updated ← put (← put (← put (← put config "events" events) "pending" pendingIndex)
+    "captures" captures) "causes" causes
   return (← put world "messages" updated, references, #[])
 
--- Only native staged admission mints this table. Retained immutable evidence is
--- sufficient; delivery must not scan receipt history (resident custody indexes it).
-def deliverWith (runtime : Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
-  exact request ["op", "principal", "intent", "object", "event", "expected"] "deliver"
+def stage (world admission invocation preimage : Json) (call workStart : Nat)
+    (emitted : Array Json) : Evaluation (Json × Array Json × Array Json) :=
+  stageCausal world admission invocation preimage call emitted none (some workStart)
+
+-- Query and delivery resolve only receiver-retained evidence. The request never
+-- carries payload, causal authority, source facts or an alternative capture.
+def pendingEvent (world request : Json) : Except String (Json × String × Json) := do
   let config ← registry world
   let reference ← field request "event"
   exact reference ["lineage", "id"] "event reference"
   if (← field reference "lineage") != (← field config "lineage") then throw "foreign message lineage"
   let id ← hashShape (← field reference "id")
-  let events ← field config "events"
-  let retained ← field events id
-  if (← str retained "status") != "pending" then throw "message already consumed"
-  let evidence ← field retained "evidence"
+  let row ← field (← field config "events") id
+  if (← str row "status") != "pending" then throw "message already terminal"
+  let evidence ← resolvedEvidence config (← field row "evidence")
   if (← field evidence "ref") != reference then throw "message reference differs from evidence"
+  if (← str request "object") != (← str evidence "to") then throw "message recipient cannot be redirected"
+  return (config, id, evidence)
+
+def terminal (config : Json) (id : String) (status : String) (consumption : Json) : Except String Json := do
+  let events ← field config "events"
+  let row ← field events id
+  let updated ← put (← put row "status" (.str status)) "consumption" consumption
+  let growth := (FileCustody.encode updated).utf8ByteSize - (FileCustody.encode row).utf8ByteSize
+  if growth > terminalReserve then throw "terminal metadata exceeds reserved storage"
+  let pending ← (← field config "pending").getObj?
+  put (← put config "events" (← put events id updated)) "pending" (.obj (pending.erase id))
+
+def deliverWith (runtime : Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
+  exact request ["op", "principal", "intent", "object", "event", "expected"] "deliver"
+  discard (component (.str principal))
+  discard (component (← field request "intent"))
+  let (config, id, evidence) ← pendingEvent world request
   let target ← str evidence "to"
-  if (← str request "object") != target then throw "message recipient cannot be redirected"
-  let preimage ← field (← field world "objects") target
+  let preimage ← readObject (← field world "objects") target principal
   if preimage != (← field request "expected") then throw "stale read root"
-  if digest (← field preimage "protocol") != (← str evidence "recipientProgram") then
-    throw "message recipient program changed"
+  let causal ← field evidence "causal"
+  let causeId ← str causal "root"
+  let ledger ← field (← field config "causes") causeId
+  let used ← counter ledger "work"
+  let ceiling ← counter (← field config "limits") "work"
+  if used >= ceiling then throw "causal work capacity exhausted"
+  let fuel := min runtime.budget (ceiling - used)
   let invocation := obj [("op", .str "invoke"), ("object", .str target),
     ("command", ← field evidence "command"), ("input", ← field evidence "payload")]
   let facts := obj [("id", .str id), ("source", ← field evidence "source"),
     ("sourceProgram", ← field evidence "sourceProgram"),
-    ("originatingPrincipal", ← field evidence "originatingPrincipal")]
+    ("originatingPrincipal", ← field evidence "originatingPrincipal"),
+    ("root", .str causeId), ("parent", ← field causal "parent"), ("depth", ← field causal "depth"),
+    ("rootPrincipal", ← field (← field ledger "origin") "principal")]
   let execution : Evaluation (Json × Json) := do
-    authorizeRequest preimage invocation principal
-    let (state, result, emitted, allocations) ← executeCommandWith runtime preimage invocation principal
-      noInputOrigin (some facts)
-    if !emitted.isEmpty then throw "message delivery cannot emit descendants"
+    authorizeRequestWith runtime preimage invocation principal
+    if (← ProgramDigest.digest (← field preimage "protocol")) != (← str evidence "recipientProgram") then
+      throw "message recipient program changed"
+    let (state, result, emitted, allocations) ← executeCommandWith runtime preimage invocation principal noInputOrigin (some facts)
     if !allocations.isEmpty then throw "message delivery cannot allocate children"
-    let version ← (← field preimage "version").getNat?
+    let version ← counter preimage "version"
     let nextObject ← put (← put preimage "state" state) "version" (toJson (version + 1))
     checkCandidateWith runtime preimage nextObject invocation principal
-    return (nextObject, result)
-  let ((nextObject, result), _) ← execution.run runtime.budget
-  let objects ← put (← field world "objects") target nextObject
-  let terminal := obj [("evidence", evidence), ("status", .str "consumed"),
-    ("consumption", obj [("principal", .str principal), ("intent", ← field request "intent")])]
-  let pendingIndex ← (← field config "pending").getObj?
-  let nextRegistry ← put (← put config "events" (← put events id terminal)) "pending"
-    (.obj (pendingIndex.erase id))
-  let next ← put (← put world "objects" objects) "messages" nextRegistry
-  let data := obj [("root", nextObject), ("result", result), ("outbox", .arr #[]),
-    ("event", reference), ("recipient", .str target), ("status", .str "consumed")]
+    let objects ← put (← field world "objects") target nextObject
+    let consumed ← terminal config id "consumed" (obj [("principal", .str principal), ("intent", ← field request "intent")])
+    let prepared ← put (← put world "objects" objects) "messages" consumed
+    let (next, children, _) ← stageCausal prepared request invocation preimage 0 emitted (some evidence)
+    let mut data := obj [("root", nextObject), ("result", result), ("outbox", .arr #[]),
+      ("event", ← field request "event"), ("recipient", .str target), ("status", .str "consumed")]
+    if !children.isEmpty then data ← put data "messages" (.arr children)
+    let outputBytes := (FileCustody.encode data).utf8ByteSize
+    charge outputBytes
+    let current ← registry next
+    let causes ← field current "causes"
+    let updated ← field causes causeId
+    let remaining ← get
+    let updated ← put (← put updated "work" (toJson (used + fuel - remaining))) "bytes"
+      (toJson ((← counter updated "bytes") + outputBytes))
+    withinLedger current updated
+    let final ← put next "messages" (← put current "causes" (← put causes causeId updated))
+    return (final, data)
+  let ((next, data), _) ← execution.run fuel
   return (next, receipt request "committed" data)
 
--- Public bounded observations; never admissions, acknowledgements, or claims.
+-- Settlement is recipient governance, not source recall or execution of an old
+-- payload against replacement code. Reserved terminal bytes permit cleanup even
+-- when the causal computation/evidence budget has reached its ceiling.
+def settleWith (runtime : Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
+  exact request ["op", "principal", "intent", "object", "event", "expected", "reason"] "settle-message"
+  discard (component (.str principal))
+  discard (component (← field request "intent"))
+  let reason ← str request "reason"
+  if reason.isEmpty || (FileCustody.encode (.str reason)).utf8ByteSize > 1024 then throw "settlement requires a bounded nonempty reason"
+  let (config, id, evidence) ← pendingEvent world request
+  let target ← str evidence "to"
+  let preimage ← readObject (← field world "objects") target principal
+  if preimage != (← field request "expected") then throw "stale read root"
+  let input := obj [("event", ← field request "event"), ("reason", .str reason),
+    ("source", ← field evidence "source"), ("sourceProgram", ← field evidence "sourceProgram"),
+    ("originatingPrincipal", ← field evidence "originatingPrincipal"), ("causal", ← field evidence "causal")]
+  let governed := obj [("op", .str "invoke"), ("object", .str target),
+    ("command", .str "$messages-settle"), ("input", input)]
+  let decision : Evaluation Unit := do
+    authorizeRequestWith runtime preimage governed principal
+    checkCandidateWith runtime preimage preimage governed principal
+  discard (decision.run runtime.budget)
+  let consumption := obj [("principal", .str principal), ("intent", ← field request "intent"),
+    ("reason", .str reason)]
+  let next ← put world "messages" (← terminal config id "settled" consumption)
+  let data := obj [("root", preimage), ("event", ← field request "event"), ("recipient", .str target),
+    ("status", .str "settled"), ("reason", .str reason), ("outbox", .arr #[])]
+  return (next, receipt request "committed" data)
+
+-- New acquisition of retained facts faces both endpoint laws. An event locator
+-- grants nothing, and evidence is expanded only after these current read checks.
 def query (world request : Json) : Except String Json := do
-  discard (component (← field request "principal"))
+  let principal ← component (← field request "principal")
+  let objects ← field world "objects"
   let config ← registry world
   match (← str request "op") with
   | "messages-pending" =>
     exact request ["op", "principal"] "messages-pending"
+    let mut visible := obj []
+    for (id, value) in (← pairs (← field config "pending")) do
+      let retained ← field (← field config "events") id
+      let evidence ← field retained "evidence"
+      if !(readObject objects (← str evidence "source") principal).isOk ||
+          !(readObject objects (← str evidence "to") principal).isOk then continue
+      visible ← put visible id value
     return obj [("profile", ← field config "profile"), ("lineage", ← field config "lineage"),
-      ("pending", ← field config "pending")]
+      ("pending", visible)]
   | "message-event" =>
     exact request ["op", "principal", "event"] "message-event"
     let reference ← field request "event"
@@ -226,8 +373,9 @@ def query (world request : Json) : Except String Json := do
     let retained ← field (← field config "events") id
     let evidence ← field retained "evidence"
     if (← field evidence "ref") != reference then throw "message reference differs from evidence"
-    let root := (field (← field world "objects") (← str evidence "to")).toOption.getD .null
-    return obj [("event", retained), ("root", root)]
+    discard (readObject objects (← str evidence "source") principal)
+    let root ← readObject objects (← str evidence "to") principal
+    return obj [("event", ← resolvedEvent config retained), ("root", root)]
   | _ => throw "unknown message query"
 
 end Messages

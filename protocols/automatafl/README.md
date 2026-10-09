@@ -1,9 +1,9 @@
 # Automatafl: two seats, one shared board
 
-This companion adds a resident view to the [qualified two-player table](../../game/table/README.md).
+This companion displays the [source-owned two-player table](../../game/table/README.md).
 Every offered table uses the original tuned 11×11 opening with 12 attractors,
-24 repulsors and the automaton at F6. The companion preserves the underlying
-table commands, commitment bytes and qualified two-player movement rules.
+24 repulsors and the automaton at F6. The table itself owns its commands, commitment framing, private offers and public
+phases in Bend. The qualified two-player movement rules remain unchanged.
 There is no board-size, layout or rules selection.
 North aims for the top corners; South aims for the bottom corners. Both players
 move the shared attractors and repulsors to guide the automaton.
@@ -43,7 +43,7 @@ opening. A stale refusal needs a fresh observation and new intent.
 
 ## Public companion
 
-[`Table.obend`](Table.obend) runs through Lean to describe each phase. It offers
+[`CommitRevealTable.obend`](../../game/table/CommitRevealTable.obend) runs through Lean to describe each phase. It offers
 only `resolve`, and only after both openings. Current law still decides who may
 act. Conflicts, invalid pairs, marks and terminal results remain the actual game’s
 outcomes. There are no public source/target/nonce entry forms.

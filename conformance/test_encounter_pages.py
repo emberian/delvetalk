@@ -34,7 +34,7 @@ def call(request):
 
 def gallery_modules():
     return [{'name': name, 'source': (ROOT / 'world/lib/prelude' / (name + '.obend')).read_text()}
-            for name in ('Abi', 'Encounter', 'EncounterPages')] + [
+            for name in ('List', 'Abi', 'Encounter', 'EncounterPages')] + [
                 {'name': 'PageGallery', 'source': (ROOT / 'world/lib/prelude/examples/PageGallery.obend').read_text()}]
 
 

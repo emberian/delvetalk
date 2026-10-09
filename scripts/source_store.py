@@ -276,11 +276,11 @@ def resolve_modules(artifact_store, manifest):
     return validate_module_material({'format': MODULE_MATERIAL, 'manifest': manifest, 'modules': modules})
 
 
-def prepare_module_proposal(artifact_store, manifest, scenarios, *, syntax='objective-bend-spell@2'):
+def prepare_module_proposal(artifact_store, manifest, scenarios, *, syntax='objective-bend-object'):
     """Opt-in resident assembly; the final module supplies the host bindings."""
     resolve_modules(artifact_store, manifest)
-    if syntax not in ('objective-bend-spell@2', 'objective-bend-spell@3'):
-        raise ValueError('module proposal requires explicit spell@2 or spell@3')
+    if syntax not in ('objective-bend-object', 'objective-bend-spell@2', 'objective-bend-spell@3'):
+        raise ValueError('module proposal requires explicit source object syntax')
     proposal = {'format': MODULE_PROPOSAL, 'syntax': syntax,
                 'manifest': loads(canonical(manifest)),
                 'scenariosRef': store_bytes(artifact_store, scenarios, kind='scenarios'),
@@ -293,7 +293,7 @@ def validate_module_proposal(artifact_store, proposal, *, check_adapter=True):
     if (not isinstance(proposal, dict)
             or set(proposal) != {'format', 'syntax', 'manifest', 'scenariosRef', 'adapterPin'}
             or proposal['format'] != MODULE_PROPOSAL
-            or proposal['syntax'] not in ('objective-bend-spell@2', 'objective-bend-spell@3')):
+            or proposal['syntax'] not in ('objective-bend-object', 'objective-bend-spell@2', 'objective-bend-spell@3')):
         raise ValueError('invalid module reference proposal')
     declared_dependencies(proposal)
     material = resolve_modules(artifact_store, proposal['manifest'])

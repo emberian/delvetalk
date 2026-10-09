@@ -2,8 +2,9 @@
 
 [`table_participant.py`](../../scripts/table_participant.py) gives each of the
 two seats a private custody directory and a portable typed card. It uses the
-existing compiled table and commitment library; Lean admits every request and
-executes the game. Create the table using the [table guide](README.md).
+source table: Bend chooses private offers and computes commitments; Lean admits
+every request and executes the game. The helper owns only physical custody,
+indexed board display and request transport. Create the table using the [table guide](README.md).
 
 ```sh
 python3 scripts/table_participant.py --database /tmp/table-world.json \

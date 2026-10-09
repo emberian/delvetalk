@@ -51,8 +51,8 @@ rows in the queue rather than separate lists here.
 Current source Garden has 32 plantings, attribution, cuttings and paged history.
 Authored Spween Scene modules add methods and authenticated message receivers.
 Source allocation and constrained amendments have focused receiving checks.
-Four-target newcomer enrollment still exceeds the current work budget; its atomic
-join remains open. These features need the actual fresh-world seed and rehearsal.
+Four-target newcomer enrollment now passes isolated membership checks under the
+unchanged work budget after identical-guard reuse; joined installation remains open. These features need the actual fresh-world seed and rehearsal.
 
 At most two local native compiler seats are used. Independent snapshots preserve
 build evidence; source review and implementation stay open. Runtime installation
@@ -65,6 +65,9 @@ DelveTalk's default top level: forms, prose, local notation and REPL participate
 in one source-authored encounter. Typed documents, native template lowering and
 source interpretation are being implemented together. Browser/Town renderers
 preserve offered meaning; neither defines another action grammar.
+
+The names below attribute earlier focused slices. Current replacement owners are
+recorded in BACKLOG; the source/current-runtime join remains in flight.
 
 - Verified Delve proof-of-control credentials: `clerk_enrollment`; physical token
   custody and fixed-provider verification, no world grants.
@@ -80,9 +83,11 @@ preserve offered meaning; neither defines another action grammar.
   `portal_bridge`. Native preparation must preserve retained values without
   repeatedly serializing typed state through an expanding generic Value wrapper.
 
-Qualified native snapshot 092407 is installed locally after exact source
-and binary verification. Direct native Data preparation, bounded catalogue and
-checker corrections await the next joined generation. The public website still
+Installed local native snapshot 092407 is older than the current source wave.
+Immutable snapshot 103301 qualifies direct native Data preparation, bounded
+catalogue, checker fixes and large Candidate source transport; it excludes the
+current law, reactive ABI, read-policy, generic, SHA and evaluator-cache changes.
+DT-30 owns qualification and installation of their joined closure. The public website still
 runs an older preview.
 Fresh source garden, source-authored scenes and new account services must be
 qualified and seeded on the actual deployment, not inferred from local tests.
@@ -93,6 +98,15 @@ recovering committed outcomes without a second encounter-custody write, and
 retaining account bootstrap descriptors before first admission so restarts retry
 the original request even after templates change. Snapshot freezes preserve
 reproducible evidence; they do not close design review.
+
+Town retry recovery has five focused passing checks against an independent copy
+of native/source snapshot 103301: lost session reply with changed runtime, pending
+request refusing changed runtime, lost membership reply with changed runtime, lost
+terminal presentation, and changed database binding. Recovery reads the original
+database receipt before current pins and never replays against a replacement heap.
+The exact two consumer-file hashes and native hashes are retained privately in
+`/Users/ember/claude_state/delvetalk/summon-recovery-check-20261009/summon-recovery-evidence.json`.
+This is DT-26 focused evidence; the current joined closure remains DT-30.
 
 ## Boundaries
 

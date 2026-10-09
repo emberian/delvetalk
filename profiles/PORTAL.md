@@ -34,7 +34,7 @@ intent; they are request material, not authenticated Delve messages.
 | GET `/api/world` | Objects, mode, CSRF token |
 | GET `/api/object?object=ID` | New saved card; optional `panel` |
 | GET `/api/card?card=ID` | Original card |
-| GET `/api/detail?card=ID` | Exact captured source/root and history prefix |
+| GET `/api/detail?card=ID` | Currently authorized captured source/root and bounded guarded history |
 | GET `/api/draft?draft=ID` | Retained draft/outcome |
 | POST `/api/prepare` | `{card,action,fields?}` |
 | POST `/api/interpret` | `{card,text}` |
@@ -159,3 +159,11 @@ Optional `interpretation` metadata names the source request and preparation
 exports. Retained reads recheck that declaration against the typed result;
 selected exports are compiled and executed by the native helper. Metadata alone
 makes no model call and admits no turn.
+
+Invitations and interpretation metadata may declare `contributionCodec` as
+`value` or `data`. Omission keeps the existing value transport. Captured cards
+preserve this source choice; ordinary forms cannot select the typed transport
+or reinterpret field text as typed data. Native preparation checks typed inputs.
+
+Saved cards and details recheck [current acquisition law](READS.md), including
+source-declared peers. Full custody snapshots are not served as participant history.

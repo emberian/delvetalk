@@ -125,8 +125,8 @@ class SpweenHandlers(unittest.TestCase):
             'expected': root, 'command': 'hash', 'input': {'program': protocol}}, 'committed')['data']['result']
 
     def test_addressed_message_source_evidence_current_delivery_law_and_retry(self):
-        door_source = (ROOT / 'protocols/resident-messages/Door.obend').read_text().replace('event.source == "bell"', 'event.source == "scene"')
-        door = obend_object.lower_data_modules([{'name': n, 'source': (ROOT / 'world/lib/prelude' / (n + '.obend')).read_text()} for n in ('Abi', 'Encounter')] + [{'name': 'Door', 'source': door_source}])
+        from conformance.test_resident_messages import residents
+        door = residents.load('Door', {'source': 'scene', 'recipient': 'lantern'})
         self.install(door, 'door', policy(['hear'], ('relay',)))
         digest = self.digest(door)
         source = scene('=== bench\n* [Repair and ring]\n  ~ repair\n  ~ send "door" "' + digest + '" "C E G"\n  -> END\n')

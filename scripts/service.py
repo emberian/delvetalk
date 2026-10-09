@@ -19,6 +19,7 @@ import history
 import message_relay
 import source_store
 import worker
+import process_custody
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMAT = 'delvetalk-service-v1'
@@ -159,7 +160,7 @@ class Service:
         return compiler_queue.CompilerQueue(self.state / 'compiler', config['database'],
             config['artifacts'], profile=config['profile'], memory_mib=memory_mib)
 
-    def enqueue(self, uri, cid, *, deadline_seconds=10, memory_mib=2048):
+    def enqueue(self, uri, cid, *, deadline_seconds=10, memory_mib=process_custody.NATIVE_MEMORY_MIB):
         if not math.isfinite(deadline_seconds) or not 0 < deadline_seconds <= 300:
             raise ValueError('enqueue deadline must be finite and in (0,300]')
         config = self.config()
@@ -242,7 +243,7 @@ class Service:
             same(desk.immutable(directory / 'plan.json', plan), plan, 'checkpoint plan differs')
         return str(directory / 'plan.json')
 
-    def tick(self, *, limit=10, deadline_seconds=60, max_attempts=3, memory_mib=2048):
+    def tick(self, *, limit=10, deadline_seconds=60, max_attempts=3, memory_mib=process_custody.NATIVE_MEMORY_MIB):
         if (type(limit) is not int or not 1 <= limit <= 100 or not math.isfinite(deadline_seconds)
                 or not 0 < deadline_seconds <= 300 or type(max_attempts) is not int or not 1 <= max_attempts <= 20
                 or type(memory_mib) is not int or not 64 <= memory_mib <= 8192):
@@ -392,7 +393,7 @@ def main():
     tick.add_argument('--limit', type=int, default=10)
     tick.add_argument('--deadline-seconds', type=float, default=60)
     tick.add_argument('--max-attempts', type=int, default=3)
-    tick.add_argument('--memory-mib', type=int, default=2048)
+    tick.add_argument('--memory-mib', type=int, default=process_custody.NATIVE_MEMORY_MIB)
     commands.add_parser('status')
     args = parser.parse_args()
     try:

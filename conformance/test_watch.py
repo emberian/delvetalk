@@ -22,6 +22,7 @@ class AppView:
     def __init__(self):
         self.feed = [{'feed': []}]
         self.search = [{'posts': []}]
+        self.tag_search = [{'posts': []}]
         self.thread = {'thread': {'post': post('anchor', 'discussion context'), 'replies': []}}
         self.calls = []
         self.failure = None
@@ -31,7 +32,8 @@ class AppView:
         self.calls.append((nsid, params))
         if nsid.endswith('getPostThread'):
             return copy.deepcopy(self.thread)
-        source = 'feed' if nsid.endswith('getFeed') else 'search'
+        source = ('feed' if nsid.endswith('getFeed') else
+                  'tag_search' if params['q'] == '#gsb' else 'search')
         index = int(params.get('cursor', '0'))
         if self.failure == (source, index):
             raise watch.delve.Failure('temporary failure')
@@ -121,6 +123,55 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(result['coverage']['thread']['deeperReplies'], 3)
         self.assertIn('repeated', result['coverage']['feed']['error'])
         self.assertEqual(len(result['new']), 1)
+
+    def test_session_markers_discover_candidates_without_requiring_both_for_observation(self):
+        paired = post('summon', '@LiveDelveTalk.Delve.Town #GSB Please make a fresh garden.')
+        tag_only = post('tag-only', '#gsb Could we try a moon room?')
+        label_only = post('label-only', '@livedelvetalk.delve.town a question about making things')
+        self.api.feed = [{'feed': [{'post': label_only}, {'post': post('unrelated', '#gsboard news')}]}]
+        related = post('related', 'GSB: can we make another room?')
+        self.api.tag_search = [{'posts': [paired, tag_only, related]}]
+        result = self.scan(search_pages=2)
+        items = {item['uri'].rsplit('/', 1)[-1]: item for item in result['new']}
+        self.assertTrue(items['summon']['summonCandidate'])
+        self.assertFalse(items['tag-only']['summonCandidate'])
+        self.assertFalse(items['label-only']['summonCandidate'])
+        self.assertTrue(items['tag-only']['matchedTag'])
+        self.assertIn('related', items, 'search context is retained without requiring literal markers')
+        self.assertFalse(items['related']['matchedTag'])
+        self.assertFalse(items['related']['summonCandidate'])
+        self.assertEqual(result['newSelectionCounts'], {'marked': 3, 'searchContext': 1, 'replyContext': 1})
+        self.assertEqual([item['uri'] for item in result['summonCandidates']], [paired['uri']])
+        self.assertNotIn('unrelated', items)
+        self.assertEqual(items['summon']['sources'], ['tagSearch'])
+        self.assertEqual({params['q'] for nsid, params in self.api.calls if nsid.endswith('searchPosts')},
+                         {'livedelvetalk', '#gsb'})
+        saved = json.loads(Path(items['summon']['observation']).read_text())
+        self.assertEqual(saved['record'], paired['record'])
+        self.assertNotIn('request', saved)
+        self.assertNotIn('principal', saved)
+        self.assertEqual(self.scan()['new'], [])
+        paired['record']['text'] = 'Actually, wait for my clarification.'
+        changed = self.scan()['changed']
+        self.assertEqual(len(changed), 1)
+        self.assertFalse(changed[0]['summonCandidate'])
+
+    def test_available_parent_and_untagged_reply_survive_page_order(self):
+        invitation = post('invitation', 'Welcome: choose a fresh place to make.')
+        summon = post('summon', '@livedelvetalk.delve.town #gsb a room with bells')
+        response = post('response', 'Could its ceiling be blue?')
+        summon['record']['reply'] = {'root': {'uri': invitation['uri'], 'cid': invitation['cid']},
+                                      'parent': {'uri': invitation['uri'], 'cid': invitation['cid']}}
+        response['record']['reply'] = {'root': {'uri': invitation['uri'], 'cid': invitation['cid']},
+                                        'parent': {'uri': summon['uri'], 'cid': summon['cid']}}
+        self.api.feed = [{'feed': [{'post': response}, {'post': invitation}, {'post': summon}]}]
+        result = self.scan()
+        items = {item['uri']: item for item in result['new']}
+        self.assertIn(invitation['uri'], items)
+        self.assertIn(response['uri'], items)
+        self.assertFalse(items[response['uri']]['summonCandidate'])
+        self.assertEqual(json.loads(Path(items[response['uri']]['observation']).read_text())['record'],
+                         response['record'])
 
 
 if __name__ == '__main__':

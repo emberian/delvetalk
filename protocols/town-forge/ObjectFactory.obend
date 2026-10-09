@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Allocation.obend as A
 import ./Encounter.obend as E
@@ -10,9 +11,10 @@ record State:
   visitors: P.Value
   methods: P.Value
   managers: P.Value
+  read: P.Value
   last: String
 def initial(config: P.Value) -> State:
-  {child: P.get(config, "child"), visitors: P.get(config, "visitors"), methods: P.get(config, "methods"), managers: P.get(config, "managers"), last: ""}
+  {child: P.get(config, "child"), visitors: P.get(config, "visitors"), methods: P.get(config, "methods"), managers: P.get(config, "managers"), read: P.get(config, "read"), last: ""}
 def visitors(value: P.Value) -> P.Values:
   match value:
     case array(a): a.values
@@ -30,7 +32,7 @@ def grants(methods: P.Values, people: P.Value) -> P.Fields:
 def authority(state: State, maker: String) -> P.Value:
   let people: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: visitors(state.visitors)})})
   let managers: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: visitors(state.managers)})})
-  P.Value.record({fields: F.pair("profile", P.Value.text({value: "delvetalk-scoped-law-v1"}), F.pair("invoke", P.Value.record({fields: grants(visitors(state.methods), people)}), F.pair("reprogram", managers, F.pair("law", managers, P.Fields.nil()))))})
+  P.Value.record({fields: F.pair("profile", P.Value.text({value: "delvetalk-scoped-law"}), F.pair("read", state.read, F.pair("invoke", P.Value.record({fields: grants(visitors(state.methods), people)}), F.pair("reprogram", managers, F.pair("law", managers, P.Fields.nil())))))})
 record Input:
   name: String
 record Decision:
@@ -39,7 +41,7 @@ record Decision:
   state: State
   result: String
   allocations: A.Allocations
-def make(state: State, input: Input, context: F.Context) -> Decision:
+def make(state: State, input: Input, context: Abi.Context) -> Decision:
   let allowed: Bool = input.name != "" && textLength(input.name) <= 64n
   {accepted: allowed, reason: if allowed then "" else "Give this object a short name.", state: if allowed then extend(state, {last: input.name}) else state, result: input.name, allocations: if allowed then A.Allocations.cons({head: {name: input.name, protocol: state.child, law: authority(state, context.principal)}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
 record Field:

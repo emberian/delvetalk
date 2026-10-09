@@ -38,3 +38,27 @@ framing. This codec does not claim preservation of the sign of zero.
 Configured loading retains the constructor entry and the exact evaluated initial
 value. Original constructor arguments are not duplicated in the executable
 protocol and cannot be reconstructed unless the caller separately retained them.
+
+Ordinary ready Candidates expose their source `release` invitation, observing the
+named target without projecting its state or law into a second semantic value.
+`prepareRelease` chooses the atomic turn: release the Candidate, then install its
+returned program and complete proposed state. Desk, local authoring and post cards
+capture and execute that same source invitation; they contain no adoption recipe.
+Editor-mode Candidates hide ordinary release and refuse direct preparation. Their
+existing immediately preceding Editor approval remains required by `adopt`.
+
+The release form has no contribution fields. Both the physical declared-field
+mirror and the source preparation reject additional fields; source refusal also
+protects callers that bypass the client. Missing contributions to other invitations
+remain available for source-authored questions. Candidate encounters link their
+target and show a compiler diagnostic of at most 1024 characters, with a report
+inspection prompt when details exceed that bound.
+
+`source_offers.prepare_fields` validates public contributions against the captured
+form; `prepare` retains that meaning. `prepare_value` carries bounded data produced
+by source interpretation, whose envelope need not be a literal form. Both execute
+the same native source export; the internal route grants no authority and does not
+bypass source refusal or current receiving laws. In particular, Candidate release
+rejects hidden fields through either route.
+
+Desk release custody records the exact source-prepared native request before exchange, bound to the principal, intent and captured inputs. A restart first asks receiving for that original request’s retained receipt, before loading the renderer or comparing current runtime pins. A pending attempt still requires the original pins and regenerates the same source preparation; changed inputs under the same intent or altered custody refuse. The release-attempt attachment belongs to the local artifact store; exporting only native history does not export this attachment.

@@ -68,3 +68,29 @@ retain a 64 KiB authored contribution bound and preserve exact decimal scale.
 Town retains no-effect outcomes as `delvetalk-clerk-preparation-v1`, keyed by the
 original verified reply URI/CID. Its exact retry does not fetch or reevaluate
 source. Executable requests retain the existing admission and retry contract.
+
+An invitation may explicitly declare `contributionCodec: "data"` for a typed
+source argument. That contribution is bounded DataWire, checked against the
+selected export's actual input type; it is not converted to Value. The default
+`value` codec remains the public form path. A typed preparation may return an
+`invokeData` effect carrying its already checked source Data. The native binder
+preserves that wire and the receiving method's `inputCodec: "data"` checks its
+own exported argument type. Neither spelling supplies observations or read
+authority: existing reads still bind only to the captured root table.
+
+Transported `Value.text` data shares the enclosing 1 MiB frame bound, so retained
+source modules over 64 KiB can be inspected and released exactly. Presentation,
+identity and numeric-text validation retain their narrower limits. This does
+not change the 512 KiB source-module limit, authored contribution bound or native
+execution allowance.
+
+Required heterogeneous fields use `lookupField`, `textField`, `naturalField`, or
+`booleanField`: each returns explicit `missing`, `wrongKind`, or `found`. A
+legitimate empty string, zero, or false remains `found`. `lookupObservation`
+returns `missing` or the actual captured observation, including version zero.
+Consumers choose their own question or refusal; the codec supplies no authority.
+`textOrEmpty`, `naturalOrZero`, `booleanOrFalse`, and `observationOrEmpty` are
+explicitly lossy optional projections. The historical `text`, `natural`, and
+`observation` exports retain that same compatibility behavior and must not
+validate required fields. Typed conversation/model envelopes are checked as
+their exported source type and do not need dynamic envelope decoding.

@@ -18,4 +18,4 @@ def study(n: Nat) -> {queued: Nat, total: Nat, selected: Nat, next: Nat, more: B
   let inbox: Mailbox.Queue = queue(n)
   let links: Consent.Links = subscriptions(n)
   let page: Consent.Page = Consent.page(links, n - 4, 4)
-  {queued: inbox.size, total: drain(inbox), selected: page.count, next: page.next, more: page.more, absent: Consent.allows(links, {topic: "ready", units: 1, generation: n + 1}, {id: "study", source: "source", sourceProgram: "0000000000000000000000000000000000000000000000000000000000000000", originatingPrincipal: "member"}) == false}
+  {queued: inbox.size, total: drain(inbox), selected: page.count, next: page.next, more: page.more, absent: Consent.allows(links, {topic: "ready", units: 1, generation: n + 1}, {id: "study", source: "source", sourceProgram: "0000000000000000000000000000000000000000000000000000000000000000", originatingPrincipal: "member", root: "study-root", parent: "", depth: 0n, rootPrincipal: "member"}) == false}

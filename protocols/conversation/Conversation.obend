@@ -80,98 +80,34 @@ def render(policy: Policy, state: State, after: Nat, limit: Nat) -> D.Document:
   let next = if after + bound < state.count && bound > 0n then D.Document.continuation({key: state.focus, after: after + bound, limit: bound, label: "Earlier contributions"}) else D.empty()
   let outcomes = D.Document.sequence({items: outcomeWindow(state.outcomes, bound)})
   D.concat(D.text(state.focus), D.concat(fields, D.concat(history, D.concat(outcomes, next))))
-# Wire decoding is source data interpretation. Context remains attributed proposal
-# evidence; only a later native preparation capture authorizes observations.
-def fields(value: P.Value) -> P.Fields:
-  match value:
-    case record(r): r.fields
-    case none(_): P.Fields.nil()
-    case retained(_): P.Fields.nil()
-    case boolean(_): P.Fields.nil()
-    case natural(_): P.Fields.nil()
-    case number(_): P.Fields.nil()
-    case text(_): P.Fields.nil()
-    case array(_): P.Fields.nil()
-def values(value: P.Value) -> P.Values:
-  match value:
-    case array(a): a.values
-    case none(_): P.Values.nil()
-    case retained(_): P.Values.nil()
-    case boolean(_): P.Values.nil()
-    case natural(_): P.Values.nil()
-    case number(_): P.Values.nil()
-    case text(_): P.Values.nil()
-    case record(_): P.Values.nil()
-def contextValues(items: P.Values) -> P.Observations:
-  match items:
-    case nil(_): P.Observations.nil()
-    case cons(c): P.Observations.cons({head: {object: P.text(P.get(c.head, "object")), version: P.natural(P.get(c.head, "version")), program: P.text(P.get(c.head, "program")), state: P.get(c.head, "state"), law: P.get(c.head, "law")}, tail: contextValues(c.tail)})
-def nameValues(items: P.Values) -> P.Names:
-  match items:
-    case nil(_): P.Names.nil()
-    case cons(c): P.Names.cons({head: P.text(c.head), tail: nameValues(c.tail)})
-def fromValue(value: P.Value) -> Interpretation:
-  let capture = P.get(value, "capture")
-  {original: P.text(P.get(value, "original")), policy: P.text(P.get(value, "policy")), context: contextValues(values(P.get(value, "context"))), capture: {object: P.text(P.get(capture, "object")), revision: P.natural(P.get(capture, "revision")), meaning: P.text(P.get(capture, "meaning")), entry: P.text(P.get(capture, "entry")), token: P.text(P.get(capture, "token"))}, bindings: fields(P.get(value, "bindings")), unresolved: nameValues(values(P.get(value, "unresolved")))}
-def isText(value: P.Value) -> Bool:
-  match value:
-    case text(_): true
-    case none(_): false
-    case retained(_): false
-    case boolean(_): false
-    case natural(_): false
-    case number(_): false
-    case record(_): false
-    case array(_): false
-def isNat(value: P.Value) -> Bool:
-  match value:
-    case natural(_): true
-    case none(_): false
-    case retained(_): false
-    case boolean(_): false
-    case text(_): false
-    case number(_): false
-    case record(_): false
-    case array(_): false
-def isRecord(value: P.Value) -> Bool:
-  match value:
-    case record(_): true
-    case none(_): false
-    case retained(_): false
-    case boolean(_): false
-    case text(_): false
-    case number(_): false
-    case natural(_): false
-    case array(_): false
-def isArray(value: P.Value) -> Bool:
-  match value:
-    case array(_): true
-    case none(_): false
-    case retained(_): false
-    case boolean(_): false
-    case text(_): false
-    case number(_): false
-    case natural(_): false
-    case record(_): false
-def fieldCount(items: P.Fields) -> Nat:
-  match items:
-    case nil(_): 0n
-    case cons(c): 1n + fieldCount(c.tail)
-def hasField(items: P.Fields, name: String) -> Bool:
-  match items:
-    case nil(_): false
-    case cons(c): c.head.name == name || hasField(c.tail, name)
-def contextWire(items: P.Values, remaining: Nat) -> Bool:
+# These are authored contribution bounds, not a second schema decoder. The
+# receiving native data codec checks every record member and recursive variant.
+def boundedFields(items: P.Fields, remaining: Nat) -> Bool:
   match items:
     case nil(_): true
-    case cons(c): remaining > 0n && fieldCount(fields(c.head)) == 5n && hasField(fields(c.head), "state") && hasField(fields(c.head), "law") && isText(P.get(c.head, "object")) && isNat(P.get(c.head, "version")) && isText(P.get(c.head, "program")) && contextWire(c.tail, remaining - 1n)
-def namesWire(items: P.Values, remaining: Nat) -> Bool:
+    case cons(c): remaining > 0n && boundedFields(c.tail, remaining - 1n)
+def boundedContext(items: P.Observations, remaining: Nat) -> Bool:
   match items:
     case nil(_): true
-    case cons(c): remaining > 0n && isText(c.head) && namesWire(c.tail, remaining - 1n)
-def wireValid(value: P.Value) -> Bool:
-  let capture = P.get(value, "capture")
-  fieldCount(fields(value)) == 6n && isText(P.get(value, "original")) && textLength(P.text(P.get(value, "original"))) <= 4096n && isText(P.get(value, "policy")) && fieldCount(fields(capture)) == 5n && isText(P.get(capture, "object")) && isNat(P.get(capture, "revision")) && isText(P.get(capture, "meaning")) && isText(P.get(capture, "entry")) && isText(P.get(capture, "token")) && isRecord(P.get(value, "bindings")) && fieldCount(fields(P.get(value, "bindings"))) <= 16n && isArray(P.get(value, "context")) && contextWire(values(P.get(value, "context")), 16n) && isArray(P.get(value, "unresolved")) && namesWire(values(P.get(value, "unresolved")), 16n)
+    case cons(c): remaining > 0n && boundedContext(c.tail, remaining - 1n)
+def boundedNames(items: P.Names, remaining: Nat) -> Bool:
+  match items:
+    case nil(_): true
+    case cons(c): remaining > 0n && boundedNames(c.tail, remaining - 1n)
+def bounded(proposal: Interpretation) -> Bool:
+  textLength(proposal.original) <= 4096n && boundedFields(proposal.bindings, 16n) && boundedContext(proposal.context, 16n) && boundedNames(proposal.unresolved, 16n)
+def retain(policy: Policy, state: State, proposal: Interpretation, context: Abi.Context) -> Decision:
+  if bounded(proposal) then contribute(policy, state, proposal, context) else decided(state, false, "The interpretation exceeds this conversation's contribution bounds.")
+def textBetween(value: P.Value, minimum: Nat, maximum: Nat) -> Bool:
+  match value:
+    case text(t): textLength(t.value) >= minimum && textLength(t.value) <= maximum
+    case none(_): false
+    case retained(_): false
+    case boolean(_): false
+    case natural(_): false
+    case number(_): false
+    case record(_): false
+    case array(_): false
 def recordSource(policy: Policy, state: State, language: String, source: String, revision: String, result: String, context: Abi.Context) -> Decision:
   let contribution = contribute(policy, state, literal(state, source, P.Fields.nil()), context)
   let cell = D.concat(D.Document.source({language: language, code: source, revision: revision}), D.Document.result({status: "recorded", body: D.text(result)}))

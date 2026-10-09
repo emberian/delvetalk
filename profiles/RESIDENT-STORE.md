@@ -55,6 +55,13 @@ expanded native requests are bounded at 1 MiB; authored intake remains 64 KiB.
 The frame bound is not a limit
 on checkpoint/export file size.
 
+Application native launches share `process_custody`: one Lean worker, bounded
+wall time/output, and 4 GiB Linux address space. This allowance includes virtual
+stack/allocator reservations; it is not RSS. Aggregate memory needs a host cgroup.
+Persistent receivers have RPC deadlines, no lifetime CPU quota. Explicit memory
+limits refuse on unsupported systems. Parent compiler/relay workers inherit the
+same default ceiling; tighter explicit operator limits remain tighter.
+
 `ResidentStoreProofs.lean` connects the actual index selection and `remember`
 helper to first-match ordered history under valid fresh keys, proves ordered
 export/history-count preservation, and proves that successful native checkpoint

@@ -78,7 +78,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
     if id.isEmpty then throw "empty object id"
     if expected == .null then
       if (field objects id).isOk then throw "stale absence root"
-    else if (← field objects id) != expected then throw "stale read root"
+    else if (← readObject objects id principal) != expected then throw "stale read root"
   let absent := (reads.filter (fun entry => entry.2 == .null)).map Prod.fst |>.toArray
   let execution : Evaluation (Json × Json × Array Json × Array Json × Json × Array Json) := do
     let mut staged := objects
@@ -88,6 +88,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
     let mut outbox : Array Json := #[]
     let mut allocatedRoots := obj []
     for call in calls do
+      let workStart ← get
       tick
       let id ← str call "object"
       if !(reads.any (fun entry => entry.1 == id)) then
@@ -97,7 +98,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         | none => pure "invoke"
       if op != "invoke" && op != "reprogram" && op != "law" && op != "observe" then
         throw "unsupported transaction operation"
-      let o ← if op == "observe" then readObject staged id principal else field staged id
+      let o ← readObject staged id principal
       if op == "observe" then
         if (← pairs call).map Prod.fst != ["object", "op"] then
           throw "observe requires exactly op and object"
@@ -109,7 +110,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
       -- The operation is explicit; the principal remains the global caller.
       -- Both profiles use one authority engine.
       let (nextObj, result, emitted, allocations, invocation, inputOrigin) ← if op == "reprogram" then do
-        authorizeRequest o (← put call "op" (.str op)) principal
+        authorizeRequestWith runtime o (← put call "op" (.str op)) principal
         let candidate ← reprogramCandidate call results
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
         checkCandidateWith runtime o nextObj (← put call "op" (.str op)) principal
@@ -118,7 +119,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         for (key, _) in (← pairs call) do
           if !(["op", "object", "law"].contains key) then
             throw "unsupported transaction law field"
-        authorizeRequest o call principal
+        authorizeRequestWith runtime o call principal
         let authority ← field call "law"
         validateLaw authority
         let n ← (← field o "version").getNat?
@@ -131,7 +132,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         let input ← callInput call results
         let inputOrigin ← callInputOrigin call calls results.size
         let invocation ← put (← put call "input" input) "op" (.str op)
-        authorizeRequest o invocation principal
+        authorizeRequestWith runtime o invocation principal
         let (nextState, result, emitted, allocations) ← executeCommandWith runtime o invocation principal inputOrigin
         let n ← (← field o "version").getNat?
         let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
@@ -146,7 +147,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
           allocatedRoots ← put allocatedRoots child initialRoot
       let ordinaryOutbox ← if op == "invoke" then do
         let (updated, references, ordinary) ← runtime.stageMessages
-          (← put stagedWorld "objects" staged) request invocation o results.size emitted
+          (← put stagedWorld "objects" staged) request invocation o results.size workStart emitted
         stagedWorld := updated
         messages := messages ++ references
         pure ordinary

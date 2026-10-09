@@ -161,7 +161,8 @@ class NativeDocumentConsumers(unittest.TestCase):
             card = app.object('conversation')
             self.assertEqual(card['mode'], 'projection')
             self.assertIn('document', card)
-            self.assertEqual(card['interpretation'], {'request': 'interpretationRequest', 'prepare': 'prepareInterpretation'})
+            self.assertEqual(card['interpretation'], {'request': 'interpretationRequest', 'prepare': 'prepareInterpretation',
+                                                    'contributionCodec': 'data'})
             self.assertTrue(any(action.get('preparation') for action in card['actions']))
             def nodes(node):
                 yield node

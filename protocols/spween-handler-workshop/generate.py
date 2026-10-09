@@ -81,4 +81,4 @@ if __name__ == '__main__':
     if args.source:
         sys.stdout.write(authoring_source(args.revision))
     else:
-        (HERE / 'source-desk.json').write_bytes(desk.canonical(source_desk()) + b'\n')
+        sys.stdout.buffer.write(desk.canonical(source_desk()) + b'\n')

@@ -73,7 +73,7 @@ def run(directory):
     before_path=custody/'cafe-before.json'
     before=(bootstrap.loads(before_path.read_bytes()) if before_path.exists() else
             immutable_private(before_path,bootstrap.inspect_view(directory)))
-    program=table.protocol(target)
+    program=table.protocol(target, *SEATS)
     bootstrap.preserve_lowering(directory,bootstrap.canonical(program))
     events=[]
 
@@ -113,7 +113,7 @@ def run(directory):
         resolved=invoke(f'{number}-resolve','resolve',{'round':number})
         rounds.append(client.public_view(resolved['data']['root']))
     final=desk.inspect(target)
-    if final['state']['game']['winner']!=1 or final['state']['round']!=len(MATCH):
+    if client.state(final)['game']['winner']!=1 or client.state(final)['round']!=len(MATCH):
         raise RuntimeError('authored match did not finish with the qualified game result')
     after=bootstrap.inspect_view(directory)
     if after!=before:

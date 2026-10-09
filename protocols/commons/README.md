@@ -1,95 +1,56 @@
-# Bounded commons
+# The commons
 
-One ordinary object holds an authored place graph and presence slots. Commands
-change only that registry. Presence grants no authority and establishes neither
-physical location nor a live connection; disconnecting does not leave.
+[Commons.obend](Commons.obend) owns a bounded place graph and declared presence.
+An authenticated caller can enter an entry place, follow a directed path, or
+leave. A call changes only that caller's presence. Another participant's copied
+identity, a reference, or a grant alone cannot select or create a presence slot.
 
-| Command | Input | Guard | Update |
-| --- | --- | --- | --- |
-| `enter` | `{place}` | Caller outside; destination is an entry | Caller enters |
-| `move` | `{place}` | Directed edge from current place | Caller moves |
-| `leave` | `{}` | Caller inside | Caller leaves |
+Presence is neither containment nor read permission. It does not establish a
+physical location, a live connection, access to a referenced object, or agreement
+with another registry. Disconnecting does not implicitly leave.
 
-Empty location means outside and cannot name a place. Lean checks the declared
-principal and current scoped law. Input `principal`/`entity` cannot select another
-slot. Grants alone cannot add participants. Defaults admit Moss and Iris at the
-porch, connect porch/garden both ways, and leave the tower disconnected. Occupancy
-is shared. The steward may revise law or reprogram.
+The source has typed collections for participants, places, paths and gates.
+It checks topology and capacity on each transition: at most eight participants,
+eight places, sixteen paths and sixteen gates. References remain explicit
+world/object identities. Results carry the caller's entity, previous and next
+place, all declared locations, and the destination's description and exits.
+Leaving returns an empty destination record.
 
-Results contain `principal`, entity reference, `from`, `to`, updated `locations`
-and destination `place`. Place contains name/title/description/reference and an
-`exits` map of adjacent names to references; leaving returns `{}`.
-[World-qualified references](../../scripts/references.py) retain exact identities;
-they establish no object existence, receiving route or access. Other registries
-may disagree. An outbox or copied result data proves no other admission.
-Configured gates can require host-supplied transaction input provenance;
-this conveys no authority.
+`generate.py` is now a physical package loader. Its existing
+`build(participants, places, paths, entries, gates)` interface frames configuration
+as data and invokes the source constructor. It does not generate guards, updates,
+views or action sequences. Every configuration retains the same source modules.
+The current compiled host executes them; no JSON protocol twin is maintained.
+`law(...)` supplies explicit installation grants independently of the source graph.
+The workshop seed uses this loader directly.
 
-## Authoring and custody
+## A source door controls a path
 
-[generate.py](generate.py) supplies `build(participants,places,paths,entries,gates)` and
-`law(participants,managers)`. Participants map to distinct entity references;
-places to `{title,description,reference}`; paths are directed pairs. Bounds:
-1–8 participants, 1–8 places, ≤16 distinct paths, nonempty distinct entries;
-names ≤64 scalars, titles ≤128, descriptions ≤512. References use shared bounds.
-Generation expands ordinary Bend; receiving budgets still apply.
+A configured gate names one directed path and its receiving object/command.
+`move` checks the host's authenticated input origin: the immediately preceding
+successful invocation must be that exact gate. Explicit copied input, the same
+result from another object or method, and an older result cannot satisfy it.
+Both objects still check the caller's current law and exact read roots.
+A later refusal rolls back the complete transaction.
 
-With hosts built:
+[The paper gate](garden-gate.obend) is an ordinary source object. A crossing invokes
+its `cross` method, then calls commons `move` with `inputFrom` pointing at that
+result. Revising the door changes the gate's behavior without replacing commons.
+This deliberate trust grants no additional authority on commons or garden objects.
+
+The maker may revise a privately created door under its current law. Shared
+commons policy is revised through its configured management/proposal path;
+there is no owner-recovery bypass. Exact retries retain historical receipts even
+when current grants have subsequently changed.
+
+With native hosts already available:
 
 ```sh
-python3 protocols/commons/generate.py
 python3 conformance/test_commons.py
+python3 conformance/test_guarded_movement.py
+python3 conformance/test_guarded_authoring.py
 ```
 
-Install generated `protocol.json` with explicit `law.json`; `migration.json`
-starts everyone outside. Command terms enforce the graph; metadata describes it.
-Reprogramming may replace this contract.
-
-Whole-object roots serialize all movements. Stale refusal needs a fresh root and
-intent; exact retries recover receipts across restart/law changes. A failed later
-transaction call rolls movement back. No external effects occur.
-
-[Tests](../../conformance/test_commons.py) exercise three receivers, configured
-bounds, movement/type failures, races, impersonation, revocation, replay, rollback
-and absence of authority transfer. They do not prove arbitrary replacements safe.
-
-## An authored door controls a path
-
-Optionally supply `gates=[{"from":"porch","to":"garden","object":"door",
-"command":"cross"}]`. Each gate names a distinct existing directed path and a
-local receiving object/command. Ungated paths keep their existing behavior.
-The gate is enforced by generated command guards, not descriptive metadata.
-
-The [paper gate](garden-gate.obend) is actual Objective Bend source using an
-extension and `fix`. Its source transition checks the word, counts its approved
-requests and returns `{place,description}`. A visitor submits one transaction:
-
-```json
-{"op":"transaction","principal":"moss","intent":"cross-1",
- "reads":{"door":"<complete door root>","commons":"<complete commons root>"},
- "calls":[{"object":"door","command":"cross","input":{"word":"please"}},
-          {"object":"commons","command":"move","inputFrom":0}]}
-```
-
-The authored door uses the compiled source-transition profile. Commons requires
-`["input-origin"]` to identify that immediately preceding successful invocation.
-Explicit input, another object's equal result, another command, or an older
-result separated by any call cannot open this path. Each target still checks the
-visitor's own current grants. All staged changes roll back on a later failure.
-Exact retry recovers the historical transaction, without a second crossing.
-
-Wiring the edge deliberately trusts this door identity's current program as its
-gate policy. The door's maker can revise its word/rule through ordinary source
-adoption without replacing commons. The commons steward controls which edge
-trusts which door; makers acquire no commons programming right. Revising the
-door to admit everyone opens this one gate, not other actions or grants.
-Adopt a gated commons revision with the existing `locations` state preserved.
-
-This is declared movement in the existing registry. It grants no access to
-unrelated garden objects. Ordinary prose can prepare the same two-call request;
-no Python evaluator or automatic object delegation is involved.
-[Tests](../../conformance/test_guarded_movement.py) run the real source door and
-commons, including revision, forgery, reuse, revocation and atomic rollback.
-The [authoring journey](../../conformance/test_guarded_authoring.py) also submits,
-compiles, adopts and revises a gate through the forge, then restores its source,
-history and working crossing.
+These check two-participant movement, wrong paths, impersonation, stale reads,
+revocation, retries, transaction rollback and source authoring/adoption/restoration.
+They establish local admitted execution, not deployment or message delivery.

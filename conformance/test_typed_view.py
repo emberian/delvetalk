@@ -127,9 +127,9 @@ class SourceTableFraming(unittest.TestCase):
         binary = '.lake/build/bin/' + projection.runtime_profile.PROFILES['compiled'][0]
         pins = {binary: 'a' * 64}
         response = {'reply': {'kind': 'committed', 'data': {'result': view['rawData']}}}
-        process = Mock(returncode=0, stdout=projection.world.wire_dumps(response))
+        process = Mock(returncode=0, stdout=projection.world.wire_dumps(response).encode('utf-8'))
         with patch.object(projection.runtime_profile, 'file_hashes', return_value=pins), \
-                patch.object(projection.subprocess, 'run', return_value=process) as run:
+                patch.object(projection.world.process_custody, 'run_native', return_value=process) as run:
             actual = projection.project(root, 'gallery')
         job = projection.world.wire_loads(run.call_args.kwargs['input'])
         synthetic = job['world']['objects']['projection']['protocol']
@@ -146,7 +146,7 @@ class SourceTableFraming(unittest.TestCase):
         root['state'] = {'model': wire({})}
         root['protocol']['viewProgram']['package'] = {
             **projection.source_packages.selector('view'), 'modules': []}
-        with patch.object(projection.subprocess, 'run') as run:
+        with patch.object(projection.world.process_custody, 'run_native') as run:
             with self.assertRaisesRegex(projection.ProjectionError, 'selector'):
                 projection.project(root, 'gallery')
             run.assert_not_called()

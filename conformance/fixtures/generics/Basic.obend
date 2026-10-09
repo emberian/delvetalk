@@ -1,0 +1,15 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+type Names = Lists.List<String>
+record Child:
+  name: String
+  index: Nat
+type Children = Lists.List<Child>
+def names() -> Names:
+  Lists.append::<String>(Names.cons({head: "moth", tail: Names.nil()}), "moon")
+def count() -> Nat:
+  Lists.length::<String>(names())
+def children() -> Children:
+  Lists.map::<String, Child>(names(), fn(name: String) -> Child: {name: name, index: 7n})
+def childCount() -> Nat:
+  Lists.length::<Child>(children())

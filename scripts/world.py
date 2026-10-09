@@ -26,6 +26,9 @@ import time
 if hasattr(sys, "set_int_max_str_digits"):
     sys.set_int_max_str_digits(0)
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import process_custody
+
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = {
     'world': ('delvetalk-world', 'World.lean'),
@@ -249,11 +252,12 @@ def retained_reply(database, request, *, timeout=30):
     executable = ROOT / '.lake/build/bin' / PROFILES['world'][0]
     if not executable.is_file():
         raise RuntimeError('prebuilt native receipt lookup required')
-    response = subprocess.run([str(executable), '--lookup-files', str(Path(database).resolve())],
-        cwd=ROOT, input=wire_dumps(request) + '\n', text=True, capture_output=True,
-        timeout=_timeout(timeout), env={**os.environ, 'LEAN_NUM_THREADS': '1'})
+    response = process_custody.run_native([str(executable), '--lookup-files', str(Path(database).resolve())],
+        cwd=ROOT, input=(wire_dumps(request) + '\n').encode('utf-8'),
+        timeout=_timeout(timeout), cpu_seconds=max(1, math.ceil(timeout)),
+        stdout_limit=MAX_IPC_FRAME, stderr_limit=1024 * 1024)
     if response.returncode:
-        raise RuntimeError(response.stderr + response.stdout)
+        raise RuntimeError((response.stderr + response.stdout).decode('utf-8', errors='replace'))
     result = wire_loads(response.stdout)
     if result is None:
         return None
@@ -270,11 +274,12 @@ def query(database, request, *, profile='compiled', timeout=30):
         if profile not in PROFILES:
             raise ValueError('unknown native query profile')
         executable = ROOT / '.lake/build/bin' / PROFILES[profile][0]
-        response = subprocess.run([str(executable), '--query-files', str(Path(database).resolve())],
-            cwd=ROOT, input=wire_dumps(request) + '\n', text=True, capture_output=True,
-            timeout=_timeout(timeout), env={**os.environ, 'LEAN_NUM_THREADS': '1'})
+        response = process_custody.run_native([str(executable), '--query-files', str(Path(database).resolve())],
+            cwd=ROOT, input=(wire_dumps(request) + '\n').encode('utf-8'),
+            timeout=_timeout(timeout), cpu_seconds=max(1, math.ceil(timeout)),
+            stdout_limit=MAX_IPC_FRAME, stderr_limit=1024 * 1024)
         if response.returncode:
-            raise RuntimeError(response.stderr + response.stdout)
+            raise RuntimeError((response.stderr + response.stdout).decode('utf-8', errors='replace'))
         result = wire_loads(response.stdout)
         if not isinstance(result, dict):
             raise ValueError('malformed native query response')
@@ -286,6 +291,21 @@ def query(database, request, *, profile='compiled', timeout=30):
     if profile != config['profile']:
         raise ValueError('selected resident profile differs from caller')
     return _resident_rpc(database, config, 'query', timeout=timeout, readonly=True, request=request)
+
+
+def catalogue_page(database, *, principal='reader', cursor=None, limit=32,
+                   profile='compiled', timeout=30, receiver=None):
+    """Read a bounded native catalogue; continuation belongs to one exact head."""
+    if receiver is not None and database is not None:
+        raise ValueError('catalogue selects exactly one native transport')
+    request = {'op': 'catalogue-page', 'principal': principal, 'cursor': cursor, 'limit': limit}
+    if receiver is None:
+        if database is None:
+            raise ValueError('catalogue requires native transport')
+        return query(database, request, profile=profile, timeout=timeout)
+    if receiver.profile != profile:
+        raise ValueError('catalogue receiver profile differs')
+    return receiver.query(request)
 
 
 def capture_roots(database, objects, *, principal='reader', profile='compiled', timeout=30,
@@ -405,12 +425,13 @@ def exchange(database, request, *, profile='world', timeout=30):
                 temporary = f.name
             # Paths are trusted custody arguments, never fields of a request.
             # Lean reads the snapshot and retains all admission/replay decisions.
-            proc = subprocess.run([*command, '--files', str(database), temporary], cwd=ROOT,
-                                  input=wire_dumps(request) + '\n', text=True, capture_output=True,
-                                  timeout=max(0.001, deadline - time.monotonic()),
-                                  env={**os.environ, 'LEAN_NUM_THREADS': '1'})
+            remaining = max(0.001, deadline - time.monotonic())
+            proc = process_custody.run_native([*command, '--files', str(database), temporary], cwd=ROOT,
+                input=(wire_dumps(request) + '\n').encode('utf-8'), timeout=remaining,
+                cpu_seconds=max(1, math.ceil(remaining)),
+                stdout_limit=MAX_IPC_FRAME, stderr_limit=1024 * 1024)
             if proc.returncode:
-                raise RuntimeError(proc.stderr + proc.stdout)
+                raise RuntimeError((proc.stderr + proc.stdout).decode('utf-8', errors='replace'))
             response = wire_loads(proc.stdout)
             if not isinstance(response, dict):
                 raise ValueError('malformed file custody response')

@@ -183,11 +183,13 @@ def primitiveTypes : Primitive → Ty × Ty × Ty
   | .conjunction => (.boolean, .boolean, .boolean)
   | .labelEqual => (.label, .label, .boolean)
   | .textConcat => (.label, .label, .label)
+  | .textSpan | .textBreak => (.label, .label, .natural)
   | .textTake | .textDrop => (.label, .natural, .label)
 
 def unaryTypes : UnaryPrimitive → Ty × Ty
   | .natText => (.natural, .label)
   | .textLength => (.label, .natural)
+  | .sha256Text => (.label, .label)
 
 def literalType (_value : String) : Ty := .label
 
@@ -1150,11 +1152,13 @@ def decodePrimitive (value : Json) : Except String Primitive := do
   | "subtract" => pure .subtract | "divide" => pure .divide
   | "less" => pure .less | "lessEqual" => pure .lessEqual | "modulo" => pure .modulo
   | "textConcat" => pure .textConcat | "textTake" => pure .textTake | "textDrop" => pure .textDrop
+  | "textSpan" => pure .textSpan | "textBreak" => pure .textBreak
   | _ => .error "unknown Objective primitive"
 
 def decodeUnaryPrimitive (value : Json) : Except String UnaryPrimitive := do
   match ← value.getStr? with
   | "natText" => pure .natText | "textLength" => pure .textLength
+  | "sha256Text" => pure .sha256Text
   | _ => .error "unknown Objective unary primitive"
 
 /-- Decodes exactly the existing world lowerer's runtime core wire; no second

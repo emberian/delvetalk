@@ -35,13 +35,18 @@ class ContractAuthoring(unittest.TestCase):
         self.serial += 1
         return self.client.exchange({'principal': 'owner', 'intent': 'call-' + str(self.serial), **request})
 
-    def candidate(self, name, source=SOURCE):
-        proposal = source_store.prepare_proposal(self.client.artifact_store,
-            'objective-bend-spell@2', source, EXAMPLES)
-        made = self.client.create(name, 'owner', 'create-' + name, self.candidate_law)
+    def candidate(self, name, source=SOURCE, *, syntax='objective-bend-spell@2', migration=None):
+        if isinstance(source, list):
+            manifest = source_store.seal_modules([{'name': item['name'],
+                'sourceRef': source_store.store_bytes(self.client.artifact_store, item['source'].encode())}
+                for item in source])
+            proposal = source_store.prepare_module_proposal(self.client.artifact_store, manifest, EXAMPLES, syntax=syntax)
+        else:
+            proposal = source_store.prepare_proposal(self.client.artifact_store, syntax, source, EXAMPLES)
+        made = self.contracts.create(name, 'owner', 'create-' + name, self.candidate_law)
         self.assertEqual(made['kind'], 'committed', made)
         submitted = self.client.submit_refs(name, 'maker', 'submit-' + name, made['data']['root'],
-                                           proposal, {'count': 0}, 'counter')
+                                           proposal, {'count': 0} if migration is None else migration, 'counter')
         self.assertEqual(submitted['kind'], 'committed', submitted)
         checked = self.client.check(name, 'compiler', 'check-' + name, submitted['data']['root'])
         self.assertEqual(checked['kind'], 'committed', checked)
@@ -86,6 +91,9 @@ class ContractAuthoring(unittest.TestCase):
         committed = self.contracts.release(proposal)
         self.assertEqual(committed, outcomes[0])
         self.assertEqual(committed['kind'], 'committed', committed)
+        with patch.object(contract_authoring, 'source_request', side_effect=AssertionError('must recover receipt first')):
+            self.assertEqual(self.prepare(candidate, root), proposal)
+            self.assertEqual(self.contracts.restore(proposal), proposal)
         governed = self.client.inspect('counter')
         self.assertEqual(governed['law']['contract']['metadata'], proposal['metadata'])
         self.assertEqual(governed['protocol'], root['protocol'])
@@ -160,6 +168,67 @@ class ContractAuthoring(unittest.TestCase):
         self.assertIn('unauthorized', str(refused))
         self.assertEqual(self.client.inspect('counter'), root)
         self.assertEqual(self.client.inspect('proposal'), candidate)
+
+    def test_model_contract_reads_large_source_from_retained_candidate(self):
+        typed = SOURCE.decode().replace('record View:',
+            'record Child:\n  key: String\n  label: String\n  object: String\n  panel: String\n'
+            'sum Children:\n  nil: {}\n  cons: {head: Child, tail: Children}\nrecord View:')
+        typed = typed.replace('record Context:\n  object: String\n  principal: String',
+            'record Origin:\n  kind: String\n  object: String\n  command: String\n'
+            '  immediatelyPrevious: Bool\nrecord Context:\n  object: String\n  principal: String\n'
+            '  inputOrigin: Origin')
+        typed = typed.replace('  actions: {add: Action}', '  children: Children\n  actions: {add: Action}')
+        typed = typed.replace('prose: "Its method promise belongs to the current law.", actions:',
+            'prose: "Its method promise belongs to the current law.", children: Children.nil(), actions:')
+        padding = '# Retained source is not an authored form contribution.\n' * 650
+        typed += '\n' + padding
+        modules = [{'name': 'Notes', 'source': 'edition ObjectiveBend 1\n' + padding + 'def value() -> Nat:\n  0n\n'},
+                   {'name': 'Main', 'source': typed}]
+        self.assertGreater(sum(len(item['source'].encode()) for item in modules), 65536)
+        model = {'model': desk.source_object.data({'count': 0})}
+        candidate = self.candidate('typed', modules, syntax='objective-bend-spell@3', migration=model)
+        root = self.target(candidate)
+        proposal = self.prepare(candidate, root)
+        contract = proposal['request']['calls'][1]['law']['contract']
+        self.assertEqual(contract['stateProfile'], 'model')
+        self.assertEqual(contract['package']['modules'], modules)
+        result = self.contracts.release(proposal)
+        self.assertEqual(result['kind'], 'committed', result)
+        self.assertEqual(self.client.inspect('counter')['state'], root['state'])
+
+    def test_source_workshop_requires_projected_law_and_preserves_v4_guard(self):
+        source = """edition ObjectiveBend 1
+import ./Preparation.obend as P
+record Context:
+  object: String
+  principal: String
+  currentLaw: P.Value
+  nextLaw: P.Value
+def amend(context: Context) -> Bool:
+  (context.principal == "owner" || context.principal == "steward") && P.text(P.get(P.get(context.currentLaw, "amendment"), "config")) == "keep" && P.text(P.get(P.get(context.nextLaw, "amendment"), "config")) == "keep"
+"""
+        self.target_law.update(profile='delvetalk-scoped-law-v4',
+            predicate=['lam', ['boolean', True]], invariant=['lam', ['boolean', True]],
+            amendment={'profile': 'delvetalk-source-amendment-v1', 'config': 'keep',
+                'package': {'modules': [
+                    {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+                    {'name': 'Amendment', 'source': source}], 'entry': 'amend'}})
+        candidate = self.candidate('promise-source')
+        root = self.target(candidate)
+        proposal = self.prepare(candidate, root)
+        revised = proposal['request']['calls'][1]['law']
+        self.assertEqual({key: value for key, value in revised.items() if key != 'contract'}, root['law'])
+        native_prepare = desk.source_offers.prepare_value
+        def without_law(invitation, *args, **kwargs):
+            invitation = deepcopy(invitation)
+            invitation['observations'][0]['inspectLaw'] = False
+            return native_prepare(invitation, *args, **kwargs)
+        with patch.object(desk.source_offers, 'prepare_value', without_law):
+            with self.assertRaisesRegex(ValueError, 'explicit scoped law'):
+                contract_authoring.source_request(proposal['inputs'], proposal['build'], proposal['metadata'])
+        result = self.contracts.release(proposal)
+        self.assertEqual(result['kind'], 'committed', result)
+        self.assertEqual(self.client.inspect('counter')['law'], revised)
 
     def test_checked_extra_method_upgrade_then_incompatible_contract_refuses(self):
         candidate = self.candidate('first')

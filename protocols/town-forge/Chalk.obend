@@ -1,15 +1,51 @@
 edition ObjectiveBend 1
-def allowed(word: String) -> Bool:
-  true
-def knock(word: String) -> String:
-  "The chalk door is waiting for a spell."
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: {}
+  result: String
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Method:
+  label: String
+  fields: {word: Field}
+record Description:
+  name: String
+  initial: {}
+  methods: {knock: Method}
+  panels: {}
 record Action:
+  visible: Bool
   text: String
   command: String
   input: {}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
   actions: {knock: Action}
+  children: Children
+def describe() -> Description:
+  {name: "The chalk door", initial: {}, methods: {knock: {label: "Whisper to the door", fields: {word: {type: "string", minLength: 0n, maxLength: 240n}}}}, panels: {}}
+def knock(state: {}, input: {word: String}, context: Context) -> Decision:
+  {accepted: true, reason: "", state: state, result: "The chalk door is waiting for a spell."}
 def view(state: {}, panel: String) -> View:
-  {title: "The chalk door", prose: "A door drawn in chalk. Its maker has not given it a spell yet.", actions: {knock: {text: "Whisper to the door", command: "knock", input: {}}}}
+  {title: "The chalk door", prose: "A door drawn in chalk. Its maker has not given it a spell yet.", actions: {knock: {visible: true, text: "Whisper to the door", command: "knock", input: {}}}, children: Children.nil()}

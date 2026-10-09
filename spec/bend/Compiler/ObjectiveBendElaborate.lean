@@ -403,10 +403,12 @@ def primitiveOf : String → Except String CorePrimitive
   | "subtract" => .ok .subtract | "divide" => .ok .divide | "less" => .ok .less | "lessEqual" => .ok .lessEqual
   | "modulo" => .ok .modulo
   | "textConcat" => .ok .textConcat | "textTake" => .ok .textTake | "textDrop" => .ok .textDrop
+  | "textSpan" => .ok .textSpan | "textBreak" => .ok .textBreak
   | other => .error ("primitive " ++ other ++ " is not a Core4 constructor yet")
 
 def unaryPrimitiveOf : String → Except String CoreUnaryPrimitive
   | "natText" => .ok .natText | "textLength" => .ok .textLength
+  | "sha256Text" => .ok .sha256Text
   | other => .error ("unknown hosted unary primitive " ++ other)
 
 mutual
@@ -953,6 +955,16 @@ def specProvided (c : Ctx) : Nat → Spec → String → PTy → M (Option PTy)
     let some defs ← specDefs c fuel s moduleName | return none
     return some (overDefs defs inherited)
 
+/-- Only a declared recursive record is transparent here. Open Self/Super variables
+have row lower bounds, not record aliases, and must retain their abstract tails. -/
+def recursiveRecordRow (c : Ctx) (st : St) (ty : PTy) : Option PTy := do
+  let .variable k := ty | none
+  let (key, _) ← st.sumVariables.find? (fun (_, index) => index == k)
+  if !c.records.any (fun (name, _) => name == key) then none
+  else
+    let row ← st.sumBounds.lookup k
+    if isRowTy row then some row else none
+
 def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy)
   | 0, _, _, _ => fail "type synthesis fuel"
   | fuel + 1, e, env, m => do
@@ -988,7 +1000,7 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
         | .variable k => (bounds.lookup k).map isRowTy | _ => none
       if !(isRowTy base || rowVariable.getD false) then return none
       -- Keep an abstract Super as the row tail; a lower bound is not its alias.
-      return some (PTy.overlay provided base).canonical
+      return some (PTy.overlay provided ((recursiveRecordRow c (← get) base).getD base)).canonical
     | .binary op left right =>
       if op == "!=" || op == "==" then return some .boolean
       if op == "||" then
@@ -1023,9 +1035,11 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
       if let some sc := sumCase c callee env m then return ← sourceType c fuel sc.2.2 sc.2.1 []
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
-          if name == "natText" && args.length == 1 then return some .label
+          if ["natText", "sha256Text"].contains name && args.length == 1 then return some .label
           if name == "textLength" && args.length == 1 then return some .natural
           if name == "textConcat" && args.length == 2 then return some .label
+          if ["textSpan", "textBreak"].contains name && args.length == 2 then return some .natural
+          if ["textTake", "textDrop"].contains name && args.length == 2 then return some .label
           if name == "textSlice" && args.length == 3 then return some .label
         if ["reflect", "metadata", "targetOf", "prototype"].contains name &&
             !env.any (·.name == name) && (lookupGlobal c name m).isNone then
@@ -1435,6 +1449,20 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
     | .extend inherited fields =>
       if duplicate (fields.map (·.1)) then fail "duplicate provided field"
       for (_, v) in fields do noActivity c fuel v env m "effect-in-field" "an extended field is a shared lazy cell"
+      let base ← synth c fuel inherited env m
+      if let some row := base.bind (recursiveRecordRow c (← get)) then
+        -- A concrete recursive alias is not an open row tail. Reconstruct its known
+        -- fields, sharing the inherited expression in one lazy application cell.
+        -- Overridden fields never project the base; unchanged fields remain lazy.
+        -- The unrestricted parameter forbids duplicating restricted captures.
+        let result ← synth c fuel e env m
+        let fn ← abstractWith c fuel [⟨"$extended", "_", "default"⟩] (some [base]) env
+          (fun inner => do
+            let provided ← fieldsOf c fuel fields inner m
+            let retained := (rowNames row).filter (fun name => !(fields.map (·.1)).contains name)
+            return .record (provided ++ retained.map (fun name => (name, .get (.bound 0) name))))
+          "recursive record extension" (.given result) m.name
+        return .app fn (← expression c fuel inherited env m)
       let i ← expression c fuel inherited env m
       return .extend i (← fieldsOf c fuel fields env m)
     | .closure params resultType bodyExpr =>
@@ -1524,11 +1552,13 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
-          if ["natText", "textLength", "textConcat", "textSlice"].contains name then
+          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textTake", "textDrop"].contains name then
             for a in args do noActivity c fuel a env m "effect-in-text" "text operands are pure"
             match name, args with
-            | "natText", [a] | "textLength", [a] => return .unary name (← expression c fuel a env m)
+            | "natText", [a] | "textLength", [a] | "sha256Text", [a] => return .unary name (← expression c fuel a env m)
             | "textConcat", [a,b] => return .binary "textConcat" (← expression c fuel a env m) (← expression c fuel b env m)
+            | "textSpan", [a,b] | "textBreak", [a,b] | "textTake", [a,b] | "textDrop", [a,b] =>
+              return .binary name (← expression c fuel a env m) (← expression c fuel b env m)
             | "textSlice", [a,start,count] =>
               return .binary "textTake" (.binary "textDrop" (← expression c fuel a env m) (← expression c fuel start env m)) (← expression c fuel count env m)
             | _, _ => fail (name ++ " has wrong arity")

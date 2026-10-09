@@ -46,7 +46,7 @@ def _native(request, deadline):
     if remaining <= 0:
         raise ValueError('Bend object description/type checking exceeded 30 seconds')
     try:
-        done = process_custody.run([str(RUNNER)], input=wire, timeout=remaining,
+        done = process_custody.run_native([str(RUNNER)], input=wire, timeout=remaining,
             cpu_seconds=10, stdout_limit=MAX_FRAME, stderr_limit=MAX_FRAME, file_limit=MAX_FRAME, cwd=ROOT)
     except subprocess.TimeoutExpired as error:
         raise ValueError('Bend object package timed out') from error
@@ -212,12 +212,15 @@ def _lower_modules(modules, *, typed):
     contracts = {}
     def contract(kind):
         if kind not in contracts:
-            names = ['Preparation'] + (['Allocation'] if kind == 'allocations' else [])
+            names = ['List', 'Preparation'] + (['Allocation'] if kind == 'allocations' else
+                                       ['Emissions'] if kind == 'emissions' else [])
             sources = [{'name': name, 'source': (ROOT / 'world/lib/prelude' / (name + '.obend')).read_text()}
                        for name in names]
             source = ('edition ObjectiveBend 1\nimport ./Preparation.obend as P\n'
                       + ('import ./Allocation.obend as A\ndef value() -> A.Allocations:\n  A.Allocations.nil()\n'
-                         if kind == 'allocations' else ('def value() -> P.Requests:\n  P.Requests.nil()\n'
+                         if kind == 'allocations' else
+                         'import ./Emissions.obend as E\ndef value() -> E.Emissions:\n  E.Emissions.nil()\n'
+                         if kind == 'emissions' else ('def value() -> P.Requests:\n  P.Requests.nil()\n'
                          if kind == 'requests' else 'def value() -> P.Value:\n  P.Value.none()\n')))
             contracts[kind] = _native({'op': 'compile', 'modules': sources + [{'name': 'Contract', 'source': source}],
                                        'entry': 'value', 'limits': LIMITS}, deadline)['artifact']
@@ -266,8 +269,9 @@ def _lower_modules(modules, *, typed):
         if not isinstance(form, dict):
             raise ValueError('method ' + name + ' requires a metadata record')
         codecs = {key: form[key] for key in ('inputCodec', 'resultCodec') if key in form}
-        if codecs and (not typed or any(value != 'value' for value in codecs.values())):
-            raise ValueError(name + ': typed method codec must be value')
+        if codecs and (not typed or any(value not in ('value', 'data') for value in codecs.values())
+                       or codecs.get('resultCodec') == 'data'):
+            raise ValueError(name + ': input codec must be value/data; result codec must be value')
         _exact(form, ('label', 'fields', *codecs), 'method ' + name)
         form = {key: deepcopy(value) for key, value in form.items() if key not in codecs}
         if not isinstance(form['fields'], dict):
@@ -290,11 +294,13 @@ def _lower_modules(modules, *, typed):
             raw_parameters, raw_decision = _raw_signature(method['type'], 4)
             event_type = {'id': 'label', 'source': 'label', 'sourceProgram': 'label',
                           'originatingPrincipal': 'label'}
+            if typed:
+                event_type.update({'root': 'label', 'parent': 'label', 'depth': 'natural', 'rootPrincipal': 'label'})
             if _type(raw_parameters[3]) != event_type:
                 raise ValueError(name + ': receive requires exact authenticated EventFacts argument')
         decision_fields = _row_members(raw_decision)
         effects = 'emissions' in decision_fields
-        if receiving and effects:
+        if receiving and effects and not typed:
             raise ValueError(name + ': receive cannot emit new messages in this profile')
         allocating = 'allocations' in decision_fields
         if allocating and (not typed or allocation is None):
@@ -304,7 +310,10 @@ def _lower_modules(modules, *, typed):
         if allocating:
             compare(method, ['codomain'] * argument_count + [{'field': 'allocations'}],
                     contract('allocations'), [], name + ' allocations')
-        if effects:
+        if effects and typed:
+            compare(method, ['codomain'] * argument_count + [{'field': 'emissions'}],
+                    contract('emissions'), [], name + ' emissions')
+        elif effects:
             slots = _type(decision_fields['emissions'])
             _exact(slots, ('a', 'b', 'c', 'd'), name + ' emissions')
             for slot in slots.values():
@@ -317,8 +326,10 @@ def _lower_modules(modules, *, typed):
             compare(artifact, [{'field': 'initial'}], method, ['domain'], name + ' state input')
             compare(artifact, [{'field': 'initial'}], method,
                     ['codomain'] * argument_count + [{'field': 'state'}], name + ' state output')
-            if 'inputCodec' in codecs:
+            if codecs.get('inputCodec') == 'value':
                 compare(method, ['codomain', 'domain'], contract('value'), [], name + ' input codec')
+            elif codecs.get('inputCodec') == 'data':
+                compare(method, ['codomain', 'domain'], method, ['codomain', 'domain'], name + ' typed input codec')
             elif _type(raw_parameters[1]) != expected_input:
                 raise ValueError(name + ': input signature differs from describe()')
             if _type(raw_parameters[2]) != context2:
@@ -330,8 +341,7 @@ def _lower_modules(modules, *, typed):
                         if key not in ('state', 'emissions', 'allocations') and not (key == 'result' and 'resultCodec' in codecs)}
             if decision['accepted'] != 'boolean' or decision['reason'] != 'label':
                 raise ValueError(name + ': decision requires accepted Bool and reason String')
-            transition_profile = ('delvetalk-source-data-receive-v1' if receiving else
-                                  'delvetalk-source-data-effects-v1' if effects else 'delvetalk-source-data-transition-v1')
+            transition_profile = 'delvetalk-source-transition'
         else:
             parameters, decision = _signature(method['type'], argument_count)
             if parameters[:2] != [state_type, expected_input] or parameters[2] not in (context1, context2):
@@ -347,7 +357,8 @@ def _lower_modules(modules, *, typed):
                 transition_profile = 'delvetalk-source-receive-v1' if receiving else 'delvetalk-source-effects-v1'
         forms[name] = form
         commands[name] = {'transition': {'profile': transition_profile,
-            'package': source_packages.selector(name), **codecs}}
+            'package': source_packages.selector(name), **codecs,
+            **({'messages': {'emit': effects, 'receive': receiving}} if typed and (effects or receiving) else {})}}
     view_artifact = compile_entry('view')
     if typed:
         raw_parameters, raw_view = _raw_signature(view_artifact['type'], 2)
@@ -357,8 +368,10 @@ def _lower_modules(modules, *, typed):
         members = _row_members(raw_view)
         if not {'title', 'prose', 'actions', 'children'} <= set(members) or set(members) - {'title', 'prose', 'actions', 'children', 'invitations', 'document', 'interpretation'}:
             raise ValueError('typed view requires title/prose/actions/children and optional invitations/document/interpretation')
-        if 'interpretation' in members and _type(members['interpretation']) != {'request': 'label', 'prepare': 'label'}:
-            raise ValueError('view interpretation requires request/prepare String export names')
+        if 'interpretation' in members and _type(members['interpretation']) not in (
+                {'request': 'label', 'prepare': 'label'},
+                {'request': 'label', 'prepare': 'label', 'contributionCodec': 'label'}):
+            raise ValueError('view interpretation requires request/prepare String exports and optional contributionCodec')
         if 'document' in members:
             document_path = ['codomain', 'codomain', {'field': 'document'}]
             compare(view_artifact, document_path, view_artifact, document_path, 'view document')
@@ -369,7 +382,10 @@ def _lower_modules(modules, *, typed):
             requests_contract = contract('requests')
             for name, raw_invitation in invitations.items():
                 invitation = _row_members(raw_invitation)
-                _exact(invitation, ('visible', 'text', 'prepare', 'fields', 'observations'), 'view invitation')
+                _exact(invitation, ('visible', 'text', 'prepare', 'fields', 'observations')
+                       + (('contributionCodec',) if 'contributionCodec' in invitation else ()), 'view invitation')
+                if 'contributionCodec' in invitation and _type(invitation['contributionCodec']) != 'label':
+                    raise ValueError('invitation contributionCodec requires String')
                 if (_type(invitation['visible']) != 'boolean' or _type(invitation['text']) != 'label'
                         or _type(invitation['prepare']) != 'label' or not isinstance(_type(invitation['fields']), dict)):
                     raise ValueError('view invitation requires visible Bool, text/prepare String and field metadata')

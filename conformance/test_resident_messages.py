@@ -22,16 +22,18 @@ def module(name, path):
 
 
 world = module('resident_messages_world', 'scripts/world.py')
-bundle = module('resident_messages_bundle', 'syntaxes/source_bundle.py')
+residents = module('resident_messages_package', 'protocols/resident-messages/package.py')
+source_offers = module('resident_messages_offers', 'scripts/source_offers.py')
+source_object = module('resident_messages_values', 'scripts/source_object.py')
 history = module('resident_messages_history', 'scripts/history.py')
 
 
 def source_protocol(name):
-    return bundle.load(FIXTURES / (name.lower() + '.binding.json'), [(n, ROOT / 'world/lib/prelude' / (n + '.obend')) for n in ('Abi', 'Encounter')] + [(name, FIXTURES / (name + '.obend'))])
+    return residents.load(name)
 
 
 def law(command, actors):
-    return {'profile': 'delvetalk-scoped-law-v1', 'invoke': {command: actors},
+    return {'profile': 'delvetalk-scoped-law', 'invoke': {command: actors},
             'reprogram': ['builder'], 'law': ['steward']}
 
 
@@ -55,14 +57,22 @@ class ResidentMessages(unittest.TestCase):
     def root(self, name):
         return self.call({'op': 'inspect', 'object': name, 'principal': 'reader'})
 
+    def model(self, name):
+        return source_object.plain(self.root(name)['state']['model'])
+
+    def event(self, reference):
+        return self.call({'op': 'message-event', 'principal': 'reader', 'event': reference})['event']
+
     def snapshot(self):
         return world.wire_loads(self.db.read_text())
 
-    def setup_world(self, pending=128):
+    def setup_world(self, pending=128, limits=None):
         self.call({'op': 'messages-init', 'principal': 'bootstrap', 'intent': 'init',
-                   'lineage': 'courtyard-1', 'pendingLimit': pending}, 'committed')
-        self.create('door', source_protocol('Door'), law('hear', ['relay']))
-        self.create('bell', source_protocol('Bell'), law('play', ['moss', 'iris']))
+                   'lineage': 'courtyard-1', 'pendingLimit': pending,
+                   **({'limits': limits} if limits is not None else {})}, 'committed')
+        self.create('door', source_protocol('Door'), {**law('hear', ['relay']), 'invoke': {'hear': ['relay'], 'bind': ['builder']}})
+        self.create('bell', source_protocol('Bell'), {**law('play', ['moss', 'iris']), 'invoke': {'play': ['moss', 'iris'], 'connect': ['builder']}})
+        self.create('lantern', source_protocol('Lantern'), law('glow', ['relay']))
         digest = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'hash': {
             'require': [], 'set': {}, 'outbox': [], 'result': ['program-digest', ['input', 'program']]}}}
         self.create('digest', digest, ['reader'])
@@ -104,7 +114,7 @@ class ResidentMessages(unittest.TestCase):
         self.setup_world()
         request, receipt, refs = self.ring(principal='iris')
         self.assertEqual(receipt['data']['outbox'], [])
-        event = self.snapshot()['messages']['events'][refs[0]['id']]
+        event = self.event(refs[0])
         self.assertEqual(event['status'], 'pending')
         evidence = event['evidence']
         self.assertEqual(evidence['sourcePreimage'], request['expected'])
@@ -114,13 +124,13 @@ class ResidentMessages(unittest.TestCase):
         delivery = self.delivery(refs[0])
         done = self.call(delivery, 'committed')
         self.assertEqual(done['data']['result'], {'disposition': 'opened', 'heard': 1})
-        state = self.root('door')['state']
+        state = self.model('door')
         self.assertEqual((state['lastSource'], state['lastPlayer'], state['lastRelay']), ('bell', 'iris', 'relay'))
         self.assertEqual(state['lastEvent'], refs[0]['id'])
         self.assertEqual(self.snapshot()['messages']['pending'], {})
         self.assertEqual(self.call(delivery), done)
         self.call(self.delivery(refs[0]), 'refused')
-        self.assertEqual(self.root('door')['state']['heard'], 1)
+        self.assertEqual(self.model('door')['heard'], 1)
 
     def test_forgery_redirect_and_receive_only(self):
         self.setup_world()
@@ -143,7 +153,7 @@ class ResidentMessages(unittest.TestCase):
     def test_current_relay_law_source_revision_and_recipient_program_binding(self):
         self.setup_world()
         _, _, refs = self.ring()
-        original = self.snapshot()['messages']['events'][refs[0]['id']]['evidence']
+        original = self.event(refs[0])['evidence']
         self.policy('bell', law('play', []))
         revised = source_protocol('Bell') | {'revision': 'new source generation'}
         result = self.reprogram('bell', revised)['data']['result']
@@ -156,7 +166,7 @@ class ResidentMessages(unittest.TestCase):
         self.assertEqual(self.call(denied)['kind'], 'refused')
         accepted = self.delivery(refs[0])
         done = self.call(accepted, 'committed')
-        self.assertEqual(self.root('door')['state']['lastProgram'], original['sourceProgram'])
+        self.assertEqual(self.model('door')['lastProgram'], original['sourceProgram'])
         self.policy('door', law('hear', []))
         self.assertEqual(self.call(accepted), done)
         self.policy('bell', law('play', ['moss']))
@@ -200,11 +210,10 @@ class ResidentMessages(unittest.TestCase):
         request['reads']['bell'] = self.root('bell')
         receipt = self.call(request, 'committed')
         refs = receipt['data']['messages']
-        events = self.snapshot()['messages']['events']
-        first, second = [events[r['id']]['evidence'] for r in refs]
+        first, second = [self.event(r)['evidence'] for r in refs]
         self.assertEqual((first['call'], second['call']), (0, 1))
         self.assertEqual(first['sourcePreimage'], request['reads']['bell'])
-        self.assertEqual(second['sourcePreimage']['state']['notes'], 1)
+        self.assertEqual(source_object.plain(second['sourcePreimage']['state']['model'])['notes'], 1)
         self.assertEqual(second['sourcePreimage']['version'], first['sourcePreimage']['version'] + 1)
         self.assertEqual(first['sourceProgram'], second['sourceProgram'])
         self.assertNotEqual(first['sourceProgram'], receipt['data']['results'][2]['program'])
@@ -236,7 +245,7 @@ class ResidentMessages(unittest.TestCase):
         q = source_protocol('Door') | {'metadata': Decimal('1.00')}
         self.assertNotEqual(self.program_digest(p), self.program_digest(q))
 
-    def test_all_disabled_effects_need_no_registry_but_still_validate_every_slot(self):
+    def test_empty_collection_needs_no_registry_and_nonempty_collection_does(self):
         self.create('bell', source_protocol('Bell'), law('play', ['moss']))
         self.door_program = '0' * 64  # Well-formed, deliberately no recipient or registry.
         before = self.root('bell')
@@ -245,18 +254,18 @@ class ResidentMessages(unittest.TestCase):
         self.assertNotIn('messages', accepted['data'])
         self.assertNotIn('messages', self.snapshot())
         current = self.root('bell')
-        self.assertEqual(current['state']['notes'], before['state']['notes'] + 1)
+        self.assertEqual(source_object.plain(current['state']['model'])['notes'], source_object.plain(before['state']['model'])['notes'] + 1)
         self.assertEqual(current['version'], before['version'] + 1)
         malformed = self.ring_request(voices=0)
         malformed['input']['recipientProgram'] = 'not-a-program-digest'
-        self.assertIn('SHA256', self.call(malformed, 'refused')['data'])
+        self.assertIn('source refused', self.call(malformed, 'refused')['data'])
         self.assertEqual(self.root('bell'), current)
-        # Turning on one valid slot requires initialized delivery custody again.
+        # A nonempty source collection requires initialized delivery custody.
         self.assertIn('messages', self.call(self.ring_request(voices=1), 'refused')['data'])
         self.assertEqual(self.root('bell'), current)
         self.assertNotIn('messages', self.snapshot())
 
-    def test_per_recipient_capacity_disabled_validation_and_read_queries(self):
+    def test_per_recipient_capacity_source_validation_and_read_queries(self):
         self.setup_world()
         invalid = self.ring_request(voices=0)
         invalid['input']['recipientProgram'] = 'forged'
@@ -274,9 +283,125 @@ class ResidentMessages(unittest.TestCase):
         event_id = next(iter(pending['pending']))
         reference = {'lineage': pending['lineage'], 'id': event_id}
         event = self.call({'op': 'message-event', 'principal': 'reader', 'event': reference})
-        self.assertEqual(event['event'], self.snapshot()['messages']['events'][event_id])
+        retained = copy.deepcopy(self.snapshot()['messages']['events'][event_id])
+        capture = self.snapshot()['messages']['captures'][retained['evidence']['capture']]
+        retained['evidence']['sourcePreimage'] = capture['sourcePreimage']
+        self.assertEqual(event['event'], retained)
         self.assertEqual(event['root'], self.root('door'))
         self.assertEqual(len(self.snapshot()['receipts']), receipts)
+
+    def portal(self):
+        portal = module('resident_messages_portal', 'scripts/portal.py')
+        runtime = module('resident_messages_runtime', 'scripts/runtime_profile.py')
+        portal.save(Path(self.temp.name) / 'manifest.json', {
+            'cafe': 'bell', 'runtime': {'name': 'compiled', 'files': runtime.file_hashes('compiled')}})
+        return portal.Portal(Path(self.temp.name))
+
+    def offered_request(self, app, identity, token, principal, fields):
+        card = app.object(identity)
+        self.assertEqual(card['mode'], 'projection', card)
+        action = next(item for item in card['actions'] if item.get('offer') == token)
+        request = app.captured_request(app._read('cards', card['card']), action['id'], principal,
+                                       self.intent(), fields)
+        return card, action, request
+
+    def test_configured_residents_use_namespaced_source_identities(self):
+        self.call({'op': 'messages-init', 'principal': 'bootstrap', 'intent': 'init',
+                   'lineage': 'namespaced-courtyard', 'pendingLimit': 128}, 'committed')
+        self.create('moss-bell', residents.load('Bell', {'recipient': 'moss-door'}),
+                    law('play', ['moss']))
+        self.create('moss-door', residents.load('Door', {'source': 'moss-bell', 'recipient': 'moss-lantern'}),
+                    {**law('hear', ['relay']), 'invoke': {'hear': ['relay'], 'bind': ['builder']}})
+        self.create('moss-lantern', residents.load('Lantern', {'source': 'moss-door'}), law('glow', ['relay']))
+        self.assertEqual(self.model('moss-bell')['recipient'], 'moss-door')
+        self.assertEqual((self.model('moss-door')['source'], self.model('moss-door')['recipient']),
+                         ('moss-bell', 'moss-lantern'))
+        self.assertEqual(self.model('moss-lantern')['source'], 'moss-door')
+        app = self.portal()
+        _, _, bind = self.offered_request(app, 'moss-door', 'bind', 'builder', {})
+        self.call(bind, 'committed')
+        _, _, play = self.offered_request(app, 'moss-bell', 'play', 'moss', {'chord': 'C E G', 'voices': 1})
+        sent = self.call(play, 'committed')['data']['messages'][0]
+        door = self.call({'op': 'deliver', 'object': 'moss-door', 'event': sent,
+            'principal': 'relay', 'intent': self.intent(), 'expected': self.root('moss-door')}, 'committed')
+        descendant = door['data']['messages'][0]
+        self.call({'op': 'deliver', 'object': 'moss-lantern', 'event': descendant,
+            'principal': 'relay', 'intent': self.intent(), 'expected': self.root('moss-lantern')}, 'committed')
+        self.assertEqual(self.model('moss-lantern')['glows'], 1)
+        self.assertEqual(self.model('moss-lantern')['lastRootPlayer'], 'moss')
+
+    def test_observed_recipient_forms_and_three_object_reaction_preserve_distinct_actors(self):
+        self.setup_world()
+        app = self.portal()
+        _, bind, connection = self.offered_request(app, 'door', 'bind', 'builder', {})
+        self.assertEqual(bind['fields'], [])
+        self.call(connection, 'committed')
+        card, play, request = self.offered_request(app, 'bell', 'play', 'iris', {'chord': 'C E G', 'voices': 1})
+        self.assertEqual({field['name'] for field in play['fields']}, {'chord', 'voices'})
+        self.assertEqual(set(request['reads']), {'bell', 'door'})
+        self.assertEqual(request['calls'][0]['input']['recipientProgram'], self.door_program)
+        for action in card['actions']:
+            self.assertNotIn('recipientProgram', {field['name'] for field in action.get('fields', [])})
+            self.assertNotIn('program', {field['name'] for field in action.get('fields', [])})
+        sent = self.call(request, 'committed')
+        root_event = sent['data']['messages'][0]
+        reaction_request = self.delivery(root_event)
+        reaction = self.call(reaction_request, 'committed')
+        descendant = reaction['data']['messages'][0]
+        self.assertEqual(self.call(reaction_request), reaction)
+        self.assertEqual(len(self.snapshot()['messages']['events']), 2)
+        root_evidence = self.event(root_event)['evidence']
+        evidence = self.event(descendant)['evidence']
+        self.assertEqual(evidence['source'], 'door')
+        self.assertEqual(evidence['originatingPrincipal'], 'relay')
+        self.assertEqual(self.snapshot()['messages']['causes'][evidence['causal']['root']]['origin']['principal'], 'iris')
+        self.assertEqual(evidence['causal']['parent'], root_event['id'])
+        self.assertEqual(evidence['causal']['root'], root_evidence['causal']['root'])
+        self.assertEqual(evidence['causal']['depth'], 1)
+        light_request = self.delivery(descendant, object='lantern', expected=self.root('lantern'))
+        light = self.call(light_request, 'committed')
+        self.assertEqual(self.call(light_request), light)
+        state = self.model('lantern')
+        self.assertEqual((state['lastSource'], state['lastEmitterActor'], state['lastRootPlayer'], state['lastRelay']),
+                         ('door', 'relay', 'iris', 'relay'))
+        self.assertEqual((state['lastParent'], state['lastDepth'], state['lastRoot']),
+                         (root_event['id'], 1, evidence['causal']['root']))
+        self.assertEqual(self.snapshot()['messages']['pending'], {})
+
+    def test_captured_target_drift_and_descendant_refusal_are_retryable_without_partial_reaction(self):
+        self.setup_world()
+        app = self.portal()
+        _, _, connection = self.offered_request(app, 'door', 'bind', 'builder', {})
+        self.call(connection, 'committed')
+        _, _, request = self.offered_request(app, 'bell', 'play', 'iris', {'chord': 'C E G', 'voices': 1})
+        self.policy('door', {**law('hear', ['relay']), 'invoke': {'hear': ['relay'], 'bind': ['builder']}})
+        self.assertIn('stale read', self.call(request, 'refused')['data'])
+        _, _, request = self.offered_request(app, 'bell', 'play', 'iris', {'chord': 'C E G', 'voices': 1})
+        sent = self.call(request, 'committed')['data']['messages'][0]
+        # Recipient revision after binding makes the descendant descriptor obsolete.
+        self.reprogram('lantern', source_protocol('Lantern') | {'revision': 'new light'})
+        before = self.root('door')
+        failed = self.delivery(sent)
+        self.call(failed, 'refused')
+        self.assertEqual(self.root('door'), before)
+        self.assertIn(sent['id'], self.snapshot()['messages']['pending'])
+        self.assertEqual(len(self.snapshot()['messages']['events']), 1)
+        _, _, refresh = self.offered_request(app, 'door', 'bind', 'builder', {})
+        self.call(refresh, 'committed')
+        self.assertEqual(self.call(failed)['kind'], 'refused')
+        done = self.call(self.delivery(sent), 'committed')
+        self.assertEqual(len(done['data']['messages']), 1)
+        self.assertEqual(self.model('door')['heard'], 1)
+
+    def test_collection_more_than_four_and_explicit_sixteen_voice_bound(self):
+        self.setup_world()
+        _, _, references = self.ring(voices=16)
+        self.assertEqual(len(references), 16)
+        self.assertEqual([self.event(reference)['evidence']['slot'] for reference in references], list(range(16)))
+        before = self.root('bell')
+        self.assertIn('sixteen', self.call(self.ring_request(voices=17), 'refused')['data'])
+        self.assertEqual(self.root('bell'), before)
+        self.assertEqual(len(self.snapshot()['messages']['pending']), 16)
 
     def test_actual_source_desk_adopts_typed_bell_and_door_then_delivers(self):
         desk_module = module('resident_messages_desk', 'scripts/desk.py')
@@ -287,7 +412,7 @@ class ResidentMessages(unittest.TestCase):
             identity = name.lower()
             candidate = identity + '-source'
             store = module('resident_messages_store', 'scripts/source_store.py')
-            paths = [(n, ROOT / 'world/lib/prelude' / (n + '.obend')) for n in ('Abi', 'Encounter')] + [(name, FIXTURES / (name + '.obend'))]
+            paths = [(n, ROOT / 'world/lib/prelude' / (n + '.obend')) for n in ('List', 'Abi', 'Preparation', 'Encounter', 'Emissions')] + [(name, FIXTURES / (name + '.obend'))]
             entries = [{'name': n, 'sourceRef': store.store_bytes(worker.artifact_store, p.read_bytes(), kind='source')} for n, p in paths]
             manifest = store.seal_modules(entries)
             material = store.resolve_modules(worker.artifact_store, manifest)
@@ -300,7 +425,7 @@ class ResidentMessages(unittest.TestCase):
             checked = worker.check(candidate, 'builder', 'check-' + candidate, pending)
             self.assertEqual(checked['kind'], 'committed', checked)
             ready = checked['data']['root']
-            self.assertEqual(ready['state']['status'], 'ready', ready['state'].get('diagnostics'))
+            self.assertEqual(desk_module.candidate_state(ready)['status'], 'ready', desk_module.candidate_state(ready).get('diagnostics'))
             current = self.root(identity)
             adopted = worker.adopt(candidate, identity, 'builder', 'adopt-' + candidate, ready, current)
             self.assertEqual(adopted['kind'], 'committed', adopted)
@@ -313,6 +438,75 @@ class ResidentMessages(unittest.TestCase):
         self.assertEqual(heard['data']['result'], {'disposition': 'opened', 'heard': 1})
         self.assertEqual(set(heard['data']['root']['state']), {'model'})
         self.assertEqual(self.snapshot()['messages']['events'][references[0]['id']]['status'], 'consumed')
+
+    def settle(self, reference, reason="The recipient has retired this event.", principal='steward'):
+        return {'op': 'settle-message', 'principal': principal, 'intent': self.intent(),
+                'object': 'door', 'event': reference, 'expected': self.root('door'), 'reason': reason}
+
+    def test_obsolete_event_settlement_uses_current_reserved_authority_and_retries(self):
+        self.setup_world()
+        _, _, references = self.ring()
+        reference = references[0]
+        self.reprogram('door', source_protocol('Door') | {'revision': 'retired generation'})
+        before = self.root('door')
+        denied = self.settle(reference)
+        self.call(denied, 'refused')
+        self.assertIn(reference['id'], self.snapshot()['messages']['pending'])
+        self.policy('door', {**law('hear', ['relay']),
+                            'invoke': {'hear': ['relay'], '$messages-settle': ['steward']}})
+        self.assertEqual(self.call(denied)['kind'], 'refused')
+        request = self.settle(reference)
+        accepted = self.call(request, 'committed')
+        self.assertEqual(self.call(request), accepted)
+        self.assertEqual(self.root('door')['state'], before['state'])
+        event = self.event(reference)
+        self.assertEqual(event['status'], 'settled')
+        self.assertEqual(event['consumption']['reason'], request['reason'])
+        self.assertNotIn(reference['id'], self.snapshot()['messages']['pending'])
+        self.call(self.delivery(reference), 'refused')
+
+    def test_initial_emission_honors_downward_work_and_storage_limits_atomically(self):
+        for field in ('work', 'bytes', 'events', 'fanout'):
+            with self.subTest(limit=field):
+                self.db = Path(self.temp.name) / (field + '.json')
+                limits = {'depth': 8, 'fanout': 16, 'events': 64, 'work': 1000000, 'bytes': 1048576}
+                limits[field] = 1
+                self.setup_world(limits=limits)
+                before = self.root('bell')
+                request = self.ring_request(voices=2 if field in ('events', 'fanout') else 1)
+                self.assertIn('causal ' + field, self.call(request, 'refused')['data'])
+                self.assertEqual(self.root('bell'), before)
+                config = self.snapshot()['messages']
+                self.assertEqual((config['events'], config['captures'], config['causes'], config['pending']),
+                                 ({}, {}, {}, {}))
+
+    def test_cyclic_depth_ceiling_rolls_back_and_settles_without_causal_work(self):
+        limits = {'depth': 2, 'fanout': 16, 'events': 64, 'work': 1000000, 'bytes': 1048576}
+        self.setup_world(limits=limits)
+        self.create('loop', source_protocol('Loop'), {**law('start', ['moss']),
+            'invoke': {'start': ['moss'], 'receive': ['relay'], '$messages-settle': ['steward']}})
+        program = self.program_digest(self.root('loop')['protocol'])
+        initial = self.call({'op': 'invoke', 'principal': 'moss', 'intent': self.intent(),
+            'object': 'loop', 'expected': self.root('loop'), 'command': 'start',
+            'input': {'object': 'loop', 'program': program}}, 'committed')
+        reference = initial['data']['messages'][0]
+        cause = self.event(reference)['evidence']['causal']['root']
+        self.assertGreater(self.snapshot()['messages']['causes'][cause]['work'], 0)
+        for depth in (1, 2):
+            receipt = self.call(self.delivery(reference, object='loop', expected=self.root('loop')), 'committed')
+            reference = receipt['data']['messages'][0]
+            self.assertEqual(self.event(reference)['evidence']['causal']['depth'], depth)
+        before = self.root('loop')
+        ledger = copy.deepcopy(self.snapshot()['messages']['causes'][cause])
+        failed = self.delivery(reference, object='loop', expected=before)
+        self.assertIn('depth capacity', self.call(failed, 'refused')['data'])
+        self.assertEqual(self.call(failed)['kind'], 'refused')
+        self.assertEqual(self.root('loop'), before)
+        self.assertEqual(self.snapshot()['messages']['causes'][cause], ledger)
+        self.assertIn(reference['id'], self.snapshot()['messages']['pending'])
+        request = self.settle(reference) | {'object': 'loop', 'expected': before}
+        self.call(request, 'committed')
+        self.assertEqual(self.snapshot()['messages']['causes'][cause], ledger)
 
     def test_killed_reply_recovery_and_export_restore(self):
         self.setup_world()
@@ -334,7 +528,7 @@ w.exchange(sys.argv[2],json.load(open(sys.argv[3])),profile="compiled")
                                 str(self.db), str(request_file)], capture_output=True)
         self.assertEqual(child.returncode, -9, child.stderr)
         done = self.call(request, 'committed')
-        self.assertEqual(self.root('door')['state']['heard'], 1)
+        self.assertEqual(self.model('door')['heard'], 1)
         self.assertEqual(self.call(request), done)
         _, _, pending = self.ring(principal='iris')
         exported = Path(self.temp.name) / 'history'
@@ -347,7 +541,7 @@ w.exchange(sys.argv[2],json.load(open(sys.argv[3])),profile="compiled")
         self.assertEqual(self.call(request), done)
         self.call(self.delivery(refs[0]), 'refused')
         self.call(self.delivery(pending[0]), 'committed')
-        self.assertEqual(self.root('door')['state']['heard'], 2)
+        self.assertEqual(self.model('door')['heard'], 2)
 
 
 if __name__ == '__main__':

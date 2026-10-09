@@ -1,9 +1,10 @@
 # Pure document templates
 
-A template is an ordinary Bend function returning `Document.Document`. Import
-the shared document module explicitly as `Document`, then write:
+A template is an ordinary Bend function returning a document. Import the shared
+module explicitly; `Document`, `D`, or any other alias works:
 
 ```text
+import ./Document.obend as Document
 def welcome(name: String, offer: Document.Document) -> Document.Document:
   doc"""Hello, {{ name }}.
 {% offer %}
@@ -12,8 +13,13 @@ def welcome(name: String, offer: Document.Document) -> Document.Document:
 
 `{{ expression }}` inserts a **String** as a text node. `{% expression %}`
 inserts a **Document** fragment. The native frontend lowers both to ordinary
-calls to the selected `Document.text`, `Document.concat` and `Document.empty`
-definitions. The regular source checker checks those calls. A string containing
+calls to the selected module's `text`, `concat` and `empty` definitions. Generated
+calls use a fresh import alias absent from the original source, so parameters,
+locals and closure arguments cannot shadow them. The generated import points to
+the same explicitly selected module and source hash. No library is supplied
+implicitly; an absent import produces a template-specific diagnostic.
+
+The regular source checker checks those calls. A string containing
 template markers, HTML, or an offer-shaped JSON value remains text; it cannot
 create a typed offer. Use `natText` for decimal interpolation.
 
@@ -46,13 +52,17 @@ a text projection; keep the structured value for interactive renderers.
 
 The hosted compiler extension is
 [`DocumentTemplate.lean`](../../../../spec/Delvetalk/DocumentTemplate.lean), with
-a narrow reversible parser hook recorded in `spec/upstream.json`. Original
-source is retained in compiled packages; diagnostics and import spans map back
-to original byte offsets. Conformance lives in
+[`FrontEnd.lean`](../../../../spec/Delvetalk/FrontEnd.lean) binding its dependency
+and calling the locally maintained core parser and checker. Original source is retained
+in compiled packages; diagnostics and import spans map back to original byte
+offsets. Historical origin attribution lives in
+[`spec/bend/origin.json`](../../../../spec/bend/origin.json); current behavior lives
+in the local compiler source. Conformance lives in
 [`test_document_templates.py`](../../../../conformance/test_document_templates.py).
 `{"op":"template-expand","source":"..."}` on `delvetalk-obend` returns the
 ordinary source expansion for inspection. It is not a checked or admitted
-artifact; pass the source through the normal compiler.
+artifact; pass the source through the normal compiler. The displayed expansion
+includes the fresh import so it also compiles as ordinary Bend source.
 
 Native source checking and execution establish template behavior; these tests
 do not claim receiving deployment or renderer HTML escaping.

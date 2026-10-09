@@ -1,0 +1,124 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
+import ./Preparation.obend as P
+import ./Emissions.obend as E
+import ./Appointments.obend as Appointments
+import ./Bell.obend as Bell
+record Config:
+  object: String
+  owner: String
+  clock: String
+  recipient: String
+record State:
+  object: String
+  owner: String
+  clock: String
+  bell: Bell.State
+  phase: String
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  chord: String
+  recipientProgram: String
+  lastEvent: String
+  lastRoot: String
+  lastRootPrincipal: String
+record Arm:
+  due: Nat
+  deadline: Nat
+  chord: String
+  recipientProgram: String
+record Result:
+  status: String
+  generation: Nat
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+record Sound:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+  emissions: E.Emissions
+def configured(config: Config) -> State:
+  {object: config.object, owner: config.owner, clock: config.clock, bell: {notes: 0n, lastBy: "", recipient: config.recipient}, phase: "idle", generation: 0n, due: 0n, deadline: 0n, chord: "", recipientProgram: "", lastEvent: "", lastRoot: "", lastRootPrincipal: ""}
+def arm(state: State, input: Arm, context: Abi.Context) -> Decision:
+  let ok = context.object == state.object && context.principal == state.owner && state.phase != "queued" && input.deadline >= input.due && input.chord != "" && textLength(input.chord) <= 128n && textLength(input.recipientProgram) == 64n
+  {accepted: ok, reason: if ok then "" else "Only this bell's owner may arrange another bounded chord after its previous appointment finishes or is cancelled.", state: extend(state, {phase: "arming", due: input.due, deadline: input.deadline, chord: input.chord, recipientProgram: input.recipientProgram}), result: {status: "arming", generation: state.generation}}
+def fromClock(context: Abi.Context, clock: String, command: String) -> Bool:
+  context.inputOrigin.kind == "invoke" && context.inputOrigin.object == clock && context.inputOrigin.command == command && context.inputOrigin.immediatelyPrevious
+def scheduled(state: State, input: Appointments.Result, context: Abi.Context) -> Decision:
+  let ok = state.phase == "arming" && context.principal == state.owner && fromClock(context, state.clock, "request") && input.status == "queued" && input.id == context.object && input.generation > state.generation
+  {accepted: ok, reason: if ok then "" else "An appointment requires the actual clock's immediately preceding booking result.", state: extend(state, {phase: "queued", generation: input.generation}), result: {status: "queued", generation: input.generation}}
+def cancelled(state: State, input: Appointments.Result, context: Abi.Context) -> Decision:
+  let ok = state.phase == "queued" && context.principal == state.owner && fromClock(context, state.clock, "cancel") && input.status == "cancelled" && input.id == context.object && input.generation == state.generation
+  {accepted: ok, reason: if ok then "" else "Cancellation requires the actual clock's result for this queued generation.", state: extend(state, {phase: "cancelled"}), result: {status: "cancelled", generation: state.generation}}
+def retired(state: State, input: Appointments.Result, context: Abi.Context) -> Decision:
+  let ok = state.phase == "queued" && context.principal == state.owner && fromClock(context, state.clock, "status") && input.status == "absent" && input.id == context.object && input.generation == state.generation
+  {accepted: ok, reason: if ok then "" else "Retirement requires the clock's actual absence result. Cancel work still queued there.", state: extend(state, {phase: "retired"}), result: {status: "retired", generation: state.generation}}
+def wake(state: State, value: P.Value, context: Abi.Context, event: E.CausalEvent) -> Sound:
+  let input = Appointments.readPayload(value)
+  let obsolete = event.source == state.clock && input.owner == state.owner && input.id == context.object && input.generation <= state.generation && (input.generation < state.generation || state.phase != "queued")
+  let ok = state.phase == "queued" && event.source == state.clock && input.owner == state.owner && input.id == context.object && input.generation == state.generation && input.due == state.due && input.deadline == state.deadline && input.topic == state.chord && input.tick >= state.due && input.tick <= state.deadline
+  let played = Bell.sound(state.bell, {to: state.bell.recipient, recipientProgram: state.recipientProgram, chord: state.chord, voices: 1n}, context)
+  {accepted: obsolete || (ok && played.accepted), reason: if obsolete then "" else if ok then played.reason else "This sound requires the retained appointment from the named clock.", state: if obsolete then state else extend(state, {bell: played.state, phase: "rang", lastEvent: event.id, lastRoot: event.root, lastRootPrincipal: event.rootPrincipal}), result: {status: if obsolete then "declined" else "rang", generation: input.generation}, emissions: if ok then played.emissions else E.empty()}
+def text(value: String) -> P.Value:
+  P.Value.text({value: value})
+def nat(value: Nat) -> P.Value:
+  P.Value.natural({value: value})
+def field(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def prepareSchedule(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let due = P.natural(P.get(input, "due"))
+  let deadline = P.natural(P.get(input, "deadline"))
+  let chord = P.text(P.get(input, "chord"))
+  let clock = P.observation(observations, state.clock)
+  let recipient = P.observation(observations, state.bell.recipient)
+  let self = P.observation(observations, context.object)
+  let armInput = P.Value.record({fields: field("due", nat(due), field("deadline", nat(deadline), field("chord", text(chord), field("recipientProgram", text(recipient.program), P.Fields.nil()))))})
+  let quoteInput = P.Value.record({fields: field("id", text(context.object), field("due", nat(due), field("deadline", nat(deadline), field("to", text(context.object), field("recipientProgram", text(self.program), field("topic", text(chord), P.Fields.nil()))))))})
+  if context.principal != state.owner || state.phase == "queued" then P.Preparation.refused({message: "Only the bell's owner can arrange its next appointment after the previous one finishes or is cancelled."}) else if chord == "" then P.Preparation.question({message: "What chord should this bell play?", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})}) else if clock.object != state.clock || recipient.object != state.bell.recipient || self.object != context.object then P.Preparation.refused({message: "Capture this bell, its clock and its actual listener before booking."}) else P.Preparation.ready({summary: "Book the shared clock's current generation for this bell and retain its actual result.", reads: P.Reads.cons({head: P.Read.existing({object: state.clock}), tail: P.Reads.cons({head: P.Read.existing({object: state.bell.recipient}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "arm", input: armInput}), tail: P.Effects.cons({head: P.Effect.invoke({object: state.clock, command: "quote", input: quoteInput}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: state.clock, command: "request", result: 1n}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "scheduled", result: 2n}), tail: P.Effects.nil()})})})})})
+def prepareCancel(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  if context.principal != state.owner || state.phase != "queued" then P.Preparation.refused({message: "Only the owner can cancel this bell's queued appointment."}) else P.Preparation.ready({summary: "Cancel the queued generation at its actual clock.", reads: P.Reads.cons({head: P.Read.existing({object: state.clock}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.clock, command: "cancel", input: P.Value.record({fields: field("id", text(context.object), field("generation", nat(state.generation), P.Fields.nil()))})}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "cancelled", result: 0n}), tail: P.Effects.nil()})})})
+def prepareRetire(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  if context.principal != state.owner || state.phase != "queued" then P.Preparation.refused({message: "Only the owner can retire this bell's waiting appointment."}) else P.Preparation.ready({summary: "Retire only after the clock has sent or expired this generation; decline any later delivery.", reads: P.Reads.cons({head: P.Read.existing({object: state.clock}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.clock, command: "status", input: P.Value.record({fields: field("id", text(context.object), field("generation", nat(state.generation), P.Fields.nil()))})}), tail: P.Effects.cons({head: P.Effect.invokeResult({object: context.object, command: "retired", result: 0n}), tail: P.Effects.nil()})})})
+def textField() -> Abi.StringField:
+  {type: "string", minLength: 1n, maxLength: 128n}
+def natField() -> Abi.NatField:
+  {type: "nat", minimum: 0n, maximum: 9007199254740991n}
+record CompletionForm:
+  label: String
+  fields: {status: Abi.StringField, id: Abi.StringField, generation: Abi.NatField, now: Abi.NatField}
+record Description:
+  name: String
+  initial: State
+  methods: {arm: {label: String, fields: {due: Abi.NatField, deadline: Abi.NatField, chord: Abi.StringField, recipientProgram: Abi.StringField}}, scheduled: CompletionForm, cancelled: CompletionForm, retired: CompletionForm, wake: {label: String, fields: {}, inputCodec: String}}
+  panels: {}
+def completion(label: String) -> CompletionForm:
+  {label: label, fields: {status: textField(), id: textField(), generation: natField(), now: natField()}}
+def describe() -> Description:
+  {name: "Appointed courtyard bell", initial: configured({object: "bell", owner: "moss", clock: "clock", recipient: "door"}), methods: {arm: {label: "Retain a prepared chord", fields: {due: natField(), deadline: natField(), chord: textField(), recipientProgram: textField()}}, scheduled: completion("Retain actual booking"), cancelled: completion("Retain actual cancellation"), retired: completion("Retire after actual clock absence"), wake: {label: "Receive the actual due appointment", fields: {}, inputCodec: "value"}}, panels: {}}
+record ScheduleInvitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {due: Abi.NatField, deadline: Abi.NatField, chord: Abi.StringField}
+  observations: P.Requests
+record CancelInvitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {}
+  observations: P.Requests
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Encounter.Children
+  invitations: {schedule: ScheduleInvitation, cancel: CancelInvitation, retire: CancelInvitation}
+def view(state: State, panel: String) -> View:
+  let clock = P.Requests.cons({head: {object: state.clock, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})
+  {title: textConcat("Appointed bell: ", state.phase), prose: textConcat("Arrange a chord using the shared clock. The clock supplies its generation; captured programs bind this bell and its listener. Generation ", natText(state.generation)), actions: {}, children: Encounter.Children.cons({head: {key: "clock", label: "Shared clock", object: state.clock, panel: "main"}, tail: Encounter.Children.cons({head: {key: "listener", label: "Actual listener", object: state.bell.recipient, panel: "main"}, tail: Encounter.Children.nil()})}), invitations: {schedule: {visible: state.phase != "queued", text: "Schedule a chord", prepare: "prepareSchedule", fields: {due: natField(), deadline: natField(), chord: textField()}, observations: P.Requests.cons({head: {object: state.object, inspectState: false, inspectLaw: false}, tail: P.Requests.cons({head: {object: state.bell.recipient, inspectState: false, inspectLaw: false}, tail: clock})})}, cancel: {visible: state.phase == "queued", text: "Cancel this appointment", prepare: "prepareCancel", fields: {}, observations: clock}, retire: {visible: state.phase == "queued", text: "Retire after clock send or expiry", prepare: "prepareRetire", fields: {}, observations: clock}}}

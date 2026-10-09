@@ -46,7 +46,7 @@ def job(snapshot, request):
 class NativePreparation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        modules = [{'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+        modules = [{'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
                    {'name': 'Gallery', 'source': SOURCE}]
         with patch.object(obend_object, 'RUNNER', PACKAGE):
             cls.protocol = obend_object.lower_data_modules(modules)
@@ -69,7 +69,7 @@ class NativePreparation(unittest.TestCase):
 
     def prepare(self, contribution, principal='actor', entry='prepareGesture'):
         invitation = {**self.invitation, 'entry': entry}
-        return source_offers.prepare(invitation, principal, 'gesture:1', contribution, binary=BINARY)
+        return source_offers.prepare_value(invitation, principal, 'gesture:1', contribution, binary=BINARY)
 
     def test_source_questions_and_refusals_are_read_only(self):
         before = copy.deepcopy(self.snapshot)
@@ -111,11 +111,11 @@ class NativePreparation(unittest.TestCase):
         self.assertEqual(outcome['kind'], 'question')
         invitation = {**self.invitation, 'entry': 'prepareOwnerArgument',
                       'observations': [{'object': 'gallery', 'root': self.root, 'inspectState': False, 'inspectLaw': False}]}
-        outcome = source_offers.prepare(invitation, 'actor', 'explicit-owner', {}, binary=BINARY)
+        outcome = source_offers.prepare_value(invitation, 'actor', 'explicit-owner', {}, binary=BINARY)
         self.assertEqual(outcome['kind'], 'refused')
         invitation['observations'].append({'object': 'gallery', 'root': self.root, 'inspectState': False, 'inspectLaw': False})
         with self.assertRaisesRegex(ValueError, 'duplicate preparation observation'):
-            source_offers.prepare(invitation, 'actor', 'duplicate-owner', {}, binary=BINARY)
+            source_offers.prepare_value(invitation, 'actor', 'duplicate-owner', {}, binary=BINARY)
 
     def test_retained_wire_depth_uses_admitted_ceiling_not_contribution_depth(self):
         value = {'leaf': 'exact retained data'}
@@ -124,13 +124,13 @@ class NativePreparation(unittest.TestCase):
         observed = {**self.peer, 'state': value}
         invitation = {**self.invitation, 'entry': 'prepareData',
                       'observations': [{'object': 'peer', 'root': observed, 'inspectState': False, 'inspectLaw': False}]}
-        outcome = source_offers.prepare(invitation, 'actor', 'retained-wire', {}, binary=BINARY)
+        outcome = source_offers.prepare_value(invitation, 'actor', 'retained-wire', {}, binary=BINARY)
         self.assertEqual(outcome['request']['calls'][0]['input'], value)
         with self.assertRaisesRegex(ValueError, 'nesting capacity'):
-            source_offers.prepare(self.invitation, 'actor', 'authored-too-deep', value, binary=BINARY)
+            source_offers.prepare_value(self.invitation, 'actor', 'authored-too-deep', value, binary=BINARY)
         invitation['observations'][0]['inspectState'] = True
         with self.assertRaisesRegex(ValueError, 'typed data nesting capacity'):
-            source_offers.prepare(invitation, 'actor', 'inspect-too-deep', {}, binary=BINARY)
+            source_offers.prepare_value(invitation, 'actor', 'inspect-too-deep', {}, binary=BINARY)
 
     def test_manufactured_and_foreign_retained_values_refuse(self):
         with self.assertRaisesRegex(ValueError, 'differs from captured root'):
@@ -150,7 +150,7 @@ class NativePreparation(unittest.TestCase):
         observed = {**self.peer, 'state': {'gesture': 'wave', 'decimal': Decimal('1.00'), 'missing': None,
                                           'list': [True, Decimal('-0.250'), 'x']}}
         invitation = {**self.invitation, 'entry': 'prepareData', 'observations': [{'object': 'peer', 'root': observed, 'inspectState': False, 'inspectLaw': False}]}
-        outcome = source_offers.prepare(invitation, 'actor', 'exactdata', {}, binary=BINARY)
+        outcome = source_offers.prepare_value(invitation, 'actor', 'exactdata', {}, binary=BINARY)
         actual = outcome['request']['calls'][0]['input']
         self.assertEqual(actual, observed['state'])
         self.assertEqual(actual['decimal'].as_tuple(), observed['state']['decimal'].as_tuple())

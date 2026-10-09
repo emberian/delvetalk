@@ -28,7 +28,7 @@ def invitation(context: Context) -> Document.Document:
 extension Base(self: Sections, super: {}) -> Sections:
   {heading: fn(context: Context) -> Document.Document: doc"""Hello, {{ context.participant }}.
 """, examples: fn(context: Context) -> Document.Document: numbered(context), body: fn(context: Context) -> Document.Document: doc"""{% self.heading(context) %}{% if context.detailed then self.examples(context) else Document.text("Details folded.\n") %}{% invitation(context) %}"""}
-extension Workshop(self: Sections, super: Sections) -> Sections:
+extension Workshop[Self has {heading: Context -> Document.Document, examples: Context -> Document.Document, body: Context -> Document.Document}, Super has {heading: Context -> Document.Document, examples: Context -> Document.Document, body: Context -> Document.Document}](self: Self, super: Super) -> Super with {heading: Context -> Document.Document, examples: Context -> Document.Document}:
   extend(super, {heading: fn(context: Context) -> Document.Document: doc"""Workshop · {% super.heading(context) %}""", examples: fn(context: Context) -> Document.Document: doc"""{% super.examples(context) %}Bring your own impossible example.
 """})
 def sections() -> Sections:

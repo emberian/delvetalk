@@ -33,10 +33,13 @@ def _fields(value):
 
 
 def validate(invitation):
-    if (not isinstance(invitation, dict) or set(invitation) !=
-            {'format', 'object', 'root', 'entry', 'observations', 'title', 'label', 'fields'}
+    required = {'format', 'object', 'root', 'entry', 'observations', 'title', 'label', 'fields'}
+    if (not isinstance(invitation, dict) or not required <= set(invitation)
+            or set(invitation) - required - {'contributionCodec'}
             or invitation['format'] != FORMAT):
         raise ValueError('captured preparation requires exact invitation fields')
+    if invitation.get('contributionCodec', 'value') not in ('value', 'data'):
+        raise ValueError('unknown preparation contribution codec')
     if not isinstance(invitation['observations'], list) or len(invitation['observations']) > 16:
         raise ValueError('captured preparation has too many observations')
     for observation in invitation['observations']:
@@ -73,12 +76,15 @@ def capture_available(view, roots, *, database=None, references=None):
             unavailable[key] = {'command': descriptor['prepare'], 'label': descriptor['text'],
                                 'reason': 'Captured observation missing: ' + ', '.join(missing)}
             continue
-        offers[key] = validate({'format': FORMAT, 'object': view['object'],
+        offer = {'format': FORMAT, 'object': view['object'],
             'root': captured(view['object']), 'entry': descriptor['prepare'],
             'observations': [{**item, 'root': captured(item['object'])}
                              for item in descriptor['observations']],
             'title': view['data']['title'], 'label': descriptor['text'],
-            'fields': _fields(descriptor['fields'])})
+            'fields': _fields(descriptor['fields'])}
+        if 'contributionCodec' in descriptor:
+            offer['contributionCodec'] = descriptor['contributionCodec']
+        offers[key] = validate(offer)
     return {'offers': offers, 'unavailable': unavailable}
 
 
@@ -112,11 +118,15 @@ def capture_observations(view, owner_capture, *, database=None, receiver=None,
 
 def action(invitation):
     invitation = validate(invitation)
-    return {'id': 'a1', 'command': invitation['entry'], 'label': invitation['label'],
+    result = {'id': 'a1', 'command': invitation['entry'], 'label': invitation['label'],
             'available': True, 'fields': invitation['fields'], 'preparation': True}
+    if 'contributionCodec' in invitation:
+        result['contributionCodec'] = invitation['contributionCodec']
+    return result
 
 
-def prepare(invitation, principal, intent, contribution, *, binary=None, database=None, receiver=None):
+def prepare_value(invitation, principal, intent, contribution, *, binary=None, database=None, receiver=None):
+    """Run bounded source interpretation data through its native preparation export."""
     invitation = validate(invitation)
     if len(world.wire_dumps(contribution).encode('utf-8')) > 65536:
         raise ValueError('authored contribution exceeds 64 KiB')
@@ -126,6 +136,8 @@ def prepare(invitation, principal, intent, contribution, *, binary=None, databas
     request = {'op': 'prepare', 'object': invitation['object'], 'root': invitation['root'],
         'entry': invitation['entry'], 'contribution': copy.deepcopy(contribution),
         'observations': invitation['observations'], 'principal': principal, 'intent': intent}
+    if 'contributionCodec' in invitation:
+        request['contributionCodec'] = invitation['contributionCodec']
     if database is not None or receiver is not None:
         if binary is not None:
             raise ValueError('retained preparation selects the database native receiver')
@@ -138,7 +150,7 @@ def prepare(invitation, principal, intent, contribution, *, binary=None, databas
             return receiver.query(request)
         return world.query(database, request)
     job = {'world': {'objects': objects, 'receipts': []}, 'request': request}
-    result = process_custody.run([binary or BINARY], timeout=30, cpu_seconds=30,
+    result = process_custody.run_native([binary or BINARY], timeout=30, cpu_seconds=30,
         stdout_limit=2 * 1024 * 1024, stderr_limit=65536,
         input=(world.wire_dumps(job) + '\n').encode('utf-8'), cwd=ROOT)
     if result.returncode:
@@ -152,6 +164,20 @@ def prepare(invitation, principal, intent, contribution, *, binary=None, databas
     if outcome.get('kind') not in ('ready', 'question', 'refused'):
         raise ValueError('unknown native preparation result')
     return outcome
+
+
+def prepare_fields(invitation, principal, intent, contribution, *, binary=None, database=None, receiver=None):
+    """Prepare a public form contribution; source still chooses questions and effects."""
+    invitation = validate(invitation)
+    if invitation.get('contributionCodec', 'value') != 'value':
+        raise ValueError('typed preparation requires an explicit DataWire contribution')
+    contribution = affordances._validate_values(invitation['fields'], contribution, complete=False)
+    return prepare_value(invitation, principal, intent, contribution,
+        binary=binary, database=database, receiver=receiver)
+
+
+# Existing public form callers retain the explicitly validated path.
+prepare = prepare_fields
 
 
 def request(invitation, principal, intent, contribution, *, database=None, receiver=None):

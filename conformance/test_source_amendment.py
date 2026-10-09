@@ -29,7 +29,7 @@ def notBool(context: Context) -> Nat:
 
 def package(entry='amend'):
     return {'modules': [
-        {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+        {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
         {'name': 'Amendment', 'source': SOURCE}], 'entry': entry}
 
 

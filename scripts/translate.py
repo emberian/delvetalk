@@ -79,8 +79,8 @@ def translate_modules(syntax, material, registry_path=None):
     """Explicit sealed assembly path; raw text never selects this variant."""
     import source_store
     source_store.validate_module_material(material)
-    if syntax not in ('objective-bend-spell@2', 'objective-bend-spell@3'):
-        raise ValueError('sealed modules require explicit spell@2 or spell@3')
+    if syntax not in ('objective-bend-object', 'objective-bend-spell@2', 'objective-bend-spell@3'):
+        raise ValueError('sealed modules require explicit source object syntax')
     modules = [{'name': entry['name'], 'source': entry['source']} for entry in material['modules']]
     return _translate(syntax, modules, material, registry_path, modules=True)
 

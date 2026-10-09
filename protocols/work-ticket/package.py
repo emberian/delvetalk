@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 
 def modules():
     return source_object.read_modules([('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('ReviewableWork', HERE / 'ReviewableWork.obend'), ('Ticket', HERE / 'Ticket.obend')])
 
 

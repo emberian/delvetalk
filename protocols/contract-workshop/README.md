@@ -6,7 +6,8 @@ source; they never copy or invent metadata JSON. `Counter.obend` contains both a
 specification export and a separate implementation. Its claim remains a claim,
 while the declared method boundary becomes a law requirement.
 
-The operator retains that exact source in an ordinary SourceDesk candidate,
+The operator retains that exact source in a `ContractCandidate`, a source-composed
+SourceDesk with an additional contract preparation export,
 submits its examples, and compiles it through the existing bounded compiler. The
 maker can submit source; a compiler can admit a checked candidate; the steward
 must have both the candidate's current `adopt` grant and the target's current
@@ -18,6 +19,11 @@ checks the retained original source. Native `inspect-spec-v1` computes its actua
 metadata. The resulting immutable proposal retains source bindings, the checked
 build, metadata, and the exact release request for review. Plain versus model
 state follows the candidate's explicitly selected @2 or @3 syntax.
+`Workshop.obend` chooses the turn and revises the captured law; Python supplies
+compiler data and retains exact attempts. The target law is an explicit source
+observation, never an ambient lookup. Missing projection refuses preparation.
+Ordinary candidate desks keep their smaller source package; a contract workshop
+is an explicit capability, composed through `ContractCandidate.obend`.
 
 `release` calls the candidate's existing `adopt` command and revises the target
 law in one exact-read transaction. It preserves the target's captured invoke,
@@ -35,6 +41,9 @@ implementations behave alike.
 The CLI uses ordinary operator custody files:
 
 ```sh
+python3 scripts/contract_authoring.py --database WORLD --artifacts ARTIFACTS create \
+  --candidate source-desk --principal owner --intent new-desk --law desk-law.json
+# Submit and check source through the ordinary scripts/desk.py commands.
 python3 scripts/contract_authoring.py --database WORLD --artifacts ARTIFACTS prepare \
   --candidate source-desk --target counter --principal steward --intent promise-1 \
   --candidate-root ready.json --target-root counter.json --entry contract > promise.json
@@ -45,6 +54,7 @@ The release plan is retained under `ARTIFACTS/contract-attempts`. Include that
 directory as history journals and the ordinary compiler build attachments when
 exporting. The actual law already retains the exact source package and native
 metadata. An exported attempt can be restored with `Contracts.restore`; this
-retains custody, not authority. Exact historical retries recover their receipt
-before consulting changed grants, missing source blobs or current compiler pins.
+retains custody, not authority. New attempts are checked against their captured
+source preparation. Exact historical retries recover their receipt before
+consulting changed grants, missing source blobs or current compiler pins.
 New attempts must still pass custody, exact-root and current-law checks.

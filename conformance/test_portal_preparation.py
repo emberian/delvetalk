@@ -116,7 +116,7 @@ class NativePortalPreparation(unittest.TestCase):
   if gesture == "" then P.Preparation.question({message: "Which gesture would you like?", needs: P.Names.cons({head: "gesture", tail: P.Names.nil()})}) else if gesture == "refuse" then P.Preparation.refused({message: "Choose another gesture."}) else P.Preparation.ready({summary: "Offer the gesture", reads: P.Reads.cons({head: P.Read.existing({object: "peer"}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: "peer", command: "touch", input: P.oneField("gesture", P.Value.text({value: gesture}))}), tail: P.Effects.nil()})})
 '''
         protocol = obend_object.lower_data_modules([
-            {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+            {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
             {'name': 'Gallery', 'source': source}])
         root = {'protocol': protocol, 'state': protocol['initial'], 'version': 0, 'law': ['visitor']}
         peer = {'protocol': {'profile': 'delvetalk-local-v1', 'initial': {},

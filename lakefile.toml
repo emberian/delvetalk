@@ -37,11 +37,19 @@ name = "SourceAmendment"
 srcDir = "profiles"
 
 [[lean_lib]]
+name = "SourcePolicy"
+srcDir = "profiles"
+
+[[lean_lib]]
 name = "Preparation"
 srcDir = "profiles"
 
 [[lean_lib]]
 name = "FileCustody"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "ProgramDigest"
 srcDir = "profiles"
 
 [[lean_lib]]

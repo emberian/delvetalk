@@ -1,6 +1,6 @@
 # Architecture and semantic boundaries
 
-DelveTalk has its own Lean object host. It reuses Mini's Objective Bend frontend,
+DelveTalk has its own Lean object host. Its Bend edition forks Mini's frontend,
 checker and demand machine; it does not inherit Mini's object kernel or its
 activity, delegation and custody guarantees. Host convergence is not required.
 Python supplies translation, transport, presentation and durable storage. The

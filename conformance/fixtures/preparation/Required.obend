@@ -1,0 +1,51 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Candidate.obend as Candidate
+import ./Interpretation.obend as I
+import ./GrantPolicy.obend as G
+import ./Welcome.obend as W
+record Checks:
+  absent: Bool
+  wrongNatural: Bool
+  actualZero: Bool
+  actualFalse: Bool
+  wrongBoolean: Bool
+  emptyText: Bool
+  absentObservation: Bool
+  actualObservation: Bool
+  missingBaseline: Bool
+  falseBaseline: Bool
+  zeroBaseline: Bool
+  malformedBound: Bool
+  zeroBound: Bool
+  missingPermission: Bool
+  falsePermission: Bool
+  wrongPermission: Bool
+  invalidCommands: Bool
+def naturalResult(value: P.NaturalLookup, kind: String) -> Bool:
+  match value:
+    case missing(_): kind == "missing"
+    case wrongKind(_): kind == "wrong"
+    case found(n): kind == "zero" && n.value == 0n
+def booleanResult(value: P.BooleanLookup, kind: String) -> Bool:
+  match value:
+    case missing(_): kind == "missing"
+    case wrongKind(_): kind == "wrong"
+    case found(b): kind == "false" && b.value == false
+def empty(value: P.TextLookup) -> Bool:
+  match value:
+    case missing(_): false
+    case wrongKind(_): false
+    case found(t): t.value == ""
+def observed(value: P.ObservationLookup, expected: Bool) -> Bool:
+  match value:
+    case missing(_): expected == false
+    case found(o): expected && o.value.object == "target" && o.value.version == 0n
+def submission(baseline: P.Fields) -> P.Value:
+  P.Value.record({fields: Candidate.pair("proposal", P.Value.record({fields: P.Fields.nil()}), Candidate.pair("migration", P.Value.record({fields: P.Fields.nil()}), Candidate.pair("target", Candidate.text("target"), Candidate.pair("editor", Candidate.text("editor"), Candidate.pair("generation", Candidate.number(1n), baseline)))))})
+def submitted(baseline: P.Fields) -> Bool:
+  Candidate.submit(Candidate.initial({editorMode: true}), submission(baseline), {object: "candidate", principal: "iris", inputOrigin: {kind: "literal", object: "", command: "", immediatelyPrevious: false}}).accepted
+def spec(lower: P.Value) -> P.Value:
+  P.Value.record({fields: Candidate.pair("type", Candidate.text("nat"), Candidate.pair("minimum", lower, Candidate.pair("maximum", Candidate.number(0n), P.Fields.nil())))})
+def checks() -> Checks:
+  {absent: naturalResult(P.naturalField(P.Value.record({fields: P.Fields.nil()}), "n"), "missing"), wrongNatural: naturalResult(P.naturalField(P.oneField("n", P.Value.boolean({value: false})), "n"), "wrong"), actualZero: naturalResult(P.naturalField(P.oneField("n", Candidate.number(0n)), "n"), "zero"), actualFalse: booleanResult(P.booleanField(P.oneField("b", P.Value.boolean({value: false})), "b"), "false"), wrongBoolean: booleanResult(P.booleanField(P.oneField("b", Candidate.number(0n)), "b"), "wrong"), emptyText: empty(P.textField(P.oneField("t", Candidate.text("")), "t")), absentObservation: observed(P.lookupObservation(P.Observations.nil(), "target"), false), actualObservation: observed(P.lookupObservation(P.Observations.cons({head: {object: "target", version: 0n, program: "actual", state: P.Value.none(), law: P.Value.none()}, tail: P.Observations.nil()}), "target"), true), missingBaseline: submitted(P.Fields.nil()) == false, falseBaseline: submitted(Candidate.pair("baselineVersion", P.Value.boolean({value: false}), P.Fields.nil())) == false, zeroBaseline: submitted(Candidate.pair("baselineVersion", Candidate.number(0n), P.Fields.nil())), malformedBound: I.fits(spec(P.Value.boolean({value: false})), Candidate.number(0n)) == false && I.fits(spec(P.Value.none()), Candidate.number(0n)) == false, zeroBound: I.fits(spec(Candidate.number(0n)), Candidate.number(0n)), missingPermission: G.optionalBoolean(P.Value.record({fields: P.Fields.nil()}), "reprogram"), falsePermission: G.optionalBoolean(P.oneField("reprogram", P.Value.boolean({value: false})), "reprogram"), wrongPermission: G.optionalBoolean(P.oneField("reprogram", Candidate.number(0n)), "reprogram") == false, invalidCommands: G.commandNames(P.Value.array({values: P.Values.cons({head: Candidate.number(0n), tail: P.Values.nil()})})) == false}

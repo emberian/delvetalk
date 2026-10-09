@@ -15,21 +15,25 @@ HERE = Path(__file__).resolve().parent
 
 def candidate(*, editor_mode=True):
     modules = source_object.read_modules([
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Candidate', HERE / 'Candidate.obend')])
     if editor_mode:
-        return source_object.load(modules, syntax='objective-bend-spell@3')
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+        return source_object.load(modules, syntax='objective-bend-object')
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='ordinary', arguments=[])
 
 
 def factory(compiler, makers):
     modules = source_object.read_modules([
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
         ('Factory', HERE / 'Factory.obend')])
     configuration = {'compiler': compiler, 'reporters': list(makers), 'candidate': candidate()}
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.value(configuration)])
 
 
@@ -39,9 +43,11 @@ def editor_source():
 
 def editor_artifact(target, factory):
     modules = source_object.read_modules([
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Editor', HERE / 'Editor.obend')])
-    protocol = source_object.load(modules, syntax='objective-bend-spell@3',
+    protocol = source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.data({'target': target, 'factory': factory})])
     return {'protocol': protocol, 'source': {'modules': modules, 'entry': 'describe'}}
 

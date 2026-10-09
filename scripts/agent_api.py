@@ -94,8 +94,12 @@ curl -sS "$BASE/AGENTS.md/me" -H "Authorization: Bearer $TOKEN"
 
 ## Make something in your studio
 
-`private` is the default realm. `GET /AGENTS.md/world` lists your objects and
-exact roots; `GET /AGENTS.md/world?object=notebook` reads your retained work.
+`private` is the default realm. `GET /AGENTS.md/world` lists a bounded page of
+object identities, names and versions; it does not return source, state, law or
+history. Follow `links.next` for another page, or `links.refresh` to start again
+if the world changed. `limit` defaults to 32 and accepts 1..64. Continuations
+belong to one exact world head; a changed world refuses the old cursor.
+`GET /AGENTS.md/world?object=notebook` reads that object's exact root.
 Sources, state and law remain inspectable. `rootJson`, `replyJson` and related
 exact strings preserve integers that browser JSON numbers cannot represent.
 
@@ -334,7 +338,7 @@ class AgentAPI:
             operation = self.identities.rotate if suffix.endswith('rotate') else self.identities.revoke
             return self.response(handler, 200, operation(token))
         if suffix == '/world':
-            exact(query, optional=('realm', 'object', 'view', 'panel', 'card', 'draft', 'preparation', 'detail', 'interpretation', 'childCard', 'childKey'))
+            exact(query, optional=('realm', 'object', 'view', 'panel', 'card', 'draft', 'preparation', 'detail', 'interpretation', 'childCard', 'childKey', 'cursor', 'limit'))
             selected = realm(query.get('realm', 'private'))
             if 'childCard' in query or 'childKey' in query:
                 exact(query, ('childCard', 'childKey'), ('realm',))
@@ -347,6 +351,7 @@ class AgentAPI:
                 reading = self.heaps.reading(identity, selected, saved[0], query[saved[0]])
                 return self.response(handler, 200, self.reading(reading, selected))
             if query.get('view') == 'encounter':
+                exact(query, ('object', 'view'), ('realm', 'panel'))
                 if not query.get('object'):
                     raise ValueError('An encounter requires an object')
                 card = self.heaps.encounter(identity, selected, query['object'], query.get('panel', 'main'))
@@ -354,13 +359,21 @@ class AgentAPI:
             if 'view' in query or 'panel' in query:
                 raise ValueError('Choose view=encounter to read a source-authored panel')
             if 'object' in query:
+                exact(query, ('object',), ('realm',))
                 root = self.heaps.inspect(identity, selected, query['object'])
                 result = {'realm': selected, 'object': query['object'], 'root': root, 'rootJson': canonical(root).decode()}
             else:
-                result = copy.deepcopy(self.heaps.catalogue(identity, selected))
+                exact(query, optional=('realm', 'cursor', 'limit'))
+                limit = int(query.get('limit', '32'))
+                result = self.heaps.catalogue(identity, selected,
+                    cursor=loads(query['cursor']) if 'cursor' in query else None, limit=limit)
                 for item in result['objects']:
-                    item['rootJson'] = canonical(item['root']).decode()
-                    item['links'] = {'encounter': BASE + '/world?realm=' + selected + '&view=encounter&object=' + quote(item['object'], safe='')}
+                    item['links'] = {'encounter': BASE + '/world?realm=' + selected + '&view=encounter&object=' + quote(item['object'], safe=''),
+                                     'root': BASE + '/world?realm=' + selected + '&object=' + quote(item['object'], safe='')}
+                refresh = BASE + '/world?realm=' + selected + '&limit=' + str(limit)
+                result['links'] = {'refresh': refresh,
+                    'next': refresh + '&cursor=' + quote(canonical(result['nextCursor']).decode(), safe='')
+                            if result['nextCursor'] is not None else None}
                 result['exactJson'] = canonical(result).decode()
             return self.response(handler, 200, result)
         if suffix == '/receipt':

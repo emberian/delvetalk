@@ -5,13 +5,14 @@ import Preparation
 namespace SourceAmendment
 open Lean World
 open Minidregg.Compiler.ObjectiveBendDataWire (dataJson)
+open Minidregg.Theory.ObjectiveBendDemandData (Data)
 
 def exact (value : Json) (names : List String) : Except String Unit := do
   let keys := (← pairs value).map Prod.fst
   unless keys.length == names.length && keys.all names.contains do
     throw "source amendment has missing or unknown fields"
 
-def check (execute : Json → Array Json → Evaluation Json)
+def check (execute : Json → Array Json → Evaluation Data)
     (amendment before after request : Json) (principal : String) : Evaluation Unit := do
   let op ← str request "op"
   -- The runtime hook is still selected on every write, so hosts without this
@@ -29,7 +30,7 @@ def check (execute : Json → Array Json → Evaluation Json)
     ("currentLaw", ← Preparation.encodeValue Preparation.retainedValueDepth (← field before "law")),
     ("nextLaw", ← Preparation.encodeValue Preparation.retainedValueDepth (← field after "law"))]
   let result ← execute package #[dataJson context]
-  match ← Delvetalk.PackageData.decode 256 result with
+  match result with
   | .boolean true => pure ()
   | .boolean false => throw "source amendment refused"
   | _ => throw "source amendment must return Bool"

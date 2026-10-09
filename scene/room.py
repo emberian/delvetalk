@@ -17,8 +17,10 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 FORMAT = "delvetalk-room-artifact-v1"
 VIEW = "delvetalk-room-view-v1"
-PIN_PATHS = ("scene/lower.py", "scene/spween-bridge/Cargo.toml",
+PIN_PATHS = ("scene/lower.py", "scripts/process_custody.py", "scene/spween-bridge/Cargo.toml",
              "scene/spween-bridge/Cargo.lock", "scene/spween-bridge/src/main.rs")
+SOURCE_PIN_PATHS = PIN_PATHS + ("scene/handlers.py",)
+SOURCE_PROFILE = "spween-obend-handlers-i64-v1"
 
 
 def module(name, path):
@@ -72,15 +74,28 @@ def wrap_bundle(bundle, pins=None):
     return artifact
 
 
-def compile_artifact(source, initial_vars=None, has=None, *, profile=lower.CURRENT_PROFILE):
+def source_artifact(protocol, pins=None):
+    """Retain exact parser custody around an already checked source protocol."""
+    parsed = copy.deepcopy(protocol["spweenSource"])
+    content = {**parsed, "pins": copy.deepcopy(pins if pins is not None else {
+        path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in SOURCE_PIN_PATHS})}
+    artifact = {"format": FORMAT, "content": content, "protocol": copy.deepcopy(protocol)}
+    validate_artifact(artifact)
+    return artifact
+
+
+def compile_artifact(source, initial_vars=None, has=None, *, profile=SOURCE_PROFILE):
+    if profile != SOURCE_PROFILE:
+        raise ArtifactError("scene compilation requires the source runtime profile")
+    if initial_vars or has:
+        raise ArtifactError("initial scene state belongs in the authored Handler constructor")
     executable = ROOT / "scene/spween-bridge/target/debug/delvetalk-spween"
     binary_pin = hashlib.sha256(executable.read_bytes()).hexdigest()
-    document = lower.bridge({"op": "parse", "source": source})
+    handlers = module("room_source_handlers", "scene/handlers.py")
+    bundle = handlers.compile_source(source)
     if hashlib.sha256(executable.read_bytes()).hexdigest() != binary_pin:
         raise ArtifactError("Spween bridge executable changed during parsing")
-    bundle = lower.lower_document(document, initial_vars, has, profile=profile)
-    bundle["bridge_binary_sha256"] = binary_pin
-    return wrap_bundle(bundle)
+    return source_artifact(bundle["protocol"])
 
 
 def validate_artifact(artifact):
@@ -92,6 +107,20 @@ def validate_artifact(artifact):
         if set(artifact) != {"format", "content", "protocol"} or artifact["format"] != FORMAT:
             raise ArtifactError("unsupported room artifact envelope")
         content, protocol = artifact["content"], artifact["protocol"]
+        if content.get("profile") == SOURCE_PROFILE:
+            if set(content) != {"source", "ast", "upstream", "profile", "pins"}:
+                raise ArtifactError("incomplete source scene artifact")
+            if content["upstream"] != lower.UPSTREAM or not isinstance(content["source"], str) or not isinstance(content["ast"], dict):
+                raise ArtifactError("invalid source scene parser custody")
+            pins = content["pins"]
+            if not isinstance(pins, dict) or set(pins) != set(SOURCE_PIN_PATHS) or any(
+                    not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in pins.values()):
+                raise ArtifactError("invalid source scene compiler pins")
+            if protocol.get("spweenSource") != {key: value for key, value in content.items() if key != "pins"}:
+                raise ArtifactError("source scene differs from its checked protocol custody")
+            if "sourcePackages" not in protocol or "viewProgram" not in protocol or "roomArtifact" in protocol:
+                raise ArtifactError("source scene requires ordinary source methods and view")
+            return digest(artifact)
         required = {"source", "ast", "upstream", "profile", "provenance", "initialVars", "has", "pins"}
         if not required <= set(content) or set(content) - required - {"bridge_binary_sha256"}:
             raise ArtifactError("incomplete room artifact content")
@@ -214,6 +243,9 @@ def room_view(root, artifact, object_id):
         artifact_id = validate_artifact(artifact)
         if root["protocol"] != artifact["protocol"]:
             return _raw(root, object_id, "Artifact protocol differs from the committed root")
+        if artifact["content"]["profile"] == SOURCE_PROFILE:
+            projection = module("room_projection", "scene/projection.py")
+            return projection.project(root, object_id)
         session = root["state"]["session"]
         if type(session["started"]) is not bool or type(session["ended"]) is not bool:
             raise ArtifactError("invalid committed session flags")
@@ -269,6 +301,12 @@ def _request(view, command, principal, intent):
 
 
 def choice_request(view, index, principal, intent):
+    if view.get("mode") == "projection":
+        projection = module("room_projection", "scene/projection.py")
+        for key, action in view["data"]["actions"].items():
+            if action["command"] == "choose" and action["input"].get("choice") == index:
+                return projection.request(view, key, principal, intent)
+        raise ArtifactError("choice is not displayed in this source view")
     if type(index) is not int or index < 0 or index >= len(view.get("choices", [])):
         raise ArtifactError("choice is not displayed in this view")
     # Availability is displayed, not used here to grant or deny admission.
@@ -276,6 +314,9 @@ def choice_request(view, index, principal, intent):
 
 
 def start_request(view, principal, intent):
+    if view.get("mode") == "projection":
+        projection = module("room_projection", "scene/projection.py")
+        return projection.request(view, "start", principal, intent)
     if view.get("started") is not False: raise ArtifactError("this view does not display a start action")
     return _request(view, "start", principal, intent)
 

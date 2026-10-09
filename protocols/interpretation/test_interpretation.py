@@ -38,16 +38,28 @@ class SourceInterpretation(unittest.TestCase):
             raise AssertionError('literal attempted provider')
         self.assertEqual(interpret.interpret('do capture-1 lend {"recipient":"Ada","nights":2}', card(), proposer=forbidden)['status'], 'proposed')
 
+    def test_dynamic_proposal_accessors_do_not_coerce_nonstrings_to_empty_tokens(self):
+        source_card = {'actions': [{'id': '', 'available': True, 'fields': []}]}
+        result = interpret.unpack(interpret.native('propose', [source.value(source_card),
+            source.value({'action': False, 'fields': {}}), source.data('model')]))
+        self.assertEqual(result['status'], 'clarify')
+        source_card['actions'] = [{'id': 'pick', 'available': True, 'fields': [
+            {'name': 'choice', 'type': 'enum', 'options': [0]}]}]
+        result = interpret.unpack(interpret.native('propose', [source.value(source_card),
+            source.value({'action': 'pick', 'fields': {'choice': ''}}), source.data('model')]))
+        self.assertEqual(result['status'], 'clarify')
+
     def test_source_prompt_revision_and_receipt_deduplication(self):
         calls = []
         def provider(body):
             calls.append(copy.deepcopy(body))
-            return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': '{"action":"lend","fields":{"nights":2}}'}]}
+            return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': '```json\n{"action":"lend","fields":{"nights":2}}\n```'}]}
         with tempfile.TemporaryDirectory() as directory:
             helper = interpret.AnthropicProposer(None, provider=provider, directory=directory)
             self.assertEqual(interpret.interpret('two nights', card(), proposer=helper)['status'], 'partial')
             interpret.interpret('two nights', card(), proposer=helper)
             self.assertEqual(len(calls), 1)
+            self.assertTrue(helper.last_receipt['reply']['content'][0]['text'].startswith('```json'))
             self.assertEqual(calls[0]['model'], 'claude-haiku-5-5')
             self.assertIn('Missing fields are welcome', calls[0]['system'])
             self.assertEqual(set(json.loads(calls[0]['messages'][0]['content'])), {'userRequest', 'untrustedCard'})
@@ -66,8 +78,10 @@ class SourceInterpretation(unittest.TestCase):
             calls = []
             with tempfile.TemporaryDirectory() as directory:
                 helper = interpret.AnthropicProposer(None, directory=directory, provider=lambda body: calls.append(body) or reply)
-                self.assertEqual(interpret.interpret('help', card(), proposer=helper)['status'], 'clarify')
-                interpret.interpret('help', card(), proposer=helper)
+                first = interpret.interpret('help', card(), proposer=helper)
+                self.assertEqual(first['status'], 'provider-error')
+                self.assertEqual(interpret.interpret('help', card(), proposer=helper), first)
+                self.assertEqual(first['request'], helper.last_receipt['key'])
                 self.assertEqual(len(calls), 1)
         with tempfile.TemporaryDirectory() as directory:
             calls = []
@@ -97,7 +111,7 @@ class SourceInterpretation(unittest.TestCase):
                 root = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
                 job_wire = interpret.native('interpretationRequest', [root['state']['model'], source.data('Lend the amber moth'), empty, context], modules=retained_modules)
                 job = source.plain(next(f['value'] for f in job_wire['fields'] if f['name'] == 'job'))
-                envelope = source.values('decode', [next(f['value'] for f in job_wire['fields'] if f['name'] == 'envelope')])[0]
+                envelope = next(f['value'] for f in job_wire['fields'] if f['name'] == 'envelope')
                 calls = []
                 def provider(body):
                     calls.append(body)
@@ -106,8 +120,8 @@ class SourceInterpretation(unittest.TestCase):
                 reply = helper.request_source(job, source_modules=retained_modules, envelope=envelope)
                 self.assertEqual(job['revision'], 'lending-policy-v1')
                 invitation = {'format': source_offers.FORMAT, 'object': 'conversation', 'root': root,
-                    'entry': 'prepareInterpretation', 'observations': [], 'title': 'Conversation', 'label': 'Interpret', 'fields': []}
-                prepared = source_offers.prepare(invitation, 'iris', 'retain-model-1', {'request': envelope, 'reply': reply})
+                    'entry': 'prepareInterpretation', 'contributionCodec': 'data', 'observations': [], 'title': 'Conversation', 'label': 'Interpret', 'fields': []}
+                prepared = source_offers.prepare_value(invitation, 'iris', 'retain-model-1', source.record({'request': envelope, 'reply': source.value(reply)}))
                 self.assertEqual(prepared['kind'], 'ready', prepared)
                 receipt = receiver.exchange(prepared['request'])
                 self.assertEqual(receipt['kind'], 'committed', receipt)
@@ -122,13 +136,14 @@ class SourceInterpretation(unittest.TestCase):
                 stale['intent'] = 'different-intent-same-old-capture'
                 self.assertEqual(receiver.exchange(stale)['kind'], 'refused')
                 current = receiver.exchange({'op': 'inspect', 'object': 'conversation', 'principal': 'iris'})
-                other_actor = source_offers.prepare({**invitation, 'root': current}, 'mallory', 'no-authority', {'request': envelope, 'reply': reply})
+                other_actor = source_offers.prepare_value({**invitation, 'root': current}, 'mallory', 'no-authority', source.record({'request': envelope, 'reply': source.value(reply)}))
                 self.assertEqual(other_actor['kind'], 'ready', other_actor)
                 self.assertEqual(receiver.exchange(other_actor['request'])['kind'], 'refused')
                 self.assertEqual(helper.request_source(job, source_modules=retained_modules, envelope=envelope), reply)
                 self.assertEqual(len(calls), 1)
-                forged = dict(envelope, policy='wrong-policy')
-                refused = source_offers.prepare(invitation, 'iris', 'wrong-policy', {'request': forged, 'reply': reply})
+                forged = copy.deepcopy(envelope)
+                next(field for field in forged['fields'] if field['name'] == 'policy')['value'] = source.data('wrong-policy')
+                refused = source_offers.prepare_value(invitation, 'iris', 'wrong-policy', source.record({'request': forged, 'reply': source.value(reply)}))
                 self.assertEqual(refused['kind'], 'refused', refused)
 
     def test_physical_service_quota_and_busy_never_call_provider(self):
@@ -147,7 +162,7 @@ class SourceInterpretation(unittest.TestCase):
 
     def test_explicit_generation_and_pure_retained_render(self):
         modules = source.read_modules([(name, ROOT / path) for name, path in [
-            ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
+            ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
             ('Encounter', 'world/lib/prelude/Encounter.obend'), ('Document', 'world/lib/document/Document.obend'),
             ('Conversation', 'protocols/conversation/Conversation.obend'), ('Interpretation', 'protocols/interpretation/Interpretation.obend'),
             ('ModelEncounter', 'protocols/interpretation/Encounter.obend')]])

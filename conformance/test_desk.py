@@ -79,7 +79,8 @@ class DeskTests(unittest.TestCase):
         artifact = desk_module.load_artifact(self.desk.artifact_store, desk_module.candidate_state(failed)['artifact'])
         self.assertFalse(artifact['passed'])
         self.assertEqual(self.desk.check('candidate', 'compiler', 'broken', pending), receipt)
-        self.assertEqual(self.desk.adopt('candidate', 'target', 'reviewer', 'no-adopt', failed, self.target)['kind'], 'refused')
+        with self.assertRaisesRegex(ValueError, 'does not offer'):
+            self.desk.adopt('candidate', 'target', 'reviewer', 'no-adopt', failed, self.target)
         self.assertEqual(self.desk.inspect('target'), self.target)
 
     def test_explicit_prepare_is_not_admission_and_recovers_its_original_request(self):

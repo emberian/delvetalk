@@ -18,14 +18,15 @@ import resident_store
 
 def modules(evening=False):
     paths = [('Abi', 'world/lib/prelude/Abi.obend'),
-             ('Preparation', 'world/lib/prelude/Preparation.obend'),
+             ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'),
              ('Encounter', 'world/lib/prelude/Encounter.obend'),
              ('Document', 'world/lib/document/Document.obend'),
              ('Conversation', 'protocols/conversation/Conversation.obend'),
              ('Interpretation', 'protocols/interpretation/Interpretation.obend'),
              ('ModelEncounter', 'protocols/interpretation/Encounter.obend'),
              ('ConversationModel', 'protocols/interpretation/ConversationModel.obend'),
-             ('Notebook', 'protocols/conversation/Notebook.obend')]
+             ('Notebook', 'protocols/conversation/Notebook.obend'),
+             ('MothNotebook', 'protocols/conversation/MothNotebook.obend')]
     if evening:
         paths.append(('EveningNotebook', 'protocols/conversation/EveningNotebook.obend'))
     return [{'name': name, 'source': (ROOT / path).read_text()} for name, path in paths]
@@ -46,6 +47,25 @@ def rows(value):
         result.append(value['payload']['head'])
         value = value['payload']['tail']
     return result
+
+
+def typed_envelope(value):
+    """Test-fixture construction only; production retains native-produced wire."""
+    import source_object as source
+    def linked(values):
+        result = source.variant('nil', source.record({}))
+        for item in reversed(values):
+            result = source.variant('cons', source.record({'head': item, 'tail': result}))
+        return result
+    def bindings(items):
+        encoded = source.value(items)
+        return next(field['value'] for field in encoded['payload']['fields'] if field['name'] == 'fields')
+    def observations(items):
+        return linked([source.record({name: source.value(item) if name in ('state', 'law') else source.data(item)
+                                      for name, item in entry.items()}) for entry in items])
+    encoders = {'bindings': bindings, 'context': observations,
+                'unresolved': lambda items: linked([source.data(item) for item in items])}
+    return source.record({key: encoders.get(key, source.data)(item) for key, item in value.items()})
 
 
 class DocumentConversation(unittest.TestCase):
@@ -76,7 +96,7 @@ class DocumentConversation(unittest.TestCase):
         return self.receiver.exchange({'op': 'inspect', 'object': identity, 'principal': 'reader'})
 
     def state(self):
-        return plain(self.root()['state']['model'])
+        return plain(self.root()['state']['model'])['conversation']
 
     def request(self, method, value, actor='iris', expected=None):
         self.serial += 1
@@ -89,7 +109,7 @@ class DocumentConversation(unittest.TestCase):
 
     def interpretation(self, target='', recipient='', original='lend the amber moth', **changes):
         return {'original': original, 'target': target, 'recipient': recipient,
-                'token': 'resolve', 'policy': 'lending-policy-v1', **changes}
+                'token': 'resolve', 'policy': 'lending-policy-v2', **changes}
 
     def invitation(self):
         root = self.root()
@@ -108,7 +128,7 @@ class DocumentConversation(unittest.TestCase):
         self.assertEqual(rows(state['unresolved']), [])
         history = rows(state['contributions'])
         self.assertEqual([entry['actor'] for entry in history], ['moss', 'iris'])
-        self.assertEqual([entry['proposal']['policy'] for entry in history], ['lending-policy-v1', 'literal'])
+        self.assertEqual([entry['proposal']['policy'] for entry in history], ['lending-policy-v2', 'literal'])
         self.assertEqual(history[0]['proposal']['original'], 'lend the amber moth')
         outcome = source_offers.prepare(self.invitation(), 'iris', 'complete', {})
         receipt = self.exchange(outcome['request'])
@@ -149,7 +169,7 @@ class DocumentConversation(unittest.TestCase):
         self.answer(target='moth:amber', original='The amber one.')
         old = self.root()
         before = projection.project(old, 'conversation')
-        self.assertIn('field answers', before['data']['prose'])
+        self.assertIn('Field answers', before['data']['prose'])
         self.exchange({'op': 'reprogram', 'object': 'conversation', 'principal': 'moss',
             'intent': 'evening', 'expected': old, 'protocol': self.evening, 'state': old['state']})
         self.assertEqual(self.root()['state'], old['state'])
@@ -160,21 +180,22 @@ class DocumentConversation(unittest.TestCase):
         self.assertEqual([entry['actor'] for entry in rows(self.state()['contributions'])], ['moss', 'iris'])
 
     def test_typed_retained_envelope_and_forged_completion(self):
-        envelope = {'original': 'Please lend a moth to Moss.', 'policy': 'lending-policy-v1',
+        envelope = {'original': 'Please lend a moth to Moss.', 'policy': 'lending-policy-v2',
                     'context': [], 'capture': self.state()['capture'],
                     'bindings': {'recipient': 'moss'}, 'unresolved': []}
-        self.exchange(self.request('retain', envelope, 'moss'))
+        self.exchange(self.request('retain', typed_envelope(envelope), 'moss'))
         self.assertEqual(rows(self.state()['unresolved']), ['target'])
         contribution = rows(self.state()['contributions'])[0]
         self.assertEqual(contribution['actor'], 'moss')
         self.assertEqual(contribution['proposal']['original'], envelope['original'])
-        self.exchange(self.request('resolve', {'moth': 'moth:amber', 'recipient': 'moss'}), 'refused')
+        self.exchange(self.request('resolve', {'object': 'moth:amber', 'recipient': 'moss'}), 'refused')
         old = self.root()
         for changed in ({**envelope, 'actor': 'iris'},
+                        {**envelope, 'original': 'x' * 4097},
                         {**envelope, 'capture': {**envelope['capture'], 'revision': '0'}},
                         {**envelope, 'bindings': {'target': 'unoffered'}},
-                        {**envelope, 'context': [{'object': 'moth:amber', 'version': 0, 'program': 'claimed', 'state': None, 'unexpected': None}]}):
-            self.exchange(self.request('retain', changed), 'refused')
+                        {**envelope, 'context': [{'object': 'moth:amber', 'version': 0, 'program': 'claimed', 'state': None, 'unexpected': 'claimed'}]}):
+            self.exchange(self.request('retain', typed_envelope(changed)), 'refused')
             self.assertEqual(self.root(), old)
 
     def test_target_current_law_refusal_rolls_back_completion(self):
@@ -210,15 +231,15 @@ class DocumentConversation(unittest.TestCase):
             source_object.variant('nil', source_object.record({})),
             source_object.data({'object': 'conversation', 'principal': 'iris'}))
         fields = {field['name']: field['value'] for field in job['fields']}
-        envelope = source_object.values('decode', [fields['envelope']])[0]
-        self.assertEqual(envelope['original'], 'The amber moth, please.')
-        invitation = {**self.invitation(), 'entry': 'prepareInterpretation'}
-        prepared = source_offers.prepare(invitation, 'iris', 'model-result', {
-            'request': envelope, 'reply': {'action': 'resolve', 'fields': {'target': 'moth:amber'}}})
+        envelope = fields['envelope']
+        self.assertEqual(plain(envelope)['original'], 'The amber moth, please.')
+        invitation = {**self.invitation(), 'entry': 'prepareInterpretation', 'contributionCodec': 'data'}
+        prepared = source_offers.prepare_value(invitation, 'iris', 'model-result', source_object.record({
+            'request': envelope, 'reply': source_object.value({'action': 'resolve', 'fields': {'target': 'moth:amber'}})}))
         self.assertEqual(prepared['request']['calls'][0]['command'], 'retain')
         self.exchange(prepared['request'])
         self.assertEqual(rows(self.state()['unresolved']), ['recipient'])
-        self.assertEqual(rows(self.state()['contributions'])[0]['proposal']['original'], envelope['original'])
+        self.assertEqual(rows(self.state()['contributions'])[0]['proposal']['original'], plain(envelope)['original'])
         self.assertEqual(plain(self.root('moth:amber')['state']['model'])['borrower'], '')
         self.answer(recipient='moss', actor='moss')
         final = source_offers.prepare(self.invitation(), 'moss', 'finish-model-intention', {})

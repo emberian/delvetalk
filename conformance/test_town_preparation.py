@@ -25,7 +25,7 @@ class TownPreparation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.protocol = obend_object.lower_data_modules([
-            {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+            {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
             {'name': 'Gallery', 'source': SOURCE}])
 
     def setUp(self):

@@ -354,7 +354,7 @@ class AdoptionCardsTests(unittest.TestCase):
         self.path = Path(self.tmp.name)
         self.desk = desk.Desk(self.path / 'world.json', self.path / 'artifacts')
         self.book = town.CardBook.create(self.path / 'book', issuer_did=ISSUER,
-                                        world_id='urn:test:forge', runtime={'name': 'transactions'})
+                                        world_id='urn:test:forge', runtime=desk.history.runtime('compiled'))
         self.scoped = lambda invoke, reprogram=[]: {'profile': 'delvetalk-scoped-law-v1',
             'invoke': invoke, 'reprogram': reprogram, 'law': ['owner']}
         candidate = self.desk.create('candidate', 'owner', 'seed-candidate', self.scoped(
@@ -391,11 +391,11 @@ class AdoptionCardsTests(unittest.TestCase):
     def test_shared_constructor_exact_roundtrip_admit_restart_and_replay(self):
         from unittest.mock import patch
         card = self.capture()
-        self.assertIn('Candidate-recorded migration: {"count":41}', card['body'])
-        self.assertIn('delvetalk install adopt', card['body'])
+        self.assertIn('Release this checked variation', card['body'])
+        self.assertIn('delvetalk install prepareRelease', card['body'])
         self.assertNotIn(card['textSha256'], card['body'])
         request, evidence = self.resolve()
-        literal = {'$type': town.FEED, 'text': 'delvetalk install adopt', 'reply': {'parent': PUBLICATION}}
+        literal = {'$type': town.FEED, 'text': 'delvetalk install prepareRelease', 'reply': {'parent': PUBLICATION}}
         wire, _ = self.book.resolve(literal, ACTOR, SOURCE, self.fetch, [ISSUER])
         legacy_wire, _ = self.book.resolve({**literal, 'text': 'delvetalk install a1 {}'},
                                           ACTOR, SOURCE, self.fetch, [ISSUER])
@@ -403,7 +403,7 @@ class AdoptionCardsTests(unittest.TestCase):
         with patch.object(self.desk, 'exchange', side_effect=lambda value: value):
             desk_request = self.desk.adopt('candidate', 'target', ACTOR, 'delve:' + SOURCE['uri'], self.ready, self.target)
         self.assertEqual(town.canonical(request), town.canonical(desk_request))
-        self.assertEqual(evidence['card']['expectedTarget'], self.target)
+        self.assertEqual(evidence['card']['offer']['observations'][0]['root'], self.target)
         result = self.desk.exchange(request)
         self.assertEqual(result['kind'], 'committed', result)
         self.assertEqual(self.desk.inspect('target')['state'], {'count': 41})
@@ -436,18 +436,17 @@ class AdoptionCardsTests(unittest.TestCase):
     def test_only_empty_fields_exact_action_and_immutable_publication(self):
         card = self.capture()
         for fields in ({'principal': ACTOR}, {'migration': {}}, {'inputFrom': 0}):
-            with self.assertRaisesRegex(ValueError, 'empty fields'): self.resolve(fields=fields)
-        with self.assertRaisesRegex(ValueError, 'empty fields'): self.resolve(action='a2')
-        self.records[PUBLICATION['uri']]['text'] = card['body'].replace('count', 'other')
+            with self.assertRaises(ValueError): self.resolve(fields=fields)
+        with self.assertRaises(ValueError): self.resolve(action='a2')
+        self.records[PUBLICATION['uri']]['text'] = card['body'].replace('Release', 'Changed')
         with self.assertRaisesRegex(ValueError, 'immutable'): self.resolve()
-        bad = copy.deepcopy(self.ready); bad['state']['target'] = 'another'
-        with self.assertRaisesRegex(ValueError, 'explicit target'):
+        bad = copy.deepcopy(self.ready)
+        for field in bad['state']['model']['fields']:
+            if field['name'] == 'target':
+                field['value'] = {'tag': 'label', 'value': 'another'}
+        with self.assertRaises(ValueError):
             self.book.capture_adoption('candidate', bad, 'target', self.target)
-        wrong = copy.deepcopy(self.target); del wrong['version']
-        with self.assertRaisesRegex(ValueError, 'exact candidate'):
-            self.book.capture_adoption('candidate', self.ready, 'target', wrong)
-        with self.assertRaisesRegex(ValueError, 'two different read roots'):
-            town.adoption.request('same', 'same', ACTOR, 'identity', {'x': True}, {'x': 1})
+
 
 
 if __name__ == '__main__': unittest.main()

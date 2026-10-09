@@ -5,7 +5,7 @@ record State:
   borrower: String
 record Completion:
   recipient: String
-  moth: String
+  object: String
 record Decision:
   accepted: Bool
   reason: String
@@ -13,7 +13,7 @@ record Decision:
   result: Completion
 def lend(state: State, input: {recipient: String}, context: Abi.Context) -> Decision:
   let ok = state.borrower == "" && input.recipient != ""
-  {accepted: ok, reason: if ok then "" else "This moth is already lent or needs a recipient.", state: if ok then {borrower: input.recipient} else state, result: {recipient: input.recipient, moth: context.object}}
+  {accepted: ok, reason: if ok then "" else "This moth is already lent or needs a recipient.", state: if ok then {borrower: input.recipient} else state, result: {recipient: input.recipient, object: context.object}}
 record Description:
   name: String
   initial: State

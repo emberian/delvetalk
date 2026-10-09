@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 # JSON is data. Source functions choose effects; this codec has no substitutions.
 sum Value:
   none: {}
@@ -18,9 +19,7 @@ record Field:
 sum Fields:
   nil: {}
   cons: {head: Field, tail: Fields}
-sum Names:
-  nil: {}
-  cons: {head: String, tail: Names}
+type Names = Lists.List<String>
 record ObservationRequest:
   object: String
   inspectState: Bool
@@ -104,3 +103,115 @@ def observation(xs: Observations, object: String) -> Observation:
     case cons(c): if c.head.object == object then c.head else observation(c.tail, object)
 def oneField(name: String, value: Value) -> Value:
   Value.record({fields: Fields.cons({head: {name: name, value: value}, tail: Fields.nil()})})
+# Required access keeps missing, wrong-kind and legitimate zero/false distinct.
+# These are source values, not exceptions or host admission decisions.
+sum FieldLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Value}
+sum TextLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: String}
+sum NaturalLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Nat}
+sum BooleanLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Bool}
+sum ObservationLookup:
+  missing: {}
+  found: {value: Observation}
+def lookupFields(fields: Fields, name: String) -> FieldLookup:
+  match fields:
+    case nil(_): FieldLookup.missing()
+    case cons(c): if c.head.name == name then FieldLookup.found({value: c.head.value}) else lookupFields(c.tail, name)
+def lookupField(value: Value, name: String) -> FieldLookup:
+  match value:
+    case record(r): lookupFields(r.fields, name)
+    case none(_): FieldLookup.wrongKind()
+    case retained(_): FieldLookup.wrongKind()
+    case boolean(_): FieldLookup.wrongKind()
+    case natural(_): FieldLookup.wrongKind()
+    case number(_): FieldLookup.wrongKind()
+    case text(_): FieldLookup.wrongKind()
+    case array(_): FieldLookup.wrongKind()
+def asText(value: Value) -> TextLookup:
+  match value:
+    case text(t): TextLookup.found({value: t.value})
+    case none(_): TextLookup.wrongKind()
+    case retained(_): TextLookup.wrongKind()
+    case boolean(_): TextLookup.wrongKind()
+    case natural(_): TextLookup.wrongKind()
+    case number(_): TextLookup.wrongKind()
+    case record(_): TextLookup.wrongKind()
+    case array(_): TextLookup.wrongKind()
+def asNatural(value: Value) -> NaturalLookup:
+  match value:
+    case natural(n): NaturalLookup.found({value: n.value})
+    case none(_): NaturalLookup.wrongKind()
+    case retained(_): NaturalLookup.wrongKind()
+    case boolean(_): NaturalLookup.wrongKind()
+    case text(_): NaturalLookup.wrongKind()
+    case number(_): NaturalLookup.wrongKind()
+    case record(_): NaturalLookup.wrongKind()
+    case array(_): NaturalLookup.wrongKind()
+def asBoolean(value: Value) -> BooleanLookup:
+  match value:
+    case boolean(b): BooleanLookup.found({value: b.value})
+    case none(_): BooleanLookup.wrongKind()
+    case retained(_): BooleanLookup.wrongKind()
+    case natural(_): BooleanLookup.wrongKind()
+    case text(_): BooleanLookup.wrongKind()
+    case number(_): BooleanLookup.wrongKind()
+    case record(_): BooleanLookup.wrongKind()
+    case array(_): BooleanLookup.wrongKind()
+def textField(value: Value, name: String) -> TextLookup:
+  match lookupField(value, name):
+    case missing(_): TextLookup.missing()
+    case wrongKind(_): TextLookup.wrongKind()
+    case found(f): asText(f.value)
+def naturalField(value: Value, name: String) -> NaturalLookup:
+  match lookupField(value, name):
+    case missing(_): NaturalLookup.missing()
+    case wrongKind(_): NaturalLookup.wrongKind()
+    case found(f): asNatural(f.value)
+def booleanField(value: Value, name: String) -> BooleanLookup:
+  match lookupField(value, name):
+    case missing(_): BooleanLookup.missing()
+    case wrongKind(_): BooleanLookup.wrongKind()
+    case found(f): asBoolean(f.value)
+def lookupObservation(xs: Observations, object: String) -> ObservationLookup:
+  match xs:
+    case nil(_): ObservationLookup.missing()
+    case cons(c): if c.head.object == object then ObservationLookup.found({value: c.head}) else lookupObservation(c.tail, object)
+def isText(value: Value) -> Bool:
+  match asText(value):
+    case found(_): true
+    case missing(_): false
+    case wrongKind(_): false
+def isNatural(value: Value) -> Bool:
+  match asNatural(value):
+    case found(_): true
+    case missing(_): false
+    case wrongKind(_): false
+def isBoolean(value: Value) -> Bool:
+  match asBoolean(value):
+    case found(_): true
+    case missing(_): false
+    case wrongKind(_): false
+# Deliberately lossy optional projections. Do not use them to validate required
+# fields. Existing text/natural/observation exports remain compatibility aliases.
+def textOrEmpty(value: Value) -> String:
+  text(value)
+def naturalOrZero(value: Value) -> Nat:
+  natural(value)
+def booleanOrFalse(value: Value) -> Bool:
+  match asBoolean(value):
+    case found(b): b.value
+    case missing(_): false
+    case wrongKind(_): false
+def observationOrEmpty(xs: Observations, object: String) -> Observation:
+  observation(xs, object)

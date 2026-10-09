@@ -9,7 +9,7 @@ from syntaxes import obend_object
 
 
 def modules(name):
-    files = [('Preparation', ROOT / 'world/lib/prelude/Preparation.obend')]
+    files = [('Abi', ROOT / 'world/lib/prelude/Abi.obend'), ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend')]
     if name == 'Factory': files.append(('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'))
     files.append((name, ROOT / 'protocols/editor' / (name + '.obend')))
     return [{'name': key, 'source': path.read_text()} for key, path in files]
@@ -53,7 +53,7 @@ class SourceBindingCodecs(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'allocations require a declared allocation policy'):
             obend_object.lower_data_modules(sources)
         sources = modules('Factory')
-        sources[1]['source'] = sources[1]['source'].replace('protocol: P.Value', 'protocol: String')
+        next(item for item in sources if item['name'] == 'Allocation')['source'] = next(item for item in sources if item['name'] == 'Allocation')['source'].replace('protocol: P.Value', 'protocol: String')
         sources[-1]['source'] = sources[-1]['source'].replace('protocol: state.candidate', 'protocol: "wrong shape"')
         with self.assertRaisesRegex(ValueError, 'make allocations.*incompatible'):
             obend_object.lower_data_modules(sources)

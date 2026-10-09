@@ -30,7 +30,7 @@ loads, canonical = desk_module.loads, desk_module.canonical
 
 
 def scoped(commands, *, managers=()):
-    return {'profile': 'delvetalk-scoped-law-v1', 'invoke': {command: PARTICIPANTS for command in commands},
+    return {'profile': 'delvetalk-scoped-law', 'invoke': {command: PARTICIPANTS for command in commands},
             'reprogram': list(managers), 'law': ['local-operator']}
 
 
@@ -122,7 +122,7 @@ def run_bootstrap(directory, *, profile='compiled'):
          'principal': 'local-operator', 'intent': 'reserve-table',
          'protocol': loads((EXAMPLES / 'table.json').read_bytes()), 'law': scoped([], managers=PARTICIPANTS)})
     record('Iris opens a source desk', desk.create(CANDIDATE, 'iris', 'open-source-desk', {
-        'profile': 'delvetalk-scoped-law-v1',
+        'profile': 'delvetalk-scoped-law',
         'invoke': {'submit': ['iris'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['moss']},
         'reprogram': [], 'law': ['local-operator']}))
     preserve_lowering(directory, canonical(inspect(CANDIDATE)['protocol']))
@@ -172,7 +172,7 @@ def run_bootstrap(directory, *, profile='compiled'):
     save_new(observations / 'sign-before-improvement.json', sign_before)
     record('Moss opens a proposal to improve the sign itself', desk.create(
         SIGN_CANDIDATE, 'moss', 'open-sign-desk', {
-            'profile': 'delvetalk-scoped-law-v1',
+            'profile': 'delvetalk-scoped-law',
             'invoke': {'submit': ['moss'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['iris']},
             'reprogram': [], 'law': ['local-operator']}))
     sign_pending = record('Moss proposes a pure Bend view program', desk.submit(

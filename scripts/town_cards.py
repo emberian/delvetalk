@@ -15,10 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affordances
 import world
 import references as object_references
-import adoption
 import composite_offers
 import source_offers
-import desk
 
 _projection_spec = importlib.util.spec_from_file_location('town_projection',
     Path(__file__).resolve().parents[1] / 'scene/projection.py')
@@ -280,7 +278,7 @@ def render_card(alias, card, view, panels=(), display_names=None):
         lines.append(prose(data['prose']))
     if view['mode'] == 'raw':
         lines.append('Object ' + canonical(card['object']) + ' · version ' + str(card['version']))
-        lines.append('State: ' + canonical(view['root']['state']))
+        lines.append('Choose an offered action below, or ask for a source-authored view of this object.')
     executable = any(action.get('available') and not action.get('inspectOnly') for action in card['actions'])
     if executable:
         lines.append('Reply here: copy a spell and change its values, or describe your intention for us to interpret.')
@@ -464,43 +462,11 @@ class CardBook:
         return self._capture(alias, build)
 
     def capture_adoption(self, candidate_id, expected_candidate, target_id, expected_target, *, alias=None):
-        """Capture one fixed adoption, not authority to supply arbitrary transactions."""
-        metadata = self.metadata()
-        candidate, target = copy.deepcopy(expected_candidate), copy.deepcopy(expected_target)
-        if (not isinstance(candidate, dict) or not isinstance(target, dict)
-                or set(candidate) != {'law', 'protocol', 'state', 'version'}
-                or set(target) != {'law', 'protocol', 'state', 'version'}):
-            raise ValueError('adoption requires exact candidate and target roots')
-        state = desk.candidate_state(candidate)
-        if (not isinstance(state, dict) or state.get('status') != 'ready'
-                or state.get('target') != target_id or not isinstance(state.get('migration'), dict)
-                or not isinstance(state.get('protocol'), dict)):
-            raise ValueError('adoption requires a ready candidate with its explicit target and migration')
-        # Reuse the constructor for its same-object exact-root check as well.
-        adoption.request(candidate_id, target_id, '', '', candidate, target)
-        object_ref = object_references.object_reference(metadata['worldId'], target_id)
-        candidate_ref = object_references.object_reference(metadata['worldId'], candidate_id)
-        def build(name):
-            lines = ['[[delvetalk-card ' + name + ']]', 'Adopt a proposed revision',
-                     'Proposal ' + canonical(candidate_id) + ' → ' + canonical(target_id),
-                     'Proposed program: ' + canonical(state['protocol'].get('name', state['protocol'].get('title', 'Untitled'))),
-                     'Runs this proposal’s adoption program; installs its released program and replaces the target’s ENTIRE state.',
-                     'Candidate-recorded migration: ' + canonical(state['migration']),
-                     'Target permissions stay in place; checks do not grant installation rights.',
-                     'Reply here to adopt, or describe your intention for us to interpret:',
-                     'delvetalk ' + name + ' adopt',
-                     'If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.',
-                     '[[/delvetalk-card ' + name + ']]']
-            body = '\n'.join(lines)
-            if len(body.encode('utf-8')) > MAX_CARD_BYTES:
-                raise ValueError('town adoption card exceeds 12000 bytes; migration must be reviewable inline')
-            _block(body, name)
-            return {'format': 'delvetalk-town-adoption-card-v1', 'alias': name,
-                    'candidate': candidate_id, 'target': target_id,
-                    'expectedCandidate': candidate, 'expectedTarget': target,
-                    'runtime': metadata['runtime'], 'objectRef': object_ref, 'candidateRef': candidate_ref,
-                    'body': body, 'textSha256': sha(body)}
-        return self._capture(alias, build)
+        """Capture the candidate's own visible release preparation."""
+        view = projection.project(expected_candidate, candidate_id,
+            expected_runtime=self.metadata()['runtime'])
+        roots = {candidate_id: expected_candidate, target_id: expected_target}
+        return self.capture_source_offer(view, roots, 'release', alias=alias)
 
     def _capture(self, alias, build):
         if alias is not None:
@@ -621,11 +587,6 @@ class CardBook:
                       if parsed.get('syntax') == 'delvetalk-town-spell-v1' else parsed['fields'])
             request = composite_offers.request(captured['offer'], author,
                                                'delve:' + source['uri'], fields, database=database)
-        elif captured['format'] == 'delvetalk-town-adoption-card-v1':
-            if parsed['action'] not in ('a1', 'adopt') or parsed['fields']:
-                raise ValueError('adoption permits only a1 with empty fields {}')
-            request = adoption.request(captured['candidate'], captured['target'], author,
-                                       'delve:' + source['uri'], captured['expectedCandidate'], captured['expectedTarget'])
         else:
             raise ValueError('unknown captured card format')
         wire = {key: value for key, value in request.items() if key not in ('principal', 'intent')}

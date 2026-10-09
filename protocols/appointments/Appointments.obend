@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Emissions.obend as E
 record Item:
   id: String
   owner: String
@@ -18,6 +20,11 @@ record Last:
   id: String
   generation: Nat
   status: String
+record Result:
+  status: String
+  id: String
+  generation: Nat
+  now: Nat
 record Payload:
   owner: String
   id: String
@@ -26,22 +33,11 @@ record Payload:
   deadline: Nat
   tick: Nat
   topic: String
-record Emission:
-  enabled: Bool
-  to: String
-  command: String
-  recipientProgram: String
-  payload: Payload
-record Slots:
-  a: Emission
-  b: Emission
-  c: Emission
-  d: Emission
 record Step:
   queue: Queue
   last: Last
   removed: Nat
-  emission: Emission
+  emission: E.Emissions
 def empty() -> Queue:
   {front: Entries.nil(), back: Entries.nil()}
 def reverse(xs: Entries, acc: Entries) -> Entries:
@@ -52,6 +48,10 @@ def contains(xs: Entries, id: String) -> Bool:
   match xs:
     case nil(_): false
     case cons(c): c.head.id == id || contains(c.tail, id)
+def active(xs: Entries, id: String, generation: Nat) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): (c.head.id == id && c.head.generation == generation) || active(c.tail, id, generation)
 def owns(xs: Entries, id: String, generation: Nat, owner: String) -> Bool:
   match xs:
     case nil(_): false
@@ -66,10 +66,14 @@ def normalize(queue: Queue) -> Queue:
   match queue.front:
     case nil(_): {front: reverse(queue.back, Entries.nil()), back: Entries.nil()}
     case cons(c): queue
-def disabled() -> Emission:
-  {enabled: false, to: "unused", command: "wake", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", payload: {owner: "", id: "", generation: 0n, due: 0n, deadline: 0n, tick: 0n, topic: ""}}
-def send(item: Item, now: Nat) -> Emission:
-  {enabled: true, to: item.to, command: "wake", recipientProgram: item.recipientProgram, payload: {owner: item.owner, id: item.id, generation: item.generation, due: item.due, deadline: item.deadline, tick: now, topic: item.topic}}
+def field(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def readPayload(value: P.Value) -> Payload:
+  {owner: P.text(P.get(value, "owner")), id: P.text(P.get(value, "id")), generation: P.natural(P.get(value, "generation")), due: P.natural(P.get(value, "due")), deadline: P.natural(P.get(value, "deadline")), tick: P.natural(P.get(value, "tick")), topic: P.text(P.get(value, "topic"))}
+def disabled() -> E.Emissions:
+  E.empty()
+def send(item: Item, now: Nat) -> E.Emissions:
+  E.one({to: item.to, command: "wake", recipientProgram: item.recipientProgram, payload: P.Value.record({fields: field("owner", P.Value.text({value: item.owner}), field("id", P.Value.text({value: item.id}), field("generation", P.Value.natural({value: item.generation}), field("due", P.Value.natural({value: item.due}), field("deadline", P.Value.natural({value: item.deadline}), field("tick", P.Value.natural({value: now}), field("topic", P.Value.text({value: item.topic}), P.Fields.nil())))))))})})
 def step(ready: Queue, last: Last, now: Nat) -> Step:
   match ready.front:
     case nil(_): {queue: ready, last: last, removed: 0n, emission: disabled()}

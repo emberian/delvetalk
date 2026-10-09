@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,7 @@ town_archive = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(town_archive)
 delve = town_archive.delve
 LABEL = 'livedelvetalk.delve.town'
+TAG = '#gsb'
 FEED = 'at://did:plc:qzqct2rrq4u2gmy5g3mjxske/town.delve.feed.generator/town'
 ANCHOR = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxen3fdeo224'
 DEFAULT_STATE = '~/claude_state/delvetalk/watch'
@@ -26,6 +28,23 @@ def stamp():
 def digest(value):
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def discovery(text):
+    """Public text hints only; a quoted marker is not an authenticated request."""
+    text = text.casefold()
+    label = LABEL in text
+    tag = re.search(r'(?<![\w#])#gsb(?!\w)', text) is not None
+    mention = re.search(r'(?<![\w@])@livedelvetalk\.delve\.town(?![\w.-])', text) is not None
+    return {'matchedLabel': label, 'matchedTag': tag, 'summonCandidate': mention and tag}
+
+
+def reply_context(record):
+    reply = record.get('reply')
+    if not isinstance(reply, dict):
+        return set()
+    return {value['uri'] for key in ('parent', 'root')
+            if isinstance(value := reply.get(key), dict) and isinstance(value.get('uri'), str)}
 
 
 def scan(state=DEFAULT_STATE, **kwargs):
@@ -43,11 +62,13 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
     if index.get('format') != 'delvetalk-watch-index-v1' or not isinstance(index.get('posts'), dict):
         raise ValueError('unsupported watch index')
     http = town_archive.Archive(archive_state or state / 'archive', request,
-                                max_requests=feed_pages + search_pages + 1)
+                                max_requests=feed_pages + 2 * search_pages + 1)
     report = {'format': 'delvetalk-watch-v1', 'startedAt': stamp(), 'label': LABEL,
-              'scope': 'literal text label and anchor context; no account resolution or admission',
+              'tag': TAG,
+              'scope': 'label/tag discovery and observed reply context; no account resolution or admission',
               'coverage': {}, 'new': [], 'changed': [], 'conflicts': [], 'errors': []}
     found = {}
+    deferred = []
 
     def observe(post, source, context=False):
         if not isinstance(post, dict):
@@ -59,14 +80,15 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
         text = record.get('text', '')
         if not isinstance(text, str):
             raise ValueError('post text must be a string')
-        matched = LABEL in text.casefold()
-        if not matched and not context and uri not in index['posts']:
+        hints = discovery(text)
+        if not (hints['matchedLabel'] or hints['matchedTag']) and not context and uri not in index['posts']:
+            deferred.append((post, source))
             return
         key = (uri, cid, digest(record))
         if key not in found:
             found[key] = {'uri': uri, 'cid': cid, 'record': record,
                           'author': post.get('author'), 'contentSha256': key[2],
-                          'matchedLabel': matched, 'sources': []}
+                          **hints, 'sources': []}
         if source not in found[key]['sources']:
             found[key]['sources'].append(source)
 
@@ -83,7 +105,8 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
                 coverage['pages'] += 1
                 for row in rows:
                     coverage['posts'] += 1
-                    observe(row.get('post') if source == 'feed' and isinstance(row, dict) else row, source)
+                    observe(row.get('post') if source == 'feed' and isinstance(row, dict) else row,
+                            source, context=source != 'feed')
                 cursor = response.get('cursor')
                 if cursor is not None and (not isinstance(cursor, str) or not cursor):
                     raise ValueError('invalid pagination cursor')
@@ -102,6 +125,7 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
     # Every run begins at the head: overlapping scans catch late observations.
     pages('feed', 'town.delve.feed.getFeed', {'feed': FEED, 'limit': 50}, 'feed', feed_pages)
     pages('search', 'town.delve.feed.searchPosts', {'q': 'livedelvetalk', 'limit': 50}, 'posts', search_pages)
+    pages('tagSearch', 'town.delve.feed.searchPosts', {'q': TAG, 'limit': 50}, 'posts', search_pages)
     coverage = {'uri': anchor, 'requestedDepth': 3, 'nodes': 0, 'posts': 0,
                 'truncated': False, 'deeperReplies': 0}
     report['coverage']['thread'] = coverage
@@ -135,6 +159,22 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
         coverage.update(error=str(error), truncated=True)
         report['errors'].append({'source': 'thread', 'error': str(error)})
 
+    # Keep available parents and replies even when they precede their tagged
+    # neighbor in a page. Missing context remains a coverage limit, never proof.
+    while deferred:
+        known = set(index['posts']) | {item['uri'] for item in found.values()}
+        for item in found.values():
+            known.update(reply_context(item['record']))
+        remaining = []
+        for post, source in deferred:
+            if post['uri'] in known or reply_context(post['record']) & known:
+                observe(post, source, context=True)
+            else:
+                remaining.append((post, source))
+        if len(remaining) == len(deferred):
+            break
+        deferred = remaining
+
     with delve.locked(state / '.watch.lock'):
         by_uri = {}
         for item in found.values():
@@ -156,7 +196,8 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
                     selected = next((variant for variant in variants
                                      if variant[1] == previous['observation']), selected)
             item, identity, observation = selected
-            summary = {key: item[key] for key in ('uri', 'cid', 'contentSha256', 'sources', 'matchedLabel')}
+            summary = {key: item[key] for key in ('uri', 'cid', 'contentSha256', 'sources',
+                                                 'matchedLabel', 'matchedTag', 'summonCandidate')}
             summary['text'] = item['record'].get('text', '')
             summary['observation'] = str(observation.resolve())
             if previous is None:
@@ -167,6 +208,17 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
             index['posts'][uri] = {'cid': item['cid'], 'contentSha256': item['contentSha256'],
                                  'observation': identity, 'lastSeenAt': report['startedAt']}
         report.update(finishedAt=stamp(), observations=len(found), retainedPosts=len(index['posts']))
+        # A broader discovery scan may uncover old discussion. Expose that
+        # context separately so operators need not treat every row as a summons.
+        def selection(item):
+            if item['matchedLabel'] or item['matchedTag']:
+                return 'marked'
+            return 'searchContext' if any(source in ('search', 'tagSearch') for source in item['sources']) else 'replyContext'
+        report['newSelectionCounts'] = {kind: sum(selection(item) == kind for item in report['new'])
+                                        for kind in ('marked', 'searchContext', 'replyContext')}
+        report['summonCandidates'] = [
+            {key: item[key] for key in ('uri', 'cid', 'contentSha256', 'observation')}
+            for item in report['new'] + report['changed'] if item['summonCandidate']]
         report['archiveManifest'] = http.finish(report['coverage'], report['errors'])
         delve.save(path, index)
         delve.save(state / 'latest-report.json', report)

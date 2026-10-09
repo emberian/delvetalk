@@ -1,27 +1,19 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
+import ./Preparation.obend as P
 import ./Encounter.obend as Encounter
+import ./Emissions.obend as E
 record State:
   notes: Nat
   lastBy: String
+  recipient: String
+# An internal, source-prepared sound. The program pin comes from an actual
+# captured observation; the public invitation never asks its player for a hash.
 record Input:
   to: String
   recipientProgram: String
   chord: String
   voices: Nat
-record Payload:
-  chord: String
-record Emission:
-  enabled: Bool
-  to: String
-  command: String
-  recipientProgram: String
-  payload: Payload
-record Slots:
-  a: Emission
-  b: Emission
-  c: Emission
-  d: Emission
 record Result:
   playedBy: String
   notes: Nat
@@ -30,25 +22,54 @@ record Decision:
   reason: String
   state: State
   result: Result
-  emissions: Slots
-def voice(input: Input, enabled: Bool) -> Emission:
-  {enabled: enabled, to: input.to, command: "hear", recipientProgram: input.recipientProgram, payload: {chord: input.chord}}
-def play(state: State, input: Input, context: Abi.Context) -> Decision:
-  {accepted: input.voices <= 4n, reason: if input.voices <= 4n then "" else "The bell has four voices.", state: {notes: state.notes + 1n, lastBy: context.principal}, result: {playedBy: context.principal, notes: state.notes + 1n}, emissions: {a: voice(input, input.voices >= 1n), b: voice(input, input.voices >= 2n), c: voice(input, input.voices >= 3n), d: voice(input, input.voices >= 4n)}}
-record Form:
-  label: String
-  fields: {to: Abi.StringField, recipientProgram: Abi.StringField, chord: Abi.StringField, voices: Abi.NatField}
+  emissions: E.Emissions
+def voice(input: Input) -> E.Emission:
+  {to: input.to, command: "hear", recipientProgram: input.recipientProgram, payload: P.oneField("chord", P.Value.text({value: input.chord}))}
+def sound(state: State, input: Input, context: Abi.Context) -> Decision:
+  let allowed = input.voices <= 16n && input.to != "" && textLength(input.to) <= 128n && textLength(input.recipientProgram) == 64n && input.chord != "" && textLength(input.chord) <= 128n
+  {accepted: allowed, reason: if allowed then "" else "Supply a bounded chord, an observed listener and at most sixteen voices.", state: if allowed then extend(state, {notes: state.notes + 1n, lastBy: context.principal}) else state, result: {playedBy: context.principal, notes: if allowed then state.notes + 1n else state.notes}, emissions: if allowed then E.repeat(input.voices, voice(input)) else E.empty()}
+def play(state: State, input: P.Value, context: Abi.Context) -> Decision:
+  if P.isText(P.get(input, "to")) && P.isText(P.get(input, "recipientProgram")) && P.isText(P.get(input, "chord")) && P.isNatural(P.get(input, "voices")) then sound(state, {to: P.text(P.get(input, "to")), recipientProgram: P.text(P.get(input, "recipientProgram")), chord: P.text(P.get(input, "chord")), voices: P.natural(P.get(input, "voices"))}, context) else {accepted: false, reason: "Supply the complete source-prepared sound.", state: state, result: {playedBy: context.principal, notes: state.notes}, emissions: E.empty()}
+record Connected:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+def connect(state: State, input: {object: String}, context: Abi.Context) -> Connected:
+  let allowed = input.object != "" && textLength(input.object) <= 128n
+  {accepted: allowed, reason: if allowed then "" else "Choose an actual listener object.", state: if allowed then extend(state, {recipient: input.object}) else state, result: input.object}
+def text(max: Nat) -> Abi.StringField:
+  {type: "string", minLength: 1n, maxLength: max}
+record PlayFields:
+  chord: Abi.StringField
+  voices: Abi.NatField
+def fields() -> PlayFields:
+  {chord: text(128n), voices: {type: "nat", minimum: 0n, maximum: 16n}}
 record Description:
   name: String
   initial: State
-  methods: {play: Form}
+  methods: {play: {label: String, fields: PlayFields, inputCodec: String}, connect: {label: String, fields: {object: Abi.StringField}}}
   panels: {}
 def describe() -> Description:
-  {name: "Courtyard play", initial: {notes: 0, lastBy: ""}, methods: {play: {label: "play", fields: {to: {type: "string", minLength: 1, maxLength: 128}, recipientProgram: {type: "string", minLength: 1, maxLength: 128}, chord: {type: "string", minLength: 1, maxLength: 128}, voices: {type: "nat", minimum: 0, maximum: 4}}}}, panels: {}}
+  {name: "Courtyard bell", initial: {notes: 0n, lastBy: "", recipient: "door"}, methods: {play: {label: "Play the captured chord", fields: fields(), inputCodec: "value"}, connect: {label: "Choose a listener", fields: {object: text(128n)}}}, panels: {}}
+def configured(config: {recipient: String}) -> State:
+  extend(describe().initial, {recipient: config.recipient})
+def preparePlay(state: State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let chord = P.text(P.get(input, "chord"))
+  let voices = P.natural(P.get(input, "voices"))
+  let recipient = P.observation(observations, state.recipient)
+  if chord == "" then P.Preparation.question({message: "What chord shall we play? The courtyard door listens for C E G.", needs: P.Names.cons({head: "chord", tail: P.Names.nil()})}) else if textLength(chord) > 128n || voices > 16n then P.Preparation.refused({message: "Choose a bounded chord and at most sixteen voices."}) else if recipient.object != state.recipient || textLength(recipient.program) != 64n then P.Preparation.refused({message: "Capture the chosen listener before playing."}) else P.Preparation.ready({summary: textConcat("Play toward ", state.recipient), reads: P.Reads.cons({head: P.Read.existing({object: state.recipient}), tail: P.Reads.nil()}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "play", input: P.Value.record({fields: P.Fields.cons({head: {name: "to", value: P.Value.text({value: state.recipient})}, tail: P.Fields.cons({head: {name: "recipientProgram", value: P.Value.text({value: recipient.program})}, tail: P.Fields.cons({head: {name: "chord", value: P.Value.text({value: chord})}, tail: P.Fields.cons({head: {name: "voices", value: P.Value.natural({value: voices})}, tail: P.Fields.nil()})})})})})}), tail: P.Effects.nil()})})
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: PlayFields
+  observations: P.Requests
 record View:
   title: String
   prose: String
-  actions: {}
+  actions: {connect: {visible: Bool, text: String, command: String, input: {}}}
   children: Encounter.Children
+  invitations: {play: Invitation}
 def view(state: State, panel: String) -> View:
-  {title: "The courtyard bell", prose: "A chord travels across the courtyard even after its player leaves.", actions: {}, children: Encounter.Children.nil()}
+  {title: "The courtyard bell", prose: textConcat("A chord travels to ", textConcat(state.recipient, " even after its player leaves. C E G opens the listening door; each voice is an independent retained sound.")), actions: {connect: {visible: true, text: "Choose a listener", command: "connect", input: {}}}, children: Encounter.Children.cons({head: {key: "listener", label: "The listening object", object: state.recipient, panel: "main"}, tail: Encounter.Children.nil()}), invitations: {play: {visible: state.recipient != "", text: "Play a chord", prepare: "preparePlay", fields: fields(), observations: P.Requests.cons({head: {object: state.recipient, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})}}}

@@ -196,7 +196,7 @@ class InterpretTests(unittest.TestCase):
         raws = [b'x' * (module.MAX_REPLY + 1), self.response(stop_reason='max_tokens'),
                 self.response(content=[{'type': 'thinking', 'thinking': 'do not retain'}]),
                 self.response('{"action":"a1","action":"a2","fields":{}}'),
-                self.response('```json\n{"action":"a1","fields":{}}\n```')]
+                self.response('Here is JSON: {"action":"a1","fields":{}}')]
         for index, raw in enumerate(raws):
             with self.subTest(raw=raw[:40]):
                 opener, _ = self.http(raw)
@@ -204,7 +204,7 @@ class InterpretTests(unittest.TestCase):
                     helper = module.AnthropicProposer('fake')
                     helper.generation = str(index)
                     result = module.interpret('sit', card(), proposer=helper)
-                self.assertEqual(result['status'], 'escalate' if index == 0 else 'clarify')
+                self.assertEqual(result['status'], 'escalate' if index == 0 else 'provider-error')
                 opener.open.assert_called_once()
                 self.assertNotIn('thinking', json.dumps(result))
         failure = Mock(side_effect=TimeoutError('must not expose secret-test-key'))
@@ -212,6 +212,18 @@ class InterpretTests(unittest.TestCase):
         self.assertEqual(result['status'], 'escalate')
         self.assertNotIn('secret-test-key', json.dumps(result))
         failure.assert_called_once()
+
+    def test_json_transport_accepts_only_complete_supported_fences(self):
+        expected = {'action': 'a1', 'fields': {}}
+        for text in ('{"action":"a1","fields":{}}', '```json\n{"action":"a1","fields":{}}\n```',
+                     '  ```\n{"action":"a1","fields":{}}\n```  '):
+            self.assertEqual(module.decode_reply(text), expected)
+        self.assertEqual(module.decode_reply('```json\r\n{"text":"A\u2028B"}\r\n```'), {'text': 'A\u2028B'})
+        for text in ('```json\n{}', '```python\n{}\n```', 'Before\n```json\n{}\n```',
+                     '```json\n{}\n```\nAfter', '```json\n{}\n```\n```json\n{}\n```',
+                     '```json\n{"a":1,"a":2}\n```', 'x' * (module.MAX_REPLY + 1)):
+            with self.assertRaises(module.ProviderReplyError):
+                module.decode_reply(text)
 
     def test_cli_exact_tokens_and_disabled_language_help_do_not_read_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:

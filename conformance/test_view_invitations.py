@@ -99,7 +99,7 @@ class InvitationFraming(unittest.TestCase):
 class NativeInvitations(unittest.TestCase):
     def test_source_invitations_use_current_typed_view_without_another_profile(self):
         protocol = obend_object.lower_data_modules([
-            {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+            {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
             {'name': 'Gestures', 'source': SOURCE}])
         self.assertEqual(protocol['viewProgram']['profile'], projection.DATA_MENU_PROFILE)
         self.assertEqual(protocol['preparation'], {'profile': 'delvetalk-source-preparation-v1',

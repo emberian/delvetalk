@@ -16,10 +16,12 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = {'ExhibitList': 'protocols/place-index/ExhibitList.obend',
+MODULES = {'List': 'world/lib/prelude/List.obend', 'Abi': 'world/lib/prelude/Abi.obend',
+           'Encounter': 'world/lib/prelude/Encounter.obend',
+           'ExhibitList': 'protocols/place-index/ExhibitList.obend',
            'Main': 'protocols/place-index/Main.obend',
            'RoomBench': 'conformance/fixtures/source-collections/RoomBench.obend'}
-PAGE_MODULES = {'Encounter': 'world/lib/prelude/Encounter.obend',
+PAGE_MODULES = {'List': 'world/lib/prelude/List.obend', 'Encounter': 'world/lib/prelude/Encounter.obend',
                 'EncounterPages': 'world/lib/prelude/EncounterPages.obend',
                 'PagesBench': 'conformance/fixtures/source-collections/PagesBench.obend'}
 DIAGNOSTICS = ('spec/Delvetalk/Package.lean', 'spec/Delvetalk/PackageData.lean',

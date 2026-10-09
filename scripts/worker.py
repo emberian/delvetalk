@@ -24,7 +24,7 @@ def key(uri):
     return hashlib.sha256(uri.encode()).hexdigest()
 
 
-def command(arguments, remaining, memory_mib=2048):
+def command(arguments, remaining, memory_mib=process_custody.NATIVE_MEMORY_MIB):
     if os.name != 'posix':
         raise RuntimeError('worker process custody requires POSIX process groups')
     if not 64 <= memory_mib <= 8192:
@@ -93,7 +93,7 @@ def publication_artifacts(receipt):
 
 
 class Worker:
-    def __init__(self, state, clerk_state, *, receiver=None, publisher=None, now=None, memory_mib=2048):
+    def __init__(self, state, clerk_state, *, receiver=None, publisher=None, now=None, memory_mib=process_custody.NATIVE_MEMORY_MIB):
         self.state = Path(state).expanduser().resolve()
         self.clerk_state = Path(clerk_state).expanduser().resolve()
         self.receiver = receiver
@@ -264,7 +264,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state', required=True, type=Path)
     parser.add_argument('--clerk-state', required=True, type=Path)
-    parser.add_argument('--memory-mib', type=int, default=2048)
+    parser.add_argument('--memory-mib', type=int, default=process_custody.NATIVE_MEMORY_MIB)
     commands = parser.add_subparsers(dest='op', required=True)
     discover = commands.add_parser('discover')
     discover.add_argument('--watch-state', default='~/claude_state/delvetalk/watch')

@@ -185,8 +185,9 @@ class Portal:
         import source_offers
         return source_offers.prepare(invitation, principal, intent, fields, database=self.database)
 
-    def world(self):
-        snapshot = self.snapshot()
+    def world(self, *, cursor=None, limit=32):
+        page = world.catalogue_page(self.database, principal=self.principal or 'portal-preview',
+                                    cursor=cursor, limit=limit, profile=self.profile)
         return {'title': self.metadata.get('title', 'DelveTalk · a shared workbench'),
                 'mode': 'public-preview' if self.public else 'local-interactive' if self.interactive else 'read-only',
                 'principal': self.principal, 'csrf': self.csrf,
@@ -198,18 +199,16 @@ class Portal:
                 'worldId': bootstrap.world_id(self.metadata),
                 'interpretation': 'model-assisted' if self.proposer else 'copyable-tokens',
                 'defaultObject': bootstrap.default_object(self.metadata),
-                'authoring': None if self.public else self.authoring.catalog(snapshot),
-                'objects': [{'id': name, 'title': self.object_label(name, root), 'version': root['version'],
-                             'href': '/api/object?object=' + quote(name, safe='')}
-                            for name, root in snapshot['objects'].items()],
+                'authoring': None if self.public else self.authoring.catalog(),
+                'objects': [{'id': row['object'], 'title': row['name'], 'version': row['version'],
+                             'nameTruncated': row['nameTruncated'],
+                             'href': '/api/object?object=' + quote(row['object'], safe='')}
+                            for row in page['objects']],
+                'nextCursor': page['nextCursor'],
+                'next': ('/api/world?cursor=' + quote(canonical(page['nextCursor']).decode(), safe='')
+                         + '&limit=' + str(limit)) if page['nextCursor'] is not None else None,
                 'scope': ('Public inspection and request export. Preview aliases expire; no action is submitted.'
                           if self.public else 'Local custody. Delve identity and publication are separate.')}
-
-    @staticmethod
-    def object_label(object_id, root):
-        # A declared name is presentation, never an inferred identity or authority.
-        name = root.get('protocol', {}).get('name')
-        return name if isinstance(name, str) and 0 < len(name) <= 256 else object_id
 
     @staticmethod
     def panels(root):
@@ -234,11 +233,28 @@ class Portal:
         if not isinstance(identity, str) or not IDENTITY.fullmatch(identity):
             raise ValueError('Invalid saved reference')
         if self.public:
-            return self.preview.read(category, identity)
-        path = self.state / category / (identity + '.json')
-        if not path.is_file():
-            raise ValueError('Unknown saved reference; obtain a card from this portal')
-        return loads(path.read_bytes())
+            saved = self.preview.read(category, identity)
+        else:
+            path = self.state / category / (identity + '.json')
+            if not path.is_file():
+                raise ValueError('Unknown saved reference; obtain a card from this portal')
+            saved = loads(path.read_bytes())
+        if category == 'cards':
+            # A saved alias selects historical contents; current native law still
+            # governs their acquisition. Source-selected peers use the same caller.
+            objects = {saved['view']['object']}
+            for offer in saved.get('offers', {}).values():
+                objects.update(item['object'] for item in offer['observations'])
+            self.authorize_reads(sorted(objects))
+        elif category == 'interpretations':
+            card = saved.get('card', saved.get('input', {}).get('card'))
+            if card is None:
+                raise ValueError('saved interpretation has no originating card')
+            self._read('cards', card)
+            draft = saved.get('result', {}).get('draft')
+            if isinstance(draft, dict) and draft.get('draft'):
+                self.authorize_saved_request(self._read('drafts', draft['draft']))
+        return saved
 
     def _store(self, category, value):
         if self.public:
@@ -413,18 +429,24 @@ class Portal:
                     'message': str(error)}
         return {'status': 'opened', 'navigation': navigation, 'card': captured}
 
+    def authorize_reads(self, objects):
+        return world.query(self.database, {'op': 'authorize-reads',
+            'principal': self.principal or 'portal-preview', 'objects': objects}, profile=self.profile)
+
+    def history_page(self, object_id, before, *, offset=0):
+        return world.query(self.database, {'op': 'object-history',
+            'principal': self.principal or 'portal-preview', 'object': object_id,
+            'before': before, 'offset': offset, 'limit': 32}, profile=self.profile)
+
     def detail(self, identity):
         saved = self._read('cards', identity)
         view = saved['view']
-        snapshot = self.snapshot()
-        def affects(request):
-            return (request.get('object') == view['object'] or view['object'] in request.get('reads', {})
-                    or view['object'] in request.get('absent', []))
-        records = [entry for entry in snapshot['receipts'][:saved['historyLength']] if affects(entry['request'])]
+        history = self.history_page(view['object'], saved['historyLength'])
+        records = history['history']
         detail = {'object': view['object'], 'source': bootstrap.room.source_document(view),
                 'state': view['root']['state'], 'law': view['root']['law'], 'root': view['root'],
-                'history': records, 'runtime': saved['runtime'],
-                'scope': 'Exact captured view and retained local admissions; no remote authorship claim.'}
+                'history': records, 'historyNextOffset': history['nextOffset'], 'runtime': saved['runtime'],
+                'scope': 'Exact captured view and bounded currently readable admissions; not a full replay bundle.'}
         detail['exact'] = {key: canonical(detail[key]).decode()
                            for key in ('source', 'state', 'law', 'root', 'history', 'runtime')}
         return detail
@@ -463,9 +485,21 @@ class Portal:
         identity = self._store('drafts', draft)
         return self.draft(identity)
 
+    def authorize_saved_request(self, saved):
+        """Serving a derived payload reacquires its captured native dependencies."""
+        request = saved.get('request', {})
+        objects = {saved.get('object'), request.get('object')}
+        objects.update(name for name, root in request.get('reads', {}).items()
+                       if root is not None and not (isinstance(root, dict)
+                           and set(root) == {'expected'} and root['expected'] is None))
+        objects.discard(None)
+        if objects:
+            self.authorize_reads(sorted(objects))
+
     def preparation(self, identity):
         """Retained source conversation; never an admission or executable draft."""
         saved = self._read('preparations', identity)
+        self._read('cards', saved['card'])
         result = {**saved, 'format': 'delvetalk-portal-preparation-v1',
                   'preparation': identity, 'canExecute': False,
                   'links': {'self': '/api/preparation?preparation=' + identity}}
@@ -493,6 +527,7 @@ class Portal:
 
     def draft(self, identity):
         saved = self._read('drafts', identity)
+        self.authorize_saved_request(saved)
         action = ({'label': saved['presentation']['summary'], 'token': saved['presentation']['token']}
                   if self.public else next(a for a in self.card(saved['card'])['actions'] if a['id'] == saved['action']))
         suffix = (' ' + canonical(saved['fields']).decode()) if saved['fields'] else ''
@@ -633,7 +668,9 @@ def make_server(portal, port=0, *, agents=None):
                     mime = {'index.html': 'text/html', 'app.js': 'text/javascript', 'theme.js': 'text/javascript', 'style.css': 'text/css'}[name]
                     return self.respond(200, (STATIC / name).read_bytes(), mime + '; charset=utf-8')
                 if url.path == '/api/world':
-                    exact(q, ()); result = portal.world()
+                    exact(q, (), ('cursor', 'limit'))
+                    result = portal.world(cursor=loads(q['cursor']) if 'cursor' in q else None,
+                                          limit=int(q.get('limit', '32')))
                     result['agents'] = {'available': agents is not None, 'guide': '/AGENTS.md'}
                 elif url.path == '/api/object':
                     exact(q, (), ('object', 'panel')); result = portal.object(q.get('object'), q.get('panel', 'main'))

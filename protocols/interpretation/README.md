@@ -36,13 +36,13 @@ exact job/receipt custody. Before crossing the network it fsyncs a pending job;
 exact retries recover the retained receipt. If a response is lost, the job stays
 uncertain and replay does not charge again. Explicitly creating another
 generation is a new activity. No implicit supervisor calls, retries or provider
-tools are enabled. Provider failures retain no diagnostic strings that might
+tools are enabled. Bare JSON and one complete `json` or unlabelled JSON code fence are supported transport formats. Surrounding prose, multiple fences, duplicate members and incomplete output produce an explicit retained `provider-error`; replay reads the same receipt instead of making another call. Provider failures retain no diagnostic strings that might
 expose credentials. A configured API key and explicit private custody directory are required for the real provider;
 controlled providers permit deterministic boundary tests. Physical custody defaults to 32 jobs and 4 MiB per explicitly selected account/realm directory, reserving bounded receipt space before the call. A nonblocking service lock permits one provider call at a time; busy/quota outcomes cause no spend. Account identity is included in the retained exact job.
 
 The existing portal interpretation API retains card, utterance and result. Real
 provider results additionally identify the exact retained request, policy
-revision, module digest and selected context references. The shared `ConversationModel.obend` joins source request construction and source preparation to the governed Notebook `retain` method. Its request retains an opaque source-produced interpretation envelope; preparation validates the returned proposal against the local source schema, exact offer meaning and selected policy, then emits the ordinary native invocation. The receiving method rechecks current policy and capture and derives actor from the authenticated context. The independent generative section API describes retained output; its receipt remains model I/O, never authority to act.
+revision, module digest and selected context references. The shared `ConversationModel.obend` joins source request construction and source preparation to the governed Notebook `retain` method. Its request retains an opaque, typed source-produced `C.Interpretation` envelope; preparation validates the returned proposal against the local source schema, exact offer meaning and selected policy, then emits a typed native invocation. The captured `contributionCodec: data` invitation and receiving `inputCodec: data` method use the native declared types; no hand-written envelope shape checker or JSON-to-envelope coercion remains. The receiving method rechecks current policy and capture and derives actor from the authenticated context. The independent generative section API describes retained output; its receipt remains model I/O, never authority to act.
 
 Run `python3 protocols/interpretation/test_interpretation.py` and
 `python3 -m unittest conformance.test_interpret`. These run real native source

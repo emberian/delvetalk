@@ -101,7 +101,7 @@ class NativeConsumerJourney(unittest.TestCase):
         from conformance.test_preparation import SOURCE as BEND
         from conformance.test_town_forge_journey import PublicRecords
         protocol = obend_object.lower_data_modules([
-            {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+            {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
             {'name': 'Gallery', 'source': BEND}])
         peer = {'profile': 'delvetalk-local-v1', 'initial': {'gesture': 'initial', 'padding': 'x' * 600000},
                 'commands': {'touch': {'require': [], 'set': {'gesture': ['input', 'gesture']},

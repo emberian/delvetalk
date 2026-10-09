@@ -41,16 +41,17 @@ def prompt(policy:Policy,quotedContext:String)->Job:
   {revision:policy.revision,model:policy.model,maxTokens:policy.maxTokens,system:D.plain(instructions(policy)),content:quotedContext,document:D.concat(instructions(policy),D.quote("Selected authorized context (data)",D.text(quotedContext)))}
 def space(s:String)->Bool:
   s==" "||s=="\n"||s=="\t"||s=="\r"
-def trim(s:String)->String:
-  if textLength(s)==0n then s else if space(textSlice(s,0n,1n)) then trim(textSlice(s,1n,textLength(s))) else s
-def wordAt(s:String,n:Nat)->Word:
-  if n==textLength(s) then {word:s,rest:""} else if space(textSlice(s,n,1n)) then {word:textSlice(s,0n,n),rest:trim(textSlice(s,n+1n,textLength(s)))} else wordAt(s,n+1n)
-def word(s:String)->Word:
-  wordAt(trim(s),0n)
+def trim(s: String) -> String:
+  textDrop(s, textSpan(s, " \n\t\r"))
+def word(s: String) -> Word:
+  let clean = trim(s)
+  let end = textBreak(clean, " \n\t\r")
+  {word: textTake(clean, end), rest: trim(textDrop(clean, end))}
 def literalParts(card:Word,action:Word)->Route:
-  {literal:true,valid:card.word!=""&&action.word!="",token:card.word,action:action.word,fields:if action.rest=="" then "{}" else action.rest}
+  let fields = trim(action.rest)
+  {literal: true, valid: card.word != "" && action.word != "", token: card.word, action: action.word, fields: if fields == "" then "{}" else fields}
 def routed(first:Word)->Route:
-  if first.word=="do" then literalParts(word(first.rest),word(word(first.rest).rest)) else {literal:false,valid:true,token:"",action:"",fields:"{}"}
+  if first.word == "do" then let card = word(first.rest) in literalParts(card, word(card.rest)) else {literal: false, valid: true, token: "", action: "", fields: "{}"}
 def route(text:String)->Route:
   routed(word(text))
 def arr(value:P.Value)->P.Values:
@@ -73,6 +74,16 @@ def truth(value:P.Value)->Bool:
     case text(_):false
     case array(_):false
     case record(_):false
+def isText(value: P.Value) -> Bool:
+  match value:
+    case text(_): true
+    case none(_): false
+    case retained(_): false
+    case boolean(_): false
+    case natural(_): false
+    case number(_): false
+    case array(_): false
+    case record(_): false
 def isRecord(value:P.Value)->Bool:
   match value:
     case record(_):true
@@ -100,19 +111,28 @@ def fs(value:P.Value)->P.Fields:
 def select(items:P.Values,id:String)->P.Value:
   match items:
     case nil(_):P.Value.none()
-    case cons(c):if P.text(P.get(c.head,"id"))==id then c.head else select(c.tail,id)
+    case cons(c):if isText(P.get(c.head,"id"))&&P.text(P.get(c.head,"id"))==id then c.head else select(c.tail,id)
 def schema(items:P.Values,name:String)->P.Value:
   match items:
     case nil(_):P.Value.none()
-    case cons(c):if P.text(P.get(c.head,"name"))==name then c.head else schema(c.tail,name)
+    case cons(c):if isText(P.get(c.head,"name"))&&P.text(P.get(c.head,"name"))==name then c.head else schema(c.tail,name)
 def enumHas(items:P.Values,value:String)->Bool:
   match items:
     case nil(_):false
-    case cons(c):P.text(c.head)==value||enumHas(c.tail,value)
+    case cons(c):(isText(c.head)&&P.text(c.head)==value)||enumHas(c.tail,value)
+def bounded(spec: P.Value, lower: String, upper: String, value: Nat) -> Bool:
+  match P.naturalField(spec, lower):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(lo):
+      match P.naturalField(spec, upper):
+        case missing(_): false
+        case wrongKind(_): false
+        case found(hi): value >= lo.value && value <= hi.value
 def fits(spec:P.Value,value:P.Value)->Bool:
   match value:
-    case text(v):if P.text(P.get(spec,"type"))=="enum" then enumHas(arr(P.get(spec,"options")),v.value) else P.text(P.get(spec,"type"))=="string"&&textLength(v.value)>=P.natural(P.get(spec,"minLength"))&&textLength(v.value)<=P.natural(P.get(spec,"maxLength"))
-    case natural(v):P.text(P.get(spec,"type"))=="nat"&&v.value>=P.natural(P.get(spec,"minimum"))&&v.value<=P.natural(P.get(spec,"maximum"))
+    case text(v):if P.text(P.get(spec,"type"))=="enum" then enumHas(arr(P.get(spec,"options")),v.value) else P.text(P.get(spec,"type"))=="string"&&bounded(spec, "minLength", "maxLength", textLength(v.value))
+    case natural(v):P.text(P.get(spec,"type"))=="nat"&&bounded(spec, "minimum", "maximum", v.value)
     case boolean(_):P.text(P.get(spec,"type"))=="bool"
     case none(_):false
     case retained(_):false
@@ -137,10 +157,9 @@ def only(fields:P.Fields,a:String,b:String)->Bool:
   match fields:
     case nil(_):true
     case cons(c):(c.head.name==a||c.head.name==b)&&only(c.tail,a,b)
-def childToken(s:String,n:Nat)->Bool:
-  if n==textLength(s) then n>0n&&n<=64n else enumChar(textSlice(s,n,1n),0n)&&childToken(s,n+1n)
-def enumChar(s:String,n:Nat)->Bool:
-  if n==64n then false else if textSlice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-",n,1n)==s then true else enumChar(s,n+1n)
+def childToken(s: String, n: Nat) -> Bool:
+  let count = textLength(s)
+  count > 0n && count <= 64n && n <= count && textSpan(textDrop(s, n), "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == count - n
 def childrenFit(items:P.Values,fields:P.Fields)->Bool:
   match items:
     case nil(_):true
@@ -148,7 +167,7 @@ def childrenFit(items:P.Values,fields:P.Fields)->Bool:
 def chosen(action:P.Value,id:String,fields:P.Value,via:String)->Proposal:
   if truth(P.get(action,"available"))==false||truth(P.get(action,"inspectOnly")) then result("clarify","Choose an available captured offer.",via) else if isRecord(fields)==false||fitFields(arr(P.get(action,"fields")),fs(fields))==false||childrenFit(arr(P.get(action,"children")),fs(fields))==false then result("clarify","Supply only the declared fields with their declared types and bounds.",via) else incomplete(id,fields,missing(arr(P.get(action,"fields")),fs(fields)),via)
 def propose(card:P.Value,answer:P.Value,via:String)->Proposal:
-  if isRecord(answer)==false then result("clarify","The reply is not a typed proposal.",via) else if exists(fs(answer),"action")&&exists(fs(answer),"fields")&&only(fs(answer),"action","fields") then chosen(select(arr(P.get(card,"actions")),P.text(P.get(answer,"action"))),P.text(P.get(answer,"action")),P.get(answer,"fields"),via) else if only(fs(answer),"status","message")&&(P.text(P.get(answer,"status"))=="clarify"||P.text(P.get(answer,"status"))=="escalate")&&textLength(P.text(P.get(answer,"message")))>0n&&textLength(P.text(P.get(answer,"message")))<=1024n then result(P.text(P.get(answer,"status")),P.text(P.get(answer,"message")),via) else result("clarify","The reply is not an offered proposal.",via)
+  if isRecord(answer)==false then result("clarify","The reply is not a typed proposal.",via) else if exists(fs(answer),"action")&&isText(P.get(answer,"action"))&&exists(fs(answer),"fields")&&only(fs(answer),"action","fields") then chosen(select(arr(P.get(card,"actions")),P.text(P.get(answer,"action"))),P.text(P.get(answer,"action")),P.get(answer,"fields"),via) else if only(fs(answer),"status","message")&&(P.text(P.get(answer,"status"))=="clarify"||P.text(P.get(answer,"status"))=="escalate")&&textLength(P.text(P.get(answer,"message")))>0n&&textLength(P.text(P.get(answer,"message")))<=1024n then result(P.text(P.get(answer,"status")),P.text(P.get(answer,"message")),via) else result("clarify","The reply is not an offered proposal.",via)
 def literal(card:P.Value,parsed:Route,fields:P.Value)->Proposal:
   if parsed.valid==false||parsed.token!=P.text(P.get(card,"card")) then result("clarify","That capture is missing or stale; select a current offer.","tokens") else chosen(select(arr(P.get(card,"actions")),parsed.action),parsed.action,fields,"tokens")
 def unavailable()->Proposal:

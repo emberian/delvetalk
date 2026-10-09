@@ -4,7 +4,7 @@ law keeper
 observe main
   title: Repair exchange
   prose: Offer help or report ready. Two notices fit on this shared workbench; acknowledge one when its work is understood.
-  offer configure -> configure: Consent or subscribe
+  offer selectPeer -> selectPeer: Choose a peer
 expect view
 as keeper
 send configure

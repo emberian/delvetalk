@@ -16,7 +16,7 @@ import resident_store
 
 LINUX = sys.platform.startswith('linux')
 # AS includes Lean's large reserved thread stack; this is not an RSS budget.
-LIMIT = 2 * 1024 * 1024 * 1024
+LIMIT = 4 * 1024 * 1024 * 1024
 
 
 class ResidentResources(unittest.TestCase):

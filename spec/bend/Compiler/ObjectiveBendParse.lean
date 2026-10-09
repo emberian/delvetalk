@@ -294,7 +294,7 @@ structure Token where
 
 /-- `^(?:[A-Za-z_]\w*|[0-9]+n?|"(?:[^"\\]|\\.)*"|->|==|!=|<=|>=|&&|\|\||[{}:=().,+*/%<>-])` -/
 def tokenRe : Re := alts [ident, seqs [many1 (.char asciiDigit), opt (chr 'n')], quoted,
-  str "->", str "==", str "!=", str "<=", str ">=", str "&&", str "||",
+  str "::", str "->", str "==", str "!=", str "<=", str ">=", str "&&", str "||",
   .char (fun c => "{}:=().,+*/%<>-".toList.contains c)]
 
 def tokenize (text : List Char) : Except String (Array Token) := do
@@ -461,6 +461,23 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
     else throw "Error: expected expression atom"
     for _ in [0:env.tokens.size + 1] do
       let some next := (← peek env) | break
+      if next == "::" then
+        discard <| take env (some "::")
+        let opening ← take env (some "<")
+        let mut depth := 1
+        let mut closing := opening
+        for _ in [0:env.tokens.size + 1] do
+          if depth == 0 then break
+          closing ← take env
+          if tokenText closing == "<" then depth := depth + 1
+          if tokenText closing == ">" then depth := depth - 1
+        if depth != 0 then throw "Error: unterminated generic specialization"
+        let types := (splitPieces ((env.text.drop opening.stop).take (closing.start - opening.stop))).map jsTrim
+        if types.isEmpty || types.any List.isEmpty then throw "Error: specialization requires type arguments"
+        let span := { result.2 with stop := (env.location closing.start closing.stop).stop }
+        result := (node "specialize" [("target", result.1),
+          ("types", toJson (types.map String.ofList))] span, span)
+        continue
       if next == "." then
         discard <| take env (some ".")
         let field ← take env
@@ -652,7 +669,12 @@ def claimRe : Re := seqs [str "claim", many1 space, group 1 ident, opt (seqs [ch
 def extensionRe : Re := seqs [str "extension", many1 space, group 1 ident,
   opt (seqs [chr '[', group 4 (many1 (.char (· != ']'))), chr ']']), chr '(', group 2 (many dot), chr ')',
   many space, str "->", many space, group 3 (many1 dot), chr ':', .done]
-def sumRe : Re := seqs [str "sum", many1 space, group 1 ident, chr ':', .done]
+def typeBindersRe : Re := seqs [chr '<', group 2 (many1 (.char (· != '>'))), chr '>']
+def sumRe : Re := seqs [str "sum", many1 space, group 1 ident, opt typeBindersRe, chr ':', .done]
+def genericDefRe : Re := seqs [str "def", many1 space, group 1 ident, typeBindersRe,
+  group 3 (many1 dot), chr ':', .done]
+def typeAliasRe : Re := seqs [str "type", many1 space, group 1 ident, many space,
+  chr '=', many space, group 2 (many1 dot), .done]
 def sumCaseRe : Re := seqs [group 1 ident, many space, chr ':', many space, group 2 (many1 dot), .done]
 def recordRe : Re := seqs [str "record", many1 space, group 1 ident, chr ':', .done]
 def fieldRe : Re := seqs [group 1 (.alt ident quoted), chr ':', many space, group 2 (many1 dot), .done]
@@ -666,6 +688,12 @@ def splitChar (s : List Char) (sep : Char) : List (List Char) :=
   (current.reverse :: finished).reverse
 
 def cap (s : List Char) (caps : Caps) (i : Nat) : String := String.ofList ((capture s caps i).getD [])
+
+def genericParameters (raw : List Char) : Except String (List String) := do
+  let names := (splitPieces raw).map jsTrim
+  if names.isEmpty || names.any (fun n => !isIdent n) then throw "Error: generic parameters must be type names"
+  if names.eraseDups.length != names.length then throw "Error: duplicate generic type parameter"
+  return names.map String.ofList
 
 /-- Lines of the source: `split("\n")`, tabs refused anywhere, indentation and spans from the
 raw line, blank and `#` comment lines dropped. -/
@@ -760,7 +788,14 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
           | some b => [("binders", toJson (String.ofList b))]
           | none => [])))
       continue
+    if let some (_, caps) ← matchAt line typeAliasRe line.text then
+      decls := decls.push (Json.mkObj [("kind", toJson "typeAlias"), ("name", toJson (cap line.text caps 1)),
+        ("type", toJson (cap line.text caps 2)), ("span", line.span.json)])
+      continue
     if let some (_, caps) ← matchAt line sumRe line.text then
+      let typeParameters ← match capture line.text caps 2 with
+        | some raw => liftAt line (genericParameters raw)
+        | none => pure []
       let mut cases : Array Json := #[]
       let mut labels : List String := []
       for _ in [0:lines.size] do
@@ -775,7 +810,7 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
       if cases.isEmpty then fail line "empty sum"
       if labels.eraseDups.length != labels.length then fail line "duplicate sum label"
       decls := decls.push (Json.mkObj [("kind", toJson "sum"), ("name", toJson (cap line.text caps 1)),
-        ("cases", Json.arr cases), ("span", line.span.json)])
+        ("cases", Json.arr cases), ("typeParameters", toJson typeParameters), ("span", line.span.json)])
       continue
     if let some (_, caps) ← matchAt line recordRe line.text then
       let mut methods : Array Json := #[]
@@ -804,6 +839,13 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
       continue
     if startsWith line.text "law " || line.text == "law".toList || startsWith line.text "law:" then
       fail line (ObjectiveBendLaw.refusalPrefix ++ "expected `law NAME: EXPR` (a top-level law has a name and no parameters)")
+    if let some (_, caps) ← matchAt line genericDefRe line.text then
+      let typeParameters ← liftAt line (genericParameters ((capture line.text caps 2).getD []))
+      let sig ← signature ((capture line.text caps 1).getD [] ++ (capture line.text caps 3).getD []) line
+      let functionBody ← body lines fuel line.indent
+      decls := decls.push (Json.mkObj [("kind", toJson "function"), ("signature", Json.mkObj (signatureJson sig)),
+        ("typeParameters", toJson typeParameters), ("body", functionBody), ("span", line.span.json)])
+      continue
     if startsWith line.text "def " && endsWith line.text ":" then
       let sig ← signature ((line.text.drop 4).take (line.text.length - 5)) line
       let functionBody ← body lines fuel line.indent

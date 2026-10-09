@@ -16,7 +16,7 @@ def call(request):
 
 class SourcePreludeTests(unittest.TestCase):
     def test_source_layers_compose_inspect_and_revise_shared_collection(self):
-        modules = [{'name': 'Encounter', 'source': (ROOT / 'world/lib/prelude/Encounter.obend').read_text()},
+        modules = [{'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Encounter', 'source': (ROOT / 'world/lib/prelude/Encounter.obend').read_text()},
                    {'name': 'Shelf', 'source': SOURCE}]
         for entry, expected in [('count', 2), ('bounded', 2), ('revised', 1)]:
             compiled = call({'op': 'compile', 'modules': modules, 'entry': entry})

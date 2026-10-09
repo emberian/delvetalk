@@ -1,6 +1,6 @@
 # Keep specifications open; close targets exactly
 
-**A Self bound is a lower bound, not the final object type.** These are the [pinned Mini frontend’s rules](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83), informed by [LTUO §8.4.1.3](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/ltuo-readable.txt#L4143-L4171). These rules cover annotated equality/rows, not general subtyping or the complete hosted object interface. [FOUNDATIONS](FOUNDATIONS.md) defines runtime wrappers.
+**A Self bound is a lower bound, not the final object type.** The [local edition](../spec/README.md) maintains these rules from the [Mini baseline](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83), informed by [LTUO §8.4.1.3](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/ltuo-readable.txt#L4143-L4171). These rules cover annotated equality/rows, not general subtyping or the complete hosted object interface. [FOUNDATIONS](FOUNDATIONS.md) defines runtime wrappers.
 
 ## Bind once, instantiate later
 

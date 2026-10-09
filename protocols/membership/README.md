@@ -16,9 +16,10 @@ Each target uses `delvetalk-scoped-law-v4` with
 only**. `GrantPolicy.amend` runs inside native admission against the actual current
 and proposed laws. For this service it admits only an unchanged law or exactly one
 DID appended to the configured public invoke methods. It preserves existing grants,
-management permissions, unrelated fields and its own configuration. Ordinary
+law-management permissions, unrelated fields and its own configuration. Only an
+explicitly configured programming target also adds that DID to `reprogram`. Ordinary
 managers retain only their separately granted revision rights; there is no recovery
-bypass. The service cannot remove this guard or grant management to a participant.
+bypass. The service cannot remove this guard or grant law management to a participant.
 
 The source's `prepareEnroll` requests explicit captured laws, constructs complete
 law values in Bend, and returns one transaction: record the welcome and revise the
@@ -44,3 +45,33 @@ Run `python3 conformance/test_membership.py` after the joined native host is bui
 The journey covers proof verification, a real Garden contribution, source factory
 creation, management/private-boundary denial, malicious service amendments,
 late rollback, stale captured laws, lost-reply recovery and revoked membership.
+
+## Opening governance seed
+
+Configure explicit Welcome targets; names below are seed choices, not reserved
+host behavior:
+
+| Target | Newcomer permission | Management |
+| --- | --- | --- |
+| `garden` | `plant`, `rain`, `visit`, `page`, `cutting` | Steward only |
+| `objects` | `make` | Factory steward only |
+| `desks` | `make` | Factory steward only |
+| `workshop/sandbox` | `write`, direct program revision | Law revision remains steward only |
+
+Use `factory()` without a participant list for `objects`: its ordinary source
+allocates each child's law from the authenticated maker. The newcomer can create
+and govern that child; another participant receives no implicit rights. Source
+Candidate desks similarly admit their maker's submissions, with compiler reporting
+separately granted. A proposal may name the Garden, but retaining or checking it
+does not authorize installation; target admission still requires the current
+steward's revision permission.
+
+Only the explicitly open sandbox target includes `reprogram: true` in both its
+Welcome configuration and `amendment(service, ['write'], reprogram=True)`.
+The guard appends the same new DID to those invoke methods and to `reprogram`,
+while preserving `law` and all other fields. The option is false when absent.
+It grants no wildcard rights to siblings, factories, future children or shared
+Garden behavior. Exact roots, ordinary allocation limits and current revocation
+still apply. Sandbox programming can change its behavior and therefore deserves
+an explicit name and explanation in the welcome, rather than being silently
+applied to shared social objects.

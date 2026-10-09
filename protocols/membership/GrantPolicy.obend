@@ -44,6 +44,9 @@ def grantMethods(invoke: P.Value, methods: P.Names, who: String) -> P.Value:
     case cons(c): grantMethods(put(invoke, c.head, grant(P.get(invoke, c.head), who)), c.tail, who)
 def enrolledLaw(law: P.Value, methods: P.Names, who: String) -> P.Value:
   put(law, "invoke", grantMethods(P.get(law, "invoke"), methods, who))
+def enrolledRole(law: P.Value, methods: P.Names, who: String, programming: Bool) -> P.Value:
+  let invoked: P.Value = enrolledLaw(law, methods, who)
+  if programming then put(invoked, "reprogram", grant(P.get(law, "reprogram"), who)) else invoked
 def tag(v: P.Value) -> Nat:
   match v:
     case retained(_): 7n
@@ -134,6 +137,26 @@ def equalSame(a: P.Value, b: P.Value) -> Bool:
     case record(x): equalFields(x.fields, fields(b))
 def equal(a: P.Value, b: P.Value) -> Bool:
   tag(a) == tag(b) && equalSame(a, b)
+# Reprogram permission is optional and defaults to false; malformed values refuse.
+def optionalBoolean(value: P.Value, name: String) -> Bool:
+  match P.booleanField(value, name):
+    case missing(_): true
+    case wrongKind(_): false
+    case found(_): true
+def commandNames(value: P.Value) -> Bool:
+  match value:
+    case array(a): emptyValues(a.values) == false && textNames(a.values)
+    case retained(_): false
+    case none(_): false
+    case boolean(_): false
+    case natural(_): false
+    case number(_): false
+    case text(_): false
+    case record(_): false
+def textNames(values: P.Values) -> Bool:
+  match values:
+    case nil(_): true
+    case cons(c): P.isText(c.head) && P.textOrEmpty(c.head) != "" && textNames(c.tail)
 def names(xs: P.Values) -> P.Names:
   match xs:
     case nil(_): P.Names.nil()
@@ -156,6 +179,14 @@ def newPrincipal(before: P.Value, after: P.Value, methods: P.Names) -> String:
     case cons(c):
       let who: String = appended(values(P.get(before, c.head)), values(P.get(after, c.head)))
       if who == "" then newPrincipal(before, after, c.tail) else who
+def roleField(name: String, before: P.Value, after: P.Value, methods: P.Names, who: String, programming: Bool) -> Bool:
+  if name == "invoke" then equal(after, grantMethods(before, methods, who)) else if name == "reprogram" && programming then equal(after, grant(before, who)) else equal(before, after)
+def roleFields(before: P.Fields, after: P.Fields, methods: P.Names, who: String, programming: Bool) -> Bool:
+  match before:
+    case nil(_): true
+    case cons(c): has(after, c.head.name) && roleField(c.head.name, c.head.value, P.field(after, c.head.name), methods, who, programming) && roleFields(c.tail, after, methods, who, programming)
+def sameRole(before: P.Value, after: P.Value, methods: P.Names, who: String, programming: Bool) -> Bool:
+  tag(before) == 6n && tag(after) == 6n && fieldCount(fields(before)) == fieldCount(fields(after)) && roleFields(fields(before), fields(after), methods, who, programming)
 record AmendmentContext:
   object: String
   principal: String
@@ -167,4 +198,4 @@ def amend(context: AmendmentContext) -> Bool:
   let service: String = P.text(P.get(config, "service"))
   let methods: P.Names = names(values(P.get(config, "commands")))
   let who: String = newPrincipal(P.get(context.currentLaw, "invoke"), P.get(context.nextLaw, "invoke"), methods)
-  if service == "" then false else if context.principal != service then true else if who == "" then equal(context.currentLaw, context.nextLaw) else textLength(who) <= 256n && equal(context.nextLaw, enrolledLaw(context.currentLaw, methods, who))
+  if service == "" || commandNames(P.get(config, "commands")) == false || optionalBoolean(config, "reprogram") == false then false else if context.principal != service then true else if who == "" then equal(context.currentLaw, context.nextLaw) else textLength(who) <= 256n && sameRole(context.currentLaw, context.nextLaw, methods, who, boolean(P.get(config, "reprogram")))

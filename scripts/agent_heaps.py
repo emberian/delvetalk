@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import world
 import resident_store
 import process_custody
+import package_session
 import desk
 import runtime_profile
 
@@ -32,7 +33,7 @@ ACCOUNT = re.compile(r'[0-9a-f]{32}\Z')
 MAX_REQUEST = 256 * 1024
 MAX_EVALUATION = 512 * 1024
 RESERVED = 'account-bootstrap:'
-DEFAULT_RESIDENT_MEMORY = 2 * 1024 * 1024 * 1024 if sys.platform.startswith('linux') else None
+DEFAULT_RESIDENT_MEMORY = process_custody.NATIVE_MEMORY_BYTES
 
 
 def encoded(value):
@@ -128,6 +129,9 @@ class HeapManager:
             self.timeout = timeout
             self.active = OrderedDict()
             self._protocols = None
+            self._package_session = package_session.PackageSession(
+                [ROOT / '.lake/build/bin/delvetalk-obend'], cwd=ROOT,
+                stdout_limit=MAX_EVALUATION, stderr_limit=64*1024)
             self.pending = threading.BoundedSemaphore(max_pending)
             self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='native-heaps')
             self.closed = False
@@ -142,6 +146,7 @@ class HeapManager:
         if self.closed: return
         self.closed = True
         def stop():
+            self._package_session.close()
             for resident in self.active.values(): resident.close()
             self.active.clear()
         self.executor.submit(stop).result()
@@ -240,6 +245,40 @@ class HeapManager:
             self._protocols = [('notebook', notebook), ('source-desk', candidate)]
         return self._protocols
 
+    def _seed_requests(self, identity, key, directory, resident):
+        path = directory / 'seed.json'
+        binding = {'format': 'delvetalk-account-seed-v1', 'identity': identity,
+                   'world': 'urn:delvetalk:heap:' + key}
+        if path.exists():
+            saved = world.wire_loads(path.read_bytes())
+            if (not isinstance(saved, dict) or set(saved) != set(binding) | {'requests', 'sha256'}
+                    or encoded({name: saved[name] for name in binding}) != encoded(binding)
+                    or digest(saved['requests']) != saved['sha256']):
+                raise ValueError('private seed custody binding differs')
+            requests = saved['requests']
+            if (not isinstance(requests, list) or len(requests) != 3
+                    or requests[0] != {'op': 'messages-init', 'principal': identity['did'],
+                        'intent': RESERVED + 'messages', 'lineage': binding['world'], 'pendingLimit': 128}):
+                raise ValueError('private seed custody schema differs')
+            for request, object_id in zip(requests[1:], ('notebook', 'source-desk')):
+                if (not isinstance(request, dict)
+                        or set(request) != {'op', 'object', 'principal', 'intent', 'protocol', 'law'}
+                        or encoded({k: v for k, v in request.items() if k != 'protocol'}) != encoded({
+                            'op': 'create', 'object': object_id, 'principal': identity['did'],
+                            'intent': RESERVED + object_id, 'law': [identity['did']]})):
+                    raise ValueError('private seed request binding differs')
+            return requests
+        if resident.sequence:
+            raise ValueError('nonempty private heap has no original seed custody; implicit reseeding is forbidden')
+        requests = [{'op': 'messages-init', 'principal': identity['did'],
+            'intent': RESERVED + 'messages', 'lineage': binding['world'], 'pendingLimit': 128}]
+        requests.extend({'op': 'create', 'object': object_id, 'principal': identity['did'],
+            'intent': RESERVED + object_id, 'protocol': protocol, 'law': [identity['did']]}
+            for object_id, protocol in self._seed_protocols())
+        # All descriptors are durable before even the first bootstrap admission.
+        self._write(path, {**binding, 'requests': requests, 'sha256': digest(requests)})
+        return requests
+
     def _resident(self, identity, key, directory):
         if key in self.active:
             resident = self.active.pop(key)
@@ -252,12 +291,8 @@ class HeapManager:
                                  max_entries=self.max_entries, journal_bytes=self.journal_bytes,
                                  **({'memory_bytes': self.resident_memory_bytes} if self.resident_memory_bytes is not None else {}))
         try:
-            initialized = resident.exchange({'op': 'messages-init', 'principal': identity['did'],
-                'intent': RESERVED + 'messages', 'lineage': 'urn:delvetalk:heap:' + key, 'pendingLimit': 128})
-            if initialized.get('kind') != 'committed': raise ValueError('private message bootstrap refused')
-            for object_id, protocol in self._seed_protocols():
-                reply = resident.exchange({'op': 'create', 'object': object_id, 'principal': identity['did'],
-                    'intent': RESERVED + object_id, 'protocol': protocol, 'law': [identity['did']]})
+            for request in self._seed_requests(identity, key, directory, resident):
+                reply = resident.exchange(request)
                 if reply.get('kind') != 'committed': raise ValueError('private source bootstrap refused')
         except BaseException:
             resident.close()
@@ -312,17 +347,21 @@ class HeapManager:
                 resident.close()
             raise
 
-    def catalogue(self, identity, realm='private'):
-        return self._call(self._catalogue, identity, realm)
+    def catalogue(self, identity, realm='private', *, cursor=None, limit=32):
+        return self._call(self._catalogue, identity, realm, cursor, limit)
 
-    def _catalogue(self, identity, realm):
+    def _catalogue(self, identity, realm, cursor, limit):
         identity, key, directory, resident = self._context(identity, realm)
-        snapshot = resident.export_world() if resident else world.snapshot(self.shared_database, timeout=self.timeout)
+        page = world.catalogue_page(None if resident else self.shared_database,
+            principal=identity['did'], cursor=cursor, limit=limit,
+            profile='compiled' if resident else self.shared_profile,
+            timeout=self.timeout, receiver=resident)
         return {'realm': realm, 'world': 'urn:delvetalk:heap:' + key if resident else self.shared_world,
                 'sharedCreatePrefix': self.shared_create_prefix(identity),
+                'defaultObject': 'notebook' if resident else None,
                 'residentMemoryBytes': self.resident_memory_bytes if resident else None,
-                'objects': [{'object': name, 'root': root} for name, root in snapshot['objects'].items()],
-                'head': {'sequence': resident.sequence, 'head': resident.head} if resident else None}
+                'objects': page['objects'], 'nextCursor': page['nextCursor'],
+                'head': {'sequence': page['sequence'], 'head': page['head']}}
 
     def inspect(self, identity, realm, object_id):
         return self._call(self._inspect, identity, realm, object_id)
@@ -342,6 +381,8 @@ class HeapManager:
             raise ValueError('intent required')
         operation = self._operation(directory, realm, intent)
         if operation is None or 'request' not in operation: return None
+        if operation['request'].get('principal') != identity['did']:
+            raise ValueError('receipt account binding differs')
         return self._lookup(resident, operation['request'])
 
     def repl(self, identity, realm, intent, specification):
@@ -350,23 +391,30 @@ class HeapManager:
     def _evaluate(self, specification):
         limits = {'ticks': '100000', 'heap': '100000', 'stack': '10000', 'typeFuel': '16384'}
         runner = ROOT / '.lake/build/bin/delvetalk-obend'
-        pins = runtime_profile.file_hashes('compiled')
+        def evaluation_pins():
+            return {**runtime_profile.file_hashes('compiled'), **runtime_profile.hash_paths(
+                ('scripts/package_session.py', 'spec/PackageMain.lean'))}
+        pins = evaluation_pins()
         runner_hash = hashlib.sha256(runner.read_bytes()).hexdigest()
         def native(request):
             try:
-                done = process_custody.run([str(runner)], input=encoded(request) + b'\n', cwd=ROOT,
-                    timeout=self.timeout, cpu_seconds=10, memory_bytes=512*1024*1024,
-                    stdout_limit=MAX_EVALUATION, stderr_limit=64*1024, file_limit=MAX_EVALUATION)
+                raw = self._package_session.exchange(encoded(request) + b'\n',
+                    timeout=min(10, self.timeout), identity=(pins, runner_hash))
             except (subprocess.TimeoutExpired, process_custody.OutputLimitExceeded):
                 return {'status': 'failed', 'message': 'native evaluation exceeded custody limits'}
-            if done.returncode: return {'status': 'failed', 'message': 'native evaluation failed within custody limits'}
-            return world.wire_loads(done.stdout)
+            except (OSError, RuntimeError):
+                return {'status': 'failed', 'message': 'native evaluation failed within custody limits'}
+            try: return world.wire_loads(raw)
+            except (ValueError, UnicodeError):
+                self._package_session.close()
+                raise ValueError('native evaluation returned invalid framing') from None
         compiled = native({'op': 'compile', 'modules': specification['modules'],
                            'entry': specification['entry'], 'limits': limits})
         result = compiled if compiled.get('status') != 'compiled' else native({
             'op': 'run-data-v1', 'artifact': compiled['artifact'],
             'arguments': specification['arguments'], 'limits': limits})
-        if pins != runtime_profile.file_hashes('compiled') or runner_hash != hashlib.sha256(runner.read_bytes()).hexdigest():
+        if pins != evaluation_pins() or runner_hash != hashlib.sha256(runner.read_bytes()).hexdigest():
+            self._package_session.close()
             raise ValueError('native evaluation runtime changed; no result admitted')
         return {**result, 'runtime': {'profile': 'compiled', 'files': pins, 'packageBinarySha256': runner_hash}}
 
@@ -484,6 +532,17 @@ class HeapManager:
                     principal=identity['did'], profile=self.profile, timeout=manager.timeout,
                     expected=expected, receiver=resident)
 
+            def authorize_reads(self, objects):
+                request = {'op': 'authorize-reads', 'principal': identity['did'], 'objects': objects}
+                return (resident.query(request) if resident else world.query(manager.shared_database,
+                    request, profile=self.profile, timeout=manager.timeout))
+
+            def history_page(self, object_id, before, *, offset=0):
+                request = {'op': 'object-history', 'principal': identity['did'],
+                    'object': object_id, 'before': before, 'offset': offset, 'limit': 32}
+                return (resident.query(request) if resident else world.query(manager.shared_database,
+                    request, profile=self.profile, timeout=manager.timeout))
+
             def prepare_invitation(self, invitation, principal, intent, fields):
                 import source_offers
                 return source_offers.prepare(invitation, principal, intent, fields,
@@ -494,20 +553,28 @@ class HeapManager:
                 manager._save_encounter(self.state / category / (token + '.json'), value)
                 return token
 
-            def _retained(self, request): return manager._lookup(resident, request)
+            def _retained(self, request):
+                if request.get('principal') != identity['did']:
+                    raise ValueError('receipt account binding differs')
+                return manager._lookup(resident, request)
 
             def draft(self, token):
                 saved = self._read('drafts', token)
+                # The native receipt owns the outcome; a presentation quota must
+                # never prevent recovery of a durably admitted request.
+                reply = self._retained(saved['request'])
+                self.authorize_saved_request(saved)
                 if saved.get('interpretation'):
                     return {'draft': token, 'intent': saved['request']['intent'],
                         'interpretation': saved['interpretation'], 'object': saved['object'],
                         'version': saved['version'], 'summary': saved['summary'],
                         'command': saved['command'], 'fields': {}, 'canExecute': True,
                         'wire': saved['wire'], 'wireJson': encoded(saved['wire']).decode(),
-                        'outcome': saved['reply']['kind'] if saved.get('reply') else None,
+                        'outcome': reply['kind'] if reply is not None else None,
                         'links': {'self': '/api/draft?draft=' + token, 'execute': '/api/execute'}}
                 result = super().draft(token)
-                result['intent'] = self._read('drafts', token)['request']['intent']
+                result['intent'] = saved['request']['intent']
+                result['outcome'] = reply['kind'] if reply is not None else None
                 return result
 
             def execute(self, payload):
@@ -520,8 +587,6 @@ class HeapManager:
                 if reply is None:
                     self._pins(saved)
                     reply = manager._turn(identity, realm, {k: v for k, v in request.items() if k != 'principal'})
-                saved['reply'] = reply
-                manager._save_encounter(self.state / 'drafts' / (payload['draft'] + '.json'), saved)
                 return {'kind': reply['kind'], 'draft': payload['draft'], 'intent': request['intent'],
                         'reply': reply, 'children': self.child_links(reply),
                         'summary': 'Action committed.' if reply['kind'] == 'committed' else str(reply.get('data'))}
@@ -543,94 +608,8 @@ class HeapManager:
         return self._call(self._interpretation, identity, realm, payload)
 
     def _interpretation(self, identity, realm, payload):
-        identity, key, directory, resident = self._context(identity, realm)
-        portal = self._portal(identity, realm)
-        if self.model_provider is not None:
-            from interpret import AnthropicProposer
-            scope = encoded([identity['accountId'], identity['did'], realm,
-                             'urn:delvetalk:heap:' + key if resident else self.shared_world]).decode()
-            portal.proposer = AnthropicProposer(None, directory=directory / 'models' / realm,
-                identity_scope=scope, provider=self.model_provider)
-        import interpret
-        import source_object
-        import source_packages
-        import source_offers
-        from scene import projection
-        if not isinstance(payload, dict) or set(payload) != {'card', 'text'}:
-            raise ValueError('interpretation requires exactly card and text')
-        interpret.string(payload['text'], interpret.MAX_TEXT)
-        saved = portal._read('cards', payload['card'])
-        token = base64.b32encode(hashlib.sha256(encoded(payload)).digest()).decode().lower()[:12]
-        path = portal.state / 'interpretations' / (token + '.json')
-        if path.exists():
-            memo = portal._read('interpretations', token)
-            if encoded(memo['input']) != encoded(payload):
-                raise ValueError('interpretation custody key collision')
-            if 'result' in memo:
-                return {**memo['result'], 'interpretation': token}
-        else:
-            # Reserve custody before any provider work. Each repeated original
-            # contribution against this exact card has one retained identity.
-            memo = {'input': payload}
-            self._save_encounter(path, memo)
-        portal._pins(saved)
-        descriptor = projection.interpretation(saved['view'])
-        if descriptor is None or portal.proposer is None or interpret.token_input(payload['text']):
-            result = portal.interpretation(payload)
-            result.pop('interpretation', None)
-        else:
-            root = saved['view']['root']
-            package = root['protocol']['viewProgram']['package']
-            source_packages.validate_selector(package)
-            modules = source_packages.validate_tables(root['protocol'])[package['name']]['modules']
-            if 'sourceRequest' not in memo:
-                empty = source_object.variant('nil', source_object.record({}))
-                native = interpret.native(descriptor['request'], [root['state']['model'],
-                    source_object.data(payload['text']), empty,
-                    source_object.data({'object': saved['view']['object'], 'principal': identity['did']})], modules=modules)
-                fields = {field['name']: field['value'] for field in native['fields']}
-                memo['sourceRequest'] = {'job': source_object.plain(fields['job']),
-                    'envelope': source_object.values('decode', [fields['envelope']])[0]}
-                self._save_encounter(path, memo)
-            request = memo['sourceRequest']
-            portal._pins(saved)
-            try:
-                reply = portal.proposer.request_source(request['job'], source_modules=modules,
-                    envelope=request['envelope'])
-            except Exception:
-                memo['providerReceipt'] = portal.proposer.last_receipt
-                status = (memo['providerReceipt'] or {}).get('status', 'unavailable')
-                result = {'status': status, 'via': 'source', 'original': payload['text'],
-                    'providerReceipt': memo['providerReceipt'],
-                    'message': 'No confirmed interpretation is available. Recover this saved contribution before retrying.'}
-                if status in ('pending', 'uncertain'):
-                    memo['result'] = result
-                self._save_encounter(path, memo)
-                return {**result, 'interpretation': token}
-            memo['providerReceipt'] = portal.proposer.last_receipt
-            memo['providerReply'] = reply
-            self._save_encounter(path, memo)
-            invitation = {'format': source_offers.FORMAT, 'object': saved['view']['object'],
-                'root': root, 'entry': descriptor['prepare'], 'observations': [],
-                'title': saved['card']['title'], 'label': 'Retain this interpreted contribution', 'fields': []}
-            outcome = portal.prepare_invitation(invitation, identity['did'], 'interpretation:' + token,
-                {'request': request['envelope'], 'reply': reply})
-            portal._pins(saved)
-            result = {'status': outcome['kind'], 'message': outcome.get('message', outcome.get('summary', '')),
-                      'via': 'source', 'original': payload['text'], 'providerReceipt': memo['providerReceipt']}
-            if outcome['kind'] == 'ready':
-                draft = {'interpretation': token, 'card': payload['card'],
-                    'object': saved['view']['object'], 'version': root['version'],
-                    'command': descriptor['prepare'], 'summary': outcome.get('summary', 'Retain interpreted contribution'),
-                    'request': outcome['request'], 'runtime': saved['runtime'], 'localPrincipal': identity['did'],
-                    'wire': portal.request_wire(outcome['request']), 'reply': None}
-                alias = portal._store('drafts', draft)
-                result['draft'] = portal.draft(alias)
-            else:
-                result['outcome'] = outcome
-        memo['result'] = result
-        self._save_encounter(path, memo)
-        return {**result, 'interpretation': token}
+        import account_interpretation
+        return account_interpretation.run(self, identity, realm, payload)
 
     def reading(self, identity, realm, kind, reference):
         if kind == 'interpretation':

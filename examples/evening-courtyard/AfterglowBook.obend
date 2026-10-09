@@ -1,0 +1,13 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./CourtyardBook.obend as Book
+
+# A governed presentation revision keeps the existing conversation and references.
+def describe() -> Book.Description:
+  Book.describe()
+def configured(config: Book.Config) -> Book.State:
+  Book.configured(config)
+def note(state: Book.State, input: Book.Note, context: Abi.Context) -> Book.Decision:
+  Book.note(state, input, context)
+def view(state: Book.State, panel: String) -> Book.View:
+  Book.render(state, "The courtyard keeps its afterglow. A chord can outlive the visit that arranged it; follow the bell, door and light to inspect what each actually did. Our lines remain here together.")

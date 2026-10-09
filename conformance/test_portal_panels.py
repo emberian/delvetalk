@@ -33,8 +33,13 @@ class PortalPanelsTest(unittest.TestCase):
     def test_catalogue_names_do_not_evaluate_or_claim_a_projected_title(self):
         with patch.object(self.app, '_view', side_effect=AssertionError('catalogue must not evaluate')):
             self.assertEqual(self.app.world()['objects'][0]['title'], 'The paper door')
-        for name in (None, {}, '', 'x' * 257):
-            self.assertEqual(self.app.object_label('door', {'protocol': {'name': name}}), 'door')
+        for name, expected, truncated in ((None, 'door', False), ({}, 'door', False),
+                                           ('x' * 257, 'x' * 256, True)):
+            self.root['protocol']['name'] = name
+            p.save(self.directory / 'world.json', {'objects': {'door': self.root}, 'receipts': []})
+            row = self.app.world()['objects'][0]
+            self.assertEqual(row['title'], expected)
+            self.assertEqual(row['nameTruncated'], truncated)
 
     def test_selected_panel_is_retained_and_refreshable_without_world_mutation(self):
         before = (self.directory / 'world.json').read_bytes()

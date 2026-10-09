@@ -10,13 +10,32 @@ namespace FileCustody
 -- Scientific notation preserves the stored mantissa and exponent without a
 -- decimal expansion proportional to the exponent. Framed and file transports
 -- preserve the same values; this changes no receiving equality rule.
-partial def encode : Json → String
-  | .num number => toString number.mantissa ++
+-- Accumulate directly: nested values do not allocate intermediate JSON strings.
+partial def encodeInto (acc : String) : Json → String
+  | .num number => acc ++ toString number.mantissa ++
       (if number.exponent == 0 then "" else "e-" ++ toString number.exponent)
-  | .arr values => "[" ++ String.intercalate "," (values.toList.map encode) ++ "]"
-  | .obj values => "{" ++ String.intercalate "," (values.toList.map fun (key, value) =>
-      (Json.str key).compress ++ ":" ++ encode value) ++ "}"
-  | value => value.compress
+  | .arr values => Id.run do
+      let mut out := acc ++ "["
+      let mut first := true
+      for value in values do
+        if !first then out := out ++ ","
+        out := encodeInto out value
+        first := false
+      return out ++ "]"
+  | .obj values => Id.run do
+      let mut out := acc ++ "{"
+      let mut first := true
+      for (key, value) in values.toList do
+        if !first then out := out ++ ","
+        out := encodeInto (Json.renderString key out ++ ":") value
+        first := false
+      return out ++ "}"
+  | .str value => Json.renderString value acc
+  | .null => acc ++ "null"
+  | .bool true => acc ++ "true"
+  | .bool false => acc ++ "false"
+
+def encode (value : Json) : String := encodeInto "" value
 
 def readRequest : IO Json := do
   let stdin ← IO.getStdin
@@ -43,8 +62,8 @@ def lookup (snapshot : System.FilePath) : IO Unit := do
 -- This endpoint is read-only by construction, including its physical custody.
 -- Reject mutations before invoking the shared native receiver. The unchanged
 -- world assertion also catches an accidentally effectful future query hook.
-def queryOperations : List String := ["inspect", "messages-pending", "message-event",
-  "retained-root", "capture-roots", "prepare", "prepare-retained", "value-codec"]
+def queryOperations : List String := ["inspect", "authorize-reads", "object-history", "messages-pending", "message-event",
+  "retained-root", "capture-roots", "catalogue-page", "prepare", "prepare-retained", "value-codec"]
 
 def query (receive : Json → Json → Except String (Json × Json))
     (snapshot : System.FilePath) : IO Unit := do

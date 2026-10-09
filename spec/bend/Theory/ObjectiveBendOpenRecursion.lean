@@ -6,6 +6,7 @@ relation does not claim a heap machine, type safety, termination, proof
 consistency, or authority. -/
 import Lean
 import Theory.AxiomPin
+import Compiler.Sha256
 namespace Minidregg.Theory.ObjectiveBendOpenRecursion
 set_option autoImplicit false
 
@@ -16,12 +17,12 @@ set_option autoImplicit false
 inductive Primitive where
   | add | multiply | equal | conjunction | labelEqual
   | subtract | divide | less | lessEqual | modulo
-  | textConcat | textTake | textDrop
+  | textConcat | textTake | textDrop | textSpan | textBreak
   deriving Repr, DecidableEq
 
 /-- DelveTalk hosted text extension; not part of the pinned upstream edition. -/
 inductive UnaryPrimitive where
-  | natText | textLength
+  | natText | textLength | sha256Text
   deriving Repr, DecidableEq
 
 inductive Term where
@@ -175,6 +176,20 @@ New fields shadow inherited fields; the inherited computation remains super. -/
 def extendFields (inherited fields : List (String × Term)) : List (String × Term) :=
   fields ++ inherited.filter (fun prior => !(fields.any fun field => field.1 == prior.1))
 
+/-- Scalar-prefix scan, bounded without allocating a character list. The Boolean
+selects membership (span) or nonmembership (break). The result records prefix
+length, comparisons performed, and whether scanning completed within the cap. -/
+def textPrefixScan (alphabet : String) (member : Bool) :
+    Nat → String.Legacy.Iterator → Nat → Nat → Nat × Nat × Bool
+  | fuel, cursor, count, visited =>
+    if cursor.atEnd then (count, visited, true)
+    else match fuel with
+      | 0 => (count, visited, false)
+      | remaining + 1 =>
+        if alphabet.contains cursor.curr == member then
+          textPrefixScan alphabet member remaining cursor.next (count + 1) (visited + 1)
+        else (count, visited + 1, true)
+
 def primitiveResult : Primitive → Term → Term → Option Term
   | .add, .nat a, .nat b => some (.nat (a + b))
   | .multiply, .nat a, .nat b => some (.nat (a * b))
@@ -187,13 +202,18 @@ def primitiveResult : Primitive → Term → Term → Option Term
   | .lessEqual, .nat a, .nat b => some (.boolean (decide (a ≤ b)))
   | .modulo, .nat a, .nat b => some (.nat (a % b))
   | .textConcat, .label a, .label b => some (.label (a ++ b))
-  | .textTake, .label a, .nat n => some (.label (String.ofList (a.toList.take n)))
-  | .textDrop, .label a, .nat n => some (.label (String.ofList (a.toList.drop n)))
+  | .textSpan, .label text, .label alphabet =>
+      some (.nat (textPrefixScan alphabet true text.utf8ByteSize (String.Legacy.iter text) 0 0).1)
+  | .textBreak, .label text, .label alphabet =>
+      some (.nat (textPrefixScan alphabet false text.utf8ByteSize (String.Legacy.iter text) 0 0).1)
+  | .textTake, .label a, .nat n => some (.label (if n == 0 then "" else if n >= a.utf8ByteSize then a else (a.take n).toString))
+  | .textDrop, .label a, .nat n => some (.label (if n == 0 then a else if n >= a.utf8ByteSize then "" else (a.drop n).toString))
   | _, _, _ => none
 
 def unaryResult : UnaryPrimitive → Term → Option Term
   | .natText, .nat n => some (.label (toString n))
   | .textLength, .label s => some (.nat s.length)
+  | .sha256Text, .label s => some (.label (Minidregg.Compiler.Sha256.hexString s))
   | _, _ => none
 
 /-- All String labels, including true/false, are excluded from Boolean operations. -/

@@ -29,11 +29,16 @@ typed:
 	LEAN_NUM_THREADS=1 lake env lean profiles/ResidentStoreProofs.lean
 	python3 conformance/test_typed.py
 packages:
+	python3 conformance/test_package_session.py
 	python3 conformance/test_package_adversarial.py
 	python3 conformance/test_package_collections.py
 	python3 conformance/test_reflection.py
 	python3 conformance/test_frontend_abstractions.py
+	python3 conformance/test_recursive_record_extend.py
+	python3 conformance/test_sha256_text.py
+	python3 conformance/test_generics.py
 	python3 conformance/test_text_primitives.py
+	python3 conformance/test_text_boundaries.py
 	python3 conformance/test_branch_rows.py
 	python3 conformance/test_open_row_composition.py
 	python3 conformance/test_match_rows.py
@@ -50,6 +55,7 @@ world:
 	python3 conformance/test_allocation_history.py
 	python3 conformance/test_transactions.py
 	python3 conformance/test_observe.py
+	python3 conformance/test_governed_reads.py
 	python3 conformance/test_reprogram.py
 	python3 conformance/test_workshop.py
 	python3 conformance/test_workshop_seed.py
@@ -58,7 +64,12 @@ world:
 	python3 conformance/test_source_packages.py
 	python3 conformance/test_source_contract.py
 	python3 conformance/test_source_amendment.py
+	python3 conformance/test_current_boundary.py
+	LEAN_NUM_THREADS=1 lake env lean profiles/SourceAmendmentChecks.lean
 	python3 conformance/test_preparation.py
+	python3 conformance/test_preparation_accessors.py
+	python3 -m unittest conformance.test_preparation_data
+	python3 conformance/test_program_digest.py
 	python3 conformance/test_source_transition.py
 	python3 conformance/test_source_data_transition.py
 	python3 conformance/test_native_data_receiving.py
@@ -81,7 +92,9 @@ world:
 	python3 conformance/test_table_participant.py
 	python3 conformance/test_automatafl_companion.py
 	python3 conformance/test_desk.py
+	python3 conformance/test_shared_proposal.py
 	python3 conformance/test_candidate_custody.py
+	python3 conformance/test_candidate_capacity.py
 	python3 conformance/test_desk_profiles.py
 	python3 conformance/test_projection.py
 	python3 conformance/test_inhabited_bootstrap.py
@@ -95,6 +108,7 @@ world:
 	python3 conformance/test_workspace_resident.py
 	python3 conformance/test_source_workshop.py
 	python3 conformance/test_commons.py
+	python3 conformance/test_constellation_source.py
 	python3 conformance/test_guarded_movement.py
 	python3 conformance/test_guarded_authoring.py
 	python3 conformance/test_place_index.py
@@ -102,6 +116,9 @@ world:
 	python3 -m unittest conformance.test_root_sessions
 	python3 conformance/test_containment.py
 	python3 conformance/test_appointments.py
+	python3 conformance/test_evening_courtyard.py
+	python3 conformance/test_appointment_physical.py
+	python3 conformance/test_appointment_relationship.py
 	python3 conformance/test_work_ticket.py
 	python3 conformance/test_town_garden.py
 	python3 conformance/test_garden_source.py
@@ -152,6 +169,7 @@ delve:
 	python3 conformance/test_peer_layers.py
 	python3 conformance/test_editor_generations.py
 	python3 conformance/test_candidate_release.py
+	python3 conformance/test_candidate_review.py
 	python3 conformance/test_contract_authoring.py
 	python3 conformance/test_module_desk.py
 	python3 conformance/test_spell_examples.py
@@ -179,6 +197,7 @@ portal:
 	python3 conformance/test_affordances.py
 	python3 conformance/test_view_action_lists.py
 	python3 conformance/test_view_invitations.py
+	python3 conformance/test_view_codecs.py
 	python3 conformance/test_references.py
 	python3 conformance/test_factory_affordances.py
 	python3 conformance/test_interpret.py

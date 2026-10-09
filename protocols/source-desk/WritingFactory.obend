@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Allocation.obend as A
 import ./Encounter.obend as E
@@ -23,9 +24,9 @@ record Decision:
   state: State
   result: String
   allocations: A.Allocations
-def make(state: State, input: Input, context: F.Context) -> Decision:
+def make(state: State, input: Input, context: Abi.Context) -> Decision:
   let allowed: Bool = input.name != "" && input.candidate != "" && input.target != "" && input.syntax != ""
-  {accepted: allowed, reason: if allowed then "" else "Name a writing card, candidate, target and syntax.", state: if allowed then {writer: state.writer, last: input.name} else state, result: input.name, allocations: if allowed then A.Allocations.cons({head: {name: input.name, protocol: W.configuredProgram(state.writer, {candidate: input.candidate, target: input.target, syntax: input.syntax}), law: P.Value.record({fields: F.pair("profile", W.text("delvetalk-scoped-law-v1"), F.pair("invoke", P.oneField("report", P.Value.array({values: P.Values.cons({head: W.text(context.principal), tail: P.Values.nil()})})), F.pair("reprogram", P.Value.array({values: P.Values.nil()}), F.pair("law", P.Value.array({values: P.Values.nil()}), P.Fields.nil()))))})}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
+  {accepted: allowed, reason: if allowed then "" else "Name a writing card, candidate, target and syntax.", state: if allowed then {writer: state.writer, last: input.name} else state, result: input.name, allocations: if allowed then A.Allocations.cons({head: {name: input.name, protocol: W.configuredProgram(state.writer, {candidate: input.candidate, target: input.target, syntax: input.syntax}), law: P.Value.record({fields: F.pair("profile", W.text("delvetalk-scoped-law"), F.pair("invoke", P.oneField("report", P.Value.array({values: P.Values.cons({head: W.text(context.principal), tail: P.Values.nil()})})), F.pair("reprogram", P.Value.array({values: P.Values.nil()}), F.pair("law", P.Value.array({values: P.Values.nil()}), P.Fields.nil()))))})}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
 record Field:
   type: String
   minLength: Nat

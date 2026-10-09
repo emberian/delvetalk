@@ -16,6 +16,8 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT))
 import world
 import source_offers
+import source_store
+import desk
 import runtime_profile
 from scene import room
 
@@ -37,7 +39,8 @@ DID = identity_fixture.B
 SERVICE = 'verified-welcome-service'
 METHODS = ['plant', 'rain', 'visit', 'page', 'cutting']
 TARGETS = [{'object': 'garden', 'commands': METHODS}, {'object': 'objects', 'commands': ['make']},
-           {'object': 'desks', 'commands': ['make']}]
+           {'object': 'desks', 'commands': ['make']},
+           {'object': 'workshop/sandbox', 'commands': ['write'], 'reprogram': True}]
 
 
 class Membership(unittest.TestCase):
@@ -47,6 +50,13 @@ class Membership(unittest.TestCase):
         cls.garden_protocol = garden.protocol()
         cls.factory_protocol = factory.factory()
         cls.desks_protocol = desks.factory('compiler', ['moss'])
+        cls.sandbox_protocol = factory.object()
+        modules = factory.source_object.read_modules([
+            ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+            ('List', ROOT / 'world/lib/prelude/List.obend'), ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+            ('Object', ROOT / 'protocols/factories/Object.obend')])
+        modules[-1]['source'] = modules[-1]['source'].replace('512n', '256n').replace('512 characters', '256 characters')
+        cls.sandbox_revised = factory.source_object.load(modules, syntax='objective-bend-spell@3')
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -60,11 +70,11 @@ class Membership(unittest.TestCase):
         self.create('welcome', self.welcome_protocol, {'profile': 'delvetalk-scoped-law-v1',
             'invoke': {'enroll': [SERVICE]}, 'reprogram': ['builder'], 'law': ['builder']})
         for target, protocol in [('garden', self.garden_protocol), ('objects', self.factory_protocol),
-                                 ('desks', self.desks_protocol)]:
-            methods = METHODS if target == 'garden' else ['make']
+                                 ('desks', self.desks_protocol), ('workshop/sandbox', self.sandbox_protocol)]:
+            methods = METHODS if target == 'garden' else ['write'] if target == 'workshop/sandbox' else ['make']
             self.create(target, protocol, {'profile': 'delvetalk-scoped-law-v4',
                 'invoke': {m: ['moss'] for m in methods}, 'reprogram': ['builder'],
-                'law': ['builder', SERVICE], 'amendment': generate.amendment(SERVICE, methods)})
+                'law': ['builder', SERVICE], 'amendment': generate.amendment(SERVICE, methods, reprogram=target == 'workshop/sandbox')})
         self.create('restricted', self.garden_protocol, {'profile': 'delvetalk-scoped-law-v1',
             'invoke': {'plant': ['private-owner']}, 'reprogram': ['private-owner'], 'law': ['private-owner']})
 
@@ -116,10 +126,51 @@ class Membership(unittest.TestCase):
         current = self.root('objects')
         self.send({'op': 'transaction', 'reads': {'objects': current, 'objects/fern': None},
             'calls': [{'object': 'objects', 'command': 'make', 'input': {'name': 'fern'}}]}, DID)
-        self.assertIn(DID, self.root('objects/fern')['law'])
+        self.assertEqual(self.root('objects/fern')['law']['invoke']['write'], [DID])
+        self.assertEqual(self.root('objects/fern')['law']['read'], 'public')
+        self.send({'op': 'invoke', 'object': 'objects/fern', 'expected': self.root('objects/fern'),
+            'command': 'write', 'input': {'text': 'Someone else owns this'}}, 'moss', 'refused')
         self.send({'op': 'transaction', 'reads': {'desks': self.root('desks'), 'desks/fern-draft': None},
             'calls': [{'object': 'desks', 'command': 'make', 'input': {'name': 'fern-draft'}}]}, DID)
         self.assertIn(DID, self.root('desks/fern-draft')['law']['invoke']['submit'])
+        own = self.root('objects/fern')
+        self.send({'op': 'reprogram', 'object': 'objects/fern', 'expected': own,
+            'protocol': self.sandbox_protocol, 'state': self.sandbox_protocol['initial']}, DID)
+        sandbox = self.root('workshop/sandbox')
+        revised = self.sandbox_revised
+        # The participant changes actual source behavior, not only prose.
+        self.send({'op': 'reprogram', 'object': 'workshop/sandbox', 'expected': sandbox,
+            'protocol': revised, 'state': revised['initial']}, DID)
+        self.send({'op': 'invoke', 'object': 'workshop/sandbox',
+            'expected': self.root('workshop/sandbox'), 'command': 'write',
+            'input': {'text': 'x' * 300}}, DID, 'refused')
+        self.send({'op': 'reprogram', 'object': 'workshop/sandbox', 'expected': sandbox,
+            'protocol': revised, 'state': revised['initial']}, DID, 'refused')
+        sandbox = self.root('workshop/sandbox')
+        self.send({'op': 'law', 'object': 'workshop/sandbox', 'expected': sandbox,
+            'law': [DID]}, DID, 'refused')
+        shared = self.root('garden')
+        proposal = source_store.prepare_proposal(self.base / 'artifacts', 'objective-bend-spell@2',
+            (ROOT / 'syntaxes/examples/lantern.obend').read_bytes(),
+            (ROOT / 'syntaxes/examples/lantern.examples').read_bytes())
+        self.send({'op': 'invoke', 'object': 'desks/fern-draft',
+            'expected': self.root('desks/fern-draft'), 'command': 'submit',
+            'input': {'proposal': proposal, 'migration': {'lit': False}, 'target': 'garden'}}, DID)
+        self.assertEqual(self.root('garden'), shared, 'retaining a proposal cannot install it')
+        self.send({'op': 'invoke', 'object': 'desks/fern-draft',
+            'expected': self.root('desks/fern-draft'), 'command': 'adopt',
+            'input': {'target': 'garden'}}, DID, 'refused')
+        client = desk.Desk(self.database, self.base / 'artifacts', profile='compiled')
+        checked = client.check('desks/fern-draft', 'compiler', 'check-shared-proposal',
+            self.root('desks/fern-draft'))
+        self.assertEqual(checked['kind'], 'committed', checked)
+        candidate = self.root('desks/fern-draft')
+        self.assertEqual(desk.candidate_state(candidate)['status'], 'ready')
+        attempted = client.adopt('desks/fern-draft', 'garden', DID, 'release-shared-proposal',
+            candidate, shared)
+        self.assertEqual(attempted['kind'], 'refused', attempted)
+        self.assertEqual(self.root('desks/fern-draft'), candidate, 'failed target admission rolls back release')
+        self.assertEqual(self.root('garden'), shared)
         target = self.root('garden')
         self.send({'op': 'law', 'object': 'garden', 'expected': target, 'law': [DID]}, DID, 'refused')
         self.send({'op': 'reprogram', 'object': 'garden', 'expected': target,
@@ -133,6 +184,35 @@ class Membership(unittest.TestCase):
                 heaps.turn(person, 'private:someone-else', {'op': 'inspect', 'object': 'notebook', 'intent': 'cross-private'})
         self.assertEqual(self.root('garden')['law']['reprogram'], ['builder'])
         self.assertEqual(self.root('garden')['law']['law'], ['builder', SERVICE])
+
+    def test_explicit_sandbox_role_permits_source_revision_but_not_law_or_neighbor(self):
+        sandbox = self.root('workshop/sandbox')
+        role = copy.deepcopy(sandbox['law'])
+        role['invoke']['write'].append(DID)
+        role['reprogram'].append(DID)
+        self.send({'op': 'law', 'object': 'workshop/sandbox', 'expected': sandbox, 'law': role}, SERVICE)
+        self.send({'op': 'invoke', 'object': 'workshop/sandbox',
+            'expected': self.root('workshop/sandbox'), 'command': 'write',
+            'input': {'text': 'x' * 300}}, DID)
+        before = self.root('workshop/sandbox')
+        self.send({'op': 'reprogram', 'object': 'workshop/sandbox', 'expected': before,
+            'protocol': self.sandbox_revised, 'state': self.sandbox_revised['initial']}, DID)
+        self.send({'op': 'invoke', 'object': 'workshop/sandbox',
+            'expected': self.root('workshop/sandbox'), 'command': 'write',
+            'input': {'text': 'x' * 300}}, DID, 'refused')
+        self.send({'op': 'reprogram', 'object': 'workshop/sandbox', 'expected': before,
+            'protocol': self.sandbox_protocol, 'state': self.sandbox_protocol['initial']}, DID, 'refused')
+        current = self.root('workshop/sandbox')
+        escalation = copy.deepcopy(current['law']); escalation['law'].append(DID)
+        self.send({'op': 'law', 'object': 'workshop/sandbox', 'expected': current,
+            'law': escalation}, SERVICE, 'refused')
+        self.send({'op': 'reprogram', 'object': 'garden', 'expected': self.root('garden'),
+            'protocol': self.sandbox_revised, 'state': self.sandbox_revised['initial']}, DID, 'refused')
+        revoked = copy.deepcopy(current['law']); revoked['reprogram'].remove(DID)
+        self.send({'op': 'law', 'object': 'workshop/sandbox', 'expected': current, 'law': revoked})
+        self.send({'op': 'reprogram', 'object': 'workshop/sandbox',
+            'expected': self.root('workshop/sandbox'), 'protocol': self.sandbox_protocol,
+            'state': self.sandbox_protocol['initial']}, DID, 'refused')
 
     def test_service_amendment_is_narrow_and_late_failure_rolls_back_membership(self):
         current = self.root('garden')
@@ -200,6 +280,12 @@ class Membership(unittest.TestCase):
         self.assertEqual(self.enroll(person, proof), result)
         self.assertEqual(self.enroll(person, proof, 'fresh-verification')['status'], 'refused')
         self.assertNotIn(DID, self.root('garden')['law']['invoke']['plant'])
+        sandbox = self.root('workshop/sandbox')
+        revoked = copy.deepcopy(sandbox['law']); revoked['reprogram'].remove(DID)
+        self.send({'op': 'law', 'object': 'workshop/sandbox', 'expected': sandbox, 'law': revoked})
+        self.send({'op': 'reprogram', 'object': 'workshop/sandbox',
+            'expected': self.root('workshop/sandbox'), 'protocol': self.sandbox_revised,
+            'state': self.sandbox_revised['initial']}, DID, 'refused')
 
 
 class MembershipCustody(unittest.TestCase):

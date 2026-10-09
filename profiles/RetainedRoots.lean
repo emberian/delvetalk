@@ -144,6 +144,8 @@ def capture (index : Index) (world request : Json) : Except String Json := do
     ("sequence", toJson (← (← field world "receipts").getArr?).size), ("head", .null)]
 
 def handleWith (admit : Admit) (world request : Json) : Except String (Json × Json) := do
+  if (← str request "op") == "catalogue-page" then
+    return (world, ← World.cataloguePage world request (← (← field world "receipts").getArr?).size .null)
   if (← str request "op") == "retained-root" then
     return (world, ← mint (fromWorld world) request)
   if (← str request "op") == "capture-roots" then
@@ -156,7 +158,7 @@ def handleWith (admit : Admit) (world request : Json) : Except String (Json × J
 -- Preparation executes against retained captured observations, even when the
 -- current object has advanced. Admission of the resulting request checks current
 -- exact roots later. No preparation observation is refreshed here.
-def prepareCaptured (index : Index) (current : Json) (run : Index → Json → Json → Except String Json)
+def prepareCaptured (index : Index) (current : Json) (run : Index → Json → Json → Json → Except String Json)
     (request : Json) : Except String Json := do
   if (FileCustody.encode request).utf8ByteSize > World.maxRequestBytes then throw "retained preparation capacity"
   let id ← str request "object"
@@ -177,6 +179,6 @@ def prepareCaptured (index : Index) (current : Json) (run : Index → Json → J
     objects ← put objects target captured
     expandedObservations := expandedObservations.push (← put observation "root" captured)
   let expanded ← put (← put request "root" root) "observations" (.arr expandedObservations)
-  run index (obj [("objects", objects), ("receipts", .arr #[])]) expanded
+  run index currentObjects (obj [("objects", objects), ("receipts", .arr #[])]) expanded
 
 end RetainedRoots

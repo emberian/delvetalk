@@ -30,13 +30,51 @@ if cpu is not None:
     limit(resource.RLIMIT_CPU, cpu)
 if memory is not None and sys.platform.startswith('linux'):
     memory = limit(resource.RLIMIT_AS, memory)
-    os.environ['MIMALLOC_ARENA_RESERVE'] = '131072'
-    os.environ['LEAN_STACK_SIZE_KB'] = str(min(64 * 1024, memory // 4 // 1024))
 if file_size is not None:
     limit(resource.RLIMIT_FSIZE, file_size)
 os.environ['DELVETALK_CUSTODY_GROUP'] = str(os.getpgrp())
 os.execvp(sys.argv[2], sys.argv[2:])
 """
+
+
+
+# Linux qualification: current Lean receiver/compiler need virtual stack/arena
+# reservations beyond RSS. The independent service cgroup bounds aggregate RSS.
+NATIVE_MEMORY_MIB = 4096
+NATIVE_MEMORY_BYTES = NATIVE_MEMORY_MIB * 1024 * 1024 if sys.platform.startswith('linux') else None
+
+
+def native_environment(env=None):
+    """One worker, default Lean stack/allocator; never mutate the parent env."""
+    result = dict(os.environ if env is None else env)
+    for key in tuple(result):
+        if key.startswith('MIMALLOC_') or key in ('LEAN_STACK_SIZE_KB', 'LEAN_MAIN_USE_THREAD'):
+            del result[key]
+    result['LEAN_NUM_THREADS'] = '1'
+    return result
+
+
+def native_launch(arguments, *, memory_bytes=NATIVE_MEMORY_BYTES, env=None):
+    """Persistent native launch: finite Linux AS, no cumulative CPU deadline."""
+    if memory_bytes is not None:
+        if type(memory_bytes) is not int or memory_bytes <= 0:
+            raise ValueError('native memory_bytes must be a positive integer')
+        if not sys.platform.startswith('linux'):
+            raise ValueError('native memory limit requires Linux RLIMIT_AS')
+    elif sys.platform.startswith('linux'):
+        raise ValueError('native Linux launch requires a finite memory limit')
+    arguments = [os.fspath(value) for value in arguments]
+    if not arguments: raise ValueError('native command is empty')
+    return ([sys.executable, '-c', LAUNCH, json.dumps([None, memory_bytes, None]), *arguments],
+            native_environment(env))
+
+
+def run_native(arguments, *, memory_bytes=NATIVE_MEMORY_BYTES, env=None, **options):
+    """One-shot native custody; callers choose CPU/wall/output/file bounds."""
+    # Reuse the same policy validation as the persistent path; run owns the
+    # launcher, process group, spool and bounded parent reads for this path.
+    _, environment = native_launch(arguments, memory_bytes=memory_bytes, env=env)
+    return run(arguments, memory_bytes=memory_bytes, env=environment, **options)
 
 
 def run(arguments, *, timeout, cpu_seconds, stdout_limit, stderr_limit,

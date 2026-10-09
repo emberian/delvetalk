@@ -1,68 +1,48 @@
 # A bell that opens a listening door
 
-`Bell.obend` and `Door.obend` are independently authored Objective Bend objects.
-They each provide `describe` and `view`, and install through
-`objective-bend-spell@3`. The focused acceptance submits, checks and adopts both
-through the source desk, then plays the bell and delivers its retained sound to
-the door. The bell decides what to emit; the door decides which sound to accept.
-Python does not implement either decision. Both import the explicit `Abi` and
-`Encounter` modules from `world/lib/prelude`; the sealed source desk package
-retains those exact sources before the Bell or Door module. There is no ambient
-prelude lookup.
+`Bell.obend`, `Door.obend` and `Lantern.obend` are independent Objective Bend
+residents. The bell prepares a chord using its chosen recipient's captured
+program; the door opens and can emit toward its own observed lantern. The
+public forms ask for a chord and voice count or confirmation of a connection.
+Their source preparations supply exact program pins from retained observations.
 
-Run `python3 -m unittest conformance.test_resident_messages -v` after building
-`delvetalk-compiled`. The two `.binding.json` files also bind the same sources
-directly to the plain record ABI for focused host tests. Scenarios remain data;
-the source desk checks their view and refusal assertions before adoption.
+[package.py](package.py) supplies exact `Abi`, `Preparation`, `Encounter` and
+`Emissions` modules plus the resident source to `objective-bend-object`.
+`configured` constructors give Bell its recipient, Door its source and recipient,
+and Lantern its source, allowing independently named courtyard instances.
+Python assembles bytes and typed arguments; Bend owns their behavior.
 
-Before creating objects, trusted custody initializes the immutable lineage:
+The receiving profile is `compiled`, with `delvetalk-source-transition` and
+explicit `messages: {emit, receive}` capabilities. State lives in `model`
+DataWire. Emissions are an ordered `nil`/`cons` collection of addressed
+`{to, command, recipientProgram, payload}` descriptors; payload uses
+`Preparation.Value`. The native ceiling is sixteen emissions per call. Bell
+also checks that bound before constructing the collection. Empty means no
+emission and needs no messaging registry.
 
-```json
-{"op":"messages-init","principal":"bootstrap","intent":"messages-v1","lineage":"courtyard-1","pendingLimit":128}
-```
+Trusted custody initializes messaging before creating objects. Native admission
+captures the source's exact preimage once per emission call and retains the
+principal, intent, call index and descriptor index. It validates current target
+programs and receive capability, and commits events atomically with source state
+and the receipt. Events stay separate from external outboxes.
 
-Initialization requires an empty object table and no existing registry. Each
-successful source effects decision has four named emission slots, `a` through
-`d`. A slot contains `enabled`, `to`, `command`, `recipientProgram` and record
-`payload`. Disabled slots are still validated. The exact protocol digest comes
-from the native expression `["program-digest", expression]`; metadata and JSON
-number representations are included. The enabled recipient must currently have
-that exact program and a receive-only command.
+Delivery supplies the retained event reference, recipient, current root and relay
+principal. Native admission supplies a fourth `CausalEvent` argument containing
+`id`, `source`, `sourceProgram`, `originatingPrincipal`, `root`, `parent`, `depth`
+and `rootPrincipal`. The immediate emitter, original player and current relay
+remain distinct. Direct invocation cannot manufacture those receiving facts.
+A receiving turn can emit descendants under the same retained causal root.
+Native depth, event, work and byte ceilings bound that continuation.
 
-The host stamps each enabled slot with its actual source preimage, protocol
-digest, originating principal, admission principal/intent, call index and slot.
-The event ID hashes the immutable lineage and admission/call/slot identity.
-Creation commits atomically with source state and the receipt's `data.messages`.
-Emission descriptors never enter ordinary external outboxes.
+Each delivery faces the recipient's current law and exact program. Refusal
+leaves the event pending; an accepted no-op can decline it. Changes to the source
+after emission cannot erase admitted history. Exact retry recovers the original
+receipt before rechecking authority or roots; a fresh attempt cannot consume the
+event again. Batch failure rolls back all source and message changes.
 
-Delivery supplies only the reference, explicit recipient and current root:
-
-```json
-{"op":"deliver","principal":"relay","intent":"stable-attempt","object":"door","event":{"lineage":"courtyard-1","id":"<native-event-id>"},"expected":"<complete-current-root>"}
-```
-
-Native admission resolves the stored payload and separately supplies fourth
-argument `EventFacts {id, source, sourceProgram, originatingPrincipal}`. The
-current recipient law must authorize the relay for the stored command, and its
-program must still match the bound digest. Direct calls cannot supply these
-facts. Source revocation or revision after sending cannot unsend a message.
-Refusal leaves it pending. Accepted delivery changes the recipient and records
-consumption atomically; an accepted no-op can explicitly decline it. Exact retry
-returns the original receipt before checking current roots or permission. A
-fresh attempt cannot consume it again. Receive-only methods cannot emit
-additional messages.
-
-Plain profiles are `delvetalk-source-effects-v1` and
-`delvetalk-source-receive-v1`; typed `@3` uses the corresponding
-`delvetalk-source-data-*` profiles and retains state as `model` DataWire.
-Both use Context2; the source player is evidence, never the relay's authority.
-
-Pending capacity is at most 128 globally and 32 per emitter or recipient. Each
-payload is at most 4 KiB and each captured source root at most 64 KiB; validation,
-source execution and staging share the host budget. Exhaustion rolls back the
-entire admission, including earlier batch calls. Consumed evidence stays
-retained; a bounded `pending` index avoids scanning terminal history. Read-only
-`messages-pending` and `message-event` queries serve the relay without expanding
-receipt history. Physical custody still needs storage capacity. Exporting and
-forking a world creates separate custody branches, not global exactly-once
-execution across copies.
+Run `python3 -m unittest conformance.test_resident_messages -v` against a matching
+native snapshot. Tests exercise source-desk adoption, observed preparations,
+namespaced constructors, three-resident reactions, stale observations, authority,
+capacity and exact retry. `Loop.obend` is a deliberately cyclic source fixture
+for native causal-ceiling tests. Exported worlds remain separate custody branches;
+copying one does not establish global exactly-once execution.

@@ -79,7 +79,7 @@ class SourceWorkshop(unittest.TestCase):
             self.assertEqual(source_object.plain(client.inspect(child)['state']['model'])['text'], 'A light for visitors.')
             reply('factory:desks', {'name': 'variation'})
             candidate = 'factory:desks/variation'
-            candidate_root = client.inspect(candidate)
+            candidate_root = client.inspect(candidate, principal=A)
             self.assertTrue(desk.is_source_desk_protocol(candidate_root['protocol']))
             self.assertEqual(desk.candidate_state(candidate_root)['status'], 'empty')
             self.assertEqual(candidate_root['law']['invoke']['compiled'], ['compiler'])
@@ -94,22 +94,22 @@ class SourceWorkshop(unittest.TestCase):
                  'root': 'initial', 'kind': 'committed'}]}]
             reply(writer, {'source': desk.canonical(before['protocol']).decode(),
                 'scenarios': desk.canonical(scenarios).decode()})
-            pending = client.inspect(candidate)
+            pending = client.inspect(candidate, principal=A)
             self.assertEqual(desk.candidate_state(pending)['migration'], client.inspect(child)['state'])
             denied = client.check(candidate, B, 'not-the-compiler', pending)
             self.assertEqual(denied['kind'], 'refused', denied)
-            self.assertEqual(client.inspect(candidate), pending)
+            self.assertEqual(client.inspect(candidate, principal=A), pending)
             queue = compiler_queue.CompilerQueue(base / 'compiler', client.database, client.artifact_store)
             job = queue.enqueue(candidate, 'compiler', 'compile-variation', pending)['job']
             self.assertEqual(queue.run()['errors'], [])
             completed = queue.inspect(job)['receipt']
             self.assertEqual(completed['kind'], 'committed', completed)
-            ready = client.inspect(candidate)
+            ready = client.inspect(candidate, principal=A)
             self.assertEqual(desk.candidate_state(ready)['status'], 'ready', desk.candidate_state(ready))
             expected_target = client.inspect(child)
             denied = client.adopt(candidate, child, B, 'not-the-reviewer', ready, expected_target)
             self.assertEqual(denied['kind'], 'refused', denied)
-            self.assertEqual(client.inspect(candidate), ready)
+            self.assertEqual(client.inspect(candidate, principal=A), ready)
             adopted = client.adopt(candidate, child, A, 'adopt-variation', ready, expected_target)
             self.assertEqual(adopted['kind'], 'committed', adopted)
             self.assertEqual(client.adopt(candidate, child, A, 'adopt-variation', ready, expected_target), adopted)

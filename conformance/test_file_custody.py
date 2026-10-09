@@ -103,12 +103,12 @@ class FileCustodyTests(unittest.TestCase):
     def test_request_only_stdin_and_unchanged_operations_preserve_snapshot(self):
         create, receipt = self.create()
         before = self.db.read_bytes()
-        original = subprocess.run
+        original = world.process_custody.run_native
         calls = []
         def observe(command, **kwargs):
             calls.append((command, kwargs['input']))
             return original(command, **kwargs)
-        with patch.object(world.subprocess, 'run', side_effect=observe), patch.object(world.os, 'replace') as replace:
+        with patch.object(world.process_custody, 'run_native', side_effect=observe), patch.object(world.os, 'replace') as replace:
             self.assertEqual(self.call(create), receipt)
             self.call({'op': 'inspect', 'object': 'room', 'principal': 'reader'})
             replace.assert_not_called()
@@ -152,12 +152,12 @@ class FileCustodyTests(unittest.TestCase):
         for output in ('[]', '{"changed":1,"reply":null}', '{"changed":true,"reply":null}',
                        '{"changed":false,"reply":null,"extra":true}', '{'):
             with self.subTest(output=output):
-                with patch.object(world.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, output, '')):
+                with patch.object(world.process_custody, 'run_native', return_value=subprocess.CompletedProcess([], 0, output.encode('utf-8'), b'')):
                     with self.assertRaises(ValueError): self.call(inspect)
                 self.assertEqual(self.db.read_bytes(), before)
-        with patch.object(world.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'failed')):
+        with patch.object(world.process_custody, 'run_native', return_value=subprocess.CompletedProcess([], 1, b'', b'failed')):
             with self.assertRaises(RuntimeError): self.call(inspect)
-        with self.assertRaises(ValueError): self.call({**inspect, 'padding': 'x' * 65536})
+        with self.assertRaises(ValueError): self.call({**inspect, 'padding': 'x' * world.MAX_EXPANDED_REQUEST_BYTES})
         self.assertEqual(self.db.read_bytes(), before)
         self.db.write_text('{broken')
         with self.assertRaises(ValueError): self.call(inspect)

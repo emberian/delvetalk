@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 import ./Preparation.obend as P
 import ./Encounter.obend as Encounter
 # Source-owned offer identity; revision/meaning are authored metadata, not native
@@ -19,9 +20,7 @@ sum Document:
   source: {language: String, code: String, revision: String}
   result: {status: String, body: Document}
   continuation: {key: String, after: Nat, limit: Nat, label: String}
-sum Documents:
-  nil: {}
-  cons: {head: Document, tail: Documents}
+type Documents = Lists.List<Document>
 def empty() -> Document:
   Document.sequence({items: Documents.nil()})
 def text(value: String) -> Document:
@@ -45,6 +44,4 @@ def plain(document: Document) -> String:
     case result(r): plain(r.body)
     case continuation(c): c.label
 def plainItems(items: Documents) -> String:
-  match items:
-    case nil(_): ""
-    case cons(c): textConcat(plain(c.head), plainItems(c.tail))
+  Lists.fold::<Document, String>(items, "", fn(document: Document) -> String -> String: fn(rest: String) -> String: textConcat(plain(document), rest))

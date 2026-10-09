@@ -139,7 +139,7 @@ class RetainedRootTests(unittest.TestCase):
         from syntaxes import obend_object
         source = SOURCE.replace('textConcat("Offer ", gesture)', '"Offer gesture"')
         protocol = obend_object.lower_data_modules([
-            {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
+            {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Preparation', 'source': (ROOT / 'world/lib/prelude/Preparation.obend').read_text()},
             {'name': 'Gallery', 'source': source}])
         database = self.directory / 'preparation.json'
         world.configure_resident(database)

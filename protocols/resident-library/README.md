@@ -7,7 +7,7 @@ engine or a generated copy of the behavior.
 
 | Module | Reusable behavior |
 | --- | --- |
-| [Consent.obend](Consent.obend) | Ordered keyed consent/subscription collections, a global monotone consent epoch, cursor pagination, and a four-descriptor native boundary encoder |
+| [Consent.obend](Consent.obend) | Ordered keyed consent/subscription collections, a global monotone consent epoch, cursor pagination, and a bounded emission collection encoder |
 | [Mailbox.obend](Mailbox.obend) | A two-list FIFO with cached size, explicit acknowledgement, contextual forms/view, and an open-recursive receiving layer |
 
 `Mailbox.Inbox` calls `self.accepts`, `self.capacity`, and `self.maxUnits`.
@@ -20,7 +20,7 @@ four units for the repair board, six for the reading circle.
 
 ## Compose and use
 
-Supply ordered exact modules `Abi`, `Encounter` (from `world/lib/prelude`),
+Supply ordered exact modules `Abi`, `Preparation`, `Encounter`, `Emissions` (from `world/lib/prelude`),
 `Consent`, `Mailbox`, then `RepairBoard` or
 `ReadingCircle` to the existing `objective-bend-spell@3` module adapter. Imports
 resolve those supplied bytes. The adapter derives state, methods, forms and
@@ -33,17 +33,19 @@ python3 conformance/test_resident_library.py
 ```
 
 The receiving profile is `compiled`. A local world initializes native messaging
-before creating objects. Each keeper has `configure`, each member has `announce`
+before creating objects. Each keeper has `selectPeer` and `configure`, each member has `announce`
 and `acknowledge`, and a separately granted relay has the receive-only `receive`
 method. Law management and reprogramming have their own grants. Names in the
 local tests are caller assertions, not authenticated remote identities.
 
-1. The recipient's keeper calls `configure` with `side="listen"`, the sender's
-   object and exact native program digest, a numeric collection key (`slot`, 1–65535), and a generation
-   greater than its global epoch, bounded by 65535. A source already enabled in
-   another incoming entry cannot be added twice.
-2. The sender's keeper calls `configure` with `side="send"`, an unused or existing collection key,
-   the recipient's object/program digest, and that recipient's generation.
+1. The recipient's keeper chooses `side="listen"`, the sender object, a
+   collection key (`slot`, 1–65535), an enabled flag and a fresh generation.
+   The source invitation then captures that peer and confirms consent with its
+   observed program. The form never asks for a program hash. Generation must
+   exceed the global epoch; an incoming source cannot occupy two enabled keys.
+2. The sender's keeper similarly chooses `side="send"`, the recipient object,
+   key and the recipient's generation, then confirms its captured observation.
+   Peer drift refuses the captured request; a new observation can prepare it again.
 3. A member calls `announce {topic,units,after,limit}`, starting with `after=0`
    and `limit=4`. Native admission retains addressed message evidence and
    validates target program identity. The result `{next,count,more}` identifies
@@ -59,8 +61,7 @@ local tests are caller assertions, not authenticated remote identities.
 `configure` also takes `enabled`; disabling or renewing incoming consent must
 advance the global epoch. An entry can keep its existing generation while other
 entries change. Moving a withdrawn source to another key requires a fresh epoch,
-so it cannot revive old events. Program values come from native
-`program-digest` results; an event's source identity and program come from native
+so it cannot revive old events. Program values come from captured native observations; an event's source identity and program come from native
 delivery facts, never a copied generation or payload assertion.
 
 | Incoming event | Native outcome |
@@ -88,9 +89,9 @@ with an explicit 64-entry traversal bound and at most four emissions per invocat
 These are policy/traversal bounds, not record fields or enumerated storage
 positions. Each invocation also faces the native machine's total work budget.
 Disabling an entry removes it and recovers capacity; the global epoch survives
-removal. Updating an existing key uses no additional capacity. The final
-`a/b/c/d` descriptor record exists only because the native emission ABI requires
-it. No subscriber storage is hand-enumerated.
+removal. Updating an existing key uses no additional capacity. Source emits a `nil`/`cons` collection directly. The native ceiling is sixteen;
+the mailbox policy selects its smaller page limit. No subscriber storage is
+hand-enumerated.
 
 The FIFO stores `size`, `front`, and reversed `rear` lists. Enqueue adds one
 node; acknowledgement reverses the rear only when the front empties. Oldest
@@ -98,8 +99,8 @@ notice projection and capacity checks use constant-size source operations.
 The object layers keep room for two or three notices. Topics and units have
 semantic bounds; generation is bounded. Address/program form lengths are UI bounds, while native emission
 and delivery validate addresses, hashes, payload size and exact program identity.
-Bad subscription text cannot grant delivery authority. All four descriptors,
-including disabled slots, remain structurally valid.
+Bad subscription text cannot grant delivery authority. Every emitted descriptor
+is checked against the exact recipient program.
 
 Recipient consent and current command grants are separate requirements. A
 copied subscription or old emission gives no relay grant. Source revocation
@@ -113,7 +114,7 @@ FIFO acknowledgement, finite vocabulary/unit guards, consent withdrawal and
 renewal across independent sources, key/generation ABA refusal, copied-generation
 forgery, current relay grant changes, retained refusals and declines,
 an outside sender's impossible generations,
-direct/forged receive attempts, exact retries, four-slot fanout, target program
+direct/forged receive attempts, exact retries, bounded collection fanout, target program
 changes, assembled form limits, and installed pure views. The actual local relay
 drains 32 obsolete events, recovers the pending quota and accepts a newly enrolled
 notice. Worlds and participant activity stay in temporary private custody.

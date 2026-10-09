@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
 import ./Relations.obend as R
 record State:
   open: Bool
@@ -8,12 +10,12 @@ record Decision:
   reason: String
   state: State
   result: R.Transfer
-def admit(s: State, i: R.Transfer, c: R.Context) -> Decision:
+def admit(s: State, i: R.Transfer, c: Abi.Context) -> Decision:
   let allowed = R.follows(c, "habitat", "plan") && i.destination == c.object && i.actor == c.principal && s.open && i.occupancy < s.capacity
   {accepted: allowed, reason: if allowed then "" else "Room closed, full, or admission not planned here.", state: s, result: i}
 record Method:
   label: String
-  fields: {object: R.TextField, destination: R.TextField, previous: R.TextField, holder: R.TextField, occupancy: R.NatField, actor: R.TextField}
+  fields: {object: Abi.StringField, destination: Abi.StringField, previous: Abi.StringField, holder: Abi.StringField, occupancy: Abi.NatField, actor: Abi.StringField}
 record Description:
   name: String
   initial: State
@@ -25,6 +27,6 @@ record View:
   title: String
   prose: String
   actions: {admit: R.Action}
-  children: R.Children
+  children: E.Children
 def view(s: State, panel: String) -> View:
-  {title: "A room", prose: if s.open then "There is room for company. Ask to enter or put something down." else "This room is resting. Come back after it opens.", actions: {admit: {visible: false, text: "Enter with a plan", command: "admit", input: {}}}, children: R.Children.nil()}
+  {title: "A room", prose: if s.open then "There is room for company. Ask to enter or put something down." else "This room is resting. Come back after it opens.", actions: {admit: {visible: false, text: "Enter with a plan", command: "admit", input: {}}}, children: E.Children.nil()}

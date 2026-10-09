@@ -58,7 +58,7 @@ def view(state: State, panel: String) -> View:
 class RequestsBinding(unittest.TestCase):
     def test_requests_bind_and_obsolete_string_names_refuse(self):
         modules = [{'name': name, 'source': (ROOT / 'world/lib/prelude' / (name + '.obend')).read_text()}
-                   for name in ('Preparation', 'Encounter')]
+                   for name in ('List', 'Preparation', 'Encounter')]
         result = adapter.lower_data_modules(modules + [{'name': 'Main', 'source': SOURCE}])
         self.assertIn('viewProgram', result)
         with self.assertRaisesRegex(ValueError, 'invitation observations'):

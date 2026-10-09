@@ -3,8 +3,9 @@
 `Conversation.obend` is a reusable Bend intention: selected offer, partial bindings,
 unanswered questions, attributed contributions and retained outcomes. A literal
 field, an interpreted utterance and a source cell contribute to that same value.
-The account notebook consumes it in place; its existing `record {source, result}`
-method remains the receiving endpoint for the native REPL.
+The account notebook consumes it in place. Its ordinary `note {thought}` offer
+needs one field; `record {source, result}` remains the receiving endpoint for the
+native REPL. Recorded result text alone does not prove execution.
 
 `Document.obend` supplies nine pure constructors: text, sequence, quote, reference,
 offer, fields, source, result and continuation. Templates return these values.
@@ -23,12 +24,16 @@ explicit context, proposed bindings and unresolved names. Source rechecks the
 capture and policy, validates fields, recomputes remaining questions and stamps
 the contribution with authenticated `Abi.Context.principal`. A model cannot choose
 that actor. Context in a proposal is retained evidence, not a permission to read it.
-The `retain` method accepts the shared JSON Value codec and source-validates the
-complete envelope before decoding it.
+The `retain` method accepts `C.Interpretation` directly through the explicit native
+DataWire codec. Native type checking rejects missing, extra, and mistyped members;
+source checks policy, capture, interpretation bounds and heterogeneous form values.
+There is no second dynamic decoder for the interpretation envelope.
 
-The optional view `interpretation {request, prepare}` names source exports.
+The optional view `interpretation {request, prepare, contributionCodec}` names source exports.
 `interpretationRequest` produces a bounded provider job plus a provenance envelope.
-`prepareInterpretation` checks the retained request and raw reply, then proposes
+`prepareInterpretation` receives a typed `{request: C.Interpretation, reply: P.Value}`
+record. Only the genuinely heterogeneous model reply is dynamic. It checks the
+retained request and raw reply, then proposes
 one ordinary `retain` invocation. It does not execute the proposed domain action.
 The literal route uses no service. The provider activity and its result are retained
 by the physical service adapter; refresh only renders their retained values.

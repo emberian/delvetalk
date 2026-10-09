@@ -1,0 +1,31 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Encounter.obend as E
+import ./Notebook.obend as N
+record Checks:
+  offered: Bool
+  invented: Bool
+  demonstration: Bool
+  missingObservation: Bool
+  capturedObservation: Bool
+  wrongRecipient: Bool
+  completionNeedsOrigin: Bool
+  actualCompletion: Bool
+def initial() -> N.State:
+  N.configured("new-notebook", "Lend a lantern", E.Children.cons({head: {key: "lamp", label: "Blue lantern", object: "lantern:blue", panel: "main"}, tail: E.Children.nil()}))
+def literal() -> Abi.Context:
+  {object: "new-notebook", principal: "iris", inputOrigin: {kind: "literal", object: "", command: "", immediatelyPrevious: false}}
+def answered(target: String) -> N.Decision:
+  N.answer(initial(), {original: "Lend it to moss", target: target, recipient: "moss"}, literal())
+def ready(value: P.Preparation) -> Bool:
+  match value:
+    case ready(_): true
+    case question(_): false
+    case refused(_): false
+def checks() -> Checks:
+  let accepted = answered("lantern:blue")
+  let completion = {object: "lantern:blue", recipient: "moss"}
+  let observed = P.Observations.cons({head: {object: "lantern:blue", version: 0n, program: "captured", state: P.Value.none(), law: P.Value.none()}, tail: P.Observations.nil()})
+  let malformed = extend(accepted.state, {conversation: extend(accepted.state.conversation, {bindings: P.Fields.cons({head: {name: "target", value: P.Value.text({value: "lantern:blue"})}, tail: P.Fields.cons({head: {name: "recipient", value: P.Value.natural({value: 0n})}, tail: P.Fields.nil()})})})})
+  {offered: accepted.accepted, invented: answered("lantern:invented").accepted == false, demonstration: answered("moth:amber").accepted == false, missingObservation: ready(N.prepareResolve(accepted.state, P.Value.none(), P.Observations.nil(), {object: "new-notebook", principal: "iris"})) == false, capturedObservation: ready(N.prepareResolve(accepted.state, P.Value.none(), observed, {object: "new-notebook", principal: "iris"})), wrongRecipient: ready(N.prepareResolve(malformed, P.Value.none(), observed, {object: "new-notebook", principal: "iris"})) == false, completionNeedsOrigin: N.resolve(accepted.state, completion, literal()).accepted == false, actualCompletion: N.resolve(accepted.state, completion, extend(literal(), {inputOrigin: {kind: "invoke", object: "lantern:blue", command: "lend", immediatelyPrevious: true}})).accepted}

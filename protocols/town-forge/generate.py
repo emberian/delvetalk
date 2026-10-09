@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import source_object
 import translate
 
-SPELL_SYNTAX = 'objective-bend-spell@1'
+SPELL_SYNTAX = 'objective-bend-object'
 _spec = importlib.util.spec_from_file_location('forge_source_desk', ROOT / 'protocols/source-desk/package.py')
 source_desks = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(source_desks)
@@ -24,7 +24,7 @@ def principals(values):
 
 
 def scoped(invoke, reprogram=(), managers=()):
-    return {'profile': 'delvetalk-scoped-law-v1', 'invoke': invoke,
+    return {'profile': 'delvetalk-scoped-law', 'invoke': invoke,
             'reprogram': list(reprogram), 'law': list(managers)}
 
 
@@ -55,16 +55,17 @@ def source_desk():
     return source_desks.candidate()
 
 
-def object_factory(child, visitors, methods, *, managers=()):
+def object_factory(child, visitors, methods, *, managers=(), read="public"):
     modules = source_object.read_modules([
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
         ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
         ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Factory', ROOT / 'protocols/editor/Factory.obend'),
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
         ('ObjectFactory', HERE / 'ObjectFactory.obend')])
-    config = {'child': child, 'visitors': principals(visitors), 'methods': principals(methods), 'managers': list(managers)}
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+    config = {'child': child, 'visitors': principals(visitors), 'methods': principals(methods), 'managers': list(managers), 'read': read}
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.value(config)])
 
 
@@ -76,7 +77,7 @@ def build(visitors, compiler):
 
 def build_stateful(visitors, compiler, *, methods, initial_program=None):
     if initial_program is None:
-        initial_program = translate.translate('objective-bend-spell@2',
+        initial_program = translate.translate('objective-bend-object',
             (ROOT / 'protocols/stateful-workshop/Instrument.obend').read_bytes())['lowered']
     return {'objects': object_factory(initial_program, visitors, methods),
             'desks': source_desks.factory(compiler, visitors),

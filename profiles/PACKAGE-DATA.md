@@ -50,3 +50,16 @@ Schema equality establishes neither behavior compatibility nor admission rights.
 
 [Implementation](../spec/Delvetalk/PackageData.lean) ·
 [native tests](../conformance/test_package_collections.py)
+
+## Pure sessions
+
+The package CLI accepts successive JSON lines and flushes each reply. The account
+REPL reuses one bounded native process on its existing serial worker. Every request
+still compiles or verifies its exact artifact; no result or authority cache exists.
+Runtime changes restart the process. Deadline, framing or output failure kills it;
+only a later explicit call starts a fresh process. World admission and durable
+Notebook retries remain separate. Linux uses the shared finite address-space
+ceiling; each exchange has a wall deadline, not a cumulative lifetime CPU quota.
+
+[Transport tests](../conformance/test_package_session.py) ·
+[REPL/gallery benchmark](../conformance/bench_package_session.py)

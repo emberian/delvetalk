@@ -10,7 +10,6 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'scripts'))
 from syntaxes import obend_object, spell_examples
 from scene import projection
-from conformance.test_document_conversation import plain, rows
 from conformance.test_garden_source import protocol as garden_protocol, plantings
 from conformance.test_town_cards import ISSUER
 import portal
@@ -25,7 +24,7 @@ import world
 def modules():
     return [{'name': name, 'source': (ROOT / path).read_text()} for name, path in [
         ('Abi', 'world/lib/prelude/Abi.obend'),
-        ('Preparation', 'world/lib/prelude/Preparation.obend'),
+        ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'),
         ('Encounter', 'world/lib/prelude/Encounter.obend'),
         ('Document', 'world/lib/document/Document.obend'),
         ('Directory', 'protocols/root-directory/Directory.obend'),
@@ -114,6 +113,8 @@ class RootDirectory(unittest.TestCase):
         self.assertEqual(self.root(), before)
         self.invoke('setDoor', door('observatory', description='A revised welcome.'))
         self.assertIn('A revised welcome.', projection.project(self.root(), 'root')['data']['prose'])
+        self.invoke('setDoor', door('studio', target='', available=False, show=True))
+        self.assertIn('STUDIO', projection.project(self.root(), 'root')['data']['prose'])
 
     def test_exact_selected_target_current_law_and_retained_retry(self):
         self.invoke('setDoor', door())

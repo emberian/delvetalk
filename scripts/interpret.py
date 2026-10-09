@@ -37,6 +37,30 @@ def loads(raw):
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid)
 
 
+
+class ProviderReplyError(ValueError):
+    """A retained provider result cannot be decoded as a proposal frame."""
+    status = 'provider-error'
+
+
+def decode_reply(text):
+    """Accept one bounded JSON value, bare or in one complete JSON fence.
+
+    A fence is transport decoration, not a search instruction: surrounding prose,
+    alternative languages, multiple fences and duplicate members are refused.
+    """
+    try:
+        string(text, MAX_REPLY, nonempty=True)
+        payload = text.strip()
+        if payload.startswith('```'):
+            lines = payload.split('\n')
+            if len(lines) < 3 or lines[0].removesuffix('\r') not in ('```', '```json') or lines[-1] != '```':
+                raise ValueError('incomplete or unsupported JSON fence')
+            payload = '\n'.join(lines[1:-1])
+        return loads(payload)
+    except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError) as exc:
+        raise ProviderReplyError('The retained model reply is not one complete JSON proposal. Inspect the saved response or submit a revised contribution; replay does not call the provider again.') from exc
+
 def encoded(value, maximum):
     raw = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf-8')
     if len(raw) > maximum:
@@ -89,7 +113,7 @@ def outcome(status, message, via):
 def modules():
     import source_object
     return source_object.read_modules([
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
         ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Document', ROOT / 'world/lib/document/Document.obend'),
         ('Interpretation', ROOT / 'protocols/interpretation/Interpretation.obend')])
@@ -164,6 +188,12 @@ def interpret(text, card, *, proposer=None):
                 'context': [{'object': captured['object'], 'card': captured['card']}],
                 'request': receipt['key'], 'source': receipt['job']['source']}
         return result
+    except ProviderReplyError as error:
+        result = outcome(error.status, str(error), 'model')
+        receipt = getattr(proposer, 'last_receipt', None)
+        if isinstance(receipt, dict):
+            result['request'] = receipt['key']
+        return result
     except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, OverflowError):
         return outcome('clarify', 'Provide a bounded public capture and valid contribution.', 'none')
     except Exception:
@@ -213,11 +243,13 @@ class AnthropicProposer:
         if receipt['status'] != 'received':
             raise RuntimeError('retained provider activity is pending or uncertain')
         message = receipt['reply']
+        if not isinstance(message, dict):
+            raise ProviderReplyError('The retained provider response is not a Messages result. Inspect the saved response before submitting another contribution.')
         content = message.get('content')
         if (message.get('stop_reason') != 'end_turn' or not isinstance(content, list) or len(content) != 1
                 or not isinstance(content[0], dict) or content[0].get('type') != 'text'):
-            raise ValueError('provider did not return one complete text result')
-        return loads(content[0]['text'])
+            raise ProviderReplyError('The retained provider response is incomplete or is not one text result. Inspect the saved response or submit a revised contribution; replay does not call the provider again.')
+        return decode_reply(content[0].get('text'))
 
 
 def main():
@@ -242,7 +274,7 @@ def main():
     except (ValueError, TypeError, OSError, RecursionError):
         result = outcome('clarify', 'Provide a valid public card; optional language help requires an explicitly configured API key.', 'none')
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))
-    return {'proposed': 0, 'partial': 2, 'clarify': 2, 'escalate': 3}[result['status']]
+    return {'proposed': 0, 'partial': 2, 'clarify': 2, 'escalate': 3, 'provider-error': 3}[result['status']]
 
 
 if __name__ == '__main__':

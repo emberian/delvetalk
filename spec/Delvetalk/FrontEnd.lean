@@ -3,6 +3,7 @@ adds only document literal expansion and a hygienic import of the already
 selected Document dependency; checking and evaluation remain ordinary Bend. -/
 import Compiler.ObjectiveBendFrontEnd
 import Delvetalk.DocumentTemplate
+import Delvetalk.Generics
 
 namespace Delvetalk.FrontEnd
 open Lean
@@ -51,11 +52,21 @@ def parseSource (name source : String) : Except Diagnostic Json := do
 
 /-- The normal typed frontend on hosted parsed modules. Original source hashes
 and the exact derived import transcript travel through the existing check. -/
+def lowerWithInstances (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
+    (args projections limits : Json) (mode : String) : Except Diagnostic (Lowering × Json) := do
+  discard <| options projections limits mode
+  let sources ← modules.mapM fun module => do
+    let ast ← parseSource module.name module.source
+    checkImports module ast
+    return Generics.Source.mk module ast
+  let specialized ← (Generics.run sources.toArray).mapError fun message =>
+    { stage := "source-specialization", message }
+  let lowered ← (lowerDecoded modules specialized.modules entryModule entryDefinition args projections limits mode).mapError fun diagnostic =>
+    { diagnostic with message := diagnostic.message ++ (if specialized.instances == Json.arr #[] then "" else "; selected generic instances: " ++ specialized.instances.compress) }
+  return (lowered, specialized.instances)
+
 def lower (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
     (args projections limits : Json) (mode : String) : Except Diagnostic Lowering := do
-  discard <| options projections limits mode
-  let decoded ← modules.mapM fun module => do
-    checkParsed module (← parseSource module.name module.source)
-  lowerDecoded modules decoded entryModule entryDefinition args projections limits mode
+  return (← lowerWithInstances modules entryModule entryDefinition args projections limits mode).1
 
 end Delvetalk.FrontEnd

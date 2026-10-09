@@ -1,0 +1,30 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+
+# Contract meaning is chosen here; the compiler supplies exact source and metadata.
+def text(value: String) -> P.Value:
+  P.Value.text({value: value})
+def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def replaced(fields: P.Fields, name: String, value: P.Value) -> P.Fields:
+  match fields:
+    case nil(_): pair(name, value, P.Fields.nil())
+    case cons(c): if c.head.name == name then pair(name, value, c.tail) else P.Fields.cons({head: c.head, tail: replaced(c.tail, name, value)})
+def install(law: P.Value, contract: P.Value) -> P.Value:
+  match law:
+    case record(r): P.Value.record({fields: replaced(replaced(r.fields, "profile", text("delvetalk-scoped-law")), "contract", contract)})
+    case retained(_): P.Value.none()
+    case none(_): P.Value.none()
+    case boolean(_): P.Value.none()
+    case natural(_): P.Value.none()
+    case number(_): P.Value.none()
+    case text(_): P.Value.none()
+    case array(_): P.Value.none()
+def prepare(status: String, target: String, program: P.Value, syntax: String, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let captured: P.Observation = P.observation(observations, target)
+  let profile: String = P.text(P.get(captured.law, "profile"))
+  let table: P.Value = P.get(P.get(program, "sourcePackages"), "resident")
+  let entry: String = P.text(P.get(contribution, "entry"))
+  let package: P.Value = P.Value.record({fields: pair("modules", P.get(table, "modules"), pair("entry", text(entry), P.Fields.nil()))})
+  let contract: P.Value = P.Value.record({fields: pair("profile", text("delvetalk-source-contract-v1"), pair("package", package, pair("stateProfile", text("model"), pair("metadata", P.get(contribution, "metadata"), P.Fields.nil()))))})
+  if status != "ready" then P.Preparation.refused({message: "Check this candidate before installing its promise."}) else if target == "" || target == context.object then P.Preparation.refused({message: "The contract requires a distinct governed target."}) else if captured.object != target then P.Preparation.refused({message: "Capture the governed target and its current law."}) else if profile != "delvetalk-scoped-law" then P.Preparation.refused({message: "Contract installation requires an explicit scoped law."}) else if syntax != "objective-bend-object" then P.Preparation.refused({message: "A source promise requires an Objective Bend package."}) else if P.text(P.get(table, "format")) != "delvetalk-source-package-table-v1" then P.Preparation.refused({message: "The checked candidate must retain its source package."}) else if entry == "" then P.Preparation.refused({message: "Name the specification export."}) else P.Preparation.ready({summary: "Install this checked source promise under the captured current law.", reads: P.Reads.cons({head: P.Read.existing({object: context.object}), tail: P.Reads.cons({head: P.Read.existing({object: target}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: context.object, command: "adopt", input: P.oneField("target", text(target))}), tail: P.Effects.cons({head: P.Effect.law({object: target, law: install(captured.law, contract)}), tail: P.Effects.nil()})})})

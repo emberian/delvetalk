@@ -92,13 +92,13 @@ def protocol_shape(value):
     for command in value['commands'].values():
         if (isinstance(command, dict) and isinstance(command.get('transition'), dict)
                 and command['transition'].get('profile') in (
-                    'delvetalk-source-transition-v1', 'delvetalk-source-transition-v2',
+                    'delvetalk-source-transition', 'delvetalk-source-transition-v1', 'delvetalk-source-transition-v2',
                     'delvetalk-source-data-transition-v1',
                     'delvetalk-source-effects-v1', 'delvetalk-source-receive-v1',
                     'delvetalk-source-data-effects-v1', 'delvetalk-source-data-receive-v1')):
             fields = set(command['transition'])
             if (set(command) != {'transition'} or not {'profile', 'package'} <= fields
-                    or not fields <= {'profile', 'package', 'inputCodec', 'resultCodec'}):
+                    or not fields <= {'profile', 'package', 'inputCodec', 'resultCodec', 'messages'}):
                 raise ValueError('source transition requires an exclusive profile/package descriptor with optional codecs')
             continue  # Lean validates the package, source, typed call and decision.
         if not isinstance(command, dict) or not isinstance(command.get('require'), list) or not isinstance(command.get('set'), dict) or 'result' not in command or not isinstance(command.get('outbox'), list):

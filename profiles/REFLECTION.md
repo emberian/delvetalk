@@ -2,7 +2,7 @@
 
 Compile an entry returning `Specification<T>`, then send the compiled artifact to
 `delvetalk-obend` with `op:"inspect-spec-v1"`. The receiver replays its exact source,
-checks the entry, applies Mini's `metadata` observer, checks that wrapped expression,
+checks the entry, applies the edition's `metadata` observer, checks that wrapped expression,
 and evaluates its `SpecMeta` through the bounded typed-data route. The response
 retains the source and packet hashes, entry, typed metadata and execution costs.
 
@@ -36,9 +36,9 @@ this route does not add a source-language JSON parser or closure-code introspect
 
 ## Reusable typed prototypes
 
-The pinned frontend parses and lowers `prototype`, `reflect`, `metadata`, and
-`targetOf`; the core checker and machine implement them. DelveTalk's explicit
-frontend compatibility repair also supports `Prototype<S,T>` parameters, returns
+The DelveTalk frontend parses and lowers `prototype`, `reflect`, `metadata`, and
+`targetOf`; the core checker and machine implement them. The
+frontend also supports `Prototype<S,T>` parameters, returns
 and inferred local bindings. `reflect` returns `S`; `targetOf` returns `T`.
 The two components are checked independently, as with the existing raw core pair.
 
@@ -48,11 +48,11 @@ without forcing its unfinished target. It also uses `extend` after a `let` and
 inside open Self/Super layers; synthesized extension types retain abstract row tails.
 Prototypes remain executable values, not serializable package data.
 
-The repair is recorded as exact reversible edits in `spec/upstream.json`, tied to
-the original upstream Git commit and SHA-256. `scripts/check_source_pins.py` reconstructs
-and verifies those original bytes without retaining a duplicate archive. Core rules
-and the checker are unchanged. A provenance-establishing constructor or reflective
-`self` inside the recursive knot remains a separate design.
+The frontend and checker are maintained as ordinary local source under
+`spec/bend/`. [Mini origin](../spec/bend/origin.json) records the upstream baseline;
+local repairs do not require replacement patches or upstream byte equality.
+Runtime custody binds the actual local source and executable. A provenance-establishing
+constructor or reflective `self` inside the recursive knot remains a separate design.
 
 [Native tests](../conformance/test_reflection.py) ·
 [observer](../spec/Delvetalk/Reflection.lean)

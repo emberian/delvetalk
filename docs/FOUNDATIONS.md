@@ -1,10 +1,10 @@
 # Specifications construct targets; hosts admit actions
 
-**Specifications build values; host law admits actions.** The construction model is documented in [LTUO archive `d7ddf53`](https://github.com/emberian/fareoo-archive/tree/d7ddf53fbdb818377b75c3d2bfafd14a072a0051), with [capture provenance](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/manifest.json), and [Mini `dcab86da`](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83). The pinned source defines the reused language, not DelveTalk’s object host; see [source scope](../spec/README.md).
+**Specifications build values; host law admits actions.** The construction model is documented in [LTUO archive `d7ddf53`](https://github.com/emberian/fareoo-archive/tree/d7ddf53fbdb818377b75c3d2bfafd14a072a0051), with [capture provenance](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/manifest.json), and [Mini `dcab86da`](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83). Mini supplies the language baseline; DelveTalk maintains its own edition and object host; see [source scope](../spec/README.md).
 
 ## Construction
 
-A specification partially describes a computation. Closing dependencies produces its target, which may be a record, function, scalar or type descriptor. Final `self` differs from inherited `super` ([LTUO §2.3.1](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/ltuo-readable.txt#L1205-L1211)). Mini uses:
+A specification partially describes a computation. Closing dependencies produces its target, which may be a record, function, scalar or type descriptor. Final `self` differs from inherited `super` ([LTUO §2.3.1](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/ltuo-readable.txt#L1205-L1211)). The Bend edition uses:
 
 ```text
 E : Self → Inherited → Provided

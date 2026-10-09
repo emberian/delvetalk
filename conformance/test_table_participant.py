@@ -113,14 +113,14 @@ class TableParticipant(unittest.TestCase):
 
     def test_fields_and_authority_remain_separate(self):
         forged = self.player(0, 'bob', self.base / 'forged')
-        card = forged.observe()
+        card = self.players[0].observe()
         for fields in ({'source': True, 'target': 9}, {'source': 0, 'target': 121},
                        {'source': 0, 'target': 5, 'principal': 'alice'}):
             with self.assertRaises(ValueError):
-                forged.prepare(card['card'], 'commit', fields, 'bad-fields')
-        sealed = forged.prepare(card['card'], 'commit', {'source': 0, 'target': 5}, 'wrong-seat')
-        reply = forged.send(sealed['prepared'])
-        self.assertEqual(reply['kind'], 'refused')
+                self.players[0].prepare(card['card'], 'commit', fields, 'bad-fields')
+        forbidden = forged.observe()
+        self.assertEqual(forbidden['actions'], [])
+        self.assertIn('does not hold this seat', forbidden['prose'])
         self.assertEqual(self.players[0].observe()['actions'][0]['id'], 'commit')
         with self.assertRaisesRegex(ValueError, 'custody differs'):
             self.player(0, 'bob')
@@ -187,7 +187,7 @@ class TableParticipant(unittest.TestCase):
         manifest = journey.bootstrap.loads((directory / 'manifest.json').read_bytes())
         host = journey.bootstrap.desk_module.Desk(directory / 'world.json', directory / 'artifacts', profile='compiled')
         target = manifest['table']
-        program = p.table.protocol(target)
+        program = p.table.protocol(target, *self.seats)
         journey.bootstrap.preserve_lowering(directory, p.canonical(program))
         before = journey.bootstrap.inspect_view(directory)
         self.assertEqual(host.exchange({'op': 'reprogram', 'object': target,
@@ -206,7 +206,7 @@ class TableParticipant(unittest.TestCase):
                 self.act(seat, 'reveal', {}, f'round-{number}-reveal-{seat}')
             self.act(0, 'resolve', {}, f'round-{number}-resolve')
         final = host.inspect(target)
-        self.assertEqual(final['state']['game']['winner'], 1)
+        self.assertEqual(p.client.state(final)['game']['winner'], 1)
         self.assertEqual(self.players[0].observe()['actions'], [])
         self.assertIn('game has finished', self.players[0].observe()['prose'])
         self.assertEqual(journey.bootstrap.inspect_view(directory), before)

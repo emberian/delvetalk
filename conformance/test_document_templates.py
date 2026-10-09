@@ -40,7 +40,7 @@ def records(value):
 
 
 def modules():
-    files = [('Preparation', 'world/lib/prelude/Preparation.obend'),
+    files = [('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'),
              ('Encounter', 'world/lib/prelude/Encounter.obend'),
              ('Document', 'world/lib/document/Document.obend'),
              ('Phrasebook', 'world/lib/document/templates/Phrasebook.obend')]
@@ -128,7 +128,8 @@ class DocumentTemplates(unittest.TestCase):
         expanded = call({'op': 'template-expand', 'source': package[-1]['source']})
         self.assertEqual(expanded.get('status'), 'expanded', expanded)
         self.assertNotIn('doc"""', expanded['source'])
-        self.assertIn('Document.concat(', expanded['source'])
+        self.assertIn('__document_template_0.concat(', expanded['source'])
+        self.assertIn('import ./Document.obend as __document_template_0', expanded['source'])
         package[-1]['source'] = expanded['source']
         compiled = call({'op': 'compile', 'modules': package, 'entry': 'plain'})
         self.assertEqual(compiled.get('status'), 'compiled', compiled)
@@ -154,6 +155,64 @@ class DocumentTemplates(unittest.TestCase):
         diagnostic = json.loads(reply['message'])
         self.assertEqual(diagnostic['span']['line'], 7, diagnostic)
         self.assertEqual(diagnostic['span']['start'], source.index('bad declaration'), diagnostic)
+
+    def test_aliases_and_lexical_shadowing_are_hygienic(self):
+        for declaration in ('import ./Document.obend as D', 'import D from "./Document.obend"'):
+            source = ('edition ObjectiveBend 1\n' + declaration + '\n'
+                      'def render(D: String, __document_template_0: String) -> D.Document:\n'
+                      '  let Document = "local"\n'
+                      '  doc"""  {{ D }} / {{ Document }} / {{ __document_template_0 }}\n🌙"""\n'
+                      'def entry() -> String:\n  D.plain(render("argument", "user binding"))\n')
+            package = modules()[:-1] + [{'name': 'Shadow', 'source': source}]
+            compiled = call({'op': 'compile', 'modules': package, 'entry': 'entry'})
+            self.assertEqual(compiled.get('status'), 'compiled', compiled)
+            self.assertEqual(compiled['artifact']['modules'][-1]['source'], source)
+            result = call({'op': 'run', 'artifact': compiled['artifact'], 'arguments': []})
+            self.assertEqual(result['value'], data('  argument / local / user binding\n🌙'))
+            expanded = call({'op': 'template-expand', 'source': source})
+            self.assertIn('import ./Document.obend as __document_template_1', expanded['source'])
+            package[-1]['source'] = expanded['source']
+            again = call({'op': 'compile', 'modules': package, 'entry': 'entry'})
+            self.assertEqual(again.get('status'), 'compiled', again)
+            self.assertEqual(call({'op': 'run', 'artifact': again['artifact'], 'arguments': []})['value'],
+                             result['value'])
+
+    def test_missing_or_misleading_dependency_has_clear_diagnostic(self):
+        for dependency in ('', 'import ./OtherDocument.obend as Document\n',
+                           'import ./other/Document.obend as D\n'):
+            source = ('edition ObjectiveBend 1\n' + dependency +
+                      'def entry() -> String:\n  doc"""literal"""\n')
+            package = modules()[:-1]
+            package[-1]['name'] = 'OtherDocument'
+            package.append({'name': 'Missing', 'source': source})
+            reply = call({'op': 'compile', 'modules': package, 'entry': 'entry'})
+            self.assertNotEqual(reply.get('status'), 'compiled', reply)
+            diagnostic = json.loads(reply['message'])
+            self.assertEqual(diagnostic['stage'], 'document-template', diagnostic)
+            self.assertIn('explicit import of ./Document.obend', diagnostic['message'])
+        source = 'edition ObjectiveBend 1\n# doc""" only a comment\ndef entry() -> String:\n  "no dependency"\n'
+        compiled = call({'op': 'compile', 'source': source, 'entry': 'entry'})
+        self.assertEqual(compiled.get('status'), 'compiled', compiled)
+
+    def test_many_occupied_generated_names(self):
+        count = 12000
+        occupied = ' '.join('__document_template_' + str(i) for i in range(count))
+        argument = '__document_template_' + str(count + 1)
+        literal = '__document_template_' + str(count)
+        source = ('edition ObjectiveBend 1\nimport ./Document.obend as D\n# ' + occupied + '\n'
+                  'def render(' + argument + ': String) -> D.Document:\n'
+                  '  doc"""{{ ' + argument + ' }}"""\n'
+                  'def entry() -> String:\n  D.plain(render("' + literal + '"))\n')
+        self.assertLess(len(source.encode()), 512 * 1024)
+        expanded = call({'op': 'template-expand', 'source': source})
+        self.assertEqual(expanded.get('status'), 'expanded', expanded)
+        self.assertTrue(expanded['source'].startswith(
+            'import ./Document.obend as __document_template_' + str(count + 2) + '\n'))
+        package = modules()[:-1] + [{'name': 'Occupied', 'source': source}]
+        compiled = call({'op': 'compile', 'modules': package, 'entry': 'entry'})
+        self.assertEqual(compiled.get('status'), 'compiled', compiled)
+        result = call({'op': 'run', 'artifact': compiled['artifact'], 'arguments': []})
+        self.assertEqual(result['value'], data(literal))
 
 
 if __name__ == '__main__':

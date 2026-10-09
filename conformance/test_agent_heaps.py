@@ -39,8 +39,10 @@ class AccountHeaps(unittest.TestCase):
             self.assertNotEqual(alice['world'], bob['world'])
             self.assertEqual(alice['head']['sequence'], 3)  # lineage, notebook, source desk
             card = manager.encounter(ALICE, 'private', 'notebook')
+            self.assertEqual(card['actions'][0]['label'], 'Keep a thought')
+            self.assertEqual([field['name'] for field in card['actions'][0]['fields']], ['thought'])
             draft = manager.prepare(ALICE, 'private', {'card': card['card'], 'action': card['actions'][0]['id'],
-                'fields': {'source': 'Alice secret', 'result': 'A private thought'}})
+                'fields': {'thought': 'Alice secret'}})
             receipt = manager.execute(ALICE, 'private', {'draft': draft['draft']})
             self.assertEqual(receipt['kind'], 'committed')
             self.assertEqual(manager.receipt(ALICE, 'private', draft['intent']), receipt['reply'])
@@ -64,7 +66,7 @@ class AccountHeaps(unittest.TestCase):
         def provider(body):
             calls.append(body)
             return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text':
-                '{"action":"record","fields":{"source":"Alice private thought","result":"not executed"}}'}]}
+                '```json\n{"action":"note","fields":{"thought":"Alice private thought"}}\n```'}]}
         with self.manager(model_provider=provider) as manager:
             card = manager.encounter(ALICE, 'private', 'notebook')
             original = {'card': card['card'], 'text': 'Keep my private thought.'}
@@ -76,6 +78,7 @@ class AccountHeaps(unittest.TestCase):
             saved = manager.reading(ALICE, 'private', 'interpretation', result['interpretation'])
             self.assertEqual(saved['input'], original)
             self.assertIn('sourceRequest', saved)
+            self.assertEqual(saved['sourceRequest']['envelope']['tag'], 'record')
             with self.assertRaises(ValueError):
                 manager.reading(BOB, 'private', 'interpretation', result['interpretation'])
             with self.assertRaises(ValueError):
@@ -99,7 +102,7 @@ class AccountHeaps(unittest.TestCase):
         with self.manager(model_provider=unavailable) as manager:
             card = manager.encounter(ALICE, 'private', 'notebook')
             action = card['actions'][0]
-            literal = {'card': card['card'], 'text': action['token'] + ' {"source":"a note","result":""}'}
+            literal = {'card': card['card'], 'text': action['token'] + ' {"thought":"a note"}'}
             routed = manager.interpretation(ALICE, 'private', literal)
             self.assertEqual(routed['status'], 'proposed', routed)
             self.assertEqual(calls, [])
@@ -112,6 +115,25 @@ class AccountHeaps(unittest.TestCase):
             saved = manager.reading(ALICE, 'private', 'interpretation', result['interpretation'])
             self.assertEqual(saved['providerReceipt']['status'], 'uncertain')
 
+    def test_malformed_provider_output_is_visible_and_recovered_without_clarification_loop(self):
+        calls = []
+        def malformed(body):
+            calls.append(body)
+            return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'Here is a proposal: {not-json}'}]}
+        with self.manager(model_provider=malformed) as manager:
+            card = manager.encounter(ALICE, 'private', 'notebook')
+            payload = {'card': card['card'], 'text': 'Keep this later.'}
+            result = manager.interpretation(ALICE, 'private', payload)
+            self.assertEqual(result['status'], 'provider-error', result)
+            self.assertNotIn('draft', result)
+            self.assertEqual(manager.interpretation(ALICE, 'private', payload), result)
+            saved = manager.reading(ALICE, 'private', 'interpretation', result['interpretation'])
+            self.assertEqual(saved['providerReceipt']['status'], 'received')
+            self.assertEqual(saved['providerReceipt']['reply']['content'][0]['text'], 'Here is a proposal: {not-json}')
+        with self.manager(model_provider=malformed) as restarted:
+            self.assertEqual(restarted.interpretation(ALICE, 'private', payload), result)
+        self.assertEqual(len(calls), 1)
+
     def test_encounter_quota_applies_to_completion_and_replacement(self):
         with self.manager(operation_bytes=128, max_entries=2) as manager:
             path = self.root / 'accounts' / 'test' / 'encounters' / 'private' / 'interpretations' / 'record.json'
@@ -121,6 +143,36 @@ class AccountHeaps(unittest.TestCase):
             self.assertEqual(world.wire_loads(path.read_bytes()), {'pending': True})
             manager._save_encounter(path, {'completion': 'small'})
             self.assertEqual(world.wire_loads(path.read_bytes()), {'completion': 'small'})
+
+    def test_original_seed_survives_interrupted_admission_and_template_change(self):
+        original = heaps.QuotaResident.exchange
+        interrupted = []
+        def lose_reply(receiver, request):
+            reply = original(receiver, request)
+            if request.get('intent') == heaps.RESERVED + 'notebook' and not interrupted:
+                interrupted.append(True)
+                raise TimeoutError('lost initial notebook reply')
+            return reply
+        seeds = [('notebook', self.shared_protocol), ('source-desk', self.shared_protocol)]
+        with self.manager() as manager:
+            with mock.patch.object(manager, '_seed_protocols', return_value=seeds), \
+                    mock.patch.object(heaps.QuotaResident, 'exchange', lose_reply):
+                with self.assertRaises(TimeoutError):
+                    manager.inspect(ALICE, 'private', 'notebook')
+            identity, key = manager._identity(ALICE)
+            path = manager.root / key / 'seed.json'
+            retained = world.wire_loads(path.read_bytes())
+            self.assertEqual(retained['identity'], ALICE)
+            self.assertEqual(retained['requests'][1]['protocol'], self.shared_protocol)
+        with self.manager() as restarted:
+            with mock.patch.object(restarted, '_seed_protocols', side_effect=AssertionError('new template consulted')):
+                notebook = restarted.inspect(ALICE, 'private', 'notebook')
+                candidate = restarted.inspect(ALICE, 'private', 'source-desk')
+            self.assertEqual(notebook['state'], {'n': 0})
+            self.assertEqual(notebook['law'], [ALICE['did']])
+            self.assertEqual(candidate['law'], [ALICE['did']])
+            self.assertEqual(world.wire_loads(path.read_bytes()), retained)
+            self.assertEqual(restarted._call(lambda: next(iter(restarted.active.values())).sequence), 3)
 
     def test_shared_native_law_account_namespace_and_no_principal_choice(self):
         with self.manager() as manager:
@@ -163,8 +215,8 @@ class AccountHeaps(unittest.TestCase):
         scenarios = '[{"name":"light","law":["visitor"],"steps":[{"principal":"visitor","command":"light","input":{},"root":"initial","kind":"committed","state":{"lit":true},"result":"A small sun for lost moths.","outbox":[]}]}]'
         with self.manager(timeout=20) as manager:
             candidate = manager.inspect(ALICE, 'private', 'source-desk')
-            target = manager.turn(ALICE, 'private', {'op': 'create', 'intent': 'target', 'object': 'lantern',
-                'protocol': self.shared_protocol, 'law': [ALICE['did']]})['data']['root']
+            manager.turn(ALICE, 'private', {'op': 'create', 'intent': 'target', 'object': 'lantern',
+                'protocol': self.shared_protocol, 'law': [ALICE['did']]})
             pending = manager.turn(ALICE, 'private', {'op': 'invoke', 'intent': 'submit', 'object': 'source-desk',
                 'expected': candidate, 'command': 'submit', 'input': {'proposal': {
                     'syntax': 'objective-bend-spell@2', 'source': source, 'scenarios': scenarios},
@@ -175,10 +227,12 @@ class AccountHeaps(unittest.TestCase):
             self.assertEqual(desk.candidate_state(ready)['status'], 'ready', desk.candidate_state(ready))
             with mock.patch.object(desk, 'bounded_compile', side_effect=AssertionError('recompiled')):
                 self.assertEqual(manager.check(ALICE, 'private', 'source-desk', 'check', pending), compiled)
-            request = desk.adoption.request('source-desk', 'lantern', ALICE['did'], 'adopt', ready, target)
-            request.pop('principal')
-            adopted = manager.turn(ALICE, 'private', request)
+            card = manager.encounter(ALICE, 'private', 'source-desk')
+            release = next(action for action in card['actions'] if action['label'] == 'Release this checked variation')
+            draft = manager.prepare(ALICE, 'private', {'card': card['card'], 'action': release['id'], 'fields': {}})
+            adopted = manager.execute(ALICE, 'private', {'draft': draft['draft']})['reply']
             self.assertEqual(adopted['kind'], 'committed', adopted)
+            self.assertEqual(manager.receipt(ALICE, 'private', draft['intent']), adopted)
             lantern = manager.inspect(ALICE, 'private', 'lantern')
             played = manager.turn(ALICE, 'private', {'op': 'invoke', 'object': 'lantern', 'intent': 'light',
                 'expected': lantern, 'command': 'light', 'input': {}})

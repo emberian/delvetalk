@@ -34,6 +34,13 @@ def text (value : Data) : Except String String :=
   match value with
   | .label s => if s.utf8ByteSize > 65536 then throw "preparation text capacity" else pure s
   | _ => throw "preparation requires String"
+-- Transported Value strings are data, not presentation or object names.
+-- The enclosing codec/preparation/execution frame retains its byte bound.
+def valueText (value : Data) : Except String String :=
+  match value with
+  | .label s => if s.utf8ByteSize > World.maxRequestBytes then
+      throw "preparation value text capacity" else pure s
+  | _ => throw "preparation requires String"
 def nat (value : Data) : Except String Nat :=
   match value with | .natural n => pure n | _ => throw "preparation requires Nat"
 -- Retained typed state may contain DataWire wrappers up to the admitted ceiling.
@@ -102,7 +109,7 @@ def decodeValueHeld (held : List (String × Json)) : Nat → Data → Work Json
       pure (toJson (← nat (← member payload "value")))
     | .variant "text" payload =>
       exact payload ["value"]
-      pure (.str (← text (← member payload "value")))
+      pure (.str (← valueText (← member payload "value")))
     | .variant "number" payload =>
       exact payload ["encoded"]
       let value ← Json.parse (← text (← member payload "encoded"))
@@ -144,6 +151,12 @@ def effect (held : List (String × Json)) (index : Nat) (value : Data) : Work Js
     let input ← decodeValueHeld held retainedValueDepth (← member payload "input")
     discard input.getObj?
     return obj (base ++ [("command", .str command), ("input", input)])
+  | "invokeData" =>
+    exact payload ["object", "command", "input"]
+    let command ← identity (← member payload "command")
+    -- This is already checked source Data, not a Value codec expression.
+    -- The receiving command checks its selected exported input type.
+    return obj (base ++ [("command", .str command), ("input", dataJson (← member payload "input"))])
   | "invokeResult" =>
     exact payload ["object", "command", "result"]
     let prior ← nat (← member payload "result")
@@ -221,17 +234,27 @@ def bind (owner : String) (ownerRoot : Json) (observations : List (String × Jso
   | _ => throw "unknown preparation result"
 
 def run (world request : Json)
-    (guard : String → Json → Except String Json := fun _ root => pure root) : Except String Json := do
+    (guard : String → Json → Except String Json := fun _ root => pure root)
+    (currentObjects : Option Json := none) : Except String Json := do
   let keys := (← pairs request).map Prod.fst
-  if keys.length != 8 || !keys.all (["op", "object", "root", "entry", "contribution", "observations", "principal", "intent"].contains) then
+  let required := ["op", "object", "root", "entry", "contribution", "observations", "principal", "intent"]
+  if keys.length != required.length + (if keys.contains "contributionCodec" then 1 else 0) ||
+      !(required.all keys.contains) || !keys.all (("contributionCodec" :: required).contains) then
     throw "prepare requires exact request fields"
+  let contributionCodec ← match (field request "contributionCodec").toOption with
+    | none => pure "value"
+    | some value => value.getStr?
+  if !(["value", "data"].contains contributionCodec) then throw "unknown preparation contribution codec"
+  if (FileCustody.encode (← field request "contribution")).utf8ByteSize > 65536 then
+    throw "authored contribution exceeds 64 KiB"
   let owner ← str request "object"
   let principal ← str request "principal"
   let intent ← str request "intent"
   if principal.isEmpty || intent.isEmpty then throw "preparation requires principal and intent"
   let root ← field request "root"
   let objects ← field world "objects"
-  if (← readObject objects owner principal) != root then throw "preparation owner root differs from captured inspection"
+  discard (readObject (currentObjects.getD objects) owner principal)
+  if (← field objects owner) != root then throw "preparation owner root differs from captured inspection"
   let protocol ← field root "protocol"
   let hook ← field protocol "preparation"
   if (← str hook "profile") != "delvetalk-source-preparation-v1" then throw "unsupported preparation profile"
@@ -249,7 +272,8 @@ def run (world request : Json)
     if keys.length != 4 || !keys.all (["object", "root", "inspectState", "inspectLaw"].contains) then throw "preparation observation requires exact fields"
     let id ← str observation "object"
     let observed ← field observation "root"
-    if (← readObject objects id principal) != observed then throw "preparation observation differs from captured inspection"
+    discard (readObject (currentObjects.getD objects) id principal)
+    if (← field objects id) != observed then throw "preparation observation differs from captured inspection"
     if sourceObservations.any (fun item => item.1 == id) then throw "duplicate preparation observation"
     sourceObservations := sourceObservations ++ [(id, observed, ← (← field observation "inspectState").getBool?, ← (← field observation "inspectLaw").getBool?)]
     if id == owner then
@@ -258,7 +282,9 @@ def run (world request : Json)
       if (observations.lookup id).isSome then throw "duplicate preparation observation"
       observations := observations ++ [(id, observed)]
   let ((args, captured), remaining) ← (do
-    let contribution ← encodeValue 64 (← field request "contribution")
+    let contribution ← if contributionCodec == "data" then
+      Delvetalk.PackageData.decode 256 (← field request "contribution")
+      else encodeValue 64 (← field request "contribution")
     let mut data := var "nil" []
     for (id, observed, inspectState, inspectLaw) in sourceObservations.reverse do
       spend
@@ -270,19 +296,22 @@ def run (world request : Json)
         ("program", .label (Messages.digest (← field observed "protocol"))),
         ("state", stateData), ("law", lawData)]
       data := var "cons" [("head", observation), ("tail", data)]
-    let state ← field (← field root "state") "model"
-    let args := #[state, dataJson contribution, dataJson data,
-      dataJson (rec [("object", .label owner), ("principal", .label principal)])]
-    pure (args, observations) : Work (Array Json × List (String × Json))).run 100000
+    let state ← ((Delvetalk.PackageData.decode 256 (← field (← field root "state") "model")).run 100000).map Prod.fst
+    let args := #[state, contribution, data,
+      rec [("object", .label owner), ("principal", .label principal)]]
+    pure (args, observations) : Work (Array Data × List (String × Json))).run 100000
   let artifact ← Delvetalk.Package.compile spec
-  let result ← Delvetalk.Package.executeDataPacket (← field artifact "packet") (.arr args)
+  let execution ← Delvetalk.Package.executeDataValues (← field artifact "packet") args
     (obj [("ticks", toJson remaining), ("heap", toJson (100000 : Nat)), ("stack", toJson (10000 : Nat)),
       ("nodes", toJson (100000 : Nat)), ("bytes", toJson (1048576 : Nat))])
-  if (← str result "status") != "finished" then throw ("source preparation refused: " ++ (← str result "failure"))
-  let used := (← (← field result "ticksUsed").getNat?) + (← (← field result "conversionNodes").getNat?)
+  let used := execution.usage.ticksUsed + execution.usage.conversionNodes
   if used >= remaining then throw "source preparation work capacity"
-  let (value, budget) ← (Delvetalk.PackageData.decode 256 (← field result "value")).run (remaining - used)
-  let (reply, _) ← (bind owner root captured principal intent value guard).run budget
+  -- Execution has already materialized and checked this Data. Keep it native
+  -- rather than encoding and decoding its own typed wire a second time.
+  let value ← match execution with
+    | .finished value _ _ _ => pure value
+    | .refused failure _ => throw ("source preparation refused: " ++ failure)
+  let (reply, _) ← (bind owner root captured principal intent value guard).run (remaining - used)
   return reply
 
 -- Pure physical codec for custody clients. This operation neither reads objects

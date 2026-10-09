@@ -49,12 +49,12 @@ class Resident:
     it reconstructs durable state and retries the exact retained attempt. A new
     Resident also reconstructs committed state before accepting any request.
 
-    Optional memory_bytes sets Linux RLIMIT_AS before exec (virtual address space,
+    memory_bytes defaults to the shared finite Linux native ceiling (virtual address space,
     not an RSS guarantee). Explicit limits on unsupported systems refuse startup.
     A killed receiver is an uncertain attempt, never a semantic refusal/success.
     This persistent process has no cumulative CPU quota; RPC wall time is bounded.
     """
-    def __init__(self, database, *, profile='compiled', timeout=30, use_checkpoint=True, memory_bytes=None):
+    def __init__(self, database, *, profile='compiled', timeout=30, use_checkpoint=True, memory_bytes=process_custody.NATIVE_MEMORY_BYTES):
         if profile not in world.PROFILES: raise ValueError('unknown resident profile')
         if not math.isfinite(timeout) or timeout <= 0: raise ValueError('resident timeout must be positive')
         if memory_bytes is not None:
@@ -62,6 +62,8 @@ class Resident:
                 raise ValueError('resident memory_bytes must be a positive integer')
             if not sys.platform.startswith('linux'):
                 raise ValueError('resident memory limit requires Linux RLIMIT_AS')
+        elif sys.platform.startswith('linux'):
+            raise ValueError('resident Linux launch requires a finite memory limit')
         self.memory_bytes = memory_bytes
         self.database = Path(database).resolve()
         self.database.parent.mkdir(parents=True, exist_ok=True)
@@ -177,15 +179,11 @@ class Resident:
         executable = ROOT / '.lake/build/bin' / world.PROFILES[self.profile][0]
         if not executable.is_file(): raise ValueError('prebuilt resident receiver required')
         self.errors = tempfile.TemporaryFile()
-        arguments = [str(executable), '--resident']
-        if self.memory_bytes is not None:
-            # The fresh interpreter sets limits before exec; no post-fork Python
-            # callback runs in the threaded account-heap parent's address space.
-            arguments = [sys.executable, '-c', process_custody.LAUNCH,
-                         json.dumps([None, self.memory_bytes, None]), *arguments]
+        arguments, environment = process_custody.native_launch(
+            [str(executable), '--resident'], memory_bytes=self.memory_bytes)
         self.process = subprocess.Popen(arguments, cwd=ROOT,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.errors, bufsize=0,
-            start_new_session=True, env={**os.environ, 'LEAN_NUM_THREADS': '1'})
+            start_new_session=True, env=environment)
         os.set_blocking(self.process.stdin.fileno(), False)
         os.set_blocking(self.process.stdout.fileno(), False)
         status = self._rpc({'op': 'status'})

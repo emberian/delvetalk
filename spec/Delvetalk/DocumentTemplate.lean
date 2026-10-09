@@ -1,6 +1,7 @@
 /- Hosted document literal sugar. No evaluator or new core forms: expansion uses
 the explicitly imported Document module and ordinary checked Bend expressions. -/
 import Lean
+import Std.Data.TreeSet
 namespace Delvetalk.DocumentTemplate
 open Lean
 set_option autoImplicit false
@@ -150,14 +151,31 @@ def scan (binding : String) : Nat → Bool → Scan (List Piece)
       let word := c.isAlphanum || c == '_'
       return ⟨c.toString, s.position, true⟩ :: (← scan binding fuel (!word))
 
-/-- A generated namespace cannot capture or be captured by any source binder.
-The candidate is absent even from string/comment text; this conservative test
-also keeps the inspection expansion safe when compiled as ordinary source. -/
+/-- Collect identifier-shaped runs once, including strings and comments
+conservatively. A balanced set bounds lookup without relying on hash behavior. -/
+def identifiers (source : String) : Std.TreeSet String := Id.run do
+  let mut names : Std.TreeSet String := {}
+  let mut reversed : List Char := []
+  for c in source.toList do
+    let word := ('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') ||
+      ('0' ≤ c && c ≤ '9') || c == '_'
+    if word then
+      reversed := c :: reversed
+    else if !reversed.isEmpty then
+      names := names.insert (String.ofList reversed.reverse)
+      reversed := []
+  if !reversed.isEmpty then names := names.insert (String.ofList reversed.reverse)
+  return names
+
+/-- A generated namespace cannot capture or be captured by a source binder.
+The source is scanned once; at most `names.size + 1` distinct candidate lookups
+find a fresh identifier. No candidate search rescans the source text. -/
 def freshBinding (source : String) : String := Id.run do
+  let names := identifiers source
   let mut index := 0
-  for _ in [0:source.length + 1] do
+  for _ in [0:names.size + 1] do
     let candidate := "__document_template_" ++ toString index
-    if (source.splitOn candidate).length == 1 then return candidate
+    if !names.contains candidate then return candidate
     index := index + 1
   return "__document_template_" ++ toString index
 

@@ -1,16 +1,9 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
 import ./ExhibitList.obend as Exhibits
 record State:
   entries: Exhibits.Entries
-record Origin:
-  kind: String
-  object: String
-  command: String
-  immediatelyPrevious: Bool
-record Context:
-  object: String
-  principal: String
-  inputOrigin: Origin
 record Witness:
   object: String
   version: Nat
@@ -29,47 +22,31 @@ record Decision:
   result: String
 def refused(state: State, reason: String) -> Decision:
   {accepted: false, reason: reason, state: state, result: ""}
-def add(state: State, input: Witness, context: Context) -> Decision:
+def add(state: State, input: Witness, context: Abi.Context) -> Decision:
   if context.inputOrigin.kind != "observe" || context.inputOrigin.command != "" || context.inputOrigin.immediatelyPrevious == false || context.inputOrigin.object != input.object then refused(state, "Observe this exhibit immediately before adding it.") else if Exhibits.contains(state.entries, input.object) then refused(state, "Already exhibited here.") else if Exhibits.length(state.entries) >= 32n then refused(state, "This exhibition is full.") else {accepted: true, reason: "", state: {entries: Exhibits.append(state.entries, {object: input.object, label: "New exhibit", addedBy: context.principal, observedVersion: input.version})}, result: "Exhibited here."}
-def caption(state: State, input: Caption, context: Context) -> Decision:
+def caption(state: State, input: Caption, context: Abi.Context) -> Decision:
   if Exhibits.contains(state.entries, input.object) == false then refused(state, "That exhibit is not here.") else if input.label == "" then refused(state, "Give the exhibit a label.") else {accepted: true, reason: "", state: {entries: Exhibits.caption(state.entries, input.object, input.label)}, result: "Exhibit label changed."}
-def remove(state: State, input: Named, context: Context) -> Decision:
+def remove(state: State, input: Named, context: Abi.Context) -> Decision:
   if Exhibits.contains(state.entries, input.object) == false then refused(state, "That exhibit is not here.") else {accepted: true, reason: "", state: {entries: Exhibits.remove(state.entries, input.object)}, result: "Removed from this exhibition."}
-def reorder(state: State, input: Reorder, context: Context) -> Decision:
+def reorder(state: State, input: Reorder, context: Abi.Context) -> Decision:
   if Exhibits.contains(state.entries, input.object) == false then refused(state, "That exhibit is not here.") else if input.before == input.object then refused(state, "Choose another exhibit to place it before.") else if input.before != "" && Exhibits.contains(state.entries, input.before) == false then refused(state, "The next exhibit is not here.") else {accepted: true, reason: "", state: {entries: Exhibits.reorder(state.entries, input.object, input.before)}, result: "Exhibition reordered."}
-record Child:
-  key: String
-  label: String
-  object: String
-  panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}
-def children(entries: Exhibits.Entries) -> Children:
+def children(entries: Exhibits.Entries) -> E.Children:
   match entries:
-    case nil(_): Children.nil()
-    case cons(c): Children.cons({head: {key: c.head.object, label: c.head.label, object: c.head.object, panel: "main"}, tail: children(c.tail)})
+    case nil(_): E.Children.nil()
+    case cons(c): E.Children.cons({head: {key: c.head.object, label: c.head.label, object: c.head.object, panel: "main"}, tail: children(c.tail)})
 
-record StringField:
-  type: String
-  minLength: Nat
-  maxLength: Nat
-record NatField:
-  type: String
-  minimum: Nat
-  maximum: Nat
 record AddMethod:
   label: String
-  fields: {object: StringField, version: NatField}
+  fields: {object: Abi.StringField, version: Abi.NatField}
 record CaptionMethod:
   label: String
-  fields: {object: StringField, label: StringField}
+  fields: {object: Abi.StringField, label: Abi.StringField}
 record RemoveMethod:
   label: String
-  fields: {object: StringField}
+  fields: {object: Abi.StringField}
 record ReorderMethod:
   label: String
-  fields: {object: StringField, before: StringField}
+  fields: {object: Abi.StringField, before: Abi.StringField}
 record Description:
   name: String
   initial: State
@@ -84,8 +61,8 @@ record View:
   title: String
   prose: String
   actions: {add: Action, caption: Action, remove: Action, reorder: Action}
-  children: Children
-def objectField() -> StringField:
+  children: E.Children
+def objectField() -> Abi.StringField:
   {type: "string", minLength: 1n, maxLength: 256n}
 def describe() -> Description:
   {name: "On display", initial: {entries: Exhibits.Entries.nil()}, methods: {add: {label: "Exhibit an observed object", fields: {object: objectField(), version: {type: "nat", minimum: 0n, maximum: 9007199254740991n}}}, caption: {label: "Label an exhibit", fields: {object: objectField(), label: {type: "string", minLength: 1n, maxLength: 128n}}}, remove: {label: "Remove an exhibit", fields: {object: objectField()}}, reorder: {label: "Reorder the exhibition", fields: {object: objectField(), before: {type: "string", minLength: 0n, maxLength: 256n}}}}, panels: {}}

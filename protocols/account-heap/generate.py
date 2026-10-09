@@ -8,7 +8,7 @@ import source_object
 
 def modules():
     paths = [('Abi', 'world/lib/prelude/Abi.obend'),
-             ('Preparation', 'world/lib/prelude/Preparation.obend'),
+             ('List', 'world/lib/prelude/List.obend'), ('Preparation', 'world/lib/prelude/Preparation.obend'),
              ('Encounter', 'world/lib/prelude/Encounter.obend'),
              ('Document', 'world/lib/document/Document.obend'),
              ('Conversation', 'protocols/conversation/Conversation.obend'),

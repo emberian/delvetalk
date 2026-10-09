@@ -42,16 +42,14 @@ def board(root):
                 else 'index ' + str(index) + ' (outside board)')
     for seat, name in enumerate(('North', 'South')):
         if view['revealed'][seat]:
-            source, target = (root['state'][key + str(seat)] for key in ('source', 'target'))
+            source, target = (client.state(root)[key + str(seat)] for key in ('source', 'target'))
             lines.append(name + ' opened: ' + coordinate(source) + ' to ' + coordinate(target))
     return '\n'.join(lines)
 
 
 def capture(root, object_id, book, alias=None):
-    if not client.same_game(root.get('protocol'), table.protocol(object_id)):
+    if not client.same_game(root.get('protocol'), object_id):
         raise ValueError('Companion requires the unchanged qualified two-player game')
-    if 'viewProgram' not in root['protocol']:
-        raise ValueError('Install the companion presentation before capturing a resident card')
     view = town_cards.projection.project(root, object_id, expected_runtime=book.metadata()['runtime'])
     saved = book.capture(view, alias)
     return {'card': saved['alias'], 'version': root['version'],

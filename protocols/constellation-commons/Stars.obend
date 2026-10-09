@@ -1,0 +1,31 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+record Star:
+  id: Nat
+  author: String
+  image: String
+  line: String
+  revision: Nat
+type Stars = Lists.List<Star>
+def blank() -> Star:
+  {id: 0, author: "", image: "", line: "", revision: 0}
+def empty() -> Stars:
+  Lists.List::<Star>.nil()
+def append(xs: Stars, star: Star) -> Stars:
+  Lists.append::<Star>(xs, star)
+def find(xs: Stars, id: Nat) -> Star:
+  match xs:
+    case nil(_): blank()
+    case cons(c): if c.head.id == id then c.head else find(c.tail, id)
+def replace(xs: Stars, star: Star) -> Stars:
+  Lists.map::<Star, Star>(xs, fn(old: Star) -> Star: if old.id == star.id then star else old)
+def words(value: String, maximum: Nat) -> Bool:
+  textLength(value) > 0 && textLength(value) <= maximum
+def caption(star: Star) -> String:
+  textConcat(natText(star.id), textConcat(". ", textConcat(star.image, textConcat(" — ", textConcat(star.author, textConcat(" · revision ", natText(star.revision)))))))
+def story(star: Star) -> String:
+  textConcat(caption(star), textConcat("\n", star.line))
+def sky(xs: Stars) -> String:
+  match xs:
+    case nil(_): ""
+    case cons(c): textConcat(story(c.head), textConcat("\n\n", sky(c.tail)))

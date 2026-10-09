@@ -88,10 +88,10 @@ class GuardedMovement(unittest.TestCase):
         reply = self.call(self.transaction())
         self.assertEqual(reply['kind'], 'committed', reply)
         self.assertEqual(reply['data']['results'][0]['description'], 'The paper door opens onto the shared garden.')
-        self.assertEqual(self.root('commons')['state']['locations']['moss'], 'garden')
+        self.assertEqual(commons.locations(self.root('commons'))['moss'], 'garden')
         self.assertEqual(self.root('door')['state']['approvals'], 1)
         self.invoke('commons', 'move', {'place': 'porch'})
-        self.assertEqual(self.root('commons')['state']['locations']['moss'], 'porch')
+        self.assertEqual(commons.locations(self.root('commons'))['moss'], 'porch')
         self.invoke('commons', 'move', {'place': 'garden'}, kind='refused')
 
     def test_explicit_input_cannot_forge_an_origin_even_after_successful_door(self):
@@ -180,8 +180,9 @@ class GuardedMovement(unittest.TestCase):
                       [{**GATE, 'authority': ['moss']}], [{**GATE, 'object': ''}]]:
             with self.assertRaises(ValueError):
                 commons.build(gates=gates)
-        # Existing default source remains byte-equivalent when no gates are authored.
-        self.assertEqual(commons.build(), json.loads((ROOT / 'protocols/commons/protocol.json').read_text()))
+        # Gates are configuration, never specialized generated control flow.
+        self.assertEqual(commons.build()['sourcePackages'],
+                         commons.build(gates=[GATE])['sourcePackages'])
 
     def test_origin_is_host_context_not_stored_input_and_older_data_remains_usable(self):
         self.create('probe', {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {

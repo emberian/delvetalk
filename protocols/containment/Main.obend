@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
 import ./Relations.obend as R
 record State:
   members: R.Members
@@ -21,9 +23,9 @@ def no(s: State, why: String) -> Decision:
   {accepted: false, reason: why, state: s, result: ""}
 def yes(s: State, m: R.Member) -> Decision:
   {accepted: true, reason: "", state: {members: R.put(s.members, m)}, result: "Relation changed."}
-def enroll(s: State, i: Witness, c: R.Context) -> Decision:
+def enroll(s: State, i: Witness, c: Abi.Context) -> Decision:
   if c.inputOrigin.kind != "observe" || c.inputOrigin.object != i.object || c.inputOrigin.immediatelyPrevious == false then no(s, "Observe this entity first.") else if R.get(s.members, i.object).object != "" || R.size(s.members) >= 32n then no(s, "Already enrolled or full.") else yes(s, R.member(i.object, c.principal, c.principal, "", "", "thing"))
-def act(s: State, i: Act, c: R.Context) -> Decision:
+def act(s: State, i: Act, c: Abi.Context) -> Decision:
   let m = R.get(s.members, i.object)
   let b = R.body(s.members, c.principal)
   if m.object == "" then no(s, "Unknown entity.") else if i.action == "inhabit" && m.role == "thing" && m.owner == c.principal && m.holder == c.principal && b.object == "" then yes(s, R.member(m.object, m.owner, "", "", "", "resident")) else if i.action == "room" && c.principal == "curator" && m.role == "thing" && m.owner == c.principal then yes(s, R.member(m.object, m.owner, "", "", "", "room")) else if m.role != "thing" then no(s, "This action needs a portable thing.") else if i.action == "offer" && m.owner == c.principal && m.holder == c.principal && R.body(s.members, i.to).object != "" then yes(s, R.member(m.object, m.owner, m.holder, m.place, i.to, m.role)) else if i.action == "cancel" && m.owner == c.principal then yes(s, R.member(m.object, m.owner, m.holder, m.place, "", m.role)) else if i.action == "accept" && m.offer == c.principal && b.place != "" && R.located(s.members, m) == b.place then yes(s, R.member(m.object, c.principal, c.principal, "", "", m.role)) else if i.action == "acquire" && m.owner == c.principal && m.holder == "" && b.place != "" && m.place == b.place then yes(s, R.member(m.object, m.owner, c.principal, "", "", m.role)) else no(s, "No consent or not together.")
@@ -36,25 +38,25 @@ record Planned:
   reason: String
   state: State
   result: R.Transfer
-def plan(s: State, i: Move, c: R.Context) -> Planned:
+def plan(s: State, i: Move, c: Abi.Context) -> Planned:
   let m = R.get(s.members, i.object)
   let allowed = movable(s, i.object, i.to, c.principal)
   {accepted: allowed, reason: if allowed then "" else "Cannot move or drop there.", state: s, result: {object: i.object, destination: i.to, previous: m.place, holder: m.holder, occupancy: R.occupancy(s.members, i.to), actor: c.principal}}
-def arrive(s: State, i: R.Transfer, c: R.Context) -> Decision:
+def arrive(s: State, i: R.Transfer, c: Abi.Context) -> Decision:
   let m = R.get(s.members, i.object)
   if R.follows(c, i.destination, "admit") == false || i.actor != c.principal || movable(s, i.object, i.destination, c.principal) == false || m.place != i.previous || m.holder != i.holder || R.occupancy(s.members, i.destination) != i.occupancy then no(s, "A fresh room admission is required.") else yes(s, R.member(m.object, m.owner, "", i.destination, "", m.role))
 record EnrollMethod:
   label: String
-  fields: {object: R.TextField, version: R.NatField}
+  fields: {object: Abi.StringField, version: Abi.NatField}
 record ActMethod:
   label: String
-  fields: {action: R.TextField, object: R.TextField, to: R.TextField}
+  fields: {action: Abi.StringField, object: Abi.StringField, to: Abi.StringField}
 record MoveMethod:
   label: String
-  fields: {object: R.TextField, to: R.TextField}
+  fields: {object: Abi.StringField, to: Abi.StringField}
 record ArriveMethod:
   label: String
-  fields: {object: R.TextField, destination: R.TextField, previous: R.TextField, holder: R.TextField, occupancy: R.NatField, actor: R.TextField}
+  fields: {object: Abi.StringField, destination: Abi.StringField, previous: Abi.StringField, holder: Abi.StringField, occupancy: Abi.NatField, actor: Abi.StringField}
 record Description:
   name: String
   initial: State
@@ -66,6 +68,6 @@ record View:
   title: String
   prose: String
   actions: {act: R.Action}
-  children: R.Children
+  children: E.Children
 def view(s: State, panel: String) -> View:
   {title: "Where we are", prose: "Acquire what is yours, offer a gift, or ask to move to another room. Carried things travel with their holder.", actions: {act: {visible: true, text: "Acquire, offer, accept or cancel", command: "act", input: {}}}, children: R.children(s.members)}

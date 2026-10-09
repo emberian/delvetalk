@@ -10,6 +10,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import desk
 import worker
+import process_custody
 
 ROOT = Path(__file__).resolve().parents[1]
 canonical, loads, digest = desk.canonical, desk.loads, desk.digest
@@ -64,7 +65,7 @@ def execute_job(path):
     material = desk.proposal_material(desk.candidate_state(inputs['expected'])['proposal'], client.artifact_store)[2]
     if 'sourceBindings' in job and canonical(material) != canonical(job['sourceBindings']):
         raise ValueError('queued source bindings changed')
-    if canonical(client.inspect(inputs['object'])) != canonical(inputs['expected']):
+    if canonical(client.inspect(inputs['object'], principal=inputs['principal'])) != canonical(inputs['expected']):
         raise ValueError('queued candidate changed; retain this job and enqueue a fresh intent')
 
     profile = desk.execution_profile(job['profile'])
@@ -90,7 +91,7 @@ def execute_job(path):
 
 
 class CompilerQueue:
-    def __init__(self, state, database, artifacts, *, profile='compiled', memory_mib=2048):
+    def __init__(self, state, database, artifacts, *, profile='compiled', memory_mib=process_custody.NATIVE_MEMORY_MIB):
         if profile not in desk.world.PROFILES:
             raise ValueError('unknown local host profile')
         if not 64 <= memory_mib <= 8192:
@@ -155,7 +156,7 @@ class CompilerQueue:
                 raise TimeoutError('compiler enqueue deadline reached')
             observed = worker.command([str(ROOT / 'scripts/desk.py'), '--database', str(self.database),
                                        '--artifacts', str(self.artifacts), '--profile', self.profile,
-                                       'inspect', '--object', object_id], remaining, self.memory_mib)
+                                       'inspect', '--object', object_id, '--principal', principal], remaining, self.memory_mib)
             if canonical(observed) != canonical(expected):
                 raise ValueError('queued candidate changed')
             if canonical(compiler_pins(self.profile, expected)) != canonical(runtime):
@@ -238,7 +239,7 @@ def main():
     parser.add_argument('--database', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--profile', choices=desk.world.PROFILES, default='compiled')
-    parser.add_argument('--memory-mib', type=int, default=2048)
+    parser.add_argument('--memory-mib', type=int, default=process_custody.NATIVE_MEMORY_MIB)
     commands = parser.add_subparsers(dest='op', required=True)
     enqueue = commands.add_parser('enqueue')
     for flag in ('object', 'principal', 'intent'):

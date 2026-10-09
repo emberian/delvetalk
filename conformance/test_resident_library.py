@@ -30,7 +30,7 @@ relay_module = module('resident_library_relay', 'scripts/message_relay.py')
 
 def prelude():
     return [{'name': key, 'source': (ROOT / 'world/lib/prelude' / (key + '.obend')).read_text()}
-            for key in ('Abi', 'Encounter')]
+            for key in ('List', 'Abi', 'Preparation', 'Encounter', 'Emissions')]
 
 
 def sources(name):
@@ -66,8 +66,8 @@ def notes(root):
 
 
 def policy(name, relay=True):
-    return {'profile': 'delvetalk-scoped-law-v1',
-            'invoke': {'configure': [name + '-keeper'], 'announce': [name + '-member'],
+    return {'profile': 'delvetalk-scoped-law',
+            'invoke': {'configure': [name + '-keeper'], 'selectPeer': [name + '-keeper'], 'announce': [name + '-member'],
                        'receive': ['relay'] if relay else [], 'acknowledge': [name + '-member']},
             'reprogram': ['builder'], 'law': ['steward']}
 
@@ -230,7 +230,7 @@ class ResidentLibrary(unittest.TestCase):
         self.deliver('circle', event)
         self.assertEqual(notes(self.root('circle'))[0]['author'], 'repair-member')
 
-    def test_four_slot_effect_contract_fanout_and_exact_target_program(self):
+    def test_bounded_emission_collection_fanout_and_exact_target_program(self):
         self.connect('repair', 'circle')
         self.configure('repair', 'circle', side='send', slot=2)
         self.configure('repair', 'repair', side='listen')
@@ -353,8 +353,8 @@ class ResidentLibrary(unittest.TestCase):
         # A separately authored sender deliberately omits this library's generation
         # guard. Its admitted events still carry authentic native source facts.
         source = (PACKAGE / 'OutsideEmitter.obend').read_text()
-        program = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'emit': {
-            'transition': {'profile': 'delvetalk-source-effects-v1', 'package': {
+        program = {'profile': 'delvetalk-local-v1', 'initial': {'model': {'tag': 'record', 'fields': []}}, 'commands': {'emit': {
+            'transition': {'profile': 'delvetalk-source-transition', 'messages': {'emit': True, 'receive': False}, 'package': {
                 'modules': prelude() + [{'name': 'Consent', 'source': (PACKAGE / 'Consent.obend').read_text()},
                             {'name': 'Outside', 'source': source}], 'entry': 'emit'}}}}}
         self.call({'op': 'create', 'object': 'outsider', 'principal': 'bootstrap',
@@ -416,6 +416,38 @@ class ResidentLibrary(unittest.TestCase):
         self.assertEqual(self.deliver('circle', stale)['data']['result'], 'declined-consent')
         self.deliver('circle', self.announce('neighbor-5')[0])
         self.assertEqual(notes(self.root('circle'))[0]['source'], 'neighbor-5')
+
+    def test_peer_enrollment_captures_observed_identity_without_a_hash_form(self):
+        portal = module('resident_library_portal', 'scripts/portal.py')
+        runtime = module('resident_library_runtime', 'scripts/runtime_profile.py')
+        portal.save(Path(self.temp.name) / 'manifest.json', {
+            'cafe': 'repair', 'runtime': {'name': 'compiled', 'files': runtime.file_hashes('compiled')}})
+        app = portal.Portal(Path(self.temp.name))
+        for source, peer, side in [('circle', 'repair', 'listen'), ('repair', 'circle', 'send')]:
+            self.invoke(source, 'selectPeer', {'side': side, 'slot': 1, 'enabled': True,
+                'object': peer, 'generation': 1}, principal=source + '-keeper')
+            card = app.object(source)
+            self.assertEqual(card['mode'], 'projection', card)
+            action = next(item for item in card['actions'] if item.get('offer') == 'configure')
+            self.assertEqual(action['fields'], [])
+            for offered in card['actions']:
+                self.assertNotIn('program', {field['name'] for field in offered.get('fields', [])})
+            request = app.captured_request(app._read('cards', card['card']), action['id'],
+                source + '-keeper', self.identity(), {})
+            self.assertEqual(set(request['reads']), {source, peer})
+            self.assertEqual(request['calls'][0]['input']['program'], self.digests[peer])
+            if side == 'listen':
+                # A captured peer remains an exact read, including its current law.
+                self.revise_grants(peer, relay=True)
+                self.call(request, 'refused')
+                card = app.object(source)
+                action = next(item for item in card['actions'] if item.get('offer') == 'configure')
+                request = app.captured_request(app._read('cards', card['card']), action['id'],
+                    source + '-keeper', self.identity(), {})
+            self.call(request)
+        event = self.announce('repair')[0]
+        self.deliver('circle', event)
+        self.assertEqual(notes(self.root('circle'))[-1]['source'], 'repair')
 
     def test_authored_examples_use_real_source_receiving(self):
         proposal = module('resident_library_proposal', 'scripts/propose.py')

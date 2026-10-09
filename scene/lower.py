@@ -19,6 +19,8 @@ SUPPORTED_PROFILES = (PROFILE, CURRENT_PROFILE)
 BIAS = 1 << 63
 MAX = (1 << 64) - 1
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import process_custody
 
 
 class LoweringError(ValueError):
@@ -339,8 +341,10 @@ def bridge(request):
     executable = ROOT / "scene/spween-bridge/target/debug/delvetalk-spween"
     if not executable.exists():
         raise LoweringError("build scene/spween-bridge with Cargo before parsing")
-    result = subprocess.run([str(executable)], input=json.dumps(request) + "\n", text=True,
-                            capture_output=True, check=True, timeout=30)
+    result = process_custody.run_native([str(executable)],
+        input=(json.dumps(request) + "\n").encode("utf-8"), timeout=30, cpu_seconds=30,
+        stdout_limit=8 * 1024 * 1024, stderr_limit=1024 * 1024)
+    result.check_returncode()
     return json.loads(result.stdout)
 
 

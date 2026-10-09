@@ -12,13 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import desk
 import runtime_profile
 import worker
+import process_custody
 
 ROOT = Path(__file__).resolve().parents[1]
 canonical, loads, digest, save = desk.canonical, desk.loads, desk.digest, worker.clerk.save
 
 
 class MessageRelay:
-    def __init__(self, state, database, principal, *, profile='compiled', memory_mib=2048):
+    def __init__(self, state, database, principal, *, profile='compiled', memory_mib=process_custody.NATIVE_MEMORY_MIB):
         if not isinstance(principal, str) or not principal or len(principal.encode()) > 256:
             raise ValueError('explicit local relay principal required')
         if profile != 'compiled' or type(memory_mib) is not int or not 64 <= memory_mib <= 8192:
@@ -30,7 +31,7 @@ class MessageRelay:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('message query deadline reached')
-        return desk.world.query(self.database, {'op': operation, 'principal': 'local-message-reader', **fields},
+        return desk.world.query(self.database, {'op': operation, 'principal': self.principal, **fields},
                                 profile=self.profile, timeout=remaining)
 
     def pins(self):
@@ -95,7 +96,7 @@ class MessageRelay:
                     break
                 path = self.event_path(identity)
                 entry = loads(path.read_bytes()) if path.exists() else {'attempts': [], 'tries': 0}
-                if entry.get('status') == 'consumed':
+                if entry.get('status') in ('consumed', 'settled'):
                     active.discard(identity)
                     save(progress_path, {'cursor': identity, 'active': sorted(active)})
                     continue
@@ -113,8 +114,8 @@ class MessageRelay:
                             timeout=max(0.001, deadline - time.monotonic()))
                         if retained is not None:
                             attempt['receipt'] = retained
-                    if event['status'] == 'consumed':
-                        entry.update(status='consumed', consumption=event.get('consumption'))
+                    if event['status'] in ('consumed', 'settled'):
+                        entry.update(status=event['status'], consumption=event.get('consumption'))
                     else:
                         evidence = event['evidence']
                         root = observed['root']
@@ -157,7 +158,7 @@ class MessageRelay:
                                 entry.update(status='consumed' if reply['kind'] == 'committed' else 'blocked',
                                              reason=reply.get('data') if reply['kind'] == 'refused' else None)
                     save(path, entry)
-                    if entry['status'] == 'consumed':
+                    if entry['status'] in ('consumed', 'settled'):
                         active.discard(identity)
                         save(progress_path, {'cursor': identity, 'active': sorted(active)})
                     report['processed'].append({'event': identity, 'status': entry['status']})
@@ -176,7 +177,7 @@ def main():
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--database', type=Path, required=True)
     parser.add_argument('--principal', required=True)
-    parser.add_argument('--memory-mib', type=int, default=2048)
+    parser.add_argument('--memory-mib', type=int, default=process_custody.NATIVE_MEMORY_MIB)
     commands = parser.add_subparsers(dest='operation', required=True)
     run = commands.add_parser('run')
     run.add_argument('--limit', type=int, default=16)

@@ -39,7 +39,8 @@
         "scene/spween-bridge/src/main.rs",
         "scene/spween-bridge/Cargo.toml",
         "scene/spween-bridge/Cargo.lock",
-        "scene/UPSTREAM.md"
+        "scene/UPSTREAM.md",
+        "scripts/process_custody.py"
       ]
     },
     "spween-scene-i64@1": {
@@ -57,7 +58,8 @@
         "scene/spween-bridge/Cargo.toml",
         "scene/spween-bridge/Cargo.lock",
         "scene/UPSTREAM.md",
-        "scene/lower.py"
+        "scene/lower.py",
+        "scripts/process_custody.py"
       ],
       "lowering_profile": "spween-scene-i64-v1"
     },
@@ -102,7 +104,8 @@
         "scene/spween-bridge/Cargo.toml",
         "scene/spween-bridge/Cargo.lock",
         "scene/UPSTREAM.md",
-        "scene/lower.py"
+        "scene/lower.py",
+        "scripts/process_custody.py"
       ],
       "lowering_profile": "spween-scene-i64-v2"
     },
@@ -122,7 +125,8 @@
         ".lake/build/bin/delvetalk-obend",
         "scripts/source_packages.py",
         "world/lib/prelude/Preparation.obend",
-        "world/lib/prelude/Allocation.obend"
+        "world/lib/prelude/Allocation.obend",
+        "world/lib/prelude/Emissions.obend"
       ]
     },
     "spween-handler-workshop@1": {
@@ -157,6 +161,26 @@
         "scene/runtime/SceneRuntime.obend",
         "scene/runtime/DefaultRuntime.obend",
         "scene/runtime/Scene.obend"
+      ]
+    },
+    "objective-bend-object": {
+      "reviewed": true,
+      "module": "syntaxes/obend_object.py",
+      "entry": "lower_data",
+      "modulesEntry": "lower_data_modules",
+      "target": "local-protocol-v1",
+      "runtimeProfile": "compiled",
+      "closure": [
+        "syntaxes/obend_object.py",
+        "scripts/source_store.py",
+        "scripts/process_custody.py",
+        "scripts/affordances.py",
+        "spec/PackageMain.lean",
+        ".lake/build/bin/delvetalk-obend",
+        "scripts/source_packages.py",
+        "world/lib/prelude/Preparation.obend",
+        "world/lib/prelude/Allocation.obend",
+        "world/lib/prelude/Emissions.obend"
       ]
     }
   },

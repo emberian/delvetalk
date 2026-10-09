@@ -25,6 +25,7 @@ generate = load('automatafl_generator_test', 'protocols/automatafl/generate.py')
 journey = load('automatafl_journey_test', 'scripts/table_journey.py')
 fixture = load('automatafl_pds_fixture', 'conformance/test_clerk.py')
 NORTH, SOUTH = fixture.A, fixture.B
+ORIGINAL = participant.loads((ROOT / 'game/automatafl/original-opening-qualification.json').read_bytes())
 ISSUER, VISITOR = 'did:plc:' + 'c' * 24, 'did:plc:' + 'd' * 24
 
 
@@ -36,7 +37,7 @@ class AutomataflCompanion(unittest.TestCase):
         self.table = 'table:automatafl'
         self.pds = fixture.FakePDS()
         self.clerk = clerk.Clerk(self.base / 'clerk', self.pds)
-        reply = self.clerk.bootstrap(self.table, generate.protocol(self.table),
+        reply = self.clerk.bootstrap(self.table, generate.protocol(self.table, NORTH, SOUTH),
             generate.table.law(NORTH, SOUTH), [NORTH, SOUTH, VISITOR], runtime_profile='compiled')
         self.assertEqual(reply['kind'], 'committed', reply)
         self.book = companion.town_cards.CardBook.create(self.base / 'cards', issuer_did=ISSUER,
@@ -100,7 +101,7 @@ class AutomataflCompanion(unittest.TestCase):
     def test_full_match_private_choices_public_receiving_and_restart(self):
         public, actions = self.capture('start')
         self.assertEqual(actions, [])
-        state = self.root()['state']
+        state = companion.client.state(self.root())
         self.assertEqual((state['width'], state['height'], state['game']['automaton']), (11, 11, 60))
         self.assertEqual(state['game']['board'], int(generate.table.OPENING['board']))
         self.assertIn('  1  - . . . + - + . . . -', public['text'])
@@ -152,10 +153,12 @@ class AutomataflCompanion(unittest.TestCase):
                 source = self.post('resolve-' + str(number), alias, SOUTH)
                 receipt = self.clerk.receive(*source)
             self.assertEqual(receipt['reply']['kind'], 'committed', receipt)
+            self.assertEqual(companion.client.state(self.root())['game'],
+                participant.table.source_object.plain(ORIGINAL['rounds'][number]['result']['value']))
             self.assertEqual(receipt['request']['principal'], NORTH if number == 0 else SOUTH)
             stale = self.clerk.receive(*self.post('stale-' + str(number), alias))
             self.assertEqual(stale['reply']['data'], 'stale read root')
-        self.assertEqual(self.root()['state']['game']['winner'], 1)
+        self.assertEqual(companion.client.state(self.root())['game']['winner'], 1)
         public, actions = self.capture('finished')
         self.assertEqual(actions, [])
         self.assertIn('North wins', public['text'])
@@ -173,33 +176,34 @@ class AutomataflCompanion(unittest.TestCase):
             self.private(0, 'resolve', {}, f'resolve-{number}')
             public, actions = self.capture('result-' + str(number))
             self.assertEqual(actions, [])
-            self.assertEqual(self.root()['state']['game']['status'], status)
+            self.assertEqual(companion.client.state(self.root())['game']['status'], status)
             self.assertIn('Marked: A1', public['text'])
             self.assertIn('last pair conflicted' if status == 1 else 'last pair was invalid', public['text'])
 
     def test_only_exact_qualified_core_and_companion_metadata_are_accepted(self):
-        qualified = generate.table.protocol(self.table)
-        program = generate.protocol(self.table)
+        qualified = generate.table.protocol(self.table, NORTH, SOUTH)
+        program = generate.protocol(self.table, NORTH, SOUTH)
         self.assertTrue(companion.client.same_game(qualified, qualified))
         self.assertTrue(companion.client.same_game(program, qualified))
-        mutations = [lambda p: p['commands']['resolve']['set'].update(round=['literal', 99]),
-                     lambda p: p['initial'].update(width=5, height=5),
-                     lambda p: p['initial'].update(round=False),
+        mutations = [lambda p: p['commands']['resolve']['transition']['package'].update(entry='commit0'),
+                     lambda p: p['initial'].update(model=participant.table.source_object.data({**companion.client.state({'state': p['initial']}), 'width': 5, 'height': 5})),
+                     lambda p: p['initial'].update(model=participant.table.source_object.data({**companion.client.state({'state': p['initial']}), 'round': False})),
                      lambda p: p.update(extraExecutionRoute={}),
                      lambda p: p['commands'].update(cheat=copy.deepcopy(p['commands']['resolve'])),
                      lambda p: p['viewProgram'].update(extra='unvalidated'),
                      lambda p: p['affordances'].update(cheat={'fields': {}}),
                      lambda p: p['viewPanels'].append({'id': 'unknown', 'label': 'Unknown'}),
-                     lambda p: p.update(description=False)]
+                     lambda p: p.update(description=False),
+                     lambda p: p['sourcePackages']['resident']['modules'][-1].update(source='edition ObjectiveBend 1')]
         for mutate in mutations:
             changed = copy.deepcopy(program)
             mutate(changed)
             self.assertFalse(companion.client.same_game(changed, qualified))
             with self.assertRaisesRegex(ValueError, 'unchanged qualified'):
                 companion.capture({**self.root(), 'protocol': changed}, self.table, self.book)
-        bare = {**self.root(), 'protocol': qualified}
-        with self.assertRaisesRegex(ValueError, 'Install the companion'):
-            companion.capture(bare, self.table, self.book)
+        self.assertEqual(program, qualified)
+        # The ordinary table itself owns the public view; no optional Python layer.
+        self.assertIn('viewProgram', qualified)
 
 
 if __name__ == '__main__':

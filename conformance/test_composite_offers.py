@@ -164,7 +164,7 @@ class CompositePostTests(unittest.TestCase):
         restored = town.Town(self.receiver.state, request=self.pds)
         response = restored.receive(*source)
         self.assertEqual(response['receipt']['reply']['kind'], 'committed', response)
-        self.assertEqual(self.roots()['commons']['state']['locations'][VISITOR], 'garden')
+        self.assertEqual(movement.commons.locations(self.roots()['commons'])[VISITOR], 'garden')
         self.assertEqual(self.roots()['door']['state']['approvals'], 1)
         calls = len(self.pds.calls)
         self.assertEqual(restored.receive(*source), response)
@@ -187,7 +187,7 @@ class CompositePostTests(unittest.TestCase):
         self.invoke('commons', 'leave', {})
         before = self.roots()
         response = self.operator.receive(*self.post(self.card()))
-        self.assertEqual(response['receipt']['reply']['data'], 'precondition failed')
+        self.assertEqual(response['receipt']['reply']['data'], 'source refused: precondition failed')
         self.assertEqual(self.roots(), before)
         # Revoke the second target first: the approved door transition must roll back.
         for target, command, manager in (('commons', 'move', 'steward'), ('door', 'cross', 'maker')):
@@ -219,7 +219,7 @@ class CompositePostTests(unittest.TestCase):
         response = self.operator.receive(*source, interpretation=decision)
         self.assertEqual(response['receipt']['reply']['kind'], 'committed', response)
         self.assertEqual(response['receipt']['interpretation']['decision'], decision)
-        self.assertEqual(self.roots()['commons']['state']['locations'][VISITOR], 'garden')
+        self.assertEqual(movement.commons.locations(self.roots()['commons'])[VISITOR], 'garden')
 
 
 if __name__ == '__main__': unittest.main()

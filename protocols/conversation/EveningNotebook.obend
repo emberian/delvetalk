@@ -3,22 +3,23 @@ import ./Abi.obend as Abi
 import ./Preparation.obend as P
 import ./Conversation.obend as C
 import ./Notebook.obend as N
+import ./MothNotebook.obend as Example
 import ./ConversationModel.obend as M
 def describe() -> N.Description:
-  N.describe()
-def answer(state: C.State, input: N.Input, context: Abi.Context) -> C.Decision:
+  Example.describe()
+def answer(state: N.State, input: N.Input, context: Abi.Context) -> N.Decision:
   N.answer(state, input, context)
-def interpret(state: C.State, input: N.Interpreted, context: Abi.Context) -> C.Decision:
+def interpret(state: N.State, input: N.Interpreted, context: Abi.Context) -> N.Decision:
   N.interpret(state, input, context)
-def retain(state: C.State, input: P.Value, context: Abi.Context) -> C.Decision:
+def retain(state: N.State, input: C.Interpretation, context: Abi.Context) -> N.Decision:
   N.retain(state, input, context)
-def resolve(state: C.State, input: N.Completion, context: Abi.Context) -> C.Decision:
+def resolve(state: N.State, input: N.Completion, context: Abi.Context) -> N.Decision:
   N.resolve(state, input, context)
-def prepareResolve(state: C.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+def prepareResolve(state: N.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
   N.prepareResolve(state, contribution, observations, context)
-def view(state: C.State, panel: String) -> N.View:
+def view(state: N.State, panel: String) -> N.View:
   N.render(state, "The evening desk keeps every voice. Choose a moth by its reference, or bring an interpretation to continue.")
-def interpretationRequest(state: C.State, original: String, observations: P.Observations, context: P.Context) -> M.Request:
+def interpretationRequest(state: N.State, original: String, observations: P.Observations, context: P.Context) -> M.Request:
   N.interpretationRequest(state, original, observations, context)
-def prepareInterpretation(state: C.State, input: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+def prepareInterpretation(state: N.State, input: M.Response, observations: P.Observations, context: P.Context) -> M.Preparation:
   N.prepareInterpretation(state, input, observations, context)

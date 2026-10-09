@@ -4,8 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import process_custody
 UPSTREAM = '95980f7d1e109138496849a444f28c4b9076a4e2'
 BRIDGE = ROOT / 'scene/spween-bridge/target/debug/delvetalk-spween'
 
@@ -15,9 +18,11 @@ def parse(source):
         raise ValueError('build the pinned parser: cargo build --locked --manifest-path scene/spween-bridge/Cargo.toml')
     executable_hash = hashlib.sha256(BRIDGE.read_bytes()).hexdigest()
     try:
-        result = subprocess.run([str(BRIDGE)], input=json.dumps({'op': 'parse', 'source': source}),
-                                text=True, capture_output=True, timeout=15, check=True)
-    except (subprocess.SubprocessError, OSError) as error:
+        result = process_custody.run_native([str(BRIDGE)],
+            input=json.dumps({'op': 'parse', 'source': source}).encode('utf-8'),
+            timeout=15, cpu_seconds=15, stdout_limit=8 * 1024 * 1024, stderr_limit=1024 * 1024)
+        result.check_returncode()
+    except (subprocess.SubprocessError, process_custody.OutputLimitExceeded, OSError) as error:
         raise ValueError(f'Spween bridge failed: {error}') from error
     document = json.loads(result.stdout)
     if document.get('ok') is not True:

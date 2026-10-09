@@ -6,10 +6,23 @@ account, filesystem path or principal. A persisted private HMAC key maps account
 IDs to separate SQLite native worlds. Each starts with its own message lineage,
 source-authored `notebook`, and ordinary source `source-desk`. Neither credential
 rotation nor process restart replaces that heap.
+Exact bootstrap requests are retained in private `seed.json` before the first
+admission. Interrupted initialization and later restarts replay those originals,
+without consulting changed source templates. An existing nonempty heap without
+that original custody refuses implicit reseeding; this is not a migration route.
 The manager also binds its custody root to the exact shared world namespace,
 database path and receiving profile; restarting against another realm refuses.
 
-The notebook's source owns its record operation and encounter. REPL input is an
+The first notebook offer is **Keep a thought**, with one `thought` field. A sentence
+or fragment is enough. Literal notes require no model. Interpreted prose uses the
+same source-owned note operation; an incomplete proposal asks only for the thought.
+Each kept note advances the intention revision and leaves its attributed history
+and outcome available. The notebook's source names **Write Bend / inspect source**
+for explicit executable experiments.
+
+The `record {source, result}` receiving endpoint remains available to the native
+REPL and is absent from ordinary note controls. A supplied record is displayed as
+**recorded**; copying result text does not prove execution. REPL input is an
 explicit sealed module table, entry and DataWire arguments. Native parsing,
 checking and evaluation produce a result; a normal exact-root notebook admission
 records the source and result. This does not install behavior. An exact retry
@@ -54,9 +67,9 @@ realm; repeating the same text against the same card recovers the same saved
 contribution. An uncertain provider attempt is retained and never spent again.
 Reading or rendering a document makes no provider call.
 
-On Linux each resident has a provisional 2 GiB virtual-address limit, distinct
-from its actual resident memory and the deployment's aggregate memory limit.
-The old receiver needs more than 1 GiB virtual space for its initial thread stack;
-new deployment binaries require their own qualification. Other platforms expose
-`residentMemoryBytes: null`; an explicitly requested unsupported address limit
-refuses instead of pretending to enforce it.
+On Linux native residents and transient evaluators use the shared 4 GiB
+virtual-address limit, distinct from actual resident memory and the deployment's
+aggregate memory limit. The qualified 092407 Linux receiver and package evaluator
+need this address space for runtime reservations; measured receiver RSS was about
+62 MiB. Other platforms expose `residentMemoryBytes: null`; an explicitly requested
+unsupported address limit refuses instead of pretending to enforce it.

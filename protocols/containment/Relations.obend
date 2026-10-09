@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
 record Member:
   object: String
   owner: String
@@ -35,16 +37,7 @@ def occupancy(xs: Members, place: String) -> Nat:
     case cons(c): (if c.head.place == place && c.head.holder == "" && c.head.role != "room" then 1n else 0n) + occupancy(c.tail, place)
 def located(xs: Members, m: Member) -> String:
   if m.holder == "" then m.place else body(xs, m.holder).place
-record Origin:
-  kind: String
-  object: String
-  command: String
-  immediatelyPrevious: Bool
-record Context:
-  object: String
-  principal: String
-  inputOrigin: Origin
-def follows(ctx: Context, object: String, command: String) -> Bool:
+def follows(ctx: Abi.Context, object: String, command: String) -> Bool:
   ctx.inputOrigin.kind == "invoke" && ctx.inputOrigin.object == object && ctx.inputOrigin.command == command && ctx.inputOrigin.immediatelyPrevious
 record Transfer:
   object: String
@@ -53,32 +46,16 @@ record Transfer:
   holder: String
   occupancy: Nat
   actor: String
-record Child:
-  key: String
-  label: String
-  object: String
-  panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}
-def children(xs: Members) -> Children:
+def children(xs: Members) -> E.Children:
   match xs:
-    case nil(_): Children.nil()
-    case cons(c): Children.cons({head: {key: c.head.object, label: c.head.object, object: c.head.object, panel: "main"}, tail: children(c.tail)})
+    case nil(_): E.Children.nil()
+    case cons(c): E.Children.cons({head: {key: c.head.object, label: c.head.object, object: c.head.object, panel: "main"}, tail: children(c.tail)})
 record Action:
   visible: Bool
   text: String
   command: String
   input: {}
-record TextField:
-  type: String
-  minLength: Nat
-  maxLength: Nat
-def textField() -> TextField:
+def textField() -> Abi.StringField:
   {type: "string", minLength: 0n, maxLength: 128n}
-record NatField:
-  type: String
-  minimum: Nat
-  maximum: Nat
-def natField() -> NatField:
+def natField() -> Abi.NatField:
   {type: "nat", minimum: 0n, maximum: 9007199254740991n}

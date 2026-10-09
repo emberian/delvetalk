@@ -12,70 +12,62 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import message_relay as relay
 
-CONTEXT = '''record Origin:
-  kind: String
-  object: String
-  command: String
-  immediatelyPrevious: Bool
-record Context:
-  object: String
-  principal: String
-  inputOrigin: Origin
-'''
+sys.path.insert(0, str(ROOT / 'syntaxes'))
+import obend_object
+import source_object
+
 RECEIVE = '''edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Emissions.obend as E
 record State:
   count: Nat
   accepting: Bool
-record Input:
-  amount: Nat
-''' + CONTEXT + '''record Event:
-  id: String
-  source: String
-  sourceProgram: String
-  originatingPrincipal: String
 record Decision:
   accepted: Bool
   reason: String
   state: State
-  result: Event
-def receive(state: State, input: Input, context: Context, event: Event) -> Decision:
-  {accepted: state.accepting, reason: if state.accepting then "" else "closed", state: {count: state.count + input.amount, accepting: state.accepting}, result: event}
+  result: E.CausalEvent
+def receive(state: State, input: P.Value, context: Abi.Context, event: E.CausalEvent) -> Decision:
+  {accepted: state.accepting, reason: if state.accepting then "" else "closed", state: {count: state.count + P.natural(P.get(input, "amount")), accepting: state.accepting}, result: event}
+record Description:
+  name: String
+  initial: State
+  methods: {receive: {label: String, fields: {}, inputCodec: String}}
+  panels: {}
+def describe() -> Description:
+  {name: "Relay receiver", initial: {count: 0n, accepting: true}, methods: {receive: {label: "Receive", fields: {}, inputCodec: "value"}}, panels: {}}
 '''
 SEND = '''edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Emissions.obend as E
 record State:
   count: Nat
 record Input:
   program: String
-''' + CONTEXT + '''record Payload:
-  amount: Nat
-record Emission:
-  enabled: Bool
-  to: String
-  command: String
-  recipientProgram: String
-  payload: Payload
-record Emissions:
-  a: Emission
-  b: Emission
-  c: Emission
-  d: Emission
 record Decision:
   accepted: Bool
   reason: String
   state: State
   result: Nat
-  emissions: Emissions
-def emission(enabled: Bool, program: String) -> Emission:
-  {enabled: enabled, to: "recipient", command: "receive", recipientProgram: program, payload: {amount: 1n}}
-def send(state: State, input: Input, context: Context) -> Decision:
-  {accepted: true, reason: "", state: {count: state.count + 1n}, result: state.count + 1n, emissions: {a: emission(true, input.program), b: emission(false, input.program), c: emission(false, input.program), d: emission(false, input.program)}}
+  emissions: E.Emissions
+def send(state: State, input: Input, context: Abi.Context) -> Decision:
+  {accepted: true, reason: "", state: {count: state.count + 1n}, result: state.count + 1n, emissions: E.one({to: "recipient", command: "receive", recipientProgram: input.program, payload: P.oneField("amount", P.Value.natural({value: 1n}))})}
+record Description:
+  name: String
+  initial: State
+  methods: {send: {label: String, fields: {program: Abi.StringField}}}
+  panels: {}
+def describe() -> Description:
+  {name: "Relay sender", initial: {count: 0n}, methods: {send: {label: "Send", fields: {program: {type: "string", minLength: 64n, maxLength: 64n}}}}, panels: {}}
 '''
 
 
-def protocol(source, profile, command, initial):
-    return {'profile': 'delvetalk-local-v1', 'initial': initial, 'commands': {
-        command: {'transition': {'profile': profile,
-            'package': {'modules': [{'name': 'Actor', 'source': source}], 'entry': command}}}}}
+def protocol(source):
+    modules = [{'name': key, 'source': (ROOT / 'world/lib/prelude' / (key + '.obend')).read_text()}
+               for key in ('List', 'Abi', 'Preparation', 'Emissions')]
+    return obend_object.lower_data_modules(modules + [{'name': 'Actor', 'source': source}])
 
 
 class MessageRelayTests(unittest.TestCase):
@@ -93,7 +85,7 @@ class MessageRelayTests(unittest.TestCase):
         initialized = self.call({'op': 'messages-init', 'principal': 'owner', 'intent': 'lineage',
                                  'lineage': 'relay-test', 'pendingLimit': 128})
         self.assertEqual(initialized['kind'], 'committed', initialized)
-        recipient = protocol(RECEIVE, 'delvetalk-source-receive-v1', 'receive', {'count': 0, 'accepting': True})
+        recipient = protocol(RECEIVE)
         hasher = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'digest': {
             'require': [], 'set': {}, 'result': ['program-digest', ['input', 'program']], 'outbox': []}}}
         made = self.call({'op': 'create', 'object': 'digest', 'principal': 'owner', 'intent': 'create-digest',
@@ -106,7 +98,7 @@ class MessageRelayTests(unittest.TestCase):
         self.law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'receive': ['relay']},
                     'reprogram': ['owner'], 'law': ['owner']}
         for name, program, law in [('recipient', recipient, self.law),
-                ('sender', protocol(SEND, 'delvetalk-source-effects-v1', 'send', {'count': 0}), ['author'])]:
+                ('sender', protocol(SEND), ['author'])]:
             made = self.call({'op': 'create', 'object': name, 'principal': 'owner', 'intent': 'create-' + name,
                              'protocol': program, 'law': law})
             self.assertEqual(made['kind'], 'committed', made)
@@ -153,7 +145,7 @@ class MessageRelayTests(unittest.TestCase):
         self.assertEqual(receipt['data']['result']['source'], 'sender')
         self.assertEqual(receipt['data']['result']['originatingPrincipal'], 'author')
         self.assertEqual(receipt['data']['result']['id'], identity)
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
         before = self.snapshot()
         self.relay = relay.MessageRelay(self.relay.state, self.database, 'relay')
         self.assertEqual(self.relay.run()['processed'], [])
@@ -170,13 +162,13 @@ class MessageRelayTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 self.relay.run()
         exact = self.entry(identity)['attempts'][0]['request']
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
         self.relay = relay.MessageRelay(self.relay.state, self.database, 'relay')
         with patch.object(self.relay, 'pins', side_effect=AssertionError('recover first')):
             self.assertEqual(self.relay.run()['errors'], [])
         self.assertEqual(self.entry(identity)['attempts'][0]['request'], exact)
         self.assertEqual(self.entry(identity)['status'], 'consumed')
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
 
     def test_unknown_reply_retains_identity_until_confirmed_stale_then_traces_refresh(self):
         identity = self.emit()
@@ -187,14 +179,14 @@ class MessageRelayTests(unittest.TestCase):
         refused = self.relay.run()
         self.assertEqual(refused['blocked'][0]['reason'], 'stale read root')
         self.assertEqual(self.entry(identity)['attempts'][0]['request'], first)
-        self.assertEqual(self.root()['state']['count'], 0)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 0)
         self.assertEqual(self.relay.run()['errors'], [])
         attempts = self.entry(identity)['attempts']
         self.assertEqual(len(attempts), 2)
         self.assertEqual(attempts[0]['receipt']['kind'], 'refused')
         self.assertNotEqual(attempts[0]['request']['intent'], attempts[1]['request']['intent'])
         self.assertEqual(attempts[0]['request']['event'], attempts[1]['request']['event'])
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
 
     def test_revocation_blocks_without_hotloop_and_explicit_retry_uses_current_law(self):
         identity = self.emit()
@@ -207,7 +199,7 @@ class MessageRelayTests(unittest.TestCase):
         self.change_law(self.law)
         self.relay.retry(identity)
         self.assertEqual(self.relay.run()['errors'], [])
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
 
     def test_replaced_recipient_generation_and_source_refusal_leave_event_pending(self):
         identity = self.emit()
@@ -219,11 +211,28 @@ class MessageRelayTests(unittest.TestCase):
         self.assertEqual(self.snapshot()['messages']['events'][identity]['status'], 'pending')
         current = self.root()
         self.call({'op': 'reprogram', 'object': 'recipient', 'principal': 'owner', 'intent': 'restore-closed',
-                   'expected': current, 'protocol': root['protocol'], 'state': {'count': 0, 'accepting': False}})
+                   'expected': current, 'protocol': root['protocol'], 'state': {'model': source_object.data({'count': 0, 'accepting': False})}})
         self.relay.retry(identity)
         self.assertIn('closed', self.relay.run()['blocked'][0]['reason'])
-        self.assertEqual(self.root()['state']['count'], 0)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 0)
         self.assertEqual(self.snapshot()['messages']['events'][identity]['status'], 'pending')
+
+    def test_relay_uses_current_read_principal_and_retires_settled_active_custody(self):
+        identity = self.emit()
+        self.change_law({**self.law, 'read': ['reader', 'relay', 'owner'],
+                         'invoke': {'receive': ['relay'], '$messages-settle': ['owner']}})
+        with patch.object(relay.worker, 'command', side_effect=TimeoutError('before transport')):
+            self.assertTrue(self.relay.run()['errors'])
+        reference = {'lineage': 'relay-test', 'id': identity}
+        settled = self.call({'op': 'settle-message', 'object': 'recipient', 'principal': 'owner',
+            'intent': 'retire-event', 'event': reference, 'expected': self.root(), 'reason': 'Retired generation.'})
+        self.assertEqual(settled['kind'], 'committed', settled)
+        result = self.relay.run()
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['blocked'], [])
+        self.assertEqual(self.entry(identity)['status'], 'settled')
+        self.assertEqual(self.relay.run()['processed'], [])
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 0)
 
     def test_batch_capacity_and_real_custody_deadline(self):
         for _ in range(17): self.emit()
@@ -242,9 +251,9 @@ class MessageRelayTests(unittest.TestCase):
                 with self.assertRaises(TimeoutError): self.relay.run(deadline_seconds=0.05)
                 self.assertLess(time.monotonic() - started, 1)
         self.assertEqual(len(self.relay.run()['processed']), 16)
-        self.assertEqual(self.root()['state']['count'], 16)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 16)
         self.assertEqual(len(self.relay.run()['processed']), 1)
-        self.assertEqual(self.root()['state']['count'], 17)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 17)
 
 
 class ResidentMessageRelayTests(MessageRelayTests):
@@ -268,7 +277,7 @@ class ResidentMessageRelayTests(MessageRelayTests):
             self.assertEqual(self.relay.run()['processed'], [])
         self.assertEqual(self.entry(identity)['attempts'][0]['request'], request)
         self.assertEqual(self.entry(identity)['attempts'][0]['receipt'], self.call(request))
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
         self.assertFalse(self.database.exists(), 'resident backend must not create a legacy world dump')
 
 
@@ -289,7 +298,7 @@ class ResidentServiceJourneyTests(unittest.TestCase):
         self.path = Path(self.tmp.name)
         self.directory = self.path / 'workspace'
         self.database = self.directory / 'world.json'
-        recipient = protocol(RECEIVE, 'delvetalk-source-receive-v1', 'receive', {'count': 0, 'accepting': True})
+        recipient = protocol(RECEIVE)
         hasher = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'digest': {
             'require': [], 'set': {}, 'result': ['program-digest', ['input', 'program']], 'outbox': []}}}
         self.seed = workspace.initialize(self.directory, [
@@ -297,7 +306,7 @@ class ResidentServiceJourneyTests(unittest.TestCase):
              'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'receive': ['relay']},
                      'law': ['owner'], 'reprogram': ['owner']}},
             {'id': 'sender', 'syntax': 'protocol-json@1', 'source': relay.canonical(
-                protocol(SEND, 'delvetalk-source-effects-v1', 'send', {'count': 0})), 'law': [AUTHOR]},
+                protocol(SEND)), 'law': [AUTHOR]},
             {'id': 'digest', 'syntax': 'protocol-json@1', 'source': relay.canonical(hasher), 'law': ['owner']}],
             entry_objects=['recipient', 'sender'], principal='owner', profile='compiled',
             backend='resident', messaging=True)
@@ -332,7 +341,7 @@ class ResidentServiceJourneyTests(unittest.TestCase):
         self.assertEqual(result['errors'], [], result)
         self.assertEqual(result['status'], 'prepared-offline', result)
         self.assertEqual(result['phases']['localMessages']['processed'][0]['status'], 'consumed')
-        self.assertEqual(self.root()['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root()['state']['model'])['count'], 1)
         receipt = self.clerk.receive(*source)
         event = receipt['reply']['data']['messages'][0]
         self.assertEqual(self.snapshot()['messages']['events'][event['id']]['status'], 'consumed')
@@ -368,7 +377,7 @@ class ResidentServiceJourneyTests(unittest.TestCase):
         stale = self.clerk.receive(*self.record('stale'))
         self.assertEqual(stale['reply']['kind'], 'refused')
         self.assertEqual(stale['reply']['data'], 'stale read root')
-        self.assertEqual(self.root('sender')['state']['count'], 1)
+        self.assertEqual(source_object.plain(self.root('sender')['state']['model'])['count'], 1)
 
 
 if __name__ == '__main__': unittest.main()

@@ -1,8 +1,8 @@
 # Typed core
 
-**`delvetalk-typed` checks array ASTs with pinned Mini's annotated partial checker.**
+**`delvetalk-typed` checks array ASTs with DelveTalk's local annotated partial checker.**
 It neither evaluates nor grants authority. Raw Lean/Python/JS/C evaluators remain
-separate. [Adapter](../spec/Delvetalk/Typed.lean), [upstream pins](../spec/upstream.json),
+separate. [Adapter](../spec/Delvetalk/Typed.lean), [Mini origin](../spec/bend/origin.json),
 [AST](../conformance/AST.md).
 
 ```sh
@@ -24,7 +24,7 @@ Required fields:
 
 Optional `context` lists `{type,quantity}` in de Bruijn order; default `[]`.
 `fuel` defaults to 4096, maximum 16384. Unknown top-level fields refuse;
-upstream nested decoders tolerate extras. Integers accept nonnegative JSON
+nested decoders tolerate extras. Integers accept nonnegative JSON
 integers/canonical decimal strings; core indices retain safe-integer limits.
 Expanded type depth ≤256; table size ≤1048576.
 
@@ -48,7 +48,7 @@ Types have `tag` and these fields:
 | `variant` | `row` |
 | `computation` | `plan,response,result` |
 
-[Upstream decoder](../spec/upstream/Theory/ObjectiveBendTyping.lean).
+[Local decoder](../spec/bend/Theory/ObjectiveBendTyping.lean).
 References are finite; bounds provide aliases. Rigid bounds expose members
 without identifying the variable with its row; this is not general subtyping.
 Shareability premises must withstand custody/closure/activity and shadowed-field

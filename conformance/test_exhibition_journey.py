@@ -105,7 +105,7 @@ class ExhibitionJourney(unittest.TestCase):
             self.assertTrue(artifact['report']['passed'])
             self.assertEqual(artifact['sourceBindings']['syntax'],'objective-bend-spell@3')
             self.assertEqual([item['name'] for item in artifact['sourceMaterial']['modules']],
-                             ['Abi','Encounter','Agreement','Exhibition'])
+                             ['Abi','List','Encounter','Agreement','Exhibition'])
             self.assertEqual(result['state']['northConsent']['payload']['revision'],
                              result['state']['arrangement']['revision'])
             events = [json.loads(path.read_text()) for path in (directory / 'events').glob('*.json')]

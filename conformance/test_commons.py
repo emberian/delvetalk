@@ -20,13 +20,14 @@ def module(name, path):
 g = module('commons_generator', 'protocols/commons/generate.py')
 a = module('commons_affordances', 'scripts/affordances.py')
 world = module('commons_world', 'scripts/world.py')
+room = module('commons_room', 'scene/room.py')
 
 
 class CommonsTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.profile = 'world'
+        self.profile = 'compiled'
         self.db = Path(self.tmp.name) / 'world.json'
 
     def call(self, request):
@@ -41,7 +42,7 @@ class CommonsTests(unittest.TestCase):
         return self.initial
 
     def request(self, root, command, principal='moss', intent=None, place=None):
-        view = {'mode': 'raw', 'object': 'commons', 'root': root}
+        view = room.inspect_object(root, 'commons')
         action = next(x['id'] for x in a.card(view)['actions'] if x['command'] == command)
         return a.request(view, action, principal, intent or command,
                          {} if place is None else {'place': place})
@@ -50,7 +51,7 @@ class CommonsTests(unittest.TestCase):
         return self.call({'op': 'inspect', 'object': 'commons', 'principal': 'reader'})
 
     def test_enter_move_leave_returns_usable_place_and_entity_references(self):
-        for profile in ('world', 'transactions', 'compiled'):
+        for profile in ('compiled',):
             with self.subTest(profile=profile):
                 self.profile = profile
                 self.db = Path(self.tmp.name) / profile
@@ -65,30 +66,30 @@ class CommonsTests(unittest.TestCase):
                 moved = self.call(self.request(entered['data']['root'], 'move', place='garden'))
                 self.assertEqual(moved['data']['result']['from'], 'porch')
                 self.assertEqual(moved['data']['result']['to'], 'garden')
-                self.assertEqual(moved['data']['root']['state']['locations']['iris'], '')
+                self.assertEqual(g.locations(moved['data']['root'])['iris'], '')
                 left = self.call(self.request(moved['data']['root'], 'leave'))
                 self.assertEqual(left['data']['result']['place'], {})
                 self.assertEqual(left['data']['root']['state'], root['state'])
-                self.assertEqual(self.call(self.request(left['data']['root'], 'leave', intent='leave-twice'))['data'], 'precondition failed')
+                self.assertEqual(self.call(self.request(left['data']['root'], 'leave', intent='leave-twice'))['data'], 'source refused: precondition failed')
 
     def test_paths_entries_and_declared_principals_are_checked_in_lean(self):
         root = self.seed()
-        self.assertEqual(self.call(self.request(root, 'move', place='garden'))['data'], 'precondition failed')
+        self.assertEqual(self.call(self.request(root, 'move', place='garden'))['data'], 'source refused: precondition failed')
         forbidden_entry = self.request(root, 'enter', intent='tower', place='porch')
         forbidden_entry['input']['place'] = 'tower'  # bypass the presentation enum
-        self.assertEqual(self.call(forbidden_entry)['data'], 'precondition failed')
+        self.assertEqual(self.call(forbidden_entry)['data'], 'source refused: precondition failed')
         entered = self.call(self.request(root, 'enter', intent='enter', place='porch'))['data']['root']
         for place in ('tower', 'missing', 'porch', False):
             request = self.request(entered, 'move', intent='bad-' + str(place), place='garden')
             request['input']['place'] = place
             self.assertEqual(self.call(request)['kind'], 'refused')
             self.assertEqual(self.inspect(), entered)
-        self.assertEqual(self.call(self.request(entered, 'enter', intent='enter-twice', place='porch'))['data'], 'precondition failed')
+        self.assertEqual(self.call(self.request(entered, 'enter', intent='enter-twice', place='porch'))['data'], 'source refused: precondition failed')
         # A grant is necessary, but cannot add a participant slot to this program.
         law = g.law(); law['invoke']['enter'].append('outsider')
         changed = self.call({'op': 'law', 'object': 'commons', 'principal': 'steward', 'intent': 'grant',
                              'expected': entered, 'law': law})['data']['root']
-        self.assertEqual(self.call(self.request(changed, 'enter', principal='outsider', intent='outside', place='porch'))['data'], 'precondition failed')
+        self.assertEqual(self.call(self.request(changed, 'enter', principal='outsider', intent='outside', place='porch'))['data'], 'source refused: precondition failed')
 
     def test_current_law_impersonation_race_and_exact_restart_replay(self):
         root = self.seed()
@@ -103,7 +104,7 @@ class CommonsTests(unittest.TestCase):
         both = self.call(iris)
         self.assertEqual(both['data']['result']['principal'], 'iris')
         self.assertEqual(both['data']['result']['entity'], g.default_participants()['iris'])
-        self.assertEqual(both['data']['root']['state']['locations'], {'moss': 'porch', 'iris': 'porch'})
+        self.assertEqual(g.locations(both['data']['root']), {'moss': 'porch', 'iris': 'porch'})
         law = g.law(); law['invoke']['move'].remove('moss')
         locked = self.call({'op': 'law', 'object': 'commons', 'principal': 'steward', 'intent': 'revoke-move',
                             'expected': both['data']['root'], 'law': law})['data']['root']
@@ -114,20 +115,20 @@ class CommonsTests(unittest.TestCase):
         # Replay a fresh custody transcript against another empty database.
         replay_db = Path(self.tmp.name) / 'replay.json'
         for retained in world.wire_loads(self.db.read_text())['receipts']:
-            self.assertEqual(world.exchange(replay_db, retained['request']), retained['receipt'])
+            self.assertEqual(world.exchange(replay_db, retained['request'], profile='compiled'), retained['receipt'])
 
     def test_transaction_failure_rolls_back_movement_and_composed_calls_remain_local(self):
-        self.profile = 'transactions'
+        self.profile = 'compiled'
         root = self.seed()
         request = {'op': 'transaction', 'principal': 'moss', 'intent': 'walk', 'reads': {'commons': root},
                    'calls': [{'object': 'commons', 'command': 'enter', 'input': {'place': 'porch'}},
                              {'object': 'commons', 'command': 'move', 'input': {'place': 'tower'}}]}
-        self.assertEqual(self.call(request)['data'], 'precondition failed')
+        self.assertEqual(self.call(request)['data'], 'source refused: precondition failed')
         self.assertEqual(self.inspect(), root)
         request['intent'] = 'valid-walk'; request['calls'][1]['input']['place'] = 'garden'
         receipt = self.call(request)
         self.assertEqual(receipt['kind'], 'committed', receipt)
-        self.assertEqual(receipt['data']['roots']['commons']['state']['locations']['moss'], 'garden')
+        self.assertEqual(g.locations(receipt['data']['roots']['commons'])['moss'], 'garden')
         self.assertEqual(self.call(request), receipt)
 
     def test_presence_does_not_grant_authority_over_referenced_place(self):
@@ -142,7 +143,7 @@ class CommonsTests(unittest.TestCase):
             'intent': 'presence-is-not-grant', 'expected': target['data']['root'], 'command': 'touch', 'input': {}})
         self.assertEqual(refused['data'], 'unauthorized')
 
-    def test_configured_upper_bound_and_generated_files_are_runnable(self):
+    def test_configured_upper_bound_and_same_source_are_runnable(self):
         participants = {f'p{i}': g.references.object_reference('other-world', f'entity/{i}') for i in range(8)}
         places = {f'r{i}': {'title': f'Room {i}', 'description': 'An authored place.',
                   'reference': g.references.object_reference('other-world', f'place/{i}')} for i in range(8)}
@@ -153,9 +154,9 @@ class CommonsTests(unittest.TestCase):
         moved = self.call(self.request(root, 'move', principal='p7', place='r2'))
         self.assertEqual(moved['kind'], 'committed', moved)
         self.assertEqual(moved['data']['result']['entity']['world'], 'other-world')
-        self.assertEqual(json.loads((ROOT / 'protocols/commons/protocol.json').read_text()), g.build())
-        self.assertEqual(json.loads((ROOT / 'protocols/commons/law.json').read_text()), g.law())
-        self.assertEqual(json.loads((ROOT / 'protocols/commons/migration.json').read_text()), g.build()['initial'])
+        default = g.build()
+        self.assertEqual(protocol['sourcePackages'], default['sourcePackages'])
+        self.assertNotEqual(protocol['initial'], default['initial'])
 
     def test_malformed_authored_topology_refuses_without_authority_or_runtime(self):
         for changes in ({'participants': {}}, {'places': {}}, {'entries': ('missing',)},

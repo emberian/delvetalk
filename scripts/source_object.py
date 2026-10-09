@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import source_store
 import runtime_profile
 import process_custody
-_LOADED_PYTHON = {name: sha for name, sha in source_store.adapter_pin('objective-bend-spell@3')['files'].items()
+_LOADED_PYTHON = {name: sha for name, sha in source_store.adapter_pin('objective-bend-object')['files'].items()
                   if name.endswith('.py')}
 
 
@@ -62,7 +62,7 @@ def values(operation, items):
         'op': 'value-codec', 'direction': operation, 'values': items}}) + b'\n'
     if len(wire) > 1024 * 1024:
         raise ValueError('native value codec frame exceeds 1 MiB')
-    done = process_custody.run([str(ROOT / '.lake/build/bin/delvetalk-compiled')],
+    done = process_custody.run_native([str(ROOT / '.lake/build/bin/delvetalk-compiled')],
         input=wire, cwd=ROOT, timeout=15, cpu_seconds=10,
         stdout_limit=8 * 1024 * 1024, stderr_limit=1024 * 1024,
         file_limit=8 * 1024 * 1024)
@@ -104,7 +104,7 @@ def read_modules(files):
 
 
 def load(modules, *, syntax, constructor=None, arguments=None):
-    if syntax != 'objective-bend-spell@3':
+    if syntax not in ('objective-bend-object', 'objective-bend-spell@3'):
         raise ValueError('configured source object requires explicit typed source syntax')
     captured = pins(syntax)
     if (captured['loader'] != _LOADED_SELF or

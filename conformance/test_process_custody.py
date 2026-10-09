@@ -103,6 +103,29 @@ class ProcessCustodyTests(unittest.TestCase):
             time.sleep(0.4)
             self.assertFalse(marker.exists())
 
+    def test_native_policy_is_shared_scoped_and_uses_exact_byte_output(self):
+        original = dict(os.environ)
+        environment = {**original, 'LEAN_NUM_THREADS': '99', 'LEAN_STACK_SIZE_KB': '1',
+                       'LEAN_MAIN_USE_THREAD': '0', 'MIMALLOC_ARENA_RESERVE': '1',
+                       'CUSTODY_TEST_MARKER': 'preserved'}
+        code = ('import json,os; print(json.dumps({k:v for k,v in os.environ.items() '
+                'if k.startswith(("LEAN_","MIMALLOC_","CUSTODY_TEST_MARKER"))}))')
+        result = custody.run_native([sys.executable, '-c', code], env=environment,
+            timeout=3, cpu_seconds=2, stdout_limit=4096, stderr_limit=1024)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = json.loads(result.stdout)
+        self.assertEqual(observed['LEAN_NUM_THREADS'], '1')
+        self.assertEqual(observed['CUSTODY_TEST_MARKER'], 'preserved')
+        for key in ('LEAN_STACK_SIZE_KB', 'LEAN_MAIN_USE_THREAD', 'MIMALLOC_ARENA_RESERVE'):
+            self.assertNotIn(key, observed)
+        self.assertEqual(dict(os.environ), original)
+        command, persistent = custody.native_launch(['receiver', '--resident'], env=environment)
+        self.assertEqual(persistent, custody.native_environment(environment))
+        self.assertEqual(json.loads(command[3]), [None, custody.NATIVE_MEMORY_BYTES, None])
+        self.assertEqual(command[-2:], ['receiver', '--resident'])
+        self.assertEqual(custody.NATIVE_MEMORY_BYTES,
+                         4 * 1024 * 1024 * 1024 if sys.platform.startswith('linux') else None)
+
     def test_worker_selects_reply_bounds_without_a_world_file_limit(self):
         spec = importlib.util.spec_from_file_location('custody_test_worker', ROOT / 'scripts/worker.py')
         worker = importlib.util.module_from_spec(spec)

@@ -85,33 +85,23 @@ class Participant:
         root = desk.world.exchange(self.database,
             {'op': 'inspect', 'object': self.object, 'principal': self.principal}, profile='compiled')
         # This specialized renderer must not assign game meaning to arbitrary code.
-        if not client.same_game(root.get('protocol'), table.protocol(self.object)):
+        if not client.same_game(root.get('protocol'), self.object):
             raise ValueError('This table does not use the supported two-player protocol')
         public = client.public_view(root)
         token = secrets.token_hex(12)
-        fields = [{'name': name, 'label': name.capitalize() + ' cell index', 'type': 'nat',
-                   'required': True, 'minimum': 0, 'maximum': len(public['cells']) - 1}
-                  for name in ('source', 'target')]
-        actions = []
-        next_hint = 'The game has finished.'
-        if not public['winner']:
-            if not public['committed'][self.seat]:
-                actions.append({'id': 'commit', 'label': 'Seal my move', 'available': True, 'fields': fields})
-                next_hint = 'Seal your move; its opening stays in your private custody.'
-            elif all(public['committed']) and not public['revealed'][self.seat]:
-                next_hint = 'Your opening is unavailable here. Recover the original participant custody to reveal.'
-                opening_path = self._opening(public['round'])
-                if opening_path.exists():
-                    opening = loads(opening_path.read_bytes())
-                    if opening['commit']['digest'] == root['state']['commit' + str(self.seat)]:
-                        actions.append({'id': 'reveal', 'label': 'Open my sealed move', 'available': True, 'fields': []})
-                        next_hint = 'Both moves are sealed. You can now open yours.'
-            else:
-                next_hint = ('Waiting for the other seat to open its move.' if public['revealed'][self.seat]
-                             else 'Waiting for the other seat to seal its move.')
-            if all(public['revealed']):
-                actions.append({'id': 'resolve', 'label': 'Resolve both moves', 'available': True, 'fields': []})
-                next_hint = 'Both moves are open. Either seat can resolve the round.'
+        opening_path = self._opening(public['round'])
+        retained_digest = loads(opening_path.read_bytes())['commit']['digest'] if opening_path.exists() else ''
+        source_card = table.source_object.plain(table.evaluate('privateCard',
+            [root['state']['model'], table.source_object.data(self.principal),
+             table.source_object.data(self.seat), table.source_object.data(retained_digest)]))
+        bindings = source_card['actions']
+        metadata = affordances._metadata({'commands': {key: {} for key in bindings},
+            'affordances': {key: {'label': value['label'], 'fields': value['fields']}
+                            for key, value in bindings.items()}})
+        actions = [{'id': key, 'label': value['label'], 'available': True,
+                    'fields': metadata[key]['fields']}
+                   for key, value in bindings.items() if value['visible']]
+        next_hint = source_card['hint']
         # Distinct glyphs: attractor +, repulsor -, automaton @.
         glyphs = '.+-@'
         width = public['width']
@@ -129,7 +119,7 @@ class Participant:
             next_hint, 'Copy do CARD ACTION with the displayed fields.'])
         card = {'card': token, 'object': self.object, 'title': 'Two-player Automatafl', 'prose': prose, 'actions': actions}
         interpret.validate_card(card)
-        retained(self.custody / 'cards' / (token + '.json'), {'root': root, 'card': card})
+        retained(self.custody / 'cards' / (token + '.json'), {'root': root, 'card': card, 'bindings': bindings})
         return card
 
     def prepare(self, token, action_id, fields, intent):
@@ -154,7 +144,7 @@ class Participant:
                     raise ValueError('Intent already retains a different choice')
                 return {'prepared': identity, 'action': action_id, 'status': 'retained'}
             self._runtime()
-            state = saved['root']['state']
+            state = client.state(saved['root'])
             number = state['round']
             if action_id == 'commit':
                 opening_path = self._opening(number)
@@ -175,7 +165,7 @@ class Participant:
                 payload = opening['reveal']
             else:
                 payload = {'round': number}
-            command = action_id if action_id == 'resolve' else action_id + str(self.seat)
+            command = saved['bindings'][action_id]['command']
             request = {'op': 'invoke', 'object': self.object, 'principal': self.principal,
                        'intent': intent, 'expected': copy.deepcopy(saved['root']), 'command': command,
                        'input': copy.deepcopy(payload)}

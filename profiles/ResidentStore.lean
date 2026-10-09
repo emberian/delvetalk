@@ -177,7 +177,7 @@ def loadCheckpoint (world : Json) (sequence : Nat) (head : String) : Except Stri
 abbrev Query := Json → Json → Except String Json
 
 def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable in this profile")
-    (capturedPreparation : RetainedRoots.Index → Query := fun _ _ _ => .error "preparation unavailable in this profile") : IO Unit := do
+    (capturedPreparation : RetainedRoots.Index → Json → Query := fun _ _ _ _ => .error "preparation unavailable in this profile") : IO Unit := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   let mut session : Session := {}
@@ -194,7 +194,13 @@ def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable
         let request ← IO.ofExcept (field frame "request")
         let operation ← IO.ofExcept (str request "op")
         let reply ← IO.ofExcept (
-          if operation == "retained-root" then RetainedRoots.mint session.committed.roots request
+          if operation == "authorize-reads" then
+            World.authorizeReads session.committed.base request
+          else if operation == "object-history" then
+            World.historyPage session.committed.base request session.committed.history.reverse.toArray
+          else if operation == "catalogue-page" then
+            World.cataloguePage session.committed.base request session.committed.sequence (.str session.committed.head)
+          else if operation == "retained-root" then RetainedRoots.mint session.committed.roots request
           else if operation == "capture-roots" then do
             let captured ← RetainedRoots.capture session.committed.roots session.committed.base request
             put (← put captured "sequence" (toJson session.committed.sequence)) "head" (.str session.committed.head)

@@ -47,11 +47,10 @@ class Authoring:
         raw = source_store.read_bytes(self.artifacts, ref, kind=kind)
         return {'source': source, 'bytes': len(raw), 'ref': ref, 'text': raw.decode('utf-8')}
 
-    def catalog(self, snapshot):
+    def catalog(self, snapshot=None):
         registry = loads((desk.ROOT / 'syntaxes/registry.json').read_bytes())
         return {'syntaxes': sorted(registry['syntaxes']),
-                'candidates': [name for name, root in snapshot['objects'].items()
-                               if desk.is_source_desk_protocol(root['protocol'])],
+                'candidates': [],
                 'maxSourceBytes': MAX_SOURCE,
                 'links': {'prepare': '/api/authoring/prepare', 'source': '/api/authoring/source'}}
 
@@ -97,12 +96,13 @@ class Authoring:
                        'expected': expected, 'command': 'submit',
                        'input': {'proposal': proposal, 'migration': migration, 'target': target}}
         elif operation == 'adopt':
-            if not isinstance(target, str) or target not in roots or target == candidate:
-                raise ValueError('Adoption requires a distinct existing target')
-            request = {'op': 'transaction', 'principal': principal, 'intent': intent,
-                       'reads': {candidate: expected, target: roots[target]},
-                       'calls': [{'object': candidate, 'command': 'adopt', 'input': {'target': target}},
-                                 {'op': 'reprogram', 'object': target, 'inputFrom': 0}]}
+            if not isinstance(target, str) or target not in roots:
+                raise ValueError('Release requires an existing captured target')
+            view = desk.projection.project(expected, candidate, expected_runtime=self.portal.runtime)
+            invitation = desk.source_offers.capture(view, {candidate: expected, target: roots[target]}).get('release')
+            if invitation is None:
+                raise ValueError('This Candidate does not offer an ordinary release')
+            request = desk.source_offers.request(invitation, principal, intent, {})
         if request is not None and len(canonical(request)) > 65536:
             raise ValueError('Exact request exceeds the 65536-byte host envelope')
         draft = {'format': 'delvetalk-authoring-draft-v1', 'operation': operation,

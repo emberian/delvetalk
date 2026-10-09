@@ -27,7 +27,8 @@ A, B = helpers.VISITOR, helpers.MAKER
 
 
 def modules():
-    return [{'name': name, 'source': (PACKAGE / (name + '.obend')).read_text()}
+    return [{'name': 'Abi', 'source': (ROOT / 'world/lib/prelude/Abi.obend').read_text()},
+            {'name': 'List', 'source': (ROOT / 'world/lib/prelude/List.obend').read_text()}, {'name': 'Encounter', 'source': (ROOT / 'world/lib/prelude/Encounter.obend').read_text()}] + [{'name': name, 'source': (PACKAGE / (name + '.obend')).read_text()}
             for name in ('ExhibitList', 'Main')]
 
 
@@ -167,7 +168,7 @@ class PlaceIndexJourney(helpers.TownForgeJourneyTests):
             source_desks = helpers.clerk.module('place_index_source_desks', 'protocols/source-desk/package.py')
             factories['desks'] = source_desks.factory(compiler, [A, B])
             writing_modules = source_object.read_modules([
-                ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+                ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
                 ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
                 ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
                 ('ExhibitWriting', PACKAGE / 'ExhibitWriting.obend')])

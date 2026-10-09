@@ -38,10 +38,153 @@ def legacyInputOrigin (origin : Json) : Except String Json := do
   return obj [("present", .bool false), ("object", .str ""), ("command", .str ""),
     ("immediatelyPrevious", .bool false)]
 
--- Public inspection and transactional observation share this boundary. A later
--- read policy belongs here; observing never calls the target's program or law.
-def readObject (objects : Json) (id : String) (_principal : String) : Except String Json :=
-  field objects id
+-- Acquisition is separate from effect authority. Missing read policy preserves
+-- the public commons; an explicit empty grant has no creator/manager bypass.
+-- The caller is supplied by authenticated transport, never by source code.
+def readObject (objects : Json) (id : String) (principal : String) : Except String Json := do
+  if principal.isEmpty then throw "read requires principal"
+  let root ← field objects id
+  let authority ← field root "law"
+  match (field authority "read").toOption with
+  | none => return root
+  | some (.str "public") => return root
+  | some grant =>
+    let principals ← (← grant.getArr?).mapM Json.getStr?
+    if !principals.contains principal then throw "object read unauthorized"
+    return root
+
+-- Recheck acquisition of already captured data without retransmitting roots.
+-- This verdict is only for this query; it is not a reusable grant/token.
+def authorizeReads (world request : Json) : Except String Json := do
+  let keys := (← pairs request).map Prod.fst
+  if keys.length != 3 || !["op", "principal", "objects"].all keys.contains then
+    throw "authorize-reads requires exact fields"
+  let principal ← str request "principal"
+  let ids ← (← (← field request "objects").getArr?).mapM Json.getStr?
+  if ids.isEmpty || ids.size > 17 then throw "read authorization object capacity"
+  let objects ← field world "objects"
+  for id in ids do discard (readObject objects id principal)
+  return obj [("authorized", .bool true)]
+
+-- Current metadata only: neither retained history nor complete roots cross this
+-- boundary. A continuation binds the exact custody revision, including refusals.
+def cataloguePage (world request : Json) (sequence : Nat) (head : Json) : Except String Json := do
+  let entries ← pairs request
+  if entries.length != 4 || !(entries.all (fun item => ["op", "principal", "limit", "cursor"].contains item.1)) then
+    throw "catalogue requires exactly op, principal, limit and cursor"
+  let principal ← str request "principal"
+  if principal.isEmpty then throw "catalogue requires principal"
+  let limit ← (← field request "limit").getNat?
+  if limit == 0 || limit > 64 then throw "catalogue page capacity"
+  let cursor ← field request "cursor"
+  let after ← if cursor == .null then pure none else do
+    let fields ← pairs cursor
+    if fields.length != 3 || !(fields.all (fun item => ["after", "sequence", "head"].contains item.1)) then
+      throw "invalid catalogue cursor"
+    if (← field cursor "sequence") != toJson sequence || (← field cursor "head") != head then
+      throw "stale catalogue cursor"
+    pure (some (← str cursor "after"))
+  let objects ← field world "objects"
+  let mut rows : Array Json := #[]
+  let mut last : Option String := none
+  let mut more := false
+  let mut bytes := 0
+  for (id, _) in (← pairs objects) do
+    if after.any (fun previous => compare id previous != .gt) then continue
+    let root ← match readObject objects id principal with
+      | .ok root => pure root
+      | .error _ => continue
+    let name := ((field root "protocol" >>= fun protocol => str protocol "name").toOption).getD id
+    let preview := (name.take 256).toString
+    let row := obj [("object", .str id), ("version", ← field root "version"),
+      ("name", .str preview), ("nameTruncated", .bool (preview != name))]
+    let size := row.compress.utf8ByteSize
+    -- Reserve the continuation even if this turns out to be the final row.
+    -- Object identities are exact and may be large; the cursor repeats one.
+    let continuation := obj [("after", .str id), ("sequence", toJson sequence), ("head", head)]
+    if rows.size == limit || bytes + size + continuation.compress.utf8ByteSize + 1024 > 60 * 1024 then
+      if rows.isEmpty then throw "catalogue identity response capacity"
+      more := true
+      break
+    rows := rows.push row
+    bytes := bytes + size
+    last := some id
+  let next := if more then obj [("after", .str (last.getD "")),
+    ("sequence", toJson sequence), ("head", head)] else .null
+  let response := obj [("objects", .arr rows), ("nextCursor", next),
+    ("sequence", toJson sequence), ("head", head)]
+  if response.compress.utf8ByteSize > 64 * 1024 then throw "catalogue response capacity"
+  return response
+
+-- A history row is one indivisible admission, not a replayable redaction. Every
+-- native-bound peer whose root/evidence it may disclose must be readable now.
+def eventObjects (world reference : Json) : Except String (List String) := do
+  let messages ← field world "messages"
+  let retained ← field (← field messages "events") (← str reference "id")
+  let evidence ← field retained "evidence"
+  return [← str evidence "source", ← str evidence "to"]
+
+def admissionObjects (world entry : Json) : Except String (List String) := do
+  let request ← field entry "request"
+  let mut ids : List String := []
+  if let some id := (str request "object").toOption then ids := id :: ids
+  if let some reads := (field request "reads").toOption then
+    ids := ids ++ (← pairs reads).map Prod.fst
+  if let some absent := (field request "absent").toOption then
+    ids := ids ++ (← absent.getArr?).toList.filterMap (fun value => value.getStr?.toOption)
+  if let some data := (field entry "receipt" >>= fun receipt => field receipt "data").toOption then
+    for key in ["roots", "allocated"] do
+      if let some roots := (field data key).toOption then ids := ids ++ (← pairs roots).map Prod.fst
+    if let some messages := (field data "messages").toOption then
+      for reference in (← messages.getArr?) do ids := ids ++ (← eventObjects world reference)
+  if ["deliver", "settle-message"].contains ((str request "op").toOption.getD "") then
+    ids := ids ++ (← eventObjects world (← field request "event"))
+  return ids.eraseDups
+
+def readableAdmission (world entry : Json) (principal : String) : Except String Unit := do
+  let objects ← field world "objects"
+  for id in (← admissionObjects world entry) do
+    -- An absent allocation guard carries no existing object contents.
+    if (field objects id).isOk then discard (readObject objects id principal)
+
+def historyPage (world request : Json) (receipts : Array Json) : Except String Json := do
+  let keys := (← pairs request).map Prod.fst
+  let expected := ["op", "principal", "object", "before", "offset", "limit"]
+  if keys.length != expected.length || !expected.all keys.contains then
+    throw "object-history requires exact fields"
+  let principal ← str request "principal"
+  let id ← str request "object"
+  discard (readObject (← field world "objects") id principal)
+  let before ← (← field request "before").getNat?
+  let offset ← (← field request "offset").getNat?
+  let limit ← (← field request "limit").getNat?
+  if before > receipts.size || offset > before || limit == 0 || limit > 32 then
+    throw "object-history bounds"
+  let stop := min before (offset + 256)
+  let mut next := offset
+  let mut rows : Array Json := #[]
+  let mut bytes := 0
+  for index in [offset:stop] do
+    let entry := receipts[index]!
+    let ids ← match admissionObjects world entry with
+      | .ok ids => pure ids
+      | .error _ =>
+        next := index + 1
+        continue
+    if !ids.contains id || !(readableAdmission world entry principal).isOk then
+      next := index + 1
+      continue
+    let size := entry.compress.utf8ByteSize
+    -- Oversized admissions require explicit custodian export, never a partial row.
+    if size > 60 * 1024 then
+      next := index + 1
+      continue
+    if rows.size == limit || bytes + size > 60 * 1024 then break
+    rows := rows.push entry
+    bytes := bytes + size
+    next := index + 1
+  return obj [("history", .arr rows), ("before", toJson before),
+    ("nextOffset", if next < before then toJson next else .null)]
 
 -- Host-bound identity for one actual receiving call, separate from user data.
 structure CallContext where
@@ -66,11 +209,13 @@ structure Runtime where
     fun _ _ _ => throw "source contracts require compiled profile"
   checkSourceAmendment : Json → Json → Json → Json → String → Evaluation Unit :=
     fun _ _ _ _ _ => throw "source amendments require compiled profile"
+  checkSourcePolicy : Json → Json → Evaluation Unit :=
+    fun _ _ => throw "source policies require compiled profile"
   -- Admission-owned effects are staged under the same budget and rollback as
   -- the source invocation. The default preserves ordinary inert outboxes.
-  stageMessages : Json → Json → Json → Json → Nat → Array Json →
+  stageMessages : Json → Json → Json → Json → Nat → Nat → Array Json →
       Evaluation (Json × Array Json × Array Json) :=
-    fun world _ _ _ _ emitted => pure (world, #[], emitted)
+    fun world _ _ _ _ _ emitted => pure (world, #[], emitted)
 
 def tick : Evaluation Unit := do
   let remaining ← get
@@ -181,7 +326,7 @@ def allocationLimit (protocol : Json) : Except String (Option Nat) := do
 -- An exact versioned marker opts in. Other legacy metadata stays inert.
 def sourceTransition? (command : Json) : Option Json := do
   let transition ← (field command "transition").toOption
-  if ["delvetalk-source-transition-v1", "delvetalk-source-transition-v2",
+  if ["delvetalk-source-transition", "delvetalk-source-transition-v1", "delvetalk-source-transition-v2",
       "delvetalk-source-data-transition-v1", "delvetalk-source-effects-v1",
       "delvetalk-source-receive-v1", "delvetalk-source-data-effects-v1",
       "delvetalk-source-data-receive-v1"].contains
@@ -233,7 +378,7 @@ def law (j : Json) : Except String (Array String) := do
 
 -- Legacy principal arrays keep their original all-operation meaning. The
 -- opt-in scoped profile names each invocation and management grant explicitly.
-def validateLaw (j : Json) : Except String Unit := do
+def validateLegacyLaw (j : Json) : Except String Unit := do
   match j with
   | .arr _ => discard (law j)
   | _ =>
@@ -265,6 +410,33 @@ def validateLaw (j : Json) : Except String Unit := do
     | some predicate => discard (Delvetalk.decode predicate)
     | none => pure ()
 
+-- One current source law boundary. Legacy validation remains a temporary
+-- producer cutover seam; it does not select separate receiving algorithms.
+def validateLaw (j : Json) : Except String Unit := do
+  if (str j "profile").toOption != some "delvetalk-scoped-law" then
+    return ← validateLegacyLaw j
+  for (key, _) in (← pairs j) do
+    unless ["profile", "invoke", "reprogram", "law", "predicate", "invariant",
+        "contract", "amendment", "read"].contains key do
+      throw "unsupported scoped law field"
+  for (_, principals) in (← pairs (← field j "invoke")) do discard (law principals)
+  discard (law (← field j "reprogram"))
+  discard (law (← field j "law"))
+  for key in ["predicate", "invariant"] do
+    if let some term := (field j key).toOption then
+      if term.getArr?.isOk then discard (Delvetalk.decode term)
+      else
+        let keys := (← pairs term).map Prod.fst
+        unless keys.length == 2 && keys.all ["package", "config"].contains do
+          throw "source policy requires exactly package and config"
+        let keys := (← pairs (← field term "package")).map Prod.fst
+        unless keys.length == 2 && keys.all ["modules", "entry"].contains do
+          throw "source policy requires standalone modules and entry"
+  for key in ["contract", "amendment"] do
+    if let some descriptor := (field j key).toOption then discard (pairs descriptor)
+  if let some reading := (field j "read").toOption then
+    if reading != .str "public" then discard (law reading)
+
 def policyContext (o request : Json) (principal : String) : Except String Json := do
   let op ← str request "op"
   let command ← if op == "invoke" then str request "command" else pure ""
@@ -273,7 +445,7 @@ def policyContext (o request : Json) (principal : String) : Except String Json :
   return obj [("principal", .str principal), ("op", .str op), ("command", .str command),
     ("state", ← field o "state"), ("input", input)]
 
-def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit := do
+def authorizeRequestWith (runtime : Runtime) (o request : Json) (principal : String) : Evaluation Unit := do
   let authority ← field o "law"
   let principals ← match authority with
     | .arr _ => law authority
@@ -295,6 +467,9 @@ def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit :
   match (field authority "predicate").toOption with
   | none => pure ()
   | some predicate =>
+    if predicate.getObj?.isOk then
+      runtime.checkSourcePolicy predicate (← put (← policyContext o request principal) "object" (← field request "object"))
+      return
     let term ← Delvetalk.decode predicate
     let context ← toTerm 64 (← policyContext o request principal)
     match (← normalize (.app term context)) with
@@ -302,48 +477,60 @@ def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit :
     | .boolean false => throw "authority predicate refused"
     | _ => throw "authority predicate must return Bool"
 
+def authorizeRequest (o request : Json) (principal : String) : Evaluation Unit :=
+  authorizeRequestWith {} o request principal
+
 def rootCheck (o request : Json) : Except String Unit := do
   if o != (← field request "expected") then throw "stale read root"
 
 -- A receiving invariant belongs to law, outside replaceable command code.
 -- Every candidate uses actual staged states; invocation input has already been
 -- resolved. This consumes the same turn budget as authority and execution.
-def checkInvariant (authority before after request : Json) (principal : String) : Evaluation Unit := do
-  let profile := (str authority "profile").toOption
-  if profile != some "delvetalk-scoped-law-v2" && profile != some "delvetalk-scoped-law-v3" &&
-      profile != some "delvetalk-scoped-law-v4" then return
+def checkInvariantWith (runtime : Runtime) (authority before after request : Json) (principal : String) : Evaluation Unit := do
   let some invariant := (field authority "invariant").toOption | return
   let op ← str request "op"
   let command ← if op == "invoke" then str request "command" else pure ""
   let input ← if op == "invoke" then field request "input" else pure (obj [])
-  let context ← toTerm 64 (obj [("object", .str (← str request "object")),
+  let facts := obj [("object", .str (← str request "object")),
     ("principal", .str principal), ("op", .str op), ("command", .str command),
-    ("state", ← field before "state"), ("nextState", ← field after "state"), ("input", input)])
+    ("state", ← field before "state"), ("nextState", ← field after "state"), ("input", input)]
+  if invariant.getObj?.isOk then
+    runtime.checkSourcePolicy invariant facts
+    return
+  let context ← toTerm 64 facts
   let term ← Delvetalk.decode invariant
   match (← normalize (.app term context)) with
   | .boolean true => pure ()
   | .boolean false => throw "state invariant refused"
-  | _ => throw "state invariant must return Bool"
+    | _ => throw "state invariant must return Bool"
+
+def checkInvariant (authority before after request : Json) (principal : String) : Evaluation Unit :=
+  checkInvariantWith {} authority before after request principal
 
 def checkCandidateWith (runtime : Runtime) (before after request : Json) (principal : String) : Evaluation Unit := do
-  checkInvariant (← field before "law") before after request principal
+  let beforeLaw ← field before "law"
+  let afterLaw ← field after "law"
+  checkInvariantWith runtime beforeLaw before after request principal
   let op ← str request "op"
   let checkContract (authority : Json) (methods : Bool) : Evaluation Unit := do
-    let profile := (str authority "profile").toOption
-    if profile == some "delvetalk-scoped-law-v3" || profile == some "delvetalk-scoped-law-v4" then
-      if let some contract := (field authority "contract").toOption then
-        runtime.checkSourceContract contract after methods
+    if let some contract := (field authority "contract").toOption then
+      runtime.checkSourceContract contract after methods
   let checkAmendment (authority : Json) : Evaluation Unit := do
-    if (str authority "profile").toOption == some "delvetalk-scoped-law-v4" then
-      runtime.checkSourceAmendment (← field authority "amendment") before after request principal
-  checkAmendment (← field before "law")
-  checkContract (← field before "law") (["create", "reprogram", "law"].contains op)
+    if let some amendment := (field authority "amendment").toOption then
+      runtime.checkSourceAmendment amendment before after request principal
+  checkAmendment beforeLaw
+  checkContract beforeLaw (["create", "reprogram", "law"].contains op)
   -- New law cannot install an invariant already false of the proposed state.
   -- Old law must also admit its own revision; management has no bypass.
   if op == "law" then
-    checkAmendment (← field after "law")
-    checkInvariant (← field after "law") before after request principal
-    checkContract (← field after "law") true
+    -- Both callbacks close over the identical actual before/after/request/caller.
+    -- An unchanged pure amendment has already accepted that context above. Reuse
+    -- only this verdict, never across objects, steps, or requests; a changed
+    -- descriptor still runs its new guard under the remaining shared budget.
+    let sameAmendment := (field beforeLaw "amendment").toOption == (field afterLaw "amendment").toOption
+    unless sameAmendment do checkAmendment afterLaw
+    checkInvariantWith runtime afterLaw before after request principal
+    checkContract afterLaw true
 
 def checkCandidate (before after request : Json) (principal : String) : Evaluation Unit :=
   checkCandidateWith {} before after request principal
@@ -456,6 +643,7 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
       (fun descriptor key => do eval (← field descriptor key))
 
 def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String) : Evaluation (Json × Json) := do
+  let workStart ← get
   let objects ← field world "objects"
   let id ← str request "object"
   if id.isEmpty then throw "empty object id"
@@ -466,8 +654,10 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     checkCandidateWith runtime o o request principal
     let next ← put world "objects" (← put objects id o)
     return (next, receipt request "committed" (obj [("root",o), ("result",.null), ("outbox", .arr #[])]))
-  let o ← field objects id
-  authorizeRequest o request principal
+  -- This profile returns complete roots in receipts; invocation rights alone
+  -- cannot authorize acquiring a private preimage through that reply.
+  let o ← readObject objects id principal
+  authorizeRequestWith runtime o request principal
   rootCheck o request
   let n ← (← field o "version").getNat?
   if op == "law" then
@@ -497,7 +687,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
   checkCandidateWith runtime o nextObj request principal
   let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o request principal absent noInputOrigin allocations
   let (next, messages, ordinaryOutbox) ← runtime.stageMessages
-    (← put world "objects" staged) request request o 0 outbox
+    (← put world "objects" staged) request request o 0 workStart outbox
   let mut data := obj [("root",nextObj), ("result",result), ("outbox", .arr ordinaryOutbox)]
   if !messages.isEmpty then data ← put data "messages" (.arr messages)
   if allocated != obj [] then data ← put data "allocated" allocated
@@ -546,6 +736,10 @@ def handleWith
   if request.compress.utf8ByteSize > maxRequestBytes then throw "expanded request exceeds 1 MiB"
   let principal ← str request "principal"
   if principal.isEmpty then throw "empty principal"
+  if (← str request "op") == "authorize-reads" then
+    return (world, ← authorizeReads world request)
+  if (← str request "op") == "object-history" then
+    return (world, ← historyPage world request (← (← field world "receipts").getArr?))
   if (← str request "op") == "inspect" then
     return (world, ← readObject (← field world "objects") (← str request "object") principal)
   let intent ← str request "intent"

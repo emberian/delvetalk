@@ -53,16 +53,17 @@ def modulesOf (j : Json) : Except String (List SourceModule × Json) := do
 def compile (j : Json) : Except String Json := do
   let (modules, sources) ← modulesOf j
   let entry ← j.getObjValAs? String "entry"
-  let lowered ← (FrontEnd.lower modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition").mapError
+  let (lowered, genericInstances) ← (FrontEnd.lowerWithInstances modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition").mapError
     (fun diagnostic => diagnostic.json.compress)
   if !lowered.laws.isEmpty then throw "package laws require a host law adapter; this pure profile refuses them"
-  let accepted ← (accept lowered).mapError (fun diagnostic => diagnostic.json.compress)
+  let accepted ← (accept lowered).mapError (fun diagnostic => ({ diagnostic with message := diagnostic.message ++
+      (if genericInstances == Json.arr #[] then "" else "; selected generic instances: " ++ genericInstances.compress) }).json.compress)
   let packet := lowered.packet
   return Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
     ("modules", sources),
     ("sourcesSha256", toJson (Minidregg.Compiler.Sha256.hexString sources.compress)),
-    ("entry", toJson entry), ("limits", getLimits j), ("packet", packet),
+    ("entry", toJson entry), ("genericInstances", genericInstances), ("limits", getLimits j), ("packet", packet),
     ("packetSha256", toJson (Minidregg.Compiler.Sha256.hexString packet.compress)),
     ("type", typeJson accepted.typed.type)]
 
@@ -217,14 +218,15 @@ def DataExecution.wire : DataExecution → Json
 /-- Explicit recursive-data execution. Full eager materialization and output
 shape checking happen here, before any native consumer sees a Data value.
 Conversion and machine work share the existing whole-execution allowance. -/
-def executeDataValue (packet arguments limits : Json) : Except String DataExecution := do
+private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × Ty × Nat))
+    (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
   let bytes ← bounded limits "bytes" 1048576 16777216
   let inputBytes ← bounded limits "inputBytes" bytes 16777216
-  if arguments.compress.utf8ByteSize > inputBytes then throw "typed data input byte capacity"
+  if argumentBytes > inputBytes then throw "typed data input byte capacity"
   let ticks ← bounded limits "ticks" 100000 1000000
   let work ← bounded limits "work" ticks 1000000
   let allowance := min ticks work
-  let ((source, type, _), remaining) ← (PackageData.prepare packet arguments).run allowance
+  let ((source, type, _), remaining) ← prepared.run allowance
   let before := allowance - remaining
   let heap ← bounded limits "heap" 100000 1000000
   let stack ← bounded limits "stack" 10000 100000
@@ -238,19 +240,32 @@ def executeDataValue (packet arguments limits : Json) : Except String DataExecut
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
       let outputAllowance := min remaining result.remaining.ticks
-      let (_, after) ← (PackageData.quote source.assumptions 256 result.value type).run outputAllowance
+      let (_, after) ← (PackageData.validate source.assumptions 256 result.value type).run outputAllowance
       return .finished result.value type (nodes - result.remaining.nodes)
         ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
+
+def executeDataValue (packet arguments limits : Json) : Except String DataExecution :=
+  executePreparedData (PackageData.prepare packet arguments) arguments.compress.utf8ByteSize limits
+
+/-- Exact same checked execution, work and physical wire byte cap for native
+arguments. Keep Data through this internal boundary rather than roundtripping. -/
+def executeDataValues (packet : Json) (arguments : Array Data) (limits : Json) : Except String DataExecution :=
+  let argumentBytes := 2 + arguments.foldl (fun n value => n + dataJsonBytes value) 0
+    + (arguments.size - 1)
+  executePreparedData (PackageData.prepareValues packet arguments) argumentBytes limits
 
 /-- The external recursive-data wire is unchanged. Native receiving uses the
 same execution function without serializing and decoding its checked result. -/
 def executeDataPacket (packet arguments limits : Json) : Except String Json := do
   return (← executeDataValue packet arguments limits).wire
 
-def runData (j : Json) : Except String Json := do
+def runDataVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
-  verifyArtifact artifact
   executeDataPacket (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
+
+def runData (j : Json) : Except String Json := do
+  verifyArtifact (← j.getObjVal? "artifact")
+  runDataVerified j
 
 /-- Observe a source-bound specification's actual metadata without applying its
     extension. A raw prototype's reflected specification says nothing about how

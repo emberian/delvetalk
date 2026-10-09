@@ -323,12 +323,19 @@ def document(view):
     return copy.deepcopy(checked)
 
 
+def _contribution_codec(metadata):
+    if 'contributionCodec' in metadata and metadata['contributionCodec'] not in ('value', 'data'):
+        raise ProjectionError('contributionCodec requires value or data')
+
+
 def _typed_interpretation(raw):
     fields = _wire_record(_wire_record(raw)['interpretation'])
-    if set(fields) != {'request', 'prepare'}:
-        raise ProjectionError('interpretation requires request and prepare exports')
+    if not {'request', 'prepare'} <= set(fields) or set(fields) - {'request', 'prepare', 'contributionCodec'}:
+        raise ProjectionError('interpretation requires request and prepare exports with optional contributionCodec')
     result = {key: _plain_data(value, [1000]) for key, value in fields.items()}
-    for entry in result.values():
+    _contribution_codec(result)
+    for key in ('request', 'prepare'):
+        entry = result[key]
         if not isinstance(entry, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,127}', entry):
             raise ProjectionError('interpretation requires source export names')
     return result
@@ -438,9 +445,11 @@ def _typed_invitations(raw):
     for key in sorted(rows):
         _text_bound(key, 128, 'invitation key')
         fields = _wire_record(rows[key])
-        if set(fields) != {'visible', 'text', 'prepare', 'fields', 'observations'}:
-            raise ProjectionError('invitation requires visible, text, prepare, fields and observations')
+        required = {'visible', 'text', 'prepare', 'fields', 'observations'}
+        if not required <= set(fields) or set(fields) - required - {'contributionCodec'}:
+            raise ProjectionError('invitation requires visible, text, prepare, fields and observations with optional contributionCodec')
         item = {name: _plain_data(value, budget) for name, value in fields.items() if name != 'observations'}
+        _contribution_codec(item)
         if type(item['visible']) is not bool:
             raise ProjectionError('invitation visible requires Bool')
         _text_bound(item['text'], 4096, 'invitation text')
@@ -620,10 +629,11 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
         runtime = (pins if source_view else runtime_profile.hash_paths([binary_path], root=ROOT))[binary_path]
         if source_view and expected_runtime is not None:
             _assert_source_runtime({'profile': host, 'files': pins}, runtime, expected_runtime)
-        result = subprocess.run([str(executable)], input=wire + '\n', text=True,
-                                capture_output=True, timeout=10, cwd=ROOT)
+        result = world.process_custody.run_native([str(executable)],
+            input=(wire + '\n').encode('utf-8'), timeout=10, cpu_seconds=10, cwd=ROOT,
+            stdout_limit=1048576, stderr_limit=1048576)
         if result.returncode: raise ProjectionError('Lean view evaluation failed')
-        if len(result.stdout.encode('utf-8')) > 1048576: raise ProjectionError('view output exceeds 1 MiB')
+        if len(result.stdout) > 1048576: raise ProjectionError('view output exceeds 1 MiB')
         after = (runtime_profile.file_hashes(host, root=ROOT) if source_view else
                  runtime_profile.hash_paths([binary_path], root=ROOT))
         if after[binary_path] != runtime:
@@ -659,6 +669,8 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
         raise
     except subprocess.TimeoutExpired as error:
         raise ProjectionError('view process deadline exceeded') from error
+    except world.process_custody.OutputLimitExceeded as error:
+        raise ProjectionError('view process output limit exceeded') from error
     except (KeyError, TypeError, ValueError, OSError) as error:
         raise ProjectionError('malformed view or snapshot: ' + str(error)) from error
 

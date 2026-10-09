@@ -1,37 +1,34 @@
 #!/usr/bin/env python3
 """Opaque commitment preparation and public display; no game/authority evaluator."""
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import secrets
 
-DOMAIN = 'delvetalk.automatafl.commit.v1'
+_spec = importlib.util.spec_from_file_location('commit_reveal_source', Path(__file__).with_name('protocol.py'))
+table = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(table)
 
 
 def same_game(program, qualified):
-    """Accept the exact core, optionally with this repository's exact companion view.
-
-    No command, initial state, name or unknown execution field is ignored.
-    Presentation is an explicit byte-equal allowlist, not arbitrary metadata.
-    """
+    """Require the complete source-owned program, including original configuration."""
     if not isinstance(program, dict):
         return False
     try:
-        encoded = canonical(program)
-        if encoded == canonical(qualified):
-            return True
-    except (TypeError, ValueError):
+        if isinstance(qualified, str):
+            initial = table.source_object.plain(program['initial']['model'])
+            qualified = table.protocol(qualified, initial['seats']['north'], initial['seats']['south'])
+        return canonical(program) == canonical(qualified)
+    except (KeyError, TypeError, ValueError):
         return False
-    path = Path(__file__).resolve().parents[2] / 'protocols/automatafl/generate.py'
-    spec = importlib.util.spec_from_file_location('table_companion_identity', path)
-    companion = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(companion)
-    display = companion.presentation()
-    return (set(display) == {'description', 'affordances', 'viewProgram', 'viewPanels'}
-            and encoded == canonical({**qualified, **display}))
+
+
+def state(root):
+    """Decode typed state; old retained receipts retain their historical display."""
+    value = root['state']
+    return table.source_object.plain(value['model']) if set(value) == {'model'} else value
 
 
 def canonical(value):
@@ -40,14 +37,15 @@ def canonical(value):
 
 def prepare(table_id, round_number, seat, source, target, nonce=None):
     nonce = secrets.token_hex(32) if nonce is None else nonce
-    preimage = [DOMAIN, table_id, round_number, seat, source, target, nonce]
+    digest = table.source_object.plain(table.evaluate('commitment',
+        [table.source_object.data(value) for value in (table_id, round_number, seat, source, target, nonce)]))
     return {'table': table_id, 'seat': seat,
-            'commit': {'round': round_number, 'digest': hashlib.sha256(canonical(preimage)).hexdigest()},
+            'commit': {'round': round_number, 'digest': digest},
             'reveal': {'round': round_number, 'source': source, 'target': target, 'nonce': nonce}}
 
 
 def public_view(root):
-    s = root['state']
+    s = state(root)
     game = s['game']
     count = s['width'] * s['height']
     board = game['board']

@@ -3,10 +3,12 @@
 import TransactionsCore
 import MessagesCore
 import FileCustody
+import ProgramDigest
 import ResidentStore
 import SourcePackages
 import SourceContract
 import SourceAmendment
+import SourcePolicy
 import Preparation
 import Delvetalk.Package
 open Lean World
@@ -126,8 +128,7 @@ def evaluateExtra (context : World.CallContext) (expr : Json) (evaluate : Json �
   | "program-digest" =>
     if args.size != 2 then throw "program digest expression arity"
     let value ← evaluate args[1]!
-    charge (FileCustody.encode value).utf8ByteSize
-    return .str (Messages.digest value)
+    return .str (← ProgramDigest.digest value)
   | "sha256" =>
     if args.size != 2 then throw "hash expression arity"
     let bytes ← canonicalData 64 (← evaluate args[1]!)
@@ -149,15 +150,20 @@ def evaluateExtra (context : World.CallContext) (expr : Json) (evaluate : Json �
 -- add bounded retained emissions; law-held contracts separately govern state.
 def transitionPackage (protocol transition : Json) : Except String Json := do
   for (key, _) in (← pairs transition) do
-    if !(["package", "profile", "inputCodec", "resultCodec"].contains key) then
+    if !(["package", "profile", "inputCodec", "resultCodec", "messages"].contains key) then
       throw "unsupported source transition field"
+  let profile ← str transition "profile"
+  if profile == "delvetalk-source-transition" then Messages.validateCapabilities transition
+  else if (field transition "messages").isOk then throw "message capabilities require current source transition"
   for key in ["inputCodec", "resultCodec"] do
     if let some codec := (field transition key).toOption then
-      if (← codec.getStr?) != "value" then throw "unknown source data codec"
-      if !(["delvetalk-source-data-transition-v1", Messages.dataEffectsProfile,
+      let name ← codec.getStr?
+      if name != "value" && !(key == "inputCodec" && name == "data") then
+        throw "unknown source data codec"
+      if !(["delvetalk-source-transition", "delvetalk-source-data-transition-v1", Messages.dataEffectsProfile,
           Messages.dataReceiveProfile].contains (← str transition "profile")) then
-        throw "Value codec requires typed source transition"
-  if !(["delvetalk-source-transition-v1", "delvetalk-source-transition-v2",
+        throw "data codec requires typed source transition"
+  if !(["delvetalk-source-transition", "delvetalk-source-transition-v1", "delvetalk-source-transition-v2",
       "delvetalk-source-data-transition-v1", Messages.effectsProfile,
       Messages.receiveProfile, Messages.dataEffectsProfile, Messages.dataReceiveProfile].contains (← str transition "profile")) then
     throw "unknown source transition profile"
@@ -166,36 +172,52 @@ def transitionPackage (protocol transition : Json) : Except String Json := do
 def validateTransition (protocol transition : Json) : Except String Unit := do
   discard (Delvetalk.Package.compile (← transitionPackage protocol transition))
 
+def executeDataPackage (spec : Json) (arguments : Array Json) :
+    Evaluation Minidregg.Theory.ObjectiveBendDemandData.Data := do
+  let artifact ← Delvetalk.Package.compile spec
+  let remaining ← get
+  let execution ← Delvetalk.Package.executeDataValue (← field artifact "packet") (.arr arguments)
+    (obj [("ticks", toJson remaining), ("heap", toJson (100000 : Nat)),
+          ("stack", toJson (10000 : Nat)), ("nodes", toJson (100000 : Nat)),
+          ("bytes", toJson (1048576 : Nat))])
+  charge (execution.usage.ticksUsed + execution.usage.conversionNodes)
+  match execution with
+  | .finished value _ _ _ => pure value
+  | .refused failure _ => throw ("typed package execution refused: " ++ failure)
+
 def executeDataTransition (context : World.CallContext) (profile : String) (transition spec state input identity : Json) :
     Evaluation (Json × Json × Array Json × Array Json) := do
+  let receiving := if profile == "delvetalk-source-transition" then Messages.receives transition else Messages.isReceive profile
+  let emitting := if profile == "delvetalk-source-transition" then Messages.emits transition else Messages.isEffects profile
   if (← pairs state).map Prod.fst != ["model"] then
     throw "typed source state requires exactly model"
-  let inputData ← if (field transition "inputCodec").isOk then
-    Preparation.encodeValue 64 input
-  else do
-    let (data, nodes) ← Delvetalk.Package.jsonData 64 input
-    charge nodes
-    pure data
+  let inputData ← match (field transition "inputCodec").toOption with
+    | some codec =>
+      if (← codec.getStr?) == "data" then Delvetalk.PackageData.decode 256 input
+      else Preparation.encodeValue 64 input
+    | none => do
+      let (data, nodes) ← Delvetalk.Package.jsonData 64 input
+      charge nodes
+      pure data
   let (identityData, identityNodes) ← Delvetalk.Package.jsonData 64 identity
   charge identityNodes
   let mut arguments := #[← field state "model",
     Minidregg.Compiler.ObjectiveBendDataWire.dataJson inputData,
     Minidregg.Compiler.ObjectiveBendDataWire.dataJson identityData]
-  if Messages.isReceive profile then
+  if receiving then
     let some facts := context.eventFacts | throw "receive-only command requires authenticated event delivery"
     let (data, nodes) ← Delvetalk.Package.jsonData 64 facts
     charge nodes
     arguments := arguments.push (Minidregg.Compiler.ObjectiveBendDataWire.dataJson data)
   else if context.eventFacts.isSome then throw "delivery requires a receive-only command"
-  let decisionWire ← evaluateExtra context
-    (.arr #[.str "package-data-v1", spec, .arr arguments]) pure
-  -- Decoding the returned envelope traverses the complete retained state and
-  -- result under the SAME remaining budget. No branch gets fresh fuel.
-  let decision ← Delvetalk.PackageData.decode 256 decisionWire
+  -- Stay inside the native boundary: the package has already materialized and
+  -- checked the complete result. Encoding it as typed wire merely to decode it
+  -- again duplicates traversal, allocation and budget charge for every field.
+  let decision ← executeDataPackage spec arguments
   let .record fields := decision | throw "typed source decision must be a record"
   let keys := fields.map Prod.fst
   let expected := ["accepted", "reason", "state", "result"] ++
-    (if Messages.isEffects profile then ["emissions"] else []) ++
+    (if emitting then ["emissions"] else []) ++
     (if (fields.lookup "allocations").isSome then ["allocations"] else [])
   if keys.length != expected.length || !(expected.all keys.contains) then
     throw "typed source decision has unsupported fields"
@@ -217,11 +239,23 @@ def executeDataTransition (context : World.CallContext) (profile : String) (tran
     if reason.isEmpty then throw "source refusal requires a reason"
     throw ("source refused: " ++ reason)
   if !reason.isEmpty then throw "accepted source transition must have empty reason"
-  let emissions ← if Messages.isEffects profile then do
-    let (slots, nodes) ← Delvetalk.Package.dataPlain 64 (← getField "emissions")
-    charge nodes
-    Messages.exact slots ["a", "b", "c", "d"] "source emissions"
-    ["a", "b", "c", "d"].toArray.mapM (fun key => do field slots key)
+  let emissions ← if emitting then do
+    if profile == "delvetalk-source-transition" then
+      let descriptors ← Preparation.list (Messages.maxFanout + 1) (← getField "emissions")
+      descriptors.toArray.mapM fun value => do
+        tick
+        Preparation.exact value ["to", "command", "recipientProgram", "payload"]
+        let destination ← Preparation.text (← Preparation.member value "to")
+        let command ← Preparation.text (← Preparation.member value "command")
+        let program ← Preparation.text (← Preparation.member value "recipientProgram")
+        let payload ← Preparation.decodeValue 64 (← Preparation.member value "payload")
+        pure (obj [("to", .str destination), ("command", .str command),
+          ("recipientProgram", .str program), ("payload", payload)])
+    else
+      let (slots, nodes) ← Delvetalk.Package.dataPlain 64 (← getField "emissions")
+      charge nodes
+      Messages.exact slots ["a", "b", "c", "d"] "source emissions"
+      ["a", "b", "c", "d"].toArray.mapM (fun key => do field slots key)
   else pure #[]
   let allocations ← match fields.lookup "allocations" with
     | none => pure #[]
@@ -243,7 +277,7 @@ def executeTransition (context : World.CallContext) (state input : Json)
     if (← str transition "profile") == "delvetalk-source-transition-v1" then []
     else [("inputOrigin", context.inputOrigin)])
   let profile ← str transition "profile"
-  if ["delvetalk-source-data-transition-v1", Messages.dataEffectsProfile,
+  if ["delvetalk-source-transition", "delvetalk-source-data-transition-v1", Messages.dataEffectsProfile,
       Messages.dataReceiveProfile].contains profile then
     return ← executeDataTransition context profile transition spec state input identity
   -- This is the same package evaluator and shared budget as ordinary compiled
@@ -275,33 +309,40 @@ def executeTransition (context : World.CallContext) (state input : Json)
 
 def reprogramResult (id : String) (root : Json) : Evaluation Json := do
   let program ← field root "protocol"
-  charge (FileCustody.encode program).utf8ByteSize
+  let digest ← ProgramDigest.digest program
   return obj [("object", .str id), ("version", ← field root "version"),
-    ("program", .str (Messages.digest program))]
+    ("program", .str digest)]
 
 def checkSourceContract (contract candidate : Json) (checkMethods : Bool) : Evaluation Unit :=
   SourceContract.check (fun spec => do Delvetalk.Package.compile (← sourceSpec spec))
     contract candidate checkMethods
 
 def checkSourceAmendment (amendment before after request : Json) (principal : String) : Evaluation Unit :=
-  SourceAmendment.check (fun package arguments =>
-    evaluateExtra { object := "" } (.arr #[.str "package-data-v1", package, .arr arguments]) pure)
+  SourceAmendment.check (fun package arguments => do
+    executeDataPackage (← sourceSpec package) arguments)
     amendment before after request principal
+
+def checkSourcePolicy (policy facts : Json) : Evaluation Unit :=
+  SourcePolicy.check (fun package arguments => do executeDataPackage (← sourceSpec package) arguments) policy facts
 
 def runtime : World.Runtime := {
   budget := 100000, validateExtra := validateExtra, evaluateExtra := evaluateExtra,
   validateTransition := validateTransition, executeTransition := executeTransition,
   checkSourceContract := checkSourceContract,
   checkSourceAmendment := checkSourceAmendment,
+  checkSourcePolicy := checkSourcePolicy,
   stageMessages := Messages.stage, reprogramResult := reprogramResult }
 
 def transition (world request : Json) (principal : String) : Except String (Json × Json) := do
   match (← str request "op") with
   | "messages-init" => Messages.initializeRegistry world request
   | "deliver" => Messages.deliverWith runtime world request principal
+  | "settle-message" => Messages.settleWith runtime world request principal
   | _ => Transactions.transitionWith runtime world request principal
 
 def handle (world request : Json) : Except String (Json × Json) := do
+  if (← str request "op") == "catalogue-page" then
+    return (world, ← World.cataloguePage world request (← (← field world "receipts").getArr?).size .null)
   if (← str request "op") == "capture-roots" then
     return (world, ← RetainedRoots.capture (RetainedRoots.fromWorld world) world request)
   if (← str request "op") == "retained-root" then
@@ -309,7 +350,8 @@ def handle (world request : Json) : Except String (Json × Json) := do
   if (← str request "op") == "prepare-retained" then
     let captured ← put request "op" (.str "prepare")
     return (world, ← RetainedRoots.prepareCaptured (RetainedRoots.fromWorld world) world
-      (fun index world request => Preparation.run world request (RetainedRoots.reference index)) captured)
+      (fun index currentObjects world request =>
+        Preparation.run world request (RetainedRoots.reference index) (some currentObjects)) captured)
   if (← str request "op") == "value-codec" then
     return (world, ← Preparation.codec request)
   if (← str request "op") == "prepare" then
@@ -323,5 +365,6 @@ end Compiled
 
 def main (args : List String) : IO Unit :=
   if args == ["--resident"] then ResidentStore.serve Compiled.transition Messages.query
-    (fun index world request => Preparation.run world request (RetainedRoots.reference index))
+    (fun index currentObjects world request =>
+        Preparation.run world request (RetainedRoots.reference index) (some currentObjects))
   else FileCustody.mainWith Compiled.handle Compiled.job args

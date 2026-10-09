@@ -28,11 +28,15 @@ source_store = module('desk_source_store', 'scripts/source_store.py')
 process_custody = module('desk_process_custody', 'scripts/process_custody.py')
 source_object = module('desk_source_object', 'scripts/source_object.py')
 history = module('desk_history', 'scripts/history.py')
-adoption = module('desk_adoption', 'scripts/adoption.py')
+source_offers = module('desk_source_offers', 'scripts/source_offers.py')
+projection = module('desk_projection', 'scene/projection.py')
 canonical, loads = translate.canonical, translate.load_json
-_REVIEWED_CANDIDATE = None
+_REVIEWED_CANDIDATE = {}
 SOURCE_CANDIDATE_FILES = ('protocols/editor/generate.py', 'protocols/editor/Candidate.obend',
-                          'world/lib/prelude/Preparation.obend')
+                          'world/lib/prelude/List.obend', 'world/lib/prelude/Preparation.obend', 'world/lib/prelude/Abi.obend',
+                          'protocols/contract-workshop/generate.py',
+                          'protocols/contract-workshop/Workshop.obend',
+                          'protocols/contract-workshop/ContractCandidate.obend')
 
 
 def digest(value):
@@ -65,26 +69,36 @@ def is_source_desk_protocol(protocol):
     """Recognize only reviewed complete bodies; this selection grants no authority."""
     if not isinstance(protocol, dict) or 'sourcePackages' not in protocol:
         return False
-    global _REVIEWED_CANDIDATE
-    pin = {'source': runtime_profile.hash_paths(SOURCE_CANDIDATE_FILES, root=ROOT),
-           'loader': source_object.pins('objective-bend-spell@3')}
-    if _REVIEWED_CANDIDATE is None or _REVIEWED_CANDIDATE[0] != pin:
-        reviewed = module('desk_candidate_package', 'protocols/editor/generate.py').candidate()
-        if pin != {'source': runtime_profile.hash_paths(SOURCE_CANDIDATE_FILES, root=ROOT),
-                   'loader': source_object.pins('objective-bend-spell@3')}:
-            raise ValueError('reviewed source candidate changed during loading')
-        _REVIEWED_CANDIDATE = pin, reviewed
     def body(value):
         return {key: item for key, item in value.items() if key not in ('initial', 'sourceConfiguration')}
-    return canonical(body(protocol)) == canonical(body(_REVIEWED_CANDIDATE[1]))
+    expected = canonical(body(protocol))
+    loader_pin = source_object.pins('objective-bend-object')
+    variants = (
+        ('protocols/editor/generate.py', SOURCE_CANDIDATE_FILES[:3]),
+        ('protocols/contract-workshop/generate.py', SOURCE_CANDIDATE_FILES))
+    for path, files in variants:
+        pin = {'source': runtime_profile.hash_paths(files, root=ROOT), 'loader': loader_pin}
+        cached = _REVIEWED_CANDIDATE.get(path)
+        if cached is None or cached[0] != pin:
+            reviewed = module('desk_candidate_package', path).candidate()
+            if pin != {'source': runtime_profile.hash_paths(files, root=ROOT),
+                       'loader': source_object.pins('objective-bend-object')}:
+                raise ValueError('reviewed source candidate changed during loading')
+            cached = pin, canonical(body(reviewed))
+            _REVIEWED_CANDIDATE[path] = cached
+        if expected == cached[1]:
+            return True
+    return False
 
 
 def execution_paths(profile='compiled'):
     """Return custody dependency names independently from byte hashing."""
     return tuple(sorted(set(runtime_profile.paths(profile))
         | set(SOURCE_CANDIDATE_FILES)
-        | set(source_store.adapter_pin('objective-bend-spell@3')['files']) | {
-        'scripts/desk.py', 'scripts/adoption.py', 'scripts/history.py', 'scripts/source_store.py',
+        | set(source_store.adapter_pin('objective-bend-object')['files']) | {
+        'scripts/desk.py', 'scripts/source_offers.py', 'scene/projection.py',
+        'scripts/affordances.py', 'scripts/references.py', 'scripts/source_packages.py',
+        'scripts/history.py', 'scripts/source_store.py',
         'scripts/process_custody.py', 'scripts/source_object.py'}))
 
 
@@ -270,7 +284,8 @@ def bounded_compile(root, *, timeout=45, profile='compiled', artifact_store=None
         process = process_custody.run([sys.executable, str(Path(__file__).resolve()), '_worker'],
             input=canonical({'root': root, 'profile': profile,
                              'artifactStore': str(Path(artifact_store).resolve()) if artifact_store is not None else None}),
-            timeout=timeout, cpu_seconds=30, stdout_limit=8 * 1024 * 1024,
+            timeout=timeout, cpu_seconds=30, memory_bytes=process_custody.NATIVE_MEMORY_BYTES,
+            stdout_limit=8 * 1024 * 1024,
             stderr_limit=8 * 1024 * 1024, file_limit=8 * 1024 * 1024)
     except subprocess.TimeoutExpired:
         return {**failed, 'diagnostics': [{'kind': 'worker-timeout', 'seconds': timeout}]}
@@ -298,8 +313,8 @@ class Desk:
         """Read an exact historical receipt without running a replacement engine."""
         return world.retained_reply(self.database, request)
 
-    def inspect(self, object_id):
-        return self.exchange({'op': 'inspect', 'object': object_id, 'principal': 'source-desk-reader'})
+    def inspect(self, object_id, *, principal='source-desk-reader'):
+        return self.exchange({'op': 'inspect', 'object': object_id, 'principal': principal})
 
     def create(self, object_id, principal, intent, law):
         if self.profile != 'compiled':
@@ -398,9 +413,50 @@ class Desk:
             entry = self.prepare_check(inputs, bounded_compile(expected, **options), profile)
         return self.admit_check(entry)
 
+    def _prepare_release(self, inputs):
+        view = projection.project(inputs['expectedCandidate'], inputs['object'])
+        roots = {inputs['object']: inputs['expectedCandidate'], inputs['target']: inputs['expectedTarget']}
+        invitation = source_offers.capture(view, roots).get('release')
+        if invitation is None:
+            raise ValueError('this source Candidate does not offer an ordinary release')
+        return source_offers.request(invitation, inputs['principal'], inputs['intent'], {})
+
     def adopt(self, object_id, target, principal, intent, expected_candidate, expected_target):
-        return self.exchange(adoption.request(object_id, target, principal, intent,
-                                              expected_candidate, expected_target))
+        inputs = {'object': object_id, 'target': target, 'principal': principal, 'intent': intent,
+                  'expectedCandidate': expected_candidate, 'expectedTarget': expected_target}
+        path = self.artifact_store / 'releases' / (digest([principal, intent]) + '.json')
+        entry = loads(path.read_bytes()) if path.exists() else None
+        if entry is not None:
+            if (not isinstance(entry, dict) or set(entry) !=
+                    {'format', 'inputs', 'runtime', 'request', 'sha256'}
+                    or entry['format'] != 'delvetalk-source-release-attempt-v1'
+                    or entry['sha256'] != digest({key: value for key, value in entry.items() if key != 'sha256'})):
+                raise ValueError('invalid retained source release attempt')
+            if canonical(entry['inputs']) != canonical(inputs):
+                raise ValueError('release intent already bound to different inputs')
+            if any(entry['request'].get(key) != inputs[key] for key in ('principal', 'intent')):
+                raise ValueError('release request differs from its retained caller and intent')
+            retained = self.retained_reply(entry['request'])
+            if retained is not None:
+                return retained
+            if execution_profile(self.profile) != entry['runtime']:
+                raise ValueError('release runtime changed; retain the original pending attempt')
+            if canonical(self._prepare_release(inputs)) != canonical(entry['request']):
+                raise ValueError('source release differs from its retained preparation')
+            if execution_profile(self.profile) != entry['runtime']:
+                raise ValueError('release runtime changed during source preparation')
+        else:
+            profile = execution_profile(self.profile)
+            request = self._prepare_release(inputs)
+            if execution_profile(self.profile) != profile:
+                raise ValueError('release runtime changed during source preparation')
+            body = {'format': 'delvetalk-source-release-attempt-v1', 'inputs': inputs,
+                    'runtime': profile, 'request': request}
+            prepared = {**body, 'sha256': digest(body)}
+            entry = immutable(path, prepared)
+            if canonical(entry) != canonical(prepared):
+                raise ValueError('release intent already bound to another preparation')
+        return self.exchange(entry['request'])
 
 
 def main():
@@ -427,6 +483,7 @@ def main():
     adopt.add_argument('--target-root', required=True, type=Path)
     inspect = commands.add_parser('inspect')
     inspect.add_argument('--object', required=True)
+    inspect.add_argument('--principal', default='source-desk-reader')
     for command in (create, submit, check, adopt):
         command.add_argument('--object', required=True)
         command.add_argument('--principal', required=True)
@@ -437,7 +494,7 @@ def main():
     desk = Desk(args.database, args.artifacts, profile=args.profile)
     try:
         if args.command == 'inspect':
-            result = desk.inspect(args.object)
+            result = desk.inspect(args.object, principal=args.principal)
         elif args.command == 'create':
             result = desk.create(args.object, args.principal, args.intent, loads(args.law.read_bytes()))
         else:

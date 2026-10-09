@@ -60,7 +60,7 @@ class EditorGenerations(unittest.TestCase):
         self.serial = 0
 
     def root(self, object_id):
-        return self.client.inspect(object_id)
+        return self.client.inspect(object_id, principal=MAKER)
 
     def intent(self, label):
         self.serial += 1

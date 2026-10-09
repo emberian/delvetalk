@@ -1,6 +1,6 @@
 # Automatafl, executed from Objective Bend
 
-Mini's parser, checker and demand machine execute the byte-exact two-player
+DelveTalk's Bend parser, checker and demand machine execute the byte-exact two-player
 [Automatafl.obend](Automatafl.obend). The bridge implements no movement rules.
 
 ```sh
@@ -36,7 +36,7 @@ The stored [Rust comparison](reference-report.json) differs on ten cases involvi
 stationary destinations and failed-move sources. Those historical records remain unchanged; that comparison used the newer
 `logic/` implementation, not the original `rust/` crate. Measured costs are not universal bounds. Existing machine
 proofs do not establish complete source adequacy or universal game termination.
-[Upstream metadata](../../spec/upstream.json) records compatibility projections;
+[Mini origin](../../spec/bend/origin.json) records the local semantics fork’s upstream baseline;
 [adversarial tests](../../conformance/test_package_adversarial.py) cover substitution
 and axiom/`sorry` rejection.
 

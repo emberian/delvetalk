@@ -16,27 +16,27 @@ def candidate():
     return package.candidate(editor_mode=False)
 
 
-def factory(compiler, reporters):
+def factory(compiler, reporters, *, reviewers=()):
     modules = source_object.read_modules([
         ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
         ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
         ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
         ('Factory', ROOT / 'protocols/editor/Factory.obend'),
         ('WorkshopFactory', HERE / 'Factory.obend')])
-    config = {'compiler': compiler, 'reporters': list(reporters), 'candidate': candidate()}
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+    config = {'compiler': compiler, 'reporters': list(reporters), 'reviewers': list(reviewers), 'candidate': candidate()}
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.value(config)])
 
 
 def writing(candidate, target, syntax):
     modules = source_object.read_modules([
         ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
         ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Writing', HERE / 'Writing.obend')])
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[source_object.data({
             'candidate': candidate, 'target': target, 'syntax': syntax})])
 
@@ -44,7 +44,7 @@ def writing(candidate, target, syntax):
 def writing_factory():
     modules = source_object.read_modules([
         ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
         ('Allocation', ROOT / 'world/lib/prelude/Allocation.obend'),
         ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
@@ -52,5 +52,5 @@ def writing_factory():
         ('Writing', HERE / 'Writing.obend'),
         ('WritingFactory', HERE / 'WritingFactory.obend')])
     config = source_object.record({'writer': source_object.value(writing('', '', ''))})
-    return source_object.load(modules, syntax='objective-bend-spell@3',
+    return source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[config])

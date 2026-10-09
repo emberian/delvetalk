@@ -1,7 +1,7 @@
 # Source-governed law amendments
 
-`delvetalk-scoped-law-v4` retains the scoped invocation, reprogram and law grants.
-Its required `amendment` contains `profile: "delvetalk-source-amendment-v1"`,
+`delvetalk-scoped-law` retains the scoped invocation, reprogram and law grants.
+Its optional `amendment` contains `profile: "delvetalk-source-amendment-v1"`,
 a standalone source `package: {modules, entry}`, and opaque `config` data.
 Existing `predicate`, `invariant` and source `contract` are optional independent
 restrictions. Grants remain necessary; a guard cannot grant authority.
@@ -17,6 +17,9 @@ Lean supplies the actual staged laws and caller. Source interprets its own confi
 for example to restrict a delegated enrollment service to named invocation grants.
 Creation checks the guard against the same installed law on both sides. Revision
 must satisfy both the current and proposed guards; management has no bypass.
+When both complete amendment descriptors are identical, one successful evaluation
+supplies both verdicts for that same actual context. Changed descriptors run both
+guards. This reuse is local to one candidate check, never a cross-turn cache.
 Explicitly permitted removal or lockout remains possible. Ordinary invocation and
 reprogramming retain the amendment without executing it.
 

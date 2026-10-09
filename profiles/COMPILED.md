@@ -13,7 +13,7 @@ Descriptors require `modules` and `entry`; modules contain exactly `name,source`
 Imports name earlier supplied modules. Optional `limits` must equal
 `{"ticks":"100000","heap":"100000","stack":"10000","typeFuel":"16384"}`;
 packets, hashes and extra fields refuse. Installation checks every package,
-including unused commands. Execution recompiles exact stored source, runs Mini's
+including unused commands. Execution recompiles exact stored source, runs the edition's
 shared-demand machine and materializes data. Package laws refuse; object law
 remains authoritative.
 

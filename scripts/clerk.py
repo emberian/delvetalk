@@ -34,7 +34,7 @@ FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
 TRANSPORT_PIN_PATHS = ['scripts/worker.py', 'scripts/process_custody.py', 'scripts/manual_intake.py', 'scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py',
-                       'scripts/town_cards.py', 'scripts/source_offers.py', 'scripts/composite_offers.py', 'scripts/adoption.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
+                       'scripts/town_cards.py', 'scripts/source_offers.py', 'scripts/composite_offers.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
                        'scene/room.py', 'scene/lower.py', 'scene/projection.py']
 UNCHANGED = object()
 RUNTIME_CHOICES = tuple(world.PROFILES)
@@ -622,7 +622,7 @@ class Clerk:
             return {'format': 'delvetalk-clerk-upgrade-v1',
                     'status': 'upgraded', 'upgrade': transition}
 
-    def snapshot(self, object_id):
+    def snapshot(self, object_id, *, principal='local-clerk-operator'):
         with delve.locked(self.state / 'clerk.lock'):
             config = self.config()
             if object_id not in config['objects']:
@@ -630,7 +630,7 @@ class Clerk:
             if config['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
                 raise ValueError('clerk implementation pins changed')
             root = world.exchange(self.database, {'op': 'inspect', 'object': object_id,
-                                                  'principal': 'local-clerk-operator'}, profile=self.execution_profile({'op': 'inspect'}, config))
+                                                  'principal': principal}, profile=self.execution_profile({'op': 'inspect'}, config))
             result = {'format': 'delvetalk-clerk-root-v1', 'object': object_id,
                       'root': root, 'profile': config['profile']}
             result['id'] = digest(result)
@@ -662,6 +662,7 @@ def main():
     receive.add_argument('--interpretation', type=Path, help='explicit local operator decision JSON; no automatic prose interpretation')
     snapshot = commands.add_parser('snapshot')
     snapshot.add_argument('object')
+    snapshot.add_argument('--principal', default='local-clerk-operator', help='explicit local custody identity for current read law')
     commands.add_parser('profile')
     upgrade = commands.add_parser('upgrade')
     upgrade.add_argument('--from-profile', required=True)
@@ -700,7 +701,7 @@ def main():
                 selection = None
             result = clerk.upgrade(args.from_profile, args.runtime_profile, town_cards=selection)
         else:
-            result = clerk.snapshot(args.object)
+            result = clerk.snapshot(args.object, principal=args.principal)
         print(world.wire_dumps(result))
     except (ValueError, OSError, KeyError, TypeError, RuntimeError, RecursionError, delve.Failure) as error:
         print('clerk: ' + str(error), file=sys.stderr)

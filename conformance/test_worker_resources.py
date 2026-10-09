@@ -2,12 +2,10 @@
 """Inherited worker limits must permit the pinned Lean main-thread runtime."""
 import importlib.util
 import json
-import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('resource_worker', ROOT / 'scripts/worker.py')
@@ -17,12 +15,10 @@ spec.loader.exec_module(worker)
 
 class WorkerResourceTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux address-space custody')
-    def test_stack_reservation_fits_unchanged_address_space_budget(self):
-        # Use real pthread allocation: this failed at Lean 4.34's default 1 GiB
-        # stack under the worker's 1 GiB address-space limit, despite low RSS.
-        probe = '''import json, os, resource, threading
-stack = int(os.environ['LEAN_STACK_SIZE_KB']) * 1024
-threading.stack_size(stack)
+    def test_parent_address_space_and_cpu_limits_remain_hard(self):
+        # Parent workers use the shared allowance; they do not invent allocator
+        # or stack settings. Native grandchildren apply their own fixed policy.
+        probe = """import json, resource, threading
 thread = threading.Thread(target=lambda: None)
 thread.start()
 thread.join()
@@ -33,17 +29,14 @@ except MemoryError:
     denied = True
 else:
     denied = False
-print(json.dumps({'stack': stack, 'memory': memory, 'cpu': resource.getrlimit(resource.RLIMIT_CPU), 'denied': denied, 'arena': os.environ['MIMALLOC_ARENA_RESERVE']}))
-'''
-        for memory_mib in (64, 2048):
+print(json.dumps({'memory': memory, 'cpu': resource.getrlimit(resource.RLIMIT_CPU), 'denied': denied}))
+"""
+        for memory_mib in (64, worker.process_custody.NATIVE_MEMORY_MIB):
             with self.subTest(memory_mib=memory_mib):
-                with mock.patch.dict(os.environ, {'LEAN_STACK_SIZE_KB': '1048576', 'MIMALLOC_ARENA_RESERVE': '1048576'}):
-                    result = worker.command(['-c', probe], 10, memory_mib)
+                result = worker.command(['-c', probe], 10, memory_mib)
                 self.assertEqual(result['memory'], [memory_mib * 1024 * 1024] * 2)
                 self.assertEqual(result['cpu'], [10, 10])
-                self.assertEqual(result['stack'], min(64, memory_mib // 4) * 1024 * 1024)
                 self.assertTrue(result['denied'])
-                self.assertEqual(result['arena'], '131072')
 
     @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-transactions').is_file(), 'built transactions host required')
     def test_real_lean_admission_under_default_worker_bounds(self):

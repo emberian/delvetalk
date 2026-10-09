@@ -3,6 +3,7 @@
    accepts every complete application, including generated injection annotations. -/
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendTyping
+import Std.Data.HashSet
 
 namespace Delvetalk.PackageData
 open Lean (Json toJson)
@@ -75,15 +76,15 @@ def decode : Nat → Json → Work Data
     | "record" =>
         exact json ["tag", "fields"]
         let fields ← (← json.getObjVal? "fields").getArr?
-        let mut names : List String := []
+        let mut names : Std.HashSet String := {}
         let mut values := []
         for field in fields do
           exact field ["name", "value"]
           let name ← field.getObjValAs? String "name"
           if names.contains name then throw "duplicate typed data field"
-          names := name :: names
-          values := values ++ [(name, ← decode depth (← field.getObjVal? "value"))]
-        return .record values
+          names := names.insert name
+          values := (name, ← decode depth (← field.getObjVal? "value")) :: values
+        return .record values.reverse
     | "variant" =>
         exact json ["tag", "label", "payload"]
         return .variant (← json.getObjValAs? String "label") (← decode depth (← json.getObjVal? "payload"))
@@ -105,9 +106,19 @@ def members : Nat → Ty → Work (List (String × Ty))
     | .field name member tail => return (name, member) :: (← members depth tail)
     | _ => throw "typed data requires a finite closed row"
 
-/-- Quote finite values against the DECLARED type, never an inferred single-tag
-    sum. The recursive alias stays the injection codomain required by Mini. -/
-def quote (a : Assumptions) : Nat → Data → Ty → Work Quoted
+/-- Construction policy only: all shape checks and work charges belong to the
+shared traversal below. The validation sink carries no terms or annotations. -/
+structure QuoteSink (α : Type) where
+  natural : Nat → α
+  boolean : Bool → α
+  label : String → α
+  emptyRecord : α
+  field : α → String → α → α
+  variant : String → Ty → Ty → α → α
+
+/-- Traverse finite values against their DECLARED type. A sink cannot alter
+acceptance, rejection or accounting: its operations are pure constructors. -/
+def quoteWith {α : Type} (sink : QuoteSink α) (a : Assumptions) : Nat → Data → Ty → Work α
   | 0, _, _ => failDepth
   | depth + 1, value, declared => do
     spend
@@ -115,28 +126,55 @@ def quote (a : Assumptions) : Nat → Data → Ty → Work Quoted
       | .variable index => sumAlias a index
       | other => pure other
     match value, expanded with
-    | .natural n, .natural => return ⟨.nat n, []⟩
-    | .boolean b, .boolean => return ⟨.boolean b, []⟩
-    | .label s, .label => return ⟨.label s, []⟩
+    | .natural n, .natural => return sink.natural n
+    | .boolean b, .boolean => return sink.boolean b
+    | .label s, .label => return sink.label s
     | .record fields, row =>
         let types ← members depth row
         if fields.length != types.length || (fields.map Prod.fst).eraseDups.length != fields.length then
           throw "typed data record fields differ from declared type"
-        let mut terms := []
-        let mut annotations := []
+        let mut result := sink.emptyRecord
         for (name, ty) in types do
           let some field := fields.lookup name | throw "typed data record is missing a declared field"
-          let child ← quote a depth field ty
-          annotations := annotations ++ prefixAnnotations terms.length child.annotations
-          terms := terms ++ [(name, child.term)]
-        return ⟨.record terms, annotations⟩
+          let child ← quoteWith sink a depth field ty
+          result := sink.field result name child
+        return result
     | .variant label payload, .variant row =>
         let types ← members depth row
         let some ty := types.lookup label | throw "typed data variant label is undeclared"
-        let child ← quote a depth payload ty
-        return ⟨.inject label child.term,
-          ([], ⟨ty, declared, .unrestricted, .reusable⟩) :: prefixAnnotations 0 child.annotations⟩
+        let child ← quoteWith sink a depth payload ty
+        return sink.variant label ty declared child
     | _, _ => throw "typed data value does not conform to declared type"
+
+def termSink : QuoteSink Quoted where
+  natural n := ⟨.nat n, []⟩
+  boolean b := ⟨.boolean b, []⟩
+  label s := ⟨.label s, []⟩
+  emptyRecord := ⟨.record [], []⟩
+  field prior name child :=
+    match prior.term with
+    | .record terms => ⟨.record (terms ++ [(name, child.term)]),
+        prior.annotations ++ prefixAnnotations terms.length child.annotations⟩
+    | _ => prior
+  variant label ty declared child := ⟨.inject label child.term,
+    ([], ⟨ty, declared, .unrestricted, .reusable⟩) :: prefixAnnotations 0 child.annotations⟩
+
+def validationSink : QuoteSink Unit where
+  natural _ := ()
+  boolean _ := ()
+  label _ := ()
+  emptyRecord := ()
+  field _ _ _ := ()
+  variant _ _ _ _ := ()
+
+/-- Input quotation retains injection annotations and canonical field order. -/
+def quote (a : Assumptions) (depth : Nat) (value : Data) (declared : Ty) : Work Quoted :=
+  quoteWith termSink a depth value declared
+
+/-- Output validation executes exactly the quotation traversal and work charges,
+while the sink discards constructors before any term tree is allocated. -/
+def validate (a : Assumptions) (depth : Nat) (value : Data) (declared : Ty) : Work Unit :=
+  quoteWith validationSink a depth value declared
 
 def apply (source : AnnotatedTerm) (argument : Quoted) : AnnotatedTerm :=
   { source with term := .app source.term argument.term
@@ -145,16 +183,39 @@ def apply (source : AnnotatedTerm) (argument : Quoted) : AnnotatedTerm :=
                   | 1 :: rest => argument.annotations.lookup rest
                   | _ => none }
 
-def prepare (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) := do
+/-- Native values share the strict decoder's depth, duplicate checks and work
+charges without encoding a JSON tree merely to decode it again. -/
+def admitValue : Nat → Data → Work Data
+  | 0, _ => failDepth
+  | depth + 1, value => do
+    spend
+    match value with
+    | .natural _ | .boolean _ | .label _ => spend 2; return value
+    | .variant _ payload =>
+      spend 3
+      let _ ← admitValue depth payload
+      return value
+    | .record fields =>
+      spend 2
+      let mut names : Std.HashSet String := {}
+      for (name, child) in fields do
+        spend 2
+        if names.contains name then throw "duplicate typed data field"
+        names := names.insert name
+        let _ ← admitValue depth child
+      return value
+
+def prepareWith {α : Type} (read : α → Work Data) (packet : Json)
+    (arguments : Array α) : Work (AnnotatedTerm × Ty × Nat) := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let mut source := decoded.source
   let some initial := check source [] decoded.fuel | throw "typed package refused by Mini type checker"
   let mut type := initial.type
-  for argument in (← arguments.getArr?) do
+  for argument in arguments do
     let .arrow _ _ domain codomain := callable type | throw "typed package argument requires a function"
     shape source.assumptions 256 [] domain
-    let value ← decode 256 argument
+    let value ← read argument
     let quoted ← quote source.assumptions 256 value domain
     source := apply source quoted
     let some checked := check source [] decoded.fuel | throw "applied typed package refused by Mini type checker"
@@ -162,6 +223,12 @@ def prepare (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) := do
     unless type == codomain do throw "typed package application result mismatch"
   shape source.assumptions 256 [] type
   return (source, type, decoded.fuel)
+
+def prepare (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) := do
+  prepareWith (decode 256) packet (← arguments.getArr?)
+
+def prepareValues (packet : Json) (arguments : Array Data) : Work (AnnotatedTerm × Ty × Nat) :=
+  prepareWith (admitValue 256) packet arguments
 
 /-- Select only explicit structural positions from a checked artifact's type. -/
 def select (a : Assumptions) (type : Ty) (path : Json) : Work Ty := do

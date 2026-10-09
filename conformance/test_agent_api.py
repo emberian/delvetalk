@@ -272,11 +272,11 @@ class AgentHTTPTest(unittest.TestCase):
         status, card, _ = self.request('GET', '/AGENTS.md/world?object=notebook&view=encounter', token=alice)
         self.assertEqual(status, 200, card)
         self.assertEqual(card['title'], 'Your private notebook')
-        action = next(action for action in card['actions'] if action['label'] == 'Keep a note or source result')
-        self.assertEqual({field['name'] for field in action['fields']}, {'source', 'result'})
+        action = next(action for action in card['actions'] if action['label'] == 'Keep a thought')
+        self.assertEqual({field['name'] for field in action['fields']}, {'thought'})
         form = card['forms']['prepare']
         status, draft, _ = self.request(form['method'], form['href'], {**form['body'],
-            'action': action['id'], 'fields': {'source': 'An idea to return to.', 'result': 'Let it rest.'}}, alice)
+            'action': action['id'], 'fields': {'thought': 'An idea to return to.'}}, alice)
         self.assertEqual(status, 200, draft)
         self.assertTrue(draft['canExecute'])
         self.assertIn('intent', draft)
@@ -299,7 +299,7 @@ class AgentHTTPTest(unittest.TestCase):
 
     def test_source_desk_checks_installs_and_plays_a_private_program(self):
         alice = self.enroll(A)
-        target = self.create_private(alice, 'lantern')
+        self.create_private(alice, 'lantern')
         candidate = self.inspect(alice, 'source-desk')
         source = (ROOT / 'syntaxes/examples/lantern.obend').read_text()
         examples = '[{"name":"light","law":["visitor"],"steps":[{"principal":"visitor","command":"light","input":{},"root":"initial","kind":"committed","state":{"lit":true},"result":"A small sun for lost moths.","outbox":[]}]}]'
@@ -316,14 +316,18 @@ class AgentHTTPTest(unittest.TestCase):
         self.assertEqual(checked['receipt']['kind'], 'committed', checked)
         ready = checked['receipt']['data']['root']
         self.assertEqual(desk.candidate_state(ready)['status'], 'ready')
-        # This existing source-adoption constructor supplies the ordinary native
-        # transaction; HTTP neither creates nor evaluates an adoption recipe.
-        adopt = desk.adoption.request('source-desk', 'lantern', A, 'adopt-source', ready, target)
-        adopt.pop('principal')
-        adopt.pop('intent')
-        status, adopted, _ = self.turn(alice, 'adopt-source', adopt)
+        status, card, _ = self.request('GET', '/AGENTS.md/world?object=source-desk&view=encounter', token=alice)
+        self.assertEqual(status, 200, card)
+        release = next(action for action in card['actions'] if action['label'] == 'Release this checked variation')
+        form = card['forms']['prepare']
+        status, draft, _ = self.request(form['method'], form['href'],
+            {**form['body'], 'action': release['id'], 'fields': {}}, alice)
+        self.assertEqual(status, 200, draft)
+        form = draft['forms']['execute']
+        status, adopted, _ = self.request(form['method'], form['href'], form['body'], alice)
         self.assertEqual(status, 200, adopted)
         self.assertEqual(adopted['reply']['kind'], 'committed', adopted)
+        self.assertEqual(self.request('GET', adopted['links']['receipt'], token=alice)[1]['reply'], adopted['reply'])
         lantern = self.inspect(alice, 'lantern')
         status, played, _ = self.turn(alice, 'light-source', {'op': 'invoke', 'object': 'lantern',
             'expected': lantern, 'command': 'light', 'input': {}})
@@ -338,7 +342,7 @@ class AgentHTTPTest(unittest.TestCase):
         def provider(body):
             calls.append(copy.deepcopy(body))
             return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text':
-                portal.canonical({'action': 'record', 'fields': {'source': 'A small sun for lost moths.'}}).decode()}]}
+                portal.canonical({'action': 'note', 'fields': {'thought': 'A small sun for lost moths.'}}).decode()}]}
         self.heaps.model_provider = provider
         status, card, _ = self.request('GET', '/AGENTS.md/world?object=notebook&view=encounter', token=alice)
         self.assertEqual(status, 200, card)
@@ -368,11 +372,11 @@ class AgentHTTPTest(unittest.TestCase):
         contribution = self.notebook_state(alice)['contributions']['payload']['head']
         self.assertEqual(contribution['actor'], A)
         self.assertEqual(contribution['proposal']['original'], payload['text'])
-        self.assertEqual(contribution['proposal']['policy'], 'notebook-policy-v1')
+        self.assertEqual(contribution['proposal']['policy'], 'notebook-policy-v2')
         self.assertEqual(self.notebook_state(bob)['count'], 0)
         status, current, _ = self.request('GET', '/AGENTS.md/world?object=notebook&view=encounter', token=alice)
         self.assertEqual(status, 200, current)
-        offered = next(action for action in current['actions'] if action['label'] == 'Keep the interpreted contribution')
+        offered = next(action for action in current['actions'] if action['label'] == 'Keep this thought')
         status, draft, _ = self.request('POST', '/AGENTS.md/turn', {'operation': 'prepare',
             'card': current['card'], 'action': offered['id'], 'fields': {}}, alice)
         self.assertEqual(status, 200, draft)
@@ -380,7 +384,7 @@ class AgentHTTPTest(unittest.TestCase):
         status, completed, _ = self.request(form['method'], form['href'], form['body'], alice)
         self.assertEqual(status, 200, completed)
         self.assertEqual(completed['kind'], 'committed', completed)
-        self.assertEqual(self.notebook_state(alice)['outcomes']['payload']['head']['status'], 'recorded')
+        self.assertEqual(self.notebook_state(alice)['outcomes']['payload']['head']['status'], 'kept')
         self.assertEqual(len(calls), 1)
 
     def test_uncertain_provider_is_retained_and_literal_form_still_bypasses_it(self):
@@ -392,9 +396,9 @@ class AgentHTTPTest(unittest.TestCase):
         self.heaps.model_provider = unavailable
         status, card, _ = self.request('GET', '/AGENTS.md/world?object=notebook&view=encounter', token=alice)
         self.assertEqual(status, 200, card)
-        action = next(action for action in card['actions'] if action['label'] == 'Keep a note or source result')
+        action = next(action for action in card['actions'] if action['label'] == 'Keep a thought')
         literal = {'operation': 'interpret', 'card': card['card'], 'text': action['token'] +
-            ' ' + portal.canonical({'source': 'Literal without a provider', 'result': ''}).decode()}
+            ' ' + portal.canonical({'thought': 'Literal without a provider'}).decode()}
         status, selected, _ = self.request('POST', '/AGENTS.md/turn', literal, alice)
         self.assertEqual(status, 200, selected)
         self.assertEqual(selected['status'], 'proposed', selected)

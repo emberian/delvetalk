@@ -2,6 +2,10 @@
 
 **History replays retained admissions through trusted local Lean.** Python
 handles custody/hashes. No network access or implicit build occurs.
+Full export is a trusted-custodian operation, not a participant disclosure API.
+Mixed-private worlds cannot publish a full replay bundle without disclosing those
+private admissions. Participant history uses [native acquisition](READS.md),
+which omits whole inaccessible admissions and makes no full-replay claim.
 
 ```sh
 python3 scripts/history.py export /PRIVATE/world.json /PRIVATE/history-001 \

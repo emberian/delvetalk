@@ -60,8 +60,8 @@ class TableJourney(unittest.TestCase):
         before=journey.bootstrap.loads((world/'world.json').read_bytes())
         report=journey.run(world)
         self.assertEqual(report['object'],journey.bootstrap.TABLE)
-        self.assertEqual(report['finalRoot']['state']['game']['winner'],1)
-        self.assertEqual(report['finalRoot']['state']['round'],len(journey.MATCH))
+        self.assertEqual(journey.client.state(report['finalRoot'])['game']['winner'],1)
+        self.assertEqual(journey.client.state(report['finalRoot'])['round'],len(journey.MATCH))
         self.assertEqual(report['cafeAfter'],report['cafeBefore'])
         after=journey.bootstrap.loads((world/'world.json').read_bytes())
         for identity,root in before['objects'].items():
@@ -106,7 +106,7 @@ class TableJourney(unittest.TestCase):
         self.assertEqual(receiving.bootstrap(cafe,artifact['protocol'],authority,seats,
                                              runtime_profile='compiled')['kind'],'committed')
         added=manage.Management(state).add_object(table_id,seats[0],'add-cafe-table','protocol-json@1',
-            clerk.canonical(journey.table.protocol(table_id)),journey.table.law(*seats))
+            clerk.canonical(journey.table.protocol(table_id, *seats)),journey.table.law(*seats))
         self.assertEqual(added['reply']['kind'],'committed',added)
         receipts=[]
 
@@ -149,9 +149,9 @@ class TableJourney(unittest.TestCase):
                 authored(f'r{number}-reveal{seat}','reveal'+str(seat),pair[seat]['reveal'],seat)
             authored(f'r{number}-resolve','resolve',{'round':number})
         final=receiving.snapshot(table_id)
-        self.assertEqual(final['root']['state']['game']['winner'],1)
-        self.assertEqual(final['root']['state']['game']['automaton'],0)
-        self.assertEqual(final['root']['state']['round'],len(journey.MATCH))
+        self.assertEqual(journey.client.state(final['root'])['game']['winner'],1)
+        self.assertEqual(journey.client.state(final['root'])['game']['automaton'],0)
+        self.assertEqual(journey.client.state(final['root'])['round'],len(journey.MATCH))
         self.assertEqual(final['root']['version'],5*len(journey.MATCH))
         self.assertEqual(room.room_view(receiving.snapshot(cafe)['root'],artifact,cafe),cafe_before)
         authored('terminal-commit','commit0',{'round':len(journey.MATCH),'digest':'0'*64},kind='refused')

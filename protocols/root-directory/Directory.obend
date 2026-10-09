@@ -101,7 +101,7 @@ def capture(state: State) -> Document.Capture:
 # One bounded sequence per section. Keeping section boundaries avoids repeated
 # traversal of a long constructed cons spine in the demand evaluator.
 def doorDocument(door: Door) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat(door.label, textConcat("\n", textConcat(door.description, "\n")))), tail: Document.Documents.cons({head: if enabled(door) then Document.Document.reference(child(door)) else Document.text("Not open in this directory yet."), tail: Document.Documents.cons({head: Document.text("\n"), tail: Document.Documents.cons({head: if door.example == "" then Document.empty() else Document.quote("You might say", Document.text(door.example)), tail: Document.Documents.cons({head: Document.text("\n\n"), tail: Document.Documents.nil()})})})})})})
+  Document.Document.sequence({items: Document.Documents.cons({head: if enabled(door) then Document.Document.reference(child(door)) else Document.text(door.label), tail: Document.Documents.cons({head: Document.text(textConcat("\n", textConcat(door.description, "\n"))), tail: Document.Documents.cons({head: if enabled(door) then Document.empty() else Document.text("Not open in this directory yet.\n"), tail: Document.Documents.cons({head: if door.example == "" then Document.empty() else Document.quote("You might say", Document.text(door.example)), tail: Document.Documents.cons({head: Document.text("\n\n"), tail: Document.Documents.nil()})})})})})})
 def doorItems(doors: Doors) -> Document.Documents:
   match doors:
     case nil(_): Document.Documents.nil()
@@ -114,10 +114,13 @@ record TextField:
   type: String
   minLength: Nat
   maxLength: Nat
+record Methods:
+  setDoor: {label: String, fields: {key: TextField, label: TextField, object: TextField, panel: TextField, description: TextField, example: TextField, available: {type: String}, show: {type: String}}}
+  choose: {label: String, fields: {door: TextField, original: TextField}}
 record Description:
   name: String
   initial: State
-  methods: {setDoor: {label: String, fields: {key: TextField, label: TextField, object: TextField, panel: TextField, description: TextField, example: TextField, available: {type: String}, show: {type: String}}}, choose: {label: String, fields: {door: TextField, original: TextField}}}
+  methods: Methods
   panels: {}
 def text(max: Nat) -> TextField:
   {type: "string", minLength: 0n, maxLength: max}

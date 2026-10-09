@@ -81,12 +81,15 @@ def declarationName (d : Json) : String :=
 
 /-- A parsed module, checked: its locked import transcript is exactly the parsed one, and its
 AST decodes to the elaborator's module. -/
-def checkParsed (m : SourceModule) (ast : Json) : Except Diagnostic ObjectiveBendElaborate.Module := do
+def checkImports (m : SourceModule) (ast : Json) : Except Diagnostic Unit := do
   let parsed := ((ast.getObjVal? "imports").bind Json.getArr?).toOption.getD #[]
   let locked := m.imports.toArray.map fun i =>
     Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span)]
   if (Json.arr parsed).compress != (Json.arr locked).compress then
     throw (elaborationRefusal "import transcript differs from parsed imports")
+
+def checkParsed (m : SourceModule) (ast : Json) : Except Diagnostic ObjectiveBendElaborate.Module := do
+  checkImports m ast
   match ObjectiveBendElaborate.decodeModule (Json.mkObj [("name", toJson m.name),
       ("imports", Json.arr (m.imports.map fun i =>
         Json.mkObj [("alias", toJson i.importAlias), ("moduleName", toJson i.moduleName)]).toArray), ("ast", ast)]) with

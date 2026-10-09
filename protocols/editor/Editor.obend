@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
 import ./Preparation.obend as P
 record Entry:
   name:String
@@ -18,15 +20,6 @@ record State:
   phase:String
   code:String
   entries:Entries
-record Origin:
-  kind:String
-  object:String
-  command:String
-  immediatelyPrevious:Bool
-record Context:
-  object:String
-  principal:String
-  inputOrigin:Origin
 record Draft:
   name:String
 record Witness:
@@ -81,9 +74,9 @@ def installed(xs:Entries,candidate:String)->Entries:
     case cons(c):Entries.cons({head:{name:c.head.name,candidate:c.head.candidate,adopted:c.head.adopted||c.head.candidate==candidate},tail:installed(c.tail,candidate)})
 def refused(state:State,reason:String)->Decision:
   {accepted:false,reason:reason,state:state,result:""}
-def observed(state:State,input:Witness,context:Context)->Bool:
+def observed(state:State,input:Witness,context:Abi.Context)->Bool:
   context.inputOrigin.kind=="observe"&&context.inputOrigin.object==state.target&&context.inputOrigin.command==""&&context.inputOrigin.immediatelyPrevious&&input.object==state.target
-def reported(state:State,input:Report,context:Context)->Bool:
+def reported(state:State,input:Report,context:Abi.Context)->Bool:
   context.inputOrigin.kind=="invoke"&&context.inputOrigin.command=="report"&&context.inputOrigin.object==input.candidate&&context.inputOrigin.immediatelyPrevious&&input.candidate==candidate(state)&&input.editor==context.object&&input.generation==state.g&&input.target==state.target&&input.baselineVersion==state.baseline
 def drafted(state:State,input:Draft)->State:
   extend(state,{g:state.next,next:state.next+1n,name:input.name,candidate:"",baseline:0n,phase:"draft",code:""})
@@ -97,50 +90,34 @@ def activated(state:State,input:Report)->State:
   extend(state,{candidate:input.candidate,phase:"pending",entries:append(state.entries,{name:state.name,candidate:input.candidate,adopted:false})})
 def reviewState(state:State,input:Report)->State:
   extend(state,{phase:input.status,code:input.program})
-def draft(state:State,input:Draft,context:Context)->Decision:
+def draft(state:State,input:Draft,context:Abi.Context)->Decision:
   if state.target==""||input.name==""||state.next>32n then refused(state,"Name a new generation (maximum 32).") else {accepted:true,reason:"",state:drafted(state,input),result:"A fresh generation awaits its exact target baseline."}
-def plan(state:State,input:Witness,context:Context)->PlanDecision:
+def plan(state:State,input:Witness,context:Abi.Context)->PlanDecision:
   let accepted:Bool = state.phase=="draft"&&observed(state,input,context)
   {accepted:accepted,reason:if accepted then "" else "Observe the target first.",state:planned(state,input),result:{factory:state.factory,name:state.name,editor:context.object,generation:state.g,target:state.target,baselineVersion:input.version}}
-def review(state:State,input:Report,context:Context)->Decision:
+def review(state:State,input:Report,context:Abi.Context)->Decision:
   if reported(state,input,context)==false||state.phase=="adopted" then refused(state,"Wrong generation report.") else if state.phase=="planned" then if input.status!="pending" then refused(state,"A new candidate must be pending.") else {accepted:true,reason:"",state:activated(state,input),result:"Generation retained."} else if input.candidate!=state.candidate||(input.status!="pending"&&input.status!="ready"&&input.status!="failed") then refused(state,"Not the current candidate.") else {accepted:true,reason:"",state:reviewState(state,input),result:input.status}
-def approve(state:State,input:Witness,context:Context)->ApprovalDecision:
+def approve(state:State,input:Witness,context:Abi.Context)->ApprovalDecision:
   let accepted:Bool = state.phase=="ready"&&observed(state,input,context)&&input.version==state.baseline
   {accepted:accepted,reason:if accepted then "" else "Target drifted or not ready. Rebase.",state:approving(state),result:{candidate:state.candidate,editor:context.object,generation:state.g,target:state.target}}
-def finish(state:State,input:Reprogrammed,context:Context)->Decision:
+def finish(state:State,input:Reprogrammed,context:Abi.Context)->Decision:
   if state.phase!="adopting"||context.inputOrigin.kind!="reprogram"||context.inputOrigin.object!=state.target||context.inputOrigin.command!=""||context.inputOrigin.immediatelyPrevious==false||input.object!=state.target||input.version!=state.baseline+1n||input.program!=state.code then refused(state,"Expected the actual approved reprogram.") else {accepted:true,reason:"",state:finished(state),result:"Installed; earlier experiments remain."}
-record Child:
-  key:String
-  label:String
-  object:String
-  panel:String
-sum Children:
-  nil:{}
-  cons:{head:Child,tail:Children}
-def children(xs:Entries)->Children:
+def children(xs:Entries)->E.Children:
   match xs:
-    case nil(_):Children.nil()
-    case cons(c):Children.cons({head:{key:c.head.candidate,label:if c.head.adopted then "Installed variation" else c.head.name,object:c.head.candidate,panel:"main"},tail:children(c.tail)})
-record StringField:
-  type:String
-  minLength:Nat
-  maxLength:Nat
-record NatField:
-  type:String
-  minimum:Nat
-  maximum:Nat
+    case nil(_):E.Children.nil()
+    case cons(c):E.Children.cons({head:{key:c.head.candidate,label:if c.head.adopted then "Installed variation" else c.head.name,object:c.head.candidate,panel:"main"},tail:children(c.tail)})
 record DraftMethod:
   label:String
-  fields:{name:StringField}
+  fields:{name:Abi.StringField}
 record WitnessMethod:
   label:String
-  fields:{object:StringField,version:NatField}
+  fields:{object:Abi.StringField,version:Abi.NatField}
 record ReportMethod:
   label:String
-  fields:{candidate:StringField,editor:StringField,generation:NatField,target:StringField,baselineVersion:NatField,status:StringField,program:StringField}
+  fields:{candidate:Abi.StringField,editor:Abi.StringField,generation:Abi.NatField,target:Abi.StringField,baselineVersion:Abi.NatField,status:Abi.StringField,program:Abi.StringField}
 record FinishMethod:
   label:String
-  fields:{object:StringField,version:NatField,program:StringField}
+  fields:{object:Abi.StringField,version:Abi.NatField,program:Abi.StringField}
 record Description:
   name:String
   initial:State
@@ -155,12 +132,12 @@ record BaseView:
   title:String
   prose:String
   actions:{draft:Action}
-  children:Children
-def textField()->StringField:
+  children:E.Children
+def textField()->Abi.StringField:
   {type:"string",minLength:1n,maxLength:256n}
-def nameField()->StringField:
+def nameField()->Abi.StringField:
   {type:"string",minLength:1n,maxLength:64n}
-def numberField()->NatField:
+def numberField()->Abi.NatField:
   {type:"nat",minimum:0n,maximum:9007199254740991n}
 def witnessMethod(label:String)->WitnessMethod:
   {label:label,fields:{object:textField(),version:numberField()}}
@@ -203,33 +180,44 @@ def question(message: String, field: String) -> P.Preparation:
   P.Preparation.question({message: message, needs: names1(field)})
 def refusal(message: String) -> P.Preparation:
   P.Preparation.refused({message: message})
+def wrongText(value: P.Value, name: String) -> Bool:
+  match P.textField(value, name):
+    case missing(_): false
+    case wrongKind(_): true
+    case found(_): false
 def prepareMake(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let name: String = P.text(P.get(contribution, "name"))
-  if state.target == "" || state.factory == "" then refusal("This workshop needs a target and a candidate factory.") else if state.next > 32n then refusal("This workshop has retained its 32 generations.") else if name == "" then question("What shall we call this variation?", "name") else if textLength(name) > 64n then refusal("Use a variation name of at most 64 characters.") else P.Preparation.ready({summary: "Make a new variation with the captured target baseline.", reads: P.Reads.cons({head: P.Read.absent({object: textConcat(textConcat(state.factory, "/"), name)}), tail: read2(state.target, state.factory)}), calls: effect4(P.Effect.invoke({object: context.object, command: "draft", input: P.oneField("name", P.Value.text({value: name}))}), P.Effect.observe({object: state.target}), P.Effect.invokeResult({object: context.object, command: "plan", result: 1n}), P.Effect.invokeResult({object: state.factory, command: "make", result: 2n}))})
+  let name: String = P.textOrEmpty(P.get(contribution, "name"))
+  if wrongText(contribution, "name") then refusal("Use text for the variation name.") else if state.target == "" || state.factory == "" then refusal("This workshop needs a target and a candidate factory.") else if state.next > 32n then refusal("This workshop has retained its 32 generations.") else if name == "" then question("What shall we call this variation?", "name") else if textLength(name) > 64n then refusal("Use a variation name of at most 64 characters.") else P.Preparation.ready({summary: "Make a new variation with the captured target baseline.", reads: P.Reads.cons({head: P.Read.absent({object: textConcat(textConcat(state.factory, "/"), name)}), tail: read2(state.target, state.factory)}), calls: effect4(P.Effect.invoke({object: context.object, command: "draft", input: P.oneField("name", P.Value.text({value: name}))}), P.Effect.observe({object: state.target}), P.Effect.invokeResult({object: context.object, command: "plan", result: 1n}), P.Effect.invokeResult({object: state.factory, command: "make", result: 2n}))})
 def proposal(syntax: String, source: String, examples: String) -> P.Value:
   P.Value.record({fields: P.Fields.cons({head: {name: "syntax", value: P.Value.text({value: syntax})}, tail: P.Fields.cons({head: {name: "source", value: P.Value.text({value: source})}, tail: P.Fields.cons({head: {name: "scenarios", value: P.Value.text({value: examples})}, tail: P.Fields.nil()})})})})
 def submission(state: State, target: P.Observation, input: P.Value, context: P.Context) -> P.Value:
-  P.Value.record({fields: P.Fields.cons({head: {name: "proposal", value: proposal(P.text(P.get(input, "syntax")), P.text(P.get(input, "source")), P.text(P.get(input, "examples")))}, tail: P.Fields.cons({head: {name: "migration", value: target.state}, tail: P.Fields.cons({head: {name: "target", value: P.Value.text({value: state.target})}, tail: P.Fields.cons({head: {name: "editor", value: P.Value.text({value: context.object})}, tail: P.Fields.cons({head: {name: "generation", value: P.Value.natural({value: state.g})}, tail: P.Fields.cons({head: {name: "baselineVersion", value: P.Value.natural({value: state.baseline})}, tail: P.Fields.nil()})})})})})})})
+  P.Value.record({fields: P.Fields.cons({head: {name: "proposal", value: proposal(P.textOrEmpty(P.get(input, "syntax")), P.textOrEmpty(P.get(input, "source")), P.textOrEmpty(P.get(input, "examples")))}, tail: P.Fields.cons({head: {name: "migration", value: target.state}, tail: P.Fields.cons({head: {name: "target", value: P.Value.text({value: state.target})}, tail: P.Fields.cons({head: {name: "editor", value: P.Value.text({value: context.object})}, tail: P.Fields.cons({head: {name: "generation", value: P.Value.natural({value: state.g})}, tail: P.Fields.cons({head: {name: "baselineVersion", value: P.Value.natural({value: state.baseline})}, tail: P.Fields.nil()})})})})})})})
 def prepareSubmit(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let target: P.Observation = P.observation(observations, state.target)
-  let syntax: String = P.text(P.get(contribution, "syntax"))
-  if state.phase != "planned" then refusal("Make a fresh variation before submitting source.") else if target.object == "" then refusal("Capture the target before submitting source.") else if target.version != state.baseline then refusal("The target changed. Make a new variation to rebase.") else if syntax == "" then question("Which source language are you using?", "syntax") else if syntax != "objective-bend-spell@2" && syntax != "objective-bend-spell@3" then refusal("Choose ordinary or typed Objective Bend source.") else if P.text(P.get(contribution, "source")) == "" then question("What source shall this variation use?", "source") else if P.text(P.get(contribution, "examples")) == "" then question("Which examples should the compiler check?", "examples") else if textLength(P.text(P.get(contribution, "source"))) > 32768n then refusal("Keep this source within 32768 characters.") else if textLength(P.text(P.get(contribution, "examples"))) > 16384n then refusal("Keep these examples within 16384 characters.") else P.Preparation.ready({summary: "Submit this source and examples to the immutable candidate.", reads: read2(state.target, candidate(state)), calls: effect3(P.Effect.invoke({object: candidate(state), command: "submit", input: submission(state, target, contribution, context)}), P.Effect.invoke({object: candidate(state), command: "report", input: P.Value.record({fields: P.Fields.nil()})}), P.Effect.invokeResult({object: context.object, command: "review", result: 1n}))})
+  match P.lookupObservation(observations, state.target):
+    case missing(_): refusal("Capture the target before submitting source.")
+    case found(t): prepareCapturedSubmit(state, contribution, t.value, context)
+def prepareCapturedSubmit(state: State, contribution: P.Value, target: P.Observation, context: P.Context) -> P.Preparation:
+  let syntax: String = P.textOrEmpty(P.get(contribution, "syntax"))
+  if wrongText(contribution, "syntax") || wrongText(contribution, "source") || wrongText(contribution, "examples") then refusal("Use text for the source language, source and examples.") else if state.phase != "planned" then refusal("Make a fresh variation before submitting source.") else if target.object == "" then refusal("Capture the target before submitting source.") else if target.version != state.baseline then refusal("The target changed. Make a new variation to rebase.") else if syntax == "" then question("Which source language are you using?", "syntax") else if syntax != "objective-bend-spell@2" && syntax != "objective-bend-spell@3" then refusal("Choose ordinary or typed Objective Bend source.") else if P.textOrEmpty(P.get(contribution, "source")) == "" then question("What source shall this variation use?", "source") else if P.textOrEmpty(P.get(contribution, "examples")) == "" then question("Which examples should the compiler check?", "examples") else if textLength(P.textOrEmpty(P.get(contribution, "source"))) > 32768n then refusal("Keep this source within 32768 characters.") else if textLength(P.textOrEmpty(P.get(contribution, "examples"))) > 16384n then refusal("Keep these examples within 16384 characters.") else P.Preparation.ready({summary: "Submit this source and examples to the immutable candidate.", reads: read2(state.target, candidate(state)), calls: effect3(P.Effect.invoke({object: candidate(state), command: "submit", input: submission(state, target, contribution, context)}), P.Effect.invoke({object: candidate(state), command: "report", input: P.Value.record({fields: P.Fields.nil()})}), P.Effect.invokeResult({object: context.object, command: "review", result: 1n}))})
 def prepareReview(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
   if state.candidate == "" then refusal("Submit a variation before reviewing it.") else if state.phase != "pending" && state.phase != "ready" && state.phase != "failed" then refusal("This variation is not awaiting review.") else P.Preparation.ready({summary: "Review the current generation's actual compiler report.", reads: read1(state.candidate), calls: effect2(P.Effect.invoke({object: state.candidate, command: "report", input: P.Value.record({fields: P.Fields.nil()})}), P.Effect.invokeResult({object: context.object, command: "review", result: 0n}))})
 def prepareAdopt(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let target: P.Observation = P.observation(observations, state.target)
+  match P.lookupObservation(observations, state.target):
+    case missing(_): refusal("Capture the target before adoption.")
+    case found(t): prepareCapturedAdopt(state, contribution, t.value, context)
+def prepareCapturedAdopt(state: State, contribution: P.Value, target: P.Observation, context: P.Context) -> P.Preparation:
   if state.phase != "ready" then refusal("Review a checked variation before adopting it.") else if target.object == "" then refusal("Capture the target before adoption.") else if target.version != state.baseline then refusal("The target changed. Make a new variation to rebase.") else P.Preparation.ready({summary: "Adopt the checked variation under current authority and retain the actual reprogram evidence.", reads: read2(state.target, state.candidate), calls: effect5(P.Effect.observe({object: state.target}), P.Effect.invokeResult({object: context.object, command: "approve", result: 0n}), P.Effect.invokeResult({object: state.candidate, command: "adopt", result: 1n}), P.Effect.reprogramResult({object: state.target, result: 2n}), P.Effect.invokeResult({object: context.object, command: "finish", result: 3n}))})
 record NameInvitation:
   visible: Bool
   text: String
   prepare: String
-  fields: {name: StringField}
+  fields: {name: Abi.StringField}
   observations: P.Requests
 record SubmitInvitation:
   visible: Bool
   text: String
   prepare: String
-  fields: {syntax: {type: String, options: {ordinary: String, typed: String}}, source: StringField, examples: StringField}
+  fields: {syntax: {type: String, options: {ordinary: String, typed: String}}, source: Abi.StringField, examples: Abi.StringField}
   observations: P.Requests
 record Invitation:
   visible: Bool
@@ -241,7 +229,7 @@ record View:
   title: String
   prose: String
   actions: {}
-  children: Children
+  children: E.Children
   invitations: {make: NameInvitation, submit: SubmitInvitation, review: Invitation, adopt: Invitation}
 def view(state: State, panel: String) -> View:
   let prior: BaseView = baseView(state, panel)

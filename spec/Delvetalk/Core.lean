@@ -178,6 +178,7 @@ partial def decode (j : Json) : Except String Term := do
     let op ← match ← str 1 with
       | "natText" => pure UnaryPrimitive.natText
       | "textLength" => pure UnaryPrimitive.textLength
+      | "sha256Text" => pure UnaryPrimitive.sha256Text
       | _ => throw "unknown unary primitive"
     return .unary op (← t 2)
   | "done" => arity 1; return .done (← t 1)
@@ -200,7 +201,7 @@ partial def encode (t : Term) : Json :=
   | .reflect x => arr "reflect" [encode x]
   | .metadata x => arr "metadata" [encode x]
   | .project x => arr "project" [encode x]
-  | .unary p a => arr "unary" [.str (match p with | .natText => "natText" | .textLength => "textLength"),encode a]
+  | .unary p a => arr "unary" [.str (match p with | .natText => "natText" | .textLength => "textLength" | .sha256Text => "sha256Text"),encode a]
   | .binary p l r => arr "binary" [.str (primName p),encode l,encode r]
   | .extend x fs => arr "extend" [encode x,fields fs]
   | .record fs => arr "record" [fields fs]

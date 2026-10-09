@@ -1,7 +1,10 @@
 # A shared two-player Automatafl table
 
-An ordinary `compiled` protocol implements two seats and commit/reveal. Lean
-checks admission and executes the qualified [game package](../automatafl/README.md).
+An ordinary [CommitRevealTable](CommitRevealTable.obend) source object owns two
+seats, commitment framing, commit/reveal/reset, seat checks, grants and encounters.
+Lean admits its source transitions under current law and executes the qualified
+[game package](../automatafl/README.md). Python only loads exact modules and typed
+configuration, retains private openings, and transports requests.
 
 ## Make a table
 
@@ -40,15 +43,23 @@ recovers the receipt; stale refusal requires a new root and intent.
 
 ## Commitment bytes
 
-SHA-256 hashes canonical UTF-8 JSON:
+The source `commitment` export computes SHA-256 over exact UTF-8 text. Its seven
+fields are `delvetalk.automatafl.commit.v2`, table identity, round, seat, source,
+target and nonce. Each field is framed as its decimal Unicode-scalar length,
+then `:`, then its text; numbers use canonical decimal. Concatenate the seven
+frames without separators. This is unambiguous even when identities contain
+colons, controls or non-ASCII text. The private helper calls that same source
+export; it does not implement a second framing or digest rule.
 
-```text
-["delvetalk.automatafl.commit.v1",tableId,round,seat,source,target,nonce]
-```
+The v2 commitment format replaces the prelaunch v1 JSON-array framing. Existing
+retained requests and historical receipts are never rewritten or reinterpreted;
+new tables and new custody use the source-owned format.
 
 The receiver supplies `tableId`; nonce is 64 lowercase hex characters. Shape
 checks cannot prove entropy. Both commitments precede either opening.
-[Protocol](protocol.py) and [client](client.py) specify encoding and guards.
+[CommitRevealTable](CommitRevealTable.obend) specifies encoding and guards.
+[Protocol loading](protocol.py) and [private custody](client.py) contain no
+executable command generator.
 
 ## Resolve and retry
 

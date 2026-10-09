@@ -5,7 +5,7 @@
 governed [tasks](Task.obend) receive native messages. Use the `compiled` host and
 initialize its message registry.
 
-Supply sealed modules in order: shared `Abi`, shared `Encounter`, `Appointments`,
+Supply sealed modules in order: shared `Abi`, shared `Encounter`, `Preparation`, `Emissions`, `Appointments`,
 then `Clock` or `Task`. The `objective-bend-spell@3` adapter binds authored menus.
 Evaluate `configured({capacity: 16})` or `configured({owner: "moss", clock: "clock"})`
 for typed initial state; configuration never rewrites source. Grant participants
@@ -14,8 +14,11 @@ for typed initial state; configuration never rewrites source. Grant participants
 | Command | Input |
 |---|---|
 | `request` | `id`, `generation`, `due`, `deadline`, `to`, `recipientProgram`, `topic` |
+| `quote` | `id`, `due`, `deadline`, `to`, `recipientProgram`, `topic` |
 | `cancel` | `id`, `generation` |
+| `status` | `id`, `generation` |
 | `tick` | `now` |
+| `sample` | `unixMillis` |
 | `page` | `offset` |
 
 Booking requires a unique active id, the clock's `nextGeneration`, `due >= now`,
@@ -46,3 +49,22 @@ python3 protocols/appointments/clock_driver.py WORLD PRIVATE_ATTEMPT \
 The driver persists this exact tick before submission and retries without refreshing
 its root. It never reads wall time or chooses due work. See [menu examples](menu-examples.md)
 and [receiving tests](../../conformance/test_appointments.py).
+
+For a physical observation, initialize `Clock.physical` with `capacity`,
+`epochMillis` and positive `quantumMillis`, and grant the driver `sample`.
+`scripts/clock_physical_driver.py` retains one Unix millisecond observation and
+its exact invocation before submission. Bend converts it to logical time and
+rejects observations before the epoch or previous observation. A large jump
+expires missed deadlines; equal logical time can sweep remaining bounded work.
+An uncertain reply retries the retained request without measuring again.
+
+[ScheduledBell](ScheduledBell.obend) joins the clock to the resident Bell, Door
+and Lantern. Its schedule invitation captures both its own program and its
+listener's program, then atomically arms, quotes, books and retains the actual
+booking result. The owner can cancel queued work. Once the clock has sent or
+expired that exact generation, the retirement invitation calls `Clock.status`
+and retains its immediately preceding `absent` result. Retirement permits a new
+booking; a later event for the retired or older generation is consumed with
+an explicit `declined` result and no sound. A caller-supplied absence claim
+cannot retire the bell. See the [joined relationship tests](../../conformance/test_appointment_relationship.py)
+and [physical custody tests](../../conformance/test_appointment_physical.py).

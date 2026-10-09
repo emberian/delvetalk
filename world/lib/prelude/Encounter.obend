@@ -1,27 +1,18 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 record Child:
   key: String
   label: String
   object: String
   panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}
+type Children = Lists.List<Child>
 def childrenLength(xs: Children) -> Nat:
-  match xs:
-    case nil(_): 0n
-    case cons(c): 1n + childrenLength(c.tail)
+  Lists.length::<Child>(xs)
 def childrenContains(xs: Children, key: String) -> Bool:
-  match xs:
-    case nil(_): false
-    case cons(c): c.head.key == key || childrenContains(c.tail, key)
+  Lists.any::<Child>(xs, fn(child: Child) -> Bool: child.key == key)
 def childrenAppend(xs: Children, child: Child) -> Children:
-  match xs:
-    case nil(_): Children.cons({head: child, tail: Children.nil()})
-    case cons(c): Children.cons({head: c.head, tail: childrenAppend(c.tail, child)})
+  Lists.append::<Child>(xs, child)
 def childrenRemove(xs: Children, key: String) -> Children:
-  match xs:
-    case nil(_): Children.nil()
-    case cons(c): if c.head.key == key then childrenRemove(c.tail, key) else Children.cons({head: c.head, tail: childrenRemove(c.tail, key)})
+  Lists.filter::<Child>(xs, fn(child: Child) -> Bool: child.key != key)
 def childrenOffer(xs: Children, child: Child, capacity: Nat) -> Children:
   if childrenContains(xs, child.key) || childrenLength(xs) >= capacity then xs else childrenAppend(xs, child)

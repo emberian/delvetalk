@@ -30,7 +30,9 @@ def load_driver():
 def modules(name):
     return [{'name': n, 'source': path.read_text()} for n, path in [
         ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+        ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
+        ('Emissions', ROOT / 'world/lib/prelude/Emissions.obend'),
         ('Appointments', FIXTURES / 'Appointments.obend'), (name, FIXTURES / (name + '.obend'))]]
 
 
@@ -105,28 +107,32 @@ class Appointments(unittest.TestCase):
         return self.call({'op': 'create', 'object': name, 'principal': 'bootstrap',
                           'intent': 'create-' + name, 'protocol': program, 'law': authority}, 'committed')
 
-    def program(self, name, **configuration):
+    def program(self, name, constructor='configured', **configuration):
         # Compile the exact sealed imports, then evaluate an authored constructor
         # on checked configuration data. No source/AST specialization in Python.
         if name not in self.lowered:
             material = modules(name)
             self.lowered[name] = obend_object.lower_data_modules(material)
-            compiled = native({'op': 'compile', 'modules': material, 'entry': 'configured'})
+        key = (name, constructor)
+        if key not in self.constructors:
+            compiled = native({'op': 'compile', 'modules': modules(name), 'entry': constructor})
             self.assertEqual(compiled['status'], 'compiled', compiled)
-            self.constructors[name] = compiled['artifact']
+            self.constructors[key] = compiled['artifact']
         protocol = copy.deepcopy(self.lowered[name])
         config = {'capacity': 16} if name == 'Clock' else {'owner': 'moss', 'clock': 'clock'}
         config.update(configuration)
-        result = native({'op': 'run-data-v1', 'artifact': self.constructors[name], 'arguments': [wire(config)]})
+        result = native({'op': 'run-data-v1', 'artifact': self.constructors[key], 'arguments': [wire(config)]})
         self.assertIn('value', result, result)
         protocol['initial']['model'] = result['value']
         return protocol
 
-    def setup_world(self, pending_capacity=128, capacity=16):
+    def setup_world(self, pending_capacity=128, capacity=16, physical=None):
         self.call({'op': 'messages-init', 'principal': 'bootstrap', 'intent': 'init',
                    'lineage': 'appointments-journey', 'pendingLimit': pending_capacity}, 'committed')
-        self.create('clock', self.program('Clock', capacity=capacity), law({'request': ['moss', 'iris'],
-                    'cancel': ['moss', 'iris'], 'tick': ['driver'], 'page': ['moss', 'iris']}))
+        program = self.program('Clock', capacity=capacity) if physical is None else self.program(
+            'Clock', constructor='physical', capacity=capacity, **physical)
+        self.create('clock', program, law({'request': ['moss', 'iris'], 'quote': ['moss', 'iris'],
+                    'cancel': ['moss', 'iris'], 'tick': ['driver'], 'sample': ['driver'], 'page': ['moss', 'iris']}))
         self.create('garden-task', self.program('Task', owner='moss'), law({'wake': ['relay']}))
         self.create('lantern-task', self.program('Task', owner='iris'), law({'wake': ['relay']}))
         self.create('digest', {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {

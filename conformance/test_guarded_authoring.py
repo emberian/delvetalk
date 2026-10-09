@@ -185,7 +185,7 @@ class GuardedAuthoring(unittest.TestCase):
                 self.assertEqual(receipt['data']['results'][0]['place'], 'garden')
                 self.assertEqual(receipt['data']['results'][1]['from'], 'porch')
                 self.assertEqual(receipt['data']['results'][1]['to'], 'garden')
-                self.assertEqual(client.inspect('commons')['state']['locations']['visitor'], 'garden')
+                self.assertEqual(commons.locations(client.inspect('commons'))['visitor'], 'garden')
                 self.assertEqual(client.exchange(request), receipt)
                 if first_crossing is None:
                     first_crossing = (request, receipt)
@@ -208,11 +208,11 @@ class GuardedAuthoring(unittest.TestCase):
 
             client = desk.Desk(restored / 'world.json', restored / 'artifacts', profile='compiled')
             self.assertEqual(client.exchange(first_crossing[0]), first_crossing[1])
-            self.assertEqual(client.inspect('commons')['state']['locations']['visitor'], 'porch')
+            self.assertEqual(commons.locations(client.inspect('commons'))['visitor'], 'porch')
             self.assertEqual(client.exchange(crossing('please'))['kind'], 'refused')
             after_restore = client.exchange(crossing('moon'))
             self.assertEqual(after_restore['kind'], 'committed', after_restore)
-            self.assertEqual(client.inspect('commons')['state']['locations']['visitor'], 'garden')
+            self.assertEqual(commons.locations(client.inspect('commons'))['visitor'], 'garden')
             self.assertIn('Whisper moon', room.inspect_object(client.inspect(TARGET), TARGET)['data']['prose'])
 
 

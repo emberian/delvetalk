@@ -62,52 +62,52 @@ class Town:
                                                        expected_runtime=expected_runtime))
         return views
 
-    def _capture_roots(self, objects, profile, *, expected=None):
-        return world.capture_roots(self.clerk.database, objects, profile=profile, expected=expected)
+    def _capture_roots(self, objects, profile, *, expected=None, principal='reader'):
+        return world.capture_roots(self.clerk.database, objects, principal=principal, profile=profile, expected=expected)
 
-    def _capture_view(self, object_id, expected_runtime, profile):
-        capture = self._capture_roots([object_id], profile)
+    def _capture_view(self, object_id, expected_runtime, profile, *, principal='reader'):
+        capture = self._capture_roots([object_id], profile, principal=principal)
         pair = capture['roots'][object_id]
         if pair is None:
             return None, capture
         root = pair['root']
         artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
         view = bootstrap.room.inspect_object(root, object_id, artifact, expected_runtime=expected_runtime)
-        return view, self._capture_observations(view, capture, profile)
+        return view, self._capture_observations(view, capture, profile, principal=principal)
 
-    def _capture_observations(self, view, capture, profile):
+    def _capture_observations(self, view, capture, profile, *, principal='reader'):
         return town_cards.source_offers.capture_observations(view, capture,
-            capture_roots=lambda objects, expected=None: self._capture_roots(objects, profile, expected=expected))
+            capture_roots=lambda objects, expected=None: self._capture_roots(objects, profile, expected=expected, principal=principal))
 
     @staticmethod
     def _capture_parts(capture):
         return {'roots': {name: pair['root'] for name, pair in capture['roots'].items() if pair is not None},
                 'references': {name: pair['reference'] for name, pair in capture['roots'].items() if pair is not None}}
 
-    def capture(self, object_id, *, alias=None):
+    def capture(self, object_id, *, alias=None, principal='reader'):
         with self.lock():
             config, book = self._configuration()
             if object_id not in config['objects']:
                 raise ValueError('object is not enrolled in this clerk')
-            view, capture = self._capture_view(object_id, book.metadata()['runtime'], config.get('runtimeProfile', 'world'))
+            view, capture = self._capture_view(object_id, book.metadata()['runtime'], config.get('runtimeProfile', 'world'), principal=principal)
             if view is None:
                 raise ValueError('object absent from current world: ' + object_id)
             captured = book.capture(view, alias=alias, **self._capture_parts(capture))
             return {'status': 'prepared', **captured}
 
-    def capture_offer(self, object_id, key, *, alias=None):
+    def capture_offer(self, object_id, key, *, alias=None, principal='reader'):
         """Capture one source-authored transaction using one current snapshot."""
         with self.lock():
             config, book = self._configuration()
             if object_id not in config['objects']:
                 raise ValueError('object is not enrolled in this clerk')
-            view, capture = self._capture_view(object_id, book.metadata()['runtime'], config.get('runtimeProfile', 'world'))
+            view, capture = self._capture_view(object_id, book.metadata()['runtime'], config.get('runtimeProfile', 'world'), principal=principal)
             if view is None:
                 raise ValueError('object absent from current world: ' + object_id)
             captured = book.capture_source_offer(view, key=key, alias=alias, **self._capture_parts(capture))
             return {'status': 'prepared', **captured}
 
-    def capture_child(self, parent_alias, child_key, *, alias=None):
+    def capture_child(self, parent_alias, child_key, *, alias=None, principal='reader'):
         """Select one retained catalogue entry, then capture that object's fresh view."""
         with self.lock():
             config, book = self._configuration()
@@ -125,7 +125,7 @@ class Town:
             if object_id not in config['objects']:
                 return unavailable('unenrolled', 'This object is not enrolled for town replies.')
             profile = config.get('runtimeProfile', 'world')
-            capture = self._capture_roots([object_id], profile)
+            capture = self._capture_roots([object_id], profile, principal=principal)
             pair = capture['roots'][object_id]
             if pair is None:
                 return unavailable('absent', 'This object is absent from the current world.')
@@ -141,7 +141,7 @@ class Town:
                 if (('viewProgram' in root['protocol'] and view.get('mode') != 'projection')
                         or ('roomArtifact' in root['protocol'] and view.get('mode') != 'room')):
                     raise ValueError(view.get('reason', 'Child view is unavailable.'))
-                capture = self._capture_observations(view, capture, profile)
+                capture = self._capture_observations(view, capture, profile, principal=principal)
             except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
                 return unavailable('view-unavailable', str(error)[:2000])
             captured = book.capture(view, alias=alias, **self._capture_parts(capture))
@@ -219,7 +219,7 @@ class Town:
                 entry['views'], entry['notices'], entry['captures'] = [], [], {}
                 for target in targets:
                     try:
-                        view, capture = self._capture_view(target, book.metadata()['runtime'], config.get('runtimeProfile', 'world'))
+                        view, capture = self._capture_view(target, book.metadata()['runtime'], config.get('runtimeProfile', 'world'), principal=request['principal'])
                         if view is None:
                             entry['notices'].append({'object': target, 'reason': 'absent'})
                             continue
@@ -284,11 +284,13 @@ def main():
     capture = commands.add_parser('capture')
     capture.add_argument('object')
     capture.add_argument('--alias')
+    capture.add_argument('--principal', default='reader', help='explicit local custody identity for current read law')
     capture.add_argument('--offer', help='visible source-authored composite action key')
     child = commands.add_parser('capture-child')
     child.add_argument('parent')
     child.add_argument('key')
     child.add_argument('--alias')
+    child.add_argument('--principal', default='reader', help='explicit local custody identity for current read law')
     bind = commands.add_parser('bind')
     bind.add_argument('card')
     bind.add_argument('uri')
@@ -297,14 +299,31 @@ def main():
     receive.add_argument('uri')
     receive.add_argument('--cid', required=True)
     receive.add_argument('--interpretation', type=Path, help='explicit local interpretation of the original post')
+    configure_summon = commands.add_parser('configure-summon', help='bind an explicit source session factory/service')
+    configure_summon.add_argument('--factory', required=True)
+    configure_summon.add_argument('--offer', default='make')
+    configure_summon.add_argument('--principal', required=True)
+    configure_summon.add_argument('--followup', nargs=2, action='append', default=[], metavar=('OBJECT', 'OFFER'))
+    summon = commands.add_parser('summon', help='interpret one verified original post as a fresh source-owned session')
+    summon.add_argument('uri')
+    summon.add_argument('--cid', required=True)
+    summon.add_argument('--interpreter', required=True)
+    summon.add_argument('--basis', required=True)
     args = parser.parse_args()
     try:
         operator = Town(args.clerk_state, state=args.state)
-        if args.operation == 'capture':
-            result = (operator.capture_offer(args.object, args.offer, alias=args.alias) if args.offer
-                      else operator.capture(args.object, alias=args.alias))
+        if args.operation in ('configure-summon', 'summon'):
+            from town_summon import Summoner
+            service = Summoner(operator)
+            result = (service.configure(factory=args.factory, offer=args.offer, principal=args.principal,
+                                        followups=[{'object': object_id, 'offer': offer} for object_id, offer in args.followup])
+                      if args.operation == 'configure-summon' else
+                      service.summon(args.uri, args.cid, interpreter=args.interpreter, basis=args.basis))
+        elif args.operation == 'capture':
+            result = (operator.capture_offer(args.object, args.offer, alias=args.alias, principal=args.principal) if args.offer
+                      else operator.capture(args.object, alias=args.alias, principal=args.principal))
         elif args.operation == 'capture-child':
-            result = operator.capture_child(args.parent, args.key, alias=args.alias)
+            result = operator.capture_child(args.parent, args.key, alias=args.alias, principal=args.principal)
             if args.text and result['status'] == 'prepared':
                 print(result['card']['body'])
                 return 0

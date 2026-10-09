@@ -22,6 +22,7 @@
       "spec/Delvetalk/Package.lean",
       "spec/Delvetalk/DocumentTemplate.lean",
       "spec/Delvetalk/FrontEnd.lean",
+      "spec/Delvetalk/Generics.lean",
       "spec/Delvetalk/PackageData.lean",
       "spec/Delvetalk/Reflection.lean",
       "spec/bend/Compiler/ObjectiveBendC4.lean",
@@ -54,6 +55,8 @@
       "profiles/SourcePackages.lean",
       "profiles/SourceContract.lean",
       "profiles/SourceAmendment.lean",
+      "profiles/SourcePolicy.lean",
+      "profiles/ProgramDigest.lean",
       "profiles/Preparation.lean"
     ]
   },

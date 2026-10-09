@@ -17,7 +17,7 @@ objects = b.module('workshop_objects', 'protocols/factories/package.py')
 
 
 def scoped(commands, people, *, programmers=(), managers=()):
-    return {'profile': 'delvetalk-scoped-law-v1',
+    return {'profile': 'delvetalk-scoped-law',
             'invoke': {command: list(people) for command in commands},
             'reprogram': list(programmers), 'law': list(managers)}
 
@@ -54,15 +54,15 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
         commons.law(participants, managers=(steward,)))
 
     add('factory:objects', objects.factory(builders), scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
-    desks = writing.factory(compiler, builders)
+    desks = writing.factory(compiler, builders, reviewers=(steward,))
     add('factory:desks', desks, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('factory:writing', writing.writing_factory(), scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('ticket:welcome', ticket.build(requester=builders[0], links={'context': ref('commons')}),
-        {'profile': 'delvetalk-scoped-law-v1',
+        {'profile': 'delvetalk-scoped-law',
          'invoke': {'post': [builders[0]], 'claim': list(builders), 'submit': list(builders),
                     'accept': [builders[0]], 'reject': [builders[0]]},
          'reprogram': [], 'law': [steward]})
-    add('table:automatafl', table.protocol('table:automatafl'), table.law(*builders))
+    add('table:automatafl', table.protocol('table:automatafl', *builders), table.law(*builders))
     return workspace.initialize(directory, seeds,
         entry_objects=['commons', 'factory:objects', 'factory:desks', 'factory:writing', 'ticket:welcome', 'table:automatafl'],
         default_object='commons', principal=steward, profile='compiled',

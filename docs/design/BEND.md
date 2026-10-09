@@ -31,6 +31,11 @@ visitation and navigation. `scene/handlers.py` serializes the parsed scene as
 typed data and packages explicit handler/runtime/scene modules. Serialization of
 that data is not control-flow generation.
 
+Town-forge, stateful and Spween workshops package source factories and writing
+participants. Contract release invokes source `prepareContract`; its Python helper
+retains compiler observations and receipts. Workshop seeds use source factories.
+Their `generate.py` names do not imply behavior generation.
+
 These are current implementation boundaries, not claims of whole-system
 qualification or deployment. [TRACKING](../../TRACKING.md) owns integration status.
 
@@ -39,9 +44,7 @@ qualification or deployment. [TRACKING](../../TRACKING.md) owns integration stat
 | Behavioral owner | Source replacement | Cutover obligation |
 | --- | --- | --- |
 | `protocols/commons/generate.py` | Typed presence/graph relations over configured data | Remove unrolled participant/edge policy; preserve gated origin checks and distinguish presence from containment. |
-| Town-forge, stateful and Spween workshop generators; JSON factory seeds | Source Candidate/Factory and authored workshop preparation | Change bootstrap, desk recognition and workshop callers; delete scalar migration templates and old recipe submissions. The source Editor loader is already separate from this debt. |
 | `scripts/authoring.py` | Source workshop encounters/preparation | Remove Python selection of application steps as its actual CLI/portal consumers move. |
-| `scripts/contract_authoring.py` | Source `ContractWorkshop` | Move candidate eligibility, law-amendment policy and release choreography; retain exact source/build custody. |
 | `game/table/protocol.py` | `CommitRevealTable` around the existing Bend game | Move commitment/reveal/reset behavior; retain private nonce custody and transport. |
 
 The [repository consumer graph](REPOSITORY.md#cut-over-consumers-then-delete-the-duplicate)
@@ -79,9 +82,9 @@ exact absence checks. A source-produced law amendment still faces old and new la
 
 ## Parallel implementation
 
-Presence and commit/reveal can progress independently. Contract workshops consume
-the native preparation, verified observation and law boundaries. Candidate/factory
-consumer cutovers share workshop seeds and desk recognition and must be coordinated.
+Presence and commit/reveal can progress independently. Qualify source workshops
+against native preparation, verified observations, allocation and law boundaries
+as one receiving composition.
 
 Each conversion ends by changing its consumers and deleting the old behavioral
 owner. Do not accumulate a new Bend object beside a permanently supported Python
@@ -104,6 +107,8 @@ fronts distinguish existing substrate from remaining consumer and design work.
   retain their exact dependencies; no ambient import is supplied. Replace remaining
   repeated declarations at consumers. Domain-specific collections can remain beside
   their behavior rather than pretending to provide polymorphism.
+  The [generic sums and functions proposal](GENERICS.md) specifies bounded native
+  specialization and two consumer cuts; it is not an implemented language feature.
 - **Text computation.** Hosted text operations implement concatenation, decimal
   rendering and Unicode-scalar length/slicing without normalization. The
   [focused checks](../../conformance/test_text_primitives.py) cover types, lazy
@@ -148,6 +153,25 @@ the durable collaboration design in [composition](COMPOSITION.md).
 A conditional may return an existing record on one branch and `extend(record,
 {field: value})` on another. Equivalent record fields may appear in a different
 order; both branches must still agree on each field's type. This also works for
-an updated record nested inside a decision. An unchosen branch stays lazy.
+an updated record nested inside a decision, and for natural-number and sum
+matches whose arms return equivalent rows. An unchosen branch stays lazy.
 The checker admits equivalent rows through its existing checked conversion;
 the typing rule and restricted-value sharing rules remain unchanged.
+
+A concrete recursive record alias can also be extended. The frontend rebuilds
+its declared row around one shared lazy base cell: overridden fields do not
+force the base, and retained fields project it only when demanded. Fields can
+change type or be added when the enclosing result declares the resulting row.
+Open `Self`/`Super` variables keep their abstract tails; their lower bounds are
+not aliases. This shared reconstruction refuses affine bases and affine
+captures. Consuming record updates need a separate ownership rule.
+
+### Bounded layer composition
+
+Open `Self`/`Super` layers can wrap closed layers whose equivalent record fields
+use a different declaration order. Composition still checks every required
+member and its type; a lower bound is not permission to replace a rigid type
+with that bound. Callable conversions preserve specification metadata, and
+restricted values cannot become reusable through row normalization. The
+checker constructs the existing composition and fix judgments through checked
+conversion; this does not introduce a new typing rule.

@@ -16,9 +16,21 @@ partial def dataJson : Data → Json
   | .natural n => Json.mkObj [("tag",toJson "natural"),("value",toJson (toString n))]
   | .boolean b => Json.mkObj [("tag",toJson "boolean"),("value",toJson b)]
   | .label s => Json.mkObj [("tag",toJson "label"),("value",toJson s)]
-  | .record fields => Json.mkObj [("tag",toJson "record"),("fields",Json.arr (fields.map fun field =>
-      Json.mkObj [("name",toJson field.1),("value",dataJson field.2)]).toArray)]
+  | .record fields => Json.mkObj [("tag",toJson "record"),("fields",Json.arr (fields.foldl (fun result field =>
+      result.push (Json.mkObj [("name",toJson field.1),("value",dataJson field.2)])) #[]))]
   | .variant label payload => Json.mkObj [("tag",toJson "variant"),("label",toJson label),("payload",dataJson payload)]
+
+/-- Exact UTF-8 size of `dataJson value |>.compress`, without allocating its
+nested JSON wrapper tree or one whole encoded string. JSON quoting is delegated
+only for leaf strings, so escaping follows Lean's physical wire printer. -/
+partial def dataJsonBytes : Data → Nat
+  | .natural n => 26 + (toJson (toString n)).compress.utf8ByteSize
+  | .boolean b => if b then 30 else 31
+  | .label s => 24 + (toJson s).compress.utf8ByteSize
+  | .record fields => 28 + fields.foldl (fun total field =>
+      total + 18 + (toJson field.1).compress.utf8ByteSize + dataJsonBytes field.2) 0
+      + (fields.length - 1)
+  | .variant label payload => 37 + (toJson label).compress.utf8ByteSize + dataJsonBytes payload
 
 def decodeNatural (json : Json) : Except String Data := do
   let text ← json.getObjValAs? String "value"

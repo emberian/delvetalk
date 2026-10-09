@@ -1,0 +1,46 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Preparation.obend as P
+import ./Document.obend as Document
+import ./Directory.obend as D
+import ./GSBWelcome.obend as Welcome
+record Origin:
+  author: String
+  originUri: String
+  originCid: String
+record State:
+  directory: D.State
+  origin: Origin
+def initial() -> State:
+  {directory: {home: "", config: {title: "", introduction: "", closing: "", capacity: 8n, doors: D.Doors.nil()}}, origin: {author: "", originUri: "", originCid: ""}}
+record Selected:
+  choice: D.Selected
+  origin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Selected
+def lifted(state: State, decision: D.Decision) -> Decision:
+  {accepted: decision.accepted, reason: decision.reason, state: {directory: decision.state, origin: state.origin}, result: {choice: decision.result, origin: state.origin}}
+def begin(state: State, input: {}, context: Abi.Context) -> Decision:
+  let allowed = state.directory.config.title == "" && state.origin.author != ""
+  {accepted: allowed, reason: if allowed then "" else "This session is already open or has no retained origin.", state: if allowed then {directory: D.initial(context.object, Welcome.configuration()), origin: state.origin} else state, result: {choice: {door: "", object: context.object, panel: "main", original: "", by: context.principal}, origin: state.origin}}
+def setDoor(state: State, input: D.Door, context: Abi.Context) -> Decision:
+  lifted(state, D.setDoor(state.directory, input, context))
+def choose(state: State, input: D.Choice, context: Abi.Context) -> Decision:
+  lifted(state, D.choose(state.directory, input, context))
+def prepareChoose(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  D.prepareChoose(state.directory, contribution, observations, context)
+record Description:
+  name: String
+  initial: State
+  methods: {begin: {label: String, fields: {}}, setDoor: {label: String, fields: {key: D.TextField, label: D.TextField, object: D.TextField, panel: D.TextField, description: D.TextField, example: D.TextField, available: {type: String}, show: {type: String}}}, choose: {label: String, fields: {door: D.TextField, original: D.TextField}}}
+  panels: {}
+def describe() -> Description:
+  {name: "A fresh DelveTalk session", initial: initial(), methods: extend(D.describe(initial().directory).methods, {begin: {label: "Open this retained session", fields: {}}}), panels: {}}
+def document(state: State) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("SESSION FOR ", textConcat(state.origin.author, textConcat("\nIn reply to ", textConcat(state.origin.originUri, "\n\n"))))), tail: Document.Documents.cons({head: D.document(state.directory), tail: Document.Documents.nil()})})})
+def view(state: State, panel: String) -> D.View:
+  let doc = document(state)
+  extend(D.view(state.directory, panel), {document: doc, prose: Document.plain(doc)})
