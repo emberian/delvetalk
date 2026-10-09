@@ -50,11 +50,10 @@ class Chain(TurnWorld):
         replies = []
         for _ in range(rounds):
             replies.append(self.host.send(op="world-deliver", limit=16))
-            if not self.host.send(op="world-pending").get("pending"):
+            if not self.host.send(op="world-pending").get("count"):
                 break
         return replies
 
-    @unittest.expectedFailure
     def test_ring_then_open_then_light(self):
         self.make("lantern", closure("Lantern"), record(lit=boolean(False), litBy=label("")))
         self.make("door", closure("Door"), record(
@@ -78,14 +77,13 @@ class Chain(TurnWorld):
         self.assertEqual(field(self.state("lantern"), "lit"), boolean(True))
         self.assertEqual(field(self.state("lantern"), "litBy"), label("gemini"))
 
-    @unittest.expectedFailure
     def test_a_tick_cycle_ends_in_a_budget_exhausted_refusal(self):
         self.make("loop", closure("Loop"), record(count=nat(0)))
         first = self.turn("loop", "tick")
         self.assertEqual(first["status"], "admitted", first)
         replies = self.deliver_all(rounds=200)
         self.assertIn("budgetExhausted", json.dumps(replies))
-        self.assertFalse(self.host.send(op="world-pending").get("pending"))
+        self.assertFalse(self.host.send(op="world-pending").get("count"))
         count = int(field(self.state("loop"), "count")["value"])
         self.assertGreater(count, 1)
         # The refusal is the last word: delivering again changes nothing.
