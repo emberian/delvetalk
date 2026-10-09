@@ -23,19 +23,26 @@ record Handling:
 sum Done:
   done: {}
   refused: {reason: String}
+# A creator supplies a Seed; seeded makes the child's State from it.
+record Seed:
+  name: String
+  description: String
 record Edits:
   present: Plans.Entries<Plans.Reference, {}>
   things: Plans.Entries<Plans.Reference, {}>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
+def defaultSeed() -> Seed:
+  {name: "", description: ""}
+def seeded(seed: Seed) -> State:
+  {name: seed.name, description: seed.description, exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
 def initial() -> State:
-  {name: "", description: "", exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
+  seeded(defaultSeed())
 def keep() -> Edits:
   {present: Plans.Entries::<Plans.Reference, {}>.keep({}), things: Plans.Entries::<Plans.Reference, {}>.keep({})}
 def written(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Done>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Done.done({})
-    case refused(r): Done.refused({reason: r.clause})
     case _: Done.refused({reason: "The write was not answered."})
 # Join the people here. Law decides whether the subject may enter.
 def enter(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Done>:

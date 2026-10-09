@@ -7,8 +7,8 @@ import ./Document.obend as Document
 # Design choice: the library is generic and the object supplies its own types.
 #   Plan<E, A>      E is the object's edits record, one field per state field,
 #                   each an Edit<T, D> (scalars) or Entries<D, U> (lists). A is
-#                   the payload sum for call, send and create: a call argument,
-#                   a message, a seed state.
+#                   the payload for call, send and create: a call argument, a
+#                   message, a child's Seed.
 #   Response<S, R>  S is the full state type of the object a view reads; R is
 #                   the result type of the methods the object calls (the host
 #                   answers a call with returned {result} of the callee's type)
@@ -25,6 +25,19 @@ import ./Document.obend as Document
 # "Any data" is not expressible in rank-1 generics, so a payload that must carry
 # several shapes is a sum the object declares; there is no dynamic Value
 # universe. One A serves call, send and create of a single object.
+#
+# The Seed rule. A creator supplies a Seed; the child's `seeded` makes its State.
+# Every object exports `Seed`, `defaultSeed()`, `seeded(seed: Seed) -> State` and
+# `initial() = seeded(defaultSeed())`. The host's create calls the child's
+# `seeded` with the supplied seed, so create's `seed: A` is the child's Seed type.
+# A creator of several kinds of child declares A as a sum with one constructor per
+# package, named like the package in lower case; the host unwraps the one the
+# `package` field names.
+#
+# Writes are staged. A `write` is answered `written` always; whether the law
+# admits it is decided once, at commit, and a refusal there ends the whole turn.
+# An activity therefore has no `refused` arm after a write: such an arm is dead
+# code. (`create`, `call` and `view` can still be answered `refused` or `denied`.)
 #
 # Recursive data (List, Document) may cross a Plan or Response: the first
 # checker refused it with "the checker refused the front end's typed packet",

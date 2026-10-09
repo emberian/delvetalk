@@ -8,9 +8,10 @@ import ./List.obend as Lists
 #
 # Blank lines and lines starting with # are ignored, and everything after a line
 # that is exactly --- is ignored. Card, action and field names are [a-z0-9-]+. A
-# value is the rest of its line, trimmed. A reply that does not begin (after
-# blank and # lines) with a delvetalk line is not a spell: prose needs
-# interpretation, not parsing.
+# value is the rest of its line, trimmed. Every line before the first delvetalk
+# line is skipped (a reply quotes the invitation it answers); a reply with no
+# delvetalk line is not a spell: prose needs interpretation, not parsing. The
+# fields may also follow the action on the same line, comma separated.
 #
 # parse turns text into a Parsed; fit checks a Parsed against the Form the card
 # offered. A Fit is never authority: a proposal is what the host may feed to the
@@ -76,7 +77,10 @@ def parse(text: String) -> Parsed:
   let stop = textBreak(text, "\n")
   let line = trimStart(textTake(text, stop))
   let rest = textDrop(text, stop + 1n)
-  if line == "" || textTake(line, 1n) == "#" then (if rest == "" then Parsed.notASpell({reason: "The reply has no delvetalk line."}) else parse(rest)) else if textTake(line, 9n) == "delvetalk" && textSpan(textDrop(line, 9n), blanks()) > 0n then header(trimEnd(textDrop(line, 9n)), rest) else Parsed.notASpell({reason: "The reply has no delvetalk line."})
+  if textTake(line, 9n) == "delvetalk" && textSpan(textDrop(line, 9n), blanks()) > 0n then header(trimEnd(textDrop(line, 9n)), rest) else skip(rest)
+# Every line before the spell is skipped: readers quote the invitation they answer.
+def skip(rest: String) -> Parsed:
+  if rest == "" then Parsed.notASpell({reason: "The reply has no delvetalk line."}) else parse(rest)
 def header(line: String, rest: String) -> Parsed:
   let afterBlanks = trimStart(line)
   let cardEnd = textBreak(afterBlanks, " \t")
@@ -84,8 +88,33 @@ def header(line: String, rest: String) -> Parsed:
   let afterCard = trimStart(textDrop(afterBlanks, cardEnd))
   let actionEnd = textBreak(afterCard, " \t")
   let action = textTake(afterCard, actionEnd)
-  let tail = textDrop(afterCard, actionEnd)
-  if isIdentifier(card) == false || isIdentifier(action) == false then Parsed.notASpell({reason: "The delvetalk line must name a card and an action in [a-z0-9-]."}) else if tail != "" then Parsed.notASpell({reason: "The delvetalk line holds only a card and an action."}) else spelled(card, action, fieldLines(rest))
+  if isIdentifier(card) == false || isIdentifier(action) == false then skip(rest) else spelled(card, action, both(inline(trimStart(textDrop(afterCard, actionEnd))), fieldLines(rest)))
+# The one-line form: fields follow the action, separated by commas. A comma
+# continues the current value unless what follows it looks like `name:`.
+def inline(tail: String) -> Fields2:
+  if tail == "" then Fields2.found({bindings: Bindings.nil()}) else piece(tail)
+def piece(tail: String) -> Fields2:
+  let stop = textBreak(tail, ",")
+  startField(trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
+def looksLikeField(value: String) -> Bool:
+  let colon = textBreak(value, ":")
+  colon > 0n && textTake(value, colon) != value && isIdentifier(textTake(value, colon))
+def startField(value: String, rest: String) -> Fields2:
+  let colon = textBreak(value, ":")
+  if looksLikeField(value) then continued(textTake(value, colon), trimStart(textDrop(value, colon + 1n)), rest) else Fields2.bad({reason: textConcat("Not a field: ", textTake(value, 40n))})
+def continued(name: String, value: String, rest: String) -> Fields2:
+  if rest == "" then consed(name, trimEnd(value), Fields2.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
+def more(name: String, value: String, stop: Nat, rest: String) -> Fields2:
+  let next = trimStart(textTake(rest, stop))
+  if looksLikeField(next) then consed(name, trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, textConcat(value, textConcat(",", textTake(rest, stop))), textDrop(rest, stop + 1n))
+def both(first: Fields2, second: Fields2) -> Fields2:
+  match first:
+    case found(f): sequenced(f.bindings, second)
+    case bad(_): first
+def sequenced(bindings: Bindings, second: Fields2) -> Fields2:
+  match second:
+    case found(g): Fields2.found({bindings: Lists.concat::<Binding>(bindings, g.bindings)})
+    case bad(_): second
 def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
   match parsed:
     case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})

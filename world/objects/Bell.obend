@@ -19,7 +19,7 @@ record State:
   door: Plans.Reference
   lastDelivery: String
   planting: Plans.Slot
-# What the garden hands the host when it plants a bell.
+# What a creator may supply for a bell; seeded makes the State from it.
 record Seed:
   planter: String
   colour: Colour
@@ -35,8 +35,12 @@ record Who:
   who: String
 type Plan = Plans.Plan<Edits, Who>
 type Response = Plans.Response<State, {}>
+def defaultSeed() -> Seed:
+  {planter: "", colour: Colour.amber({}), seed: "", planting: {principal: "", intent: ""}}
+def seeded(seed: Seed) -> State:
+  {planter: seed.planter, colour: seed.colour, seed: seed.seed, rains: Lists.List::<Rain>.nil(), rung: false, door: Plans.nobody(), lastDelivery: "", planting: seed.planting}
 def initial() -> State:
-  {planter: "", colour: Colour.amber({}), seed: "", rains: Lists.List::<Rain>.nil(), rung: false, door: {world: "", object: ""}, lastDelivery: "", planting: {principal: "", intent: ""}}
+  seeded(defaultSeed())
 def keep() -> Edits:
   {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({}), door: Plans.Edit::<Plans.Reference, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({})}
 def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
