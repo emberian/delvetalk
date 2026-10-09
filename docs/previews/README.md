@@ -15,3 +15,10 @@ not a report that those implementation or deployment obligations have passed.
 Its root/forge/workshop invitations and `using/when/ask/prepare` dialect propose
 concrete language surfaces to implement; they are not current parser examples.
 The Bend block is an excerpt assuming a declared `Door` type.
+
+[Root menu](gsb-root-menu.txt) fills the opening's `[delvetalk root menu]` slot.
+It is the intended Town rendering of the living document: directory words and
+ordinary-language examples, followed by locally offered forms. It is not a new
+global command grammar or an already published capture. The root source lane is
+connecting this presentation to configured world objects; deployment and exact
+publication bindings remain separate.
