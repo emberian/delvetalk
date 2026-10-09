@@ -23,6 +23,9 @@ structure Open where
   snapshotAt : Nat := 0
   /-- What the open did with snapshots, for the `world-open` reply. -/
   report : Snapshot.Report := {}
+  /-- Whether appends are made durable with `syncHandle` (F_FULLFSYNC / fsync); `world-open
+      {sync: false}` only flushes, for test journals. Per process, never journaled. -/
+  sync : Bool := true
 
 abbrev Session := Option Open
 
@@ -98,7 +101,7 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
       return (some s, .error "journal is full")
     try
       for entry in fresh do s.handle.putStr (entry.compress ++ "\n")
-      syncHandle s.handle
+      if s.sync then syncHandle s.handle else s.handle.flush
     catch e => return (some s, .error s!"journal write failed: {e}")
     -- The entries are durable; a snapshot is derived from them and its failure refuses nothing.
     if w'.height < s.snapshotAt + Limits.snapshotEvery then return (some { s with world := w' }, .ok r)
@@ -120,9 +123,14 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
         | .ok (.bool b) => pure b
         | .ok _ => return (session, .error "verify must be true or false")
         | .error _ => pure false
+      let sync ← match request.getObjVal? "sync" with
+        | .ok (.bool b) => pure b
+        | .ok _ => return (session, .error "sync must be true or false")
+        | .error _ => pure true
       match ← openWorld path held verify with
       | .error e => return (session, .error e)
       | .ok o =>
+        let o := { o with sync }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
@@ -206,7 +214,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("locked", toJson true)]))
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

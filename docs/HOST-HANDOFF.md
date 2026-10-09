@@ -9,7 +9,8 @@ Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 `test_integration.py`.
 `make check` runs everything in parallel (~2 min); `make smoke` the fast pair. Two wall-clock bounds
 (`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
-loaded box; alone they take 3.3 s and pass.
+loaded box; alone they take 3.3 s and pass. `test_snapshot`'s reopen under 1 s takes 0.2 to 0.4 s alone and
+has measured 1.08 s inside the parallel suite on hbox at load 30.
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
@@ -73,7 +74,9 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
-`world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
+`world-open {sync: false}` appends with a flush and no F_FULLFSYNC/fsync for that process (default true, never
+journaled, reported by `world-status` as `sync`); `tests/host.py` opens every test journal so, deploy and hostd keep
+the default. `world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.

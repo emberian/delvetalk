@@ -46,6 +46,9 @@ class Host:
                                      text=True, bufsize=1)
 
     def send(self, **request):
+        # Test journals skip F_FULLFSYNC (`world-open {sync: false}`); deploy and hostd keep the default.
+        if request.get("op") == "world-open" and "sync" not in request:
+            request["sync"] = False
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
