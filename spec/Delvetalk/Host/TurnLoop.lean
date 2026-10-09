@@ -390,7 +390,7 @@ def hasMethod (o : Object) (name : String) : Bool :=
 /-- The Context a card is rendered for: the reader (`principal`), the card's object, the asking
     object (`caller`, "" for `world-card`), and the turn's intent and height. -/
 def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) : Data :=
-  contextData id reader (handleOf w reader) caller intent height "card" method
+  contextData id reader (handleOf w reader) caller intent height w.clock "card" method
 
 /-- An object's card as `context`'s reader sees it, run on its committed state under this turn's
     ticks: `renderFor(state, context)` when the package has it, else `render`, which may take
@@ -440,7 +440,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   recordRoot handler obj.version
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
-  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height "handle" ""
+  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" ""
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ _ _)) => (d, [obj.state, plan, context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -475,7 +475,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
-  let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height
+  let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
     (if depth == 0 then "request" else "call") method
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)

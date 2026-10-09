@@ -512,13 +512,16 @@ def initial() -> State:
 def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.handle})}})):
     case _: context.handle
+def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
+    case _: natText(context.clock)
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat("seen by ", context.handle))
 """
 GLM = "did:plc:nmjdxe6fex23zslnnbwgruj3"
 
 
-class Handles(Reflection):
+class Handles(Reflection):  # and the clock
     """Rehearsal finding 8: cards showed DID fragments. The host keeps a principal registry the
     clock principal fills (`world-principal`), and every Context carries the handle."""
     def setUp(self):
@@ -554,6 +557,14 @@ class Handles(Reflection):
         self.reopen()
         self.assertEqual(self.card(), "seen by glm.town")
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did=GLM, handle="two\nlines")["status"], "error")
+
+    def test_the_context_carries_the_world_clock_beside_the_height(self):
+        """`until` deadlines compare against the clock world-advance moves, not the journal height."""
+        when = lambda: self.turn("mirror", "when", principal=GLM)["result"]["value"]
+        self.assertEqual(when(), "0")
+        self.assertEqual(self.host.send(op="world-advance", principal="transport", height=1000)["status"], "advanced")
+        self.assertEqual(when(), "1000")
+        self.assertLess(self.host.send(op="world-status")["height"], 1000)
 
 
 class Transient(Reflection):

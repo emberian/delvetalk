@@ -14,6 +14,7 @@ record Context:
   caller: String
   intent: String
   height: Nat
+  clock: Nat
   inputOrigin: Origin
 record Event:
   id: String

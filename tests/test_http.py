@@ -218,7 +218,7 @@ class HttpFront(unittest.TestCase):
         tok = self.login()
         context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': 'c1'},
                          principal={'tag': 'label', 'value': HANDLE}, handle={'tag': 'label', 'value': ''},
-                         caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0),
+                         caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0), clock=nat(0),
                          inputOrigin=record(
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
                              command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},

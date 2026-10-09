@@ -937,11 +937,13 @@ def handleOf (w : World) (principal : String) : String :=
 /-- What the host tells a running method about itself, built here and nowhere else.
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
-    `intent` the turn's identity, `height` the journal height the turn read. None is chosen
+    `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
+    clock (`world-advance`) the frame runs at, which deadlines compare against. None is chosen
     by the client. -/
-def contextData (id principal handle caller intent : String) (height : Nat) (kind command : String) : Data :=
+def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String) : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
     ("handle", .label handle), ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
+    ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
 
@@ -959,7 +961,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
       unless p.roots.any (·.1 == r) do return refuse "lawReads"
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := contextData id subject (handleOf w subject) caller p.intent w.height "law" method
+  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
