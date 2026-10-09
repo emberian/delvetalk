@@ -1427,6 +1427,115 @@ def composeStep (metaTy : Option PTy) (value : ATerm) (valueTy : Option PTy) (ri
 
 
 
+/-- What keeps a type from being first-order data, by name: `some "a function"` for an
+arrow (or a specification or prototype) anywhere in it, `some "an Activity"` for a
+computation, `none` otherwise (unresolved parts are left to the checker). -/
+def PTy.notData (bounds : List (Nat × PTy)) : Nat → List Nat → PTy → Option String
+  | 0, _, _ => none
+  | fuel + 1, seen, t =>
+    match t with
+    | .arrow .. | .specification .. | .prototype .. => some "a function"
+    | .computation .. => some "an Activity"
+    | .field _ member tail => (member.notData bounds fuel seen).orElse fun _ => tail.notData bounds fuel seen
+    | .variant row => row.notData bounds fuel seen
+    | .variable k =>
+      if seen.contains k then none
+      else (bounds.lookup k).bind (PTy.notData bounds fuel (k :: seen))
+    | _ => none
+
+/-- The row a record-typed expected type names (a recursive record's bound). -/
+def expectedRow (st : St) : Option PTy → Option PTy
+  | some (.variable k) => match st.sumBounds.lookup k with
+    | some row => if isRowTy row then some row else none
+    | none => none
+  | some t => if isRowTy t then some t else none
+  | none => none
+
+/-- Whether a value at `expected` could need an implicit `Data` injection: `expected` is
+`Data`, or a record row (through recursive-record bounds) with such a field. -/
+def mentionsData (bounds : List (Nat × PTy)) : Nat → List Nat → PTy → Bool
+  | 0, _, _ => false
+  | fuel + 1, seen, t =>
+    match t with
+    | .data => true
+    | .field _ member tail => mentionsData bounds fuel seen member || mentionsData bounds fuel seen tail
+    | .variable k =>
+      if seen.contains k then false
+      else match bounds.lookup k with
+        | some bound => isRowTy bound && mentionsData bounds fuel (k :: seen) bound
+        | none => false
+    | _ => false
+
+/- Implicit `Data` injection. Where the expected type is `Data` and an expression
+synthesizes a first-order data type `T`, the elaborated term is wrapped exactly as
+`Data.of::<T>(e)` wraps it (`toData T`). Expected types reach a value through a sum
+payload, a call's parameter, an extended field and a definition's result, and descend
+through record literals and `if`. The probe runs after the ordinary elaboration and
+its state is discarded unless it injects, so a program that injects nothing elaborates
+exactly as before. -/
+def coerceGo (c : Ctx) : Nat → Option PTy → Expr → ATerm → List Binding → Module → M (ATerm × Bool)
+  | 0, _, _, t, _, _ => return (t, false)
+  | fuel + 1, expected, e, t, env, m => do
+    let some ty := expected | return (t, false)
+    if let (.ite _ whenTrue whenFalse, .ifBool ct tt ft) := (e, t) then
+      let (tt', a) ← coerceGo c fuel (some ty) whenTrue tt env m
+      let (ft', b) ← coerceGo c fuel (some ty) whenFalse ft env m
+      return (.ifBool ct tt' ft', a || b)
+    if let .data := ty then
+      if let .toData .. := e then return (t, false)
+      match ← synth c fuel e env m with
+      | none | some .data => return (t, false)
+      | some actual =>
+        if let some what := actual.notData (← get).sumBounds 4096 [] then
+          fail ("refused (data-injection): this value is " ++ what ++
+            ", not first-order data, so it cannot be passed as Data")
+        return (.toData actual t, true)
+    match e, t with
+    | .record fields, .record terms =>
+      let some row := expectedRow (← get) (some ty) | return (t, false)
+      if fields.length != terms.length then return (t, false)
+      let mut out : List (String × ATerm) := []
+      let mut changed := false
+      for ((n, v), (n', av)) in fields.zip terms do
+        let (av', ch) ← coerceGo c fuel (lookupRow (some row) n) v av env m
+        out := out ++ [(n', av')]
+        changed := changed || ch
+      return (.record out, changed)
+    | _, _ => return (t, false)
+
+def coerceAt (c : Ctx) (fuel : Nat) (expected : Option PTy) (e : Expr) (t : ATerm) (env : List Binding) (m : Module) : M ATerm := do
+  let some ty := expected | return t
+  if !mentionsData (← get).sumBounds 4096 [] ty then return t
+  let saved ← get
+  let (t', changed) ← coerceGo c fuel expected e t env m
+  unless changed do set saved
+  return t'
+
+/-- A call's arguments at the callee's parameter types (`coerceAt` for each). -/
+def coerceArgs (c : Ctx) (fuel : Nat) (callee : Expr) (args : List Expr) (terms : List ATerm) (env : List Binding) (m : Module) :
+    M (List ATerm) := do
+  let saved ← get
+  let mut calleeTy := callable (← synth c fuel callee env m)
+  let mut out : List ATerm := []
+  let mut changed := false
+  for (a, t) in args.zip terms do
+    let domain := match calleeTy with
+      | some (.arrow _ _ d _) => some d
+      | _ => none
+    calleeTy := match calleeTy with
+      | some (.arrow _ _ _ cod) => callable (some cod)
+      | _ => none
+    match domain with
+    | some d =>
+      if mentionsData (← get).sumBounds 4096 [] d then
+        let (t', ch) ← coerceGo c fuel domain a t env m
+        out := out ++ [t']
+        changed := changed || ch
+      else out := out ++ [t]
+    | none => out := out ++ [t]
+  unless changed do set saved
+  return out
+
 mutual
 def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
@@ -1488,7 +1597,12 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
           "recursive record extension" (.given result) m.name
         return .app fn (← expression c fuel inherited env m)
       let i ← expression c fuel inherited env m
-      return .extend i (← fieldsOf c fuel fields env m)
+      let terms ← fieldsOf c fuel fields env m
+      let row := expectedRow (← get) base
+      let mut coerced : List (String × ATerm) := []
+      for ((n, v), (n', t)) in fields.zip terms do
+        coerced := coerced ++ [(n', ← coerceAt c fuel (lookupRow row n) v t env m)]
+      return .extend i coerced
     | .closure params resultType bodyExpr =>
       abstract c fuel params env (fun next => expression c fuel bodyExpr next m) "closure" (.source resultType) m.name
     | .binary op left right =>
@@ -1581,6 +1695,9 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
           | [a] => expression c fuel a env m
           | _ => pure (.record [])
         let type ← sourceType c fuel sumName moduleName []
+        let payload ← match args with
+          | [a] => coerceAt c fuel (lookupRow (variantRowOf (← get) type) caseLabel) a payload env m
+          | _ => pure payload
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
@@ -1611,7 +1728,10 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
             | _ => fail "prototype expects spec and lazy target"
       for a in args do noActivity c fuel a env m "effect-as-argument" "an argument is a shared lazy thunk"
       let mut fn ← expression c fuel callee env m
-      for a in args do fn := .app fn (← expression c fuel a env m)
+      let mut terms : List ATerm := []
+      for a in args do terms := terms ++ [← expression c fuel a env m]
+      if !args.isEmpty then terms ← coerceArgs c fuel callee args terms env m
+      for t in terms do fn := .app fn t
       return fn
 
 /-- A tail position of an activity body: pure results are lifted with `done`. -/
@@ -1619,7 +1739,8 @@ def tail (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
   | fuel + 1, e, env, m => do
     if let .fix .. := e then modify fun st => { st with fixTarget := st.resultType }
-    let some (p, r) := (← get).effect | expression c fuel e env m
+    let some (p, r) := (← get).effect | do
+      coerceAt c fuel (← get).resultType e (← expression c fuel e env m) env m
     if let .letE name type value bodyE := e then
       return ← lowerLet c fuel name type value env m true (expression c fuel value env m)
         (fun inner => tail c fuel bodyE inner m) (fun inner => synth c fuel bodyE inner m)
@@ -1630,7 +1751,10 @@ def tail (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       return .ifBool ct tt ft
     if isPerform c e env m || isComputation (← synth c fuel e env m) then
       return ← expression c fuel e env m
-    return .done p r (← expression c fuel e env m)
+    let result := match (← get).resultType with
+      | some (.computation _ _ a) => some a
+      | _ => none
+    return .done p r (← coerceAt c fuel result e (← expression c fuel e env m) env m)
 
 /-- An open declaration's template layer at its own bounds (Self and Super its two rigid
 bounded variables), elaborated once and cached: `(Self index, Super index, layer)`. The knot

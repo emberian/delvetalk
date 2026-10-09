@@ -456,3 +456,25 @@ compile (173 ms on hbox at 81ea9ec; the cost was the whole-closure proposal, 77 
 generics, 60 ms, not packet decoding: the closure's packet decoded in 3.6 ms and an entry's in
 under 1.5 ms).
 
+
+## 11. Kernel lane 5 (lane/kernel4, 2026-10-09): surface sugar, no new semantics
+
+Each form lowers to its explicit spelling; `tests/test_sugar.py` compiles both and
+compares the packet without `sourceModules` (the only field that names source bytes).
+Every world artifact is byte-identical (`tests/test_artifact_pins.py` against the
+fixture recorded by the foundation binary).
+
+- Implicit `Data` injection (`ObjectiveBendElaborate.coerceAt`/`coerceArgs`/`coerceGo`).
+  Where the expected type is `Data` and the expression synthesizes a type `T` other
+  than `Data`, the elaborated term is wrapped `toData T`, exactly as `Data.of::<T>(e)`
+  wraps it. Expected types come from a sum payload, a call's parameter (the callee's
+  synthesized arrow), an extended field and a definition's result (pure, or the `A` of
+  an activity tail), and descend through record literals and both branches of `if`.
+  The probe runs AFTER the ordinary elaboration and restores the elaborator state unless
+  it injected, so a program with nothing to inject elaborates as before (recursive-sum
+  variable numbering is a side effect of type resolution and is in packets). A value
+  whose synthesized type holds an arrow or a computation is refused by name
+  ("refused (data-injection): this value is a function|an Activity, ..."); a value whose
+  type does not synthesize is left alone for the checker. All 11 `Data.of` in world/
+  are unnecessary: stripped, every one of the 717 entries compiles to the same packet
+  (minus source hashes).
