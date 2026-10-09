@@ -14,11 +14,13 @@ import signal
 import sqlite3
 import sys
 import threading
+import urllib.parse
 import time
 from pathlib import Path
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
 from transport.hostd import CLOCK
+from transport.identity import ORIGIN
 from transport.hostproc import add_host_args, connect
 from transport.observe import SCHEMA, Observer
 
@@ -63,23 +65,37 @@ def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
 
-def draft_text(reply):
-    """The only text a draft carries. A refusal names its class and receipt, nothing of state."""
+def cite(object_, version, origin=None):
+    """`<object> v<n>` and, with an origin, its short link on the next line. Posts never carry a hash or a blob."""
+    text = f'{object_} v{version}' if version is not None else str(object_)
+    link = f'\n{origin.rstrip("/")}/o/{urllib.parse.quote(str(object_), safe="")}#v{version}' if origin and version is not None else ''
+    return text, link
+
+
+def receipt_line(receipt, origin=None):
+    root = (receipt.get('roots') or [{}])[0]
+    text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
+    return f"receipt: {text} at height {receipt.get('height')}{link}\n"
+
+
+def draft_text(reply, origin=None):
+    """The only text a draft carries. A refusal names its class and root, nothing of state; no hash or CID."""
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
         public = reply.get('public')
-        if public:  # the host's projection, verbatim and nothing else
-            lines = [f"reason: {public.get('class', 'unknown')}", f"root: {canonical(public.get('root'))}"]
+        if public:  # the host's projection, minus the CID, which stays in the API and the HTML page
+            root = public.get('root') or {}
+            text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('none', '')
+            lines = [f"reason: {public.get('class', 'unknown')}", f'root: {text}{link}']
             lines += [f'{k}: {public[k]}' for k in ('object', 'hint') if public.get(k)]
             return 'proposal observed, not committed\n' + '\n'.join(lines) + '\n'
-        return (f"proposal observed, not committed\nreason: {outcome.get('class', 'unknown')}\n"
-                f"receipt: {receipt['hash']}\n")
+        return f"proposal observed, not committed\nreason: {outcome.get('class', 'unknown')}\n" + receipt_line(receipt, origin)
     offers = [o['text'] for o in reply.get('offers') or []]
     if offers:
         return '\n'.join(offers)
     if receipt.get('offers'):
-        return f"reply card offered but not retained by the host; receipt: {receipt['hash']}\n"
+        return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin)
     return ''  # no offer, no draft
 
 
@@ -223,7 +239,7 @@ def tick(host, now=None):
     return host.send({'op': 'world-advance', 'principal': CLOCK, 'height': int((time.time() if now is None else now) // 60)})
 
 
-def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
+def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     state = Path(state)
     outbox = state / 'outbox'
     outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -262,7 +278,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})  # offerless: text '', hidden from outbox
+            'receipt': reply['receipt'], 'text': draft_text(reply, origin), 'posted': False})  # offerless: text '', hidden from outbox
         done.append(obs['uri'])
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
@@ -324,6 +340,7 @@ def main(argv=None, out=None):
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
     r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
     r.add_argument('--mock', metavar='DIR')
+    r.add_argument('--origin', default=ORIGIN, help='the front\'s origin, for the short links drafts cite')
     r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
     o.add_argument('--state', required=True)
@@ -355,9 +372,9 @@ def main(argv=None, out=None):
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
             if a.once:
-                out.write(canonical(run(a.state, host, poll, now=a.now)) + '\n')
+                out.write(canonical(run(a.state, host, poll, now=a.now, origin=a.origin)) + '\n')
             else:
-                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll)) + '\n') and out.flush())
+                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll, origin=a.origin)) + '\n') and out.flush())
         finally:
             host.close()
     return 0

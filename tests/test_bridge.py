@@ -131,6 +131,8 @@ class Bridging(BridgeCase):
         self.run_bridge()
         (d,) = self.drafts()
         self.assertTrue(d['text'].startswith("proposal observed, not committed\nreason: lawRefused\n"), d['text'])
+        import re
+        self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', d['text']), d['text'])
         self.assertNotIn('seen', d['text'])  # no state field
 
     def test_unknown_card_yields_unknownObject_draft(self):
@@ -340,10 +342,23 @@ class Projection(unittest.TestCase):
         reply = {'status': 'refused', 'receipt': {'hash': 'h', 'outcome': {'tag': 'refused', 'class': 'unknownObject', 'reason': 'SECRET state'}},
                  'public': {'status': 'refused', 'class': 'unknownObject', 'root': {'object': 'nope'}, 'object': 'nope', 'hint': 'try garden'}}
         text = bridge.draft_text(reply)
-        self.assertEqual(text, 'proposal observed, not committed\nreason: unknownObject\nroot: {"object":"nope"}\nobject: nope\nhint: try garden\n')
+        self.assertEqual(text, 'proposal observed, not committed\nreason: unknownObject\nroot: nope\nobject: nope\nhint: try garden\n')
         self.assertNotIn('SECRET', text)
-        reply['public'] = {'status': 'refused', 'class': 'lawRefused', 'root': {'object': 'm', 'version': 2}}
-        self.assertEqual(bridge.draft_text(reply), 'proposal observed, not committed\nreason: lawRefused\nroot: {"object":"m","version":2}\n')
+        reply['public'] = {'status': 'refused', 'class': 'lawRefused', 'root': {'object': 'm', 'version': 2, 'cid': 'bafy' + 'a' * 50}}
+        self.assertEqual(bridge.draft_text(reply), 'proposal observed, not committed\nreason: lawRefused\nroot: m v2\n')
+        self.assertEqual(bridge.draft_text(reply, 'https://x.example/'),
+                         'proposal observed, not committed\nreason: lawRefused\nroot: m v2\nhttps://x.example/o/m#v2\n')
+
+    def test_no_draft_text_carries_a_hash_or_a_blob(self):
+        import re
+        h = 'bafyrei' + 'a' * 52
+        receipt = {'hash': h, 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
+        texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
+        self.assertIn('receipt: garden v3 at height 9\nhttps://x.example/o/garden#v3', texts[0])
+        for t in texts:
+            self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', t), t)
 
 
 class Principals(BridgeCase):
