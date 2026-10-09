@@ -387,13 +387,29 @@ def methodForms (id : String) (methods : Json) : List Data :=
     let kinds ← fields.mapM fun (n, member) => (formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
     return .record [("card", .label id), ("action", .label name), ("fields", listData kinds)]
 
-/-- An object's card: its pure `render(state)` run on its committed state under this turn's
-    ticks. `noCard` when it has no such method, `render` when it fails or runs out. -/
-def renderCard (o : Object) : M (Except String Data) := do
-  let compiled ← tryCatch (some <$> compiledMethod o "render") fun _ => pure none
+/-- Does the object's method table list `name`? -/
+def hasMethod (o : Object) (name : String) : Bool :=
+  ((o.methods.getArr?.toOption).getD #[]).any fun m => (m.getObjValAs? String "name").toOption == some name
+
+/-- The Context a card is rendered for: the reader (`principal`), the card's object, the asking
+    object (`caller`, "" for `world-card`), and the turn's intent and height. -/
+def cardContext (id reader caller intent : String) (height : Nat) (method : String) : Data :=
+  contextData id reader caller intent height "card" method
+
+/-- An object's card as `context`'s reader sees it, run on its committed state under this turn's
+    ticks: `renderFor(state, context)` when the package has it, else `render`, which may take
+    `(state, context)` or the state alone. `noCard` when it has neither, `render` when it fails
+    or runs out. -/
+def renderCard (o : Object) (context : String → Data) : M (Except String Data) := do
+  let name := if hasMethod o "renderFor" then "renderFor" else "render"
+  let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
+  let arguments := match c.type with
+    | .arrow _ _ _ (.arrow _ _ _ _) => #[o.state, context name]
+    | _ => #[o.state]
+  let entry ← entryOf c
   let st ← get
-  match Package.executeDataValues c.packet #[o.state] (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
+  match Package.executeDataEntry entry arguments (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
   | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
   | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "render"
   | .error _ => return .error "render"
@@ -734,7 +750,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordRoot id o.version
-      match ← renderCard o with
+      let reader := cardContext id s.subject self s.intent s.world.height
+      match ← renderCard o reader with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "check" (.record f) =>
@@ -1422,7 +1439,7 @@ def cardOp (w : World) (j : Json) : Except String Json := do
     if !o.read.permits principal then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match ((renderCard o).run.run init).1 with
+    match ((renderCard o (cardContext id principal "" "" w.height)).run.run init).1 with
     | .ok (.ok document) =>
       return Json.mkObj [("status", toJson "card"), ("object", toJson id),
         ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)]

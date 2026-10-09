@@ -38,6 +38,10 @@ imports Session and `PackageMain.lean` drives it.
 - **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
+  Durability is fsync, not a full barrier: an entry may be lost on power loss within the OS write-back
+  window; the chain verifies on reopen so a torn tail is cut, never corrupted. `world-open {sync}` is
+  `"fsync"` by default, `"full"` for the old F_FULLFSYNC barrier (macOS; it stalls every other writer
+  on the disk), `"none"` (flush only) for test journals.
 
 Signatures a newcomer calls (all pure unless noted):
 
@@ -75,14 +79,16 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
-`world-open {sync: false}` appends with a flush and no F_FULLFSYNC/fsync for that process (default true, never
-journaled, reported by `world-status` as `sync`); `tests/host.py` opens every test journal so, deploy and hostd keep
-the default. `world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
+`world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
+never journaled, reported by `world-status` as `sync`; the old boolean is accepted for one release, false = none,
+true = fsync); `tests/host.py` opens every test journal with `"none"`, deploy and hostd keep the default. `world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.
-`world-posted {principal, uri, cid, object, slot?}` journals a `posted` entry (identity `posted:<uri>`) and indexes
-`world.posts`; `world-addressee {parent}` answers `{status: "addressee", object, slot?}` or `{status: "unknown"}`.
+`world-posted {principal, uri, cid, object, slot?, page?, section?}` journals a `posted` entry (identity `posted:<uri>`;
+`page`/`section` when the post carried the object's publication, section "" for the whole page) and indexes
+`world.posts` (`Post {object, slot, page, part, height}`; snapshots keep them); `world-addressee {parent}` answers
+`{status: "addressee", object, slot?, page?, section?}` or `{status: "unknown"}`.
 `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
 Every journaling op goes through `durable`: step, then `settleAll` (resume what the step released, then run
 pending deliveries oldest first, each followed by another resume pass, up to `deliveriesPerSettle` 64; the reply
@@ -258,10 +264,16 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 9. **Listing and cards.** Plan `objects {prefix, after}` -> `listed {ids, more}` (`listIds`: ids the frame's subject
    may view, prefix match, strictly after `after` in byte order, sorted, `listPage` 64) and op
    `world-objects {principal, prefix?, after?}` -> `{status: "listed", ids, more}`. Plan `card {object}` ->
-   `carded {document}`: `renderCard` compiles the target's `render` and runs it on its committed state under the
-   turn's ticks (records the target as a root; `denied` without read authority, `noCard` without `render`,
-   `refused {clause: render}` if it fails). Op `world-card {principal, object}` -> `{status: "card", text, document}`
-   (text by `Document.render`), journals nothing.
+   `carded {document}`: `renderCard` runs the target's card on its committed state under the turn's ticks
+   (records the target as a root; `denied` without read authority, `noCard` without a card method,
+   `refused {clause: render}` if it fails). The card has a point of view: `renderFor(state, context)` when the
+   method table lists it, else `render`, given the reader's Context when it takes two arguments (so the
+   objects' rename of `renderFor` to `render` changes nothing here). The Context (`cardContext`): principal =
+   the reader (the frame's subject), object = the target, caller = the asking object ("" for the op), intent
+   and height of the current turn ("" and the world's height for the op), `inputOrigin.kind` "card". It runs the
+   held entry (`executeDataEntry`). Op `world-card {principal, object}` -> `{status: "card", text, document}`
+   (text by `Document.render`) as that principal sees it, journals nothing; the HTML object page asks it for
+   the logged-in reader (its receive-turn fallback is gone).
 10. **The outbound channel.** `offer {to, document}`: `to` "" is the frame's subject. An admitted entry retains
    `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`), and `world-offers {principal, after?}`
    answers `{status: "offers", offers [{height, ordinal, identity, text}], more}` (after = journal height,
@@ -278,8 +290,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `refused {clause: title}`). The page is the object's: `page` "" means the object id. The admitted entry
    retains `publishes [{id, object, page, section, text}]` with the agentwiki text (`wiki: Title\n\nbody`, or
    `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
-   adds `publications`. Transport posts the text, confirms with `world-posted {uri, cid, object}`, and routes a
-   reply (`merge` from the page's owner) by `world-addressee` to the object's `receive` (bridge work).
+   adds `publications`. `world-publications {principal, after?}` (the publisher only; anyone else `denied`) answers
+   `{status: "publications", publications [{height, ordinal, id, object, page, section, body, replyTo?}], more}`;
+   `replyTo` is, for a section edit, the newest recorded post of that object's whole page (`pagePosts`). The
+   bridge (`publication_drafts`, cursor `<state>/publications.after`) writes each as an outbox draft
+   `<height>-pub-<id>.json` `{publication {id, height, object}, page, section, replyTo, text, posted: false}`,
+   never posts it, and fills `replyTo` of an unposted section draft once the page post is recorded. `post.py
+   --record` confirms as the clock principal ("transport") and adds `page`/`section` parsed from the posted text's
+   `wiki:`/`edit:` header; a reply (`merge`) to that post routes by `world-addressee` to the object's
+   `receive {text, post, slot}`.
 
 12. **Kernel integration (host4).** An argument that does not conform to the method's input type
    (`argumentFits`: at `Data` well-formed, at a data type `conformsUnder` the packet's bounds; the kernel's
@@ -460,8 +479,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **Replay recompile cost**: `world-open` compiles each distinct package once (`world.builds`) and each
   reprogram record, and re-runs `judge`. Method packets are
   compiled lazily and cached in memory only. 1000 plain proposals replay in ~0.08 s.
-- **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fcntl(F_FULLFSYNC)`
-  (macOS) / `fsync`; this made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s. One sync per
+- **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fsync`, or with `sync: "full"`
+  `fcntl(F_FULLFSYNC)` (macOS); the full barrier made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s,
+  and hammered the disk for every other user of the box, so it is no longer the default. One sync per
   `durable` call (not per entry). The build needs `lakefile.lean` (the TOML cannot declare `extern_lib`).
 - **Journal lock**: `openWorld` takes an exclusive `flock` on the journal handle (`IO.FS.Handle.tryLock`, the
   runtime's flock; no second C extern was needed) and refuses "journal is open in another process"; the lock lives
@@ -500,9 +520,16 @@ Queued, none started:
 4. **Snapshot verification by default.** A plain open trusts a snapshot whose CID, head, binary pin, derived
    copies, versions and pins check; only `verify: true` catches a consistently forged state. If snapshots ever
    leave the host's directory, journal the snapshot's CID (a `snapshot` entry) and check it on open.
-5. **Pure methods.** A state-returning method and `render` still go through `Package.executeDataValues` (packet
-   JSON); move them to `executeDataEntry` with `compiledMethod`'s held entry.
-6. **Transport asks** (from host3, unchanged): `receive {text, post, slot?}` with a missing `slot`.
+5. **Pure methods.** A state-returning method still goes through `Package.executeDataValues` (packet JSON); move
+   it to `executeDataEntry` with `compiledMethod`'s held entry (cards moved in lane/host5).
+
+lane/host5 (based on foundation 7d90f1b) did: journal durability modes (`sync: "none" | "fsync" | "full"`, default
+fsync); cards with a point of view (5.9); `publish` end to end (5.11: `world-publications`, page-aware `posted`, the
+bridge's publication drafts, `post.py --record` as the clock principal); and closed the transport ask: `receive` takes
+exactly `{text, post, slot}`, the bridge and the HTML front always send all three, nothing in Host or transport
+tolerates two fields (a missing or forged field is refused `typeMismatch`, `tests/test_receive.py`).
+Still open from transport: `post.py --slot` passes text while `world-posted` takes a slot `{principal, intent}`,
+so `--record --slot` is refused by the host; no object reads `slot` or acts on `merge` yet (objects lane).
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
 as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).

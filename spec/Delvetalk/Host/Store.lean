@@ -234,6 +234,27 @@ def Grant.ofJson (j : Json) : Except String Grant := do
            expires := ← j.getObjValAs? Nat "until", fixed := (j.getObjVal? "fixed").toOption,
            uses := (j.getObjValAs? Nat "uses").toOption }
 
+/-- A post transport confirmed (a `posted` entry at `height`): the object it speaks for; when it
+    was made for an awaited slot, that slot as `{principal, intent}`; when it carried one of the
+    object's publications, its `page` and section (`part`, "" for the whole page). -/
+structure Post where
+  object : String
+  slot : Option Json := none
+  page : String := ""
+  part : String := ""
+  height : Nat := 0
+
+def Post.json (uri : String) (p : Post) : Json :=
+  Json.mkObj ([("uri", toJson uri), ("object", toJson p.object)] ++ (p.slot.map fun s => [("slot", s)]).getD [] ++
+    (if p.page.isEmpty then [] else [("page", toJson p.page), ("section", toJson p.part)]) ++
+    [("height", toJson p.height)])
+
+def Post.ofJson (j : Json) : Except String (String × Post) := do
+  return (← j.getObjValAs? String "uri",
+    { object := ← j.getObjValAs? String "object", slot := (j.getObjVal? "slot").toOption,
+      page := (j.getObjValAs? String "page").toOption.getD "", part := (j.getObjValAs? String "section").toOption.getD "",
+      height := (j.getObjValAs? Nat "height").toOption.getD 0 })
+
 /-- A package compiled as an object's code: artifact, entry type, declared laws. -/
 structure Built where
   artifact : Json
@@ -269,9 +290,8 @@ structure World where
   suspended : Array Json := #[]
   /-- Every grant an admitted turn made, by id; a revocation marks it. -/
   grants : Std.HashMap String Grant := {}
-  /-- Posts transport confirmed, by AT URI: the object the post speaks for and, when it was
-      made for an awaited slot, that slot as `{principal, intent}`. -/
-  posts : Std.HashMap String (String × Option Json) := {}
+  /-- Posts transport confirmed, by AT URI. -/
+  posts : Std.HashMap String Post := {}
   /-- The principal that alone moves the clock and confirms posts ("" = anyone), and the
       hourly posting cap; both set by the `settings` entry of the first open that names them. -/
   clockPrincipal : String := ""

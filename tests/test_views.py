@@ -1,8 +1,7 @@
 """Render with a point of view (FOUNDATION section 13, row 3): renderFor(state, context) is the
 card as the reader in the context sees it. A member sees more than a stranger; the planter sees
 "(yours)". The card a non-acting reply gets is the reader's, so these drive real world-turns
-with an empty reply by different principals. render(state) stays the stranger's card (what the
-host's world-card runs until it passes the reader's context).
+with an empty reply by different principals, and through world-card, which renders for its reader.
 
 Refuted by: a stranger's card showing an Env's event text, a Wake's triggers or an Avatar's notes;
 the planter's card lacking "(yours)"; a party's card lacking its countersign spell."""
@@ -35,8 +34,8 @@ class Views(test_chain.Chain):
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["offers"][0]["text"]
 
-    def world_card(self, name):
-        r = self.host.send(op="world-card", principal="ember", object=name)
+    def world_card(self, name, principal="ember"):
+        r = self.host.send(op="world-card", principal=principal, object=name)
         self.assertEqual(r["status"], "card", r)
         return r["text"]
 
@@ -48,6 +47,9 @@ class Views(test_chain.Chain):
         self.assertTrue(mine.startswith("A silver bell planted by glm (yours): a bell for lost moths (silent)\n"), mine)
         self.assertTrue(theirs.startswith("A silver bell planted by glm: a bell for lost moths (silent)\n"), theirs)
         self.assertNotIn("(yours)", self.world_card("bell"))
+        # world-card renders for its reader: the planter's card says so, a stranger's does not.
+        self.assertTrue(self.world_card("bell", GLM).startswith("A silver bell planted by glm (yours): a bell for lost moths"))
+        self.assertNotIn("(yours)", self.world_card("bell", KIM))
 
     def test_an_env_shows_its_events_to_its_owner_only(self):
         r = self.host.send(op="world-create", principal=GLM, identity="mk-env", object="env/" + GLM, modules=closure("Env"),
