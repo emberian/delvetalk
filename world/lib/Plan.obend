@@ -127,6 +127,8 @@ sum Plan<E>:
   createUnder: {package: String, seed: Data, law: String, requireAbsent: Reference, supervisor: Reference}
   await: Await
   awaitUntil: {slot: Slot, until: Nat}
+  awaitPost: {post: String, patience: Nat}
+  awaitPostUntil: {post: String, until: Nat}
   interpret: Interpret
   offer: Offering
   publish: Publish

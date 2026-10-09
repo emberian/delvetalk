@@ -160,9 +160,11 @@ def body (w : World) (binary : String) : Except String Json := do
       types := types ++ [(o.pin, Json.mkObj [("pin", toJson o.pin), ("stateType", tyJson o.stateType),
         ("bounds", boundsJson o.bounds), ("methods", o.methods), ("predicate", toJson o.predicate),
         ("predicateReads", toJson o.predicateReads)])]
-    out := out.push (Json.mkObj [("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
+    out := out.push (Json.mkObj ([("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
       ("version", toJson o.version), ("state", dataJson o.state), ("read", o.read.json),
-      ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)])
+      ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
+      (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
+      (if o.packet.isEmpty then [] else [("packet", toJson o.packet)])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -308,7 +310,9 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
         methods := methods
         predicate := predicate
         predicateReads := predicateReads
-        supervisor := (o.getObjValAs? String "supervisor").toOption.getD "" }
+        supervisor := (o.getObjValAs? String "supervisor").toOption.getD ""
+        minted := (o.getObjValAs? Nat "minted").toOption.getD 0
+        packet := (o.getObjValAs? String "packet").toOption.getD "" }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do

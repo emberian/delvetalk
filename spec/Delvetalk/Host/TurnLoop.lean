@@ -28,6 +28,9 @@ structure TurnRequest where
   digest : String
   /-- Answer the tick breakdown of the turn's activity segments (not part of the digest). -/
   profile : Bool := false
+  /-- The post this turn's text replies to ("" for none): the bridge names the parent of an
+      observed reply, so a reply to a recorded post is the reply that post awaits. -/
+  replyTo : String := ""
 
 def parseTurn (j : Json) : Except String TurnRequest := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
@@ -44,13 +47,16 @@ def parseTurn (j : Json) : Except String TurnRequest := do
     else given.setObjVal! "ticks" (toJson (toString Limits.maxTurnTicks))
   if let some asked := ← optNat given "ticks" then
     if asked > Limits.maxTurnTicks then throw "ticks exceeds the turn ceiling"
-  let digest := Journal.bodyHash (Json.mkObj [("principal", toJson principal), ("object", toJson object),
-    ("method", toJson method), ("argument", dataJson argument), ("limits", limits)])
+  let replyTo := (← optText j "replyTo").getD ""
+  if replyTo.utf8ByteSize > Limits.maxUriBytes then throw s!"replyTo must be at most {Limits.maxUriBytes} bytes"
+  let digest := Journal.bodyHash (Json.mkObj ([("principal", toJson principal), ("object", toJson object),
+    ("method", toJson method), ("argument", dataJson argument), ("limits", limits)] ++
+    (if replyTo.isEmpty then [] else [("replyTo", toJson replyTo)])))
   let profile ← match j.getObjVal? "profile" with
     | .ok (.bool b) => pure b
     | .ok _ => throw "profile must be true or false"
     | .error _ => pure false
-  return ⟨principal, object, method, argument, intent, limits, digest, profile⟩
+  return ⟨principal, object, method, argument, intent, limits, digest, profile, replyTo⟩
 
 inductive Abort where
   /-- The request is not a well-formed turn; nothing is journaled. -/
@@ -65,7 +71,7 @@ inductive Abort where
   | refused (cls reason : String)
   /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
-      (interpretation : Option Json := none)
+      (interpretation : Option Json := none) (post : Option String := none)
   deriving Inhabited
 
 /-- A `send` staged by a turn: it leaves with the commit. `sender` is the sending object (the
@@ -276,6 +282,25 @@ def settled (w : World) (principal intent : String) : Option Json :=
   | some i => let e := w.entries[i]!; if tagOf e == "suspended" then none else some e
   | none => none
 
+/-- The id a create with an empty `requireAbsent` gets: `<creator>/<package, lowercased>/<n>`, the
+    first `n` past the creator's `minted` counter not held by an object, by this turn's creates,
+    or by the creates of a suspended turn (its `absent`), so interleaved creators never race on
+    a name. A source package is kind `created`. -/
+def mintId (self package : String) : M String := do
+  let s ← get
+  let reserved : Std.HashSet String := s.world.suspended.foldl (fun acc e =>
+    let absent := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+      |>.bind (·.getObjVal? "absent" |>.toOption) |>.bind (·.getArr? |>.toOption)).getD #[]
+    absent.foldl (fun a x => match x.getStr? with | .ok i => a.insert i | .error _ => a) acc) {}
+  let kind := (if package.startsWith "edition" then "created" else package).toLower
+  let base := ((s.world.objects[self]?).map (·.minted)).getD 0
+  let mut n := base + 1
+  for _ in [0:Limits.maxObjects + Limits.maxSuspended + Limits.createsPerTurn] do
+    let id := s!"{self}/{kind}/{n}"
+    if !(s.world.objects.contains id || s.creates.any (·.1 == id) || reserved.contains id) then return id
+    n := n + 1
+  evaluation "no child id is free"
+
 /-- Compile an object's new sibling: `package` is a module of the creator's own sealed
     chain (a name), or the source of one more module over that chain. -/
 def creationInputs (creator : Object) (package : String) : Except (String × String) Json := do
@@ -392,7 +417,7 @@ def renderCard (o : Object) (context : String → Data) : M (Except String Data)
   let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
   let arguments := match c.type with
-    | .arrow _ _ _ (.arrow _ _ _ _) => #[o.state, context name]
+    | .arrow _ _ _ (.arrow _ _ ct _) => #[o.state, fitRecord c.bounds ct (context name)]
     | _ => #[o.state]
   let entry ← entryOf c
   let st ← get
@@ -433,7 +458,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   let entry ← entryOf c
   let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" ""
   let (domain, arguments) := match c.type with
-    | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ _ _)) => (d, [obj.state, plan, context])
+    | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
     | _ => (.emptyRow, [obj.state, plan])
   -- A plan the handler's input does not name passes.
@@ -469,8 +494,8 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
     (if depth == 0 then "request" else "call") method
   let (arguments, r) ← match compiled.type with
-    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
-    | .arrow _ _ _ (.arrow _ _ _ r) => pure ([obj.state, context], r)
+    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
+    | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
   unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal)
   match r with
@@ -509,6 +534,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     countPlan
     let response ← match plan with
       | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
+      | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType checkpoint
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
       | _ => do
         -- A frame run under a handler offers each Plan to it first.
@@ -551,6 +577,34 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
       else
         mayWait depth self checkpoint
         throw (.suspend sp si patience checkpoint)
+
+/-- `awaitPost {post, patience}` / `awaitPostUntil {post, until}`: wait for the reply that answers
+    `post`, the first turn on the post's recorded object whose `replyTo` names it (`World.replies`);
+    answered `reply {receipt}` of that turn once it settles, or `timedOut` by the clock. -/
+partial def awaitPostPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : List (String × Data))
+    (responseType : Ty) (checkpoint : Delvetalk.Turn.Checkpoint) : M Data := do
+  let some post := (f.lookup "post").bind labelOf | evaluation "malformed awaitPost plan"
+  if post.isEmpty || post.utf8ByteSize > Limits.maxUriBytes then evaluation "awaitPost names no post"
+  let s ← get
+  let patience ← match f.lookup "until", f.lookup "patience" with
+    | some (.natural height), _ => pure (height - s.world.clock)
+    | none, some (.natural patience) => pure patience
+    | _, _ => evaluation "malformed awaitPost plan"
+  let key := "post:" ++ post
+  if s.awaited.contains key then respond bounds responseType "broken" [emptyRecord]
+  else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
+  else
+    set { s with awaited := s.awaited ++ [key], awaits := s.awaits + 1 }
+    let answered := s.world.replies[post]?
+    if answered == some (s.principal, s.intent) then respond bounds responseType "broken" [emptyRecord] else
+    match answered.bind fun (sp, si) => settled s.world sp si with
+    | some entry => respond bounds responseType "reply" [.record [("receipt", receiptData entry)]]
+    | none =>
+      if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
+      else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
+      else
+        mayWait depth self checkpoint
+        throw (.suspend "" "" patience checkpoint none (some post))
 
 /-- The capacities every suspension is held to; only the top of a turn may wait. Awaits and
     interpretations waiting on one object are counted apart (`pendingActivitiesPerObject`,
@@ -761,7 +815,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some seed := f.lookup "seed" | evaluation "malformed create plan"
     let lawArg := ((f.lookup "law").bind labelOf).getD ""
     let some target := f.lookup "requireAbsent" | evaluation "malformed create plan"
-    let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
+    let some named := referenceId target | refusedWith bounds responseType "foreignWorld"
+    -- An empty `requireAbsent` asks the host to mint the child's id.
+    let id ← if named.isEmpty then mintId self package else pure named
     let s ← get
     let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
     if id.isEmpty || id == "self" || ownCards.contains id || id.utf8ByteSize > Limits.maxObjectIdBytes then
@@ -957,6 +1013,8 @@ structure Ctx where
   via : String := ""
   /-- This segment continues an activity whose await ran past its deadline. -/
   timedOut : Bool := false
+  /-- The recorded post this direct turn answers (journaled as `replyTo`), "" for none. -/
+  answers : String := ""
 
 
 def sendJson (s : Send) : Json :=
@@ -975,7 +1033,8 @@ def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
   [("turnRequest", toJson ctx.digest), ("ticksUsed", toJson used), ("ledger", ctx.ledger.json)] ++
     (ctx.delivery.map fun (id, sender) => [("delivery", Json.mkObj ([("id", toJson id), ("from", sender)] ++
       (if ctx.via.isEmpty then [] else [("via", toJson ctx.via)])))]).getD [] ++
-    (ctx.resumes.map fun h => [("resumes", toJson h)]).getD []
+    (ctx.resumes.map fun h => [("resumes", toJson h)]).getD [] ++
+    (if ctx.answers.isEmpty then [] else [("replyTo", toJson ctx.answers)])
 
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
 def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
@@ -1020,13 +1079,13 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls, reason := some reason, object := some ctx.object }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
-  | .error (.suspend sp si patience checkpoint interpretation) =>
+  | .error (.suspend sp si patience checkpoint interpretation post) =>
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
       ("checkpoint", checkpoint.toJson),
       ("roots", rootsJson st.roots st.rootCids), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
-      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
+      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson w.binary id c)),
       ("extends", toJson st.layered),
       ("programs", Json.arr (st.programs.toArray.map fun (id, (src, mig)) => Json.mkObj
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
@@ -1036,8 +1095,11 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes),
       ("spent", spentJson st.spent)] ++
       (if st.violation.isSome then [("violation", toJson st.violation)] else []))
-    let outcome := Json.mkObj <| [("tag", toJson "suspended"),
-      ("slot", Json.mkObj [("principal", toJson sp), ("intent", toJson si)]),
+    -- A post await names the post; the slot it settles on is whichever reply answers it.
+    let waitsOn := match post with
+      | some p => ("post", toJson p)
+      | none => ("slot", Json.mkObj [("principal", toJson sp), ("intent", toJson si)])
+    let outcome := Json.mkObj <| [("tag", toJson "suspended"), waitsOn,
       ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
       (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
@@ -1066,6 +1128,23 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends) endedIfLate
     return (w', turnReply w' r)
 
+/-- `receive`'s `slot` is the host's: an object that declares `receive {text, post}` gets the
+    argument without one (a client may still send it for one release), and one that still
+    declares `slot` gets it filled from the recorded post the turn replies to (its slot as
+    compressed JSON, "" for none) when the client left it out. Any other argument is as sent. -/
+def receiveArgument (init : TurnState) (req : TurnRequest) (slot : Option Json) : Data × TurnState :=
+  if req.method != "receive" then (req.argument, init) else
+  match req.argument, init.world.objects[req.object]? with
+  | .record fs, some obj =>
+    match ((compiledMethod obj "receive").run.run init) with
+    | (.ok c, st) =>
+      let without := Data.record (fs.filter (·.1 != "slot"))
+      let filled := Data.record (fs ++ [("slot", .label ((slot.map (·.compress)).getD ""))])
+      let pick := [req.argument, without, filled].find? (argumentFits c ·)
+      ((pick.getD req.argument), st)
+    | (.error _, _) => (req.argument, init)
+  | _, _ => (req.argument, init)
+
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing, except for a delivery, which must be consumed. -/
 def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String (World × Json) := do
@@ -1076,6 +1155,13 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
                             direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile }
+  -- A reply to a post recorded for this very object answers it (reply-is-address).
+  let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
+  let answers := match post with
+    | some p => if p.object == req.object then req.replyTo else ""
+    | none => ""
+  let (argument, init) := receiveArgument init req (post.bind (·.slot))
+  let req := { req with argument }
   let (result, st) := (runMethod 0 req.object req.method req.argument how.caller req.principal how.via |>.run).run init
   let ctx : Ctx :=
     { principal := req.principal
@@ -1088,7 +1174,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
       delivery := how.delivery
       ticksStart := ticks
       caller := how.caller
-      via := how.via }
+      via := how.via
+      answers }
   let (w', r) ← finishTurn w ctx result st
   return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
@@ -1255,7 +1342,11 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
 def pickResumable (w : World) : Option (Json × Resume) :=
   w.suspended.findSome? fun s =>
     let outcome := (s.getObjVal? "outcome").toOption.getD Json.null
-    let slot := (outcome.getObjVal? "slot").toOption.getD Json.null
+    let slot := match (outcome.getObjValAs? String "post").toOption with
+      | some post => match w.replies[post]? with
+        | some (sp, si) => Json.mkObj [("principal", toJson sp), ("intent", toJson si)]
+        | none => Json.mkObj [("principal", toJson ""), ("intent", toJson "")]
+      | none => (outcome.getObjVal? "slot").toOption.getD Json.null
     match (slot.getObjValAs? String "principal").toOption, (slot.getObjValAs? String "intent").toOption,
         (outcome.getObjValAs? Nat "deadline").toOption with
     | some sp, some si, some deadline =>

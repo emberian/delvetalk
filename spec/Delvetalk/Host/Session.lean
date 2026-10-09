@@ -150,7 +150,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       match ← openWorld path held verify with
       | .error e => return (session, .error e)
       | .ok o =>
-        let o := { o with sync }
+        -- The binary that compiles from here on is recorded beside each pin it makes.
+        let o := { o with sync, world := { o.world with binary := ← Snapshot.binaryPin } }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
@@ -237,7 +238,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name)]))
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name),
+          ("recompiledDifferently", toJson s.world.recompiledDifferently)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
       | "world-addressee" => return (session, addressee s.world request)
