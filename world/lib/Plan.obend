@@ -28,8 +28,8 @@ import ./Document.obend as Document
 #
 # Recursive data (List, Document) may cross a Plan or Response: the first
 # checker refused it with "the checker refused the front end's typed packet",
-# the current one admits it. List fields are still edited by Entries (append or
-# amend one item by index), never replaced whole, so the host judges one item.
+# the current one admits it. List fields are still edited by Entries (append,
+# amend or remove one item by index; remove is a variant the host must implement), never replaced whole, so the host judges one item.
 # Generic records are replaced by inline sum payloads, and the phantom type
 # parameters of keep/append need explicit instantiation: Plans.Edit::<T, D>.keep({}).
 record Reference:
@@ -39,11 +39,14 @@ sum Edit<T, D>:
   keep: {}
   set: {value: T}
   add: {delta: D}
-# A list-valued field: append an item, or change the item at an index.
+# A list-valued field: append an item, change the item at an index, or remove
+# the item at an index (later items shift down by one). The host must implement
+# remove; it is the one edit that is neither an append nor an amend.
 sum Entries<D, U>:
   keep: {}
   append: {item: D}
   amend: {index: Nat, change: U}
+  remove: {index: Nat}
 # The identity of a turn, (principal, intent): what an await names.
 record Slot:
   principal: String
@@ -103,3 +106,20 @@ sum Response<S, R>:
 # empty world is the world the turn runs in).
 def self(context: Abi.Context) -> Reference:
   {world: context.world, object: context.object}
+# References compare by world and object. The empty reference (object "") names
+# nothing: a thing nobody holds has the empty reference as its holder.
+def nobody() -> Reference:
+  {world: "", object: ""}
+def same(left: Reference, right: Reference) -> Bool:
+  left.world == right.world && left.object == right.object
+def isNobody(reference: Reference) -> Bool:
+  reference.object == ""
+sum Position:
+  absent: {}
+  at: {index: Nat}
+def indexOf(items: Lists.List<Reference>, target: Reference) -> Position:
+  indexFrom(items, target, 0n)
+def indexFrom(items: Lists.List<Reference>, target: Reference, index: Nat) -> Position:
+  match items:
+    case nil(_): Position.absent({})
+    case cons(c): if same(c.head, target) then Position.at({index: index}) else indexFrom(c.tail, target, index + 1n)
