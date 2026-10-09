@@ -302,14 +302,11 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     if package.startsWith "edition" then return finish [("source", toJson package)]
     else throw ("unknownPackage", "the creator has no sealed modules to name")
 
-/-- A seed is a whole state, or a record naming some fields of it (the rest come from
-    `initial()`); a variant around the record is only a wrapper for the creator's types. -/
+/-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
+    come from `initial()`). -/
 def mergeSeed (initial seed : Data) (bounds : DataBounds) (ty : Ty) : Except String Data := do
-  let payload := match seed with
-    | .variant _ p => p
-    | d => d
-  if payload.conformsUnder bounds ty then return payload
-  match payload, initial with
+  if seed.conformsUnder bounds ty then return seed
+  match seed, initial with
   | .record given, .record base =>
     if given.any fun (k, _) => !base.any (·.1 == k) then throw "the seed names a field the state does not have"
     return .record (base.map fun (k, v) => (k, (given.lookup k).getD v))

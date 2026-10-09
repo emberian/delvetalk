@@ -474,47 +474,34 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **Not done**: `world-reprogram`/`amend` are gated only by the object's law;
   foreign worlds (`Reference.world != ""`) are always refused.
 
-## 7. Where lane/host3 stopped, and the queue
+## 7. Where lane/host4 stopped, and the queue
 
-lane/host3 is based on foundation e7faa87; foundation has since moved (kernel batch e0b46f3, transport 40d3ee0,
-FOUNDATION section 13 in c6e5586). The root merges. Done here, each with tests: the merge fix, grants, reprogram and
-amend of another object, posted/addressee/settings, listing and cards, deliveries in the settling pass and
-`awaitUntil`, `request.method` and list membership, sources by CID and the build cache, the journal lock, the
-outbound channel and projections, transient refusals, no silent defaults, publish. Test files of this lane:
-`tests/test_grants.py`, `tests/test_outbound.py`, `tests/test_journal.py`.
+lane/host4 is based on foundation a5287f4 and has merged foundation a08cb38 (objects2) and 81ea9ec (kernel2).
+Done here, each with tests (`test_integration`, `test_snapshot`, `test_commute`, `test_grants` Attenuation,
+`test_extend`, `test_supervisors`, `test_law`, `test_handlers`): the kernel batch (typeMismatch, profiles, methods
+as forms), snapshots, all of FOUNDATION section 13's host items (commutative edits and item-addressed entries,
+attenuated and counted grants with `world-revoke`, extension layers, supervisors, the two-tier law, `run` and
+`judge`), the objects lane's asks (the check hint, `writeOnce` for every type), held entries on the turn path,
+`sync: false`, and the one-variant seed unwrap deleted (`mergeSeed`: payloads are Data). Build and test on hbox
+(`~/scratch/dt-host4`, `swarm-build lake build`; the full suite there is about 65 s).
 
-Queued, in the coordinator's order (none started):
+Queued, none started:
 
-1. **Snapshots.** Every `Limits.snapshotEvery` (1,000) entries write `<journal>.snapshot.<height>.cbor`: the
-   canonical store (objects with state, pins, laws, read policies; suspended; pending; grants; posts; outbox;
-   modules) and the chain head, plus the binary pin (new checkpoint tags in the kernel batch mean an older binary
-   cannot resume a newer snapshot). `world-open` verifies the hash walk from genesis (cheap), loads the newest valid
-   snapshot, replays only later entries; a snapshot that disagrees with replay at its height is refused by name and
-   the previous one used. `Object` holds `Ty`/`DataBounds`, so a snapshot either serializes those or recompiles by
-   pin from `world.builds` (the build cache already makes that one compile per distinct package). Test: 500 creates,
-   snapshot, reopen under 1 s.
-2. **FOUNDATION section 13**, in order: (1) commutative edits commit against moved roots (`add`/`append`-only roots
-   are checked present, steps re-applied on the current state, law re-judged; `Entries.amend/remove` by item
-   equality; test: two agents rain on one bell in one settle pass, both admit). (2) grants completed: attenuation
-   (fixed argument fields merged, conflict refused), `uses` decremented per admitted use, revocation as a write to a
-   grant object (today a grant is a record in `world.grants`, see 5.8). (3) `reprogram {mode: extend}`.
-   (4) `inspected.methods` from the artifact's `methods` table (the kernel now emits
-   `methods: [{name, input, result, activity}]`). (5) supervisors (`create {supervisor?}`, `ended {receipt}`
-   delivery on timedOut, broken, budget). (6) two-tier law (`def law(old, new, request)` under `Limits.lawTicks`,
-   reads from `lawReads()` recorded as roots; the artifact's `law: {present, reads}`). (7) `run` and `judge` Plans.
-3. **Kernel batch integration** (after the root merges e0b46f3): map "turn refused: argument does not conform to its
-   type" from `startActivity` to the journaled class `typeMismatch`; pass `profile: true` through `world-turn`;
-   when the objects lane moves `call`/`send`/`create` payloads to `Data`, delete the one-variant unwrap in
-   `mergeSeed`; a State with a `Data` field is refused by the PackageData certificate path until the kernel extends
-   it (note, do not work around).
-4. **Transport asks.** `receive {text, post, slot?}` must tolerate a missing or empty `slot`: that is the objects'
-   method signature (a record argument with a field the method's input lacks does not conform); either the objects
-   take `slot: String` always and the bridge sends "", or the host learns to drop fields an input type lacks (a
-   silent default; not done). The bridge still formats the refusal text itself from class and hash; the host's
-   `publicRefusal` is what `world-receipt {of}` returns.
+1. **Late binding across layers.** `delegate` resolves a method to the highest layer defining it, but a method
+   below calling another sees its own module's: real open recursion needs the kernel's `extension`/`fix` over a
+   record of methods, i.e. packages written as a methods record. Decide with the kernel and objects lanes.
+2. **Forms for every input.** `methodForms` lists only methods whose input is text, naturals and closed sums of
+   empty payloads; a sum held as a bounds variable (most declared sums) has no form yet. Resolve variables
+   through the packet bounds (the artifact's `type` table) or have the kernel inline them in the method table.
+3. **Handlers for nested frames and activities.** `run` offers only the callee's own frame's plans to a pure
+   `handle`; an activity handler (a card that asks before answering) and handlers over the callee's own calls
+   are open.
+4. **Snapshot verification by default.** A plain open trusts a snapshot whose CID, head, binary pin, derived
+   copies, versions and pins check; only `verify: true` catches a consistently forged state. If snapshots ever
+   leave the host's directory, journal the snapshot's CID (a `snapshot` entry) and check it on open.
+5. **Pure methods.** A state-returning method and `render` still go through `Package.executeDataValues` (packet
+   JSON); move them to `executeDataEntry` with `compiledMethod`'s held entry.
+6. **Transport asks** (from host3, unchanged): `receive {text, post, slot?}` with a missing `slot`.
 
-What was wrong in the previous version of this file: the module map line counts; section 5.1 said `reprogram` and
-`amend` of another object were `notSelf` (now judged by the target's law); section 6 said offers live on the reply
-only and history/receipt ignore read policy (both changed here); the test list omitted `test_workshop`, whose
-propose case is still an expected failure for its fixture (see its docstring); `check` refused any module without
-`initial` ("missing selected entry"), fixed in the merge commit.
+What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
+as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).
