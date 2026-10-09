@@ -1397,6 +1397,21 @@ def mergeSeed (initial seed : Data) (bounds : Minidregg.Theory.ObjectiveBendType
     return .record (base.map fun (k, v) => (k, (given.lookup k).getD v))
   | _, _ => throw "the seed is not a record"
 
+/-- The `owner` convention every object's law uses: when the state has a text field `owner`
+    and the seed does not set it, the merged state takes `owner` (the named owner, else the
+    creating principal) before the law's dry run, so a creator owns what it makes. -/
+def withOwner (state seed : Data) (owner : String) : Data :=
+  let given := match seed with
+    | .record f => f.any (·.1 == "owner")
+    | _ => true
+  match state with
+  | .record fs =>
+    if given then state else
+    match fs.lookup "owner" with
+    | some (.label _) => .record (fs.map fun (k, v) => if k == "owner" then (k, .label owner) else (k, v))
+    | _ => state
+  | _ => state
+
 /-- The state a package's entry (its `initial()`) evaluates to. -/
 def initialState (b : Built) : Except String Data := do
   match Package.executeDataValues (← b.artifact.getObjVal? "packet") #[] (Json.mkObj []) with
@@ -1427,6 +1442,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let built ← compileObject w inputs
   let given ← decodeData Limits.dataDepth (← j.getObjVal? "seed")
   let state ← (mergeSeed (← initialState built) given built.assumptions.bounds built.ty).mapError (s!"typeMismatch: {·}")
+  let state := withOwner state given (owner.getD principal)
   let seed := dataJson state
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
   let supervisor := (← optText j "supervisor").getD ""
