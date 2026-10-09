@@ -21,6 +21,7 @@ record Seed:
   at: Plans.Reference
   holding: Lists.List<Plans.Reference>
 record Edits:
+  handle: Plans.Edit<String, {}>
   at: Plans.Edit<Plans.Reference, {}>
   holding: Plans.Entries<Plans.Reference, {}>
   inbox: Plans.Entries<Note, {}>
@@ -40,7 +41,7 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {at: Plans.Edit::<Plans.Reference, {}>.keep({}), holding: Plans.Entries::<Plans.Reference, {}>.keep({}), inbox: Plans.Entries::<Note, {}>.keep({})}
+  {handle: Plans.Edit::<String, {}>.keep({}), at: Plans.Edit::<Plans.Reference, {}>.keep({}), holding: Plans.Entries::<Plans.Reference, {}>.keep({}), inbox: Plans.Entries::<Note, {}>.keep({})}
 def edited(edits: Edits, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): true
@@ -136,7 +137,10 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "move" then walk::<Card.Reply>(state, Card.text(a.fields, "exit"), context, movedReply) else noted::<Card.Reply>(Card.text(a.fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"}))
-    case _: Card.answer::<Edits, Place.State, Place.Done>(routed, context, forms(), renderFor(state, context))
+    case _: Card.answerLensed::<Edits, Place.State, Place.Done>(routed, context, forms(), lenses(), if mine(context) then "" else "Only the avatar's own principal changes it.", renderFor(state, context))
+# The handle the card shows is set through a lens: `delvetalk <did> set` and `handle: ...`.
+def lenses() -> Lists.List<Form.Lens<Edits>>:
+  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "handle", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {handle: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})
 def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text(textConcat("Holding: ", textConcat(item.object, "\n")))
 def noteLine(item: Note) -> Document.Document:

@@ -17,7 +17,7 @@ import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Policy.obend as Policy
 def sample() -> Policy.State:
-  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant, seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: ""}
+  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: ""}
 # Garden's plant form (Garden.planting), written out: Garden and Policy together exceed
 # one closure's declaration capacity.
 def plantForm(context: Abi.Context) -> Form.Form:
@@ -29,7 +29,7 @@ def plantPrompt(context: Abi.Context) -> String:
 def examples(n: Nat) -> Lists.List<Policy.Example>:
   match n:
     case 0: Lists.List::<Policy.Example>.nil()
-    case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant, seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
+    case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
   textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: ""}, forms(context), "plant me a moth"))
 """
@@ -61,7 +61,7 @@ def run(entry, *arguments, limits=None):
 
 class Types(unittest.TestCase):
     def test_every_method_is_an_activity_over_the_plan_library(self):
-        for method in ("teach", "define", "setModel", "receive"):
+        for method in ("teach", "define", "receive"):
             with self.subTest(method=method):
                 reply = compile_job(closure("Policy"), method)
                 self.assertEqual(reply["status"], "compiled", reply)
@@ -91,13 +91,14 @@ class PolicyObject(Chain):
 
     def test_teach_define_and_set_model_edit_the_policy_in_order(self):
         self.policy()
-        for utterance, spell in (("a fern", "delvetalk garden-1 plant, seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant, seed: moth, colour: amber")):
+        for utterance, spell in (("a fern", "delvetalk garden-1 plant seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant seed: moth, colour: amber")):
             reply = self.turn("policy", "teach", record(example=record(utterance=label(utterance), spell=label(spell))), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "taught"), reply)
         reply = self.turn("policy", "define", record(term=record(word=label("moth"), meaning=label("a seed"))), principal="ember")
         self.assertEqual(reply["status"], "admitted", reply)
-        reply = self.turn("policy", "setModel", record(model=label("claude-sonnet"), escalate=label("claude-opus")), principal="ember")
-        self.assertEqual(reply["status"], "admitted", reply)
+        for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus"):
+            reply = self.turn("policy", "receive", record(text=label(spell), post=label(""), slot=label("")), principal="ember")
+            self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
         print("\n--- policy card ---\n" + card)
         self.assertIn("Model: claude-sonnet", card)
@@ -120,6 +121,7 @@ class PolicyObject(Chain):
                                   writes=[{"object": "policy", "edits": [record(
                                       model={"tag": "variant", "label": "set", "payload": record(value=label("evil"))},
                                       escalate={"tag": "variant", "label": "keep", "payload": record()},
+                                      system={"tag": "variant", "label": "keep", "payload": record()},
                                       lexicon={"tag": "variant", "label": "keep", "payload": record()},
                                       examples={"tag": "variant", "label": "keep", "payload": record()})]}])
         self.assertEqual(proposed["status"], "refused", proposed)
@@ -139,7 +141,7 @@ class PolicyObject(Chain):
         prompt = out["value"]["value"]
         print("\n--- prompt ---\n" + prompt)
         for needle in ("You turn words into one spell.\n", "Lexicon:\n- moth: a seed\n",
-                       "Participant: a silver fern\nSpell:\ndelvetalk garden-1 plant, seed: a fern, colour: silver\n",
+                       "Participant: a silver fern\nSpell:\ndelvetalk garden-1 plant seed: a fern, colour: silver\n",
                        "delvetalk garden-1 plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
                        "Answer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.",
                        "Participant: plant me a moth"):
