@@ -23,12 +23,13 @@ def callInput (call : Json) (results : Array Json) : Except String Json := do
     | some input, none => pure input
     | none, some index => priorResult index results
     | _, _ => throw "call requires exactly one of input or inputFrom"
-  discard (pairs input)
+  if from?.isNone then discard (pairs input)
   return input
 
 -- This descriptor is made only from previously admitted calls in this batch.
 -- Equal explicit input never receives provenance. It transfers no authority.
-def callInputOrigin (call : Json) (calls : Array Json) (completed : Nat) : Except String Json := do
+def callInputOrigin (runtime : World.Runtime) (call : Json) (calls producerPrograms : Array Json)
+    (completed : Nat) : Evaluation Json := do
   match (field call "inputFrom").toOption with
   | none => return World.noInputOrigin
   | some value =>
@@ -42,8 +43,11 @@ def callInputOrigin (call : Json) (calls : Array Json) (completed : Nat) : Excep
       | some value => value.getStr?
     if op != "invoke" && op != "observe" && op != "reprogram" then return World.noInputOrigin
     let command ← if op == "invoke" then str prior "command" else pure ""
+    let program ← match producerPrograms[index]? with
+      | some program => runtime.programIdentity program
+      | none => throw "inputFrom has no admitted producer program"
     return obj [("kind", .str op), ("object", .str (← str prior "object")),
-      ("command", .str command),
+      ("command", .str command), ("program", .str program),
       ("immediatelyPrevious", .bool (index + 1 == completed))]
 
 def reprogramCandidate (call : Json) (results : Array Json) : Except String Json := do
@@ -85,6 +89,10 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
     let mut stagedWorld := world
     let mut messages : Array Json := #[]
     let mut results : Array Json := #[]
+    let mut nativeResults : Array (Option World.NativeResult) := #[]
+    -- Exact admitted producing protocols, indexed with results. A later revision
+    -- cannot retroactively replace the producer of an earlier typed outcome.
+    let mut producerPrograms : Array Json := #[]
     let mut outbox : Array Json := #[]
     let mut allocatedRoots := obj []
     for call in calls do
@@ -106,15 +114,17 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
           throw "observe requires an existing exact read root"
         let version ← (← field o "version").getNat?
         results := results.push (obj [("object", .str id), ("version", toJson version)])
+        producerPrograms := producerPrograms.push (← field o "protocol")
+        nativeResults := nativeResults.push none
         continue
       -- The operation is explicit; the principal remains the global caller.
       -- Both profiles use one authority engine.
-      let (nextObj, result, emitted, allocations, invocation, inputOrigin) ← if op == "reprogram" then do
+      let (nextObj, result, nativeResult, emitted, allocations, invocation, semanticInvocation, inputOrigin) ← if op == "reprogram" then do
         authorizeRequestWith runtime o (← put call "op" (.str op)) principal
         let candidate ← reprogramCandidate call results
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
         checkCandidateWith runtime o nextObj (← put call "op" (.str op)) principal
-        pure (nextObj, ← runtime.reprogramResult id nextObj, (#[] : Array Json), (#[] : Array Json), Json.null, World.noInputOrigin)
+        pure (nextObj, ← runtime.reprogramResult id nextObj, (none : Option World.NativeResult), (#[] : Array Json), (#[] : Array World.Allocation), Json.null, Json.null, World.noInputOrigin)
       else if op == "law" then do
         for (key, _) in (← pairs call) do
           if !(["op", "object", "law"].contains key) then
@@ -127,20 +137,36 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         -- Both current and proposed law check the already-staged program/state.
         -- Later steps see this law immediately, including deliberate lockout.
         checkCandidateWith runtime o nextObj call principal
-        pure (nextObj, Json.null, (#[] : Array Json), (#[] : Array Json), Json.null, World.noInputOrigin)
+        pure (nextObj, Json.null, (none : Option World.NativeResult), (#[] : Array Json), (#[] : Array World.Allocation), Json.null, Json.null, World.noInputOrigin)
       else do
-        let input ← callInput call results
-        let inputOrigin ← callInputOrigin call calls results.size
+        let publicInput ← callInput call results
+        let nativeInput ← match (field call "inputFrom").toOption with
+          | none => pure none
+          | some index => do
+            let index ← index.getNat?
+            match nativeResults[index]? with
+            | some value => pure value
+            | none => throw "inputFrom has no admitted native result slot"
+        let input ← match nativeInput with
+          | some produced => runtime.frameDerivedInput o (← str call "command") produced
+          | none => do
+            if (field call "inputFrom").isOk then
+              let transition ← field (← field (← field (← field o "protocol") "commands") (← str call "command")) "transition"
+              if (str transition "inputCodec").toOption == some "compact" then
+                throw "compact derived input requires an actual typed source result"
+            pure publicInput
+        let inputOrigin ← callInputOrigin runtime call calls producerPrograms results.size
         let invocation ← put (← put call "input" input) "op" (.str op)
-        authorizeRequestWith runtime o invocation principal
-        let (nextState, result, emitted, allocations) ← executeCommandWith runtime o invocation principal inputOrigin
+        let semanticInvocation ← prepareInvocation runtime o invocation nativeInput
+        authorizeRequestWith runtime o semanticInvocation principal
+        let produced ← executeCommandWith runtime o semanticInvocation principal inputOrigin none (some input)
         let n ← (← field o "version").getNat?
-        let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
-        checkCandidateWith runtime o nextObj invocation principal
-        pure (nextObj, result, emitted, allocations, invocation, inputOrigin)
+        let nextObj ← put (← put o "state" produced.state) "version" (toJson (n + 1))
+        checkCandidateWith runtime o nextObj semanticInvocation principal
+        pure (nextObj, produced.result, produced.nativeResult, produced.emissions, produced.allocations, invocation, semanticInvocation, inputOrigin)
       staged ← put staged id nextObj
       if op == "invoke" then
-        let (nextObjects, created) ← allocateChildrenWith runtime staged o invocation principal absent inputOrigin allocations
+        let (nextObjects, created) ← allocateChildrenWith runtime staged o semanticInvocation principal absent inputOrigin allocations
         staged := nextObjects
         -- Preserve creation evidence even when later calls replace a child.
         for (child, initialRoot) in (← pairs created) do
@@ -155,7 +181,9 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
       for payload in ordinaryOutbox do
         outbox := outbox.push (obj [("object", .str id),
           ("step", toJson results.size), ("payload", payload)])
+      producerPrograms := producerPrograms.push (← field (if op == "reprogram" then nextObj else o) "protocol")
       results := results.push result
+      nativeResults := nativeResults.push nativeResult
     return (staged, stagedWorld, results, outbox, allocatedRoots, messages)
   let ((staged, stagedWorld, results, outbox, allocatedRoots, messages), _) ← execution.run runtime.budget
   let roots := reads.map fun (id, _) => (id, (field staged id).toOption.getD .null)

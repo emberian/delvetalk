@@ -117,39 +117,111 @@ structure QuoteSink (α : Type) where
   field : α → String → α → α
   variant : String → Ty → Ty → α → α
 
-/-- Traverse finite values against their DECLARED type. A sink cannot alter
-acceptance, rejection or accounting: its operations are pure constructors. -/
-def quoteWith {α : Type} (sink : QuoteSink α) (a : Assumptions) : Nat → Data → Ty → Work α
-  | 0, _, _ => failDepth
-  | depth + 1, value, declared => do
+/-- A bounded graph of the selected static schema. Recursive sums retain alias
+references; their rows are checked/indexed once, rather than once per value node. -/
+inductive Schema where
+  | natural | boolean | label
+  | record (fields : List (String × Ty × Schema))
+  | variant (fields : Std.HashMap String (Ty × Schema))
+  | reference (index : Nat)
+
+structure SchemaState where
+  seen : Std.HashSet Nat := {}
+  aliases : Std.HashMap Nat Schema := {}
+
+abbrev SchemaBuild := StateT SchemaState Work
+
+mutual
+def buildSchema (a : Assumptions) (canonical : Bool) : Nat → Ty → SchemaBuild Schema
+  | 0, _ => failDepth
+  | depth + 1, ty => do
     spend
-    let expanded ← match declared with
-      | .variable index => sumAlias a index
-      | other => pure other
-    match value, expanded with
+    match ty with
+    | .natural => pure .natural
+    | .boolean => pure .boolean
+    | .label => pure .label
+    | .emptyRow | .field .. => return .record (← buildMembers a canonical depth {} ty)
+    | .variant row =>
+      let fields ← buildMembers a canonical depth {} row
+      return .variant (fields.foldl (fun map (name, member, schema) => map.insert name (member, schema)) {})
+    | .variable index =>
+      let state ← get
+      if !state.seen.contains index then
+        set { state with seen := state.seen.insert index }
+        let bound ← sumAlias a index
+        let schema ← buildSchema a canonical depth bound
+        modify fun state => { state with aliases := state.aliases.insert index schema }
+      return .reference index
+    | _ => throw "type is not serializable package data"
+def buildMembers (a : Assumptions) (canonical : Bool) : Nat → Std.HashSet String → Ty → SchemaBuild (List (String × Ty × Schema))
+  | 0, _, _ => failDepth
+  | depth + 1, names, ty => do
+    spend
+    match ty with
+    | .emptyRow => pure []
+    | .field name member tail =>
+      if names.contains name then throw "duplicate typed data field"
+      let child ← buildSchema a canonical depth member
+      let fields ← buildMembers a canonical depth (names.insert name) tail
+      if canonical then
+        -- Insertion into the canonical static row is charged before allocation.
+        spend fields.length
+        return (name, member, child) :: fields |>.mergeSort (fun x y => x.1 ≤ y.1)
+      return (name, member, child) :: fields
+    | _ => throw "typed data requires a finite closed row"
+end
+
+structure SchemaGraph where
+  root : Schema
+  aliases : Std.HashMap Nat Schema
+
+def schemaGraph (a : Assumptions) (canonical : Bool) (depth : Nat) (ty : Ty) : Work SchemaGraph := do
+  let (root, state) ← (buildSchema a canonical depth ty).run {}
+  return ⟨root, state.aliases⟩
+
+private def dereference (graph : SchemaGraph) (schema : Schema) : Work Schema := do
+  match schema with
+  | .reference index =>
+    spend
+    let some schema := graph.aliases[index]? | throw "typed data requires a transparent sum alias"
+    pure schema
+  | schema => pure schema
+
+def quoteSchema {α : Type} (sink : QuoteSink α) (graph : SchemaGraph) : Nat → Data → Ty → Schema → Work α
+  | 0, _, _, _ => failDepth
+  | depth + 1, value, declared, schema => do
+    spend
+    match value, ← dereference graph schema with
     | .natural n, .natural => return sink.natural n
     | .boolean b, .boolean => return sink.boolean b
     | .label s, .label => return sink.label s
-    | .record fields, row =>
-        let types ← members depth row
-        if fields.length != types.length then
-          throw "typed data record fields differ from declared type"
-        let mut indexed : Std.HashMap String Data := {}
-        for (name, field) in fields do
-          if indexed.contains name then throw "typed data record fields differ from declared type"
-          indexed := indexed.insert name field
-        let mut result := sink.emptyRecord
-        for (name, ty) in types do
-          let some field := indexed[name]? | throw "typed data record is missing a declared field"
-          let child ← quoteWith sink a depth field ty
-          result := sink.field result name child
-        return result
-    | .variant label payload, .variant row =>
-        let types ← members depth row
-        let some ty := types.lookup label | throw "typed data variant label is undeclared"
-        let child ← quoteWith sink a depth payload ty
-        return sink.variant label ty declared child
+    | .record fields, .record types =>
+      if fields.length != types.length then throw "typed data record fields differ from declared type"
+      let mut indexed : Std.HashMap String Data := {}
+      for (name, field) in fields do
+        spend
+        if indexed.contains name then throw "typed data record fields differ from declared type"
+        indexed := indexed.insert name field
+      let mut result := sink.emptyRecord
+      for (name, ty, childSchema) in types do
+        spend
+        let some field := indexed[name]? | throw "typed data record is missing a declared field"
+        let child ← quoteSchema sink graph depth field ty childSchema
+        result := sink.field result name child
+      return result
+    | .variant label payload, .variant types =>
+      spend
+      let some (ty, childSchema) := types[label]? | throw "typed data variant label is undeclared"
+      let child ← quoteSchema sink graph depth payload ty childSchema
+      return sink.variant label ty declared child
     | _, _ => throw "typed data value does not conform to declared type"
+
+/-- Static preprocessing and actual value visits share one bounded allowance.
+The same sink-independent traversal owns validation and quotation. -/
+def quoteWith {α : Type} (sink : QuoteSink α) (a : Assumptions) (depth : Nat)
+    (value : Data) (declared : Ty) : Work α := do
+  let graph ← schemaGraph a false depth declared
+  quoteSchema sink graph depth value declared graph.root
 
 def termSink : QuoteSink Quoted where
   natural n := ⟨.nat n, []⟩
@@ -195,16 +267,14 @@ def admitValue : Nat → Data → Work Data
   | depth + 1, value => do
     spend
     match value with
-    | .natural _ | .boolean _ | .label _ => spend 2; return value
+    | .natural _ | .boolean _ | .label _ => return value
     | .variant _ payload =>
-      spend 3
       let _ ← admitValue depth payload
       return value
     | .record fields =>
-      spend 2
       let mut names : Std.HashSet String := {}
       for (name, child) in fields do
-        spend 2
+        spend
         if names.contains name then throw "duplicate typed data field"
         names := names.insert name
         let _ ← admitValue depth child
@@ -213,14 +283,11 @@ def admitValue : Nat → Data → Work Data
 /-- A physical compact value is meaningful only relative to this exact checked
 schema. Records carry canonical positional members; sums retain their label.
 Naturals remain arbitrary precision canonical decimal strings. -/
-def decodeCompact (a : Assumptions) : Nat → Ty → Json → Work Data
+def decodeCompactSchema (graph : SchemaGraph) : Nat → Schema → Json → Work Data
   | 0, _, _ => failDepth
-  | depth + 1, declared, wire => do
+  | depth + 1, schema, wire => do
     spend
-    let expanded ← match declared with
-      | .variable index => sumAlias a index
-      | other => pure other
-    match expanded.canonical with
+    match ← dereference graph schema with
     | .natural =>
       let text ← wire.getStr?
       let some n := text.toNat? | throw "compact natural must be canonical decimal"
@@ -228,51 +295,57 @@ def decodeCompact (a : Assumptions) : Nat → Ty → Json → Work Data
       return .natural n
     | .boolean => return .boolean (← wire.getBool?)
     | .label => return .label (← wire.getStr?)
-    | .emptyRow | .field .. =>
-      let types := (← members depth expanded.canonical).toArray
+    | .record types =>
       let values ← wire.getArr?
-      unless values.size == types.size do throw "compact record arity differs from declared type"
+      unless values.size == types.length do throw "compact record arity differs from declared type"
       let mut fields := []
-      for ((name, ty), child) in types.zip values do
-        fields := (name, ← decodeCompact a depth ty child) :: fields
+      for ((name, _, schema), child) in types.toArray.zip values do
+        spend
+        fields := (name, ← decodeCompactSchema graph depth schema child) :: fields
       return .record fields.reverse
-    | .variant row =>
+    | .variant types =>
       let values ← wire.getArr?
       unless values.size == 2 do throw "compact variant requires label and payload"
       let label ← values[0]!.getStr?
-      let some member := (← members depth row.canonical).lookup label
-        | throw "compact variant label is undeclared"
-      return .variant label (← decodeCompact a depth member values[1]!)
-    | _ => throw "type is not serializable package data"
+      spend
+      let some (_, schema) := types[label]? | throw "compact variant label is undeclared"
+      return .variant label (← decodeCompactSchema graph depth schema values[1]!)
+    | .reference _ => throw "unresolved compact schema alias"
 
-def encodeCompact (a : Assumptions) : Nat → Ty → Data → Work Json
+def encodeCompactSchema (graph : SchemaGraph) : Nat → Schema → Data → Work Json
   | 0, _, _ => failDepth
-  | depth + 1, declared, value => do
+  | depth + 1, schema, value => do
     spend
-    let expanded ← match declared with
-      | .variable index => sumAlias a index
-      | other => pure other
-    match value, expanded.canonical with
+    match value, ← dereference graph schema with
     | .natural n, .natural => return toJson (toString n)
     | .boolean b, .boolean => return toJson b
     | .label text, .label => return toJson text
-    | .record fields, row =>
-      let types ← members depth row
+    | .record fields, .record types =>
       unless fields.length == types.length do throw "compact record fields differ from declared type"
       let mut indexed : Std.HashMap String Data := {}
       for (name, child) in fields do
+        spend
         if indexed.contains name then throw "duplicate typed data field"
         indexed := indexed.insert name child
       let mut values := #[]
-      for (name, ty) in types do
+      for (name, _, schema) in types do
+        spend
         let some child := indexed[name]? | throw "compact record is missing a declared field"
-        values := values.push (← encodeCompact a depth ty child)
+        values := values.push (← encodeCompactSchema graph depth schema child)
       return .arr values
-    | .variant label payload, .variant row =>
-      let some member := (← members depth row.canonical).lookup label
-        | throw "compact variant label is undeclared"
-      return .arr #[toJson label, ← encodeCompact a depth member payload]
+    | .variant label payload, .variant types =>
+      spend
+      let some (_, schema) := types[label]? | throw "compact variant label is undeclared"
+      return .arr #[toJson label, ← encodeCompactSchema graph depth schema payload]
     | _, _ => throw "typed data value does not conform to declared type"
+
+def decodeCompact (a : Assumptions) (depth : Nat) (declared : Ty) (wire : Json) : Work Data := do
+  let graph ← schemaGraph a true depth declared
+  decodeCompactSchema graph depth graph.root wire
+
+def encodeCompact (a : Assumptions) (depth : Nat) (declared : Ty) (value : Data) : Work Json := do
+  let graph ← schemaGraph a true depth declared
+  encodeCompactSchema graph depth graph.root value
 
 def prepareWith {α : Type} (read : Assumptions → Ty → α → Work Data) (packet : Json)
     (arguments : Work (Array α)) : Work (AnnotatedTerm × Ty × Nat) := do
@@ -345,5 +418,93 @@ def equivalent (left right : Assumptions) : Nat → List (Ty × Ty) → Ty → T
         equivalent left right depth next aTail bTail
     | .variant ar, .variant br => equivalent left right depth next ar br
     | _, _ => return false
+
+/-- Closed source choices retain the type of each configured child model. No
+existential box or source-authored schema participates in allocation admission. -/
+def allocationLeaves (a : Assumptions) : Nat → Ty → Work (List Ty)
+  | 0, _ => failDepth
+  | depth + 1, type => do
+    spend
+    match type with
+    | .variable i => allocationLeaves a depth (← sumAlias a i)
+    | .variant row =>
+        let alternatives ← members depth row
+        if alternatives.isEmpty then throw "allocation choice must have alternatives"
+        let mut leaves := []
+        for (_, payload) in alternatives do
+          leaves := leaves ++ (← allocationLeaves a depth payload)
+        return leaves
+    | .field .. | .emptyRow =>
+        let fields ← members depth type
+        let names := fields.map Prod.fst
+        let expected := ["name", "protocol", "law"] ++ (if names.contains "initial" then ["initial"] else [])
+        unless names.length == expected.length && expected.all names.contains do
+          throw "allocation requires name, protocol, law and optional typed initial"
+        unless fields.lookup "name" == some .label do throw "allocation name requires String"
+        for key in ["protocol", "law"] do
+          let some member := fields.lookup key | throw "allocation descriptor field missing"
+          shape a depth [] member
+        if let some initial := fields.lookup "initial" then
+          match initial with
+          | .field .. | .emptyRow => shape a depth [] initial
+          | _ => throw "allocation initial requires a closed record model"
+        return [type]
+    | _ => throw "allocation requires a closed descriptor or finite source choice"
+
+def allocationListType (a : Assumptions) (type : Ty) : Work Ty := do
+  spend
+  let expanded ← match type with
+    | .variable i => sumAlias a i
+    | other => pure other
+  let .variant row := expanded | throw "allocations require a nil/cons list"
+  let cases ← members 256 row
+  unless cases.length == 2 && (cases.map Prod.fst).all ["nil", "cons"].contains do
+    throw "allocations require exactly nil/cons alternatives"
+  unless cases.lookup "nil" == some .emptyRow do throw "allocation nil requires an empty payload"
+  let some cons := cases.lookup "cons" | throw "allocation cons is missing"
+  let fields ← members 256 cons
+  unless fields.length == 2 && (fields.map Prod.fst).all ["head", "tail"].contains do
+    throw "allocation cons requires head/tail"
+  let some head := fields.lookup "head" | throw "allocation head is missing"
+  let some tail := fields.lookup "tail" | throw "allocation tail is missing"
+  unless tail.canonical == type.canonical do throw "allocation tail must retain its list type"
+  discard (allocationLeaves a 256 head)
+  return head
+
+def allocationLeaf (a : Assumptions) : Nat → Data → Ty → Work (Data × Ty)
+  | 0, _, _ => failDepth
+  | depth + 1, value, type => do
+    spend
+    match type with
+    | .variable i => allocationLeaf a depth value (← sumAlias a i)
+    | .variant row =>
+        let .variant label payload := value | throw "allocation choice requires its checked variant"
+        let some member := (← members depth row).lookup label | throw "allocation choice alternative missing"
+        allocationLeaf a depth payload member
+    | .field .. | .emptyRow =>
+        let .record _ := value | throw "allocation descriptor requires a checked record"
+        return (value, type)
+    | _ => throw "invalid allocation descriptor type"
+
+def allocationElements (a : Assumptions) (type : Ty) (value : Data)
+    (limit : Nat := 32) : Work (List (Data × Ty)) := do
+  let head ← allocationListType a type
+  let mut cursor := value
+  let mut result := []
+  let mut remaining := limit
+  repeat
+    spend
+    match cursor with
+    | .variant "nil" (.record []) => return result.reverse
+    | .variant "cons" (.record fields) =>
+        if remaining == 0 then throw "allocation collection capacity"
+        unless fields.length == 2 && (fields.map Prod.fst).all ["head", "tail"].contains do
+          throw "allocation cons requires checked head/tail"
+        let some item := fields.lookup "head" | throw "allocation head missing"
+        let some tail := fields.lookup "tail" | throw "allocation tail missing"
+        result := (← allocationLeaf a 256 item head) :: result
+        cursor := tail
+        remaining := remaining - 1
+    | _ => throw "allocation collection requires checked nil/cons"
 
 end Delvetalk.PackageData

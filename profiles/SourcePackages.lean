@@ -16,15 +16,8 @@ private def exact (value : Json) (keys : List String) (label : String) : Except 
   if actual.length != keys.length || !(keys.all actual.contains) then
     throw (label ++ " has missing or unsupported fields")
 
-/-- Inline descriptors retain their historical meaning. An explicit selector
-resolves only in the owning protocol: exact roots pin both table and selector.
-Source validation, typing and execution remain with the package boundary. -/
-def resolve (protocol descriptor : Json) : Except String Json := do
-  if (descriptor.getObjValAs? String "format").toOption != some referenceFormat then
-    return descriptor
-  exact descriptor ["format", "name", "entry"] "source package reference"
-  let name ← descriptor.getObjValAs? String "name"
-  let entry ← descriptor.getObjValAs? String "entry"
+/-- Select an exact object-local source table without inventing an entry. -/
+def modules (protocol : Json) (name : String) : Except String Json := do
   if name.isEmpty || name.utf8ByteSize > 128 then throw "source package name must be 1..128 bytes"
   let tables ← protocol.getObjVal? "sourcePackages"
   if (← pairs tables).length > 64 then throw "source package table exceeds 64 entries"
@@ -36,6 +29,18 @@ def resolve (protocol descriptor : Json) : Except String Json := do
     throw "unsupported source package table format"
   let modules ← selected.getObjVal? "modules"
   discard modules.getArr?
-  return Json.mkObj [("modules", modules), ("entry", toJson entry)]
+  return modules
+
+/-- Inline descriptors retain their historical meaning. An explicit selector
+resolves only in the owning protocol: exact roots pin both table and selector.
+Source validation, typing and execution remain with the package boundary. -/
+def resolve (protocol descriptor : Json) : Except String Json := do
+  if (descriptor.getObjValAs? String "format").toOption != some referenceFormat then
+    return descriptor
+  exact descriptor ["format", "name", "entry"] "source package reference"
+  let name ← descriptor.getObjValAs? String "name"
+  let entry ← descriptor.getObjValAs? String "entry"
+  let selected ← modules protocol name
+  return Json.mkObj [("modules", selected), ("entry", toJson entry)]
 
 end SourcePackages

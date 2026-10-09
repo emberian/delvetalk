@@ -22,9 +22,22 @@ constructing the output. Its shared turn ledger charges:
 | SHA-256 compression, including padding | 32 per block |
 
 String scans are prepaid. Integer limb work is prepaid before decimal conversion.
-Rendering and hashing are prepaid after the exact size is known. Nesting is capped
-at 256; encoded output at 1MiB. Refusal changes no object. Repeated fresh hashes
+Rendering and hashing are prepaid after the exact size is known. Exact protocol
+fingerprints are retained only within one receiving run: at most eight entries
+and 1MiB of protocol data. Each lookup pays the normal bounded traversal and
+2 units per 64 bytes of both compared values before exact equality; a hit avoids
+only the rendering and SHA work actually not performed. Nesting is capped
+at 256; encoded output at 1MiB. Refusal changes no object. Fresh hashes and bounded cache lookups
 consume the same ledger; a retained exact retry returns its previous receipt.
+Message source captures reuse this bounded preflight and canonical-rendering
+price, without charging SHA compression for the capture itself. Their causal
+storage ledger still records the exact retained bytes and reserves terminal
+metadata separately. Each emitting call pays its actual admission and staging
+work; delivery charges its entire successful receiving turn to the same root.
+Message descriptors, capture headers, event rows and delivery results now use
+the same preflight and 8-per-64-byte canonical rendering tariff, replacing their
+former one-unit-per-byte charge. Their exact output bytes still accrue to the
+causal byte ledger. This is a resource-model repair, not unchanged accounting.
 Other hash profiles keep their existing, stricter tariffs.
 
 **Measured, not timeless.** Native local calibration used a retained 122,447-byte

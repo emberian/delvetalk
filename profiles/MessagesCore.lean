@@ -8,12 +8,6 @@ open Lean World
 
 namespace Messages
 
-def effectsProfile := "delvetalk-source-effects-v1"
-def receiveProfile := "delvetalk-source-receive-v1"
-def dataEffectsProfile := "delvetalk-source-data-effects-v1"
-def dataReceiveProfile := "delvetalk-source-data-receive-v1"
-def isEffects (profile : String) : Bool := profile == effectsProfile || profile == dataEffectsProfile
-def isReceive (profile : String) : Bool := profile == receiveProfile || profile == dataReceiveProfile
 def registryProfile := "delvetalk-messages-v1"
 
 -- Custody encoding preserves exact JSON-number mantissas/scales. A message binds
@@ -109,7 +103,7 @@ def descriptor (value : Json) : Evaluation Unit := do
   let payload ← field value "payload"
   discard (pairs payload)
   if (FileCustody.encode payload).utf8ByteSize > 4096 then throw "message payload exceeds 4096 bytes"
-  charge (FileCustody.encode value).utf8ByteSize
+  discard (ProgramDigest.render value)
 
 def counter (value : Json) (key : String) : Except String Nat := (field value key).bind Json.getNat?
 
@@ -166,16 +160,20 @@ def stageCausal (world admission invocation preimage : Json) (call : Nat)
       pure (obj [("origin", origin), ("events", toJson (0 : Nat)),
         ("work", toJson (0 : Nat)), ("bytes", toJson (0 : Nat))])
   let program ← field preimage "protocol"
-  let sourceBytes := (FileCustody.encode preimage).utf8ByteSize
+  -- Prepay traversal and canonical rendering before capture allocation using
+  -- the same physical prices as program hashing. Retained bytes remain exact;
+  -- work units do not charge large shared source text once per UTF-8 byte.
+  let (sourceBytes, _) ← (ProgramDigest.measure ProgramDigest.maxDepth preimage).run 0
   if sourceBytes > 65536 then throw "message source preimage exceeds 64 KiB"
-  charge sourceBytes
+  charge (8 * ((sourceBytes + 63) / 64))
+  if (FileCustody.encode preimage).utf8ByteSize != sourceBytes then
+    throw "message source capture size mismatch"
   let sourceProgram ← ProgramDigest.digest program
   let captureId := digest (obj [("lineage", lineage), ("admission", origin), ("call", toJson call)])
   if (field captures captureId).isOk then throw "message capture identity collision"
   let captureHead := obj [("source", .str source), ("sourceProgram", .str sourceProgram),
     ("originatingPrincipal", .str principal), ("admission", origin), ("call", toJson call)]
-  let headBytes := (FileCustody.encode captureHead).utf8ByteSize
-  charge headBytes
+  let headBytes := (← ProgramDigest.render captureHead).utf8ByteSize
   -- Exact encoded size after adding one member to this nonempty JSON object;
   -- reuse the already encoded preimage instead of traversing it a second time.
   let captureBytes := headBytes + sourceBytes + (FileCustody.encode (.str "sourcePreimage")).utf8ByteSize + 2
@@ -219,8 +217,7 @@ def stageCausal (world admission invocation preimage : Json) (call : Nat)
       ("payload", ← field value "payload"), ("causal", obj [("root", .str causeId),
         ("parent", .str parentId), ("depth", toJson depth)])]
     let row := obj [("evidence", evidence), ("status", .str "pending")]
-    let rowBytes := (FileCustody.encode row).utf8ByteSize
-    charge rowBytes
+    let rowBytes := (← ProgramDigest.render row).utf8ByteSize
     ledger ← put (← put ledger "events" (toJson ((← counter ledger "events") + 1))) "bytes"
       (toJson ((← counter ledger "bytes") + rowBytes + terminalReserve))
     withinLedger config ledger
@@ -288,23 +285,23 @@ def deliverWith (runtime : Runtime) (world request : Json) (principal : String) 
     ("root", .str causeId), ("parent", ← field causal "parent"), ("depth", ← field causal "depth"),
     ("rootPrincipal", ← field (← field ledger "origin") "principal")]
   let execution : Evaluation (Json × Json) := do
-    authorizeRequestWith runtime preimage invocation principal
+    let semanticInvocation ← prepareInvocation runtime preimage invocation
+    authorizeRequestWith runtime preimage semanticInvocation principal
     if (← ProgramDigest.digest (← field preimage "protocol")) != (← str evidence "recipientProgram") then
       throw "message recipient program changed"
-    let (state, result, emitted, allocations) ← executeCommandWith runtime preimage invocation principal noInputOrigin (some facts)
-    if !allocations.isEmpty then throw "message delivery cannot allocate children"
+    let produced ← executeCommandWith runtime preimage semanticInvocation principal noInputOrigin (some facts) (some (← field evidence "payload"))
+    if !produced.allocations.isEmpty then throw "message delivery cannot allocate children"
     let version ← counter preimage "version"
-    let nextObject ← put (← put preimage "state" state) "version" (toJson (version + 1))
-    checkCandidateWith runtime preimage nextObject invocation principal
+    let nextObject ← put (← put preimage "state" produced.state) "version" (toJson (version + 1))
+    checkCandidateWith runtime preimage nextObject semanticInvocation principal
     let objects ← put (← field world "objects") target nextObject
     let consumed ← terminal config id "consumed" (obj [("principal", .str principal), ("intent", ← field request "intent")])
     let prepared ← put (← put world "objects" objects) "messages" consumed
-    let (next, children, _) ← stageCausal prepared request invocation preimage 0 emitted (some evidence)
-    let mut data := obj [("root", nextObject), ("result", result), ("outbox", .arr #[]),
+    let (next, children, _) ← stageCausal prepared request invocation preimage 0 produced.emissions (some evidence)
+    let mut data := obj [("root", nextObject), ("result", produced.result), ("outbox", .arr #[]),
       ("event", ← field request "event"), ("recipient", .str target), ("status", .str "consumed")]
     if !children.isEmpty then data ← put data "messages" (.arr children)
-    let outputBytes := (FileCustody.encode data).utf8ByteSize
-    charge outputBytes
+    let outputBytes := (← ProgramDigest.render data).utf8ByteSize
     let current ← registry next
     let causes ← field current "causes"
     let updated ← field causes causeId

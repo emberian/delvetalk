@@ -74,13 +74,38 @@ def measure : Nat → Json → Measure Nat
         first := false
       return size
 
+/-- Rendering uses the same preflight and block tariff as source captures.
+Exact storage bytes remain independently bounded by each caller's byte ledger. -/
+def render (value : Json) : Evaluation String := do
+  let (size, _) ← (measure maxDepth value).run 0
+  charge (8 * ((size + 63) / 64))
+  let bytes := FileCustody.encode value
+  if bytes.utf8ByteSize != size then throw "canonical render size mismatch"
+  return bytes
+
+def fingerprintLimit : Nat := 1048576
+
+private def fitFingerprints : Nat → List ProgramFingerprint → List ProgramFingerprint
+  | _, [] => []
+  | capacity, entry :: rest =>
+    if entry.bytes ≤ capacity then entry :: fitFingerprints (capacity - entry.bytes) rest else []
+
+/-- Exact protocol equality, not a hash, permits reuse within this receiving run.
+Every lookup prepays traversal/equality; rendering and SHA are charged only when
+actually performed. No authority, state or earlier turn's result is cached. -/
 def digest (value : Json) : Evaluation String := do
   let (size, _) ← (measure maxDepth value).run 0
-  -- Eight units per rendered 64-byte block; SHA-256 adds padding then performs
-  -- one compression per block, charged at 32 units. Charge before allocation.
+  let state ← getThe EvaluationState
+  for entry in state.programFingerprints do
+    charge (2 * ((size + entry.bytes + 63) / 64))
+    if entry.program == value then return entry.hash
   charge (8 * ((size + 63) / 64) + 32 * ((size + 72) / 64))
   let bytes := FileCustody.encode value
   if bytes.utf8ByteSize != size then throw "program digest size mismatch"
-  return Minidregg.Compiler.Sha256.hexString bytes
+  let hash := Minidregg.Compiler.Sha256.hexString bytes
+  let state ← getThe EvaluationState
+  set { state with programFingerprints :=
+    ⟨value, hash, size⟩ :: fitFingerprints (fingerprintLimit - size) (state.programFingerprints.take 7) }
+  return hash
 
 end ProgramDigest

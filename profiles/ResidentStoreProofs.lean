@@ -62,8 +62,8 @@ theorem indexCorrect_remember (state : State) (key : Key)
     (admission base : Json) (head : String)
     (correct : IndexCorrect state)
     (fresh : state.index[key]? = none)
-    (keyed : admissionKey admission = some key) :
-    IndexCorrect (remember state key admission base head) := by
+    (keyed : admissionKey admission = some key) (trackChanges : Bool := true) :
+    IndexCorrect (remember state key admission base head trackChanges) := by
   intro query
   change (state.index.insert key admission)[query]? =
     firstReceipt (admission :: state.history) query
@@ -76,6 +76,19 @@ theorem indexCorrect_remember (state : State) (key : Key)
   · subst query
     simp [compareKey_eq_iff, fresh, keyed]
   · simp [compareKey_eq_iff, equal, keyed]
+
+/-- The ordinal used by bounded history queries stores this exact appended fact. -/
+theorem ordered_remember_current (state : State) (key : Key)
+    (admission base : Json) (head : String) :
+    (remember state key admission base head).ordered[state.sequence]? = some admission := by
+  simp [remember]
+
+/-- Appending an admission cannot rewrite an earlier retained ordinal. -/
+theorem ordered_remember_before (state : State) (key : Key)
+    (admission base : Json) (head : String) (ordinal : Nat)
+    (earlier : ordinal < state.sequence) :
+    (remember state key admission base head).ordered[ordinal]? = state.ordered[ordinal]? := by
+  simp [remember, Std.TreeMap.getElem?_insert, Nat.ne_of_gt earlier]
 
 /-- The reversed-list storage exports new admissions at the chronological end. -/
 theorem remember_history_order (state : State) (key : Key)
@@ -116,7 +129,7 @@ private theorem bind_success {α β : Type} {first : Except String α}
 theorem checkedAppend_success (state final : State) (entry : Json)
     (success : checkedAppend state entry = .ok final) :
     ∃ key, admissionKey entry = some key ∧ state.index[key]? = none ∧
-      final = remember state key entry state.base state.head := by
+      final = remember state key entry state.base state.head false := by
   unfold checkedAppend at success
   cases keyed : admissionKey entry with
   | none => simp [keyed] at success
@@ -127,8 +140,8 @@ theorem checkedAppend_success (state final : State) (entry : Json)
       cases fresh : state.index[key]? with
       | none =>
           rw [fresh] at success
-          change Except.ok (remember state key entry state.base state.head) = Except.ok final at success
-          have output : remember state key entry state.base state.head = final := by
+          change Except.ok (remember state key entry state.base state.head false) = Except.ok final at success
+          have output : remember state key entry state.base state.head false = final := by
             exact Except.ok.inj success
           exact ⟨key, rfl, fresh, output.symm⟩
       | some prior =>
@@ -141,7 +154,7 @@ theorem indexCorrect_checkedAppend (state final : State) (entry : Json)
     (correct : IndexCorrect state)
     (success : checkedAppend state entry = .ok final) : IndexCorrect final := by
   obtain ⟨key, keyed, fresh, rfl⟩ := checkedAppend_success state final entry success
-  exact indexCorrect_remember state key entry state.base state.head correct fresh keyed
+  exact indexCorrect_remember state key entry state.base state.head correct fresh keyed false
 
 private theorem indexCorrect_listFold (entries : List Json) (state final : State)
     (correct : IndexCorrect state)
@@ -177,7 +190,8 @@ theorem indexCorrect_loadCheckpoint (world : Json) (sequence : Nat) (head : Stri
   split at success
   · cases success
   · obtain ⟨base, _, success⟩ := bind_success success
-    apply indexCorrect_checkpointFold history { base, head } state ?_ success
+    obtain ⟨currentObjects, _, success⟩ := bind_success success
+    apply indexCorrect_checkpointFold history { base, head, roots := RetainedRoots.collect {} currentObjects } state ?_ success
     intro key
     change (∅ : Index)[key]? = ([] : List Json).reverse.find? _
     simp

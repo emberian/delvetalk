@@ -362,6 +362,27 @@ def compareDataTypes (j : Json) : Except String Json := do
   return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
     ("conversionNodes", toJson (work - remaining))]
 
+/-- Validate every typed allocation alternative against the checked source Value
+ABI. Configuration models remain independently typed for receiving admission. -/
+def allocationDataTypes (j : Json) : Except String Json := do
+  let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
+  let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
+  let work ← bounded j "work" 100000 1000000
+  let action : PackageData.Work Bool := do
+    let allocations ← PackageData.select left lt lp
+    let value ← PackageData.select right rt rp
+    PackageData.shape right 256 [] value
+    let head ← PackageData.allocationListType left allocations
+    for leaf in (← PackageData.allocationLeaves left 256 head) do
+      let fields ← PackageData.members 256 leaf
+      for key in ["protocol", "law"] do
+        let some member := fields.lookup key | throw "allocation descriptor field missing"
+        unless (← PackageData.equivalent left right 256 [] member value) do return false
+    return true
+  let (equal, remaining) ← action.run work
+  return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
+    ("conversionNodes", toJson (work - remaining))]
+
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
   | "source-imports-v1" =>
@@ -396,6 +417,7 @@ def job (j : Json) : Except String Json := do
   | "decode-compact" => compactCodec j false
   | "inspect-spec-v1" => inspectSpecification j
   | "compare-data-types-v1" => compareDataTypes j
+  | "allocation-data-types-v1" => allocationDataTypes j
   | _ => throw "package operation must be compile or run"
 
 end Delvetalk.Package

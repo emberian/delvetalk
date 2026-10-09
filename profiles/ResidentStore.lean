@@ -16,6 +16,7 @@ def compareKey (a b : Key) : Ordering :=
   | .eq => compare a.2 b.2
   | other => other
 abbrev Index := Std.TreeMap Key Json compareKey
+abbrev HistoryIndex := Std.TreeMap Nat Json compare
 
 def genesis : String := Minidregg.Compiler.Sha256.hexString "delvetalk-resident-v1"
 def digest (value : Json) : String := Minidregg.Compiler.Sha256.hexString (FileCustody.encode value)
@@ -25,6 +26,7 @@ structure State where
   index : Index := {}
   roots : RetainedRoots.Index := {}
   history : List Json := []
+  ordered : HistoryIndex := {}
   sequence : Nat := 0
   head : String := genesis
 
@@ -50,6 +52,7 @@ def remember (state : State) (key : Key) (admission base : Json) (head : String)
     roots := RetainedRoots.admission
       (if trackChanges then RetainedRoots.changed state.roots state.base base else state.roots) admission,
     history := admission :: state.history,
+    ordered := state.ordered.insert state.sequence admission,
     sequence := state.sequence + 1, head }
 
 def selected (state : State) (request : Json) : Array Json :=
@@ -194,10 +197,14 @@ def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable
         let request ← IO.ofExcept (field frame "request")
         let operation ← IO.ofExcept (str request "op")
         let reply ← IO.ofExcept (
-          if operation == "authorize-reads" then
+          if operation == "inspect" then do
+            World.readObject (← field session.committed.base "objects")
+              (← str request "object") (← str request "principal")
+          else if operation == "authorize-reads" then
             World.authorizeReads session.committed.base request
           else if operation == "object-history" then
-            World.historyPage session.committed.base request session.committed.history.reverse.toArray
+            World.historyPageIndexed session.committed.base request session.committed.sequence
+              (fun index => session.committed.ordered[index]?)
           else if operation == "catalogue-page" then
             World.cataloguePage session.committed.base request session.committed.sequence (.str session.committed.head)
           else if operation == "retained-root" then RetainedRoots.mint session.committed.roots request

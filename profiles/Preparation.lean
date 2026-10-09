@@ -1,12 +1,14 @@
 /- Pure source preparation. The source constructs complete calls. This boundary
    serializes data, bounds work and binds reads to already captured observations.
    It neither substitutes input fields nor chooses a workflow. -/
+import SourceState
 import Delvetalk.Package
 import Delvetalk.PackageData
 import FileCustody
 import RetainedRoots
 import MessagesCore
 import SourcePackages
+import SourceReflection
 
 namespace Preparation
 open Lean
@@ -156,7 +158,11 @@ def effect (held : List (String × Json)) (index : Nat) (value : Data) : Work Js
     let command ← identity (← member payload "command")
     -- This is already checked source Data, not a Value codec expression.
     -- The receiving command checks its selected exported input type.
-    return obj (base ++ [("command", .str command), ("input", dataJson (← member payload "input"))])
+    let data ← member payload "input"
+    let input ← match held.lookup target with
+      | some root => SourceState.inputWire (← field root "protocol") command data
+      | none => pure (dataJson data)
+    return obj (base ++ [("command", .str command), ("input", input)])
   | "invokeResult" =>
     exact payload ["object", "command", "result"]
     let prior ← nat (← member payload "result")
@@ -191,6 +197,14 @@ def bind (owner : String) (ownerRoot : Json) (observations : List (String × Jso
   | "refused" =>
     exact payload ["message"]
     return obj [("kind", .str "refused"), ("message", .str (← text (← member payload "message")))]
+  | "inspection" =>
+    exact payload ["message", "value", "document"]
+    let value ← decodeValueHeld observations retainedValueDepth (← member payload "value")
+    if (FileCustody.encode value).utf8ByteSize > World.maxRequestBytes then
+      throw "definition inspection response byte capacity"
+    return obj [("kind", .str "inspection"),
+      ("message", .str (← text (← member payload "message"))), ("value", value),
+      ("document", dataJson (← member payload "document"))]
   | "ready" =>
     exact payload ["summary", "reads", "calls"]
     let mut reads := [(owner, ownerRoot)]
@@ -238,8 +252,9 @@ def run (world request : Json)
     (currentObjects : Option Json := none) : Except String Json := do
   let keys := (← pairs request).map Prod.fst
   let required := ["op", "object", "root", "entry", "contribution", "observations", "principal", "intent"]
-  if keys.length != required.length + (if keys.contains "contributionCodec" then 1 else 0) ||
-      !(required.all keys.contains) || !keys.all (("contributionCodec" :: required).contains) then
+  let optional := ["contributionCodec", "definitions"]
+  if keys.length != required.length + (optional.filter keys.contains).length ||
+      !(required.all keys.contains) || !keys.all ((optional ++ required).contains) then
     throw "prepare requires exact request fields"
   let contributionCodec ← match (field request "contributionCodec").toOption with
     | none => pure "value"
@@ -296,9 +311,14 @@ def run (world request : Json)
         ("program", .label (Messages.digest (← field observed "protocol"))),
         ("state", stateData), ("law", lawData)]
       data := var "cons" [("head", observation), ("tail", data)]
-    let state ← ((Delvetalk.PackageData.decode 256 (← field (← field root "state") "model")).run 100000).map Prod.fst
+    let state ← ((SourceState.read (← field root "protocol") (← field (← field root "state") "model")).run 100000).map Prod.fst
     let args := #[state, contribution, data,
       rec [("object", .label owner), ("principal", .label principal)]]
+    let args ← match (field request "definitions").toOption with
+      | none => pure args
+      | some selections => do
+        let definitions ← SourceReflection.definitions observations selections
+        pure (args.push definitions)
     pure (args, observations) : Work (Array Data × List (String × Json))).run 100000
   let artifact ← Delvetalk.Package.compile spec
   let execution ← Delvetalk.Package.executeDataValues (← field artifact "packet") args

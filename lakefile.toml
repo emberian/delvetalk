@@ -15,9 +15,8 @@ name = "delvetalk"
 root = "Main"
 srcDir = "spec"
 
-[[lean_exe]]
-name = "delvetalk-world"
-root = "World"
+[[lean_lib]]
+name = "EvaluationState"
 srcDir = "profiles"
 
 [[lean_lib]]
@@ -41,6 +40,18 @@ name = "SourcePolicy"
 srcDir = "profiles"
 
 [[lean_lib]]
+name = "SourceProjection"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "SourceReflection"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "SourceState"
+srcDir = "profiles"
+
+[[lean_lib]]
 name = "Preparation"
 srcDir = "profiles"
 
@@ -58,16 +69,6 @@ srcDir = "profiles"
 
 [[lean_lib]]
 name = "RetainedRoots"
-srcDir = "profiles"
-
-[[lean_exe]]
-name = "delvetalk-typed"
-root = "TypedMain"
-srcDir = "spec"
-
-[[lean_exe]]
-name = "delvetalk-transactions"
-root = "Transactions"
 srcDir = "profiles"
 
 [[lean_lib]]
