@@ -6,9 +6,28 @@ import Delvetalk.Host.Snapshot
 namespace Delvetalk.Host
 open Lean (Json toJson)
 
-/-- Flush and fsync (F_FULLFSYNC on macOS); see `spec/native/sync.c`. -/
+/-- Flush and fsync; with `full`, F_FULLFSYNC where the OS has it (macOS). See `spec/native/sync.c`. -/
 @[extern "delvetalk_handle_sync"]
-opaque syncHandle (handle : @& IO.FS.Handle) : IO Unit
+opaque syncHandle (handle : @& IO.FS.Handle) (full : Bool) : IO Unit
+
+/-- How appends are made durable, per process and never journaled (`world-open {sync}`):
+    `none` only flushes (test journals), `fsync` (the default) asks the OS to write the bytes
+    out, `full` adds the drive-cache barrier (F_FULLFSYNC on macOS), which stalls every other
+    writer on the disk. -/
+inductive Durability | none | fsync | full
+  deriving BEq, Repr
+
+def Durability.name : Durability → String
+  | .none => "none" | .fsync => "fsync" | .full => "full"
+
+/-- `sync` of `world-open`: one of the three names; the boolean of the previous release is still
+    accepted for one release (false = none, true = fsync). Absent is `fsync`. -/
+def Durability.ofJson? : Option Lean.Json → Except String Durability
+  | Option.none => .ok .fsync
+  | Option.some (.str "none") | Option.some (.bool false) => .ok .none
+  | Option.some (.str "fsync") | Option.some (.bool true) => .ok .fsync
+  | Option.some (.str "full") => .ok .full
+  | Option.some _ => .error "sync must be \"none\", \"fsync\" or \"full\""
 
 /-! ## Session and journal file -/
 
@@ -23,9 +42,8 @@ structure Open where
   snapshotAt : Nat := 0
   /-- What the open did with snapshots, for the `world-open` reply. -/
   report : Snapshot.Report := {}
-  /-- Whether appends are made durable with `syncHandle` (F_FULLFSYNC / fsync); `world-open
-      {sync: false}` only flushes, for test journals. Per process, never journaled. -/
-  sync : Bool := true
+  /-- How appends are made durable (`Durability`). Per process, never journaled. -/
+  sync : Durability := .fsync
 
 abbrev Session := Option Open
 
@@ -101,7 +119,10 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
       return (some s, .error "journal is full")
     try
       for entry in fresh do s.handle.putStr (entry.compress ++ "\n")
-      if s.sync then syncHandle s.handle else s.handle.flush
+      match s.sync with
+      | .none => s.handle.flush
+      | .fsync => syncHandle s.handle false
+      | .full => syncHandle s.handle true
     catch e => return (some s, .error s!"journal write failed: {e}")
     -- The entries are durable; a snapshot is derived from them and its failure refuses nothing.
     if w'.height < s.snapshotAt + Limits.snapshotEvery then return (some { s with world := w' }, .ok r)
@@ -123,10 +144,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
         | .ok (.bool b) => pure b
         | .ok _ => return (session, .error "verify must be true or false")
         | .error _ => pure false
-      let sync ← match request.getObjVal? "sync" with
-        | .ok (.bool b) => pure b
-        | .ok _ => return (session, .error "sync must be true or false")
-        | .error _ => pure true
+      let sync ← match Durability.ofJson? (request.getObjVal? "sync").toOption with
+        | .ok d => pure d
+        | .error e => return (session, .error e)
       match ← openWorld path held verify with
       | .error e => return (session, .error e)
       | .ok o =>
@@ -214,7 +234,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync)]))
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

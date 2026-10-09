@@ -38,6 +38,10 @@ imports Session and `PackageMain.lean` drives it.
 - **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
+  Durability is fsync, not a full barrier: an entry may be lost on power loss within the OS write-back
+  window; the chain verifies on reopen so a torn tail is cut, never corrupted. `world-open {sync}` is
+  `"fsync"` by default, `"full"` for the old F_FULLFSYNC barrier (macOS; it stalls every other writer
+  on the disk), `"none"` (flush only) for test journals.
 
 Signatures a newcomer calls (all pure unless noted):
 
@@ -75,9 +79,9 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
-`world-open {sync: false}` appends with a flush and no F_FULLFSYNC/fsync for that process (default true, never
-journaled, reported by `world-status` as `sync`); `tests/host.py` opens every test journal so, deploy and hostd keep
-the default. `world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
+`world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
+never journaled, reported by `world-status` as `sync`; the old boolean is accepted for one release, false = none,
+true = fsync); `tests/host.py` opens every test journal with `"none"`, deploy and hostd keep the default. `world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.
@@ -460,8 +464,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **Replay recompile cost**: `world-open` compiles each distinct package once (`world.builds`) and each
   reprogram record, and re-runs `judge`. Method packets are
   compiled lazily and cached in memory only. 1000 plain proposals replay in ~0.08 s.
-- **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fcntl(F_FULLFSYNC)`
-  (macOS) / `fsync`; this made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s. One sync per
+- **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fsync`, or with `sync: "full"`
+  `fcntl(F_FULLFSYNC)` (macOS); the full barrier made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s,
+  and hammered the disk for every other user of the box, so it is no longer the default. One sync per
   `durable` call (not per entry). The build needs `lakefile.lean` (the TOML cannot declare `extern_lib`).
 - **Journal lock**: `openWorld` takes an exclusive `flock` on the journal handle (`IO.FS.Handle.tryLock`, the
   runtime's flock; no second C extern was needed) and refuses "journal is open in another process"; the lock lives
