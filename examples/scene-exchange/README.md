@@ -4,7 +4,9 @@ Jun frees a roof vane. Tavi opens a shutter. Together they release yesterday's
 rain into a listening room and give its sound a name: Threadsong.
 
 The [scene](rain-relay.scene) uses the pinned Spween i64 subset. The
-[rain card](rain-card.md) uses `protocol-markdown@1` and a typed name/ink form.
+[rain card](RainCard.obend) owns a typed name/ink form in ordinary Bend source.
+The scene uses the source-owned SceneRuntime and Handler; its announcement is
+retained in the handler state.
 Both sources pass proposal scenarios before local installation. The journey
 copies portal action tokens, prepares exact drafts, submits to Lean, and retains
 source-bound history. It needs no language model or credentials.
@@ -26,15 +28,16 @@ a fresh card and a new draft.
 `report.json` records the result; `events.json` keeps the copyable tokens, cards,
 drafts and replies. `sources/` and `artifacts/` retain original text and compiler
 provenance. `history/` replays all admissions through the named local host
-(default `transactions`). Its genesis/head hashes identify this run; trust in
+(default `compiled`). Its genesis/head hashes identify this run; trust in
 those hashes must come through a separate channel. Portal actions after the run
 extend the world beyond that initial history checkpoint.
 
 The journey includes premature release, an unauthorized visitor, Tavi's stale
 card, exact retry, invalid ink clarification, and an attempted second name.
 The naming card's reader convention does not enforce order across objects.
-Form field bounds guide portal input; Lean owns authority and first-write
-admission. Scene calls remain retained outbox intents; no delivery is attempted.
+Form field bounds guide portal input; the source receiving method enforces them
+and first-write semantics. Lean owns authority and exact-root admission. The
+source handler retains the scene announcement; no external delivery is attempted.
 
 ```sh
 python3 conformance/test_scene_exchange.py

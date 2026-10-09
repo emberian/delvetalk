@@ -1,139 +1,60 @@
 #!/usr/bin/env python3
-"""Independent scene boundary checks against the actual pinned Rust runtime."""
-import copy
-import importlib.util
+"""Source scene bounded representation and atomic rejection checks."""
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from conformance.test_scene import SceneHarness, scene, parser, room, world
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('scene_test_helpers', ROOT / 'conformance/test_scene.py')
-helpers = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(helpers)
-lower, world, scene = helpers.lower, helpers.world, helpers.scene
-
-
-class SceneAdversarial(unittest.TestCase):
-    # Reuse transport and oracle comparison, not the existing test cases.
-    setUp = helpers.SceneTests.setUp
-    tearDown = helpers.SceneTests.tearDown
-    install = helpers.SceneTests.install
-    invoke = helpers.SceneTests.invoke
-    compare = helpers.SceneTests.compare
-    replay = helpers.SceneTests.replay
-
-    def test_implicit_end_refuses_further_choices_and_restart(self):
-        source = scene('''=== opening
-~ notify "entry"
-* [Finish without arrow]
-  ~ total = -1
-  ~ notify "finished"
-''')
-        self.replay(source, [0, 0])
-        self.assertTrue(self.root['state']['session']['ended'])
-        self.assertEqual([c['args'][0][1] for c in self.calls], ['entry', 'finished'])
-        before = copy.deepcopy(self.root)
-        self.assertEqual(self.invoke('start')[0]['kind'], 'refused')
-        self.assertEqual(self.root, before)
-
-    def test_three_passage_call_order_and_type_changes(self):
-        source = scene('''=== first
-~ notify "first-entry"
-~ value = "é"
-* [Forward] { value > "é" }
-  ~ notify "before-write"
-  ~ value = true
-  ~ value += 10
-  ~ notify "after-write"
-  -> second
-=== second
-~ notify "second-entry"
-* [Bool is one] { value == 1 && value != 2 }
-  ~ value = 0
-  ~ notify "to-third"
-  -> third
-=== third
-~ value -= 1
-~ notify "third-entry"
-* [Back] { value < 0 }
-  ~ notify "back"
-  -> first
-* [Finish]
-  -> END
-''')
-        # Reentry preserves the changed integer: first's string condition is
-        # now false and must refuse without emitting calls or replaying entry.
-        self.replay(source, [0, 0, 0, 0])
-        self.assertEqual(lower.decode_value(self.root['state']['session']['vars']['value']), ['int', '-1'])
-        self.assertEqual([c['args'][0][1] for c in self.calls],
-                         ['first-entry', 'before-write', 'after-write', 'second-entry',
-                          'to-third', 'third-entry', 'back'])
-
-    def test_string_order_uses_scalars_not_utf16_or_normalization(self):
-        strings = ['e\u0301', 'é', '\ue000', '🜉✾', '𐀀']
-        for i, value in enumerate(strings):
-            self.db = Path(self.tmp.name) / f'unicode-{i}.json'
-            choices = '\n'.join(f'* [Compare {j}] {{ value < "{other}" }}\n  -> END'
-                                for j, other in enumerate(strings))
-            self.replay(scene('=== first\n' + choices), [],
-                        {'vars': {'value': ['string', value]}})
-
-    def test_requirements_remain_observations_after_final_effects(self):
-        source = '''---
-id: requirement-lifecycle
-title: Requirements
-weight: 1
-cooldown: 0
-requires: "ready == true"
----
-=== a
-~ ready = false
-* [Finish]
-  ~ ready = true
-  -> END
-'''
-        self.replay(source, [0, 0])
-        self.assertTrue(self.root['state']['session']['requirements'])
-        self.assertTrue(self.root['state']['session']['ended'])
-
-    def test_entry_overflow_rolls_back_choice_and_outbox(self):
-        source = scene('''=== a
-* [Go]
-  ~ first_write = 5
-  ~ notify "must-roll-back"
-  -> b
-=== b
-~ lowest -= 1
-~ lowest = 0
-~ notify "never-visible"
-''')
-        self.install(source, {'vars': {'lowest': ['int', str(-(1 << 63))]}})
+class SceneAdversarialTests(SceneHarness):
+    def test_signed_overflow_refuses_entire_entry(self):
+        self.install(scene('=== a\n~ number = 9223372036854775807\n~ number += 1\nA.\n'))
+        before=self.root
+        reply,_=self.invoke('start')
+        self.assertEqual(reply['kind'],'refused',reply)
+        self.assertEqual(self.root,before)
+    def test_source_guard_refuses_hidden_choice(self):
+        self.install(scene('=== a\n~ ready = false\nA.\n* [Blocked] { ready == true }\n  -> END\n'))
+        self.assertEqual(self.invoke('start')[0]['kind'],'committed')
+        before=self.root
+        reply,_=self.invoke('choose',0)
+        self.assertEqual(reply['kind'],'refused',reply)
+        self.assertEqual(self.root,before)
+    def test_out_of_range_choice_refuses(self):
+        self.install(scene('=== a\nA.\n'))
+        self.invoke('start'); before=self.root
+        reply,_=self.invoke('choose',255)
+        self.assertEqual(reply['kind'],'refused',reply)
+        self.assertEqual(self.root,before)
+    def test_float_retained_by_parser_and_refused_as_source_data(self):
+        source=scene('=== a\n~ x = 1.5\nA.\n')
+        parsed=parser.bridge({'op':'parse','source':source})
+        self.assertTrue(parsed['ok'],parsed)
+        with self.assertRaisesRegex(ValueError,'Float'): room.compile_artifact(source)
+    def test_duplicate_passages_rejected_by_source_validation(self):
+        with self.assertRaisesRegex(ValueError,'unique'):
+            room.compile_artifact(scene('=== a\nOne.\n=== a\nTwo.\n'))
+    def test_late_choice_failure_rolls_back_state_and_outbox(self):
+        initialized = world.exchange(self.db, {"op": "messages-init", "principal": "owner", "intent": "message-init", "lineage": "scene-rollback", "pendingLimit": 8}, profile="compiled")
+        self.assertEqual(initialized["kind"], "committed", initialized)
+        sends = '  ~ send "listener" "program" "chord"\n'
+        self.install(scene('=== a\nA.\n* [Attempt]\n  ~ number = 9223372036854775807\n' + sends + '  ~ number += 1\n  -> END\n'))
         self.assertEqual(self.invoke('start')[0]['kind'], 'committed')
-        before = copy.deepcopy(self.root)
-        response, request = self.invoke('choose:0:0')
-        self.assertEqual(response['kind'], 'refused')
+        before = self.root
+        reply, _ = self.invoke('choose', 0)
+        self.assertEqual(reply['kind'], 'refused', reply)
         self.assertEqual(self.root, before)
-        self.assertEqual(self.calls, [])
-        self.assertEqual(world.exchange(self.db, request), response)
-        inspected = world.exchange(self.db, {'op': 'inspect', 'object': 'scene', 'principal': 'any'})
-        self.assertEqual(inspected, before)
+        self.assertEqual(world.query(self.db, {'op': 'messages-pending', 'principal': 'reader'}, profile='compiled')['pending'], {})
 
-    def test_duplicate_passages_refuse_before_execution(self):
-        parsed = lower.bridge({'op': 'parse', 'source': scene('=== a\nOne.\n=== a\nTwo.\n')})
-        self.assertTrue(parsed['ok'], parsed)
-        with self.assertRaisesRegex(lower.LoweringError, 'duplicate passage'):
-            lower.lower_document(parsed)
-
-    def test_malformed_initial_state_is_not_silently_defaulted(self):
-        parsed = lower.bridge({'op': 'parse', 'source': scene('=== a\nHello.\n')})
-        self.assertTrue(parsed['ok'], parsed)
-        for invalid in [[], False, 0, '', [1], 'wrong']:
-            with self.subTest(field='vars', value=invalid):
-                with self.assertRaises(lower.LoweringError):
-                    lower.lower_document(parsed, initial_vars=invalid)
-            with self.subTest(field='has', value=invalid):
-                with self.assertRaises(lower.LoweringError):
-                    lower.lower_document(parsed, has=invalid)
-
-
-if __name__ == '__main__':
-    unittest.main()
+    def test_failed_destination_entry_does_not_keep_visit_or_emissions(self):
+        initialized = world.exchange(self.db, {"op": "messages-init", "principal": "owner", "intent": "message-init", "lineage": "scene-rollback", "pendingLimit": 8}, profile="compiled")
+        self.assertEqual(initialized["kind"], "committed", initialized)
+        self.install(scene('=== a\nA.\n* [Attempt]\n  ~ send "listener" "program" "chord"\n  -> b\n=== b\n~ number = 9223372036854775807\n~ number += 1\nB.\n'))
+        self.assertEqual(self.invoke('start')[0]['kind'], 'committed')
+        before = self.root
+        for _ in range(2):
+            reply, _ = self.invoke('choose', 0)
+            self.assertEqual(reply['kind'], 'refused', reply)
+            self.assertEqual(self.root, before)
+        self.assertEqual(world.query(self.db, {'op': 'messages-pending', 'principal': 'reader'}, profile='compiled')['pending'], {})
+if __name__=='__main__': unittest.main()

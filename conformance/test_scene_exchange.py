@@ -23,9 +23,12 @@ class SceneExchangeTests(unittest.TestCase):
 
     def test_original_sources_survive_proposal_installation_and_history(self):
         manifest = journey.history.loads((self.directory / 'history/manifest.json').read_bytes())
-        for key, filename in [('relay', 'rain-relay.scene'), ('card', 'rain-card.md')]:
+        for key, filename in [('relay', 'rain-relay.workshop'), ('card', 'RainCard.obend')]:
             with self.subTest(source=filename):
-                original = (ROOT / 'examples/scene-exchange' / filename).read_bytes()
+                original = ((ROOT / 'examples/scene-exchange' / filename).read_bytes()
+                    if key == 'card' else journey.bootstrap.scene_workshop.frame_source(
+                        (ROOT / 'examples/scene-exchange/rain-relay.scene').read_text(), [
+                            {'name': 'Handler', 'source': (ROOT / 'protocols/spween-handlers/Handler.obend').read_text()}]).encode())
                 self.assertEqual((self.directory / 'sources' / filename).read_bytes(), original)
                 report = journey.history.loads((self.directory / 'artifacts' / (key + '-proposal.json')).read_bytes())
                 self.assertTrue(report['passed'])
@@ -45,30 +48,38 @@ class SceneExchangeTests(unittest.TestCase):
         self.assertEqual(stale['draft']['wire']['expected'], free['draft']['wire']['expected'])
         self.assertEqual(stale['principal'], 'tavi')
         self.assertTrue(self.report['retryRecovered'])
-        self.assertEqual(len(self.snapshot['receipts']), len(self.events) + 2)
+        self.assertEqual(len(self.snapshot['receipts']), len(self.events) + 3)
         refusals = [e['response']['reply']['data'] for e in self.events if e['response']['kind'] == 'refused']
         self.assertIn('unauthorized', refusals)
         self.assertIn('stale read root', refusals)
-        self.assertEqual(len(refusals), 4)
+        self.assertEqual(len(refusals), 3)
+        self.assertIn('choice unavailable', self.report['earlyGuardRefusal']['data'])
 
     def test_final_room_agrees_with_pinned_spween_reference(self):
         source = (ROOT / 'examples/scene-exchange/rain-relay.scene').read_text()
-        lower = journey.room.lower
+        lower = journey.room.parser
         reference = lower.bridge({'op': 'replay', 'source': source,
                                   'actions': [{'choose': i} for i in [2, 0, 1, 2]]})
         self.assertTrue(reference['ok'], reference)
         expected = reference['trace'][-1]['snapshot']
-        session = self.snapshot['objects']['scene:rain-relay']['state']['session']
-        self.assertEqual(session['passage'], expected['state']['index'])
-        self.assertFalse(session['ended'])
-        self.assertEqual({k: lower.decode_value(v) for k, v in session['vars'].items()}, expected['vars'])
-        self.assertEqual(lower.decode_sequence(session['choices']), expected['choices'])
-        release = next(e for e in self.events if e['draft']['summary'] == 'Release the rain note'
-                       and e['response']['kind'] == 'committed')
-        calls = [call for batch in release['response']['reply']['data']['outbox']
-                 for call in lower.decode_sequence(batch['calls'])]
-        self.assertEqual([{'name': c['name'], 'args': [lower.decode_value(a)
-                          for a in lower.decode_sequence(c['args'])]} for c in calls], expected['calls'])
+        model = journey.source_object.plain(journey.source_object.state_data(self.snapshot['objects']['scene:rain-relay']))
+        self.assertEqual(model['passage'], expected['state']['index'])
+        self.assertFalse(model['ended'])
+        variables, values = model['handler']['variables'], {}
+        while variables['variant'] == 'cons':
+            head = variables['payload']['head']
+            values[head['name']] = head['value']
+            variables = variables['payload']['tail']
+        for name, value in expected['vars'].items():
+            self.assertEqual(value[0], 'bool')
+            self.assertEqual(values[name], {'variant': 'boolean', 'payload': {'value': value[1]}})
+        self.assertEqual(values['announcement'], {'variant': 'string', 'payload': {
+            'value': expected['calls'][0]['args'][0][1]}})
+        final = journey.history.loads((self.directory / 'final-room.json').read_bytes())
+        view = journey.bootstrap.room.inspect_object(self.snapshot['objects']['scene:rain-relay'], 'scene:rain-relay')
+        self.assertEqual(view['data']['prose'], final['prose'])
+        self.assertEqual([action['text'] for action in view['data']['actions'].values()],
+                         [choice['text'] for choice in expected['choices'] if choice['available']])
 
     def test_copyable_tokens_and_typed_fields_reach_existing_admission(self):
         for event in self.events:
@@ -82,7 +93,7 @@ class SceneExchangeTests(unittest.TestCase):
         self.assertEqual(name['draft']['wire']['input'], {'name': 'Threadsong', 'ink': 'silver'})
         self.assertEqual({field['type'] for field in name['card']['actions'][0]['fields']}, {'string', 'enum'})
         room = journey.history.loads((self.directory / 'final-room.json').read_bytes())
-        self.assertEqual(room['mode'], 'room')
+        self.assertEqual(room['mode'], 'projection')
         self.assertIn('silver line trembles', room['prose'])
 
 

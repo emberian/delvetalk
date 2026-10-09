@@ -1,0 +1,55 @@
+edition ObjectiveBend 1
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record State:
+  name: String
+  ink: String
+  by: String
+record Name:
+  name: String
+  ink: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+record TextField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record InkField:
+  type: String
+  options: {blue: String, silver: String}
+record Description:
+  name: String
+  initial: State
+  methods: {name: {label: String, fields: {name: TextField, ink: InkField}}}
+  panels: {}
+def describe() -> Description:
+  {name: "Yesterday's rain card", initial: {name: "", ink: "", by: ""}, methods: {name: {label: "Name the rain", fields: {name: {type: "string", minLength: 1n, maxLength: 80n}, ink: {type: "enum", options: {blue: "blue", silver: "silver"}}}}}, panels: {}}
+def name(state: State, input: Name, context: Context) -> Decision:
+  let accepted = state.name == "" && input.name != "" && textLength(input.name) <= 80n && (input.ink == "blue" || input.ink == "silver")
+  {accepted: accepted, reason: if accepted then "" else "The first bounded name in blue or silver stays on this card.", state: if accepted then {name: input.name, ink: input.ink, by: context.principal} else state, result: if accepted then "The rain has a name." else ""}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {name: {visible: Bool, text: String, command: String, input: {}}}
+  children: Children
+def view(state: State, panel: String) -> View:
+  {title: "Yesterday's rain card", prose: if state.name == "" then "Leave a name for the sound you heard together." else textConcat(state.name, textConcat(" was named by ", textConcat(state.by, ". The first name stays here."))), actions: {name: {visible: true, text: "Name the rain", command: "name", input: {}}}, children: Children.nil()}

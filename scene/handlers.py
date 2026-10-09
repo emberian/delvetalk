@@ -15,32 +15,34 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scene.lower import LoweringError, UPSTREAM, BIAS, bridge, tagged_values
+from scene.parser import LoweringError, UPSTREAM, BIAS, bridge, tagged_values
 from syntaxes import obend_object
+sys.path.insert(0, str(ROOT / "scripts"))
+import source_object
+import source_closure
 
 PROFILE = 'spween-obend-handlers-i64-v1'
 LIBRARY = ROOT / 'protocols/spween-handlers'
 RUNTIME = ROOT / 'scene/runtime'
-PRELUDE = ROOT / 'world/lib/prelude'
-RESERVED = {'Abi', 'Encounter', 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'SceneRuntime', 'Score', 'DefaultScene', 'Scene'}
+RESERVED = {name for name, _ in source_closure.LIBRARY} | { 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'SceneRuntime', 'DefaultScene', 'Scene'}
 
 
 def quote(text):
-    return json.dumps(text, ensure_ascii=False)
+    return source_object.data(text)
 
 
 def record(**fields):
-    return '{' + ', '.join(key + ': ' + value for key, value in fields.items()) + '}'
+    return source_object.record(fields)
 
 
-def constructor(type_name, tag, **fields):
-    return type_name + '.' + tag + '(' + (record(**fields) if fields else '') + ')'
+def variant(tag, **fields):
+    return source_object.variant(tag, record(**fields))
 
 
-def sequence(type_name, values):
-    result = constructor(type_name, 'nil')
+def sequence(values):
+    result = variant('nil')
     for item in reversed(values):
-        result = constructor(type_name, 'cons', head=item, tail=result)
+        result = variant('cons', head=item, tail=result)
     return result
 
 
@@ -48,27 +50,27 @@ def value(tagged):
     """Representation mapping only: i64 is its unsigned biased payload."""
     tagged_values(tagged)
     kind = tagged[0]
-    if kind == 'null': return constructor('K.Value', 'null')
-    if kind == 'int': return constructor('K.Value', 'integer', value=str(int(tagged[1]) + BIAS) + 'n')
-    if kind == 'bool': return constructor('K.Value', 'boolean', value=str(tagged[1]).lower())
-    return constructor('K.Value', 'string', value=quote(tagged[1]))
+    if kind == 'null': return variant('null')
+    if kind == 'int': return variant('integer', value=source_object.data(int(tagged[1]) + BIAS))
+    if kind == 'bool': return variant('boolean', value=source_object.data(tagged[1]))
+    return variant('string', value=quote(tagged[1]))
 
 
 def condition(data):
-    if data is None: return constructor('D.Condition', 'always')
+    if data is None: return variant('always')
     def expression(expr):
         tag = expr[0]
         if tag == 'atom': return clause(expr[1])
         names = {'and': 'conjunction', 'or': 'disjunction'}
-        return constructor('D.Condition', names[tag], left=expression(expr[1]), right=expression(expr[2]))
+        return variant(names[tag], left=expression(expr[1]), right=expression(expr[2]))
     def clause(item):
         kind = item['kind']
         if kind == 'not':
-            return constructor('D.Condition', 'negation', condition=clause(item['clause']))
+            return variant('negation', condition=clause(item['clause']))
         if kind == 'has':
-            return constructor('D.Condition', 'has', category=quote(item['category']), key=quote(item['key']))
+            return variant('has', category=quote(item['category']), key=quote(item['key']))
         if kind == 'compare':
-            return constructor('D.Condition', 'compare', name=quote(item['var']), op=quote(item['op']), value=value(item['value']))
+            return variant('compare', name=quote(item['var']), op=quote(item['op']), value=value(item['value']))
         raise LoweringError('unknown parser condition variant')
     return expression(data['expr'])
 
@@ -76,17 +78,17 @@ def condition(data):
 def effect(data):
     kind = data['kind']
     if kind == 'set':
-        return constructor('D.Effect', 'set', name=quote(data['var']), value=value(data['value']))
+        return variant('set', name=quote(data['var']), value=value(data['value']))
     if kind == 'modify':
         tagged_values(['int', data['delta']])
         integer = int(data['delta'])
-        return constructor('D.Effect', 'modify', name=quote(data['var']), positive=str(integer >= 0).lower(), magnitude=str(abs(integer)) + 'n')
+        return variant('modify', name=quote(data['var']), positive=source_object.data(integer >= 0), magnitude=source_object.data(abs(integer)))
     if kind == 'call':
-        return constructor('D.Effect', 'call', name=quote(data['name']), args=sequence('K.Values', [value(x) for x in data['args']]))
+        return variant('call', name=quote(data['name']), args=sequence([value(x) for x in data['args']]))
     raise LoweringError('unknown parser effect variant')
 
 
-def score_source(document):
+def scene_data(document):
     """Serialize the parser's exact ordered content tree, without selecting steps."""
     if document.get('ok') is not True or document.get('upstream') != UPSTREAM:
         raise LoweringError('requires a successful pinned Spween parse: ' + str(document.get('error', 'invalid parser document')))
@@ -96,26 +98,25 @@ def score_source(document):
         for item in passage['content']:
             kind = item['kind']
             if kind == 'prose':
-                encoded = constructor('D.Content', 'prose', text=quote(item['text']))
+                encoded = variant('prose', text=quote(item['text']))
             elif kind == 'effect':
-                encoded = constructor('D.Content', 'effect', effect=effect(item['effect']))
+                encoded = variant('effect', effect=effect(item['effect']))
             elif kind == 'choice':
                 target = item['target']
-                encoded_target = (constructor('D.Target', 'absent') if target is None else
-                                  constructor('D.Target', 'named', name=quote(target['target']), isEnd=str(target['is_end']).lower()))
+                encoded_target = (variant('absent') if target is None else
+                                  variant('named', name=quote(target['target']), isEnd=source_object.data(target['is_end'])))
                 choice = record(key=quote('choice-' + str(item['span'][0])), text=quote(item['text']),
                     condition=condition(item['condition']),
-                    effects=sequence('D.Effects', [effect(x) for x in item['effects']]), target=encoded_target)
-                encoded = constructor('D.Content', 'choice', choice=choice)
+                    effects=sequence([effect(x) for x in item['effects']]), target=encoded_target)
+                encoded = variant('choice', choice=choice)
             else:
                 raise LoweringError('unknown parser content variant')
             content.append(encoded)
-        passages.append(record(name=quote(passage['name']), content=sequence('D.Contents', content)))
+        passages.append(record(name=quote(passage['name']), content=sequence(content)))
     scene = record(title=quote(document['ast']['meta'].get('title') or ''),
                    requires=condition(document['ast']['meta'].get('requires')),
-                   passages=sequence('D.Passages', passages))
-    return ('edition ObjectiveBend 1\nimport ./Kernel.obend as K\nimport ./SceneData.obend as D\n'
-            'def scene() -> D.Scene:\n  ' + scene + '\n')
+                   passages=sequence(passages))
+    return scene
 
 
 def modules_for(document, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None, scene_source=None, scene_modules=None):
@@ -165,24 +166,26 @@ def modules_for(document, handler_source=None, *, handler_modules=None, runtime_
     default_scene = (RUNTIME / 'Scene.obend').read_text()
     entry_modules = ([{'name': 'DefaultScene', 'source': default_scene}] + scene_modules
                      if scene_modules is not None else [{'name': 'Scene', 'source': default_scene}])
-    return ([{'name': 'Abi', 'source': (PRELUDE / 'Abi.obend').read_text()},
-             {'name': 'Encounter', 'source': (PRELUDE / 'Encounter.obend').read_text()},
-             {'name': 'Kernel', 'source': (LIBRARY / 'Kernel.obend').read_text()},
+    material = ([{'name': name, 'source': (ROOT / path).read_text()}
+                 for name, path in source_closure.LIBRARY]
+            + [             {'name': 'Kernel', 'source': (LIBRARY / 'Kernel.obend').read_text()},
              {'name': 'SceneData', 'source': (RUNTIME / 'SceneData.obend').read_text()}]
             + handler_modules
             + [{'name': 'SceneModel', 'source': (RUNTIME / 'SceneModel.obend').read_text()},
                {'name': 'BaseRuntime', 'source': (RUNTIME / 'SceneRuntime.obend').read_text()}]
             + runtime_modules
-            + [{'name': 'Score', 'source': score_source(document)}] + entry_modules)
+            + entry_modules)
+
+    return source_closure.order(['Scene'], material)
 
 
-def check_data(modules):
+def check_data(modules, scene):
     """Report the selected Bend runtime's configuration check; do not copy it."""
     deadline = time.monotonic() + 30
     artifact = obend_object._native({'op': 'compile', 'modules': modules, 'entry': 'validate',
                                     'limits': obend_object.LIMITS}, deadline)['artifact']
     result = obend_object._native({'op': 'run-data-v1', 'artifact': artifact,
-                                  'arguments': [], 'limits': obend_object.LIMITS}, deadline)['value']
+                                  'arguments': [scene], 'limits': obend_object.LIMITS}, deadline)['value']
     validation = obend_object._data(result)
     if (not isinstance(validation, dict) or set(validation) != {'valid', 'reason'}
             or type(validation['valid']) is not bool or not isinstance(validation['reason'], str)):
@@ -195,8 +198,10 @@ def compile_document(document, handler_source=None, *, handler_modules=None, run
     """Seal selected source modules with typed scene data and native checked ABI."""
     modules = modules_for(document, handler_source, handler_modules=handler_modules, runtime_source=runtime_source, runtime_modules=runtime_modules,
                           scene_source=scene_source, scene_modules=scene_modules)
-    check_data(modules)
-    protocol = obend_object.lower_data_modules(modules)
+    scene = scene_data(document)
+    check_data(modules, scene)
+    protocol = source_object.load(modules, syntax='objective-bend-object',
+        constructor='configure', arguments=[scene])
     protocol['spweenSource'] = {'profile': PROFILE, 'upstream': UPSTREAM,
                               'source': document['source'], 'ast': document['ast']}
     return {'profile': PROFILE, 'upstream': UPSTREAM, 'source': document['source'],
@@ -217,9 +222,9 @@ def main():
     parser.add_argument('--runtime', type=Path, help='explicit SceneRuntime.obend module bytes')
     parser.add_argument('--entry', type=Path, help='explicit final Scene.obend module bytes')
     args = parser.parse_args()
-    result = compile_source(args.scene.read_text(), args.handler.read_text() if args.handler else None,
-                            runtime_source=args.runtime.read_text() if args.runtime else None,
-                            scene_source=args.entry.read_text() if args.entry else None)
+    result = compile_source(args.scene.read_bytes().decode('utf-8'), args.handler.read_bytes().decode('utf-8') if args.handler else None,
+                            runtime_source=args.runtime.read_bytes().decode('utf-8') if args.runtime else None,
+                            scene_source=args.entry.read_bytes().decode('utf-8') if args.entry else None)
     print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
 
 

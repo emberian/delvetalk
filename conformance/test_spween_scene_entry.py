@@ -9,7 +9,12 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'scripts'))
 from scene import handlers
 from syntaxes import spween_workshop, obend_object
-from conformance.test_spween_handlers import decoded, policy
+import source_object
+import source_offers
+from scene import projection
+import importlib.util
+def policy(commands, actors):
+    return {"profile": "delvetalk-scoped-law", "read": "public", "invoke": {c: list(actors) for c in commands}, "reprogram": ["author"], "law": ["steward"]}
 import world
 
 SOURCE = '''---
@@ -39,7 +44,9 @@ class SceneEntryFences(unittest.TestCase):
         self.assertEqual(parsed['sceneModules'], [{'name': 'Tuning', 'source': helper}, {'name': 'Scene', 'source': entry}])
         modules = handlers.modules_for(handlers.bridge({'op': 'parse', 'source': SOURCE}),
             handler_modules=parsed['handlerModules'], scene_modules=parsed['sceneModules'])
-        self.assertEqual([m['name'] for m in modules][-4:], ['Score', 'DefaultScene', 'Tuning', 'Scene'])
+        self.assertEqual([m['name'] for m in modules][-2:], ['DefaultScene', 'Scene'])
+        self.assertNotIn('Score', [m['name'] for m in modules])
+        self.assertNotIn('Tuning', [m['name'] for m in modules])
         self.assertEqual(modules[-1]['source'], entry)
         for malformed in (source + '\n```obend Tail\nextra\n```\n',
                           source.replace('obend Tuning', 'obend DefaultScene'),
@@ -83,10 +90,10 @@ class SceneEntry(unittest.TestCase):
             'command': command, 'input': inputs, 'expected': self.root(name) if expected is None else expected}, kind)
 
     def variable(self, name):
-        values = decoded(self.root()['state']['model'])['handler']['variables']
-        while values[0] == 'cons':
-            if values[1]['head']['name'] == name: return values[1]['head']['value']
-            values = values[1]['tail']
+        values = source_object.plain(source_object.state_data(self.root()))['handler']['variables']
+        while values['variant'] == 'cons':
+            if values['payload']['head']['name'] == name: return values['payload']['head']['value']
+            values = values['payload']['tail']
         return None
 
     def test_added_typed_method_revision_and_restart_keep_exact_source(self):
@@ -103,17 +110,17 @@ class SceneEntry(unittest.TestCase):
             self.invoke('tune', {'amount': invalid}, kind='refused')
             self.assertEqual(self.root(), started)
         self.invoke('tune', {'amount': 3})
-        self.assertEqual(self.variable('tuning'), ('integer', {'value': (1 << 63) + 3}))
+        self.assertEqual(self.variable('tuning'), {'variant': 'integer', 'payload': {'value': (1 << 63) + 3}})
         old = self.root()
         revised = self.entry.replace('5808n + input.amount', '5808n + input.amount + 1n')
         next_protocol = handlers.compile_source(SOURCE, scene_source=revised)['protocol']
         self.call({'op': 'reprogram', 'object': 'scene', 'principal': 'second-author', 'intent': self.intent(),
             'expected': old, 'protocol': next_protocol, 'state': old['state']}, 'committed')
-        self.assertEqual(self.root()['state'], old['state'])
+        self.assertEqual(source_object.state_data(self.root()), source_object.state_data(old))
         self.invoke('tune', {'amount': 3}, expected=old, kind='refused')
         self.assertEqual(world.wire_loads(self.path.read_text())['objects']['scene'], self.root())
         self.invoke('tune', {'amount': 3})
-        self.assertEqual(self.variable('tuning'), ('integer', {'value': (1 << 63) + 4}))
+        self.assertEqual(self.variable('tuning'), {'variant': 'integer', 'payload': {'value': (1 << 63) + 4}})
         self.assertEqual(self.root()['protocol']['spweenSource']['source'], SOURCE)
         packages = self.root()['protocol']['sourcePackages']
         modules = packages['resident']['modules']
@@ -126,17 +133,18 @@ class SceneEntry(unittest.TestCase):
         self.invoke('hear', {'chord': 'C E G'}, kind='refused', principal='relay')
         self.invoke('choose', {'choice': 0}, kind='refused')
         self.assertEqual(self.root(), before)
-        # This helper asks the actual host for the receiver's exact program digest.
-        helper = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'hash': {
-            'require': [], 'set': {}, 'outbox': [], 'result': ['program-digest', ['input', 'program']]}}}
-        self.call({'op': 'create', 'object': 'digest', 'principal': 'author', 'intent': self.intent(),
-                   'protocol': helper, 'law': ['player']}, 'committed')
-        digest = self.invoke('hash', {'program': self.protocol}, name='digest')['data']['result']
-        bell = obend_object.lower_data_modules([{'name': n, 'source': (handlers.PRELUDE / (n + '.obend')).read_text()}
-            for n in ('List', 'Abi', 'Preparation', 'Encounter', 'Emissions')] + [{'name': 'Bell', 'source': (ROOT / 'protocols/resident-messages/Bell.obend').read_text()}])
+        spec = importlib.util.spec_from_file_location('scene_entry_residents', ROOT / 'protocols/resident-messages/package.py')
+        residents = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(residents)
+        bell = residents.load('Bell', {'recipient': 'scene'})
         self.call({'op': 'create', 'object': 'bell', 'principal': 'author', 'intent': self.intent(),
-                   'protocol': bell, 'law': ['player']}, 'committed')
-        sent = self.invoke('play', {'to': 'scene', 'recipientProgram': digest, 'chord': 'C E G', 'voices': 1}, name='bell')
+                   'protocol': bell, 'law': policy(['play', 'connect'], ['player'])}, 'committed')
+        owner = world.capture_roots(self.path, ['bell'], principal='player', profile='compiled')
+        view = projection.project(owner['roots']['bell']['root'], 'bell')
+        observed = source_offers.capture_observations(view, owner, database=self.path, principal='player', profile='compiled')
+        offer = source_offers.capture(view, {key: item['root'] for key, item in observed['roots'].items()}, references={key: item['reference'] for key, item in observed['roots'].items()})['play']
+        request = source_offers.request(offer, 'player', self.intent(), {'chord': 'C E G', 'voices': 1}, database=self.path)
+        sent = self.call(request, 'committed')
         ref = sent['data']['messages'][0]
         request = {'op': 'deliver', 'object': 'scene', 'principal': 'relay', 'intent': self.intent(),
                    'expected': self.root(), 'event': ref}
@@ -144,7 +152,7 @@ class SceneEntry(unittest.TestCase):
         self.assertEqual(result['data']['result'], {'source': 'bell', 'player': 'player'})
         self.assertEqual(self.call(request), result)
         self.invoke('choose', {'choice': 0})
-        self.assertTrue(decoded(self.root()['state']['model'])['ended'])
+        self.assertTrue(source_object.plain(source_object.state_data(self.root()))['ended'])
 
 
 if __name__ == '__main__': unittest.main()
