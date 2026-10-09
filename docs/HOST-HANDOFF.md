@@ -227,6 +227,13 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `applyGrants`; `world.grants` holds them all (`maxGrants` 4096, `grantsPerTurn` 8). The frame lives in
    `TurnState.subject/method/via`, set and restored by `runMethod`; `principal` stays the identity's and
    derives send and grant ids. Tests: `tests/test_grants.py`.
+9. **Listing and cards.** Plan `objects {prefix, after}` -> `listed {ids, more}` (`listIds`: ids the frame's subject
+   may view, prefix match, strictly after `after` in byte order, sorted, `listPage` 64) and op
+   `world-objects {principal, prefix?, after?}` -> `{status: "listed", ids, more}`. Plan `card {object}` ->
+   `carded {document}`: `renderCard` compiles the target's `render` and runs it on its committed state under the
+   turn's ticks (records the target as a root; `denied` without read authority, `noCard` without `render`,
+   `refused {clause: render}` if it fails). Op `world-card {principal, object}` -> `{status: "card", text, document}`
+   (text by `Document.render`), journals nothing.
 
 ## 6. Gotchas
 

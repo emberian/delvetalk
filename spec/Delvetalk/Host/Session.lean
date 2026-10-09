@@ -170,6 +170,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           ("postQuota", toJson s.world.postQuota)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
+      | "world-objects" => return (session, objectsOp s.world request)
+      | "world-card" => return (session, cardOp s.world request)
       | _ => return (session, .error s!"unknown world operation {op}")
 
 end Delvetalk.Host

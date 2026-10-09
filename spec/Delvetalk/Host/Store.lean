@@ -91,6 +91,8 @@ def plainDepth : Nat := 64
 def grantsPerTurn : Nat := 8
 def maxGrants : Nat := 4096
 def genesis : String := "".pushn '0' 64
+/-- Ids one `objects` listing answers. -/
+def listPage : Nat := 64
 /-- Bytes of a post's AT URI and CID. -/
 def maxUriBytes : Nat := 512
 end Limits

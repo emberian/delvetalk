@@ -1196,6 +1196,23 @@ def advance (w : World) (j : Json) : Except String (World × Json) := do
 
 /-! ## Reads -/
 
+/-- Ids the reader may view, starting with `prefix`, after `after` in byte order: one page,
+    and whether more follow. -/
+def listIds (w : World) (reader pfx after : String) : List String × Bool :=
+  let ids := (w.objects.toList.filterMap fun (id, o) =>
+    if id.startsWith pfx && decide (after < id) && o.read.permits reader then some id else none).toArray.qsort (· < ·)
+  ((ids.extract 0 Limits.listPage).toList, ids.size > Limits.listPage)
+
+/-- `world-objects {principal, prefix?, after?}`. -/
+def objectsOp (w : World) (j : Json) : Except String Json := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let text := fun (k : String) => match j.getObjVal? k with
+    | .ok (.str s) => pure s
+    | .ok _ => throw s!"{k} must be text"
+    | .error _ => pure ""
+  let (ids, more) := listIds w principal (← text "prefix") (← text "after")
+  return Json.mkObj [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
+
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")

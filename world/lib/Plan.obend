@@ -98,6 +98,10 @@ record Grant:
   object: Reference
   method: String
   until: Nat
+# Listing and cards. `objects` answers one page (64) of the ids the principal may view,
+# starting with `prefix`, after `after` in byte order. `card` runs the target's pure
+# `render(state)` under the reader's read authority (`denied` otherwise), so an object
+# shows one of another state type without viewing its state.
 record Publish:
   page: String
   section: String
@@ -120,6 +124,8 @@ sum Plan<E, A>:
   revoke: {id: String}
   callVia: {object: Reference, method: String, argument: A, via: String}
   sendVia: {object: Reference, method: String, argument: A, via: String}
+  objects: {prefix: String, after: String}
+  card: {object: Reference}
 sum Response<S, R>:
   viewed: {version: Nat, state: S}
   denied: {}
@@ -142,6 +148,8 @@ sum Response<S, R>:
   checked: {diagnostics: Document.Names}
   granted: {id: String}
   revoked: {}
+  listed: {ids: Document.Names, more: Bool}
+  carded: {document: Document.Document}
 # The reference of the running object, in the world the context carries (the
 # empty world is the world the turn runs in).
 def self(context: Abi.Context) -> Reference:

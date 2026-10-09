@@ -302,6 +302,17 @@ def usableGrant (via self callee method : String) : M (Option String) := do
   | some g => return if (g.to == s.subject || g.to == self) && !s.revokes.contains via then some g.grantor else none
   | none => return none
 
+/-- An object's card: its pure `render(state)` run on its committed state under this turn's
+    ticks. `noCard` when it has no such method, `render` when it fails or runs out. -/
+def renderCard (o : Object) : M (Except String Data) := do
+  let compiled ← tryCatch (some <$> compiledMethod o "render") fun _ => pure none
+  let some c := compiled | return .error "noCard"
+  let st ← get
+  match Package.executeDataValues c.packet #[o.state] (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
+  | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
+  | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "render"
+  | .error _ => return .error "render"
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -508,6 +519,22 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord]
       else respond bounds responseType "inspected" [.record [("pin", .label o.pin),
         ("law", .label o.lawText), ("source", .label (entrySource o))]]
+  | .variant "objects" (.record f) =>
+    let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
+    let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"
+    let s ← get
+    let (ids, more) := listIds s.world s.subject pfx after
+    respond bounds responseType "listed" [.record [("ids", listData (ids.map Data.label)), ("more", .boolean more)]]
+  | .variant "card" (.record f) =>
+    let s ← get
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      recordRoot id o.version
+      match ← renderCard o with
+      | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
+      | .error clause => refusedWith bounds responseType clause
   | .variant "check" (.record f) =>
     let some (.label source) := f.lookup "package" | evaluation "malformed check plan"
     let s ← get
@@ -1061,6 +1088,23 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
       ("law", toJson o.lawText), ("source", toJson (entrySource o))]
+
+/-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
+def cardOp (w : World) (j : Json) : Except String Json := do
+  let id ← j.getObjValAs? String "object"
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  match w.objects[id]? with
+  | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  | some o =>
+    if !o.read.permits principal then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+    let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
+                              limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
+    match ((renderCard o).run.run init).1 with
+    | .ok (.ok document) =>
+      return Json.mkObj [("status", toJson "card"), ("object", toJson id),
+        ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)]
+    | .ok (.error clause) => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)]
+    | .error _ => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")]
 
 /-- Plain JSON for a model to read: lists are arrays, a sum is an object with its `tag`. -/
 partial def listHeads (acc : List Data) : Data → Option (List Data)
