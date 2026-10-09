@@ -1,0 +1,60 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+record State:
+  open: Bool
+  openedBy: String
+  knocks: Lists.List<String>
+  lantern: Plans.Reference
+  lastDelivery: String
+record Who:
+  who: String
+record Edits:
+  open: Plans.Edit<Bool, {}>
+  openedBy: Plans.Edit<String, {}>
+  knocks: Plans.Entries<String, {}>
+  lastDelivery: Plans.Edit<String, {}>
+  lantern: Plans.Edit<Plans.Reference, {}>
+type Plan = Plans.Plan<Edits, Who>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {open: false, openedBy: "", knocks: Lists.List::<String>.nil(), lantern: {world: "", object: ""}, lastDelivery: ""}
+def keep() -> Edits:
+  {open: Plans.Edit::<Bool, {}>.keep({}), openedBy: Plans.Edit::<String, {}>.keep({}), knocks: Plans.Entries::<String, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({}), lantern: Plans.Edit::<Plans.Reference, {}>.keep({})}
+def unlatched(who: String) -> Edits:
+  extend(keep(), {open: Plans.Edit::<Bool, {}>.set({value: true}), openedBy: Plans.Edit::<String, {}>.set({value: who})})
+# Points the door at the lantern it lights. The host overwrites the placeholder.
+def configure(state: State, input: {lantern: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {lantern: Plans.Edit::<Plans.Reference, {}>.set({value: input.lantern})})})):
+    case written(_): true
+    case _: false
+# The method a bell sends to: open the door and light the lantern behind it.
+def open(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: unlatched(input.who)})):
+    case written(_): announce(state, input, context)
+    case _: state.open
+def latch(state: State, who: String) -> Edits:
+  if state.open then keep() else unlatched(who)
+# A knock is retained; a knock on a closed door opens it.
+def knock(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, input.who), {knocks: Plans.Entries::<String, {}>.append({item: input.who})})})):
+    case written(_): answer(state, input, context)
+    case _: false
+def answer(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  if state.open then true else announce(state, input, context)
+def announce(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.send({object: state.lantern, method: "light", argument: input})):
+    case delivery(d): remember(d.id, context)
+    case _: false
+def remember(id: String, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {lastDelivery: Plans.Edit::<String, {}>.set({value: id})})})):
+    case written(_): true
+    case _: false
+def knockLine(who: String) -> Document.Document:
+  Document.text(textConcat("knock: ", textConcat(who, "\n")))
+def render(state: State) -> Document.Document:
+  Document.concat(Document.text(if state.open then textConcat("The door is open, opened by ", textConcat(state.openedBy, ".\n")) else "The door is shut.\n"), Document.Document.sequence({items: Lists.map::<String, Document.Document>(state.knocks, knockLine)}))
+def card(state: State) -> String:
+  Document.plain(render(state))

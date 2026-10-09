@@ -1,0 +1,25 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+record State:
+  lit: Bool
+  litBy: String
+record Who:
+  who: String
+record Edits:
+  lit: Plans.Edit<Bool, {}>
+  litBy: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {lit: false, litBy: ""}
+# Light the lantern and remember who did.
+def light(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit::<Bool, {}>.set({value: true}), litBy: Plans.Edit::<String, {}>.set({value: input.who})}})):
+    case written(_): true
+    case _: state.lit
+def render(state: State) -> Document.Document:
+  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(state.litBy, ".\n")) else "The lantern is dark.\n")
+def card(state: State) -> String:
+  Document.plain(render(state))
