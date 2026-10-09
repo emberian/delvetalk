@@ -183,21 +183,18 @@ class Floor(Chain):
 
     # --- paths that need remove: expected failures until the host lands it ------------
 
-    @unittest.expectedFailure
     def test_leave_removes_from_present(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
         reply = self.turn("porch", "leave", record(who=reference("glm")), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
         self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: kimik3\n")
 
-    @unittest.expectedFailure
     def test_take_removes_from_things(self):
         self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone", "fern"]))
         reply = self.turn("garden", "take", record(thing=reference("stone"), by=reference("glm")), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
         self.assertEqual(self.card("garden"), "Garden\nabout Garden\nHere: glm\nLying here: fern\n")
 
-    @unittest.expectedFailure
     def test_a_mover_walks_porch_to_garden_and_back_carrying_a_thing(self):
         self.world()
         moved = self.turn("glm", "move", record(exit=label("in")), principal="glm")
