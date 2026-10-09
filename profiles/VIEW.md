@@ -55,7 +55,19 @@ denies its direct invocation nor replaces current-law checks or receiving guards
 Typed menus use `delvetalk-obend-data-menu-v1`. Their state is exactly
 `{model:DataWire(State)}`; the native `package-data-v1` evaluator receives that model
 and a typed panel string. The source returns four fields: `title`, `prose`, `actions`
-and `children`. The first three retain the menu contract. Children is a typed
+and `children`. Typed actions can be a source `nil:{}` /
+`cons:{head:Action,tail:Actions}` list. Each head is either a descriptor or one
+ordinary source sum alternative carrying `{key,text,command,input,visible}`.
+Different alternatives may have different closed record inputs (for example
+`start {}` and `choose {choice:Nat}`); constructor tags confer no authority.
+All selected descriptors, including hidden entries, are checked before filtering.
+Keys are unique, with at most 64 entries. Source list order survives retained
+canonical storage and determines the same offered actions in town and portal.
+Fixed action rows remain readable while source objects migrate; no new profile
+is introduced for this data representation. Native schema checking establishes
+serializability of every alternative; projection checks the actual output shape.
+
+Children is a typed
 `nil:{}` / `cons:{head:Child,tail:Children}` list; each Child contains exactly
 `{key:String,label:String,object:String,panel:String}`. No ordinary JSON record is
 heuristically treated as a list.
@@ -134,3 +146,5 @@ Check: `python3 conformance/test_projection.py` for upgrades, stale actions,
 independent panels, escaping and adversarial results; `python3 conformance/test_obend_menu.py`
 for source menus, hidden-descriptor validation, town/portal agreement and real admission.
 Typed checks: `test_typed_view.py` and `test_child_navigation.py` under `conformance/`.
+
+Source collection check: `conformance/test_view_action_lists.py` joins native evaluation, town capture and portal preparation.

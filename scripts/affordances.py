@@ -248,7 +248,10 @@ def _describe(view):
         data = view["data"]
         title, prose = data["title"], data["prose"]
         if not isinstance(data["actions"], dict): raise AffordanceError("projected actions must be a record")
-        for key in sorted(data["actions"]):
+        spec = importlib.util.spec_from_file_location('affordances_projection', ROOT / 'scene/projection.py')
+        projection = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(projection)
+        for key in projection.action_order(view):
             action = data["actions"][key]
             if not isinstance(action, dict) or set(action) != {"text", "command", "input"}:
                 raise AffordanceError("malformed projected action")

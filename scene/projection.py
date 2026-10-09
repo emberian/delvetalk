@@ -144,6 +144,47 @@ def _validate_children(values):
     return values
 
 
+def _typed_list(sequence, maximum, name):
+    """Decode the canonical source nil/cons data shape; never choose behavior."""
+    entries = []
+    while True:
+        if (not isinstance(sequence, dict) or set(sequence) != {'tag', 'label', 'payload'}
+                or sequence['tag'] != 'variant'):
+            raise ProjectionError(name + ' require typed nil/cons variants')
+        payload = _wire_record(sequence['payload'])
+        if sequence['label'] == 'nil' and not payload:
+            return entries
+        if sequence['label'] != 'cons' or set(payload) != {'head', 'tail'}:
+            raise ProjectionError('invalid typed ' + name + ' alternative or payload')
+        if len(entries) == maximum:
+            raise ProjectionError('view ' + name + ' exceed ' + str(maximum) + ' entries')
+        entries.append(payload['head'])
+        sequence = payload['tail']
+
+
+def _typed_actions(value, budget):
+    if isinstance(value, dict) and value.get('tag') == 'record':
+        # Existing fixed source rows remain readable during source migration.
+        return _plain_data(value, budget)
+    actions = {}
+    for item in _typed_list(value, 64, 'actions'):
+        if isinstance(item, dict) and item.get('tag') == 'variant':
+            if (set(item) != {'tag', 'label', 'payload'}
+                    or not isinstance(item['label'], str) or not item['label']):
+                raise ProjectionError('invalid action alternative envelope')
+            # Its constructor distinguishes ordinary source input types. It
+            # grants no dispatch authority; command and current law still apply.
+            item = item['payload']
+        descriptor = _plain_data(item, budget)
+        if not isinstance(descriptor, dict) or set(descriptor) != {'key', 'text', 'command', 'input', 'visible'}:
+            raise ProjectionError('listed action requires key, text, command, input and visible')
+        key = _text_bound(descriptor['key'], 128, 'action key')
+        if key in actions:
+            raise ProjectionError('duplicate action key')
+        actions[key] = {name: value for name, value in descriptor.items() if name != 'key'}
+    return actions
+
+
 def _typed_menu(raw, root):
     fields = _wire_record(raw)
     expected = {'title', 'prose', 'actions', 'children'}
@@ -152,22 +193,23 @@ def _typed_menu(raw, root):
     if set(fields) != expected:
         raise ProjectionError('typed menu fields differ from its declared profile')
     budget = [100000]
-    data = _menu_data({name: _plain_data(fields[name], budget) for name in ('title', 'prose', 'actions')}, root)
-    sequence, entries = fields['children'], []
-    while True:
-        if (not isinstance(sequence, dict) or set(sequence) != {'tag', 'label', 'payload'}
-                or sequence['tag'] != 'variant'):
-            raise ProjectionError('children require typed nil/cons variants')
-        payload = _wire_record(sequence['payload'])
-        if sequence['label'] == 'nil' and not payload:
-            break
-        if sequence['label'] != 'cons' or set(payload) != {'head', 'tail'}:
-            raise ProjectionError('invalid typed children alternative or payload')
-        if len(entries) == 32:
-            raise ProjectionError('view children exceed 32 entries')
-        entries.append(_plain_data(payload['head'], budget))
-        sequence = payload['tail']
+    values = {name: _plain_data(fields[name], budget) for name in ('title', 'prose')}
+    values['actions'] = _typed_actions(fields['actions'], budget)
+    data = _menu_data(values, root)
+    entries = [_plain_data(item, budget) for item in _typed_list(fields['children'], 32, 'children')]
     return data, _validate_children(entries)
+
+
+def action_order(view):
+    """Source list order survives canonical custody; fixed rows keep their order rule."""
+    source = view.get('root', {}).get('protocol', {}).get('viewProgram', {})
+    if view.get('mode') == 'projection' and source.get('profile') in DATA_PROFILES:
+        fields = _wire_record(view['rawData'])
+        if fields['actions'].get('tag') == 'variant':
+            children(view)  # Recheck the retained normalized data against raw source.
+            data, _ = _typed_menu(view['rawData'], view['root'])
+            return list(data['actions'])
+    return sorted(view['data']['actions'])
 
 
 def children(view):
@@ -419,7 +461,7 @@ def html_view(view):
         if 'spweenSource' in view['root']['protocol']:
             source['spweenSource'] = view['root']['protocol']['spweenSource']
     items = ''.join('<li>' + esc(k) + ': ' + esc(a['text']) + '</li>'
-                    for k, a in data['actions'].items())
+                    for k in action_order(view) for a in [data['actions'][k]])
     exhibits = ('<h2>Look around</h2><ol>' + ''.join('<li>' + esc(child['label']) + '</li>'
                 for child in catalogue) + '</ol>') if catalogue else ''
     return ('<!doctype html><html><head><meta charset="utf-8">'

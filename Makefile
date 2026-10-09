@@ -152,6 +152,7 @@ scene:
 portal:
 	python3 conformance/test_portal_artifacts.py
 	python3 conformance/test_affordances.py
+	python3 conformance/test_view_action_lists.py
 	python3 conformance/test_references.py
 	python3 conformance/test_factory_affordances.py
 	python3 conformance/test_interpret.py

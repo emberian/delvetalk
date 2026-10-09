@@ -352,7 +352,16 @@ def _lower_modules(modules, *, typed):
         child_contract = _native({'op': 'compile', 'modules': [{'name': 'ChildrenContract', 'source': CHILDREN_SOURCE}],
                                  'entry': 'children', 'limits': LIMITS}, deadline)['artifact']
         compare(view_artifact, ['codomain', 'codomain', {'field': 'children'}], child_contract, [], 'view children')
-        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'offers')}
+        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'offers', 'actions')}
+        try:
+            view['actions'] = _type(members['actions'])
+        except ValueError:
+            # Native schema traversal checks every alternative for serializability.
+            # Structural list/descriptor framing is checked on the actual output;
+            # Python does not resolve recursive source aliases or interpret them.
+            actions_path = ['codomain', 'codomain', {'field': 'actions'}]
+            compare(view_artifact, actions_path, view_artifact, actions_path, 'view actions')
+            view['actions'] = {}
         parameters = [state_type, 'label']
     else:
         parameters, view = _signature(view_artifact['type'], 2)
