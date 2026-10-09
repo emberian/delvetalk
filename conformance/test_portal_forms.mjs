@@ -13,7 +13,7 @@ class Node {
     this.listeners = {};
     this.value = '';
     this.checked = false;
-    this.classList = { toggle() {} };
+    this.classList = { toggle() {}, add() {} };
   }
   set textContent(value) { this.content = String(value); this.children = []; }
   get textContent() { return (this.content || '') + this.children.map(n => n.textContent).join(''); }
@@ -22,20 +22,32 @@ class Node {
   replaceChildren(...nodes) { this.children = nodes; }
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
+  focus() {}
+  scrollIntoView() {}
+  get childElementCount() { return this.children.length; }
   setCustomValidity(message) { this.validityMessage = message; }
   reportValidity() { return !this.validityMessage; }
 }
 const ids = new Map();
 const document = {
   createElement: tag => new Node(tag),
+  querySelector: selector => document.getElementById(selector),
   getElementById: id => {
     if (!ids.has(id)) ids.set(id, new Node('div'));
     return ids.get(id);
   },
 };
 const requests = [];
+const navigation = [];
+const events = {};
+const location = { href: 'https://example.invalid/' };
+const history = Object.fromEntries(['pushState', 'replaceState'].map(method => [method, (_, __, url) => {
+  location.href = String(url); navigation.push({ method, url: String(url) });
+}]));
 const context = vm.createContext({
-  document, URL, location: { href: 'https://example.invalid/' },
+  document, URL, history, location,
+  window: { addEventListener(name, fn) { events[name] = fn; } },
+  matchMedia: () => ({ matches: true }),
   fetch: (url, options) => {
     requests.push({ url, options });
     return new Promise(() => {}); // Startup waits; no network or world authority.
@@ -104,3 +116,109 @@ assert.deepEqual(JSON.parse(prepared.options.body), {
   card: 'garden', action: 'a1', fields: { word: 'my own words' },
 });
 console.log('Portal authored examples: text-only guidance, empty fields, explicit submission passed.');
+
+// Panel navigation is generic, encoded in the URL, and preserves uncertain work.
+vm.runInContext("state.world = { mode: 'public-preview', objects: [{ id: 'door', title: 'Door' }] }", context);
+const panels = [{ id: 'main', label: 'Overview' }, { id: 'ink & light', label: malicious }];
+const cards = [];
+context.fetch = async (url, options) => {
+  requests.push({ url, options });
+  const panel = new URL(url, location.href).searchParams.get('panel') || 'main';
+  const card = { card: 'card-' + cards.length, object: 'door', title: 'Door', prose: panel,
+    panel, panels, actions: [], version: 0 };
+  cards.push(card);
+  return { ok: true, json: async () => card };
+};
+await context.openObject('door', true, 'ink & light', 'push');
+assert.equal(new URL(location.href).searchParams.get('panel'), 'ink & light');
+assert.equal(navigation.at(-1).method, 'pushState');
+assert.equal(document.getElementById('object-panels').children[1].textContent, malicious);
+assert.equal(document.getElementById('object-panels').children[1].attributes['aria-current'], 'true');
+assert.equal(document.getElementById('interpret-form').hidden, true);
+document.getElementById('refresh-object').listeners.click();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(new URL(requests.at(-1).url, location.href).searchParams.get('panel'), 'ink & light');
+assert.equal(navigation.at(-1).method, 'replaceState');
+location.href = 'https://example.invalid/?object=door&panel=main';
+await events.popstate();
+assert.equal(document.getElementById('object-prose').textContent, 'main');
+assert.equal(new URL(location.href).searchParams.has('panel'), false);
+const draft = { draft: 'retaineddraft', summary: 'Knock', object: 'door', panel: 'ink & light',
+  token: 'private-token', fields: { note: malicious }, canExecute: false, wireJson: '{}' };
+context.showDraft(draft);
+assert.equal(document.getElementById('send-draft').hidden, true);
+assert.equal(document.getElementById('draft-command-row').hidden, true);
+assert.equal(document.getElementById('preview-copy').hidden, false);
+assert.equal(document.getElementById('draft-fields').children[1].textContent, malicious);
+vm.runInContext("state.world.mode = 'local-interactive'; state.uncertain = true;", context);
+location.href = 'https://example.invalid/?object=door&panel=ink%20%26%20light';
+await events.popstate();
+assert.equal(new URL(location.href).searchParams.get('draft'), 'retaineddraft');
+assert.equal(document.getElementById('draft-panel').hidden, false);
+assert.equal(document.getElementById('draft-command').textContent, 'private-token');
+assert.equal(vm.runInContext('state.uncertain', context), true);
+assert.equal(vm.runInContext('state.draft.draft', context), 'retaineddraft');
+const requestCount = requests.length;
+vm.runInContext('state.sending = true', context);
+await context.openObject('door', false, 'main', 'push');
+assert.equal(requests.length, requestCount);
+console.log('Portal panels: selection, refresh, history, safe labels, public copy and uncertain draft preservation passed.');
+
+location.href = 'https://example.invalid/?object=other';
+await events.popstate();
+assert.equal(new URL(location.href).searchParams.get('object'), 'door');
+vm.runInContext("state.sending = false; authoring.uncertain = true; authoring.draft = { draft: 'retained-work' };", context);
+location.href = 'https://example.invalid/?object=door&work=other-work';
+await events.popstate();
+assert.equal(new URL(location.href).searchParams.get('work'), 'retained-work');
+assert.equal(vm.runInContext('authoring.draft.draft', context), 'retained-work');
+assert.equal(requests.some(r => r.url.includes('/api/authoring/draft?draft=other-work')), false);
+
+// Resolve two real route requests in reverse order: late old work must not
+// replace a newer restored draft, its uncertainty, or its URL.
+vm.runInContext("state.sending = false; state.uncertain = false; state.draft = null; state.world = { mode: 'local-interactive', objects: [{id: 'door'}], authoring: {} }; authoring.pending = false; authoring.uncertain = false; authoring.draft = null;", context);
+const workReplies = new Map();
+context.fetch = async (url, options) => {
+  requests.push({ url, options });
+  if (url.startsWith('/api/authoring/draft?')) {
+    const id = new URL(url, location.href).searchParams.get('draft');
+    return new Promise(resolve => workReplies.set(id, () => resolve({ ok: true,
+      json: async () => ({ draft: id, operation: 'compile', canExecute: true }) })));
+  }
+  const value = url.startsWith('/api/object')
+    ? { card: 'door-card', object: 'door', panel: 'main', panels, actions: [] }
+    : { phase: 'prepared' };
+  return { ok: true, json: async () => value };
+};
+location.href = 'https://example.invalid/?object=door&work=old';
+const oldRoute = events.popstate();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(workReplies.has('old'), true);
+location.href = 'https://example.invalid/?object=door&work=new';
+const newRoute = events.popstate();
+await new Promise(resolve => setImmediate(resolve));
+workReplies.get('new')();
+await newRoute;
+assert.equal(vm.runInContext('authoring.draft.draft', context), 'new');
+assert.equal(vm.runInContext('authoring.uncertain', context), true);
+workReplies.get('old')();
+await oldRoute;
+assert.equal(vm.runInContext('authoring.draft.draft', context), 'new');
+assert.equal(vm.runInContext('authoring.uncertain', context), true);
+assert.equal(new URL(location.href).searchParams.get('work'), 'new');
+assert.equal(requests.some(r => r.url === '/api/authoring/status?draft=old'), false);
+
+// A response also loses authority to replace the UI if work starts while it
+// is loading, even when no second route was requested.
+for (const guard of ['pending', 'uncertain', 'preparing']) {
+  vm.runInContext("authoring.pending = false; authoring.uncertain = false; authoring.preparing = false; authoring.draft = { draft: 'kept' };", context);
+  location.href = `https://example.invalid/?object=door&work=delayed-${guard}`;
+  const route = events.popstate();
+  await new Promise(resolve => setImmediate(resolve));
+  vm.runInContext(`authoring.${guard} = true`, context);
+  workReplies.get(`delayed-${guard}`)();
+  await route;
+  assert.equal(vm.runInContext('authoring.draft.draft', context), 'kept');
+  assert.equal(document.getElementById('authoring-alias').textContent, 'work new');
+}
+console.log('Portal delayed authoring responses: newest route and pending/uncertain work remain intact.');

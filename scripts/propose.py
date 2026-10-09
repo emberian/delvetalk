@@ -169,25 +169,31 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
     return results
 
 
+def execution_paths(profile='world'):
+    """Return dependency names without repeatedly reading their bytes."""
+    if profile not in world.PROFILES:
+        raise ValueError('unknown local host profile: ' + str(profile))
+    return tuple(sorted(set(runtime_profile.paths(profile)) | {
+        'scene/projection.py', 'syntaxes/spell_examples.py', 'scripts/propose.py'}))
+
+
 def execution_pin(profile='world'):
     # Byte identity is provenance, not a proof that a binary was built from these sources.
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
-    files = {**runtime_profile.file_hashes(profile),
-             'scene/projection.py': digest((ROOT / 'scene/projection.py').read_bytes()),
-             'syntaxes/spell_examples.py': digest((ROOT / 'syntaxes/spell_examples.py').read_bytes()),
-             'scripts/propose.py': digest(Path(__file__).read_bytes())}
+    files = runtime_profile.hash_paths(execution_paths(profile), root=ROOT)
     identity = {'profile': 'delvetalk-local-v1', 'admissionProfile': profile, 'files': files,
                 'python': list(sys.version_info[:3])}
     return {**identity, 'sha256': digest(translation.canonical(identity))}
 
 
-def propose(syntax, source, scenario_source, *, profile='world'):
+def propose(syntax, source, scenario_source, *, profile='world', modules=None):
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
-    if len(source) > 512 * 1024 or len(scenario_source) > 1024 * 1024:
+    if (modules is None and len(source) > 512 * 1024) or len(scenario_source) > 1024 * 1024:
         raise ValueError('proposal source exceeds 512 KiB or scenarios exceed 1 MiB')
-    artifact = translation.translate(syntax, source)
+    artifact = (translation.translate(syntax, source) if modules is None
+                else translation.translate_modules(syntax, modules))
     if artifact['target'] == 'local-protocol-v1':
         protocol, selection = artifact['lowered'], 'lowered'
     elif artifact['target'] == 'spween-protocol-bundle-v1':

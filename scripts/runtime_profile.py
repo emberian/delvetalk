@@ -68,14 +68,19 @@ def paths(profile, *, manifest=None, root=ROOT):
     return tuple(sorted(set(selected)))
 
 
-def file_hashes(profile, *, root=ROOT):
-    """Read pinned files only; refuse missing paths and escaping symlinks."""
+def hash_paths(names, *, root=ROOT):
+    """Stream each named dependency once for this capture; retain no cache."""
     root = Path(root).resolve()
     result = {}
-    for name in paths(profile, root=root):
+    for name in sorted(set(relative_path(name) for name in names)):
         path = (root / name).resolve()
         if not path.is_relative_to(root):
             raise ValueError('runtime dependency escapes repository: ' + name)
         with path.open('rb') as stream:
             result[name] = hashlib.file_digest(stream, 'sha256').hexdigest()
     return result
+
+
+def file_hashes(profile, *, root=ROOT):
+    """Read pinned files only; refuse missing paths and escaping symlinks."""
+    return hash_paths(paths(profile, root=root), root=root)

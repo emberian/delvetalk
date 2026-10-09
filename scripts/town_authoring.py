@@ -99,10 +99,12 @@ def describe(result):
     if result.get('diagnostics'):
         lines.append('Check details: ' + canonical(result['diagnostics']).decode()[:1800])
     material = result.get('sourceMaterial', {})
-    for key, label in (('source', 'Source'), ('scenarios', 'Test examples')):
-        if key not in material:
-            continue
-        raw = material[key]
+    shown_sources = [(key, label, material[key]) for key, label in
+                     (('source', 'Source'), ('scenarios', 'Test examples')) if key in material]
+    if material.get('format') == desk.source_store.MODULE_MATERIAL:
+        shown_sources = [('module ' + entry['name'], 'Module ' + entry['name'], entry['source'])
+                         for entry in material['modules']] + shown_sources
+    for key, label, raw in shown_sources:
         # This is editable data, never a reply/card delimiter or an instruction.
         display = '| ' + re.sub(r'\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]',
                                 lambda match: match[0] + '| ', raw)
@@ -186,12 +188,7 @@ class TownAuthoring:
             same(build.get(key), value, 'compiler build ' + key)
         same(build['worker']['scripts/desk.py'], job['runtime']['files']['scripts/desk.py'], 'compiler worker')
         material = build.get('sourceMaterial')
-        if not isinstance(material, dict):
-            raise ValueError('compiler build lacks retained exact source material')
-        for name, kind, ref_key in [('source', 'source', 'sourceRef'), ('scenarios', 'scenarios', 'scenariosRef')]:
-            ref = desk.source_store.reference(material[name].encode('utf-8'), kind=kind)
-            bound = job['sourceBindings'][ref_key]
-            same({key: ref[key] for key in bound}, bound, 'compiler retained ' + name)
+        retained_source = desk.source_store.verify_bound_material(job['sourceBindings'], material)
         report = build.get('report')
         if report is None and (build['passed'] or any(d['kind'] == 'scenario-failure' for d in build['diagnostics'])):
             raise ValueError('compiler build lacks its required fixture report')
@@ -200,7 +197,10 @@ class TownAuthoring:
             same(report['id'], digest({k: v for k, v in report.items() if k != 'id'}), 'compiler report identity')
             candidate = report['candidate']
             same(candidate['id'], digest({k: v for k, v in candidate.items() if k != 'id'}), 'reported candidate identity')
-            same(candidate['artifact']['source']['text'], material['source'], 'reported exact source')
+            if 'manifest' in job['sourceBindings']:
+                same(candidate['artifact']['source'], retained_source, 'reported exact modules')
+            else:
+                same(candidate['artifact']['source']['text'], material['source'], 'reported exact source')
             same(candidate['scenarios']['source'], material['scenarios'], 'reported exact scenarios')
             same(candidate['scenarios']['value'], examples.load(material['scenarios'], loads), 'reported scenario values')
             same(candidate['artifact']['translation'], job['sourceBindings']['adapterPin'], 'reported adapter pins')

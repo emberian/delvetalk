@@ -1,7 +1,7 @@
 # Pulling the durable world forward
 
-Construction record, 2026-10-09. The deployed release is `2926fcb`; local interface
-work is checkpointed at `94819c7`. The foundations below are implemented locally and passed joined regression;
+Construction record, 2026-10-09. The deployed release is `2926fcb`; local foundations
+are checkpointed at `2c6e243`. The foundations below are implemented locally and passed joined regression;
 this does not describe deployed capabilities. External message publication remains paused.
 
 ## One system
@@ -46,6 +46,21 @@ is deliberately unsupported and names Mini-specific request facts. Law-held
 state invariants do not establish either source-law binding or behavioral
 substitutability. Source continuation, history continuation and persistence of a
 language evaluation stack are also distinct contracts.
+
+## Connecting the foundations
+
+The next local wave connects sealed peer modules through desks and retained history,
+exposes authored panels in the browser, and archives bounded public town observations.
+It also removes repeated dependency hashing within each capture and consolidates
+bounded subprocess custody. Affected checks and joined journeys pass, including direct and queued desk
+compilation. Review caught and fixed delayed browser restoration and a missing
+module-custody branch. The hosted release remains unchanged.
+
+A native observation witness and an opt-in source context will let authored directories
+admit actual local references without becoming a special room engine. Typed recursive
+collections need a package-local serialization bridge: the existing checker and evaluator
+already handle recursive sums. Keep old plain-data routes and upstream `isData`
+unchanged. Dynamic record keys, arbitrary closures and private read authority are separate.
 
 ## The next semantic decisions
 

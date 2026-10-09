@@ -144,19 +144,22 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
         if len(wire.encode('utf-8')) > 65536: raise ProjectionError('view input exceeds 64 KiB')
         host = 'compiled' if source_view else 'world'
         binary = runtime_profile.PROFILES[host][0]
-        executable = ROOT / '.lake/build/bin' / binary
+        binary_path = '.lake/build/bin/' + binary
+        executable = ROOT / binary_path
         if not executable.is_file(): raise ProjectionError('build ' + binary + ' before projecting')
         pins = runtime_profile.file_hashes(host, root=ROOT) if source_view else None
-        runtime = hashlib.sha256(executable.read_bytes()).hexdigest()
+        runtime = (pins if source_view else runtime_profile.hash_paths([binary_path], root=ROOT))[binary_path]
         if source_view and expected_runtime is not None:
             _assert_source_runtime({'profile': host, 'files': pins}, runtime, expected_runtime)
         result = subprocess.run([str(executable)], input=wire + '\n', text=True,
                                 capture_output=True, timeout=10, cwd=ROOT)
         if result.returncode: raise ProjectionError('Lean view evaluation failed')
         if len(result.stdout.encode('utf-8')) > 1048576: raise ProjectionError('view output exceeds 1 MiB')
-        if hashlib.sha256(executable.read_bytes()).hexdigest() != runtime:
+        after = (runtime_profile.file_hashes(host, root=ROOT) if source_view else
+                 runtime_profile.hash_paths([binary_path], root=ROOT))
+        if after[binary_path] != runtime:
             raise ProjectionError('view runtime changed during evaluation')
-        if source_view and runtime_profile.file_hashes(host, root=ROOT) != pins:
+        if source_view and after != pins:
             raise ProjectionError('view runtime dependencies changed during evaluation')
         response = world.wire_loads(result.stdout)
         if 'error' in response: raise ProjectionError(str(response['error']))

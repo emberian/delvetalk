@@ -6,7 +6,6 @@ import hashlib
 import importlib.util
 import os
 from pathlib import Path
-import signal
 import shutil
 import stat
 import subprocess
@@ -27,6 +26,7 @@ translate = module('desk_translate', 'scripts/translate.py')
 world = module('desk_world', 'scripts/world.py')
 runtime_profile = module('desk_runtime_profile', 'scripts/runtime_profile.py')
 source_store = module('desk_source_store', 'scripts/source_store.py')
+process_custody = module('desk_process_custody', 'scripts/process_custody.py')
 history = module('desk_history', 'scripts/history.py')
 adoption = module('desk_adoption', 'scripts/adoption.py')
 canonical, loads = translate.canonical, translate.load_json
@@ -48,15 +48,15 @@ def is_source_desk_protocol(protocol):
                for path in SOURCE_DESK_PROTOCOL_PATHS)
 
 
+def execution_paths(profile='transactions'):
+    """Return custody dependency names independently from byte hashing."""
+    return tuple(sorted(set(runtime_profile.paths(profile)) | set(SOURCE_DESK_PROTOCOL_PATHS) | {
+        'scripts/desk.py', 'scripts/adoption.py', 'scripts/history.py', 'scripts/source_store.py',
+        'scripts/process_custody.py'}))
+
+
 def execution_profile(profile='transactions'):
-    return {'profile': profile, 'files': {
-        **runtime_profile.file_hashes(profile),
-        **{path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
-           for path in SOURCE_DESK_PROTOCOL_PATHS},
-        'scripts/desk.py': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        'scripts/adoption.py': hashlib.sha256((ROOT / 'scripts/adoption.py').read_bytes()).hexdigest(),
-        'scripts/history.py': hashlib.sha256((ROOT / 'scripts/history.py').read_bytes()).hexdigest(),
-        'scripts/source_store.py': hashlib.sha256((ROOT / 'scripts/source_store.py').read_bytes()).hexdigest()}}
+    return {'profile': profile, 'files': runtime_profile.hash_paths(execution_paths(profile), root=ROOT)}
 
 
 def immutable(path, value):
@@ -154,7 +154,12 @@ def preserve_build_dependencies(directory, artifact):
 
 def proposal_material(proposal, artifact_store=None):
     """Resolve exact bytes only from the explicitly selected local source store."""
-    if isinstance(proposal, dict) and proposal.get('format') == source_store.PROPOSAL:
+    if isinstance(proposal, dict) and proposal.get('format') == source_store.MODULE_PROPOSAL:
+        if artifact_store is None:
+            raise ValueError('module proposal requires an explicit artifact store')
+        source, scenarios = source_store.validate_module_proposal(artifact_store, proposal)
+        bindings = {key: proposal[key] for key in ('syntax', 'manifest', 'scenariosRef', 'adapterPin')}
+    elif isinstance(proposal, dict) and proposal.get('format') == source_store.PROPOSAL:
         if artifact_store is None:
             raise ValueError('source reference proposal requires an explicit artifact store')
         source, scenarios = source_store.validate_proposal(artifact_store, proposal)
@@ -186,10 +191,13 @@ def compile_proposal(payload):
         raw_source, raw_scenarios, bindings = proposal_material(source, payload.get('artifactStore'))
         artifact['sourceBindings'] = bindings
         # Local build custody retains originals even when compilation fails.
-        artifact['sourceMaterial'] = {'source': raw_source.decode('utf-8'), 'scenarios': raw_scenarios.decode('utf-8')}
+        modules = raw_source if isinstance(raw_source, dict) else None
+        artifact['sourceMaterial'] = ({**modules, 'scenarios': raw_scenarios.decode('utf-8')} if modules is not None
+                                      else {'source': raw_source.decode('utf-8'), 'scenarios': raw_scenarios.decode('utf-8')})
         if not isinstance(state['migration'], dict):
             raise ValueError('migration must be a complete state object')
-        report = proposal.propose(source['syntax'], raw_source, raw_scenarios, profile=profile)
+        report = proposal.propose(source['syntax'], b'' if modules is not None else raw_source,
+                                  raw_scenarios, profile=profile, modules=modules)
         if (bindings['adapterPin'] is not None
                 and canonical(report['candidate']['artifact']['translation']) != canonical(bindings['adapterPin'])):
             raise ValueError('source adapter changed during compilation')
@@ -220,41 +228,24 @@ def bounded_compile(root, *, timeout=45, profile='transactions', artifact_store=
         failed['proposal'] = proposed
         if proposed.get('format') == source_store.PROPOSAL:
             failed['sourceBindings'] = {key: proposed[key] for key in ('syntax', 'sourceRef', 'scenariosRef', 'adapterPin')}
-    def limits():
-        import resource
-        resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024 * 1024, 8 * 1024 * 1024))
-    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-        process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '_worker'],
-                                   stdin=subprocess.PIPE, stdout=output, stderr=errors,
-                                   start_new_session=True, preexec_fn=limits)
-        def terminate_group():
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
-            if process.stdin is not None:
-                process.stdin.close()
-        try:
-            process.communicate(canonical({'root': root, 'profile': profile,
-                                           'artifactStore': str(Path(artifact_store).resolve()) if artifact_store is not None else None}),
-                                timeout=timeout)
-        except subprocess.TimeoutExpired:
-            terminate_group()
-            return {**failed, 'diagnostics': [{'kind': 'worker-timeout', 'seconds': timeout}]}
-        except BaseException:
-            terminate_group()
-            raise
-        output.seek(0)
-        raw = output.read(8 * 1024 * 1024 + 1)
-        if process.returncode or len(raw) > 8 * 1024 * 1024:
-            terminate_group()
-            return {**failed, 'diagnostics': [{'kind': 'worker-failure', 'exit': process.returncode}]}
-        try:
-            return loads(raw)
-        except (ValueError, UnicodeError):
-            return {**failed, 'diagnostics': [{'kind': 'worker-malformed-output'}]}
+        elif proposed.get('format') == source_store.MODULE_PROPOSAL:
+            failed['sourceBindings'] = {key: proposed[key] for key in ('syntax', 'manifest', 'scenariosRef', 'adapterPin')}
+    try:
+        process = process_custody.run([sys.executable, str(Path(__file__).resolve()), '_worker'],
+            input=canonical({'root': root, 'profile': profile,
+                             'artifactStore': str(Path(artifact_store).resolve()) if artifact_store is not None else None}),
+            timeout=timeout, cpu_seconds=30, stdout_limit=8 * 1024 * 1024,
+            stderr_limit=8 * 1024 * 1024, file_limit=8 * 1024 * 1024)
+    except subprocess.TimeoutExpired:
+        return {**failed, 'diagnostics': [{'kind': 'worker-timeout', 'seconds': timeout}]}
+    except process_custody.OutputLimitExceeded:
+        return {**failed, 'diagnostics': [{'kind': 'worker-output-limit'}]}
+    if process.returncode:
+        return {**failed, 'diagnostics': [{'kind': 'worker-failure', 'exit': process.returncode}]}
+    try:
+        return loads(process.stdout)
+    except (ValueError, UnicodeError):
+        return {**failed, 'diagnostics': [{'kind': 'worker-malformed-output'}]}
 
 
 class Desk:
@@ -298,7 +289,10 @@ class Desk:
         retained = self.retained_reply(request)
         if retained is not None:
             return retained
-        source_store.validate_proposal(self.artifact_store, proposal)
+        if isinstance(proposal, dict) and proposal.get('format') == source_store.MODULE_PROPOSAL:
+            source_store.validate_module_proposal(self.artifact_store, proposal)
+        else:
+            source_store.validate_proposal(self.artifact_store, proposal)
         source_store.preserve_dependencies(self.artifact_store, proposal)
         return self.exchange(request)
 
@@ -348,7 +342,7 @@ class Desk:
         if entry.get('executionProfile') != execution_profile(self.profile):
             raise ValueError('pending desk admission runtime pins changed or missing')
         proposal = entry['inputs']['expected']['state']['proposal']
-        if proposal.get('format') == source_store.PROPOSAL:
+        if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
             proposal_material(proposal, self.artifact_store)
         build = load_artifact(self.artifact_store, entry['request']['input']['artifact'])
         preserve_build_dependencies(self.artifact_store, build)
@@ -362,7 +356,7 @@ class Desk:
         if entry is None:
             profile = execution_profile(self.profile)
             options = {'profile': self.profile}
-            if expected['state']['proposal'].get('format') == source_store.PROPOSAL:
+            if expected['state']['proposal'].get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
                 proposal_material(expected['state']['proposal'], self.artifact_store)
                 options['artifact_store'] = self.artifact_store
             entry = self.prepare_check(inputs, bounded_compile(expected, **options), profile)

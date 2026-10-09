@@ -192,11 +192,36 @@ class Portal:
                 'interpretation': 'model-assisted' if self.proposer else 'copyable-tokens',
                 'defaultObject': bootstrap.default_object(self.metadata),
                 'authoring': None if self.public else self.authoring.catalog(snapshot),
-                'objects': [{'id': name, 'title': name, 'version': root['version'],
+                'objects': [{'id': name, 'title': self.object_label(name, root), 'version': root['version'],
                              'href': '/api/object?object=' + quote(name, safe='')}
                             for name, root in snapshot['objects'].items()],
                 'scope': ('Public inspection and request export. Preview aliases expire; no action is submitted.'
                           if self.public else 'Local custody. Delve identity and publication are separate.')}
+
+    @staticmethod
+    def object_label(object_id, root):
+        # A declared name is presentation, never an inferred identity or authority.
+        name = root.get('protocol', {}).get('name')
+        return name if isinstance(name, str) and 0 < len(name) <= 256 else object_id
+
+    @staticmethod
+    def panels(root):
+        declared = root['protocol'].get('viewPanels', [])
+        if not isinstance(declared, list) or len(declared) > 8:
+            raise ValueError('viewPanels must be an array of at most eight panels')
+        result, seen = [{'id': 'main', 'label': 'Overview'}], set()
+        for entry in declared:
+            if (not isinstance(entry, dict) or set(entry) != {'id', 'label'}
+                    or any(not isinstance(entry[k], str) or not entry[k]
+                           or len(entry[k].encode('utf-8')) > 128 for k in entry)
+                    or entry['id'] in seen):
+                raise ValueError('Invalid or duplicate declared view panel')
+            seen.add(entry['id'])
+            if entry['id'] == 'main':
+                result[0] = dict(entry)
+            else:
+                result.append(dict(entry))
+        return result
 
     def _read(self, category, identity):
         if not isinstance(identity, str) or not IDENTITY.fullmatch(identity):
@@ -263,7 +288,19 @@ class Portal:
         snapshot = self.snapshot()
         if object_id not in snapshot['objects']:
             raise ValueError('Unknown object')
-        view = self._view(snapshot['objects'][object_id], object_id, panel)
+        root = snapshot['objects'][object_id]
+        panel_warning = None
+        try:
+            panels = self.panels(root)
+        except ValueError as error:
+            panels, panel_warning = [{'id': 'main', 'label': 'Overview'}], str(error)
+        if panel not in {item['id'] for item in panels}:
+            raise ValueError('Unknown declared panel; read the object overview')
+        view = self._view(root, object_id, panel)
+        if view['mode'] != 'projection':
+            panels = [{'id': 'main', 'label': 'Overview'}]
+            if panel != 'main':
+                raise ValueError('The declared panel has no available pure view')
         try:
             card = affordances.card(view)
         except affordances.AffordanceError as error:
@@ -271,6 +308,9 @@ class Portal:
                     'version': view['root']['version'], 'mode': view['mode'],
                     'title': object_id, 'prose': 'Action metadata is unsupported. Exact source, state and law remain available in Look inside.',
                     'actions': [], 'unsupported': str(error)}
+        card.update(panel=panel, panels=panels)
+        if panel_warning:
+            card['panelWarning'] = panel_warning
         identity = self._store('cards', {'view': view, 'card': card,
             'historyLength': len(snapshot['receipts']), 'runtime': self.runtime})
         return self.card(identity)
@@ -296,7 +336,7 @@ class Portal:
         card.update(self.object_ref(card['object']))
         card.update(card=identity, links={'self': '/api/card?card=' + identity,
             'details': '/api/detail?card=' + identity,
-            'refresh': '/api/object?object=' + quote(card['object'], safe=''),
+            'refresh': '/api/object?object=' + quote(card['object'], safe='') + '&panel=' + quote(card.get('panel', 'main'), safe=''),
             'prepare': '/api/prepare', 'interpret': '/api/interpret'})
         for action in card['actions']:
             action['token'] = 'do ' + identity + ' ' + action['id']
@@ -329,7 +369,7 @@ class Portal:
         if len(canonical(request)) > MAX_BODY:
             raise ValueError('Exact request exceeds the host envelope; a smaller program/view is required')
         wire = {key: value for key, value in request.items() if key not in ('principal', 'intent')}
-        draft = {'card': payload['card'], 'action': payload['action'], 'fields': payload.get('fields', {}),
+        draft = {'panel': saved['card'].get('panel', 'main'), 'card': payload['card'], 'action': payload['action'], 'fields': payload.get('fields', {}),
                  'request': request, 'runtime': saved['runtime'], 'localPrincipal': self.principal,
                  'wire': wire, 'reply': None}
         if self.public:
@@ -348,7 +388,7 @@ class Portal:
         action = ({'label': saved['presentation']['summary'], 'token': saved['presentation']['token']}
                   if self.public else next(a for a in self.card(saved['card'])['actions'] if a['id'] == saved['action']))
         suffix = (' ' + canonical(saved['fields']).decode()) if saved['fields'] else ''
-        result = {'draft': identity, 'summary': action['label'], 'command': saved['request']['command'],
+        result = {'draft': identity, 'panel': saved.get('panel', 'main'), 'fields': saved['fields'], 'summary': action['label'], 'command': saved['request']['command'],
                 'object': saved['request']['object'], 'version': saved['request']['expected']['version'],
                 'canExecute': self.interactive and saved['localPrincipal'] == self.principal,
                 'token': action['token'] + suffix, 'wire': saved['wire'],

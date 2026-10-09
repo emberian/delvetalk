@@ -2,7 +2,7 @@
 
 // World text is data: no HTML insertion, source evaluation, or generated URLs.
 const $ = id => document.getElementById(id);
-const state = { world: null, card: null, draft: null, detail: null, generation: 0, sending: false, uncertain: false };
+const state = { world: null, card: null, draft: null, detail: null, generation: 0, routeGeneration: 0, location: location.href, sending: false, uncertain: false };
 const authoring = { draft: null, pending: false, preparing: false, uncertain: false, source: null, sourceText: null, rawFiles: {}, status: null };
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
 function element(tag, className, content) {
@@ -72,9 +72,10 @@ function renderObjects() {
     symbol.setAttribute('aria-hidden', 'true');
     const label = element('span');
     label.append(element('strong', '', object.title || object.id));
-    label.append(element('small', '', object.version == null ? 'Open object' : `Version ${text(object.version)}`));
+    label.append(element('small', '', object.title && object.title !== object.id ? object.id
+      : object.version == null ? 'Open object' : `Version ${text(object.version)}`));
     button.append(symbol, label);
-    button.addEventListener('click', () => openObject(object.id, true));
+    button.addEventListener('click', () => openObject(object.id, true, 'main', 'push'));
     $('objects').append(button);
   }
   if (!$('objects').childElementCount) $('objects').append(element('p', 'muted', 'No objects here yet.'));
@@ -91,11 +92,12 @@ async function loadWorld() {
     ? 'Every action begins as a draft.' : 'Explore, inspect and prepare a draft.';
   $('preview-scope').hidden = !preview;
   const minutes = Math.ceil((world.custody?.ttlSeconds || 900) / 60);
-  $('preview-scope').textContent = `A public window into this world. Preview aliases expire after about ${minutes} minutes and may be cleared sooner. Copy or download exact proposal JSON before leaving; actions cannot be sent here.`;
+  $('preview-scope').textContent = `Explore this world and preview its offered actions. Nothing you do here changes the world or posts to town. Previews last up to ${minutes} minutes; copy a summary to keep your idea. Exact request data is available separately.`;
   $('repository-export').hidden = preview || world.capabilities?.repository === false;
   const assisted = world.interpretation === 'model-assisted';
   $('interpret-label').textContent = assisted ? 'Or say what you have in mind' : 'Or paste an action token';
   $('intent-text').placeholder = assisted ? 'Describe a next step…' : 'do CARD ACTION';
+  $('interpret-form').hidden = preview;
   $('interpret-help').textContent = assisted
     ? 'A suggestion is a draft. You decide whether to send it.'
     : 'Copied tokens become proposals here. You decide whether to send them.';
@@ -108,26 +110,32 @@ function clearRepositoryRecord() {
   $('repository-json').textContent = '';
   $('repository-status').textContent = '';
 }
-function clearDraft() {
+function writeLocation(url, push = false) {
+  history[push ? 'pushState' : 'replaceState'](null, '', url);
+  state.location = String(url);
+}
+function clearDraft(updateUrl = true) {
   state.draft = null;
   state.uncertain = false;
   clearRepositoryRecord();
   $('draft-panel').hidden = true;
   $('draft-state').textContent = '';
+  if (!updateUrl) return;
   const url = new URL(location.href);
   url.searchParams.delete('draft');
-  history.replaceState(null, '', url);
+  writeLocation(url);
 }
-async function openObject(id, focus = false) {
+async function openObject(id, focus = false, panel = 'main', navigation = 'replace') {
   if (state.sending) return notice('Wait for the send result before replacing this reading.');
   const generation = ++state.generation;
+  ++state.routeGeneration;
   notice('');
   try {
-    const card = await api(`/api/object?object=${encodeURIComponent(id)}&panel=main`);
-    if (generation !== state.generation) return;
+    const card = await api(`/api/object?object=${encodeURIComponent(id)}&panel=${encodeURIComponent(panel)}`);
+    if (generation !== state.generation || state.sending || authoring.pending) return;
     state.card = card;
     state.detail = null;
-    if (!state.uncertain) clearDraft();
+    if (!state.uncertain) clearDraft(false);
     $('object-title').textContent = card.title || id;
     $('object-prose').textContent = text(card.prose);
     $('version').textContent = card.version == null ? '' : `v${text(card.version)}`;
@@ -143,19 +151,44 @@ async function openObject(id, focus = false) {
     $('reference-status').hidden = !card.referenceStatus;
     $('unsupported-status').textContent = text(card.unsupported);
     $('unsupported-status').hidden = !card.unsupported;
-    $('interpret-form').hidden = false;
+    $('interpret-form').hidden = state.world.mode === 'public-preview';
     $('intent-text').value = '';
     $('interpret-result').replaceChildren();
+    renderPanels(card);
     renderActions(card);
+    if (card.panel === 'main') {
+      const listed = state.world.objects.find(object => object.id === id);
+      if (listed && card.title) listed.title = card.title;
+    }
     $('object-children').replaceChildren();
     $('object-children').hidden = true;
     renderObjects();
     const url = new URL(location.href);
     url.searchParams.set('object', id);
-    history.replaceState(null, '', url);
+    if (card.panel && card.panel !== 'main') url.searchParams.set('panel', card.panel);
+    else url.searchParams.delete('panel');
+    if (state.uncertain && state.draft) url.searchParams.set('draft', state.draft.draft);
+    else url.searchParams.delete('draft');
+    writeLocation(url, navigation === 'push');
     document.title = `${card.title || id} · DelveTalk`;
     if (focus) $('object-card').focus({ preventScroll: true });
+    return true;
   } catch (error) { if (generation === state.generation) notice(error.message, true); }
+}
+function renderPanels(card) {
+  const nav = $('object-panels');
+  nav.replaceChildren();
+  const panels = card.panels || [{ id: 'main', label: 'Overview' }];
+  nav.hidden = panels.length < 2;
+  for (const panel of panels) {
+    const button = element('button', 'panel-link', panel.label);
+    button.type = 'button';
+    button.setAttribute('aria-current', String(panel.id === (card.panel || 'main')));
+    button.addEventListener('click', () => openObject(card.object, false, panel.id, 'push'));
+    nav.append(button);
+  }
+  $('panel-warning').textContent = card.panelWarning || '';
+  $('panel-warning').hidden = !card.panelWarning;
 }
 function fieldInput(field, actionId, index) {
   const label = element('label', 'field-label');
@@ -251,7 +284,7 @@ function renderActions(card) {
     const form = element('form', 'action');
     const top = element('div', 'action-top');
     const label = element('p', 'action-label', action.label || action.id);
-    const submit = element('button', 'secondary', 'Prepare');
+    const submit = element('button', 'secondary', state.world?.mode === 'public-preview' ? 'Preview' : 'Prepare');
     submit.type = 'submit';
     const inspectOnly = action.inspectOnly === true || action.available === false;
     submit.disabled = inspectOnly;
@@ -291,7 +324,7 @@ function renderActions(card) {
       } catch (error) { notice(error.message, true); }
     });
     tokenRow.append(code, copyButton);
-    form.append(tokenRow);
+    if (state.world?.mode !== 'public-preview') form.append(tokenRow);
     controls.forEach(({ input }) => input.addEventListener('input', () => input.setCustomValidity('')));
     form.addEventListener('submit', event => {
       event.preventDefault();
@@ -316,7 +349,16 @@ function showDraft(draft, restored = false) {
   state.draft = draft;
   clearRepositoryRecord();
   state.uncertain = restored && draft.outcome == null && state.world.mode !== 'public-preview';
+  const preview = state.world.mode === 'public-preview';
+  $('draft-title').textContent = preview ? 'Your action preview' : 'A proposed action';
   $('draft-summary').textContent = text(draft.summary);
+  $('draft-fields').replaceChildren();
+  for (const [name, value] of Object.entries(draft.fields || {})) {
+    $('draft-fields').append(element('dt', '', name), element('dd', '', text(value)));
+  }
+  $('preview-copy').hidden = !preview;
+  $('draft-command-row').hidden = preview;
+  $('send-draft').hidden = preview;
   $('draft-target').textContent = draft.object
     ? `${text(draft.object)}${draft.version == null ? '' : ` · read at version ${text(draft.version)}`}` : '';
   $('draft-absence').hidden = !draft.absence?.length;
@@ -333,7 +375,7 @@ function showDraft(draft, restored = false) {
   $('send-draft').disabled = !canSend;
   $('send-draft').textContent = settled ? 'Outcome retained' : restored ? 'Send / retry saved draft' : 'Send action';
   $('draft-help').textContent = state.world.mode === 'public-preview'
-    ? 'This temporary preview cannot send actions. Its alias will expire. Open the exact proposal below and copy or download the JSON to keep it.'
+    ? 'This is an unsent preview, not a town reply. Copy a summary to keep your idea. The exact request is optional technical detail; sending requires an authenticated receiving route.'
     : settled
     ? 'This draft already has a retained receipt. Read the object again before preparing a new action.'
     : canSend
@@ -345,7 +387,7 @@ function showDraft(draft, restored = false) {
       : 'This proposal cannot be sent here. You can copy it and inspect its exact details.';
   const url = new URL(location.href);
   url.searchParams.set('draft', draft.draft);
-  history.replaceState(null, '', url);
+  writeLocation(url);
   $('draft-panel').hidden = false;
   $('draft-panel').focus({ preventScroll: true });
   $('draft-panel').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'nearest' });
@@ -434,9 +476,16 @@ $('refresh-world').addEventListener('click', () => busy($('refresh-world'), '…
 }));
 $('refresh-object').addEventListener('click', () => {
   if (state.sending) return notice('Wait for the send result before replacing this reading.');
-  if (state.card) openObject(state.card.object);
+  if (state.card) openObject(state.card.object, false, state.card.panel || 'main');
 });
 $('dismiss-draft').addEventListener('click', clearDraft);
+$('copy-preview').addEventListener('click', () => {
+  if (!state.draft) return;
+  const lines = ['Unsent action preview', state.draft.summary, `Object: ${state.draft.object}`,
+    ...Object.entries(state.draft.fields || {}).map(([key, value]) => `${key}: ${text(value)}`),
+    'This summary is not an executable town reply.'];
+  copy(lines.join('\n'), $('copy-preview'));
+});
 $('copy-draft').addEventListener('click', () => copy($('draft-command').textContent, $('copy-draft')));
 $('copy-wire').addEventListener('click', () => copy($('draft-wire').textContent, $('copy-wire')));
 $('download-wire').addEventListener('click', () => {
@@ -521,7 +570,7 @@ function authoringUrl(id) {
   const url = new URL(location.href);
   if (id) url.searchParams.set('work', id);
   else url.searchParams.delete('work');
-  history.replaceState(null, '', url);
+  writeLocation(url);
 }
 function clearAuthoring() {
   if (authoring.pending) return;
@@ -679,29 +728,60 @@ $('copy-authoring').addEventListener('click', () => copy($('authoring-exact').te
 $('send-authoring').addEventListener('click', () => authoringAction('execute'));
 $('run-authoring').addEventListener('click', () => authoringAction('run'));
 $('refresh-authoring').addEventListener('click', () => busy($('refresh-authoring'), 'Checking…', checkAuthoringStatus));
-(async () => {
+async function openLocation() {
   try {
+    if (state.sending || authoring.pending) {
+      writeLocation(state.location);
+      return notice('Wait for the send result before navigating.');
+    }
+    const routeGeneration = ++state.routeGeneration;
     const requestedParams = new URL(location.href).searchParams;
     const requested = requestedParams.get('object');
     const savedDraftId = requestedParams.get('draft');
     const workId = requestedParams.get('work');
-    const world = await loadWorld();
-    let savedDraft = null;
+    if (authoring.uncertain && authoring.draft && workId !== authoring.draft.draft) {
+      const url = new URL(location.href);
+      url.searchParams.set('work', authoring.draft.draft);
+      writeLocation(url);
+    }
+    const world = state.world;
+    let savedDraft = state.uncertain ? state.draft : null;
     let draftError = null;
-    if (savedDraftId) {
+    if (savedDraftId && !state.uncertain) {
       try { savedDraft = await api(`/api/draft?draft=${encodeURIComponent(savedDraftId)}`); }
       catch (error) { draftError = error; }
     }
+    if (routeGeneration !== state.routeGeneration) return;
     const id = (world.objects || []).find(object => object.id === requested)?.id
       || savedDraft?.object || world.defaultObject || world.objects?.[0]?.id;
-    if (id) await openObject(id);
+    const panel = requestedParams.get('panel') || (savedDraft?.object === id ? savedDraft.panel : null) || 'main';
+    if (id && !await openObject(id, false, panel)) return;
     if (savedDraft) showDraft(savedDraft, true);
     else if (draftError) notice(`The saved draft could not be opened: ${draftError.message}`, true);
-    if (workId && world.authoring && world.capabilities?.authoring !== false) {
+    if (workId && !authoring.uncertain && world.authoring && world.capabilities?.authoring !== false) {
+      // openObject advances the route generation. Capture its winning route,
+      // then recheck after loading: a newer route or local work may now own the UI.
+      const winningRoute = state.routeGeneration;
+      const previousWork = authoring.draft;
+      let restoredWork;
+      const mayRestore = () => winningRoute === state.routeGeneration && !state.sending
+        && !authoring.pending && !authoring.preparing && !authoring.uncertain
+        && authoring.draft === previousWork;
       try {
-        showAuthoringDraft(await api(`/api/authoring/draft?draft=${encodeURIComponent(workId)}`), true);
+        restoredWork = await api(`/api/authoring/draft?draft=${encodeURIComponent(workId)}`);
+        if (!mayRestore()) return;
+        showAuthoringDraft(restoredWork, true);
         await checkAuthoringStatus();
-      } catch (error) { notice(`The saved source desk proposal could not be opened: ${error.message}`, true); }
+      } catch (error) {
+        if (mayRestore() || (winningRoute === state.routeGeneration
+            && authoring.draft === restoredWork && !authoring.pending))
+          notice(`The saved source desk proposal could not be opened: ${error.message}`, true);
+      }
     }
-  } catch (error) { notice(error.message, true); $('mode').textContent = 'World unavailable'; }
+  } catch (error) { notice(error.message, true); }
+}
+window.addEventListener('popstate', openLocation);
+(async () => {
+  try { await loadWorld(); await openLocation(); }
+  catch (error) { notice(error.message, true); $('mode').textContent = 'World unavailable'; }
 })();

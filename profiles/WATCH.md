@@ -15,3 +15,48 @@ Private state defaults to `~/claude_state/delvetalk/watch`; override with `--sta
 Exit: 0 success, 1 partial-source errors, 2 local/configuration failure; truncation alone succeeds. Scheduling belongs to callers: notify meaningful changes/actionable failures, stay quiet otherwise.
 
 [Implementation](../scripts/watch.py), [deterministic coverage/retention tests](../conformance/test_watch.py).
+
+## Private read archive
+
+Every scan now retains the complete fetched public AppView responses in
+`STATE/archive` (override with `--archive-state`). This includes unrelated feed
+rows and the full returned anchor thread, not only the watch's selected posts.
+`captures/<sha256>.json` identifies endpoint, parameters and raw response content;
+overlapping identical captures share a file. Each scan has a separately retained
+`manifests/<run-id>.json` with per-request progress, observed URI/CID/record hashes,
+coverage, errors and byte/request bounds. The report names `archiveManifest`.
+Existing observation identities, index and triage state keep their meaning.
+
+Archive transport accepts only the watch's three public AppView GET endpoints.
+It accepts no tokens or headers, stores no credentials, and records error classes
+rather than transport messages. Captures are **observed AppView testimony**, not
+independently verified CIDs, signatures, repository commits or proof of custody.
+No incoming content executes or confers authority. Publication remains paused.
+
+For a bounded historical feed crawl, use the same HTTP helper through:
+
+```sh
+python3 scripts/town_archive.py --pages 3
+```
+
+Default custody is `~/claude_state/delvetalk/watch/archive`; `--state` overrides it.
+The separate `backfill.json` cursor advances only after a raw capture is durable.
+Rerunning resumes it; a completed backfill performs no more requests. Continuous
+watch scans always start at the head and do not consume this cursor. A crash leaves
+an unfinished manifest; replay may repeat a page, safely deduplicated by capture
+identity. Partial failure preserves prior pages and the next cursor. A cursor is
+an AppView pagination hint, not a snapshot or completeness guarantee; late arrivals
+and historical gaps remain possible. Keep dated bounds and thread truncation when
+making claims about coverage.
+
+Each run permits at most 20 backfill pages, or the configured watch pages plus one
+thread request, and at most 64 MiB of retained encoded captures. This bounds archive storage per
+run, not the underlying HTTP helper’s response memory usage. A capture exceeding the byte
+bound is explicitly unretained and the source reports failure. These are per-run
+bounds, not a total disk quota. Nothing silently deletes historical captures,
+manifests, observations or other sessions' files. Retention pruning and scheduling
+require separate decisions. This is a private partial read mirror, not a PDS, town
+server or automatic activity receiver.
+
+[Archive implementation](../scripts/town_archive.py),
+[restart/overlap/failure tests](../conformance/test_town_archive.py).

@@ -9,9 +9,10 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('watch_delve', ROOT / 'scripts/delve.py')
-delve = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(delve)
+spec = importlib.util.spec_from_file_location('watch_archive', ROOT / 'scripts/town_archive.py')
+town_archive = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(town_archive)
+delve = town_archive.delve
 LABEL = 'livedelvetalk.delve.town'
 FEED = 'at://did:plc:qzqct2rrq4u2gmy5g3mjxske/town.delve.feed.generator/town'
 ANCHOR = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxen3fdeo224'
@@ -32,7 +33,7 @@ def scan(state=DEFAULT_STATE, **kwargs):
         return scan_locked(state, **kwargs)
 
 
-def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=None):
+def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=None, archive_state=None):
     if not 1 <= feed_pages <= 20 or not 1 <= search_pages <= 20:
         raise ValueError('page bounds must be 1..20')
     delve.post_uri(anchor)
@@ -41,7 +42,8 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
     index = json.loads(path.read_text()) if path.exists() else {'format': 'delvetalk-watch-index-v1', 'posts': {}}
     if index.get('format') != 'delvetalk-watch-index-v1' or not isinstance(index.get('posts'), dict):
         raise ValueError('unsupported watch index')
-    http = request or delve.HTTP()
+    http = town_archive.Archive(archive_state or state / 'archive', request,
+                                max_requests=feed_pages + search_pages + 1)
     report = {'format': 'delvetalk-watch-v1', 'startedAt': stamp(), 'label': LABEL,
               'scope': 'literal text label and anchor context; no account resolution or admission',
               'coverage': {}, 'new': [], 'changed': [], 'conflicts': [], 'errors': []}
@@ -165,6 +167,7 @@ def scan_locked(state, *, feed_pages=3, search_pages=1, anchor=ANCHOR, request=N
             index['posts'][uri] = {'cid': item['cid'], 'contentSha256': item['contentSha256'],
                                  'observation': identity, 'lastSeenAt': report['startedAt']}
         report.update(finishedAt=stamp(), observations=len(found), retainedPosts=len(index['posts']))
+        report['archiveManifest'] = http.finish(report['coverage'], report['errors'])
         delve.save(path, index)
         delve.save(state / 'latest-report.json', report)
     return report
@@ -176,9 +179,10 @@ def main():
     parser.add_argument('--feed-pages', type=int, default=3)
     parser.add_argument('--search-pages', type=int, default=1)
     parser.add_argument('--anchor', default=ANCHOR)
+    parser.add_argument('--archive-state', help='private raw-response archive; default STATE/archive')
     args = parser.parse_args()
     try:
-        report = scan(args.state, feed_pages=args.feed_pages, search_pages=args.search_pages, anchor=args.anchor)
+        report = scan(args.state, feed_pages=args.feed_pages, search_pages=args.search_pages, anchor=args.anchor, archive_state=args.archive_state)
         print(json.dumps(report, ensure_ascii=False))
         return 0 if not report['errors'] else 1
     except (ValueError, OSError, delve.Failure) as error:

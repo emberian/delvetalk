@@ -64,17 +64,28 @@ def closure_paths(registry, adapter, validator, *, root=ROOT, runtime_manifest=N
 def closure_files(registry, adapter, validator, *, root=ROOT):
     """Hash the shared closure, refusing dependencies outside the repository."""
     root = Path(root).resolve()
-    files = {}
-    for name in closure_paths(registry, adapter, validator, root=root):
-        path = (root / name).resolve()
-        if not path.is_relative_to(root):
-            raise ValueError('adapter closure must stay inside the repository')
-        files[name] = digest(path.read_bytes())
-    return files
+    spec = importlib.util.spec_from_file_location('closure_runtime_profile', root / 'scripts/runtime_profile.py')
+    runtime = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runtime)
+    return runtime.hash_paths(closure_paths(registry, adapter, validator, root=root), root=root)
 
 
 def translate(syntax, raw, registry_path=None):
     source = raw.decode('utf-8')  # No newline normalization, including CRLF/BOM.
+    return _translate(syntax, source, {'encoding': 'utf-8', 'text': source, 'sha256': digest(raw)}, registry_path)
+
+
+def translate_modules(syntax, material, registry_path=None):
+    """Explicit sealed assembly path; raw text never selects this variant."""
+    import source_store
+    source_store.validate_module_material(material)
+    if syntax != 'objective-bend-spell@2':
+        raise ValueError('sealed modules require objective-bend-spell@2')
+    modules = [{'name': entry['name'], 'source': entry['source']} for entry in material['modules']]
+    return _translate(syntax, modules, material, registry_path, modules=True)
+
+
+def _translate(syntax, source, source_identity, registry_path=None, *, modules=False):
     registry_path = registry_path or ROOT / 'syntaxes/registry.json'
     registry_bytes = Path(registry_path).read_bytes()
     registry = load_json(registry_bytes)
@@ -94,7 +105,12 @@ def translate(syntax, raw, registry_path=None):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return getattr(module, entry['entry'])(value)
-    lowered = invoke(adapter, source)
+    selected = adapter
+    if modules:
+        if not isinstance(adapter.get('modulesEntry'), str):
+            raise ValueError('adapter has no reviewed ordered-module entry')
+        selected = {**adapter, 'entry': adapter['modulesEntry']}
+    lowered = invoke(selected, source)
     invoke(validator, lowered)
     lowered_bytes = canonical(lowered)  # Also rejects nonfinite/surrogate output.
     if 'runtimeProfile' in adapter and (Path(registry_path).read_bytes() != registry_bytes
@@ -103,7 +119,7 @@ def translate(syntax, raw, registry_path=None):
     identity = {'syntax': syntax, 'adapter': adapter, 'validator': validator,
                 'registry_sha256': digest(registry_bytes), 'files': files}
     return {'format': 'delvetalk-lowered-v1', 'syntax': syntax,
-            'source': {'encoding': 'utf-8', 'text': source, 'sha256': digest(raw)},
+            'source': load_json(canonical(source_identity)),
             'translation': {**identity, 'pin': digest(canonical(identity))},
             'target': adapter['target'], 'lowered': lowered,
             'lowered_sha256': digest(lowered_bytes)}

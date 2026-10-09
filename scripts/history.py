@@ -209,10 +209,8 @@ def lowered_protocol(artifact, bundle):
     """Check source/provenance integrity without executing its claimed adapter."""
     exact(artifact, ['format', 'syntax', 'source', 'translation', 'target', 'lowered', 'lowered_sha256'], 'lowering artifact')
     source = artifact['source']
-    exact(source, ['encoding', 'text', 'sha256'], 'lowering source')
-    if (source['encoding'] != 'utf-8' or not isinstance(source['text'], str)
-            or hashlib.sha256(source['text'].encode('utf-8')).hexdigest() != source['sha256']):
-        raise ValueError('lowering source digest mismatch')
+    import source_store
+    source_store.validate_translation_source(source)
     translation = artifact['translation']
     exact(translation, ['syntax', 'adapter', 'validator', 'registry_sha256', 'files', 'pin'], 'translation pin')
     if translation['syntax'] != artifact['syntax'] or translation['pin'] != digest({

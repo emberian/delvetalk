@@ -44,10 +44,12 @@ world:
 	python3 conformance/test_state_invariant.py
 	python3 conformance/test_file_custody.py
 	python3 conformance/test_runtime_profile.py
+	python3 conformance/test_runtime_hashing.py
 	python3 conformance/test_convergence.py
 	python3 conformance/test_game_table.py
 	python3 conformance/test_table_journey.py
 	python3 conformance/test_table_participant.py
+	python3 conformance/test_automatafl_companion.py
 	python3 conformance/test_desk.py
 	python3 conformance/test_desk_profiles.py
 	python3 conformance/test_projection.py
@@ -74,7 +76,9 @@ syntax:
 	python3 conformance/test_adapter_runtime_pins.py
 delve:
 	python3 conformance/test_watch.py
+	python3 conformance/test_town_archive.py
 	python3 conformance/test_worker.py
+	python3 conformance/test_process_custody.py
 	python3 conformance/test_transaction_intake.py
 	python3 conformance/test_allocation_receiving.py
 	python3 conformance/test_delve.py
@@ -98,6 +102,8 @@ delve:
 	python3 conformance/test_obend_menu.py
 	python3 conformance/test_obend_object.py
 	python3 conformance/test_stateful_authoring.py
+	python3 conformance/test_peer_layers.py
+	python3 conformance/test_module_desk.py
 	python3 conformance/test_spell_examples.py
 	python3 conformance/test_spween_migration.py
 	python3 conformance/test_service.py
@@ -124,6 +130,7 @@ portal:
 	python3 conformance/test_authoring.py
 	python3 conformance/test_submission.py
 	python3 conformance/test_portal_public.py
+	python3 conformance/test_portal_panels.py
 	node --check portal/static/app.js
 	node conformance/test_portal_forms.mjs
 check: build worker-resources scene-build capsules core typed packages world wiki syntax delve proposals scene portal

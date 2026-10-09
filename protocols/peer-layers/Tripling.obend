@@ -1,0 +1,4 @@
+edition ObjectiveBend 1
+import ./Base.obend as Base
+extension DoubleLayer(self: Base.Counter, super: Base.Counter) -> Base.Counter:
+  extend(super, {increment: 3, stamp: super.increment + 10})

@@ -93,3 +93,25 @@ unattended operation remain [work](../TRACKING.md).
 [Implementation](../scripts/portal.py) · [composition tests](../conformance/test_portal.py)
 
 [Repository handoff](PORTAL-BRIDGE.md) exports saved drafts and reconciles trusted local clerk receipts; it publishes nothing.
+
+## Authored panels and preview language
+
+Cards expose the selected `panel` and up to eight declared `viewPanels`, with
+`main` always available as the overview. Panel IDs and labels are data; they do
+not select remote URLs, confer identity, or change the captured root. Invalid
+panel declarations leave overview inspection available with a notice. A missing
+pure projection cannot become an active panel. The browser retains selection in
+`?object=…&panel=…`, including refresh and back/forward navigation. Navigating
+while a local outcome is uncertain retains that exact draft; sending blocks
+navigation until its result arrives.
+
+The shelf uses an explicit protocol name when available and keeps the exact
+object ID visible. A visited overview may supply its evaluated title. Listing
+the world never evaluates every object's view or infers participant names from
+DIDs. The workspace's existing default object remains its selected entrance.
+
+Public forms say **Preview** and offer a plain summary to copy. Portal-only
+tokens and the disabled local send button are hidden; exact JSON remains an
+optional inspection/export format. A summary is explicitly unsent and is not a
+town reply or executable spell. No publication link or identity is inferred.
+Public mode retains all existing origin, cache, filesystem and authority limits.

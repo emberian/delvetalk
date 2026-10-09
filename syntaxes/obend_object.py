@@ -10,23 +10,17 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import affordances
 import runtime_profile
+import process_custody
 
 RUNNER = ROOT / '.lake/build/bin/delvetalk-obend'
 LIMITS = {'ticks': '100000', 'heap': '100000', 'stack': '10000', 'typeFuel': '16384'}
 MAX_FRAME = 8 * 1024 * 1024
-# A tiny launcher avoids preexec_fn in threaded callers; no source is executed
-# by Python. The native package process inherits these file/CPU ceilings.
-LAUNCH = ('import os,resource,sys; '
-          'resource.setrlimit(resource.RLIMIT_FSIZE,(8388608,8388608)); '
-          'resource.setrlimit(resource.RLIMIT_CPU,(10,10)); '
-          'os.execv(sys.argv[1],[sys.argv[1]])')
 
 
 def _native(request, deadline):
@@ -36,16 +30,16 @@ def _native(request, deadline):
     remaining = min(10, deadline - time.monotonic())
     if remaining <= 0:
         raise ValueError('Bend object description/type checking exceeded 30 seconds')
-    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-        try:
-            done = subprocess.run([sys.executable, '-c', LAUNCH, str(RUNNER)], input=wire,
-                stdout=output, stderr=errors, timeout=remaining, cwd=ROOT)
-        except subprocess.TimeoutExpired as error:
-            raise ValueError('Bend object package timed out') from error
-        output.seek(0)
-        raw = output.read(MAX_FRAME + 1)
-        if done.returncode or len(raw) > MAX_FRAME:
-            raise ValueError('Bend object package failed or exceeded its output limit')
+    try:
+        done = process_custody.run([str(RUNNER)], input=wire, timeout=remaining,
+            cpu_seconds=10, stdout_limit=MAX_FRAME, stderr_limit=MAX_FRAME, file_limit=MAX_FRAME, cwd=ROOT)
+    except subprocess.TimeoutExpired as error:
+        raise ValueError('Bend object package timed out') from error
+    except process_custody.OutputLimitExceeded as error:
+        raise ValueError('Bend object package exceeded its output limit') from error
+    raw = done.stdout
+    if done.returncode:
+        raise ValueError('Bend object package failed or exceeded its output limit')
     try:
         reply = json.loads(raw)
     except (ValueError, UnicodeError) as error:
@@ -117,10 +111,28 @@ def _exact(value, keys, label):
 def lower(source):
     if not isinstance(source, str) or not source.strip() or len(source.encode('utf-8')) > 512 * 1024:
         raise ValueError('Bend object requires nonempty source of at most 512 KiB')
+    return lower_modules([{'name': 'Main', 'source': source}])
+
+
+def lower_modules(modules):
+    """Compile one ordered, explicitly supplied package; native code owns imports."""
+    if not isinstance(modules, list) or not 1 <= len(modules) <= 64:
+        raise ValueError('Bend object requires 1..64 supplied modules')
+    total = 0
+    for entry in modules:
+        _exact(entry, ('name', 'source'), 'Bend module')
+        if not isinstance(entry['name'], str) or not 1 <= len(entry['name']) <= 128:
+            raise ValueError('Bend module requires a bounded name')
+        source = entry['source']
+        if not isinstance(source, str) or not source.strip() or len(source.encode('utf-8')) > 512 * 1024:
+            raise ValueError('Bend module requires nonempty source of at most 512 KiB')
+        total += len(source.encode('utf-8'))
+    if total > 1024 * 1024:
+        raise ValueError('Bend modules exceed 1 MiB aggregate source')
+    modules = deepcopy(modules)
     pins = runtime_profile.file_hashes('compiled')
     native = hashlib.sha256(RUNNER.read_bytes()).hexdigest()
     deadline = time.monotonic() + 30
-    modules = [{'name': 'Main', 'source': source}]
 
     def compile_entry(name):
         return _native({'op': 'compile', 'modules': modules, 'entry': name, 'limits': LIMITS}, deadline)['artifact']

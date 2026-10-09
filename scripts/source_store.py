@@ -16,6 +16,10 @@ spec.loader.exec_module(translate)
 canonical, loads = translate.canonical, translate.load_json
 REF = 'delvetalk-source-ref-v1'
 PROPOSAL = 'delvetalk-source-proposal-v1'
+MODULE_PROPOSAL = 'delvetalk-module-proposal-v1'
+MODULE_MANIFEST = 'delvetalk-module-manifest-v1'
+MODULE_MATERIAL = 'delvetalk-module-material-v1'
+MAX_MODULE_BYTES = 1024 * 1024
 LIMITS = {'source': 512 * 1024, 'scenarios': 1024 * 1024}
 MAX_BLOBS, MAX_TOTAL_BYTES = 10000, 128 * 1024 * 1024
 SHA = re.compile(r'[0-9a-f]{64}\Z')
@@ -173,7 +177,7 @@ def declared_dependencies(value):
     files = {}
     def walk(item):
         if isinstance(item, dict):
-            if item.get('format') == PROPOSAL:
+            if item.get('format') in (PROPOSAL, MODULE_PROPOSAL):
                 pin = item['adapterPin']
                 identity = {key: val for key, val in pin.items() if key != 'pin'}
                 if (set(pin) != {'syntax', 'adapter', 'validator', 'registry_sha256', 'files', 'pin'}
@@ -218,3 +222,111 @@ def prepare_proposal(artifact_store, syntax, source, scenarios):
                 'adapterPin': pin}
     preserve_dependencies(artifact_store, proposal)
     return proposal
+
+
+def seal_modules(entries):
+    """Seal explicit ordered names/refs; no paths, imports or authority are resolved."""
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 64:
+        raise ValueError('module manifest requires 1..64 ordered entries')
+    names, total = set(), 0
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {'name', 'sourceRef'}:
+            raise ValueError('module entry requires name and sourceRef')
+        name = entry['name']
+        if not isinstance(name, str) or not 1 <= len(name) <= 128 or name in names:
+            raise ValueError('module names must be bounded and distinct')
+        names.add(name)
+        validate_ref(entry['sourceRef'], kind='source')
+        total += entry['sourceRef']['bytes']
+    if total > MAX_MODULE_BYTES:
+        raise ValueError('module manifest exceeds 1 MiB aggregate source')
+    # Roundtrip through the lossless JSON framing gives callers no mutable aliases.
+    value = loads(canonical({'format': MODULE_MANIFEST, 'modules': entries}))
+    return {**value, 'sha256': hashlib.sha256(canonical(value)).hexdigest()}
+
+
+def validate_manifest(manifest):
+    if (not isinstance(manifest, dict) or set(manifest) != {'format', 'modules', 'sha256'}
+            or manifest['format'] != MODULE_MANIFEST or seal_modules(manifest['modules']) != manifest):
+        raise ValueError('invalid sealed module manifest or changed module order')
+    return manifest
+
+
+def validate_module_material(material):
+    if (not isinstance(material, dict) or set(material) != {'format', 'manifest', 'modules'}
+            or material['format'] != MODULE_MATERIAL):
+        raise ValueError('invalid resolved module material')
+    manifest = validate_manifest(material['manifest'])
+    modules = material['modules']
+    if not isinstance(modules, list) or len(modules) != len(manifest['modules']):
+        raise ValueError('resolved modules differ from sealed manifest')
+    for supplied, declared in zip(modules, manifest['modules']):
+        if (not isinstance(supplied, dict) or set(supplied) != {'name', 'sourceRef', 'source'}
+                or not isinstance(supplied['source'], str)
+                or {key: supplied[key] for key in ('name', 'sourceRef')} != declared
+                or reference(supplied['source'].encode('utf-8'), kind='source') != declared['sourceRef']):
+            raise ValueError('resolved module source/name/order does not match exact reference')
+    return material
+
+
+def resolve_modules(artifact_store, manifest):
+    validate_manifest(manifest)
+    modules = [{**entry, 'source': read_bytes(artifact_store, entry['sourceRef'], kind='source').decode('utf-8')}
+               for entry in manifest['modules']]
+    return validate_module_material({'format': MODULE_MATERIAL, 'manifest': manifest, 'modules': modules})
+
+
+def prepare_module_proposal(artifact_store, manifest, scenarios):
+    """Opt-in resident assembly; the final module supplies the host bindings."""
+    resolve_modules(artifact_store, manifest)
+    proposal = {'format': MODULE_PROPOSAL, 'syntax': 'objective-bend-spell@2',
+                'manifest': loads(canonical(manifest)),
+                'scenariosRef': store_bytes(artifact_store, scenarios, kind='scenarios'),
+                'adapterPin': adapter_pin('objective-bend-spell@2')}
+    preserve_dependencies(artifact_store, proposal)
+    return proposal
+
+
+def validate_module_proposal(artifact_store, proposal, *, check_adapter=True):
+    if (not isinstance(proposal, dict)
+            or set(proposal) != {'format', 'syntax', 'manifest', 'scenariosRef', 'adapterPin'}
+            or proposal['format'] != MODULE_PROPOSAL or proposal['syntax'] != 'objective-bend-spell@2'):
+        raise ValueError('invalid module reference proposal')
+    declared_dependencies(proposal)
+    material = resolve_modules(artifact_store, proposal['manifest'])
+    scenarios = read_bytes(artifact_store, proposal['scenariosRef'], kind='scenarios')
+    if check_adapter and canonical(proposal['adapterPin']) != canonical(adapter_pin(proposal['syntax'])):
+        raise ValueError('module proposal adapter pins changed')
+    return material, scenarios
+
+
+def verify_bound_material(bindings, material):
+    """Recheck compiler custody against queued refs, without evaluating source."""
+    if not isinstance(material, dict) or not isinstance(material.get('scenarios'), str):
+        raise ValueError('compiler build lacks retained exact source material')
+    scenarios = reference(material['scenarios'].encode('utf-8'), kind='scenarios')
+    if {key: scenarios[key] for key in bindings['scenariosRef']} != bindings['scenariosRef']:
+        raise ValueError('compiler retained scenarios differ from queued source binding')
+    if 'manifest' in bindings:
+        source = {key: value for key, value in material.items() if key != 'scenarios'}
+        validate_module_material(source)
+        if source['manifest'] != bindings['manifest']:
+            raise ValueError('compiler retained modules differ from queued manifest')
+        return source
+    if not isinstance(material.get('source'), str):
+        raise ValueError('compiler build lacks retained exact source')
+    ref = reference(material['source'].encode('utf-8'), kind='source')
+    if {key: ref[key] for key in bindings['sourceRef']} != bindings['sourceRef']:
+        raise ValueError('compiler retained source differs from queued source binding')
+    return {'encoding': 'utf-8', 'text': material['source'], 'sha256': ref['sha256']}
+
+
+def validate_translation_source(source):
+    """Old lowering sources remain byte-exact; assemblies use an explicit tag."""
+    if isinstance(source, dict) and source.get('format') == MODULE_MATERIAL:
+        return validate_module_material(source)
+    if (not isinstance(source, dict) or set(source) != {'encoding', 'text', 'sha256'}
+            or source['encoding'] != 'utf-8' or not isinstance(source['text'], str)
+            or hashlib.sha256(source['text'].encode('utf-8')).hexdigest() != source['sha256']):
+        raise ValueError('lowering source digest mismatch')
+    return source

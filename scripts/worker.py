@@ -7,7 +7,6 @@ import hashlib
 import json
 import math
 import os
-import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +15,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import clerk
 import receipts
+import process_custody
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,41 +24,16 @@ def key(uri):
     return hashlib.sha256(uri.encode()).hexdigest()
 
 
-RESOURCE_BOOTSTRAP = """import os, resource, sys
-cpu, memory = int(sys.argv[1]), int(sys.argv[2])
-resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
-if sys.platform.startswith('linux'):
-    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    # Lean's libuv thread starts with a 1 GiB stack before stack env is read.
-    # Avoid mimalloc reserving another 1 GiB up front; this is reservation size,
-    # not extra memory above the exact operator-selected address-space cap.
-    os.environ['MIMALLOC_ARENA_RESERVE'] = '131072'  # KiB: 128 MiB
-    os.environ['LEAN_STACK_SIZE_KB'] = str(min(64 * 1024, memory // 4 // 1024))
-os.execv(sys.executable, [sys.executable, *sys.argv[3:]])
-"""
-
-
 def command(arguments, remaining, memory_mib=2048):
     if os.name != 'posix':
         raise RuntimeError('worker process custody requires POSIX process groups')
     if not 64 <= memory_mib <= 8192:
         raise ValueError('memory bound must be 64..8192 MiB')
-    cpu = max(1, math.ceil(remaining))
-    # A fresh interpreter sets inherited limits before exec; no thread-unsafe
-    # preexec_fn is run in the parent's forked Python state.
-    process = subprocess.Popen([sys.executable, '-c', RESOURCE_BOOTSTRAP,
-                                str(cpu), str(memory_mib * 1024 * 1024), *arguments],
-                               cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               start_new_session=True)
-    try:
-        output, errors = process.communicate(timeout=remaining)
-    except BaseException:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.communicate()  # Reap the direct child after killing its group.
-        raise
+    # This caps reply transport, not the world snapshots/history a child writes.
+    process = process_custody.run([sys.executable, *arguments], timeout=remaining,
+        cpu_seconds=max(1, math.ceil(remaining)), memory_bytes=memory_mib * 1024 * 1024,
+        stdout_limit=64 * 1024 * 1024, stderr_limit=1024 * 1024, cwd=ROOT)
+    output, errors = process.stdout.decode('utf-8'), process.stderr.decode('utf-8')
     if process.returncode:
         raise RuntimeError((errors or output or f'worker subprocess exited {process.returncode}').strip()[:2000])
     return clerk.loads(output)

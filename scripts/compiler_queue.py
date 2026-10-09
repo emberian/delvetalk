@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Restartable local source-desk compiler custody; no adoption authority."""
 import argparse
-import hashlib
 import math
 from pathlib import Path
 import subprocess
@@ -20,22 +19,18 @@ save = worker.clerk.save
 def compiler_pins(profile, expected):
     """Reviewed runtime plus the selected registered compiler dependency closure."""
     proposal = desk.module('queue_proposal', 'scripts/propose.py')
-    files = {**desk.execution_profile(profile)['files'], **proposal.execution_pin(profile)['files']}
     registry = loads((ROOT / 'syntaxes/registry.json').read_bytes())
     adapter = registry['syntaxes'].get(expected['state']['proposal']['syntax'], {})
     validator = registry['targets'].get(adapter.get('target'), {})
     paths = {'scripts/compiler_queue.py', 'scripts/worker.py', 'scripts/clerk.py',
              'scripts/translate.py', 'syntaxes/registry.json',
+             *desk.execution_paths(profile), *proposal.execution_paths(profile),
              *desk.translate.closure_paths(registry, adapter, validator)}
     if adapter.get('module') == 'syntaxes/spween.py':
         paths.add('scene/spween-bridge/target/debug/delvetalk-spween')
     if adapter.get('target') == 'spween-protocol-bundle-v1':
         paths.add('scene/room.py')
-    for name in sorted(paths):
-        path = (ROOT / name).resolve()
-        if not path.is_relative_to(ROOT):
-            raise ValueError('compiler dependency escapes repository')
-        files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    files = desk.runtime_profile.hash_paths(paths, root=ROOT)
     return {'profile': profile, 'python': list(sys.version_info[:3]), 'files': files}
 
 

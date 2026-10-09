@@ -85,7 +85,7 @@ class Participant:
         root = desk.world.exchange(self.database,
             {'op': 'inspect', 'object': self.object, 'principal': self.principal}, profile='compiled')
         # This specialized renderer must not assign game meaning to arbitrary code.
-        if root.get('protocol') != table.protocol(self.object):
+        if not client.same_game(root.get('protocol'), table.protocol(self.object)):
             raise ValueError('This table does not use the supported two-player protocol')
         public = client.public_view(root)
         token = secrets.token_hex(12)

@@ -74,10 +74,13 @@
       "reviewed": true,
       "module": "syntaxes/obend_object.py",
       "entry": "lower",
+      "modulesEntry": "lower_modules",
       "target": "local-protocol-v1",
       "runtimeProfile": "compiled",
       "closure": [
         "syntaxes/obend_object.py",
+        "scripts/source_store.py",
+        "scripts/process_custody.py",
         "scripts/affordances.py",
         "spec/PackageMain.lean",
         ".lake/build/bin/delvetalk-obend"

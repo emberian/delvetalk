@@ -58,6 +58,8 @@
       <article id="object-card" class="object-card" tabindex="-1">
         <div class="card-topline"><span class="eyebrow">An object in the world</span><span id="version" class="version"></span></div>
         <h2 id="object-title">Come in. Take a look around.</h2>
+        <nav id="object-panels" class="object-panels" aria-label="Object views" hidden></nav>
+        <p id="panel-warning" class="help" hidden></p>
         <p id="object-prose" class="prose">Choose an object to see what it has to say and what you can do together.</p>
         <div id="object-children" class="object-children" hidden></div>
         <div id="object-meta" class="object-meta" hidden><code id="card-token"></code><button id="refresh-object" class="text-button" type="button">Read again ↻</button></div>
@@ -75,9 +77,11 @@
       <section id="draft-panel" class="draft-panel" aria-labelledby="draft-title" tabindex="-1" hidden>
         <div class="draft-heading"><div><span class="eyebrow">Before anything changes</span><h2 id="draft-title">A proposed action</h2></div><button id="dismiss-draft" class="icon-button" type="button" aria-label="Dismiss draft">×</button></div>
         <p id="draft-summary" class="prose"></p>
+        <dl id="draft-fields" class="draft-fields"></dl>
         <p id="draft-target" class="help"></p>
         <p id="draft-absence" class="help" hidden></p>
-        <div class="command-row"><code id="draft-command"></code><button id="copy-draft" class="text-button" type="button">Copy</button></div>
+        <div id="draft-command-row" class="command-row"><code id="draft-command"></code><button id="copy-draft" class="text-button" type="button">Copy</button></div>
+        <div id="preview-copy" hidden><button id="copy-preview" class="secondary" type="button">Copy summary</button></div>
         <p id="draft-help" class="help"></p>
         <details class="draft-exact">
           <summary>Inspect the exact proposal</summary>

@@ -2,6 +2,7 @@
 """Opt-in syntax runtimes share exact translation and source-custody dependencies."""
 import copy
 import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -65,18 +66,16 @@ class AdapterRuntimePins(unittest.TestCase):
         self.assertNotIn('scripts/runtime_profile.py', pin['files'])
 
     def test_runtime_drift_during_translation_is_refused(self):
-        raw = translate.canonical(self.registry)
-        read, calls = Path.read_bytes, []
+        opened, calls = Path.open, []
         binary = ROOT / '.lake/build/bin/delvetalk-obend'
-        def changed(path):
-            if path.resolve() == self.registry_path:
-                return raw
-            data = read(path)
+        def changed(path, *args, **kwargs):
             if path.resolve() == binary:
                 calls.append(path)
-                return data if len(calls) == 1 else data + b'changed'
-            return data
-        with patch.object(Path, 'read_bytes', changed), self.assertRaisesRegex(ValueError, 'changed during translation'):
+                return io.BytesIO(b'original' if len(calls) == 1 else b'changed')
+            return opened(path, *args, **kwargs)
+        # Dependency capture streams files; the JSON-only probe never executes
+        # this binary. Change its observed bytes between the real hash captures.
+        with self.registry_bytes(), patch.object(Path, 'open', changed), self.assertRaisesRegex(ValueError, 'changed during translation'):
             translate.translate('runtime-probe@1', b'["nat","1"]')
         self.assertEqual(len(calls), 2)
 

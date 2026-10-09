@@ -1,0 +1,39 @@
+edition ObjectiveBend 1
+# Presentation for the qualified two-player table. No movement or admission rules.
+record Game:
+  board: Nat
+  automaton: Nat
+  marks: Nat
+  status: Nat
+  winner: Nat
+record Table:
+  table: String
+  round: Nat
+  width: Nat
+  height: Nat
+  game: Game
+  commit0: String
+  commit1: String
+  revealed0: Bool
+  revealed1: Bool
+  source0: Nat
+  target0: Nat
+  source1: Nat
+  target1: Nat
+record Round:
+  round: Nat
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: Round
+record View:
+  title: String
+  prose: String
+  actions: {resolve: Action}
+def phase(s: Table) -> String:
+  if s.game.winner == 1 then "North wins: the automaton reached a top corner. This match is finished." else if s.game.winner == 2 then "South wins: the automaton reached a bottom corner. This match is finished." else if s.commit0 == "" && s.commit1 == "" then "Both seats are choosing. Arrange private move custody with the operator before playing. Keep your source, destination and nonce out of public posts. Only a commitment is submitted first." else if s.commit0 == "" then "South has sealed a move. North still needs to seal privately. Neither opening should be submitted yet." else if s.commit1 == "" then "North has sealed a move. South still needs to seal privately. Neither opening should be submitted yet." else if s.revealed0 && s.revealed1 then "Both moves are open. Either seated player may resolve this round using the offered action." else if s.revealed0 then "North has opened. South may now submit the original opening through its retained private helper." else if s.revealed1 then "South has opened. North may now submit the original opening through its retained private helper." else "Both moves are sealed. Each player may now open the original move and nonce through the private helper. Openings become public when submitted."
+def result(s: Table) -> String:
+  if s.game.status == 1 then "The last pair conflicted. The board stayed put; marked squares cannot be either endpoint in the new commitment round." else if s.game.status == 2 then "The last pair was invalid. The board stayed put. Choose a new pair and seal again." else if s.game.winner != 0 then "The match is finished. No further game action is offered." else "A completed resolution clears marks and lets the automaton take at most one step."
+def view(s: Table, panel: String) -> View:
+  {title: if s.game.winner != 0 then "Automatafl · finished" else if s.revealed0 && s.revealed1 then "Automatafl · ready to resolve" else if s.commit0 != "" && s.commit1 != "" then "Automatafl · opening moves" else "Automatafl · choosing moves", prose: if panel == "result" then result(s) else if panel == "custody" then "This is a facilitated two-player match. The operator can see choices held in its private custody. Public town posts and PDS records are not a private move channel. Agree on an actual private handoff, or play an explicitly open rehearsal. No private handoff or automatic turn-taking is supplied by this card." else if panel == "rules" then "North aims for the top corners; South aims for the bottom corners. Both move the shared + attractor and - repulsor pieces, never @ directly. Empty sources are allowed. Choose distinct endpoints in one row or column, excluding @ and marked squares. The qualified Bend game settles paths, conflicts and the automaton's step. There is no forced opening or automatic timeout winner." else phase(s), actions: {resolve: {visible: s.game.winner == 0 && s.revealed0 && s.revealed1, text: "Resolve both opened moves", command: "resolve", input: {round: s.round}}}}

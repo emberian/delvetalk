@@ -65,15 +65,16 @@ The [construction wave](docs/CONSTRUCTION-V2.md) now implements general source
 objects, contextual menus, receiving invariants, composite offers and request-only
 file custody. The joined post-only journey passes revision, protected migration,
 deliberate law change, visitor interaction and exact restoration. Full regression passed after updating the desk-catalog fixture for the third
-registered desk; the repaired group and every remaining check target passed. Source-module reuse is the next Faré authoring bridge; the core native
-compiler already demonstrates the required cross-module self/super composition.
+registered desk; the repaired group and every remaining check target passed. Sealed source-module reuse now has a resident authoring bridge with passing joined acceptance;
+the core native compiler already demonstrates cross-module self/super composition.
 
 ## Next queues
 
 - **Independent source reuse:** sealed ordered multi-module proposals through source
   custody, desks, compiler queue and exact restoration. Existing native imports and
-  self/super composition work; the resident authoring bridge is missing.
-- **World composition:** governed room contents/discovery and reusable Bend commons
+  self/super composition work; the new resident bridge passes direct, queued and restored journeys.
+- **World composition:** host-authenticated observation, typed recursive collections,
+  governed room contents/discovery and reusable Bend commons
   and tickets. Avoid parallel behavior generators and duplicated place descriptions.
 - **Durable reactions:** source effect ABI and receiving-authenticated retained-event
   consumption. Ordinary messages and retractable offers have distinct commitments;
@@ -90,7 +91,19 @@ compiler already demonstrates the required cross-module self/super composition.
 - **Opening and archive:** reconcile release and recapture hosted cards, then bind
   Ember's publication. Welcome remains v1; Canon/Runtime conventions are v1.1.
   Scope mutable PDS discovery pointers and configured-PDS limits explicitly.
-  Private observations exist; continuous raw archival coverage is not yet established.
+  The new bounded raw archive is implemented and tested; historical coverage remains
+  partial. Independent backfill resumes its cursor without changing head-first watch.
+
+The tested local portal exposes existing authored panels, retains panel selection and makes
+public export-only operation clear. Private opening drafts pair the Welcome Message
+with source authoring, shared places and two-player Automatafl. The game companion passes a complete facilitated match with private commitment
+custody and public resolution. Live installation, named seats and an agreed private
+handoff remain outstanding.
+
+Measured machine-sympathy fixes halve dependency bytes read per compiler capture and
+source view. Independent before/after captures remain. Shared process custody bounds
+parent output reads and keeps nested managed children in the outer process group;
+these limits do not establish an OS sandbox or solve whole-history storage cost.
 
 ## Boundaries
 

@@ -2,12 +2,36 @@
 """Opaque commitment preparation and public display; no game/authority evaluator."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import secrets
 
 DOMAIN = 'delvetalk.automatafl.commit.v1'
+
+
+def same_game(program, qualified):
+    """Accept the exact core, optionally with this repository's exact companion view.
+
+    No command, initial state, name or unknown execution field is ignored.
+    Presentation is an explicit byte-equal allowlist, not arbitrary metadata.
+    """
+    if not isinstance(program, dict):
+        return False
+    try:
+        encoded = canonical(program)
+        if encoded == canonical(qualified):
+            return True
+    except (TypeError, ValueError):
+        return False
+    path = Path(__file__).resolve().parents[2] / 'protocols/automatafl/generate.py'
+    spec = importlib.util.spec_from_file_location('table_companion_identity', path)
+    companion = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(companion)
+    display = companion.presentation()
+    return (set(display) == {'description', 'affordances', 'viewProgram', 'viewPanels'}
+            and encoded == canonical({**qualified, **display}))
 
 
 def canonical(value):
