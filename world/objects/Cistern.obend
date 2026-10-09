@@ -5,8 +5,9 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 record State:
   entries: Lists.List<Plans.Receipt>
+# What a creator may overlay on initial(): a field of State, here the first entries.
 record Seed:
-  empty: Bool
+  entries: Lists.List<Plans.Receipt>
 record Edits:
   entries: Plans.Entries<Plans.Receipt, {}>
 type Plan = Plans.Plan<Edits, {}>

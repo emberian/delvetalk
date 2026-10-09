@@ -39,7 +39,7 @@ def sow(state: State, colour: Bell.Colour, seed: String, planter: String, post: 
     case _: Made.refused({clause: "no creation"})
 # One cistern per garden: the second create finds its reference occupied.
 def cistern(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, Made>:
-  match perform(Plan.create({package: "Cistern", seed: Seed.cistern({empty: true}), law: "Cistern", requireAbsent: child(context, "cistern", 1n)})):
+  match perform(Plan.create({package: "Cistern", seed: Seed.cistern({entries: Lists.List::<Plans.Receipt>.nil()}), law: "Cistern", requireAbsent: child(context, "cistern", 1n)})):
     case created(c): Made.made({object: c.object})
     case refused(r): Made.refused({clause: r.clause})
     case _: Made.refused({clause: "no creation"})

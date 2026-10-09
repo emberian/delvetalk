@@ -67,7 +67,6 @@ class Cards(Chain):
         self.assertEqual(self.version("garden"), 0)
         print("\n--- refused ---\n" + expected)
 
-    @unittest.expectedFailure
     def test_a_proposal_plants_a_bell_and_offers_the_garden_card(self):
         self.garden()
         reply = self.say("delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver")

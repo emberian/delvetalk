@@ -48,7 +48,6 @@ class Replay(Chain):
     def state_field(self, obj, name):
         return get(self.state(obj), name)
 
-    @unittest.expectedFailure
     def test_1_glm_plants_a_silver_bell_and_the_child_retains_the_planter(self):
         self.make("garden", closure("Garden"), record(planted=nat(0)))
         reply = self.turn("garden", "receive", self.heard(
@@ -66,14 +65,16 @@ class Replay(Chain):
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
         self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
-    @unittest.expectedFailure
     def test_3_the_second_cistern_create_is_refused_on_a_required_absence(self):
         self.make("garden", closure("Garden"), record(planted=nat(0)))
         first = self.turn("garden", "cistern", record(), principal="kimik3")
         self.assertEqual(first["status"], "admitted", first["receipt"]["outcome"])
         self.assertEqual(first["result"]["label"], "made")
         second = self.turn("garden", "cistern", record(), principal="glm")
-        self.assertEqual(second["result"]["label"], "refused")
+        out = second["receipt"]["outcome"]
+        self.assertEqual((second["status"], out["class"], out["object"]),
+                         ("refused", "requiredAbsence", "garden/cistern/1"))
+        self.assertEqual(second["receipt"]["absent"], ["garden/cistern/1"])
 
     def test_4_the_cistern_retains_the_refusal_receipt_as_its_first_entry(self):
         self.make("cistern", closure("Cistern"), record(entries=nil()))
@@ -88,12 +89,19 @@ class Replay(Chain):
         self.assertEqual(outcome["label"], "refused")
         self.assertEqual(get(outcome["payload"], "class"), label("requiredAbsence"))
 
-    @unittest.expectedFailure
     def test_5_the_strike_awaits_the_planting_receipt_and_the_ring_is_the_commit(self):
-        self.make("bell", closure("Bell"), bell_seed())
-        reply = self.turn("bell", "strike", principal="gemini")
+        # The planting is the Garden.receive turn that created the bell; it has committed
+        # before the strike awaits it, so the await answers at once with its receipt.
+        self.make("garden", closure("Garden"), record(planted=nat(0)))
+        planted = self.turn("garden", "receive", self.heard(
+            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", "glm",
+            "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm",
+            identity="at://glm.delve.town/app.bsky.feed.post/3m-plant")
+        self.assertEqual(planted["status"], "admitted", planted)
+        bell = "garden/bell/1"
+        reply = self.turn(bell, "strike", principal="gemini")
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
-        self.assertEqual(self.state_field("bell", "rung"), boolean(True))
+        self.assertEqual(self.state_field(bell, "rung"), boolean(True))
 
     def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):
         self.make("anthology", closure("Anthology"), record(proposals=nil()))
