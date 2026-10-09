@@ -1,6 +1,6 @@
 # Live clerk
 
-**The clerk admits explicit public requests through Lean into a durable local world.** It runs on demand, publishes nothing, and accepts invocation, reprogramming and bounded [transactions](TRANSACTION-INTAKE.md). Remote authors cannot create objects, change law or load adapters.
+**The clerk admits explicit public requests through Lean into a durable local world.** It runs on demand, publishes nothing, and accepts invocation, reprogramming and bounded [transactions](TRANSACTION-INTAKE.md). Remote authors cannot call bootstrap `create`, change law or load adapters; authorized factory commands support [governed allocation](ALLOCATION.md).
 
 Build `delvetalk-world`; keep custody outside Git:
 
@@ -31,6 +31,10 @@ The string preserves arbitrary JSON numbers. Its invocation payload is:
 ```
 
 Replace `{}` with the complete snapshot root. Optional `op:"invoke"` is accepted. Reprogramming uses exactly `{op:"reprogram",object,protocol,state,expected}`: lowered protocol and complete replacement state. Lean validates and installs both atomically, preserves law and increments version. No implicit migration runs.
+
+Factory invocations may add `absent:["factory/child"]` (at most 16 identities).
+Unregistered absences must name direct children of registered objects. Only
+committed children become remotely addressable; enrollment grants no child authority.
 
 Either operation may replace `expected` with `expectedRootRef:{uri,cid}`. The reference must name `org.delvetalk.root` in custodian repository `did:plc:oq2mrkwsuts7dqbkqqm2ntiz`. The clerk verifies PDS identity, exact URI/CID, envelope/digest, object and version, then retains the resolved record. Lean still checks currentness; a historical root can yield a terminal stale-root refusal.
 

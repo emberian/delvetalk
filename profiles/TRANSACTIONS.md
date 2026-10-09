@@ -19,7 +19,9 @@ python3 scripts/world.py --profile transactions /path/to/world.json request.json
 Replace roots with complete protocol/law/version/state records. All targets must
 appear in `reads`; extra roots guard commits. Lean checks every initial root
 before any call. Calls are nonempty and ordered; each checks the global
-principal's current target authority. No creation, law change or delegation occurs.
+principal's current target authority. No law change or delegation occurs.
+For [governed allocation](ALLOCATION.md), a `null` read asserts initial absence;
+factory calls may create that child for subsequent calls in the same transaction.
 
 Invocation permits only `object`, `command`, exactly one of record `input` or
 `inputFrom`, and optional `op:"invoke"`. `inputFrom` selects an earlier call's
@@ -32,7 +34,8 @@ Later calls see staged state/programs. Each success increments version once.
 Within a call, require/set/result/outbox expressions all read its original
 state; writes are simultaneous.
 
-Receipt data is `{roots,results,outbox}`: final roots cover the entire read set;
+Receipt data is `{roots,results,outbox}` with optional `allocated` creation roots:
+final roots cover the entire read set, preserving unused absence as `null`;
 results follow call order; outbox entries are `{object,step,payload}` in emission
 order. Outboxes establish intent, not delivery. Any semantic failure discards
 all staged effects. Malformed envelopes remain transport errors.

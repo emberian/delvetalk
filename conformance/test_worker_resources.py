@@ -33,16 +33,17 @@ except MemoryError:
     denied = True
 else:
     denied = False
-print(json.dumps({'stack': stack, 'memory': memory, 'cpu': resource.getrlimit(resource.RLIMIT_CPU), 'denied': denied}))
+print(json.dumps({'stack': stack, 'memory': memory, 'cpu': resource.getrlimit(resource.RLIMIT_CPU), 'denied': denied, 'arena': os.environ['MIMALLOC_ARENA_RESERVE']}))
 '''
-        for memory_mib in (64, 1024):
+        for memory_mib in (64, 2048):
             with self.subTest(memory_mib=memory_mib):
-                with mock.patch.dict(os.environ, {'LEAN_STACK_SIZE_KB': '1048576'}):
+                with mock.patch.dict(os.environ, {'LEAN_STACK_SIZE_KB': '1048576', 'MIMALLOC_ARENA_RESERVE': '1048576'}):
                     result = worker.command(['-c', probe], 10, memory_mib)
                 self.assertEqual(result['memory'], [memory_mib * 1024 * 1024] * 2)
                 self.assertEqual(result['cpu'], [10, 10])
                 self.assertEqual(result['stack'], min(64, memory_mib // 4) * 1024 * 1024)
                 self.assertTrue(result['denied'])
+                self.assertEqual(result['arena'], '131072')
 
     @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-transactions').is_file(), 'built transactions host required')
     def test_real_lean_admission_under_default_worker_bounds(self):
@@ -58,6 +59,16 @@ print(json.dumps({'stack': stack, 'memory': memory, 'cpu': resource.getrlimit(re
             self.assertEqual(reply['kind'], 'committed')
             self.assertEqual(reply['data']['root']['state'], request['protocol']['initial'])
             self.assertTrue((directory / 'world.json').is_file())
+            inspected = worker.command([str(ROOT / 'scripts/desk.py'), '--database', str(directory / 'world.json'),
+                                        '--artifacts', str(directory / 'artifacts'), '--profile', 'transactions',
+                                        'inspect', '--object', 'bounded-counter'], 15)
+            self.assertEqual(inspected, reply['data']['root'])
+            if sys.platform.startswith('linux'):
+                before = (directory / 'world.json').read_bytes()
+                with self.assertRaises(RuntimeError):
+                    worker.command([str(ROOT / 'scripts/world.py'), '--profile', 'transactions',
+                                    str(directory / 'world.json'), str(request_path)], 15, memory_mib=1024)
+                self.assertEqual((directory / 'world.json').read_bytes(), before)
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-.PHONY: all build check core typed packages capsules world wiki syntax delve proposals scene-build scene portal
+.PHONY: all build check worker-resources core typed packages capsules world wiki syntax delve proposals scene-build scene portal
 all: check
 build:
 	LEAN_NUM_THREADS=1 lake build delvetalk
@@ -8,6 +8,8 @@ build:
 	LEAN_NUM_THREADS=1 lake build delvetalk-typed
 	LEAN_NUM_THREADS=1 lake build delvetalk-obend
 	LEAN_NUM_THREADS=1 lake build delvetalk-compiled
+worker-resources:
+	python3 conformance/test_worker_resources.py
 scene-build:
 	CARGO_BUILD_JOBS=2 cargo build --locked --manifest-path scene/spween-bridge/Cargo.toml
 	CARGO_BUILD_JOBS=2 cargo test --locked --manifest-path scene/spween-bridge/Cargo.toml
@@ -56,7 +58,6 @@ syntax:
 delve:
 	python3 conformance/test_watch.py
 	python3 conformance/test_worker.py
-	python3 conformance/test_worker_resources.py
 	python3 conformance/test_transaction_intake.py
 	python3 conformance/test_allocation_receiving.py
 	python3 conformance/test_delve.py
@@ -82,4 +83,4 @@ portal:
 	python3 conformance/test_portal_adversarial.py
 	python3 conformance/test_portal_bridge.py
 	node --check portal/static/app.js
-check: build scene-build capsules core typed packages world wiki syntax delve proposals scene portal
+check: build worker-resources scene-build capsules core typed packages world wiki syntax delve proposals scene portal

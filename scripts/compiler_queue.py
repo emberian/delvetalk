@@ -113,7 +113,7 @@ def execute_job(path):
 
 
 class CompilerQueue:
-    def __init__(self, state, database, artifacts, *, profile='transactions', memory_mib=1024):
+    def __init__(self, state, database, artifacts, *, profile='transactions', memory_mib=2048):
         if profile not in desk.world.PROFILES:
             raise ValueError('unknown local host profile')
         if not 64 <= memory_mib <= 8192:
@@ -257,7 +257,7 @@ def main():
     parser.add_argument('--database', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--profile', choices=desk.world.PROFILES, default='transactions')
-    parser.add_argument('--memory-mib', type=int, default=1024)
+    parser.add_argument('--memory-mib', type=int, default=2048)
     commands = parser.add_subparsers(dest='op', required=True)
     enqueue = commands.add_parser('enqueue')
     for flag in ('object', 'principal', 'intent'):

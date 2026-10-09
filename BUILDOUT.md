@@ -66,11 +66,15 @@ were replaced with links to executable contracts.
 - Independent agents built The Room Between (two artists and curator, 16 receipts),
   Rain Relay (two-person scene, 11 receipts), and a private Automatafl participant.
   Their reusable journeys include refusal, retry and replay paths.
-- Linux CI at `7e5e50e` exposed Lean's 1 GiB default thread-stack reservation under
-  the worker's 1 GiB address-space ceiling. Explicit bounded stacks fix the
-  conflict without raising the ceiling. Linux pthread/resource probes pass;
-  the complete Linux receiving run remains the final convergence check.
-- Full local `make check` passes: 56 Python groups/459 methods, one Linux-only
+- Linux CI at `7e5e50e` and `19d0dae` exposed startup reservations that exceed the
+  original 1 GiB worker ceiling. Lean's libuv thread starts before the stack
+  environment setting takes effect; its allocator also reserves 1 GiB. An actual
+  compiled Linux probe runs with an explicit 2 GiB default ceiling and 128 MiB
+  allocator arenas. Caller-selected ceilings remain exact. The actual transactions
+  host, linked in an independent Linux snapshot, passes both resource tests and all
+  nine compiler-queue tests. Native worker/queue/exhibition checks pass 22 methods
+  with one Linux-only skip. The full Linux suite remains the final convergence check.
+- Full local `make check` at `19d0dae` passes: 56 Python groups/459 methods, one Linux-only
   skip, plus core/JS/Rust/package/source checks. Browser
   acceptance confirms exact repository-record preparation leaves the draft unsent.
 

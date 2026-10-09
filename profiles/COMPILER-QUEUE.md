@@ -29,8 +29,8 @@ Retained records are never automatically pruned.
 `run` defaults to ten jobs, sixty seconds and three attempts; configurable maxima
 are 100 jobs, 300 seconds and twenty attempts. Queues retain at most 10,000 jobs.
 The existing worker command API bounds subprocess wall time, inherited CPU and
-Linux address space (default 1024 MiB per process); it kills the process group on
-interruption. Queue lock waits and child world locks share the deadline. macOS has
+Linux address space (default 2048 MiB per process); it kills the process group on
+interruption. Linux reserves a 128 MiB initial allocator arena; Lean’s early libuv thread still needs a 1 GiB stack. Explicit memory budgets remain exact. Queue lock waits and child world locks share the deadline. macOS has
 no address-space limit. This is local custody, not an OS sandbox or aggregate
 memory/output quota.
 

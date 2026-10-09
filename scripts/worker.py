@@ -29,14 +29,16 @@ cpu, memory = int(sys.argv[1]), int(sys.argv[2])
 resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
 if sys.platform.startswith('linux'):
     resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    # Lean 4.34 reserves 1 GiB per thread by default, including its main thread.
-    # Leave address space for the executable and heap within the unchanged cap.
+    # Lean's libuv thread starts with a 1 GiB stack before stack env is read.
+    # Avoid mimalloc reserving another 1 GiB up front; this is reservation size,
+    # not extra memory above the exact operator-selected address-space cap.
+    os.environ['MIMALLOC_ARENA_RESERVE'] = '131072'  # KiB: 128 MiB
     os.environ['LEAN_STACK_SIZE_KB'] = str(min(64 * 1024, memory // 4 // 1024))
 os.execv(sys.executable, [sys.executable, *sys.argv[3:]])
 """
 
 
-def command(arguments, remaining, memory_mib=1024):
+def command(arguments, remaining, memory_mib=2048):
     if os.name != 'posix':
         raise RuntimeError('worker process custody requires POSIX process groups')
     if not 64 <= memory_mib <= 8192:
@@ -116,7 +118,7 @@ def publication_artifacts(receipt):
 
 
 class Worker:
-    def __init__(self, state, clerk_state, *, receiver=None, publisher=None, now=None, memory_mib=1024):
+    def __init__(self, state, clerk_state, *, receiver=None, publisher=None, now=None, memory_mib=2048):
         self.state = Path(state).expanduser().resolve()
         self.clerk_state = Path(clerk_state).expanduser().resolve()
         self.receiver = receiver
@@ -281,7 +283,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state', required=True, type=Path)
     parser.add_argument('--clerk-state', required=True, type=Path)
-    parser.add_argument('--memory-mib', type=int, default=1024)
+    parser.add_argument('--memory-mib', type=int, default=2048)
     commands = parser.add_subparsers(dest='op', required=True)
     discover = commands.add_parser('discover')
     discover.add_argument('--watch-state', default='~/claude_state/delvetalk/watch')
