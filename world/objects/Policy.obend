@@ -90,7 +90,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "teach" then taught::<Card.Reply>(state, {utterance: Card.text(a.fields, "utterance"), spell: Card.text(a.fields, "spell")}, context, taughtReply) else defined::<Card.Reply>(state, {word: Card.text(a.fields, "word"), meaning: Card.text(a.fields, "meaning")}, context, taughtReply)
-    case _: Card.answerLensed::<Edits, State, {}>(routed, context, forms(), lenses(), guard(state, context), renderFor(state, context))
+    case _: Card.answerLensed::<Edits, State, {}>(routed, context, forms(), lenses(), guard(state, context), render(state, context))
 def kindText(kind: Form.Kind) -> String:
   match kind:
     case text(t): textConcat("text of ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters"))))
@@ -122,12 +122,9 @@ def stance(state: State) -> String:
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nWhat I know:\n"
 # The policy as a card, including how to teach it.
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
   let head = Document.text(textConcat("✾ INTERPRETATION POLICY\n\nModel: ", textConcat(state.model, textConcat("\n", textConcat(stance(state), if Card.reads(state.owner, context) then teaching() else textConcat("\nOnly its owner, ", textConcat(Card.handle(state.owner), ", teaches it.\n\nWhat I know:\n")))))))
   let terms = Lists.map::<Term, Document.Document>(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map::<Example, Document.Document>(state.examples, exampleCard)
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(terms, shown)})})
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())

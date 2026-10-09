@@ -55,15 +55,10 @@ def natural (out : ByteArray) (n : Nat) : ByteArray :=
   let b := bigEndian n
   (head out 2 b.size).append b
 
-/-- Keys by byte length, then bytewise: the DAG-CBOR order. -/
+/-- Keys by byte length, then bytewise: the DAG-CBOR order. UTF-8 orders bytes as code
+points, so for keys of one byte length the bytewise order is `String`'s. -/
 def keyLess (a b : String) : Bool :=
-  let x := a.toUTF8
-  let y := b.toUTF8
-  if x.size != y.size then x.size < y.size else
-  Id.run do
-    for i in [0:x.size] do
-      if x[i]! != y[i]! then return x[i]! < y[i]!
-    return false
+  if a.utf8ByteSize != b.utf8ByteSize then a.utf8ByteSize < b.utf8ByteSize else a < b
 
 /-- Entries sorted into canonical order; a repeated key keeps its first value. -/
 def sortedUnique {α : Type} (entries : List (String × α)) : List (String × α) :=

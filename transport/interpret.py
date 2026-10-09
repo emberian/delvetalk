@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from transport import model
@@ -29,20 +30,34 @@ def user_content(item):
     return canonical({'examples': item['policy'].get('examples'), 'utterance': item['utterance'], 'offers': item['offers']})
 
 
-def run(state, host, ask=model.ask):
+TRANSIENT, MAX_ATTEMPTS, BACKOFF = ('transport', 'rate'), 8, 60
+
+
+def run(state, host, ask=model.ask, now=time.time):
+    """Settle each pending request with the model's reply. A transient failure (transport, rate) is not
+    settled: the attempt is recorded in the receipt file and retried after a backoff, until MAX_ATTEMPTS."""
     listed = host.send({'op': 'world-interpretations'})
     if listed.get('status') == 'error':
         return {'settled': [], 'failed': [{'message': listed.get('message')}]}
-    settled, failed = [], []
+    settled, failed, retrying = [], [], []
     for item in listed.get('pending') or []:
         path = receipt_path(state, item['id'])
         saved = json.loads(path.read_text()) if path.exists() else None
         if saved and saved['settled']:
             continue
-        if saved is None:
+        if saved is None or saved.get('retry'):
+            if saved and saved['next'] > now():
+                retrying.append(item['id'])
+                continue
             policy = item['policy']
             reply = ask({'model': policy.get('model'), 'system': policy.get('system', ''), 'user': user_content(item)})
-            saved = {'id': item['id'], 'object': item['object'], 'reply': reply, 'settled': False}
+            attempts = (saved or {}).get('attempts', 0) + 1
+            transient = reply.get('status') == 'failed' and reply.get('reason') in TRANSIENT and attempts < MAX_ATTEMPTS
+            saved = {'id': item['id'], 'object': item['object'], 'reply': reply, 'settled': False, 'attempts': attempts}
+            if transient:
+                write_atomic(path, dict(saved, retry=True, next=now() + BACKOFF * 2 ** (attempts - 1)))
+                retrying.append(item['id'])
+                continue
             write_atomic(path, saved)
         answer = host.send({'op': 'world-interpretation', 'id': item['id'], 'reply': saved['reply']})
         if answer.get('status') == 'error':
@@ -50,7 +65,7 @@ def run(state, host, ask=model.ask):
             continue
         write_atomic(path, dict(saved, settled=True, answer=answer))
         settled.append(item['id'])
-    return {'settled': settled, 'failed': failed}
+    return {'settled': settled, 'failed': failed, **({'retrying': retrying} if retrying else {})}
 
 
 def main(argv=None, out=None):

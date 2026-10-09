@@ -83,7 +83,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "rain" then rained::<Card.Reply>(state, Card.text(a.fields, "text"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "rain"})) else rang::<Card.Reply>(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 def colourName(colour: Colour) -> String:
   match colour:
     case amber(_): "amber"
@@ -92,10 +92,7 @@ def colourName(colour: Colour) -> String:
 def line(rain: Rain) -> Document.Document:
   Document.text(textConcat(Card.handle(rain.author), textConcat(": ", textConcat(rain.text, "\n"))))
 # Newest rains are last; the card shows the first eight and counts the rest.
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
   let head = Document.text(textConcat("A ", textConcat(colourName(state.colour), textConcat(" bell planted by ", textConcat(Card.handle(state.planting.principal), textConcat(Card.mine(state.planting.principal, context), textConcat(": ", textConcat(state.seed, if state.rung then " (rung)\n" else " (silent)\n"))))))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map::<Rain, Document.Document>(state.rains, line), 8n)})})
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())

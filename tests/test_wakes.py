@@ -128,10 +128,28 @@ class Wakes(Chain):
         self.assertEqual(self.version("env/" + OWNER), 1)
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="glm")["status"], "error")
 
+    def test_each_principal_creates_and_amends_their_own_env_and_wake(self):
+        """Rehearsal finding 10: Env and Wake belong to their principal from creation (GENESIS):
+        the owner creates them and may amend their laws; ember cannot seed them for another."""
+        env = self.env()
+        wake = self.wake()
+        for obj in (env, wake):
+            version = self.version(obj)
+            r = self.host.send(op="world-amend", principal=OWNER, identity="am-" + obj, object=obj, version=version,
+                               law="law owner: request.subject == new.owner")
+            self.assertEqual(r["status"], "admitted", (obj, r))
+            r = self.host.send(op="world-amend", principal=OTHER, identity="steal-" + obj, object=obj, version=version + 1,
+                               law="law open: request.kind == 0 or request.subject == \"%s\"" % OTHER)
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), (obj, r))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-w2", object="wake/x", modules=closure("Wake"), entry="initial",
+                           seed=record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        self.assertEqual(r["status"], "error", r)
+        self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: "), r)
+
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
                            entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))
-        self.assertEqual(r, {"status": "error", "message": "law does not admit an amendment by its proposer ember: owner: new.owner == request.subject"})
+        self.assertEqual(r, {"status": "error", "message": "law does not admit an amendment by its proposer ember: owner: request.subject == new.owner"})
 
     def test_env_law_refuses_a_strangers_write_proposed_directly(self):
         env = self.env()
@@ -204,6 +222,23 @@ class Wakes(Chain):
 
     def tide(self, gap=3):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=nil()))
+
+    def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
+        """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
+        and subscribe, tick and a tick too soon each answer with what happened and the card."""
+        self.tide()
+        self.avatar(OTHER)
+        post = ("delvetalk garden plant / colour: amber / seed: an example\nmine:\n"
+                "delvetalk tide subscribe / every: 1 / note: WC-01, first light")
+        sub = self.turn("tide", "receive", heard(post), principal=OTHER)
+        self.assertEqual(self.label_of(sub), "done")
+        card = sub["offers"][0]["text"]
+        print("\n--- tide, subscribed ---\n" + card)
+        self.assertTrue(card.startswith("Subscribed, from tick 0.\n\nTIDE at tick 0"), card)
+        tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
+        self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 notes sent.\n\nTIDE at tick 0"), tick["offers"])
+        soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
+        self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at height "), soon["offers"])
 
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()

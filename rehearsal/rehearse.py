@@ -28,6 +28,14 @@ from transport import post as post_py  # noqa: E402
 OWNER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town (docs/GENESIS.md)
 WELCOME = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxeibkqxuk2j'
 STATUS = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxhfxkkcts27'
+# Every post of ember's in the archive that carries a card is a hub, recorded for the directory:
+# the v0 welcome, the v1 status, the leaked v1 welcome draft (the post the FOUNDATION section 10 hour
+# answers), the v2 status. The archive holds no post of the Garden's own card.
+HUBS = [WELCOME, 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxen3fdeo224',
+        'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxgh25xsa227', STATUS]
+# The section 10 planting: glm's post, recorded as the bell's planting slot once a bell grows from it,
+# so the rains and the strike that reply to it route to the bell by reply address.
+PLANTING = 'at://did:plc:nmjdxe6fex23zslnnbwgruj3/town.delve.feed.post/3mxghe7w33c2f'
 NOT_ADDRESSED = 'unclear: not addressed'
 FIX = ROOT / 'rehearsal' / 'fixtures'
 
@@ -94,6 +102,7 @@ class Run:
         self.steps = []       # per window: what each program printed
         self.answers = json.loads((FIX / 'model-answers.json').read_text())
         self.answered = {}    # interpretation id -> (uri, raw)
+        self.seen, self.planting = set(), None
 
     def program(self, *argv, what=''):
         """One transport program as a subprocess; its stdout JSON lines are returned, stderr kept verbatim."""
@@ -151,7 +160,7 @@ class Run:
     def record_posts(self, posts):
         """The owner's posts as posted for their objects, through post.py's own record_posted."""
         recorded = []
-        for uri, obj in ((WELCOME, 'directory'), (STATUS, 'garden')):
+        for uri, obj in ((hub, 'directory') for hub in HUBS):
             p = posts[uri]
             reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj)
             recorded.append({'uri': uri, 'object': obj, 'status': reply.get('status'), 'message': reply.get('message')})
@@ -183,15 +192,52 @@ class Run:
             self.answered[item['id']] = {'uri': uri, 'raw': raw, 'utterance': item['utterance'][:200]}
         return len(listed.get('pending') or [])
 
-    def window(self, window, now, texts):
+    def children(self, obj='garden'):
+        v = self.host.send({'op': 'world-view', 'principal': OWNER, 'object': obj})
+        f = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'children'), {'items': []})
+        return [next(x['value']['value'] for x in c['fields'] if x['name'] == 'object') for c in f.get('items', [])]
+
+    def record_planting(self, posts, before):
+        """Once glm's planting post has grown a bell, record that post for the bell with the planting slot
+        (the turn's principal and intent, as Garden.slot names it)."""
+        if self.planting or PLANTING not in self.seen:
+            return
+        grown = [c for c in self.children() if c not in before]
+        if not grown:
+            self.planting = {'status': 'no bell grew from the planting post', 'uri': PLANTING}
+            return
+        did = PLANTING.split('/')[2]
+        reply = post_py.record_posted(self.host, {'uri': PLANTING, 'cid': posts[PLANTING]['cid']}, grown[-1],
+                                      {'principal': did, 'intent': PLANTING})
+        self.planting = {'status': reply.get('status'), 'object': grown[-1], 'message': reply.get('message'), 'uri': PLANTING}
+
+    def window(self, window, now, texts, posts):
+        """One observer poll, as production runs it: bridge, then the interpretation loop, then deliveries,
+        then the clock to the end of the window."""
         self.feed(window)
+        self.seen.update(p['uri'] for p in window)
+        before = self.children()
         sock = str(self.state / 'host.sock')
         bridged = self.program('-m', 'transport.bridge', 'run', '--once', '--mock', str(self.mock), '--state', str(self.state),
                                '--host-socket', sock, '--now', str(now), what='bridge')
         pending = self.fixtures_for_pending(texts)
         interpreted = self.program('-m', 'transport.interpret', 'run', '--once', '--mock', str(self.models), '--state', str(self.state),
                                    '--host-socket', sock, what='interpret') if pending else []
-        step = {'now': now, 'posts': len(window), 'bridge': bridged, 'interpretations': pending, 'interpret': interpreted}
+        delivered = 0
+        for _ in range(16):
+            if not self.host.send({'op': 'world-pending'}).get('count'):
+                break
+            got = self.host.send({'op': 'world-deliver', 'limit': 16})
+            if got.get('status') == 'error':
+                self.errors.append({'kind': 'deliver', 'reply': got})
+                break
+            delivered += len(got.get('receipts') or [])
+        clock = self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': int(now // 60)})
+        if clock.get('status') == 'error':
+            self.errors.append({'kind': 'clock', 'reply': clock})
+        self.record_planting(posts, before)
+        step = {'now': now, 'posts': len(window), 'bridge': bridged, 'interpretations': pending, 'interpret': interpreted,
+                'delivered': delivered}
         for b in bridged:
             for f in b.get('failed') or []:
                 self.errors.append({'kind': 'bridge-failed', 'uri': f['uri'], 'message': f['message']})
@@ -283,11 +329,11 @@ def main(argv=None):
         for p in posts:
             buckets[int((epoch(p['record']['createdAt']) - t0) // span)].append(p)
         for k in sorted(buckets):
-            r.window(buckets[k], t0 + (k + 1) * span, texts)
+            r.window(buckets[k], t0 + (k + 1) * span, texts, by_uri)
         # After the last post: the clock runs on past every interpretation deadline, deliveries drain.
         last = t0 + (max(buckets) + 1) * span
         for extra in (30, 70, 130):
-            r.window([], last + extra * 60, texts)
+            r.window([], last + extra * 60, texts, by_uri)
         sock = str(r.state / 'host.sock')
         for _ in range(16):
             if not r.host.send({'op': 'world-pending'}).get('count'):
@@ -313,7 +359,7 @@ def main(argv=None):
             results['cards'][obj] = {'status': c.get('status'), 'text': c.get('text'), 'clause': c.get('clause'),
                                      'chars': len(c.get('text') or '')}
         # Offers the host holds for each principal, against what the outbox drafted (by height).
-        drafted = {json.loads(p.read_text())['receipt']['height'] for p in (r.state / 'outbox').glob('*.json')}
+        drafted = {int(p.name.split('-')[0]) for p in (r.state / 'outbox').glob('*.json')}
         held = []
         for principal in sorted({e['identity']['principal'] for e in map(json.loads, open(r.state / 'world.journal')) if 'identity' in e}):
             got = r.host.send({'op': 'world-offers', 'principal': principal})
@@ -332,17 +378,29 @@ def main(argv=None):
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))
     obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.state / 'observe.sqlite').execute('SELECT json FROM observations ORDER BY seq')]
     results['observed'] = {'count': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
-    results['observations'] = {o['uri']: {'kind': o['kind'], 'spell': o['spell'], 'replyTo': o['replyTo'], 'handle': o['author']['handle']} for o in obs}
+    results['observations'] = {o['uri']: {'kind': o['kind'], 'spell': o['spell'], 'replyTo': o['replyTo'], 'root': o.get('root'), 'handle': o['author']['handle']} for o in obs}
     skipped = (r.state / 'skipped.txt').read_text().split() if (r.state / 'skipped.txt').exists() else []
     results['skipped'] = len(skipped)
     drafts = []
     for path in sorted((r.state / 'outbox').glob('*.json'), key=lambda p: int(p.name.split('-')[0])):
         d = json.loads(path.read_text())
-        drafts.append({'file': path.name, 'height': d['receipt']['height'], 'replyTo': d['replyTo'],
-                       'postText': by_uri[d['replyTo']]['record']['text'] if d['replyTo'] in by_uri else None, 'to': d['replyHandle'], 'text': d['text'],
-                       'chars': len(d['text']), 'outcome': (d['receipt'].get('outcome') or {}).get('tag'),
-                       'class': (d['receipt'].get('outcome') or {}).get('class'), 'object': (d['receipt'].get('identity') or {}).get('object')})
-    results['drafts'] = drafts
+        receipt = d.get('receipt') or {}
+        reply_to = d.get('replyTo')
+        drafts.append({'file': path.name, 'height': int(path.name.split('-')[0]), 'replyTo': reply_to,
+                       'postText': by_uri[reply_to]['record']['text'] if reply_to in by_uri else None, 'to': d.get('replyHandle'),
+                       'text': d.get('text') or '', 'chars': len(d.get('text') or ''),
+                       'outcome': (receipt.get('outcome') or {}).get('tag') or ('resumed offer' if d.get('offer') else 'publication' if not reply_to else None),
+                       'class': (receipt.get('outcome') or {}).get('class'), 'object': d.get('object')})
+    results['offerless'] = sum(1 for d in drafts if not d['text'])
+    results['drafts'] = [d for d in drafts if d['text']]
+    results['planting'] = r.planting
+    verdicts = collections.Counter()
+    for e in entries:
+        o = e.get('outcome') or {}
+        if o.get('tag') == 'interpreted':
+            v = o.get('verdict') or {}
+            verdicts[v.get('tag', '?') + (': ' + '; '.join(v.get('needs') or []) if v.get('needs') else '')] += 1
+    results['verdicts'] = dict(verdicts)
     results['answered'] = r.answered
     results['steps'] = r.steps
     results['errors'] = r.errors

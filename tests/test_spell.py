@@ -149,6 +149,32 @@ class Parse(unittest.TestCase):
                 self.assertNotEqual(propose(bad, card="env/x").split(" ")[0], "proposal", bad)
         self.assertTrue(parse("delvetalk env/x ??").startswith("not a spell"))
 
+    def test_the_slash_form_the_town_writes(self):
+        """All five spells in the archive use ` / ` (rehearsal/REPORT.md, finding 1)."""
+        self.assertEqual(parse("delvetalk tide subscribe / every: 1 / note: WC-01, first light"),
+                         "spell tide subscribe every=1;note=WC-01, first light;")
+        self.assertEqual(propose("delvetalk garden-1 plant / colour: amber / seed: a fern"),
+                         "proposal garden-1 plant colour=amber;seed=a fern;")
+        # A field line holds one field: its value keeps its slashes.
+        self.assertEqual(parse("delvetalk garden-1 plant\nseed: a / b fern"), "spell garden-1 plant seed=a / b fern;")
+        self.assertEqual(parse("delvetalk a b x: at://did/p/1 / y: 2"), "spell a b x=at://did/p/1;y=2;")
+        self.assertEqual(parse("delvetalk a b x: 1/2 / y: and/or"), "spell a b x=1/2;y=and/or;")
+
+    def test_the_last_unquoted_delvetalk_line_is_the_spell(self):
+        post = ("e.g. like this:\n    delvetalk garden plant / colour: amber / seed: x\n"
+                "> delvetalk wake watch\nso here is mine:\ndelvetalk tide subscribe / every: 1 / note: WC-01")
+        self.assertEqual(parse(post), "spell tide subscribe every=1;note=WC-01;")
+        self.assertEqual(parse("delvetalk a first\ndelvetalk b second\nx: 1"), "spell b second x=1;")
+        # Only quotation: the indented spell is taken; a `>` line never is.
+        self.assertEqual(parse("quoted:\n    delvetalk garden-1 plant\n    seed: fern"), "spell garden-1 plant seed=fern;")
+        self.assertTrue(parse("> delvetalk garden-1 plant\n> seed: fern").startswith("not a spell"))
+        # A malformed last delvetalk line does not hide a real one.
+        self.assertEqual(parse("delvetalk a b\nx: 1\ndelvetalk Is The word"), "spell a b x=1;")
+
+    def test_fences_and_quoted_lines_among_the_fields_are_skipped(self):
+        post = "```\ndelvetalk garden-1 plant\n```\n```text\nseed: fern\n> colour: violet\ncolour: silver\n```"
+        self.assertEqual(propose(post), "proposal garden-1 plant colour=silver;seed=fern;")
+
     def test_unicode_values_survive(self):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: 🌙 é “moths” 蛾\ncolour: silver"),
                          "proposal garden-1 plant colour=silver;seed=🌙 é “moths” 蛾;")
@@ -214,8 +240,9 @@ class Maximum(unittest.TestCase):
     they traverse (an exact bounded scan, no longer 2 x min(size, 4 x scalars)),
     break 2 x (|alphabet| + 2) per visited scalar, plus about 400 ticks of fixed
     work per line. Bytes after a --- rule are never scanned. A 4,096-byte reply
-    with 64 fields and a rule parses in about 57,000 ticks; one whose every byte
-    is in a field line (4,057 bytes) in about 65,000: both fit the default
+    with 64 fields and a rule parses in about 68,000 ticks; one whose every byte
+    is in a field line (4,057 bytes) in about 76,000 (each line is also checked
+    for a later spell line, which takes over): both fit the default
     100,000 ticks (the dense one needed 1,000,000 under the 4-bytes-per-scalar
     charge)."""
 

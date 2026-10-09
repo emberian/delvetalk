@@ -111,3 +111,68 @@ class Lenses(test_chain.Chain):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwnedLenses(test_chain.Chain):
+    """Lenses on the objects that had no owner: Garden (confirm), Place and Thing (name,
+    description); Workshop has nothing to set and says so. Garden and Thing declare a law that
+    refuses the same write from anyone but the owner; Place is imported by Thing and Avatar, so
+    its guard is its code's alone."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def say(self, obj, text, who):
+        r = self.turn(obj, "receive", heard(text), principal=who)
+        self.assertEqual(r["status"], "admitted", r)
+        return r
+
+    def field(self, obj, name):
+        return [f["value"]["value"] for f in self.state(obj)["fields"] if f["name"] == name][0]
+
+    def forged(self, obj, edits):
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        version = self.host.send(op="world-view", principal="ember", object=obj)["version"]
+        fields = {name: keep for name in edits[0]}
+        fields.update(edits[1])
+        return self.host.send(op="world-propose", principal="did:plc:mallory", identity="forged-" + obj,
+                              roots=[{"object": obj, "version": version}], writes=[{"object": obj, "edits": [record(**fields)]}])
+
+    def test_the_gardens_owner_sets_confirm(self):
+        from tests.test_chain import garden_seed
+        self.make("garden", closure("Garden"), garden_seed())
+        usage = self.say("garden", "delvetalk garden ?", "glm")["offers"][0]["text"]
+        self.assertIn("    delvetalk garden set\n    confirm: <yes, no>\n", usage)
+        r = self.say("garden", "delvetalk garden set\nconfirm: no", "glm")
+        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the garden's owner sets it; that is ember"))
+        r = self.say("garden", "delvetalk garden set\nconfirm: no", "ember")
+        self.assertEqual(r["result"]["label"], "changed", r)
+        self.assertFalse(self.field("garden", "confirm"))
+        set_ = {"tag": "variant", "label": "set", "payload": record(value={"tag": "boolean", "value": True})}
+        r = self.forged("garden", (["planted", "confirm", "pending", "children", "pageCheckpoint"], {"confirm": set_}))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
+
+    def test_a_rooms_owner_renames_it(self):
+        from tests.test_places import place_seed
+        self.make("porch", closure("Place"), place_seed("Porch"))
+        r = self.say("porch", "delvetalk porch set\nname: Back Porch", "glm")
+        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the room's owner changes it; that is ember"))
+        self.assertEqual(self.say("porch", "delvetalk porch set\ndescription: moths at the lamp", "ember")["result"]["label"], "done")
+        self.assertEqual(self.say("porch", "delvetalk porch set\nname: Back Porch", "ember")["result"]["label"], "done")
+        self.assertEqual((self.field("porch", "name"), self.field("porch", "description")), ("Back Porch", "moths at the lamp"))
+
+    def test_a_things_owner_redescribes_it_and_the_law_keeps_others_out(self):
+        from tests.test_places import thing_seed
+        self.make("stone", closure("Thing"), thing_seed("stone"))
+        r = self.say("stone", "delvetalk stone set\nname: pebble", "glm")
+        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the thing's owner changes it; that is ember"))
+        self.assertEqual(self.say("stone", "delvetalk stone set\ndescription: warm from the sun", "ember")["result"]["label"], "done")
+        self.assertEqual(self.field("stone", "description"), "warm from the sun")
+        set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
+        r = self.forged("stone", (["name", "description", "holder", "location"], {"name": set_}))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
+
+    def test_the_workshop_has_nothing_to_set_and_says_so(self):
+        self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
+        r = self.say("workshop", "delvetalk workshop set\ntitle: Forge", "ember")
+        self.assertEqual(r["offers"][0]["text"], "Not done: Nothing here can be set: the workshop keeps no settings of its own.\n")
+        self.assertIn("delvetalk workshop check", self.say("workshop", "delvetalk workshop ?", "glm")["offers"][0]["text"])

@@ -54,7 +54,7 @@ class Mailbox(test_chain.Chain):
         self.assertEqual(self.inbox(KIM), [(GLM, "the moths are out")])
         card = self.say(KIM, "", KIM)["offers"][0]["text"]
         print("\n--- kimik3's own card ---\n" + card)
-        self.assertIn("0 following, follows 1\nFollows: did:plc:glm\n", card)
+        self.assertIn("0 following, follows 1\nFollows: glm\n", card)
         self.assertIn("glm: the moths are out\n", card)
         # Unsubscribing removes both sides.
         self.assertEqual(self.say(KIM, "delvetalk %s unsubscribe\nto: %s" % (KIM, GLM), KIM)["result"]["label"], "done")

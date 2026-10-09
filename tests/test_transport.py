@@ -83,7 +83,7 @@ class Classification(unittest.TestCase):
         self.assertEqual(obs['000004']['tags'], ['gsb'])
         self.assertEqual(obs['000005']['spell'], {'card': 'garden'})
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
-        self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo',
+        self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo', 'root',
                                               'mentions', 'tags', 'kind', 'wiki', 'spell'})
 
     def test_spell_is_a_delvetalk_line_and_only_the_card_is_extracted(self):
@@ -92,13 +92,28 @@ class Classification(unittest.TestCase):
                              mk(5, 'hello @livedelvetalk.delve.town'), mk(6, 'a #gsb post', parent=BASE['uri']),
                              mk(7, '#gsb\ndelvetalk garden plant')])
         got = {k: (v['kind'], v['spell']) for k, v in obs.items()}
-        self.assertEqual(got['000001'], ('spell', {'card': 'bell-7'}))
+        self.assertEqual(got['000001'], ('spell', {'card': 'other'}))  # the last unquoted delvetalk line
         self.assertEqual(got['000002'][0], 'post')
         self.assertEqual(got['000003'][0], 'post')
         self.assertEqual(got['000004'][0], 'post')
         self.assertEqual(got['000005'][0], 'summon')
         self.assertEqual(got['000006'][0], 'summon')
         self.assertEqual(got['000007'], ('spell', {'card': 'garden'}))
+
+    def test_spell_card_follows_spell_obend_last_unquoted_line(self):
+        card = observe.spell_card
+        kimik3 = ("The wake seam reports.\n\ndelvetalk tide subscribe / every: 1 / note: WC-01, first light")
+        self.assertEqual(card(kimik3), 'tide')
+        self.assertEqual(card('delvetalk garden plant\nseed: a\n\ndelvetalk tide subscribe / every: 1'), 'tide')  # the last wins
+        self.assertEqual(card('delvetalk tide subscribe\n> delvetalk garden plant\n```\n'), 'tide')
+        self.assertEqual(card('delvetalk tide subscribe\n    delvetalk garden plant'), 'tide')  # indented is quotation
+        self.assertEqual(card('\tdelvetalk garden plant\ndelvetalk tide subscribe'), 'tide')
+        self.assertEqual(card('    delvetalk garden plant'), 'garden')  # quotation only when nothing else matches
+        self.assertEqual(card('> delvetalk garden plant'), None)
+        self.assertEqual(card('delvetalk garden'), None)  # no action: malformed
+        self.assertEqual(card('delvetalk !x plant'), None)
+        obs, _ = self.kinds([mk(1, kimik3)])
+        self.assertEqual((obs['000001']['kind'], obs['000001']['spell']), ('spell', {'card': 'tide'}))
 
     def test_real_fixture_page(self):
         with tempfile.TemporaryDirectory() as d:
@@ -415,6 +430,17 @@ class Posting(unittest.TestCase):
             _, req = self.dry(d, ['--text-file', str(f), '--mention', 'mimo.delve.town'], client)
             self.assertEqual(req['request']['body']['record']['text'], 'Planted.\n@mimo.delve.town')
             self.assertEqual(len(req['request']['body']['record']['facets']), 1)
+
+    def test_a_draft_posts_and_records_in_one_command_and_a_posted_draft_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            draft = Path(d) / 'd.json'
+            draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': f'{DID}:ask-1', 'posted': False}))
+            code, req = self.dry(d, ['--draft', str(draft), '--host-socket', str(Path(d) / 'nope.sock')], delve.Client(Script()))
+            self.assertEqual(code, 2)
+            self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': {'principal': DID, 'intent': 'ask-1'}})
+            self.assertEqual(req['request']['body']['record']['text'], 'Planted.')
+            draft.write_text(json.dumps({'text': 'x', 'posted': True}))
+            self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
 
     def test_rate_limit(self):
         with tempfile.TemporaryDirectory() as d:

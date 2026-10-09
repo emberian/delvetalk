@@ -30,3 +30,9 @@ extern_lib delvetalk_sync pkg := do
 lean_exe «delvetalk-obend» where
   root := `PackageMain
   srcDir := "spec"
+
+/-- Stage timings of a compile and the front end's differential self-checks
+(`spec/CompileProfile.lean`); not a default target. -/
+lean_exe «compile-profile» where
+  root := `CompileProfile
+  srcDir := "spec"

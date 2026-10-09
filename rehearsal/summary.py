@@ -21,11 +21,13 @@ def main(path):
     kinds = collections.Counter(o['kind'] for o in obs.values())
     considered = [u for u, o in obs.items() if o['kind'] in BRIDGED or o['replyTo']]
     routed_recorded = [u for u in considered if obs[u]['replyTo'] in recorded]
+    routed_root = [u for u in considered if obs[u]['replyTo'] not in recorded and obs[u].get('root') in recorded]
     w('\n| Measure | Count |\n| --- | --- |')
     for k in ('spell', 'summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge'):
         w(f'| observed as `{k}` | {kinds.get(k, 0)} |')
     w(f"| considered by the bridge (spell, summon, or any reply) | {len(considered)} |")
     w(f"| ... routed by reply address (parent recorded as posted) | {len(routed_recorded)} |")
+    w(f"| ... routed by thread root (root recorded as posted) | {len(routed_root)} |")
     w(f"| ... skipped (no addressee, no card word) | {r['skipped']} |")
     w(f"| never considered (top-level non-spell, non-summon posts) | {len(obs) - len(considered)} |")
     outcomes = j['outcomes']
@@ -35,7 +37,10 @@ def main(path):
         w(f"| journal `{k}` entries | {outcomes.get(k, 0)} |")
     for cls, n in sorted(j['refusedByClass'].items()):
         w(f'| refused `{cls}` | {n} |')
+    for v, n in sorted((r.get('verdicts') or {}).items()):
+        w(f"| interpretation verdict `{v}` | {n} |")
     w(f"| outbox drafts | {len(r['drafts'])} |")
+    w(f"| turns that offered nothing (no draft) | {r.get('offerless', 0)} |")
     stranded = [o for o in r.get('hostOffers', []) if not o['drafted']]
     w(f"| offers the host holds that no draft carries | {len(stranded)} |")
     w(f"| drafts over 1,400 characters | {sum(1 for d in r['drafts'] if d['chars'] > 1400)} |")
@@ -46,6 +51,8 @@ def main(path):
     w(f"| snapshots | {len(r['snapshots'])} {r['snapshots']} |")
     w(f"| objects | {r['status'].get('objects')} |")
     w(f"| clock at the end (unix minutes) | {r['status'].get('clock')} |\n")
+    w('Recorded as posted: ' + ', '.join(f"`{x['uri'].rsplit('/', 1)[-1]}` for {x['object']} ({x['status']})" for x in r['recorded'])
+      + f". Section 10 planting slot: {json.dumps(r.get('planting'))}.\n")
 
     w('### Drafts by recipient\n')
     by = collections.Counter(d['to'] for d in r['drafts'])

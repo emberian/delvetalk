@@ -1,4 +1,4 @@
-"""Render with a point of view (FOUNDATION section 13, row 3): renderFor(state, context) is the
+"""Render with a point of view (FOUNDATION section 13, row 3): render(state, context) is the
 card as the reader in the context sees it. A member sees more than a stranger; the planter sees
 "(yours)". The card a non-acting reply gets is the reader's, so these drive real world-turns
 with an empty reply by different principals, and through world-card, which renders for its reader.
@@ -86,6 +86,22 @@ class Views(test_chain.Chain):
         self.assertTrue(theirs.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:\n\n    delvetalk garden plant\n"), theirs)
         # Showing the card drops nothing.
         self.assertEqual(len([f for f in self.state("garden")["fields"] if f["name"] == "pending"][0]["value"]["items"]), 1)
+
+
+class Handles(test_chain.Chain):
+    """Rehearsal finding 8: a card never shows a raw DID. A real did:plc (24 characters after the
+    method) shows as "…" and its last eight; a short test DID shows whole."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_a_real_did_is_shown_by_its_last_eight(self):
+        did = "did:plc:a5uoyxqts4y3iwo2dk74ygma"
+        r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
+                           entry="initial", seed=record(owner=label(did), buffer=nil(), seen=nat(0), subscribers=nil()))
+        self.assertEqual(r["status"], "created", r)
+        card = self.turn("env/" + did, "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
+        self.assertTrue(card.startswith("ENV of …dk74ygma: 0 new since #0\n"), card)
+        self.assertNotIn("a5uoyxqts4y3iwo2dk74ygma", card.split("Reply with a spell")[0])
 
 
 class PartyViews(test_chain.Chain):

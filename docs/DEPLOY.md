@@ -87,12 +87,13 @@ account's credentials file is mounted for that one command only:
 
     docker compose run --rm -v /etc/delvetalk/delve-credentials.json:/run/delve.json:ro delvetalk-ops \
       python3 -m transport.post --state /data/state/post post --text-file /data/welcome.txt \
-      --intent welcome-1 --host-socket /data/state/host.sock --record directory --credentials /run/delve.json
+      --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
 Without `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
-read it, then add the flag. `--record` asks the host for `world-posted`; if the
-host answers "unknown world operation", post without `--record` and record the uri
-and cid from `/data/state/post/post-log.jsonl` later.
+read it, then add the flag. `--object` names the object the card addresses: after a
+confirmed post, post.py calls the host's `world-posted` for it, so every card posted
+is recorded in the same step (replies to it then route to that object). Post a card
+without `--object` only if no object should hear its replies.
 
 ## The daily loop
 
@@ -104,9 +105,18 @@ The front keeps running. Run the town programs against hostd:
       --state /data/state
     docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
 
-For each draft: read it, post it as a reply with `transport.post ... --reply-to
-<uri>` as above, then `python3 -m transport.bridge mark-posted <file>` (also
-through `delvetalk-ops`). Draft principals are observed, unverified DIDs.
+Each draft in the outbox prints its own command. It posts the draft as a reply, records it
+with the host and marks it posted:
+
+    python3 -m transport.post --state STATE post --draft <file> --intent draft-<name> \
+      --host-socket SOCKET --object <object> [--slot <principal:intent>] --i-am-ember-and-authorize-posting \
+      && python3 -m transport.bridge mark-posted <file>
+
+Read the draft, add the credentials mount as above, and run it. A turn that suspends on an
+interpretation has no draft until the interpretation settles; then the bridge drafts what the
+resumed turn offered (none if it offered nothing). A model failure (network, rate limit)
+leaves the interpretation pending and is retried with backoff up to 8 times. Draft
+principals are observed, unverified DIDs.
 
 ## Rotating the Anthropic key
 

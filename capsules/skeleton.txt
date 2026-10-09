@@ -1,5 +1,5 @@
 DelveTalk: object = pinned Bend + versioned State + law. Methods are activities; every effect is a Plan.
-object: record State; record Seed; def seeded(Seed) -> State; def initial() -> State; def render(State) -> Document
+object: record State; record Seed; def seeded(Seed) -> State; def initial() -> State; def render(State, Context) -> Document
   def m(state: State, input: I, context: Context) -> Activity<Plan, Response, T>; match perform(p): case written(_): ..
   Edits: one Edit<T,D> or Entries<D,U> per State field; type Plan = Plan<Edits, A>; type Response = Response<State, R>
 record Context: world, object, principal, caller, intent: String; height: Nat

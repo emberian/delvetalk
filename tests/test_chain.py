@@ -28,17 +28,30 @@ def reference(name):
     return record(world=label(""), object=label(name))
 
 
-def garden_seed(policy="", pending=(), confirm=True):
-    """A Garden Seed: its policy object, whether prose waits for "yes", and the proposals already waiting."""
+def garden_seed(policy="", pending=(), confirm=True, owner="ember"):
+    """A Garden Seed: its owner, its policy object, whether prose waits for "yes", and the proposals already waiting."""
     wire = {"tag": "list", "items": [record(principal=label(principal), spell=label(spell))
                                      for principal, spell in pending]}
-    return record(policy=reference(policy), confirm=boolean(confirm), pending=wire)
+    return record(owner=label(owner), policy=reference(policy), confirm=boolean(confirm), pending=wire)
 
 
-def garden_state(planted=0):
+def garden_state(planted=0, owner="ember"):
     """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
-    return record(planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirm=boolean(True),
-                  pending=nil(), children=nil())
+    return record(owner=label(owner), planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirm=boolean(True),
+                  pending=nil(), children=nil(), pageCheckpoint=label(""))
+
+
+# A package that declares a law cannot be imported by a creator ("a law belongs to the
+# package's entry module"), so make() creates it with world-create: the whole State is
+# these defaults with the Seed's fields laid over them (as the host's create does), made
+# by the seed's owner (a law must admit an amendment by its installer).
+def lawful_defaults():
+    return {
+        "Garden": [("owner", label("ember")), ("planted", {"tag": "natural", "value": "0"}), ("policy", reference("")),
+                   ("confirm", boolean(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label(""))],
+        "Thing": [("owner", label("ember")), ("name", label("")), ("description", label("")), ("holder", reference("")),
+                  ("location", reference(""))],
+    }
 
 
 def field(state, name):
@@ -70,8 +83,17 @@ def make(state: State, input: {id: String, seed: Child.Seed}, context: Abi.Conte
 
 class Chain(TurnWorld):
     def make(self, name, modules, seed):
-        """Create object `name` from the last module of `modules` with a Seed, through a creator."""
+        """Create object `name` from the last module of `modules` with a Seed, through a creator
+        (or, for a package that declares a law, with world-create by the seed's owner)."""
         package = modules[-1]["name"]
+        if any(line.startswith("law ") for line in modules[-1]["source"].splitlines()):
+            given = {f["name"]: f["value"] for f in seed["fields"]}
+            whole = [(k, given.get(k, v)) for k, v in lawful_defaults()[package]]
+            owner = given.get("owner", label("ember"))["value"]
+            r = self.host.send(op="world-create", principal=owner, identity="mk-" + name, object=name,
+                               modules=modules, entry="initial", seed={"tag": "record", "fields": [{"name": k, "value": v} for k, v in whole]})
+            self.assertEqual(r["status"], "created", r)
+            return
         maker = "maker-" + name
         creator = modules + [{"name": "Maker", "source": MAKER.replace("PACKAGE", package)}]
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + maker, object=maker,

@@ -52,7 +52,7 @@ class Create(Await):
         self.assertEqual(get(bell, "rung"), boolean(False))                 # default from initial()
         v = self.host.send(op="world-view", principal="e", object="garden/bell/1")
         self.assertEqual((v["status"], v["version"]), ("viewed", 0))
-        self.assertEqual(self.state("garden")["fields"][0]["value"], nat(1))
+        self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(1))
 
     def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):
         self.make("garden", closure("Garden"), garden_seed())

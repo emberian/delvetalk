@@ -374,3 +374,10 @@ anthology lines from the archive itself.
 | 10 | Env and Wake genesis refused with a misleading message; Envs stay empty | the message names the clause; the opener may create for a named owner; the bridge feeds observed posts to Envs | host, objects, transport |
 | 11 | the clock tick and `post --record` were always refused | fixed in the rehearsal lane | done |
 | 12 | a transient model failure settles an interpretation for good | retry with backoff; settle only on refusal or after eight attempts | transport |
+| 13 | a reply whose parent is unrecorded is dropped even when an ancestor is recorded (the §10 hour) | route via the nearest recorded ancestor, then the thread root, then the card word | transport |
+| 14 | one bridge poll suspends a whole batch on interpretation and the ninth is refused `capacity`, which bound its identity | interpretation suspensions get their own limit; `capacity` is transient and releases the identity | host |
+
+After the interleaved rerun with hub posts recorded: 73 turns, 73 admitted,
+0 refused, 0 crashes, every hub reply answered with the directory menu, no
+bell grown. The gate stands: the §10 hour must plant, rain, refuse the
+duplicate cistern and admit the anthology lines from the archive itself.
