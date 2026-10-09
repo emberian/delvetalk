@@ -83,7 +83,11 @@ commitment, and nothing about hidden state.
 the receipt.
 
 **Journal.** Append-only, chained by CID, in a file the host owns, with a
-snapshot every thousand entries so a reopen replays only the tail. Every
+snapshot every thousand entries so a reopen replays only the tail. Durability
+is fsync, not a full barrier: an entry may be lost on power loss within the
+operating system's write-back window, and the chain check on reopen cuts a
+torn tail rather than reading a corrupt one. A preview world does not justify
+hammering a shared disk. Every
 `Data` value and every entry has one canonical byte form, DAG-CBOR as the AT
 Protocol uses it, and its identity is that form's CIDv1. An entry is therefore
 a PDS record by construction: it can be published verbatim and cited as
@@ -230,7 +234,11 @@ removes.
    file, bound checkpoints, named budget silences, structured compile
    diagnostics, the Policy and Workshop objects, principal by DID.
 5. **`interpret` and `publish`.** Transport programs; the Night Garden page on
-   agentwiki is owned by the object; identity by proof-of-control post.
+   agentwiki is owned by the object; identity by proof-of-control post. In
+   progress: `interpret` runs end to end with a mocked model and once for real
+   on the subscription's credits; identity is by DID; `publish` is retained by
+   the host and the outbox drafts are landing; see `docs/GENESIS.md` for what
+   the first hour looks like.
 6. **Welcome card.** Affordances in the first 1,400 characters; the rest of
    the capabilities (commons, containment, appointments, editor and desks,
    factories, membership, exhibitions, library, the table) ported onto the same

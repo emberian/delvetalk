@@ -1405,11 +1405,26 @@ def parseSlot (j : Json) : Except String Json := do
   let intent ← boundedText "slot intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
   return identityJson principal intent
 
-def postIndex (w : World) (uri object : String) (slot : Option Json) : World :=
-  { w with posts := w.posts.insert uri (object, slot) }
+def postIndex (w : World) (uri : String) (post : Post) : World :=
+  { w with posts := w.posts.insert uri post }
 
-/-- `world-posted {principal, uri, cid, object, slot?}`: transport confirms a post it made for
-    `object` (and for an awaited `slot`). Only the world's clock principal, when one is named. -/
+/-- The `page` and `section` of a `posted` request or outcome: absent, or a page title (a line of
+    at most `maxTitleBytes`) and a section, "" for the whole page. A section without a page is refused. -/
+def postedPage (j : Json) : Except String (String × String) := do
+  let page ← optText j "page"
+  let part ← optText j "section"
+  match page with
+  | none => if part.isSome then throw "section needs a page" else return ("", "")
+  | some page =>
+    let part := part.getD ""
+    if page.isEmpty || page.utf8ByteSize > Limits.maxTitleBytes || part.utf8ByteSize > Limits.maxTitleBytes
+        || page.any (· == '\n') || part.any (· == '\n') then
+      throw s!"page and section are titles: one line of 1..{Limits.maxTitleBytes} bytes"
+    return (page, part)
+
+/-- `world-posted {principal, uri, cid, object, slot?, page?, section?}`: transport confirms a post it
+    made for `object` (and for an awaited `slot`, or carrying the object's publication of `page`,
+    section "" for the whole page). Only the world's clock principal, when one is named. -/
 def postedOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let uri ← boundedText "uri" Limits.maxUriBytes (← j.getObjValAs? String "uri")
@@ -1418,12 +1433,14 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
   let slot ← match j.getObjVal? "slot" with
     | .ok (.null) | .error _ => pure none
     | .ok s => pure (some (← parseSlot s))
+  let (page, part) ← postedPage j
   unless uri.startsWith "at://" do throw "uri must be an at:// URI"
   if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
     throw s!"posts are confirmed only by {w.clockPrincipal}"
   unless w.objects.contains object do throw s!"unknown object {object}"
   let fields := [("tag", toJson "posted"), ("uri", toJson uri), ("cid", toJson cid), ("object", toJson object)] ++
-    (slot.map fun s => [("slot", s)]).getD []
+    (slot.map fun s => [("slot", s)]).getD [] ++
+    (if page.isEmpty then [] else [("page", toJson page), ("section", toJson part)])
   let digest := Journal.bodyHash (Json.mkObj fields)
   let answer := fun (entry : Json) => Json.mkObj [("status", toJson "posted"),
     ("height", (entry.getObjVal? "height").toOption.getD Json.null), ("receipt", entry)]
@@ -1432,18 +1449,19 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
   | some r => return (w, match r.getObjVal? "receipt" with | .ok e => answer e | .error _ => r)
   | none =>
     if w.posts.contains uri then throw s!"post {uri} is already recorded"
-    let (w', entry) := push (postIndex w uri object slot) (identityKey principal intent)
+    let (w', entry) := push (postIndex w uri { object, slot, page, part, height := w.height + 1 }) (identityKey principal intent)
       [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
        ("request", toJson digest), ("outcome", Json.mkObj fields)] [object]
     return (w', answer entry)
 
-/-- `world-addressee {parent}`: the object (and slot) a post at `parent` was made for. -/
+/-- `world-addressee {parent}`: the object (and slot, or page and section) a post at `parent` was made for. -/
 def addressee (w : World) (j : Json) : Except String Json := do
   let uri ← j.getObjValAs? String "parent"
   match w.posts[uri]? with
   | none => return Json.mkObj [("status", toJson "unknown")]
-  | some (object, slot) => return Json.mkObj ([("status", toJson "addressee"), ("object", toJson object)] ++
-      (slot.map fun s => [("slot", s)]).getD [])
+  | some p => return Json.mkObj ([("status", toJson "addressee"), ("object", toJson p.object)] ++
+      (p.slot.map fun s => [("slot", s)]).getD [] ++
+      (if p.page.isEmpty then [] else [("page", toJson p.page), ("section", toJson p.part)]))
 
 /-! ## Replay -/
 
@@ -1561,7 +1579,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let slot ← match outcome.getObjVal? "slot" with
       | .ok s => pure (some (← parseSlot s))
       | .error _ => pure none
-    return record (postIndex w uri object slot) entry key [object]
+    let (page, part) ← postedPage outcome
+    return record (postIndex w uri { object, slot, page, part, height := ← natField entry "height" }) entry key [object]
   | "suspended" =>
     let activity ← outcome.getObjVal? "activity"
     let checkpoint ← activity.getObjVal? "checkpoint"
@@ -1819,5 +1838,47 @@ def offersOp (w : World) (j : Json) : Except String Json := do
       pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i)] ++ fields.toList))
   return Json.mkObj ([("status", toJson "offers"), ("offers", Json.arr items), ("more", toJson (decide (all.size > page.size)))] ++
     (if principal == publisher w then [("publications", Json.arr pubs)] else []))
+
+
+/-- The newest whole-page post recorded for each object's page, by `identityKey object page`:
+    the post a section edit of that page replies to. -/
+def pagePosts (w : World) : Std.HashMap String (Nat × String) :=
+  w.posts.fold (init := {}) fun m uri p =>
+    if p.page.isEmpty || !p.part.isEmpty then m else
+    let key := identityKey p.object p.page
+    match m[key]? with
+    | some (h, _) => if h ≥ p.height then m else m.insert key (p.height, uri)
+    | none => m.insert key (p.height, uri)
+
+/-- `world-publications {principal, after?}`: the publications admitted turns retained, for the
+    publisher (the clock principal, else "transport"; anyone else is `denied`), oldest first after
+    journal height `after`, one page: `{height, ordinal, id, object, page, section, body}`, and
+    `replyTo` for a section edit when a post of its whole page is recorded (the newest). -/
+def publicationsOp (w : World) (j : Json) : Except String Json := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let after := (← optNat j "after").getD 0
+  if principal != publisher w then return Json.mkObj [("status", toJson "denied")]
+  let all := w.published.filter fun (index, _) => index + 1 > after
+  let shown := all.extract 0 Limits.maxHistoryLimit
+  let posts := pagePosts w
+  let items := shown.filterMap fun (index, i) => do
+    let entry ← w.entries[index]?
+    let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
+    let field := fun (k : String) => (p.getObjValAs? String k).toOption
+    let object ← field "object"
+    let title ← field "page"
+    let part ← field "section"
+    let text ← field "text"
+    -- The retained text is the agentwiki header, a blank line, then the body.
+    let body := "\n\n".intercalate (text.splitOn "\n\n").tail
+    let replyTo := if part.isEmpty then [] else
+      match posts[identityKey object title]? with
+      | some (_, uri) => [("replyTo", toJson uri)]
+      | none => []
+    pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
+      ("id", (p.getObjVal? "id").toOption.getD Json.null), ("object", toJson object), ("page", toJson title),
+      ("section", toJson part), ("body", toJson body)] ++ replyTo))
+  return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr items),
+    ("more", toJson (decide (all.size > shown.size)))]
 
 end Delvetalk.Host

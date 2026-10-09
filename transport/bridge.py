@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
+from transport.hostd import CLOCK
 from transport.hostproc import add_host_args, connect
 from transport.observe import SCHEMA, Observer
 
@@ -47,9 +48,6 @@ def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
 
-# TODO(host `publish`): when the host answers a turn with a `published` result ({page, section, body}),
-# turn it into a wiki-edit draft whose text is `edit: <page> › <section>\n\n<body>` and whose replyTo is
-# the page post, for post.py --wiki-edit. Until the host supports publish nothing produces one.
 def draft_text(reply):
     """The only text a draft carries. A refusal names its class and receipt, nothing of state."""
     receipt = reply['receipt']
@@ -93,18 +91,60 @@ def route(host, obs):
     return None
 
 
-def tick(host):
-    """Time enters the journal here and nowhere else: unix minutes, as the clock principal."""
-    host.send({'op': 'world-advance', 'height': int(time.time() // 60)})
+def publication_text(p):
+    """agentwiki: `wiki: <page>` for a whole page, `edit: <page> › <section>` for one section."""
+    header = f"wiki: {p['page']}" if not p['section'] else f"edit: {p['page']} › {p['section']}"
+    return f"{header}\n\n{p['body']}"
 
 
-def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
+def publication_drafts(state, host):
+    """Drafts for what objects published (`world-publications`, read as the clock principal), marked
+    like reply drafts and never posted here. A section edit replies to its page's recorded post; one
+    drafted before that post was recorded gets it on a later run, while it is unposted."""
+    outbox = Path(state) / 'outbox'
+    cursor = Path(state) / 'publications.after'
+    after = int(cursor.read_text()) if cursor.exists() else 0
+    waiting = [d['publication']['height'] for _, d in unposted(state) if 'publication' in d and d['section'] and not d['replyTo']]
+    start = min([after] + [h - 1 for h in waiting])
+    drafted = []
+    while True:
+        got = host.send({'op': 'world-publications', 'principal': CLOCK, 'after': start})
+        if got.get('status') != 'publications':
+            return drafted, got.get('message', got.get('status'))
+        for p in got['publications']:
+            path = outbox / f"{p['height']}-pub-{p['id'][:16]}.json"
+            if path.exists():
+                d = json.loads(path.read_text())
+                if not d['posted'] and not d['replyTo'] and p.get('replyTo'):
+                    write_atomic(path, dict(d, replyTo=p['replyTo']))
+                continue
+            write_atomic(path, {'publication': {k: p[k] for k in ('id', 'height', 'object')}, 'page': p['page'],
+                                'section': p['section'], 'replyTo': p.get('replyTo'), 'text': publication_text(p),
+                                'posted': False})
+            drafted.append(p['id'])
+        heights = [p['height'] for p in got['publications']]
+        if not got['more'] or not heights:
+            break
+        start = heights[-1] - 1  # a page may end inside one entry's publications; drafts already written are kept
+    last = max([after] + heights)
+    if last > after:
+        write_atomic(cursor, last)
+    return drafted, None
+
+
+def tick(host, now=None):
+    """Time enters the journal here and nowhere else: unix minutes, as the clock principal.
+    `now` (unix seconds) replaces the wall clock for an offline replay."""
+    return host.send({'op': 'world-advance', 'principal': CLOCK, 'height': int((time.time() if now is None else now) // 60)})
+
+
+def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
     state = Path(state)
     outbox = state / 'outbox'
     outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     if poll:
         poll(Observer(state, poll.client))
-    tick(host)
+    tick(host, now)
     done, failed, skip = [], [], skipped(state)
     for obs in pending_observations(state):
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']):
@@ -134,7 +174,10 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
         if not host.send({'op': 'world-pending'}).get('count'):
             break
         host.send({'op': 'world-deliver', 'limit': 16})
-    return {'turns': done, 'failed': failed}
+    published, problem = publication_drafts(state, host)
+    if problem:
+        failed.append({'publications': problem})
+    return {'turns': done, 'failed': failed, **({'published': published} if published else {})}
 
 
 def daemon(state, name, interval, step, stop=None, sleep=None):
@@ -186,6 +229,7 @@ def main(argv=None, out=None):
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
     r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
     r.add_argument('--mock', metavar='DIR')
+    r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
     o.add_argument('--state', required=True)
     m = sub.add_parser('mark-posted')
@@ -193,6 +237,13 @@ def main(argv=None, out=None):
     a = ap.parse_args(argv)
     if a.cmd == 'outbox':
         for path, d in unposted(a.state):
+            if 'publication' in d:
+                p = d['publication']
+                where = f"--reply-to {d['replyTo']} " if d['replyTo'] else ''
+                need = '' if d['replyTo'] or not d['section'] else '=== needs: the page post first (post and --record the whole page)\n'
+                out.write(f"=== publish for: {p['object']}  file: {path}\n{need}=== post: python3 -m transport.post --state STATE post "
+                          f"--text-file TEXT {where}--intent {p['id']} --host-socket SOCKET --record {p['object']}\n{d['text'].rstrip()}\n\n")
+                continue
             out.write(f"=== reply to: {d['replyTo']}\n=== web: {web_url(d['replyTo'], d['replyHandle'])}\n=== as: {d['replyHandle']} {d['principal']} (unverified)  file: {path}\n{d['text'].rstrip()}\n\n")
     elif a.cmd == 'mark-posted':
         mark_posted(a.file)
@@ -206,7 +257,7 @@ def main(argv=None, out=None):
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
             if a.once:
-                out.write(canonical(run(a.state, host, poll)) + '\n')
+                out.write(canonical(run(a.state, host, poll, now=a.now)) + '\n')
             else:
                 daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll)) + '\n') and out.flush())
         finally:

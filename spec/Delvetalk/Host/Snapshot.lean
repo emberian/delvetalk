@@ -175,8 +175,7 @@ def body (w : World) (binary : String) : Except String Json := do
       ("postQuota", toJson w.postQuota)]),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
-    ("posts", Json.arr (posts.toArray.map fun (uri, (object, slot)) =>
-      Json.mkObj ([("uri", toJson uri), ("object", toJson object)] ++ (slot.map fun s => [("slot", s)]).getD [])))] ++
+    ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
     derived w)
 
 def fileOf (journal : String) (height : Nat) : String := s!"{journal}.snapshot.{height}.cbor"
@@ -314,9 +313,10 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
   for g in ← (← b.getObjVal? "grants").getArr? do
     let grant ← Grant.ofJson g
     grants := grants.insert grant.id { grant with revoked := ← g.getObjValAs? Bool "revoked" }
-  let mut posts : Std.HashMap String (String × Option Json) := {}
+  let mut posts : Std.HashMap String Post := {}
   for p in ← (← b.getObjVal? "posts").getArr? do
-    posts := posts.insert (← p.getObjValAs? String "uri") (← p.getObjValAs? String "object", (p.getObjVal? "slot").toOption)
+    let (uri, post) ← Post.ofJson p
+    posts := posts.insert uri post
   return { w with objects, grants, posts }
 
 /-- The bookkeeping `record` derives from entries, with no judging: receipts, the history index,

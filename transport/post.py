@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from transport.delve import Client, Failure, canonical, http_transport
+from transport.hostd import CLOCK
 from transport.observe import MENTION
 
 FLAG = '--i-am-ember-and-authorize-posting'
@@ -57,11 +58,36 @@ def quota_limit(host):
     return LIMIT, 'constant'
 
 
-def record_posted(host, result, obj, slot=None):
-    """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?}."""
-    req = {'op': 'world-posted', 'principal': result['uri'].split('/')[2], 'uri': result['uri'], 'cid': result['cid'], 'object': obj}
+def wiki_target(text):
+    """(page, section) of an agentwiki post: `wiki: <page>` is the whole page (section ""), `edit: <page> › <section>`
+    one section; None for any other text."""
+    head = text.split('\n', 1)[0]
+    if head.startswith('wiki: ') and head[6:].strip():
+        return head[6:].strip(), ''
+    if head.startswith('edit: ') and ' › ' in head:
+        page, section = head[6:].split(' › ', 1)
+        if page.strip() and section.strip():
+            return page.strip(), section.strip()
+    return None
+
+
+def slot_record(text):
+    """`principal:intent` -> {principal, intent}, split at the last colon (DIDs contain colons)."""
+    principal, sep, intent = (text or '').rpartition(':')
+    if not (principal and sep and intent):
+        raise Failure('bad_slot', 'expected principal:intent')
+    return {'principal': principal, 'intent': intent}
+
+
+def record_posted(host, result, obj, slot=None, target=None):
+    """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?, page?, section?},
+    as the clock principal hostd opens the world with (the only one that may confirm posts).
+    `target` is the (page, section) an agentwiki post carried, so a reply to it routes to the page's object."""
+    req = {'op': 'world-posted', 'principal': CLOCK, 'uri': result['uri'], 'cid': result['cid'], 'object': obj}
     if slot is not None:
         req['slot'] = slot
+    if target is not None:
+        req['page'], req['section'] = target
     return host.send(req)
 
 
@@ -127,22 +153,23 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--host-socket', metavar='PATH', help='hostd socket: read the posting quota and record posts')
     p.add_argument('--record', metavar='OBJECT', help='after a confirmed post, call world-posted for this object (needs --host-socket)')
-    p.add_argument('--slot')
+    p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
     a = ap.parse_args(argv)
     try:
         if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) != 1 or (not a.text_file and not a.body_file):
             raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
-        if a.wiki_edit and not a.reply_to:
-            raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
         if a.text_file:
             text = Path(a.text_file).read_text()
         else:
             text = wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
+        if (a.wiki_edit or (wiki_target(text) or ('', ''))[1]) and not a.reply_to:
+            raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
         if a.record and not a.host_socket:
             raise Failure('record_needs_journal')
+        slot = slot_record(a.slot) if a.slot else None
         reader = client or Client(http_transport)
         reply = reply_ref(reader, a.reply_to) if a.reply_to else None
         request = build_request(text, reply, mention_facets(reader, text))
@@ -155,12 +182,14 @@ def main(argv=None, out=None, client=None):
             if not a.authorized:
                 plan = {'dry_run': True, 'intent': a.intent, 'quota': {'limit': limit, 'source': source}, 'request': request}
                 if a.record:
-                    plan['record'] = {'op': 'world-posted', 'object': a.record, 'slot': a.slot}
+                    plan['record'] = {'op': 'world-posted', 'object': a.record, 'slot': slot}
+                    if wiki_target(text):
+                        plan['record']['page'], plan['record']['section'] = wiki_target(text)
                 out.write(canonical(plan) + '\n')
                 return 2
             result = send(request, a.intent, Path(a.state), a.credentials, limit=limit)
             if a.record:
-                result['recorded'] = record_posted(host, result, a.record, a.slot)
+                result['recorded'] = record_posted(host, result, a.record, slot, wiki_target(text))
         finally:
             if host:
                 host.close()

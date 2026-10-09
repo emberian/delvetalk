@@ -38,7 +38,7 @@ class Front(HTTPServer):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy = heaps, repl, trust_proxy
-        self.hits, self.cards, self.nonce = {}, {}, secrets.token_hex(4)
+        self.hits, self.nonce = {}, secrets.token_hex(4)
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
                             else host.send({'op': 'hostd-info'}).get('hostSha256', 'unknown'))
@@ -276,28 +276,13 @@ class Handler(BaseHTTPRequestHandler):
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, principal, name, view['version']) if principal else None
+        card = self.card(host, principal, name) if principal else None
         self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), result))
 
-    def card(self, host, principal, name, version):
-        """The object's card from the host's world-card (no journaled turn); until that op exists,
-        what its receive offers for an empty reply (every object takes receive {text, post, slot}),
-        cached because a retried identity returns no offers."""
+    def card(self, host, principal, name):
+        """The object's card as this reader sees it, from the host's world-card (no journaled turn)."""
         r = host.send({'op': 'world-card', 'principal': principal or 'anonymous', 'object': name})
-        if r.get('status') != 'error':
-            return r.get('text')
-        # TODO(host world-card): delete this fallback once the op exists everywhere.
-        if 'unknown world operation' not in r.get('message', ''):
-            return None
-        key = (principal, name, version)
-        if key not in self.server.cards:
-            field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
-            stamp = f'page:{name}:{version}:{self.server.nonce}'
-            r = host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
-                           'argument': {'tag': 'record', 'fields': [field('text', ''), field('post', stamp), field('slot', '')]},
-                           'identity': stamp})
-            self.server.cards[key] = '\n'.join(o['text'] for o in r['offers']) if r.get('offers') else None
-        return self.server.cards[key]
+        return r.get('text') if r.get('status') == 'card' else None
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""
