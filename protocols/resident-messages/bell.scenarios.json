@@ -1,0 +1,31 @@
+[
+  {
+    "name": "source-view-and-explicit-boundary",
+    "law": [
+      "reader"
+    ],
+    "steps": [
+      {
+        "observe": "main",
+        "view": {
+          "title": "The courtyard bell",
+          "prose": "A chord travels across the courtyard even after its player leaves.",
+          "actions": {}
+        }
+      },
+      {
+        "principal": "reader",
+        "command": "play",
+        "input": {
+          "to": "door",
+          "recipientProgram": "0000000000000000000000000000000000000000000000000000000000000000",
+          "chord": "C E G",
+          "voices": 5
+        },
+        "root": "current",
+        "kind": "refused",
+        "error": "source refused: The bell has four voices."
+      }
+    ]
+  }
+]

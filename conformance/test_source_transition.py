@@ -103,7 +103,7 @@ class SourceTransition(unittest.TestCase):
         cases = [
             ('{accepted: true, reason: "ambiguous", state: state, result: 0n}', '', 'empty reason'),
             ('{accepted: false, reason: "", state: state, result: 0n}', '', 'requires a reason'),
-            ('{accepted: true, reason: "", state: state, result: 0n, extra: 1n}', '  extra: Nat\n', 'requires exactly'),
+            ('{accepted: true, reason: "", state: state, result: 0n, extra: 1n}', '  extra: Nat\n', 'unsupported fields'),
         ]
         for index, (body, extra, message) in enumerate(cases):
             name = 'bad-envelope-' + str(index)

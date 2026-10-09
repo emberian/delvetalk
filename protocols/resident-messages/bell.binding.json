@@ -1,0 +1,20 @@
+{
+  "profile": "delvetalk-local-v1",
+  "runtimeProfile": "compiled",
+  "name": "bell",
+  "initial": {
+    "notes": 0,
+    "lastBy": ""
+  },
+  "commands": {
+    "play": {
+      "transition": {
+        "profile": "delvetalk-source-effects-v1",
+        "package": {
+          "modules": [],
+          "entry": "play"
+        }
+      }
+    }
+  }
+}

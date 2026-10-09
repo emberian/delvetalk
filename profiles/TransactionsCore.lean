@@ -40,9 +40,10 @@ def callInputOrigin (call : Json) (calls : Array Json) (completed : Nat) : Excep
     let op ← match (field prior "op").toOption with
       | none => pure "invoke"
       | some value => value.getStr?
-    if op != "invoke" then return World.noInputOrigin
-    return obj [("present", .bool true), ("object", .str (← str prior "object")),
-      ("command", .str (← str prior "command")),
+    if op != "invoke" && op != "observe" && op != "reprogram" then return World.noInputOrigin
+    let command ← if op == "invoke" then str prior "command" else pure ""
+    return obj [("kind", .str op), ("object", .str (← str prior "object")),
+      ("command", .str command),
       ("immediatelyPrevious", .bool (index + 1 == completed))]
 
 def reprogramCandidate (call : Json) (results : Array Json) : Except String Json := do
@@ -79,8 +80,10 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
       if (field objects id).isOk then throw "stale absence root"
     else if (← field objects id) != expected then throw "stale read root"
   let absent := (reads.filter (fun entry => entry.2 == .null)).map Prod.fst |>.toArray
-  let execution : Evaluation (Json × Array Json × Array Json × Json) := do
+  let execution : Evaluation (Json × Json × Array Json × Array Json × Json × Array Json) := do
     let mut staged := objects
+    let mut stagedWorld := world
+    let mut messages : Array Json := #[]
     let mut results : Array Json := #[]
     let mut outbox : Array Json := #[]
     let mut allocatedRoots := obj []
@@ -89,20 +92,28 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
       let id ← str call "object"
       if !(reads.any (fun entry => entry.1 == id)) then
         throw "transaction target missing from read set"
-      let o ← field staged id
       let op ← match (field call "op").toOption with
         | some value => value.getStr?
         | none => pure "invoke"
-      if op != "invoke" && op != "reprogram" then
+      if op != "invoke" && op != "reprogram" && op != "observe" then
         throw "unsupported transaction operation"
+      let o ← if op == "observe" then readObject staged id principal else field staged id
+      if op == "observe" then
+        if (← pairs call).map Prod.fst != ["object", "op"] then
+          throw "observe requires exactly op and object"
+        if (← field (← field request "reads") id) == .null then
+          throw "observe requires an existing exact read root"
+        let version ← (← field o "version").getNat?
+        results := results.push (obj [("object", .str id), ("version", toJson version)])
+        continue
       -- The operation is explicit; the principal remains the global caller.
       -- Both profiles use one authority engine.
       let (nextObj, result, emitted, invocation, inputOrigin) ← if op == "reprogram" then do
         authorizeRequest o (← put call "op" (.str op)) principal
         let candidate ← reprogramCandidate call results
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
-        checkCandidate o nextObj (← put call "op" (.str op)) principal
-        pure (nextObj, Json.null, (#[] : Array Json), Json.null, World.noInputOrigin)
+        checkCandidateWith runtime o nextObj (← put call "op" (.str op)) principal
+        pure (nextObj, ← runtime.reprogramResult id nextObj, (#[] : Array Json), Json.null, World.noInputOrigin)
       else do
         let input ← callInput call results
         let inputOrigin ← callInputOrigin call calls results.size
@@ -111,7 +122,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         let (nextState, result, emitted) ← executeCommandWith runtime o invocation principal inputOrigin
         let n ← (← field o "version").getNat?
         let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
-        checkCandidate o nextObj invocation principal
+        checkCandidateWith runtime o nextObj invocation principal
         pure (nextObj, result, emitted, invocation, inputOrigin)
       staged ← put staged id nextObj
       if op == "invoke" then
@@ -120,16 +131,24 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         -- Preserve creation evidence even when later calls replace a child.
         for (child, initialRoot) in (← pairs created) do
           allocatedRoots ← put allocatedRoots child initialRoot
-      for payload in emitted do
+      let ordinaryOutbox ← if op == "invoke" then do
+        let (updated, references, ordinary) ← runtime.stageMessages
+          (← put stagedWorld "objects" staged) request invocation o results.size emitted
+        stagedWorld := updated
+        messages := messages ++ references
+        pure ordinary
+      else pure emitted
+      for payload in ordinaryOutbox do
         outbox := outbox.push (obj [("object", .str id),
           ("step", toJson results.size), ("payload", payload)])
       results := results.push result
-    return (staged, results, outbox, allocatedRoots)
-  let ((staged, results, outbox, allocatedRoots), _) ← execution.run runtime.budget
+    return (staged, stagedWorld, results, outbox, allocatedRoots, messages)
+  let ((staged, stagedWorld, results, outbox, allocatedRoots, messages), _) ← execution.run runtime.budget
   let roots := reads.map fun (id, _) => (id, (field staged id).toOption.getD .null)
-  let next ← put world "objects" staged
+  let next ← put stagedWorld "objects" staged
   let mut data := obj [
     ("roots", obj roots), ("results", .arr results), ("outbox", .arr outbox)]
+  if !messages.isEmpty then data ← put data "messages" (.arr messages)
   if allocatedRoots != obj [] then data ← put data "allocated" allocatedRoots
   return (next, receipt request "committed" data)
 

@@ -25,25 +25,50 @@ abbrev BendTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term
 abbrev Evaluation := StateT Nat (Except String)
 
 def noInputOrigin : Json := obj [
-  ("present", .bool false), ("object", .str ""), ("command", .str ""),
+  ("kind", .str "none"), ("object", .str ""), ("command", .str ""),
   ("immediatelyPrevious", .bool false)]
+
+-- The old expression describes only invocation-result provenance. Observation
+-- must not silently broaden an existing invoke-only guard or change its row.
+def legacyInputOrigin (origin : Json) : Except String Json := do
+  if (← str origin "kind") == "invoke" then
+    return obj [("present", .bool true), ("object", ← field origin "object"),
+      ("command", ← field origin "command"),
+      ("immediatelyPrevious", ← field origin "immediatelyPrevious")]
+  return obj [("present", .bool false), ("object", .str ""), ("command", .str ""),
+    ("immediatelyPrevious", .bool false)]
+
+-- Public inspection and transactional observation share this boundary. A later
+-- read policy belongs here; observing never calls the target's program or law.
+def readObject (objects : Json) (id : String) (_principal : String) : Except String Json :=
+  field objects id
 
 -- Host-bound identity for one actual receiving call, separate from user data.
 structure CallContext where
   object : String
+  protocol : Json := obj []
   inputOrigin : Json := noInputOrigin
+  eventFacts : Option Json := none
 
 -- Executable-selected extensions; requests and protocols cannot choose a budget.
 structure Runtime where
   budget : Nat := 10000
-  validateExtra : Json → (Json → Except String Unit) → Except String Unit :=
-    fun _ _ => throw "unknown expression"
+  validateExtra : Json → Json → (Json → Except String Unit) → Except String Unit :=
+    fun _ _ _ => throw "unknown expression"
   evaluateExtra : CallContext → Json → (Json → Evaluation Json) → Evaluation Json :=
     fun _ _ _ => throw "unknown expression"
-  validateTransition : Json → Except String Unit :=
-    fun _ => throw "source transitions require compiled profile"
+  validateTransition : Json → Json → Except String Unit :=
+    fun _ _ => throw "source transitions require compiled profile"
   executeTransition : CallContext → Json → Json → String → Json → Evaluation (Json × Json × Array Json) :=
     fun _ _ _ _ _ => throw "source transitions require compiled profile"
+  reprogramResult : String → Json → Evaluation Json := fun _ _ => pure .null
+  checkSourceContract : Json → Json → Bool → Evaluation Unit :=
+    fun _ _ _ => throw "source contracts require compiled profile"
+  -- Admission-owned effects are staged under the same budget and rollback as
+  -- the source invocation. The default preserves ordinary inert outboxes.
+  stageMessages : Json → Json → Json → Json → Nat → Array Json →
+      Evaluation (Json × Array Json × Array Json) :=
+    fun world _ _ _ _ emitted => pure (world, #[], emitted)
 
 def tick : Evaluation Unit := do
   let remaining ← get
@@ -91,7 +116,7 @@ def evaluateWith (runtime : Runtime) (context : CallContext) (depth : Nat) (stat
     let a ← expr.getArr?
     let tag ← (a[0]?.toExcept "empty expression").bind Json.getStr?
     if tag == "principal" && a.size == 1 then return .str principal
-    if tag == "input-origin" && a.size == 1 then return context.inputOrigin
+    if tag == "input-origin" && a.size == 1 then return ← legacyInputOrigin context.inputOrigin
     if tag == "bend" then
       if a.size != 3 then throw "Bend expression arity"
       let mut term ← Delvetalk.decode a[1]!
@@ -116,7 +141,7 @@ def evaluate (depth : Nat) (state input : Json) (principal : String) (expr : Jso
   evaluateWith {} { object := "" } depth state input principal expr
 
 -- Reject malformed definitions at installation, including branches not yet used.
-def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except String Unit := do
+def validateExprIn (runtime : Runtime) (protocol : Json) (fuel : Nat) (expr : Json) : Except String Unit := do
   match fuel with
   | 0 => throw "expression depth exceeded"
   | fuel + 1 =>
@@ -127,17 +152,20 @@ def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except Str
     if tag == "bend" then
       if a.size != 3 then throw "Bend expression arity"
       discard (Delvetalk.decode a[1]!)
-      for e in (← a[2]!.getArr?) do validateExprWith runtime fuel e
+      for e in (← a[2]!.getArr?) do validateExprIn runtime protocol fuel e
       return
     if !(["literal", "state", "input", "record", "array"].contains tag) then
-      return ← runtime.validateExtra expr (validateExprWith runtime fuel)
+      return ← runtime.validateExtra protocol expr (validateExprIn runtime protocol fuel)
     if a.size != 2 then throw "expression arity"
     match tag with
     | "literal" => pure ()
     | "state" | "input" => discard a[1]!.getStr?
-    | "record" => for (_,v) in (← pairs a[1]!) do validateExprWith runtime fuel v
-    | "array" => for v in (← a[1]!.getArr?) do validateExprWith runtime fuel v
+    | "record" => for (_,v) in (← pairs a[1]!) do validateExprIn runtime protocol fuel v
+    | "array" => for v in (← a[1]!.getArr?) do validateExprIn runtime protocol fuel v
     | _ => throw "unknown expression"
+
+def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except String Unit :=
+  validateExprIn runtime (obj []) fuel expr
 
 -- An opt-in factory has a current direct-child quota, governed by reprogramming.
 def allocationLimit (protocol : Json) : Except String (Option Nat) := do
@@ -151,7 +179,11 @@ def allocationLimit (protocol : Json) : Except String (Option Nat) := do
 -- An exact versioned marker opts in. Other legacy metadata stays inert.
 def sourceTransition? (command : Json) : Option Json := do
   let transition ← (field command "transition").toOption
-  if (str transition "profile").toOption == some "delvetalk-source-transition-v1" then
+  if ["delvetalk-source-transition-v1", "delvetalk-source-transition-v2",
+      "delvetalk-source-data-transition-v1", "delvetalk-source-effects-v1",
+      "delvetalk-source-receive-v1", "delvetalk-source-data-effects-v1",
+      "delvetalk-source-data-receive-v1"].contains
+      ((str transition "profile").toOption.getD "") then
     some transition
   else none
 
@@ -166,16 +198,16 @@ def validateProtocolWith (runtime : Runtime) (p : Json) : Except String Unit := 
   for (_,c) in (← pairs (← field p "commands")) do
     if let some transition := sourceTransition? c then
       validateTransitionCommand c
-      runtime.validateTransition transition
+      runtime.validateTransition p transition
     else
       for requirement in (← (← field c "require").getArr?) do
         let r ← requirement.getArr?
         if r.size != 2 then throw "require expects two expressions"
-        validateExprWith runtime 64 r[0]!
-        validateExprWith runtime 64 r[1]!
-      for (_,e) in (← pairs (← field c "set")) do validateExprWith runtime 64 e
-      validateExprWith runtime 64 (← field c "result")
-      for e in (← (← field c "outbox").getArr?) do validateExprWith runtime 64 e
+        validateExprIn runtime p 64 r[0]!
+        validateExprIn runtime p 64 r[1]!
+      for (_,e) in (← pairs (← field c "set")) do validateExprIn runtime p 64 e
+      validateExprIn runtime p 64 (← field c "result")
+      for e in (← (← field c "outbox").getArr?) do validateExprIn runtime p 64 e
       match (field c "allocate").toOption with
       | none => pure ()
       | some allocations =>
@@ -185,7 +217,7 @@ def validateProtocolWith (runtime : Runtime) (p : Json) : Except String Unit := 
             if !(["name", "protocol", "law"].contains key) then
               throw "unsupported allocation descriptor field"
           for key in ["name", "protocol", "law"] do
-            validateExprWith runtime 64 (← field allocation key)
+            validateExprIn runtime p 64 (← field allocation key)
 
 def validateExpr (fuel : Nat) (expr : Json) : Except String Unit :=
   validateExprWith {} fuel expr
@@ -204,14 +236,19 @@ def validateLaw (j : Json) : Except String Unit := do
   | .arr _ => discard (law j)
   | _ =>
     let profile ← str j "profile"
-    if profile != "delvetalk-scoped-law-v1" && profile != "delvetalk-scoped-law-v2" then
+    if !(["delvetalk-scoped-law-v1", "delvetalk-scoped-law-v2", "delvetalk-scoped-law-v3"].contains profile) then
       throw "unknown law profile"
     for (key, _) in (← pairs j) do
       if !(["profile", "invoke", "reprogram", "law", "predicate"].contains key) &&
-          !(profile == "delvetalk-scoped-law-v2" && key == "invariant") then
+          !(["delvetalk-scoped-law-v2", "delvetalk-scoped-law-v3"].contains profile && key == "invariant") &&
+          !(profile == "delvetalk-scoped-law-v3" && key == "contract") then
         throw "unsupported scoped law field"
     if profile == "delvetalk-scoped-law-v2" then
       discard (Delvetalk.decode (← field j "invariant"))
+    if profile == "delvetalk-scoped-law-v3" then
+      discard (pairs (← field j "contract"))
+      if let some invariant := (field j "invariant").toOption then
+        discard (Delvetalk.decode invariant)
     for (_, principals) in (← pairs (← field j "invoke")) do
       discard (law principals)
     discard (law (← field j "reprogram"))
@@ -264,25 +301,36 @@ def rootCheck (o request : Json) : Except String Unit := do
 -- Every candidate uses actual staged states; invocation input has already been
 -- resolved. This consumes the same turn budget as authority and execution.
 def checkInvariant (authority before after request : Json) (principal : String) : Evaluation Unit := do
-  if (str authority "profile").toOption != some "delvetalk-scoped-law-v2" then return
+  let profile := (str authority "profile").toOption
+  if profile != some "delvetalk-scoped-law-v2" && profile != some "delvetalk-scoped-law-v3" then return
+  let some invariant := (field authority "invariant").toOption | return
   let op ← str request "op"
   let command ← if op == "invoke" then str request "command" else pure ""
   let input ← if op == "invoke" then field request "input" else pure (obj [])
   let context ← toTerm 64 (obj [("object", .str (← str request "object")),
     ("principal", .str principal), ("op", .str op), ("command", .str command),
     ("state", ← field before "state"), ("nextState", ← field after "state"), ("input", input)])
-  let term ← Delvetalk.decode (← field authority "invariant")
+  let term ← Delvetalk.decode invariant
   match (← normalize (.app term context)) with
   | .boolean true => pure ()
   | .boolean false => throw "state invariant refused"
   | _ => throw "state invariant must return Bool"
 
-def checkCandidate (before after request : Json) (principal : String) : Evaluation Unit := do
+def checkCandidateWith (runtime : Runtime) (before after request : Json) (principal : String) : Evaluation Unit := do
   checkInvariant (← field before "law") before after request principal
+  let op ← str request "op"
+  let checkContract (authority : Json) (methods : Bool) : Evaluation Unit := do
+    if (str authority "profile").toOption == some "delvetalk-scoped-law-v3" then
+      runtime.checkSourceContract (← field authority "contract") after methods
+  checkContract (← field before "law") (["create", "reprogram", "law"].contains op)
   -- New law cannot install an invariant already false of the proposed state.
   -- Old law must also admit its own revision; management has no bypass.
-  if (← str request "op") == "law" then
+  if op == "law" then
     checkInvariant (← field after "law") before after request principal
+    checkContract (← field after "law") true
+
+def checkCandidate (before after request : Json) (principal : String) : Evaluation Unit :=
+  checkCandidateWith {} before after request principal
 
 def receipt (request : Json) (kind : String) (data : Json) : Json :=
   obj [("intent", (field request "intent").toOption.getD .null),
@@ -290,13 +338,13 @@ def receipt (request : Json) (kind : String) (data : Json) : Json :=
        ("kind", .str kind), ("data", data)]
 
 def executeCommandWith (runtime : Runtime) (o request : Json) (principal : String)
-    (inputOrigin : Json := noInputOrigin) : Evaluation (Json × Json × Array Json) := do
+    (inputOrigin : Json := noInputOrigin) (eventFacts : Option Json := none) : Evaluation (Json × Json × Array Json) := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   let state ← field o "state"
   let input ← field request "input"
   discard (pairs input)
-  let context : CallContext := { object := ← str request "object", inputOrigin := inputOrigin }
+  let context : CallContext := { object := ← str request "object", protocol := protocol, inputOrigin := inputOrigin, eventFacts := eventFacts }
   if let some transition := sourceTransition? command then
     validateTransitionCommand command
     return ← runtime.executeTransition context state input principal transition
@@ -357,7 +405,7 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
   | some allocations =>
     let limit ← (← allocationLimit protocol).toExcept "allocation requires factory policy"
     let parent ← str request "object"
-    let eval := evaluateWith runtime { object := parent, inputOrigin := inputOrigin }
+    let eval := evaluateWith runtime { object := parent, protocol := protocol, inputOrigin := inputOrigin }
       64 (← field o "state") (← field request "input") principal
     let mut staged := objects
     let mut roots : Array (String × Json) := #[]
@@ -375,7 +423,7 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
       let childProtocol ← eval (← field allocation "protocol")
       let childLaw ← eval (← field allocation "law")
       let child ← newObjectWith runtime childProtocol childLaw
-      checkCandidate child child (obj [("op", .str "create"), ("object", .str id)]) principal
+      checkCandidateWith runtime child child (obj [("op", .str "create"), ("object", .str id)]) principal
       staged ← put staged id child
       roots := roots.push (id, child)
       childCount := childCount + 1
@@ -389,7 +437,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
   if op == "create" then
     if (field objects id).isOk then throw "object exists"
     let o ← newObjectWith runtime (← field request "protocol") (← field request "law")
-    checkCandidate o o request principal
+    checkCandidateWith runtime o o request principal
     let next ← put world "objects" (← put objects id o)
     return (next, receipt request "committed" (obj [("root",o), ("result",.null), ("outbox", .arr #[])]))
   let o ← field objects id
@@ -400,7 +448,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     let authority ← field request "law"
     validateLaw authority
     let nextObj ← put (← put o "law" authority) "version" (toJson (n+1))
-    checkCandidate o nextObj request principal
+    checkCandidateWith runtime o nextObj request principal
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
   if op == "reprogram" then
@@ -412,17 +460,20 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     -- an expression executed with extra authority. Law and identity stay put.
     let state ← field request "state"
     let nextObj ← reprogramObjectWith runtime o protocol state
-    checkCandidate o nextObj request principal
+    checkCandidateWith runtime o nextObj request principal
     let next ← put world "objects" (← put objects id nextObj)
-    return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
+    let result ← runtime.reprogramResult id nextObj
+    return (next, receipt request "committed" (obj [("root",nextObj), ("result",result), ("outbox", .arr #[])]))
   if op != "invoke" then throw "unknown operation"
   let absent ← absenceReads objects request
   let (nextState, result, outbox) ← executeCommandWith runtime o request principal
   let nextObj ← put (← put o "state" nextState) "version" (toJson (n+1))
-  checkCandidate o nextObj request principal
+  checkCandidateWith runtime o nextObj request principal
   let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o request principal absent
-  let next ← put world "objects" staged
-  let mut data := obj [("root",nextObj), ("result",result), ("outbox", .arr outbox)]
+  let (next, messages, ordinaryOutbox) ← runtime.stageMessages
+    (← put world "objects" staged) request request o 0 outbox
+  let mut data := obj [("root",nextObj), ("result",result), ("outbox", .arr ordinaryOutbox)]
+  if !messages.isEmpty then data ← put data "messages" (.arr messages)
   if allocated != obj [] then data ← put data "allocated" allocated
   return (next, receipt request "committed" data)
 
@@ -442,6 +493,22 @@ def transitionEvaluation (world request : Json) (principal : String) : Evaluatio
 def transition (world request : Json) (principal : String) : Except String (Json × Json) :=
   transitionWith {} world request principal
 
+/-- First retained admission for this exact principal/intent identity. -/
+def findReceipt (receipts : Array Json) (principal intent : String) : Except String (Option Json) := do
+  for entry in receipts do
+    let prior ← field entry "request"
+    if (← str prior "principal") == principal && (← str prior "intent") == intent then
+      return some entry
+  return none
+
+/-- Read-only exact retry lookup. Absence does not assert that the identity is free. -/
+def retainedReply (receipts : Array Json) (request : Json) : Except String Json := do
+  let some principal := (str request "principal").toOption | return .null
+  let some intent := (str request "intent").toOption | return .null
+  let some entry ← findReceipt receipts principal intent | return .null
+  if (← field entry "request") == request then return ← field entry "receipt"
+  return .null
+
 def handleWith
     (admit : Json → Json → String → Except String (Json × Json))
     (world request : Json) : Except String (Json × Json) := do
@@ -449,15 +516,13 @@ def handleWith
   let principal ← str request "principal"
   if principal.isEmpty then throw "empty principal"
   if (← str request "op") == "inspect" then
-    return (world, ← field (← field world "objects") (← str request "object"))
+    return (world, ← readObject (← field world "objects") (← str request "object") principal)
   let intent ← str request "intent"
   if intent.isEmpty then throw "empty intent"
   let receipts ← (← field world "receipts").getArr?
-  for r in receipts do
-    let prior ← field r "request"
-    if (← str prior "principal") == principal && (← str prior "intent") == intent then
-      if prior == request then return (world, ← field r "receipt")
-      return (world, receipt request "refused" (.str "intent reused for different request"))
+  if let some entry ← findReceipt receipts principal intent then
+    if (← field entry "request") == request then return (world, ← field entry "receipt")
+    return (world, receipt request "refused" (.str "intent reused for different request"))
   let (next, outcome) := match admit world request principal with
     | .ok value => value
     | .error e => (world, receipt request "refused" (.str e))

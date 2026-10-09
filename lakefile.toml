@@ -25,7 +25,19 @@ name = "WorldCore"
 srcDir = "profiles"
 
 [[lean_lib]]
+name = "SourcePackages"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "SourceContract"
+srcDir = "profiles"
+
+[[lean_lib]]
 name = "FileCustody"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "ResidentStore"
 srcDir = "profiles"
 
 [[lean_exe]]
@@ -58,4 +70,8 @@ srcDir = "profiles"
 
 [[lean_lib]]
 name = "TransactionsCore"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "MessagesCore"
 srcDir = "profiles"

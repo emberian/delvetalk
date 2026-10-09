@@ -1,0 +1,33 @@
+edition ObjectiveBend 1
+
+record State:
+  count: Nat
+record Input:
+  amount: Nat
+record Context:
+  object: String
+  principal: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Nat
+record Counter:
+  add(state: State, input: Input, context: Context) -> Decision
+
+# This specification's checked method row is the receiving interface bound.
+# Its implementation and claims do not prove the behavior of another program.
+spec CounterContract for Counter:
+  def add(state: State, input: Input, context: Context) -> Decision:
+    {accepted: true, reason: "", state: state, result: state.count}
+  claim preservesCount(n: Nat): true
+
+def contract() -> Specification<Counter>:
+  CounterContract
+
+def contractMetadata() -> SpecMeta:
+  metadata(contract())
+
+# A separate implementation can satisfy the interface and do different work.
+def add(state: State, input: Input, context: Context) -> Decision:
+  {accepted: true, reason: "", state: {count: state.count + input.amount}, result: state.count + input.amount}

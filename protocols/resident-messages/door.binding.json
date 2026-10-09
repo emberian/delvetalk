@@ -1,0 +1,25 @@
+{
+  "profile": "delvetalk-local-v1",
+  "runtimeProfile": "compiled",
+  "name": "door",
+  "initial": {
+    "open": false,
+    "heard": 0,
+    "lastEvent": "",
+    "lastSource": "",
+    "lastProgram": "",
+    "lastPlayer": "",
+    "lastRelay": ""
+  },
+  "commands": {
+    "hear": {
+      "transition": {
+        "profile": "delvetalk-source-receive-v1",
+        "package": {
+          "modules": [],
+          "entry": "hear"
+        }
+      }
+    }
+  }
+}

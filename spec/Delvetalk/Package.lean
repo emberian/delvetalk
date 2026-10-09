@@ -4,6 +4,8 @@ import Delvetalk.Core
 import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
+import Delvetalk.PackageData
+import Delvetalk.Reflection
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -183,10 +185,90 @@ def run (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
   runVerified j
 
+/-- Explicit recursive-data route. Legacy executePacket/executeJsonPacket keep
+    their original fragment and wire. Conversion and machine work share ticks. -/
+def executeDataPacket (packet arguments limits : Json) : Except String Json := do
+  let bytes ← bounded limits "bytes" 1048576 16777216
+  let inputBytes ← bounded limits "inputBytes" bytes 16777216
+  -- Bound complete typed input, including large scalars, before decoding or
+  -- decimal conversion. This is compact wire UTF-8, not extraction encoding.
+  if arguments.compress.utf8ByteSize > inputBytes then throw "typed data input byte capacity"
+  let ticks ← bounded limits "ticks" 100000 1000000
+  let work ← bounded limits "work" ticks 1000000
+  let allowance := min ticks work
+  let ((source, type, _), remaining) ← (PackageData.prepare packet arguments).run allowance
+  let before := allowance - remaining
+  let heap ← bounded limits "heap" 100000 1000000
+  let stack ← bounded limits "stack" 10000 100000
+  let nodes ← bounded limits "nodes" 100000 1000000
+  let budget : Budget := ⟨nodes, ticks - before, bytes⟩
+  match execute ⟨heap, stack⟩ budget source.term with
+  | .error (failure, state, rest) =>
+      return Json.mkObj [("executionProfile", toJson "delvetalk-package-data-v1"),
+        ("status", toJson "refused"), ("failure", toJson (reprStr failure)),
+        ("ticksUsed", toJson (budget.ticks - rest.ticks)), ("conversionNodes", toJson before),
+        ("heapCells", toJson state.heap.size)]
+  | .ok execution =>
+      let result := execution.extraction.result
+      -- Recheck finite extracted data against the declared result; do not rely
+      -- on Data.conforms, which deliberately does not unfold recursive aliases.
+      let outputAllowance := min remaining result.remaining.ticks
+      let (_, after) ← (PackageData.quote source.assumptions 256 result.value type).run outputAllowance
+      return Json.mkObj [("executionProfile", toJson "delvetalk-package-data-v1"),
+        ("status", toJson "finished"), ("value", dataJson result.value), ("type", typeJson type),
+        ("ticksUsed", toJson (budget.ticks - result.remaining.ticks)),
+        ("conversionNodes", toJson (before + outputAllowance - after)),
+        ("heapCells", toJson result.state.heap.size),
+        ("nodesUsed", toJson (nodes - result.remaining.nodes))]
+
+def runData (j : Json) : Except String Json := do
+  let artifact ← j.getObjVal? "artifact"
+  verifyArtifact artifact
+  executeDataPacket (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
+
+/-- Observe a source-bound specification's actual metadata without applying its
+    extension. A raw prototype's reflected specification says nothing about how
+    its target was made; this result makes no stronger provenance claim. -/
+def inspectSpecification (j : Json) : Except String Json := do
+  let artifact ← j.getObjVal? "artifact"
+  verifyArtifact artifact
+  let packet ← Reflection.metadataPacket (← artifact.getObjVal? "packet")
+  let result ← executeDataPacket packet (.arr #[]) (getLimits j)
+  let fields ← result.getObj?
+  return Json.mkObj (fields.toArray.toList ++ [
+    ("reflectionProfile", toJson "delvetalk-source-specification-v1"),
+    ("sourceBinding", Json.mkObj [("entry", ← artifact.getObjVal? "entry"),
+      ("sourcesSha256", ← artifact.getObjVal? "sourcesSha256"),
+      ("packetSha256", ← artifact.getObjVal? "packetSha256")])])
+
+def selectedDataType (selection : Json) : Except String (Assumptions × Ty × Json) := do
+  let artifact ← selection.getObjVal? "artifact"
+  verifyArtifact artifact
+  let packet ← decodePacket (← artifact.getObjVal? "packet")
+  let some checked := check packet.source [] packet.fuel | throw "type comparison checker refusal"
+  return (packet.source.assumptions, checked.type, ← selection.getObjVal? "path")
+
+def compareDataTypes (j : Json) : Except String Json := do
+  let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
+  let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
+  let work ← bounded j "work" 100000 1000000
+  let action : PackageData.Work Bool := do
+    let a ← PackageData.select left lt lp
+    let b ← PackageData.select right rt rp
+    PackageData.shape left 256 [] a
+    PackageData.shape right 256 [] b
+    PackageData.equivalent left right 256 [] a b
+  let (equal, remaining) ← action.run work
+  return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
+    ("conversionNodes", toJson (work - remaining))]
+
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
+  | "run-data-v1" => runData j
+  | "inspect-spec-v1" => inspectSpecification j
+  | "compare-data-types-v1" => compareDataTypes j
   | _ => throw "package operation must be compile or run"
 
 end Delvetalk.Package

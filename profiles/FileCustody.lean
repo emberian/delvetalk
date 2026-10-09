@@ -18,21 +18,33 @@ partial def encode : Json → String
       (Json.str key).compress ++ ":" ++ encode value) ++ "}"
   | value => value.compress
 
+def readRequest : IO Json := do
+  let stdin ← IO.getStdin
+  let mut bytes := ByteArray.empty
+  repeat
+    let chunk ← stdin.read 4096
+    if chunk.isEmpty then break
+    if bytes.size + chunk.size > 65537 then throw (IO.userError "request exceeds 64 KiB")
+    bytes := bytes ++ chunk
+  let some line := String.fromUTF8? bytes | throw (IO.userError "request is not UTF-8")
+  IO.ofExcept (Json.parse line)
+
+def lookup (snapshot : System.FilePath) : IO Unit := do
+  let result ← try
+    let request ← readRequest
+    let world ← if ← snapshot.pathExists then
+        IO.ofExcept (Json.parse (← IO.FS.readFile snapshot))
+      else pure World.empty
+    IO.ofExcept (World.retainedReply (← IO.ofExcept ((← IO.ofExcept (World.field world "receipts")).getArr?)) request)
+  catch error => pure (World.obj [("error", .str error.toString)])
+  (← IO.getStdout).putStrLn (encode result)
+
 def run (receive : Json → Json → Except String (Json × Json))
     (snapshot candidate : System.FilePath) : IO Unit := do
   let stdout ← IO.getStdout
   let result ← try
     if snapshot == candidate then throw (IO.userError "candidate must differ from snapshot")
-    let stdin ← IO.getStdin
-    -- Only the request crosses this wire; retained history has no frame quota.
-    let mut bytes := ByteArray.empty
-    repeat
-      let chunk ← stdin.read 4096
-      if chunk.isEmpty then break
-      if bytes.size + chunk.size > 65537 then throw (IO.userError "request exceeds 64 KiB")
-      bytes := bytes ++ chunk
-    let some line := String.fromUTF8? bytes | throw (IO.userError "request is not UTF-8")
-    let request ← IO.ofExcept (Json.parse line)
+    let request ← readRequest
     let world ← if ← snapshot.pathExists then
         IO.ofExcept (Json.parse (← IO.FS.readFile snapshot))
       else pure World.empty
@@ -48,6 +60,7 @@ def mainWith (receive : Json → Json → Except String (Json × Json))
   match args with
   | [] => World.serve framed
   | ["--files", snapshot, candidate] => run receive snapshot candidate
-  | _ => throw (IO.userError "expected no arguments or --files SNAPSHOT CANDIDATE")
+  | ["--lookup-files", snapshot] => lookup snapshot
+  | _ => throw (IO.userError "expected no arguments, --files SNAPSHOT CANDIDATE, or --lookup-files SNAPSHOT")
 
 end FileCustody
