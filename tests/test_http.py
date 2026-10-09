@@ -7,7 +7,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
+from tests.test_turn_world import BINARY, closure, counter_modules, nat, record
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
 from transport.http import Front, Heaps, Host
@@ -186,14 +186,15 @@ class HttpFront(unittest.TestCase):
         s, e = self.repl(tok, modules=mods, entry='nope')
         self.assertEqual((s, e['status']), (400, 'error'))
         self.assertIn('missing selected entry', e['message'])
-        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 8193}], entry='pure')
+        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 16385}], entry='pure')
         self.assertEqual(s, 413)
 
     def test_repl_runs_counter_bump_as_an_activity(self):
         tok = self.login()
         context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': 'c1'},
-                         principal={'tag': 'label', 'value': HANDLE}, caller={'tag': 'label', 'value': ''},
-                         intent={'tag': 'label', 'value': 'repl-1'}, height=nat(0), inputOrigin=record(
+                         principal={'tag': 'label', 'value': HANDLE},
+                         caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0),
+                         inputOrigin=record(
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
                              command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},
                              immediatelyPrevious={'tag': 'boolean', 'value': False}))
@@ -258,7 +259,7 @@ class HttpFront(unittest.TestCase):
 
     def test_html_card_and_spell_form(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2), policy=record(world=label(""), object=label("")))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2))})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)

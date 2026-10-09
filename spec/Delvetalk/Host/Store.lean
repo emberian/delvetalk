@@ -73,6 +73,20 @@ def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
 /-- Prepared reprograms kept in memory. -/
 def maxPreparedPrograms : Nat := 16
+/-- Modules and bytes of the sealed standard library. -/
+def maxLibraryModules : Nat := 256
+def maxLibraryBytes : Nat := 786432
+/-- `check` Plans one turn may run (each is a full compile). -/
+def checksPerTurn : Nat := 8
+/-- Clock units an `interpret` waits for its reply before it resumes `timedOut`. -/
+def interpretationPatience : Nat := 64
+/-- Utterance and offered forms of one `interpret`. -/
+def maxUtteranceBytes : Nat := 8192
+def maxOffersBytes : Nat := 65536
+/-- A model reply, as settled. -/
+def maxReplyBytes : Nat := 262144
+/-- Nesting of the plain JSON argument of a proposal. -/
+def plainDepth : Nat := 64
 def genesis : String := "".pushn '0' 64
 end Limits
 
@@ -145,7 +159,18 @@ structure Object where
   /-- Digest of `inputs`, the key of this object's compiled methods. -/
   inputsKey : String := ""
 
+/-- The standard library every package may import by name: modules in dependency
+    order, sealed by `pin` (a hash of the names and sources in that order). -/
+structure Library where
+  pin : String
+  modules : List (String × String)
+
 structure World where
+  /-- The current library, every library a journaled object was compiled under (by pin),
+      and the text of the world law that judges a library change. -/
+  library : Option Library := none
+  libraries : Std.HashMap String Library := {}
+  libraryLaw : String := ""
   objects : Std.HashMap String Object := {}
   /-- Number of journal entries; the last entry's height. -/
   height : Nat := 0
