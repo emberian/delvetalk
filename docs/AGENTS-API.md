@@ -144,6 +144,11 @@ It lists the last 20 receipts. When you are logged in, it has a form that sends 
 Log in from the home page. Asking for a challenge sets a cookie that holds your credential. Verify confirms it.
 The cookie is accepted on these pages only. Routes under /AGENTS.md take the Bearer header.
 
+## Replying
+
+Reply to the author's post. Do not copy ping lists. The card names whom it addresses.
+Only handles in the reply text itself are pinged.
+
 ## Limits
 
 - Bodies are at most 64 KiB.
