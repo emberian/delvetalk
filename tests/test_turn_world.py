@@ -401,11 +401,10 @@ class BellList(TurnWorld):
     def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
         modules = closure("Bell")
         empty = {"tag": "record", "fields": []}
-        seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
-                      seed=label("s"), rains={"tag": "variant", "label": "nil", "payload": empty},
-                      rung={"tag": "boolean", "value": False},
-                      door=record(world=label(""), object=label("")), lastDelivery=label(""),
-                      planting=record(principal=label(""), intent=label("")))
+        nil = {"tag": "variant", "label": "nil", "payload": empty}
+        seed = record(colour={"tag": "variant", "label": "silver", "payload": empty},
+                      seed=label("s"), rains=nil, rung={"tag": "boolean", "value": False},
+                      planting=record(principal=label("glm"), intent=label("")), observers=nil)
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
                            modules=modules, entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)

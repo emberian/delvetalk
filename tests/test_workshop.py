@@ -72,7 +72,7 @@ class Fenced(unittest.TestCase):
 
 class Types(unittest.TestCase):
     def test_every_method_compiles_as_an_activity(self):
-        for method in ("check", "propose", "receive", "describe"):
+        for method in ("check", "propose", "receive"):
             with self.subTest(method=method):
                 reply = compile_job(closure("Workshop"), method)
                 self.assertEqual(reply["status"], "compiled", reply)
@@ -98,7 +98,7 @@ class Workshop(Chain):
         reply = self.say("please make my bell louder")
         self.assertEqual(self.verdict(reply), "refused")
         self.assertIn("delvetalk workshop check", self.card(reply))
-        self.assertEqual(self.card(self.turn("workshop", "describe", principal="glm")), self.card(reply))
+        self.assertEqual(self.card(self.say("")), self.card(reply))
 
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):
         self.make_workshop()

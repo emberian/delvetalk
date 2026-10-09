@@ -58,3 +58,13 @@ def removeWhere<T>(items: List<T>, predicate: T -> Bool) -> List<T>:
   match items:
     case nil(_): List::<T>.nil()
     case cons(c): if predicate(c.head) then removeWhere::<T>(c.tail, predicate) else List::<T>.cons({head: c.head, tail: removeWhere::<T>(c.tail, predicate)})
+def take<T>(items: List<T>, count: Nat) -> List<T>:
+  match items:
+    case nil(_): List::<T>.nil()
+    case cons(c): if count == 0n then List::<T>.nil() else List::<T>.cons({head: c.head, tail: take::<T>(c.tail, count - 1n)})
+def reverse<T>(items: List<T>) -> List<T>:
+  reverseOnto::<T>(items, List::<T>.nil())
+def reverseOnto<T>(items: List<T>, onto: List<T>) -> List<T>:
+  match items:
+    case nil(_): onto
+    case cons(c): reverseOnto::<T>(c.tail, List::<T>.cons({head: c.head, tail: onto}))

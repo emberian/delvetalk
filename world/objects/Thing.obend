@@ -3,6 +3,8 @@ import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Place.obend as Place
+import ./Form.obend as Form
+import ./Card.obend as Card
 record State:
   name: String
   description: String
@@ -86,12 +88,19 @@ def handOver(state: State, to: Plans.Reference, from: Plans.Reference, context: 
   match perform(Plan.call({object: to, method: "hold", argument: {}})):
     case _: held(context, to, state.location)
 def holding(state: State) -> String:
-  if Plans.isNobody(state.holder) then "Nobody holds it." else textConcat("Held by ", textConcat(state.holder.object, "."))
+  if Plans.isNobody(state.holder) then "Nobody holds it." else textConcat("Held by ", textConcat(Card.handle(state.holder.object), "."))
 def render(state: State) -> Document.Document:
   Document.text(textConcat(state.name, textConcat("\n", textConcat(state.description, textConcat("\n", textConcat(holding(state), "\n"))))))
-def inspect(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({to: "", document: render(state)})):
-    case offered(_): true
-    case _: false
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "acquire", fields: Form.Fields.nil()}, tail: Card.Forms.cons({head: {card: "", action: "give", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})
+def door() -> Card.Door:
+  {word: "thing", blurb: "Pick it up, put it down, give it away."}
+# A spell's `to` names the recipient's avatar, which is the recipient's DID.
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  heard(state, Card.route(input.text, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match routed:
+    case act(a): if a.action == "acquire" then acquire(state, context) else give(state, {to: {world: context.world, object: Card.text(a.fields, "to")}}, context)
+    case _: Card.answerAs::<Edits, {}, Place.State, Place.Done, Place.Done>(routed, context, forms(), render(state), Place.Done.refused({reason: Card.reason(routed)}))
 def card(state: State) -> String:
   Document.plain(render(state))

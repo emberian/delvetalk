@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 record Exit:
   label: String
   to: Plans.Reference
@@ -83,16 +84,18 @@ def putThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Don
 def line(prefix: String, suffix: String) -> Document.Document:
   Document.text(textConcat(prefix, textConcat(suffix, "\n")))
 def reference(prefix: String) -> Plans.Reference -> Document.Document:
-  fn(item: Plans.Reference) -> Document.Document: line(prefix, item.object)
+  fn(item: Plans.Reference) -> Document.Document: line(prefix, Card.handle(item.object))
 def exit(item: Exit) -> Document.Document:
   line("Exit ", textConcat(item.label, textConcat(" to ", item.to.object)))
 def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: "))), Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: "))), Lists.map::<Exit, Document.Document>(state.exits, exit))})
-# The room card: description, who is here, what lies here, exits. The host takes
-# a pure method to return the state record, so a card is shown by offering it.
-def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({to: "", document: render(state)})):
-    case offered(_): true
-    case _: false
+  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: ")), 8n)), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: ")), 8n)), Lists.map::<Exit, Document.Document>(state.exits, exit))})
+# A room is entered and left by an avatar's move, and things take and put themselves:
+# its card offers no spell of its own.
+def forms() -> Card.Forms:
+  Card.Forms.nil()
+def door() -> Card.Door:
+  {word: "place", blurb: "A room: who is here, what lies here, the exits."}
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  Card.answer::<Edits, {}, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
 def card(state: State) -> String:
   Document.plain(render(state))

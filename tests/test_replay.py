@@ -1,13 +1,7 @@
 """FOUNDATION section 10: the hour of 2026-10-09, replayed as proposals.
 
-Steps that need the host's `create` or `await` are expected failures with the
-exact message the host answers today, and flip when it merges:
-
-    create -> {'class': 'evaluation', 'reason': 'plan not supported: create'}
-    await  -> {'class': 'evaluation', 'reason': 'plan not supported: await'}
-
-The other steps run on fixtures created with world-create (the child bell and
-cistern a create would have allocated).
+Every step runs on the host: Garden creates the bell and the cistern, the strike awaits the
+planting turn's receipt. Authors and planters are the turns' principals.
 """
 import unittest
 
@@ -23,8 +17,9 @@ def silver():
     return {"tag": "variant", "label": "silver", "payload": record()}
 
 
-def bell_seed(planter="glm"):
-    return record(planter=label(planter), colour=silver(), seed=label("a bell for lost moths"), planting=PLANTING)
+def bell_seed():
+    """A Bell Seed: the planter is the principal of the planting slot."""
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=PLANTING)
 
 
 def items(wire):
@@ -54,6 +49,9 @@ class Replay(Chain):
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["result"]["label"], "planted", reply)
+        planting = self.state_field("garden/bell/1", "planting")
+        self.assertEqual((get(planting, "principal"), get(planting, "intent")), (label("glm"), label(reply["receipt"]["identity"]["intent"])))
+        self.assertEqual(items(self.state_field("garden", "children")), [reference("garden/bell/1")])
 
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
         self.make("bell", closure("Bell"), bell_seed())
@@ -62,7 +60,7 @@ class Replay(Chain):
             self.assertEqual(reply["status"], "admitted", reply)
         rains = items(self.state_field("bell", "rains"))
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
-        self.assertEqual(self.state_field("bell", "planter"), label("glm"))
+        self.assertEqual(get(self.state_field("bell", "planting"), "principal"), label("glm"))
 
     def test_3_the_second_cistern_create_is_refused_on_a_required_absence(self):
         self.make("garden", closure("Garden"), garden_seed())

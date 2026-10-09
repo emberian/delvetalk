@@ -362,18 +362,16 @@ class Handler(BaseHTTPRequestHandler):
         self.html(200, pages.obj(name, handle, view, card, self.history(host, name), result))
 
     def card(self, host, principal, name, version):
-        """The object's own card: an offer from present/describe, cached because a retried identity returns no offers."""
+        """The object's own card: what its receive offers for an empty reply (every object takes
+        receive {text, post}), cached because a retried identity returns no offers."""
         key = (principal, name, version)
         if key not in self.server.cards:
-            text = None
-            for method in ('present', 'describe'):
-                r = host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': method,
-                               'argument': {'tag': 'record', 'fields': []},
-                               'identity': f'page:{name}:{method}:{version}:{self.server.nonce}'})
-                if r.get('offers'):
-                    text = '\n'.join(o['text'] for o in r['offers'])
-                    break
-            self.server.cards[key] = text
+            field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
+            stamp = f'page:{name}:{version}:{self.server.nonce}'
+            r = host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
+                           'argument': {'tag': 'record', 'fields': [field('text', ''), field('post', stamp)]},
+                           'identity': stamp})
+            self.server.cards[key] = '\n'.join(o['text'] for o in r['offers']) if r.get('offers') else None
         return self.server.cards[key]
 
     def history(self, host, name):

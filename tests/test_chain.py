@@ -2,12 +2,7 @@
 
 Both tests drive the host's `send` machinery (`world-turn` answers a send with a
 delivery id; `world-deliver {limit}` runs the queued deliveries; `world-pending`
-lists them). The host lane has not landed it, so both are expected failures.
-Against the foundation binary today the first turn that sends is refused:
-
-    receipt outcome {'class': 'evaluation', 'reason': 'plan not supported: send'}
-
-When the host merges, the unexpected success flips these to ordinary passes.
+lists them). The chain is wired with Card's observers.
 """
 import json
 import unittest
@@ -31,13 +26,19 @@ def reference(name):
     return record(world=label(""), object=label(name))
 
 
-def garden_seed(policy="", pending=()):
-    """A Garden Seed: its policy object and the proposals already waiting."""
+def garden_seed(policy="", pending=(), confirm=True):
+    """A Garden Seed: its policy object, whether prose waits for "yes", and the proposals already waiting."""
     wire = nil()
     for principal, spell in reversed(pending):
         wire = {"tag": "variant", "label": "cons", "payload": record(
             head=record(principal=label(principal), spell=label(spell)), tail=wire)}
-    return record(policy=reference(policy), pending=wire)
+    return record(policy=reference(policy), confirm=boolean(confirm), pending=wire)
+
+
+def garden_state(planted=0):
+    """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
+    return record(planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirm=boolean(True),
+                  pending=nil(), children=nil())
 
 
 def field(state, name):
@@ -95,18 +96,20 @@ class Chain(TurnWorld):
 
     def test_ring_then_open_then_light(self):
         self.make("lantern", closure("Lantern"), record())
-        self.make("door", closure("Door"), record(lantern=reference("none")))
+        self.make("door", closure("Door"), record())
         silver = {"tag": "variant", "label": "silver", "payload": empty()}
         self.make("bell", closure("Bell"), record(
-            planter=label("glm"), colour=silver, seed=label("s"),
-            planting=record(principal=label(""), intent=label(""))))
-        # The placeholders are overwritten through the objects' own configure methods.
-        for obj, argument in (("door", record(lantern=reference("lantern"))), ("bell", record(door=reference("door")))):
-            self.assertEqual(self.turn(obj, "configure", argument)["status"], "admitted")
+            colour=silver, seed=label("s"), planting=record(principal=label("glm"), intent=label("p"))))
+        # The chain is wired by observers: the door observes the bell, the lantern the door.
+        for obj, watcher, method in (("door", "lantern", "light"), ("bell", "door", "open")):
+            w = self.turn(obj, "observe", record(object=reference(watcher), method=label(method)))
+            self.assertEqual((w["status"], w["result"]["label"]), ("admitted", "edit"), w)
+        again = self.turn("bell", "observe", record(object=reference("door"), method=label("open")))
+        self.assertEqual(again["result"]["label"], "unchanged")
         ring = self.turn("bell", "ring", principal="gemini")
         self.assertEqual(ring["status"], "admitted", ring)
+        self.assertEqual(ring["result"], nat(1))  # one observer, one send
         self.assertEqual(field(self.state("bell"), "rung"), boolean(True))
-        self.assertNotEqual(field(self.state("bell"), "lastDelivery"), label(""))
         self.assertEqual(field(self.state("lantern"), "lit"), boolean(False))
         self.deliver_all()
         self.assertEqual(field(self.state("door"), "open"), boolean(True))

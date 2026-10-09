@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 record Door:
   label: String
   description: String
@@ -15,11 +16,6 @@ record Edits:
   doors: Plans.Entries<Door, {}>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
-# The same input as every card's receive: the text and the post it is in. Who wrote
-# it is the context's principal.
-record Heard:
-  text: String
-  post: String
 sum Answer:
   done: {}
   refused: {reason: String}
@@ -51,12 +47,10 @@ def render(state: State) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat::<Document.Document>(Lists.map::<Door, Document.Document>(state.doors, doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
 def card(state: State) -> String:
   Document.plain(render(state))
-def show(state: State) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.offer({to: "", document: render(state)})):
-    case offered(_): Lists.length::<Door>(state.doors)
-    case _: 0n
+def forms() -> Card.Forms:
+  Card.Forms.nil()
+def door() -> Card.Door:
+  {word: "directory", blurb: "The doors of DelveTalk."}
 # A summon: whatever was said, the menu is the answer.
-def receive(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  show(state)
-def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  show(state)
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  Card.tell::<Edits, {}, State, {}, Nat>(Lists.length::<Door>(state.doors), render(state))

@@ -5,6 +5,7 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Spell.obend as Spell
 import ./Form.obend as Form
+import ./Card.obend as Card
 record Term:
   word: String
   meaning: String
@@ -14,17 +15,17 @@ record Example:
 # The interpretation policy as an ordinary object: the host sends prompt(...) to
 # the configured model and returns the answer as a proposal, never as authority.
 record State:
+  owner: String
   model: String
   system: String
   lexicon: Lists.List<Term>
   examples: Lists.List<Example>
-  confirm: Bool
   escalate: String
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
+  owner: String
   model: String
   system: String
-  confirm: Bool
   escalate: String
 record Edits:
   model: Plans.Edit<String, {}>
@@ -34,26 +35,57 @@ record Edits:
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", confirm: true, escalate: ""}
+  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: ""}
 def seeded(seed: Seed) -> State:
-  {model: seed.model, system: seed.system, lexicon: Lists.List::<Term>.nil(), examples: Lists.List::<Example>.nil(), confirm: seed.confirm, escalate: seed.escalate}
+  {owner: seed.owner, model: seed.model, system: seed.system, lexicon: Lists.List::<Term>.nil(), examples: Lists.List::<Example>.nil(), escalate: seed.escalate}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
   {model: Plans.Edit::<String, {}>.keep({}), escalate: Plans.Edit::<String, {}>.keep({}), lexicon: Plans.Entries::<Term, {}>.keep({}), examples: Plans.Entries::<Example, {}>.keep({})}
-def edited(edits: Edits, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+# Every write of the policy is its owner's: the law says so, and the methods refuse a
+# stranger by name before writing. With the host's `request.method` the law becomes
+#   owner: request.kind == 0 and request.method == "describe" or request.subject == new.owner
+law owner: new.owner == request.subject
+sum Taught:
+  taught: {count: Nat}
+  refused: {reason: String}
+# At most this many examples go into every model call.
+def exampleCap() -> Nat:
+  16n
+def edited<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
+  if context.principal != state.owner then then(Taught.refused({reason: textConcat("Only the policy's owner may teach it; that is ", Card.handle(state.owner))})) else written::<T>(state, edits, context, then)
+def written<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
-    case written(_): true
-    case _: false
+    case _: then(Taught.taught({count: Lists.length::<Example>(state.examples)}))
+def same(taught: Taught) -> Taught:
+  taught
+def taught<T>(state: State, example: Example, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
+  if Lists.length::<Example>(state.examples) < exampleCap() then edited::<T>(state, extend(keep(), {examples: Plans.Entries::<Example, {}>.append({item: example})}), context, then) else then(Taught.refused({reason: "The policy holds sixteen examples, the most a model call carries."}))
+def defined<T>(state: State, term: Term, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
+  if Lists.length::<Term>(state.lexicon) < exampleCap() then edited::<T>(state, extend(keep(), {lexicon: Plans.Entries::<Term, {}>.append({item: term})}), context, then) else then(Taught.refused({reason: "The lexicon holds sixteen words."}))
 # Teach it a phrase and the spell that phrase means.
-def teach(state: State, input: {example: Example}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  edited(extend(keep(), {examples: Plans.Entries::<Example, {}>.append({item: input.example})}), context)
+def teach(state: State, input: {example: Example}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
+  taught::<Taught>(state, input.example, context, same)
 # Define a word of the lexicon.
-def define(state: State, input: {term: Term}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  edited(extend(keep(), {lexicon: Plans.Entries::<Term, {}>.append({item: input.term})}), context)
+def define(state: State, input: {term: Term}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
+  defined::<Taught>(state, input.term, context, same)
 # Choose the model, and the stronger one to escalate to when it is unsure.
-def setModel(state: State, input: {model: String, escalate: String}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  edited(extend(keep(), {model: Plans.Edit::<String, {}>.set({value: input.model}), escalate: Plans.Edit::<String, {}>.set({value: input.escalate})}), context)
+def setModel(state: State, input: {model: String, escalate: String}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
+  edited::<Taught>(state, extend(keep(), {model: Plans.Edit::<String, {}>.set({value: input.model}), escalate: Plans.Edit::<String, {}>.set({value: input.escalate})}), context, same)
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "teach", fields: Form.Fields.cons({head: {name: "utterance", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.cons({head: {name: "spell", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})})}, tail: Card.Forms.cons({head: {card: "", action: "define", fields: Form.Fields.cons({head: {name: "word", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.cons({head: {name: "meaning", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})})}, tail: Card.Forms.nil()})})
+def door() -> Card.Door:
+  {word: "policy", blurb: "How a card understands prose: its examples and words."}
+def taughtReply(taught: Taught) -> Card.Reply:
+  match taught:
+    case taught(_): Card.Reply.done({action: "teach"})
+    case refused(r): Card.Reply.refused({reason: r.reason})
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  heard(state, Card.route(input.text, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): if a.action == "teach" then taught::<Card.Reply>(state, {utterance: Card.text(a.fields, "utterance"), spell: Card.text(a.fields, "spell")}, context, taughtReply) else defined::<Card.Reply>(state, {word: Card.text(a.fields, "word"), meaning: Card.text(a.fields, "meaning")}, context, taughtReply)
+    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
 def kindText(kind: Form.Kind) -> String:
   match kind:
     case text(t): textConcat("text of ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters"))))
@@ -81,7 +113,7 @@ def prompt(state: State, offers: Lists.List<Form.Form>, utterance: String) -> St
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleLine(example))
 def stance(state: State) -> String:
-  textConcat(if state.confirm then "I ask before acting on what I understood.\n" else "I act on what I understood without asking.\n", if state.escalate == "" then "" else textConcat("When unsure I escalate to ", textConcat(state.escalate, ".\n")))
+  textConcat("I only propose; the card I serve decides whether to ask first.\n", if state.escalate == "" then "" else textConcat("When unsure I escalate to ", textConcat(state.escalate, ".\n")))
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant, seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nWhat I know:\n"
 # The policy as a card, including how to teach it.
@@ -92,7 +124,3 @@ def render(state: State) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(terms, shown)})})
 def card(state: State) -> String:
   Document.plain(render(state))
-def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({to: "", document: render(state)})):
-    case offered(_): true
-    case _: false

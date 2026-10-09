@@ -1,11 +1,13 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
+import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 record State:
   lit: Bool
   litBy: String
-# A creator supplies a Seed; seeded makes the child's State from it.
+# What a creator may supply; the host lays it over initial().
 type Seed = {}
 record Edits:
   lit: Plans.Edit<Bool, {}>
@@ -18,12 +20,23 @@ def seeded(seed: Seed) -> State:
   {lit: false, litBy: ""}
 def initial() -> State:
   seeded(defaultSeed())
-# Light the lantern and remember who did.
-def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+# Light the lantern and remember who did: the turn's principal.
+def lit<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit::<Bool, {}>.set({value: true}), litBy: Plans.Edit::<String, {}>.set({value: context.principal})}})):
-    case written(_): true
-    case _: state.lit
+    case _: then(true)
+def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  lit::<Bool>(state, context, fn(done: Bool) -> Bool: done)
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "light", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})
+def door() -> Card.Door:
+  {word: "lantern", blurb: "Light it, or let a door light it."}
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  heard(state, Card.route(input.text, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): lit::<Card.Reply>(state, context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
 def render(state: State) -> Document.Document:
-  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(state.litBy, ".\n")) else "The lantern is dark.\n")
+  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.handle(state.litBy), ".\n")) else "The lantern is dark.\n")
 def card(state: State) -> String:
   Document.plain(render(state))

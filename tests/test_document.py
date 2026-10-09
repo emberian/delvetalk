@@ -10,6 +10,8 @@ import tempfile
 import time
 import unittest
 
+from tests.test_chain import garden_state
+
 from tests import host
 from tests.host import HostCase
 from tests.test_turn_world import closure, label, nat, record
@@ -221,12 +223,15 @@ class RenderTests(unittest.TestCase):
 class OfferTests(HostCase):
     def test_an_offer_turn_on_garden_returns_the_card_and_journals_only_the_count(self):
         made = self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
-                              modules=closure("Garden"), entry="initial", seed=record(planted=nat(2), policy=record(world=label(""), object=label("")), pending={"tag": "variant", "label": "nil", "payload": record()}))
+                              modules=closure("Garden"), entry="initial", seed=garden_state(2))
         self.assertEqual(made["status"], "created", made)
-        turn = self.host.send(op="world-turn", principal="glm", object="garden", method="present",
-                              argument=record(), identity="look-1")
+        look = record(text=label(""), post=label("at://glm/p/look"))
+        turn = self.host.send(op="world-turn", principal="glm", object="garden", method="receive",
+                              argument=look, identity="look-1")
         self.assertEqual(turn["status"], "admitted", turn)
-        self.assertEqual(turn["offers"], [{"principal": "glm", "text": "The Night Garden: 2 planted\n"}])
+        self.assertEqual(len(turn["offers"]), 1)
+        self.assertEqual(turn["offers"][0]["principal"], "glm")
+        self.assertIn("2 planted, newest first:\n", turn["offers"][0]["text"])
         self.assertEqual(turn["receipt"]["offers"], 1)
         self.assertNotIn("2 planted", json.dumps(turn["receipt"]))
         # the journal file holds the count and no text
@@ -240,13 +245,13 @@ class OfferTests(HostCase):
         self.assertEqual(again["receipt"]["offers"], 1)
         self.assertEqual(again["receipt"]["outcome"]["tag"], "admitted")
         # a retry of the same identity returns the same receipt
-        retry = self.host.send(op="world-turn", principal="glm", object="garden", method="present",
-                               argument=record(), identity="look-1")
+        retry = self.host.send(op="world-turn", principal="glm", object="garden", method="receive",
+                               argument=look, identity="look-1")
         self.assertEqual(retry["receipt"], again["receipt"])
 
     def test_a_turn_without_an_offer_carries_no_offers_field(self):
         self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
-                       modules=closure("Garden"), entry="initial", seed=record(planted=nat(0), policy=record(world=label(""), object=label("")), pending={"tag": "variant", "label": "nil", "payload": record()}))
+                       modules=closure("Garden"), entry="initial", seed=garden_state(0))
         turn = self.host.send(op="world-turn", principal="glm", object="garden", method="cistern",
                               argument=record(), identity="c1")
         self.assertNotIn("offers", turn)

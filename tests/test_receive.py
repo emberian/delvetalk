@@ -1,10 +1,7 @@
 """The cards the town sees first: Garden.receive and Directory.receive.
 
-Every observed spell reaches `<card>.receive {text, who, post}`; the reply card is
-what the turn offers. Planting needs the host's `create`, which is not landed:
-a valid spell is refused with {'class': 'evaluation', 'reason': 'plan not
-supported: create'}, so the planted-card test is an expected failure and the
-planted card text is checked through a pure probe instead.
+Every observed spell reaches `<card>.receive {text, post}`; who wrote it is the turn's
+principal, and the reply card is what the turn offers.
 """
 import unittest
 
@@ -126,7 +123,7 @@ def planted(context: Abi.Context) -> String:
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)
-        self.assertEqual(self.card(self.turn("root", "describe", principal="glm")), text)
+        self.assertEqual(self.card(self.say("", obj="root")), text)
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()
@@ -134,7 +131,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(again["result"]["label"], "refused")
         gone = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
-        self.assertNotIn("PLAY\n", self.card(self.turn("root", "describe", principal="glm")))
+        self.assertNotIn("PLAY\n", self.card(self.say("", obj="root")))
         missing = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
         self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called PLAY")
 

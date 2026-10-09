@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.test_chain import garden_state
 from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
 from tests.test_turn_world import closure, label, nat, record
@@ -158,7 +159,7 @@ class Bridging(BridgeCase):
 
     def test_real_garden_receive_end_to_end(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0), policy=record(world=label(""), object=label("")), pending={"tag": "variant", "label": "nil", "payload": record()})})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])

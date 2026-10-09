@@ -2,64 +2,70 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
+import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 record State:
   open: Bool
   openedBy: String
   knocks: Lists.List<String>
-  lantern: Plans.Reference
-  lastDelivery: String
-# A creator supplies a Seed; seeded makes the child's State from it.
-record Seed:
-  lantern: Plans.Reference
+  observers: Card.Observers
+# What a creator may supply; the host lays it over initial().
+type Seed = {}
 record Edits:
   open: Plans.Edit<Bool, {}>
   openedBy: Plans.Edit<String, {}>
   knocks: Plans.Entries<String, {}>
-  lastDelivery: Plans.Edit<String, {}>
-  lantern: Plans.Edit<Plans.Reference, {}>
+  observers: Plans.Entries<Card.Observer, {}>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {lantern: Plans.nobody()}
+  {}
 def seeded(seed: Seed) -> State:
-  {open: false, openedBy: "", knocks: Lists.List::<String>.nil(), lantern: seed.lantern, lastDelivery: ""}
+  {open: false, openedBy: "", knocks: Lists.List::<String>.nil(), observers: Card.Observers.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {open: Plans.Edit::<Bool, {}>.keep({}), openedBy: Plans.Edit::<String, {}>.keep({}), knocks: Plans.Entries::<String, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({}), lantern: Plans.Edit::<Plans.Reference, {}>.keep({})}
-def unlatched(who: String) -> Edits:
-  extend(keep(), {open: Plans.Edit::<Bool, {}>.set({value: true}), openedBy: Plans.Edit::<String, {}>.set({value: who})})
-# Points the door at the lantern it lights. The host overwrites the placeholder.
-def configure(state: State, input: {lantern: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {lantern: Plans.Edit::<Plans.Reference, {}>.set({value: input.lantern})})})):
-    case written(_): true
-    case _: false
-# The method a bell sends to: open the door and light the lantern behind it.
+  {open: Plans.Edit::<Bool, {}>.keep({}), openedBy: Plans.Edit::<String, {}>.keep({}), knocks: Plans.Entries::<String, {}>.keep({}), observers: Plans.Entries::<Card.Observer, {}>.keep({})}
+# Who opened it is the turn's principal (for a bell's send, the bell ringer's).
+def unlatched(context: Abi.Context) -> Edits:
+  extend(keep(), {open: Plans.Edit::<Bool, {}>.set({value: true}), openedBy: Plans.Edit::<String, {}>.set({value: context.principal})})
+def latch(state: State, context: Abi.Context) -> Edits:
+  if state.open then keep() else unlatched(context)
+# The method a bell's observer entry names: open the door and tell its observers.
 def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: unlatched(context.principal)})):
-    case written(_): announce(state, context)
-    case _: state.open
-def latch(state: State, who: String) -> Edits:
-  if state.open then keep() else unlatched(who)
+  match perform(Plan.write({object: Plans.self(context), edits: unlatched(context)})):
+    case _: Card.broadcast::<Edits, {}, State, {}, Bool>(state.observers, {}, 0n, fn(sent: Nat) -> Bool: true)
 # A knock is retained; a knock on a closed door opens it.
+def knocked<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context), {knocks: Plans.Entries::<String, {}>.append({item: context.principal})})})):
+    case _: if state.open then then(true) else Card.broadcast::<Edits, {}, State, {}, T>(state.observers, {}, 0n, fn(sent: Nat) -> T: then(true))
 def knock(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context.principal), {knocks: Plans.Entries::<String, {}>.append({item: context.principal})})})):
-    case written(_): answer(state, context)
-    case _: false
-def answer(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  if state.open then true else announce(state, context)
-def announce(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.send({object: state.lantern, method: "light", argument: {}})):
-    case delivery(d): remember(d.id, context)
-    case _: false
-def remember(id: String, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {lastDelivery: Plans.Edit::<String, {}>.set({value: id})})})):
-    case written(_): true
-    case _: false
+  knocked::<Bool>(state, context, fn(opened: Bool) -> Bool: opened)
+def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  changed(Card.observing(state.observers, input), context)
+def unobserve(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  changed(Card.unobserving(state.observers, input), context)
+def changed(change: Card.Change, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  match change:
+    case edit(e): observed(change, e.entries, context)
+    case _: change
+def observed(change: Card.Change, entries: Plans.Entries<Card.Observer, {}>, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {observers: entries})})):
+    case _: change
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "knock", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})
+def door() -> Card.Door:
+  {word: "door", blurb: "Knock; a bell can open it too."}
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  heard(state, Card.route(input.text, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): knocked::<Card.Reply>(state, context, fn(opened: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
 def knockLine(who: String) -> Document.Document:
-  Document.text(textConcat("knock: ", textConcat(who, "\n")))
+  Document.text(textConcat("knock: ", textConcat(Card.handle(who), "\n")))
 def render(state: State) -> Document.Document:
-  Document.concat(Document.text(if state.open then textConcat("The door is open, opened by ", textConcat(state.openedBy, ".\n")) else "The door is shut.\n"), Document.Document.sequence({items: Lists.map::<String, Document.Document>(state.knocks, knockLine)}))
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then textConcat("The door is open, opened by ", textConcat(Card.handle(state.openedBy), ".\n")) else "The door is shut.\n"), tail: Card.clipped(Lists.map::<String, Document.Document>(state.knocks, knockLine), 8n)})})
 def card(state: State) -> String:
   Document.plain(render(state))

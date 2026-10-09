@@ -16,7 +16,7 @@ def planting(post):
 
 
 def bell_seed(post="post-1"):
-    return record(planter=label("glm"), colour=silver(), seed=label("a bell for lost moths"), planting=planting(post))
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=planting(post))
 
 
 class Await(Chain):
@@ -48,7 +48,7 @@ class Create(Await):
         self.make("garden", closure("Garden"), garden_seed())
         self.assertEqual(self.plant()["status"], "admitted")
         bell = self.state("garden/bell/1")
-        self.assertEqual(get(bell, "planter"), label("glm"))
+        self.assertEqual(get(get(bell, "planting"), "principal"), label("glm"))
         self.assertEqual(get(bell, "rung"), boolean(False))                 # default from initial()
         v = self.host.send(op="world-view", principal="e", object="garden/bell/1")
         self.assertEqual((v["status"], v["version"]), ("viewed", 0))

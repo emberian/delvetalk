@@ -46,8 +46,8 @@ def names(wire):
 
 
 class Types(unittest.TestCase):
-    METHODS = {"Place": ["enter", "leave", "take", "put", "describe"], "Thing": ["acquire", "drop", "give", "inspect"],
-               "Avatar": ["move", "arrive", "note", "hold", "release", "describe"]}
+    METHODS = {"Place": ["enter", "leave", "take", "put", "receive"], "Thing": ["acquire", "drop", "give", "receive"],
+               "Avatar": ["move", "arrive", "note", "hold", "release", "receive"]}
 
     def test_every_method_is_an_activity_over_the_plan_library(self):
         for module, methods in self.METHODS.items():
@@ -73,7 +73,8 @@ class Floor(Chain):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
 
     def card(self, name, principal="glm"):
-        reply = self.turn(name, "describe", principal=principal)
+        """The card is what receive offers for an empty reply."""
+        reply = self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["offers"][0]["text"]
 
@@ -177,16 +178,17 @@ class Floor(Chain):
 
     def test_thing_inspect_offers_its_card(self):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
-        reply = self.turn("stone", "inspect", principal="glm")
-        self.assertEqual(reply["offers"][0]["text"], "stone\na stone\nNobody holds it.\n")
+        self.assertTrue(self.card("stone").startswith("stone\na stone\nNobody holds it.\n\nReply with a spell:\n\n    delvetalk stone acquire\n"), self.card("stone"))
 
     def test_a_place_with_64_things_renders_under_the_default_budget(self):
         things = ["thing%02d" % i for i in range(64)]
         self.make("hall", closure("Place"), place_seed("Hall", [("out", "porch")], present=["glm", "kimik3"], things=things))
-        reply = self.turn("hall", "describe", principal="glm")
+        reply = self.turn("hall", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
-        self.assertEqual(text.count("Lying here: "), 64)
+        self.assertEqual(text.count("Lying here: "), 8)
+        self.assertIn("… and 56 more\n", text)
+        self.assertLess(len(text), 1400)
         print("\n  place with 64 things: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
         self.assertLess(reply["ticksUsed"], 100000)
 
@@ -199,10 +201,12 @@ class Floor(Chain):
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
         self.assertEqual(over["status"], "admitted", over)  # the wire now decodes lists to depth 8192; the cap is bytes, not count
-        reply = self.turn("glm", "describe", principal="glm")
+        reply = self.turn("glm", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
-        self.assertEqual(text.count("kimik3: note "), 247)
+        self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest
+        self.assertLess(text.index("one too many"), text.index("kimik3: note 246"))  # newest first
+        self.assertIn("… and 240 more\n", text)
         print("\n  avatar with 247 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
         self.assertLess(reply["ticksUsed"], 100000)
 

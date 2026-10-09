@@ -39,7 +39,7 @@ def show(fit: Spell.Fit) -> String:
     case unclear(u): textConcat("unclear ", bar(u.needs))
     case refused(r): textConcat("refused ", r.reason)
 def propose(text: String, context: Abi.Context) -> String:
-  show(Garden.propose(text, context))
+  show(Spell.fit(Spell.parse(text), Garden.plantForm(context)))
 """
 
 
