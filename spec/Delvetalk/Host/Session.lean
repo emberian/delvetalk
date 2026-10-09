@@ -221,7 +221,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
         | .error e => return (session, .error e)
         | .ok lib => durable s (fun w => libraryOp w principal intent lib none)
       | "world-inspect" => return (session, inspectOp s.world request)
-      | "world-interpretations" => return (session, .ok (interpretationsReply s.world))
+      | "world-interpretations" =>
+        let (w, r) := interpretationsReply s.world
+        return (some { s with world := w }, .ok r)
       | "world-interpretation" => durable s (fun w => interpretationOp w request)
       | "world-reprogram" => durable s (fun w => reprogramOp w request)
       | "world-amend" => durable s (fun w => amendOp w request)

@@ -181,6 +181,7 @@ def interpreted(state: State, input: Card.Heard, context: Abi.Context, confirm: 
   match perform(Plan.interpret({utterance: input.text, offers: Lists.List::<Form.Form>.cons({head: plantForm(context), tail: Lists.List::<Form.Form>.nil()}), policy: state.policy})):
     case proposal(p): named(state, context, found, confirm, p.argument.colour, p.argument.seed)
     case unclear(u): told(found, context, Reply.unclear({needs: u.needs}), needsCard(u.needs))
+    case replied(r): judged(state, context, Spell.parse(r.text), confirm, found)
     case denied(_): told(found, context, Reply.refused({reason: "The garden's policy is not visible to you."}), refusedCard("The garden's policy is not visible to you."))
     case _: told(found, context, Reply.refused({reason: "I could not make sense of that."}), refusedCard("I could not make sense of that."))
 def needsCard(needs: Form.Names) -> Document.Document:

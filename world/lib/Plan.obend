@@ -158,6 +158,7 @@ sum Response<S, R>:
   broken: {}
   proposal: {method: String, argument: R}
   unclear: {needs: Document.Names}
+  replied: {text: String}
   offered: {}
   published: {post: String}
   reprogrammed: {pin: String}

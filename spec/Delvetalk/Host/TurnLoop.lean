@@ -1123,6 +1123,8 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     let argument ← liftEval (decodeData Limits.dataDepth raw)
     let method ← liftEval (verdict.getObjValAs? String "method")
     respond bounds responseType "proposal" [.record [("method", .label method), ("argument", argument)]]
+  | "replied" =>
+    respond bounds responseType "replied" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
   | _ =>
     let needs := strings (verdict.getObjVal? "needs").toOption
     respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
@@ -1467,31 +1469,63 @@ partial def plainJson : Data → Json
       | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
       | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
 
-/-- The state of a Policy object as `{model, system, examples}` (absent fields are null). -/
-def policyJson (w : World) (id : String) : Json :=
-  match (w.objects[id]?).map (fun o => o.state) with
-  | some (Data.record f) => Json.mkObj (["model", "system", "examples"].map fun k =>
-      (k, ((f.lookup k).map plainJson).getD Json.null))
-  | _ => Json.null
+/-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
+    utterance)` when its package defines one and it renders text under the turn tick budget,
+    else none (the caller then sends the `system` field). The method table does not list
+    `prompt` (its offers are not a form), so the definition is compiled by name and cached. -/
+def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) : Option String × World :=
+  match compileDef w o "prompt" with
+  | .error _ => (none, w)
+  | .ok (c, w') =>
+    let cache := if w'.compiled.size < Limits.maxCompiledPackets then w'.compiled else {}
+    let w' := { w' with compiled := cache.insert (defKey o "prompt") c }
+    match c.entry with
+    | none => (none, w')
+    | some entry =>
+      match (runPure entry [o.state, offers, .label utterance] Limits.maxTurnTicks).1 with
+      | .ok (.label text) => (some text, w')
+      | _ => (none, w')
+
+/-- The state of a Policy object as `{model, system, examples}` (absent fields are null), with
+    `system` the Policy's rendered prompt for these offers and utterance when it has one. -/
+def policyJson (w : World) (id : String) (offers : Data) (utterance : String) : Json × World :=
+  match w.objects[id]? with
+  | some o =>
+    match o.state with
+    | Data.record f =>
+      let (prompt, w) := policyPrompt w o offers utterance
+      let field := fun k => ((f.lookup k).map plainJson).getD Json.null
+      (Json.mkObj [("model", field "model"), ("system", (prompt.map toJson).getD (field "system")),
+        ("examples", field "examples")], w)
+    | _ => (Json.null, w)
+  | none => (Json.null, w)
 
 def interpretationOf (s : Json) : Option Json :=
   (s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption
 
-/-- `world-interpretations`: every `interpret` still waiting for a reply. -/
-def interpretationsReply (w : World) : Json :=
-  let pending := w.suspended.filterMap fun s => do
-    let i ← interpretationOf s
-    let id ← (i.getObjValAs? String "id").toOption
-    guard (settled w interpretationPrincipal id).isNone
-    let deadline ← ((s.getObjVal? "outcome").toOption.bind (·.getObjValAs? Nat "deadline" |>.toOption))
-    guard (w.clock ≤ deadline)
-    let object ← (i.getObjValAs? String "object").toOption
-    let policy ← (i.getObjValAs? String "policy").toOption
-    let offers ← (i.getObjVal? "offers").toOption.bind fun o => (decodeData Limits.dataDepth o).toOption
-    let utterance ← (i.getObjValAs? String "utterance").toOption
-    pure (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", policyJson w policy),
+/-- `world-interpretations`: every `interpret` still waiting for a reply. The world returned
+    carries only the compiled prompts it cached; nothing is journaled. -/
+def interpretationsReply (w : World) : World × Json := Id.run do
+  let mut w := w
+  let mut pending : Array Json := #[]
+  for s in w.suspended do
+    let item : Option (String × String × String × Data × String) := do
+      let i ← interpretationOf s
+      let id ← (i.getObjValAs? String "id").toOption
+      guard (settled w interpretationPrincipal id).isNone
+      let deadline ← ((s.getObjVal? "outcome").toOption.bind (·.getObjValAs? Nat "deadline" |>.toOption))
+      guard (w.clock ≤ deadline)
+      let object ← (i.getObjValAs? String "object").toOption
+      let policy ← (i.getObjValAs? String "policy").toOption
+      let offers ← (i.getObjVal? "offers").toOption.bind fun o => (decodeData Limits.dataDepth o).toOption
+      let utterance ← (i.getObjValAs? String "utterance").toOption
+      pure (id, object, policy, offers, utterance)
+    let some (id, object, policy, offers, utterance) := item | continue
+    let (shown, w') := policyJson w policy offers utterance
+    w := w'
+    pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
       ("utterance", toJson utterance), ("offers", plainJson offers)])
-  Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)]
+  return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
 
 def scratchState (w : World) : TurnState :=
   { world := w, principal := "", intent := "", subject := "", ticks := 0, limits := Json.mkObj [] }
@@ -1511,9 +1545,12 @@ def inputTypeOf : Ty → Except String (Option Ty)
 def unclearVerdict (needs : List String) : Json :=
   Json.mkObj [("tag", toJson "unclear"), ("needs", toJson needs)]
 
-/-- What a reply says to the suspended object: a proposal (a method of the object, one of
-    the offered actions, with an argument that conforms to the method's input type and
-    fits the object's response type), or `unclear` with the reason. -/
+/-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
+    (a method of the object, one of the offered actions, with an argument that conforms to the
+    method's input type and fits the object's response type) or `unclear` with the reason. Any
+    other reply is the model's text, `replied {text}`, for the object to read with its own
+    grammar; an object whose Response cannot carry it hears `unclear`. A failed call is
+    `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -1523,11 +1560,23 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   | some "replied" => pure ()
   | some "failed" =>
     let reason := ((reply.getObjValAs? String "reason").toOption).getD "failed"
-    return (w, unclearVerdict [s!"the model did not reply: {reason}"])
+    return (w, unclearVerdict [s!"model: {reason}"])
   | _ => throw "reply must have status replied or failed"
-  let some json := (reply.getObjVal? "json").toOption | throw "a replied interpretation carries json"
+  let json := (reply.getObjVal? "json").toOption.getD Json.null
+  let raw := (reply.getObjValAs? String "raw").toOption
+  if json.isNull && raw.isNone then throw "a replied interpretation carries json or raw"
+  let some obj := w.objects[object]? | throw s!"unknown object {object}"
+  let (r2, st2) := ((compiledMethod obj suspendedMethod).run.run (scratchState w))
+  let suspended ← match r2 with | .ok c => pure c | .error e => throw (abortText e)
+  let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
+  let w := { w with compiled := st2.world.compiled }
   let some method := (json.getObjValAs? String "method").toOption
-    | return (w, unclearVerdict ["the reply names no method"])
+    | match raw with
+      | some text =>
+        if (Data.variant "replied" (.record [("text", .label text)])).conformsUnder suspended.bounds responseType then
+          return (w, Json.mkObj [("tag", toJson "replied"), ("text", toJson text)])
+        return (w, unclearVerdict ["the reply names no method"])
+      | none => return (w, unclearVerdict ["the reply names no method"])
   let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
   let actions := ((listHeads [] offers).getD []).filterMap fun form =>
     match form with
@@ -1535,12 +1584,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     | _ => none
   if !actions.isEmpty && !actions.contains method then
     return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
-  let some obj := w.objects[object]? | throw s!"unknown object {object}"
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
-  let (r2, st2) := ((compiledMethod obj suspendedMethod).run.run st)
-  let suspended ← match r2 with | .ok c => pure c | .error e => throw (abortText e)
-  let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
-  let w := { w with compiled := st2.world.compiled }
+  let w := { w with compiled := st.world.compiled }
   let compiledM ← match r with
     | .ok c => pure c
     | .error e => return (w, unclearVerdict [s!"{method} is not a method of the object: {abortText e}"])
