@@ -24,7 +24,7 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   rains: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 law cap: new.count <= 3
 def initial() -> State:

@@ -162,6 +162,8 @@ structure Proposal where
   /-- Grants the turn makes and grant ids it revokes; they take effect with the commit. -/
   grants : List Grant := []
   revokes : List String := []
+  /-- Uses the turn spends of limited grants: grant id and count. -/
+  spent : List (String × Nat) := []
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
     amendment that no write of the proposal already names. -/
@@ -245,6 +247,13 @@ def parseProposal (j : Json) : Except String Proposal := do
     unless roots.any (·.1 == id) do throw s!"write names {id}, which is not among the roots"
   return { principal, intent, roots, writes }
 
+def spentJson (spent : List (String × Nat)) : Json :=
+  Json.arr (spent.toArray.map fun (id, n) => Json.mkObj [("id", toJson id), ("uses", toJson n)])
+
+def parseSpent (j : Option Json) : Except String (List (String × Nat)) := do
+  let some raw := j | return []
+  (← raw.getArr?).toList.mapM fun x => do return (← x.getObjValAs? String "id", ← natField x "uses")
+
 /-- Digest binding an identity to the request that first used it. -/
 def Proposal.digest (p : Proposal) : String :=
   let programs := p.programs.map fun (id, (src, mig)) => Json.mkObj
@@ -258,7 +267,8 @@ def Proposal.digest (p : Proposal) : String :=
       [("object", toJson id), ("pin", toJson c.object.pin), ("seed", toJson (Journal.bodyHash c.seed.compress)),
        ("law", toJson c.object.lawText)]))]) ++
     (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
-    (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)])))
+    (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
+    (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)])))
 
 /-! ## Judging -/
 
@@ -677,12 +687,31 @@ def grantStands (w : World) (id object method : String) : Option Grant :=
   | some g => if !g.revoked && w.clock ≤ g.expires && g.object == object && g.method == method then some g else none
   | none => none
 
-/-- Install a commit's grants and mark its revocations. -/
-def applyGrants (w : World) (grants : List Grant) (revokes : List String) : World :=
+/-- Install a commit's grants, spend its uses, and mark its revocations. -/
+def applyGrants (w : World) (grants : List Grant) (revokes : List String) (spent : List (String × Nat) := []) : World :=
   let w := grants.foldl (fun w g => { w with grants := w.grants.insert g.id g }) w
+  let w := spent.foldl (fun w (id, n) => match w.grants[id]? with
+    | some g => { w with grants := w.grants.insert id { g with uses := g.uses.map (· - n) } }
+    | none => w) w
   revokes.foldl (fun w id => match w.grants[id]? with
     | some g => { w with grants := w.grants.insert id { g with revoked := true } }
     | none => w) w
+
+/-- The argument a use of grant `g` runs with: the caller's, with the grant's fixed part merged
+    in. A fixed record field the caller gives with other bytes is a conflict; a fixed value that is
+    not a record must be the whole argument (or the caller gives `{}`). -/
+def attenuate (g : Grant) (argument : Data) : Except String Data := do
+  let some raw := g.fixed | return argument
+  let fixed ← decodeData Limits.dataDepth raw
+  let same := fun (a b : Data) => Delvetalk.Canonical.encode a == Delvetalk.Canonical.encode b
+  match fixed, argument with
+  | .record ff, .record af =>
+    for (k, v) in ff do
+      if let some given := af.lookup k then
+        unless same given v do throw "grantConflict"
+    return .record (af ++ ff.filter fun (k, _) => (af.lookup k).isNone)
+  | f, .record [] => return f
+  | f, a => if same f a then return a else throw "grantConflict"
 
 /-- Every change of `id` in the writes is an ordinary write made only of commuting edits. -/
 def commutesAt (writes : List (String × List Written)) (id : String) : Bool :=
@@ -715,6 +744,13 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
   for g in p.grants do
     if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
+  -- A limited grant must have the uses the turn spends left when it commits.
+  for (id, n) in p.spent do
+    match w.grants[id]? with
+    | some g =>
+      if let some left := g.uses then
+        if left < n then throw { cls := "lawRefused", clause := some "grantSpent", object := some g.object }
+    | none => throw { cls := "evaluation", reason := some "a turn spends an unknown grant" }
   -- A revocation needs the grantor's turn, or a turn that read the object holding the grant.
   for id in p.revokes do
     match w.grants[id]? with
@@ -907,7 +943,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := applyGrants w p.grants p.revokes
+      let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) ::
           writtenFields ((p.allWrites.lookup id).getD [])))
@@ -916,7 +952,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if judged.amendments.isEmpty then [] else [("amendments", Json.arr judged.amendments.toArray)]) ++
         (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]) ++
         (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
-        (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]))
+        (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
+        (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]))
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
           newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs))
@@ -1326,8 +1363,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let revokes ← ((outcome.getObjVal? "revokes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM (·.getStr?)
     for (g, i) in grants.zipIdx do
       unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
+    let spent ← parseSpent (outcome.getObjVal? "spent").toOption
     let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws,
-                          absent, creates, grants, revokes }
+                          absent, creates, grants, revokes, spent }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     match judge w (w.height + 1) p with
@@ -1343,7 +1381,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := applyGrants w grants revokes
+      let w := applyGrants w grants revokes spent
       let holders := (grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
   | other => throw s!"unknown outcome {other}"

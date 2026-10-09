@@ -21,7 +21,7 @@ record State:
   seen: String
 record Edits:
   seen: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, {m: Nat}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, String>
 sum Colour:
   silver: {}
@@ -32,7 +32,7 @@ def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>
   match perform(Plan.write({object: Plans.self(context), edits: {seen: Plans.Edit::<String, {}>.set({value: text})}})):
     case _: text
 def poke(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: "bump2", argument: {m: 1n}})):
+  match perform(Plan.call({object: {world: "", object: input.target}, method: "bump2", argument: Data.of::<{m: Nat}>({m: 1n})})):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
@@ -100,7 +100,7 @@ class Integration(Reflection):
         self.assertNotIn("profile", retry)
         plain = self.turn("probe", "bump")
         self.assertNotIn("profile", plain)
-        self.assertNotIn("profile", json.dumps(self.lines()))
+        self.assertFalse(any("profile" in json.loads(line) for line in self.lines()))
         bad = self.host.send(op="world-turn", principal="ember", object="probe", method="bump",
                              argument=record(), identity="p2", profile="yes")
         self.assertEqual(bad["status"], "error", bad)

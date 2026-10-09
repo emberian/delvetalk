@@ -208,17 +208,24 @@ structure Grant where
   method : String
   expires : Nat
   revoked : Bool := false
+  /-- Attenuation: the part of the callee's argument the grant fixes (Data wire), merged with the
+      caller's at each use; a field the caller gives otherwise is refused `grantConflict`. -/
+  fixed : Option Json := none
+  /-- Uses left (each admitted call or send under the grant spends one); none is unlimited. -/
+  uses : Option Nat := none
   deriving BEq
 
 def Grant.json (g : Grant) : Json :=
-  Json.mkObj [("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
-    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)]
+  Json.mkObj ([("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
+    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)] ++
+    (g.fixed.map fun f => [("fixed", f)]).getD [] ++ (g.uses.map fun n => [("uses", toJson n)]).getD [])
 
 def Grant.ofJson (j : Json) : Except String Grant := do
   return { id := ← j.getObjValAs? String "id", grantor := ← j.getObjValAs? String "grantor",
            holder := ← j.getObjValAs? String "holder", to := ← j.getObjValAs? String "to",
            object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
-           expires := ← j.getObjValAs? Nat "until" }
+           expires := ← j.getObjValAs? Nat "until", fixed := (j.getObjVal? "fixed").toOption,
+           uses := (j.getObjValAs? Nat "uses").toOption }
 
 /-- A package compiled as an object's code: artifact, entry type, declared laws. -/
 structure Built where

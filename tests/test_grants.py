@@ -273,3 +273,149 @@ class Grants(Reflection):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+LAMP = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  colour: String
+  level: Nat
+  by: String
+record Edits:
+  colour: Plans.Edit<String, {}>
+  level: Plans.Edit<Nat, Nat>
+  by: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+law owner: request.kind == 0 implies request.subject == "owner"
+def initial() -> State:
+  {colour: "", level: 0n, by: ""}
+def light(state: State, input: {colour: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {colour: Plans.Edit::<String, {}>.set({value: input.colour}), level: Plans.Edit::<Nat, Nat>.set({value: input.level}), by: Plans.Edit::<String, {}>.set({value: context.principal})}})):
+    case _: input.colour
+"""
+
+HOLDER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+record Fix:
+  colour: String
+record Level:
+  level: Nat
+record Full:
+  colour: String
+  level: Nat
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+    case _: text
+def authorize(state: State, input: {colour: String, uses: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.grantWith({to: context.object, object: {world: "", object: "lamp"}, method: "light", until: 100n, fixed: Data.of::<Fix>({colour: input.colour}), uses: input.uses})):
+    case granted(g): said(context, g.id)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+def dim(state: State, input: {via: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.callVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Level>({level: input.level}), via: input.via})):
+    case returned(r): said(context, r.result)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+def paint(state: State, input: {via: String, colour: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.callVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Full>({colour: input.colour, level: 1n}), via: input.via})):
+    case returned(r): said(context, r.result)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+def post(state: State, input: {via: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.sendVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Level>({level: input.level}), via: input.via})):
+    case delivery(_): said(context, "sent")
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+"""
+
+
+class Attenuation(Reflection):
+    """A grant may fix part of the callee's argument, serve a number of uses, and be revoked by
+    its grantor as a write of its own (`world-revoke`)."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("lamp", LAMP, record(colour=label(""), level=nat(0), by=label("")))
+        self.make("holder", HOLDER, record(note=label("")))
+
+    def grant(self, colour="red", uses=2):
+        r = self.turn("holder", "authorize", record(colour=label(colour), uses=nat(uses)), principal="owner")
+        self.assertEqual(r["status"], "admitted", r)
+        return r["result"]["value"]
+
+    def lamp(self):
+        s = self.state("lamp")
+        return field(s, "colour")["value"], field(s, "level")["value"], field(s, "by")["value"]
+
+    def use(self, method, via, principal="kim", **arg):
+        r = self.turn("holder", method, record(via=label(via), **arg), principal=principal)
+        self.assertIn(r["status"], ("admitted", "refused"), r)
+        return r
+
+    def test_the_fixed_part_is_merged_into_the_callers_argument(self):
+        g = self.grant()
+        r = self.use("dim", g, level=nat(3))
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("red")), r)
+        self.assertEqual(self.lamp(), ("red", "3", "owner"))
+        self.assertEqual(r["receipt"]["outcome"]["spent"], [{"id": g, "uses": 1}])
+
+    def test_a_conflicting_field_is_refused_and_spends_nothing_and_the_same_bytes_pass(self):
+        g = self.grant(uses=1)
+        self.assertEqual(self.use("paint", g, colour=label("blue"))["result"], label("grantConflict"))
+        self.assertEqual(self.lamp(), ("", "0", ""))
+        same = self.use("paint", g, colour=label("red"))
+        self.assertEqual(same["result"], label("red"), same)
+        self.assertEqual(self.lamp(), ("red", "1", "owner"))
+
+    def test_uses_run_out_and_stay_spent_across_a_restart(self):
+        g = self.grant(uses=2)
+        self.assertEqual(self.use("dim", g, level=nat(1))["result"], label("red"))
+        self.assertEqual(self.use("dim", g, level=nat(2))["result"], label("red"))
+        self.assertEqual(self.use("dim", g, level=nat(3))["result"], label("grantSpent"))
+        self.assertEqual(self.lamp(), ("red", "2", "owner"))
+        # Once by replay, once from a snapshot that holds the grant's uses left.
+        self.reopen()
+        self.assertEqual(self.use("dim", g, level=nat(4))["result"], label("grantSpent"))
+        self.assertIn("height", self.host.send(op="world-snapshot"))
+        self.reopen()
+        self.assertGreater(self.host.send(op="world-open", path=self.path)["snapshot"]["resumed"], 0)
+        self.assertEqual(self.use("dim", g, level=nat(4), principal="ann")["result"], label("grantSpent"))
+
+    def test_a_send_under_an_attenuated_grant_delivers_the_merged_argument(self):
+        g = self.grant(uses=1)
+        r = self.use("post", g, level=nat(7))
+        self.assertEqual(r["result"], label("sent"), r)
+        [send] = r["receipt"]["sends"]
+        self.assertEqual(sorted(f["name"] for f in send["argument"]["fields"]), ["colour", "level"])
+        [delivered] = r["delivered"]
+        self.assertEqual(delivered["status"], "admitted", delivered)
+        self.assertEqual(self.lamp(), ("red", "7", "owner"))
+        self.assertEqual(self.use("post", g, level=nat(8))["result"], label("grantSpent"))
+
+    def test_the_grantor_revokes_as_a_write_of_its_own_and_a_stranger_cannot(self):
+        g = self.grant(uses=5)
+        stranger = self.host.send(op="world-revoke", principal="mallory", identity="r1", grant=g)
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"]["clause"]), ("refused", "notGrantor"), stranger)
+        self.assertEqual(self.use("dim", g, level=nat(1))["result"], label("red"))
+        mine = self.host.send(op="world-revoke", principal="owner", identity="r2", grant=g)
+        self.assertEqual(mine["status"], "admitted", mine)
+        self.assertEqual(mine["receipt"]["outcome"]["revokes"], [g])
+        self.assertEqual(self.use("dim", g, level=nat(2))["result"], label("noGrant"))
+        self.reopen()
+        self.assertEqual(self.use("dim", g, level=nat(2))["result"], label("noGrant"))
+        self.assertEqual(self.host.send(op="world-revoke", principal="owner", identity="r3", grant="nope")["status"], "error")
+
+    def test_a_grant_of_no_uses_is_refused(self):
+        self.assertEqual(self.grant(uses=0), "uses")

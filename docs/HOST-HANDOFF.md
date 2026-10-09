@@ -329,6 +329,20 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    payload are accepted too) address the first item whose canonical DAG-CBOR equals `item`'s; none is the new
    refusal class `absentItem`. The index forms stay for one release (`world/objects` still use them).
 
+15. **Grants completed (host4, FOUNDATION 13).** Plan `grantWith {to, object, method, until, fixed: Data, uses: Nat}`
+   (Plan.obend) makes a grant that fixes part of the callee's argument and serves `uses` (>= 1; 0 is answered
+   `refused {clause: uses}`); plain `grant` is unlimited and fixes nothing. `Grant.fixed` (Data wire) and
+   `Grant.uses` (left) are in `Grant.json`. At each `callVia`/`sendVia`, `grantFor` checks the grant stands, the
+   grantee, a use left (`grantSpent`), and `attenuate`s: a fixed record's fields are added to the caller's
+   record, a field the caller gives with other canonical bytes is `grantConflict` (a non-record fixed value must
+   be the whole argument, or the caller gives `{}`); the callee and its law see the merged argument, and a send
+   journals it merged. A use is spent (`spendGrant`, `TurnState.spent`) only when the call runs or the send is
+   staged; the admitted entry records `spent [{id, uses}]` (in the digest), `judge` re-checks the uses are still
+   there (`lawRefused grantSpent`), `applyGrants` decrements, replay re-derives. `grantStands` ignores uses, so
+   a delivery whose send spent the last use still runs. `world-revoke {principal, identity, grant}` is the
+   grantor's own write to the grant outside any object (admitted entry with `revokes`; anyone else
+   `lawRefused notGrantor`; an unknown grant is a request error).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

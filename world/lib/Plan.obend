@@ -100,7 +100,11 @@ record Offering:
 # grant is used by naming its id as `via` in callVia or sendVia: the callee then runs with
 # request.subject = the grantor and request.caller = the calling object. Without a grant
 # that stands the Plan is answered refused {clause: "noGrant"}. (Records have no optional
-# fields, so a call or send under a grant is its own constructor.)
+# fields, so a call or send under a grant is its own constructor.) grantWith attenuates:
+# `fixed` (Data.of a record of some of the callee's input fields) is merged into every
+# use's argument (a use giving such a field otherwise is refused grantConflict), and the
+# grant serves `uses` (at least 1) admitted calls or sends, then grantSpent. The grantor
+# may also revoke with the op world-revoke, outside any object.
 record Grant:
   to: String
   object: Reference
@@ -130,6 +134,7 @@ sum Plan<E>:
   inspect: {object: Reference}
   check: {package: String}
   grant: Grant
+  grantWith: {to: String, object: Reference, method: String, until: Nat, fixed: Data, uses: Nat}
   revoke: {id: String}
   callVia: {object: Reference, method: String, argument: Data, via: String}
   sendVia: {object: Reference, method: String, argument: Data, via: String}

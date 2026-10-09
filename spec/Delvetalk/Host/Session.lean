@@ -197,6 +197,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-interpretation" => durable s (fun w => interpretationOp w request)
       | "world-reprogram" => durable s (fun w => reprogramOp w request)
       | "world-amend" => durable s (fun w => amendOp w request)
+      | "world-revoke" => durable s (fun w => revokeOp w request)
       | "world-advance" => durable s (fun w => advance w request)
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
