@@ -28,11 +28,23 @@ def maxJournalEntries : Nat := 1000000
 def maxJournalBytes : Nat := 268435456
 def maxHistoryLimit : Nat := 100
 def dataDepth : Nat := 64
+/-- Nested `call` depth inside one turn. -/
+def maxCallDepth : Nat := 8
+/-- Plans answered in one turn, across all nested calls. -/
+def maxPlansPerTurn : Nat := 1024
+/-- Compiled method packets kept in memory. -/
+def maxCompiledPackets : Nat := 256
+def maxMethodBytes : Nat := 128
 def genesis : String := "".pushn '0' 64
 end Limits
 
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
 abbrev Law := List (String × LawExpr)
+
+/-- A compiled method of an object's package: its checked packet and entry type. -/
+structure Compiled where
+  packet : Json
+  type : Ty
 
 structure Object where
   /-- `packetSha256` of the compiled artifact the object was created from. -/
@@ -42,6 +54,10 @@ structure Object where
   state : Data
   /-- The entry definition's type: a closed record of first-order data. -/
   stateType : Ty
+  /-- The journaled compile inputs (modules, limits); a method is one more `entry`. -/
+  inputs : Json := Json.null
+  /-- Digest of `inputs`, the key of this object's compiled methods. -/
+  inputsKey : String := ""
 
 structure World where
   objects : Std.HashMap String Object := {}
@@ -54,6 +70,8 @@ structure World where
   receipts : Std.HashMap String Nat := {}
   /-- Object id to indices of admitted or creating entries touching it. -/
   touched : Std.HashMap String (Array Nat) := {}
+  /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
+  compiled : Std.HashMap String Compiled := {}
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress

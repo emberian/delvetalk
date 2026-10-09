@@ -1,5 +1,5 @@
 import Delvetalk.Package
-import Delvetalk.Host.Ops
+import Delvetalk.Host.Session
 
 namespace Delvetalk.PackageSession
 open Lean (Json toJson)

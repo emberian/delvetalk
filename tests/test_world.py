@@ -36,16 +36,21 @@ def seed(count=0, open_=True, name="c"):
         {"name": "name", "value": {"tag": "label", "value": name}}]}
 
 
+def variant(label, **payload):
+    return {"tag": "variant", "label": label, "payload": {"tag": "record", "fields": [
+        {"name": k, "value": v} for k, v in payload.items()]}}
+
+
 def add(field, n):
-    return {"field": field, "edit": {"tag": "add", "value": str(n)}}
+    return field, variant("add", delta=nat(n))
 
 
 def put(field, value):
-    return {"field": field, "edit": {"tag": "set", "value": value}}
+    return field, variant("set", value=value)
 
 
 def keep(field):
-    return {"field": field, "edit": {"tag": "keep"}}
+    return field, variant("keep")
 
 
 class Host:
@@ -104,7 +109,9 @@ def root(obj, version):
 
 
 def write(obj, *edits):
-    return {"object": obj, "edits": list(edits)}
+    """One Edits record: a variant per field, as in world/lib/Plan.obend."""
+    return {"object": obj, "edits": {"tag": "record", "fields": [
+        {"name": f, "value": v} for f, v in edits]}}
 
 
 class CreateAndView(WorldCase):
