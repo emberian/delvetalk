@@ -37,5 +37,3 @@ def line(receipt: Plans.Receipt) -> Document.Document:
   Document.text(textConcat("#", textConcat(natText(receipt.height), textConcat(" ", textConcat(Card.handle(receipt.slot.principal), textConcat(": ", textConcat(outcomeName(receipt.outcome), "\n")))))))
 def render(state: State) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Cistern\n"), tail: Card.clipped(Lists.map::<Plans.Receipt, Document.Document>(state.entries, line), 8n)})})
-def card(state: State) -> String:
-  Document.plain(render(state))

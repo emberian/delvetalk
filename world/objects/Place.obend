@@ -97,5 +97,3 @@ def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
-def card(state: State) -> String:
-  Document.plain(render(state))

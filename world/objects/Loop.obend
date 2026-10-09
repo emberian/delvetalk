@@ -39,5 +39,3 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def render(state: State) -> Document.Document:
   Document.text(textConcat("Ticks: ", textConcat(natText(state.count), "\n")))
-def card(state: State) -> String:
-  Document.plain(render(state))

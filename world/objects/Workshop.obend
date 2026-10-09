@@ -130,5 +130,3 @@ def door() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 def render(state: State) -> Document.Document:
   usage()
-def card(state: State) -> String:
-  Document.plain(render(state))

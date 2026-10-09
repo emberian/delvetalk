@@ -11,7 +11,10 @@ import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Spell.obend as Spell
 import ./Form.obend as Form
-import ./Garden.obend as Garden
+# Garden's plant form (Garden.planting), written out: these are Spell's tests, and
+# Garden's closure leaves no room for a probe this size.
+def plantForm(context: Abi.Context) -> Form.Form:
+  {card: context.object, action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}
 def bar(items: Form.Names) -> String:
   Lists.fold::<String, String>(items, "", fn(head: String) -> String -> String: fn(rest: String) -> String: textConcat(head, textConcat("|", rest)))
 def value(v: Spell.Value) -> String:
@@ -39,8 +42,13 @@ def show(fit: Spell.Fit) -> String:
     case unclear(u): textConcat("unclear ", bar(u.needs))
     case refused(r): textConcat("refused ", r.reason)
 def propose(text: String, context: Abi.Context) -> String:
-  show(Spell.fit(Spell.parse(text), Garden.plantForm(context)))
+  show(Spell.fit(Spell.parse(text), plantForm(context)))
 """
+
+
+def unique(modules):
+    seen = set()
+    return [m for m in modules if not (m["name"] in seen or seen.add(m["name"]))]
 
 
 def text(value):
@@ -56,7 +64,7 @@ def context(card="garden-1"):
 
 
 def run(entry, *arguments, limits=None):
-    compiled = compile_job(closure("Garden") + [{"name": "Probe", "source": PROBE}], entry)
+    compiled = compile_job(unique(closure("Spell") + closure("Abi")) + [{"name": "Probe", "source": PROBE}], entry)
     assert compiled["status"] == "compiled", compiled
     request = {"op": "run", "artifact": compiled["artifact"], "arguments": list(arguments)}
     if limits:
@@ -168,9 +176,7 @@ class Fit(unittest.TestCase):
 def natural(text: String) -> String:
   show(Spell.fit(Spell.parse(text), form()))
 """
-        # Without Garden: Garden's closure and this probe together exceed one closure's capacity.
-        alone = "".join(l for l in form.splitlines(True) if "Garden" not in l and "def propose" not in l)
-        compiled = compile_job(closure("Spell") + closure("Abi") + [{"name": "Probe", "source": alone}], "natural")
+        compiled = compile_job(unique(closure("Spell") + closure("Abi")) + [{"name": "Probe", "source": form}], "natural")
         self.assertEqual(compiled["status"], "compiled", compiled)
 
         def go(value):

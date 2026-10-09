@@ -67,5 +67,3 @@ def knockLine(who: String) -> Document.Document:
   Document.text(textConcat("knock: ", textConcat(Card.handle(who), "\n")))
 def render(state: State) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then textConcat("The door is open, opened by ", textConcat(Card.handle(state.openedBy), ".\n")) else "The door is shut.\n"), tail: Card.clipped(Lists.map::<String, Document.Document>(state.knocks, knockLine), 8n)})})
-def card(state: State) -> String:
-  Document.plain(render(state))

@@ -102,5 +102,3 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
   match routed:
     case act(a): if a.action == "acquire" then acquire(state, context) else give(state, {to: {world: context.world, object: Card.text(a.fields, "to")}}, context)
     case _: Card.answerAs::<Edits, Place.State, Place.Done, Place.Done>(routed, context, forms(), render(state), Place.Done.refused({reason: Card.reason(routed)}))
-def card(state: State) -> String:
-  Document.plain(render(state))

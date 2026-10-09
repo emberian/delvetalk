@@ -79,6 +79,19 @@ def childLine(reference: Plans.Reference) -> Document.Document:
 def render(state: State) -> Document.Document:
   let head = Document.text(textConcat("✾ THE NIGHT GARDEN\n\nTo plant, reply:\n\n    delvetalk garden plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n", textConcat(natText(state.planted), " planted, newest first:\n")))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map::<Plans.Reference, Document.Document>(Lists.reverse::<Plans.Reference>(state.children), childLine), 8n)})})
+# The garden's page: its card, how to reply, then one section per bell, newest first,
+# sixteen of them; the card section counts the rest.
+def page(state: State, context: Abi.Context) -> Card.Page:
+  let bells = Lists.reverse::<Plans.Reference>(state.children)
+  let shown = Lists.map::<Plans.Reference, Card.Section>(Lists.take::<Plans.Reference>(bells, 16n), fn(bell: Plans.Reference) -> Card.Section: {title: bell.object, body: Document.text(textConcat("A bell planted here: [[", textConcat(bell.object, "]]. Reply on its card to rain on it.\n")))})
+  let more = if Lists.length::<Plans.Reference>(bells) > 16n then textConcat("… and ", textConcat(natText(Lists.length::<Plans.Reference>(bells) - 16n), " more bells\n")) else ""
+  Lists.concat::<Card.Section>(Card.defaultPage(Document.concat(render(state), Document.text(more)), context, forms()), shown)
+# Publishes the page as one agentwiki post (`wiki: <id>` and its sections).
+def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.publish({page: "", section: "", body: Card.pageText(page(state, context))})):
+    case published(p): p.post
+    case refused(r): r.clause
+    case _: ""
 def forms() -> Card.Forms:
   Card.Forms.cons({head: planting(), tail: Card.Forms.nil()})
 def door() -> Card.Door:

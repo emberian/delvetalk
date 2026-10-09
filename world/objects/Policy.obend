@@ -122,5 +122,3 @@ def render(state: State) -> Document.Document:
   let terms = Lists.map::<Term, Document.Document>(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map::<Example, Document.Document>(state.examples, exampleCard)
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(terms, shown)})})
-def card(state: State) -> String:
-  Document.plain(render(state))

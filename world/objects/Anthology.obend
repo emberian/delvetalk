@@ -67,5 +67,3 @@ def entry(proposal: Proposal) -> Document.Document:
   Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.handle(proposal.author), textConcat(": ", textConcat(proposal.line, "\n")))))))
 def render(state: State) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology\n"), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry), 8n)})})
-def card(state: State) -> String:
-  Document.plain(render(state))

@@ -38,5 +38,3 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def render(state: State) -> Document.Document:
   Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.handle(state.litBy), ".\n")) else "The lantern is dark.\n")
-def card(state: State) -> String:
-  Document.plain(render(state))

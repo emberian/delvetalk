@@ -144,5 +144,3 @@ def noteLine(item: Note) -> Document.Document:
 # Notes newest first; eight of each list, then a count.
 def render(state: State) -> Document.Document:
   Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: Document.text(textConcat(state.handle, textConcat(" is at ", textConcat(state.at.object, "\n")))), tail: Document.Documents.nil()}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.holding, holdingLine), 8n)), Card.clipped(Lists.map::<Note, Document.Document>(Lists.reverse::<Note>(state.inbox), noteLine), 8n))})
-def card(state: State) -> String:
-  Document.plain(render(state))

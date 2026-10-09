@@ -95,5 +95,3 @@ def line(rain: Rain) -> Document.Document:
 def render(state: State) -> Document.Document:
   let head = Document.text(textConcat("A ", textConcat(colourName(state.colour), textConcat(" bell planted by ", textConcat(Card.handle(state.planting.principal), textConcat(": ", textConcat(state.seed, if state.rung then " (rung)\n" else " (silent)\n")))))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map::<Rain, Document.Document>(state.rains, line), 8n)})})
-def card(state: State) -> String:
-  Document.plain(render(state))
