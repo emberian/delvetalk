@@ -10,10 +10,11 @@ import tempfile
 import time
 import unittest
 
+from tests import host
+from tests.host import Host, HostCase
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BINARY = os.path.join(ROOT, ".lake", "build", "bin", "delvetalk-obend")
-if not os.path.exists(BINARY):  # lane worktrees do not build; use the read-only foundation checker
-    BINARY = os.environ.get("DELVETALK_OBEND", "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend")
+BINARY = host.binary()
 IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 
 
@@ -134,48 +135,7 @@ def label(s):
     return {"tag": "label", "value": s}
 
 
-class Host:
-    def __init__(self):
-        self.proc = subprocess.Popen([BINARY], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     text=True, bufsize=1)
-
-    def send(self, **request):
-        self.proc.stdin.write(json.dumps(request) + "\n")
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        assert line, "host closed its output"
-        return json.loads(line)
-
-    def close(self):
-        self.proc.stdin.close()
-        self.proc.wait(timeout=60)
-        self.proc.stdout.close()
-
-
-class TurnWorld(unittest.TestCase):
-    def setUp(self):
-        self.dir = tempfile.TemporaryDirectory()
-        self.path = os.path.join(self.dir.name, "world.journal")
-        self.hosts = []
-        self.host = self.spawn()
-        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
-
-    def tearDown(self):
-        for h in self.hosts:
-            h.close()
-        self.dir.cleanup()
-
-    def spawn(self):
-        h = Host()
-        self.hosts.append(h)
-        return h
-
-    def reopen(self):
-        self.host.close()
-        self.hosts.remove(self.host)
-        self.host = self.spawn()
-        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
-
+class TurnWorld(HostCase):
     def create(self, obj, modules, count):
         r = self.host.send(op="world-create", principal="ember", identity="create-" + obj,
                            object=obj, modules=modules, entry="initial", seed=record(count=nat(count)))

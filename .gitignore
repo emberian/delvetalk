@@ -11,3 +11,4 @@ impl/c/evaluator
 /state/
 *.sqlite
 *.db
+/tests/.timings.json

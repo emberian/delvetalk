@@ -10,7 +10,9 @@ import tempfile
 import time
 import unittest
 
-from tests.test_turn_world import BINARY, Host, closure, label, nat, record
+from tests import host
+from tests.host import HostCase
+from tests.test_turn_world import closure, label, nat, record
 
 ALPHABET = ["a", "b", " ", "\n", "é", "日本", "😀", "\\", '"', "x y", "\n\n", "tab\t", ""]
 
@@ -118,11 +120,10 @@ def to_bend(d):
 
 
 class Session:
-    def __init__(self):
-        self.host = Host()
+    host = host.Stateless()
 
     def close(self):
-        self.host.close()
+        pass
 
     def render(self, document):
         return self.host.send(op="render-document", document=document)
@@ -217,20 +218,7 @@ class RenderTests(unittest.TestCase):
             self.assertIn("malformed document", r["message"])
 
 
-class OfferTests(unittest.TestCase):
-    def setUp(self):
-        self.dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.dir.cleanup)
-        self.path = os.path.join(self.dir.name, "world.journal")
-        self.hosts = []
-        self.host = self.spawn()
-        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
-
-    def spawn(self):
-        h = Host()
-        self.addCleanup(h.close)
-        return h
-
+class OfferTests(HostCase):
     def test_an_offer_turn_on_garden_returns_the_card_and_journals_only_the_count(self):
         made = self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
                               modules=closure("Garden"), entry="initial", seed=record(planted=nat(2)))
@@ -246,9 +234,7 @@ class OfferTests(unittest.TestCase):
             raw = handle.read()
         self.assertNotIn("2 planted", raw)
         # restart: replay reproduces the same offers count on the same receipt
-        self.host.close()
-        self.host = self.spawn()
-        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+        self.reopen()
         again = self.host.send(op="world-receipt", principal="glm", identity="look-1")
         self.assertEqual(again["status"], "receipt", again)
         self.assertEqual(again["receipt"]["offers"], 1)

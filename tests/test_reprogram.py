@@ -238,8 +238,7 @@ class Restart(Reprogram):
     def test_a_tampered_new_source_in_the_journal_breaks_open_at_its_height(self):
         self.make()
         self.reprogram(ADDS_TWO)
-        self.host.close()
-        self.hosts.remove(self.host)
+        self.release()
         with open(self.path) as f:
             text = f.read()
         with open(self.path, "w") as f:
