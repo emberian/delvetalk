@@ -44,7 +44,7 @@ static void fields(J *fs) {
 }
 static void validate(J *t) {
  if(!json_object_is_type(t,json_type_array)||LEN(t)<2||!isstr(AT(t,0))) fail("invalid term array");
- if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label binary extend record get ifZero inject case ifBool perform done")) fail("unknown term constructor");
+ if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label binary unary extend record get ifZero inject case ifBool perform done")) fail("unknown term constructor");
  J *a=AT(t,1); size_t n=LEN(t);
  if(tag(t,"bound")) { if(n!=2||!isint(a)) fail("invalid bound index"); }
  else if(tag(t,"nat")) {
@@ -61,7 +61,9 @@ static void validate(J *t) {
  else if(tag(t,"get")) { if(n!=3||!isstr(AT(t,2))) fail("invalid get"); validate(a); }
  else if(tag(t,"inject")) { if(n!=3||!isstr(a)) fail("invalid inject"); validate(AT(t,2)); }
  else if(tag(t,"binary")) {
-  if(n!=4||!named(a,"add multiply equal conjunction labelEqual subtract divide less lessEqual modulo")) fail("invalid primitive"); validate(AT(t,2)); validate(AT(t,3));
+  if(n!=4||!named(a,"add multiply equal conjunction labelEqual subtract divide less lessEqual modulo textConcat textTake textDrop textSpan textBreak")) fail("invalid primitive"); validate(AT(t,2)); validate(AT(t,3));
+ } else if(tag(t,"unary")) {
+  if(n!=3||!named(a,"natText textLength sha256Text")) fail("invalid unary primitive"); validate(AT(t,2));
  } else if(tag(t,"ifZero")||tag(t,"ifBool")) { if(n!=4) fail("wrong condition arity"); validate(a); validate(AT(t,2)); validate(AT(t,3)); }
  else fail("unknown term constructor");
 }
@@ -82,7 +84,7 @@ static J *walk(J *t,uint64_t depth,int mode,uint64_t delta,J *arg) {
  J *r=arr(); add(r,keep(AT(t,0)));
  for(size_t i=1;i<LEN(t);i++) {
   int fs=(tag(t,"record")&&i==1)||((tag(t,"extend")||tag(t,"case"))&&i==2);
-  int literal=(tag(t,"binary")&&i==1)||(tag(t,"get")&&i==2)||(tag(t,"inject")&&i==1);
+  int literal=((tag(t,"binary")||tag(t,"unary"))&&i==1)||(tag(t,"get")&&i==2)||(tag(t,"inject")&&i==1);
   uint64_t d=depth+((tag(t,"lam")&&i==1)||(tag(t,"ifZero")&&i==3)||(tag(t,"case")&&i==2));
   add(r,literal?keep(AT(t,i)):fs?walkfields(AT(t,i),d,mode,delta,arg):walk(AT(t,i),d,mode,delta,arg));
  } return r;
@@ -90,10 +92,61 @@ static J *walk(J *t,uint64_t depth,int mode,uint64_t delta,J *arg) {
 static J *inst(J *body,J *arg) { return walk(body,0,1,0,arg); }
 static J *lookup(J *fs,J *name) { for(size_t i=0;i<LEN(fs);i++) if(eq(AT(AT(fs,i),0),name)) return AT(AT(fs,i),1); return NULL; }
 static J *natural(mpz_t z) { char *s=mpz_get_str(NULL,10,z); J *r=one("nat",json_object_new_string(s)); void (*release)(void *,size_t); mp_get_memory_functions(NULL,NULL,&release); release(s,strlen(s)+1); return r; }
+
+/* ---- text: code points (UTF-8), SHA-256 ---- */
+static size_t u8count(const char *s,size_t n) { size_t k=0; for(size_t i=0;i<n;i++) if(((unsigned char)s[i]&0xc0)!=0x80) k++; return k; }
+static size_t u8width(unsigned char c) { return c<0x80?1:c<0xe0?2:c<0xf0?3:4; }
+/* byte offset of the k-th code point, or n when k reaches the end */
+static size_t u8offset(const char *s,size_t n,size_t k) { size_t i=0; while(k&&i<n) { i+=u8width((unsigned char)s[i]); k--; } return i<n?i:n; }
+static int in_alphabet(const char *c,size_t w,const char *alpha,size_t an) {
+ for(size_t i=0;i<an;i+=u8width((unsigned char)alpha[i])) { size_t aw=u8width((unsigned char)alpha[i]); if(aw==w&&!memcmp(alpha+i,c,w)) return 1; } return 0;
+}
+static J *label_n(const char *s,size_t n) { return one("label",json_object_new_string_len(s,(int)n)); }
+static J *nat_u64(uint64_t v) { mpz_t z; mpz_init_set_ui(z,v); J *r=natural(z); mpz_clear(z); return r; }
+static uint32_t rotr(uint32_t x,int k) { return (x>>k)|(x<<(32-k)); }
+static void sha256_hex(const unsigned char *msg,size_t len,char out[65]) {
+ static const uint32_t K[64]={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
+ uint32_t h[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+ size_t total=((len+8)/64+1)*64; unsigned char *m=calloc(total,1); if(!m) fail("allocation failure");
+ memcpy(m,msg,len); m[len]=0x80; uint64_t bits=(uint64_t)len*8; for(int i=0;i<8;i++) m[total-1-i]=(unsigned char)(bits>>(8*i));
+ for(size_t off=0;off<total;off+=64) {
+  uint32_t w[64]; for(int i=0;i<16;i++) w[i]=(uint32_t)m[off+4*i]<<24|(uint32_t)m[off+4*i+1]<<16|(uint32_t)m[off+4*i+2]<<8|m[off+4*i+3];
+  for(int i=16;i<64;i++) { uint32_t s0=rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>3),s1=rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>10); w[i]=w[i-16]+s0+w[i-7]+s1; }
+  uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+  for(int i=0;i<64;i++) { uint32_t S1=rotr(e,6)^rotr(e,11)^rotr(e,25),ch=(e&f)^(~e&g),t1=hh+S1+ch+K[i]+w[i],S0=rotr(a,2)^rotr(a,13)^rotr(a,22),mj=(a&b)^(a&c)^(b&c),t2=S0+mj; hh=g;g=f;f=e;e=d+t1;d=c;c=b;b=a;a=t1+t2; }
+  h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh;
+ }
+ free(m); for(int i=0;i<8;i++) sprintf(out+8*i,"%08x",h[i]);
+}
+static J *text_primitive(const char *op,J *a,J *b) {
+ if(!strcmp(op,"textConcat")||!strcmp(op,"textSpan")||!strcmp(op,"textBreak")) {
+  if(!tag(a,"label")||!tag(b,"label")) return NULL;
+  const char *x=str(AT(a,1)),*y=str(AT(b,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1)),yn=(size_t)json_object_get_string_len(AT(b,1));
+  if(!strcmp(op,"textConcat")) { char *buf=malloc(xn+yn+1); if(!buf) fail("allocation failure"); memcpy(buf,x,xn); memcpy(buf+xn,y,yn); J *r=label_n(buf,xn+yn); free(buf); return r; }
+  int member=!strcmp(op,"textSpan"); uint64_t count=0;
+  for(size_t i=0;i<xn;i+=u8width((unsigned char)x[i])) { size_t w=u8width((unsigned char)x[i]); if(in_alphabet(x+i,w,y,yn)!=member) break; count++; }
+  return nat_u64(count);
+ }
+ if(!tag(a,"label")||!tag(b,"nat")) return NULL;
+ const char *x=str(AT(a,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1));
+ mpz_t n; mpz_init_set_str(n,str(AT(b,1)),10); int zero=!mpz_sgn(n), big=mpz_cmp_ui(n,xn)>=0; size_t k=big?xn:mpz_get_ui(n); mpz_clear(n);
+ int take=!strcmp(op,"textTake");
+ if(take) return zero?label_n("",0):big?label_n(x,xn):label_n(x,u8offset(x,xn,k));
+ return zero?label_n(x,xn):big?label_n("",0):label_n(x+u8offset(x,xn,k),xn-u8offset(x,xn,k));
+}
+static J *unary_primitive(J *t) {
+ const char *op=str(AT(t,1)); J *a=AT(t,2);
+ if(!strcmp(op,"natText")) return tag(a,"nat")?one("label",json_object_new_string(str(AT(a,1)))):NULL;
+ if(!tag(a,"label")) return NULL;
+ const char *x=str(AT(a,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1));
+ if(!strcmp(op,"textLength")) return nat_u64(u8count(x,xn));
+ char hex[65]; sha256_hex((const unsigned char *)x,xn,hex); return one("label",json_object_new_string(hex));
+}
 static J *primitive(J *t) {
  J *a=AT(t,2),*b=AT(t,3); const char *op=str(AT(t,1));
  if(!strcmp(op,"conjunction")) return tag(a,"boolean")&&tag(b,"boolean")?one("boolean",json_object_new_boolean(json_object_get_boolean(AT(a,1))&&json_object_get_boolean(AT(b,1)))):NULL;
  if(!strcmp(op,"labelEqual")) return tag(a,"label")&&tag(b,"label")?one("boolean",json_object_new_boolean(eq(AT(a,1),AT(b,1)))):NULL;
+ if(!strncmp(op,"text",4)) return text_primitive(op,a,b);
  if(!tag(a,"nat")||!tag(b,"nat")) return NULL;
  mpz_t x,y,z; mpz_inits(x,y,z,NULL); mpz_set_str(x,str(AT(a,1)),10); mpz_set_str(y,str(AT(b,1)),10); J *r=NULL;
  if(!strcmp(op,"equal")||!strcmp(op,"less")||!strcmp(op,"lessEqual")) { int c=mpz_cmp(x,y); r=one("boolean",json_object_new_boolean(!strcmp(op,"equal")?c==0:!strcmp(op,"less")?c<0:c<=0)); }
@@ -126,7 +179,13 @@ static int reducible(J *t) {
   if(!value(right)) return reducible(right);
   if(!strcmp(str(a),"conjunction")) return tag(b,"boolean")&&tag(right,"boolean");
   if(!strcmp(str(a),"labelEqual")) return tag(b,"label")&&tag(right,"label");
+  if(!strcmp(str(a),"textConcat")||!strcmp(str(a),"textSpan")||!strcmp(str(a),"textBreak")) return tag(b,"label")&&tag(right,"label");
+  if(!strcmp(str(a),"textTake")||!strcmp(str(a),"textDrop")) return tag(b,"label")&&tag(right,"nat");
   return tag(b,"nat")&&tag(right,"nat");
+ }
+ if(tag(t,"unary")) {
+  if(!value(b)) return reducible(b);
+  return !strcmp(str(a),"natText")?tag(b,"nat"):tag(b,"label");
  }
  if(tag(t,"ifZero")) return tag(a,"nat")||reducible(a);
  if(tag(t,"ifBool")) return tag(a,"boolean")||reducible(a);
@@ -160,6 +219,7 @@ static Transition advance(J *t,J *response) {
   if(tag(a,"record")) { J *fs=arr(),*old=AT(a,1); for(size_t i=0;i<LEN(b);i++) add(fs,keep(AT(b,i))); for(size_t i=0;i<LEN(old);i++) if(!lookup(b,AT(AT(old,i),0))) add(fs,keep(AT(old,i))); return result(one("record",fs)); } return context(t,1,response);
  }
  if(tag(t,"binary")) { if(!value(b)) return context(t,2,response); if(!value(AT(t,3))) return context(t,3,response); return result(primitive(t)); }
+ if(tag(t,"unary")) { if(!value(b)) return context(t,2,response); return result(unary_primitive(t)); }
  if(tag(t,"ifZero")) {
   if(tag(a,"nat")) { mpz_t z; mpz_init_set_str(z,str(AT(a,1)),10); J *r; if(!mpz_sgn(z)) r=keep(b); else { mpz_sub_ui(z,z,1); J *n=natural(z); r=inst(AT(t,3),n); json_object_put(n); } mpz_clear(z); return result(r); } return context(t,1,response);
  }
