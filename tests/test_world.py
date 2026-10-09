@@ -483,7 +483,7 @@ class Maximum(WorldCase):
 
     def test_state_beyond_the_byte_capacity_is_a_type_mismatch(self):
         self.create()
-        big = {"tag": "label", "value": "x" * 70000}
+        big = {"tag": "label", "value": "x" * 300000}
         r = self.propose("big", [root("c1", 0)], [write("c1", put("name", big))])
         self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
 
