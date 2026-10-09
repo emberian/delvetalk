@@ -282,6 +282,25 @@ def settled (w : World) (principal intent : String) : Option Json :=
   | some i => let e := w.entries[i]!; if tagOf e == "suspended" then none else some e
   | none => none
 
+/-- The id a create with an empty `requireAbsent` gets: `<creator>/<package, lowercased>/<n>`, the
+    first `n` past the creator's `minted` counter not held by an object, by this turn's creates,
+    or by the creates of a suspended turn (its `absent`), so interleaved creators never race on
+    a name. A source package is kind `created`. -/
+def mintId (self package : String) : M String := do
+  let s ← get
+  let reserved : Std.HashSet String := s.world.suspended.foldl (fun acc e =>
+    let absent := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+      |>.bind (·.getObjVal? "absent" |>.toOption) |>.bind (·.getArr? |>.toOption)).getD #[]
+    absent.foldl (fun a x => match x.getStr? with | .ok i => a.insert i | .error _ => a) acc) {}
+  let kind := (if package.startsWith "edition" then "created" else package).toLower
+  let base := ((s.world.objects[self]?).map (·.minted)).getD 0
+  let mut n := base + 1
+  for _ in [0:Limits.maxObjects + Limits.maxSuspended + Limits.createsPerTurn] do
+    let id := s!"{self}/{kind}/{n}"
+    if !(s.world.objects.contains id || s.creates.any (·.1 == id) || reserved.contains id) then return id
+    n := n + 1
+  evaluation "no child id is free"
+
 /-- Compile an object's new sibling: `package` is a module of the creator's own sealed
     chain (a name), or the source of one more module over that chain. -/
 def creationInputs (creator : Object) (package : String) : Except (String × String) Json := do
@@ -796,7 +815,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some seed := f.lookup "seed" | evaluation "malformed create plan"
     let lawArg := ((f.lookup "law").bind labelOf).getD ""
     let some target := f.lookup "requireAbsent" | evaluation "malformed create plan"
-    let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
+    let some named := referenceId target | refusedWith bounds responseType "foreignWorld"
+    -- An empty `requireAbsent` asks the host to mint the child's id.
+    let id ← if named.isEmpty then mintId self package else pure named
     let s ← get
     let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
     if id.isEmpty || id == "self" || ownCards.contains id || id.utf8ByteSize > Limits.maxObjectIdBytes then

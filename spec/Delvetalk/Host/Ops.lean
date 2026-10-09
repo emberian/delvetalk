@@ -183,6 +183,19 @@ def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
       acc.map fun (i, ws) => if i == id then (i, ws ++ [{ caller := "", kind, edits := [] }]) else (i, ws)
     else acc ++ [(id, [{ caller := "", kind, edits := [] }])]) p.writes
 
+/-- A child id `<parent>/<kind>/<n>` raises its parent's `minted` counter to `n` (any creation of
+    that shape, named or minted, so a later mint never collides with a named child). -/
+def noteMinted (w : World) (id : String) : World :=
+  let parts := id.splitOn "/"
+  if parts.length < 3 then w else
+  match parts.getLast!.toNat? with
+  | none => w
+  | some n =>
+    let parent := "/".intercalate (parts.take (parts.length - 2))
+    match w.objects[parent]? with
+    | some p => if p.minted ≥ n then w else { w with objects := w.objects.insert parent { p with minted := n } }
+    | none => w
+
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/
 def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
@@ -1274,7 +1287,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     | .ok judged =>
       let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) ::
@@ -1458,7 +1471,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let outcome := match owner with
     | some o => outcome.setObjVal! "owner" (toJson o)
     | none => outcome
-  let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
+  let (w', entry) := push (noteMinted { w with objects := w.objects.insert id o } id) (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
   return (w', reply entry)
@@ -1803,7 +1816,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
-    return record { w with objects := w.objects.insert id o } entry key [id]
+    return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
   | "refused" =>
     let cls ← outcome.getObjValAs? String "class"
     unless refusalClasses.contains cls do throw s!"unknown refusal class {cls}"
@@ -1846,7 +1859,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         let some (_, o) := updates.find? (·.1 == id) | throw "write missing"
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w grants revokes spent
       let holders := (grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)

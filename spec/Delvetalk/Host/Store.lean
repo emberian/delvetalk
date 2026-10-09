@@ -200,6 +200,9 @@ structure Object where
   /-- The object told `ended {receipt, how}` when an activity of this one ends `timedOut`,
       `broken` or `budget` ("" for none); fixed at creation. -/
   supervisor : String := ""
+  /-- The highest `n` among this object's children `<id>/<kind>/<n>`: a create with an empty
+      `requireAbsent` mints the next one. Derived from the creations the journal records. -/
+  minted : Nat := 0
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

@@ -654,6 +654,69 @@ class ReplyIsAddress(Reflection):
         self.assertEqual(json.loads(self.note("old")), SLOT)
 
 
+MINTER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./Child.obend as Child
+record State:
+  made: Nat
+record Edits:
+  made: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {made: 0n}
+def made(target: Plans.Reference) -> Activity<Plan, Response, String>:
+  match perform(Plan.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: target})):
+    case created(c): c.object.object
+    case refused(r): r.clause
+    case _: "no answer"
+def spawn(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  made(Plans.nobody())
+def named(state: State, input: {id: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  made({world: "", object: input.id})
+def spawnThenWait(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: Plans.nobody()})):
+    case created(c): waited(c.object.object)
+    case _: "no answer"
+def waited(id: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: 5n})):
+    case _: id
+"""
+
+
+class MintedIds(Reflection):
+    """A create with an empty requireAbsent mints `<creator>/<package>/<n>` from a per-parent counter."""
+    def setUp(self):
+        super().setUp()
+        self.open_library(clock="transport")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-m", object="m", entry="initial",
+                           modules=[{"name": "Child", "source": PACKAGE}, {"name": "Minter", "source": MINTER}],
+                           seed=record(made=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+
+    def mint(self, method="spawn", argument=None):
+        r = self.turn("m", method, argument or record())
+        return r, r.get("result", {}).get("value")
+
+    def test_ids_are_minted_in_order_skip_named_children_and_never_race_a_waiting_creator(self):
+        self.assertEqual([self.mint()[1] for _ in range(2)], ["m/child/1", "m/child/2"])
+        self.assertEqual(self.mint("named", record(id=label("m/child/4")))[1], "m/child/4")
+        self.assertEqual(self.mint()[1], "m/child/5")
+        # A creator suspended after minting holds its id: the next mint passes it.
+        waiting, _ = self.mint("spawnThenWait")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        self.assertEqual(self.mint()[1], "m/child/7")
+        [resumed] = self.host.send(op="world-advance", principal="transport", height=9)["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", label("m/child/6")), resumed)
+        # A real collision is still refused: a named create of a minted id.
+        clash, _ = self.mint("named", record(id=label("m/child/1")))
+        self.assertEqual((clash["status"], clash["receipt"]["outcome"]["class"]), ("refused", "requiredAbsence"), clash)
+        self.reopen()
+        self.assertEqual(self.mint()[1], "m/child/8")
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="m/child/8")["status"], "viewed")
+
+
 class Transient(Reflection):
     """staleRoot, budget and evaluation refusals are journaled but do not bind the identity."""
 

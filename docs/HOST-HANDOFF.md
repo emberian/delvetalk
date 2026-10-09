@@ -477,6 +477,11 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `timedOut`; the suspension records `post` instead of `slot`. `receive`'s `slot` is the host's
    (`receiveArgument`): dropped for an object declaring `{text, post}`, filled from the recorded post's slot
    (compressed JSON, "" for none) for one still declaring it.
+24. **Minted child ids (host6).** A `create` whose `requireAbsent.object` is "" gets `<creator>/<package
+   lowercased>/<n>` (`mintId`; a source package is `created`): the first `n` past the creator's `Object.minted`
+   not held by an object, this turn's creates, or a suspended turn's `absent`. Every creation of an id of that
+   shape, named or minted, raises its parent's counter (`noteMinted`, at commit, world-create and replay);
+   snapshots keep `minted`. A named `requireAbsent` behaves as before.
 
 ## 6. Gotchas
 
