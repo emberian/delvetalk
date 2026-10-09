@@ -1,0 +1,23 @@
+DelveTalk: object = pinned Bend + versioned State + law. Methods are activities; every effect is a Plan.
+object: record State; record Seed; def seeded(Seed) -> State; def initial() -> State; def render(State) -> Document
+  def m(state: State, input: I, context: Context) -> Activity<Plan, Response, T>; match perform(p): case written(_): ..
+  Edits: one Edit<T,D> or Entries<D,U> per State field; type Plan = Plan<Edits, A>; type Response = Response<State, R>
+record Context: world, object, principal, caller, intent: String; height: Nat
+record Reference: world, object: String;  record Slot: principal, intent: String
+record Receipt: slot, height, outcome: admitted | refused{class, root}
+sum Edit<T,D>: keep | set{value: T} | add{delta: D};  sum Entries<D,U>: keep | append{item: D} | amend{index, change: U} | remove{index}
+sum Plan<E,A>: view{object} | write{edits: E} | call{object, method, argument: A} | send{object, method, argument: A}
+  | create{package, seed: A, law, requireAbsent: Reference} | await{slot, patience: Nat} | interpret{utterance, offers: List<Form>, policy}
+  | offer{to, document: Document} | publish{page, section, body} | reprogram{object, package, migration} | amend{object, law}
+  | inspect{object} | check{package}
+sum Response<S,R>: viewed{version, state: S} | denied | written | refused{clause} | returned{result: R} | delivery{id} | created{object}
+  | reply{receipt: Receipt} | unknown | timedOut | broken | proposal{method, argument: R} | unclear{needs: List<String>} | offered
+  | published{post} | reprogrammed{pin} | amended | inspected{pin, law, source} | checked{diagnostics: List<String>}
+record Form: card, action, fields: List<{name, kind: text{min,max} | natural{min,max} | choice{options}}>
+sum Document: text | sequence | quote | reference | offer | fields | source | result | continuation
+law NAME: EXPR;  EXPR ::= EXPR implies|or|and EXPR | not EXPR | (EXPR) | ATOM
+  ATOM ::= REF ==|<= INT | REF in [INT..] | REF == REF | REF <= REF + INT | REF == "TEXT" | monotone|writeOnce|appendOnly|unchanged(F)
+  REF ::= new.F | request.subject|caller|height|turn|pin|kind  (kind 0 write,1 reprogram,2 amend)
+turn: write only self; others change via call under their own law; commit iff every root read is current and the law
+  admits every write; a refusal names its clause; silences: reply | refused | unknown | timedOut | broken; retry = same receipt
+spell: "delvetalk CARD ACTION" then "field: value" lines (# and after --- ignored); fit(parse(text), form) -> proposal | unclear | refused
