@@ -2,6 +2,7 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Encounter.obend as E
 import ./Preparation.obend as P
+import ./RevisionReport.obend as RR
 import ./Reflection.obend as R
 import ./Document.obend as D
 
@@ -72,30 +73,51 @@ def compiled(state: State, input: P.Value, context: Abi.Context) -> Decision:
   if state.status != "pending" then refused(state, "Only a pending candidate accepts a compiler report.") else if isRecord(P.get(input, "protocol")) == false || program == "" || artifact == "" then refused(state, "A checked program and its retained artifact are required.") else accepted(extend(state, {status: "ready", checkRequested: false, artifact: artifact, protocol: P.get(input, "protocol"), program: program, diagnostics: P.Value.array({values: P.Values.nil()}), compiler: context.principal, roomArtifact: P.get(input, "roomArtifact")}), text("compiled"))
 def failed(state: State, input: P.Value, context: Abi.Context) -> Decision:
   if state.status != "pending" then refused(state, "Only a pending candidate accepts a compiler report.") else accepted(extend(state, {status: "failed", checkRequested: false, artifact: P.textOrEmpty(P.get(input, "artifact")), diagnostics: P.get(input, "diagnostics"), compiler: context.principal}), text("failed"))
-def report(state: State, input: {}, context: Abi.Context) -> Decision:
-  accepted(state, P.Value.record({fields: pair("candidate", text(context.object), pair("editor", text(state.editor), pair("generation", number(state.generation), pair("target", text(state.target), pair("baselineVersion", number(state.baselineVersion), pair("status", text(state.status), pair("program", text(state.program), P.Fields.nil())))))))}))
-def approved(state: State, input: P.Value, context: Abi.Context) -> Bool:
-  context.inputOrigin.kind == "invoke" && context.inputOrigin.object == state.editor && context.inputOrigin.command == "approve" && context.inputOrigin.immediatelyPrevious && P.textOrEmpty(P.get(input, "editor")) == state.editor && P.isNatural(P.get(input, "generation")) && P.naturalOrZero(P.get(input, "generation")) == state.generation && P.textOrEmpty(P.get(input, "candidate")) == context.object
-def adopt(state: State, input: P.Value, context: Abi.Context) -> Decision:
-  if state.status != "ready" then refused(state, "Check this candidate before adopting it.") else if P.textOrEmpty(P.get(input, "target")) != state.target then refused(state, "This candidate names another target.") else if state.editorMode && approved(state, input, context) == false then refused(state, "Use the actual immediately preceding editor approval.") else accepted(extend(state, {lastRelease: context.principal}), P.Value.record({fields: pair("protocol", state.protocol, pair("state", state.migration, P.Fields.nil()))}))
+record ReportDecision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: RR.Report
+def report(state: State, input: {}, context: Abi.Context) -> ReportDecision:
+  {accepted: true, reason: "", state: state, result: {candidate: context.object, editor: state.editor, generation: state.generation, target: state.target, baselineVersion: state.baselineVersion, status: state.status, program: state.program}}
+def approved(state: State, input: RR.Approval, context: Abi.Context) -> Bool:
+  context.inputOrigin.kind == "invoke" && context.inputOrigin.object == state.editor && context.inputOrigin.command == "approve" && context.inputOrigin.immediatelyPrevious && input.editor == state.editor && input.generation == state.generation && input.candidate == context.object
+def released(state: State, context: Abi.Context) -> Decision:
+  accepted(extend(state, {lastRelease: context.principal}), P.Value.record({fields: pair("protocol", state.protocol, pair("state", state.migration, P.Fields.nil()))}))
+def adopt(state: State, input: RR.Target, context: Abi.Context) -> Decision:
+  if state.status != "ready" then refused(state, "Check this candidate before adopting it.") else if input.target != state.target then refused(state, "This candidate names another target.") else if state.editorMode then refused(state, "Use the actual immediately preceding editor approval.") else released(state, context)
+def adoptApproved(state: State, input: RR.Approval, context: Abi.Context) -> Decision:
+  if state.status != "ready" then refused(state, "Check this candidate before adopting it.") else if input.target != state.target then refused(state, "This candidate names another target.") else if state.editorMode == false || approved(state, input, context) == false then refused(state, "Use the actual immediately preceding editor approval.") else released(state, context)
 record OpenMethod:
   label: String
   fields: {}
   inputCodec: String
   resultCodec: String
+record TypedReportMethod:
+  label: String
+  fields: {}
 record ReportMethod:
   label: String
   fields: {}
   resultCodec: String
+record DirectAdoptMethod:
+  label: String
+  fields: {target: Abi.StringField}
+  resultCodec: String
+record ApprovedAdoptMethod:
+  label: String
+  fields: {}
+  inputCodec: String
+  resultCodec: String
 record Description:
   name: String
   initial: State
-  methods: {requestCheck: ReportMethod, submit: OpenMethod, compiled: OpenMethod, failed: OpenMethod, report: ReportMethod, adopt: OpenMethod}
+  methods: {requestCheck: ReportMethod, submit: OpenMethod, compiled: OpenMethod, failed: OpenMethod, report: TypedReportMethod, adopt: DirectAdoptMethod, adoptApproved: ApprovedAdoptMethod}
   panels: {status: String}
 def method(label: String) -> OpenMethod:
   {label: label, fields: {}, inputCodec: "value", resultCodec: "value"}
 def describe() -> Description:
-  {name: "Candidate", initial: initial({editorMode: true}), methods: {requestCheck: {label: "Check source and examples", fields: {}, resultCodec: "value"}, submit: method("Submit source and examples"), compiled: method("Retain a checked compiler result"), failed: method("Retain compiler diagnostics"), report: {label: "Report this candidate", fields: {}, resultCodec: "value"}, adopt: method("Release the approved candidate")}, panels: {status: "Compiler report"}}
+  {name: "Candidate", initial: initial({editorMode: true}), methods: {requestCheck: {label: "Check source and examples", fields: {}, resultCodec: "value"}, submit: method("Submit source and examples"), compiled: method("Retain a checked compiler result"), failed: method("Retain compiler diagnostics"), report: {label: "Report this candidate", fields: {}}, adopt: {label: "Release this checked candidate", fields: {target: {type: "string", minLength: 1n, maxLength: 512n}}, resultCodec: "value"}, adoptApproved: {label: "Release the editor-approved candidate", fields: {}, inputCodec: "data", resultCodec: "value"}}, panels: {status: "Compiler report"}}
 # An empty release form cannot carry hidden operational inputs.
 def emptyContribution(value: P.Value) -> Bool:
   match value:

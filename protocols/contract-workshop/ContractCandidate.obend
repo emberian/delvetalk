@@ -15,6 +15,7 @@ export C.compiled
 export C.failed
 export C.report
 export C.adopt
+export C.adoptApproved
 export C.prepareRelease
 def prepareContract(state: C.State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
   match P.textField(state.proposal, "syntax"):

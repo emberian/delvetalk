@@ -44,18 +44,20 @@ class EditorGenerations(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.base = Path(temporary.name)
         self.home = self.base / 'world'
-        source_editor = generator.editor_artifact(TARGET, FACTORY)['protocol']
-        seeds = [{'id': TARGET, 'syntax': 'objective-bend-spell@2', 'source': SOURCE.encode(),
-            'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'add': [MAKER, VISITOR]},
-                    'reprogram': [MAKER], 'law': [MAKER]}},
-            {'id': EDITOR, 'syntax': 'protocol-json@1', 'source': desk.canonical(source_editor),
-             'law': generator.editor_law([MAKER])},
-            {'id': FACTORY, 'syntax': 'protocol-json@1', 'source': desk.canonical(generator.factory(COMPILER, [MAKER])),
-             'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'make': [MAKER]},
-                     'reprogram': [MAKER], 'law': [MAKER]}}]
-        self.seed = workspace.initialize(self.home, seeds, principal='operator', profile='compiled',
-            entry_objects=[EDITOR, TARGET], world_id='urn:test:repeatable-editor')
+        self.home.mkdir()
         self.client = desk.Desk(self.home / 'world.json', self.home / 'artifacts', profile='compiled')
+        protocols = {TARGET: source_object.load([{'name': 'Counter', 'source': SOURCE}], syntax='objective-bend-object'),
+            EDITOR: generator.editor_artifact(TARGET, FACTORY)['protocol'],
+            FACTORY: generator.factory(COMPILER, [MAKER])}
+        laws = {TARGET: {'profile': 'delvetalk-scoped-law', 'invoke': {'add': [MAKER, VISITOR]},
+                       'reprogram': [MAKER], 'law': [MAKER], 'read': 'public'},
+            EDITOR: {**generator.editor_law([MAKER]), 'read': 'public'},
+            FACTORY: {'profile': 'delvetalk-scoped-law', 'invoke': {'make': [MAKER]},
+                      'reprogram': [MAKER], 'law': [MAKER], 'read': 'public'}}
+        for identity, protocol in protocols.items():
+            made = self.client.exchange({'op': 'create', 'object': identity, 'principal': 'operator',
+                'intent': 'seed-' + identity, 'protocol': protocol, 'law': laws[identity]})
+            self.assertEqual(made['kind'], 'committed', made)
         self.editor = editor.Editor(self.client, self.base / 'editor-custody')
         self.serial = 0
 
@@ -103,7 +105,7 @@ class EditorGenerations(unittest.TestCase):
         plan = allocation['receipt']['data']['results'][2]
         candidate = next(iter(allocation['receipt']['data']['allocated']))
         submission = self.editor.interact(self.invitation('submit'),
-            {'syntax': 'objective-bend-spell@2', 'source': source,
+            {'syntax': 'objective-bend-object', 'source': source,
              'examples': (PACKAGE / examples).read_text()}, MAKER, self.intent('submit'))
         self.assertEqual(submission['receipt']['kind'], 'committed', submission)
         generation = {'candidate': candidate, 'generation': plan['generation'], 'baseline': baseline}
@@ -111,7 +113,10 @@ class EditorGenerations(unittest.TestCase):
         self.assertEqual(self.candidate_state(candidate)['status'], 'pending')
         queue = compiler_queue.CompilerQueue(self.base / ('queue-' + name), self.client.database,
             self.client.artifact_store, profile='compiled')
-        job = queue.enqueue(candidate, COMPILER, self.intent('check'), self.root(candidate))['job']
+        view = desk.projection.project(self.root(candidate), candidate)
+        checked = self.client.exchange(desk.projection.request(view, 'check', MAKER, self.intent('request-check')))
+        self.assertEqual(checked['kind'], 'committed', checked)
+        job = queue.enqueue_offered(candidate, COMPILER, expected=self.root(candidate))['job']
         return generation, queue, job
 
     def compile(self, generation, queue, job):
@@ -133,7 +138,7 @@ class EditorGenerations(unittest.TestCase):
         return result['receipt']
 
     def current_candidate(self):
-        return source_object.plain(self.root(EDITOR)['state']['model'])['candidate']
+        return source_object.plain(source_object.state_data(self.root(EDITOR)))['candidate']
 
     def adopt(self, generation):
         result = self.editor.interact(self.invitation('adopt'), {}, MAKER, self.intent('adopt'))
@@ -153,12 +158,12 @@ class EditorGenerations(unittest.TestCase):
         self.assertEqual(made['receipt']['kind'], 'committed', made)
         plan = made['receipt']['data']['results'][2]
         expected_candidate = next(iter(made['receipt']['data']['allocated']))
-        fake_protocol = {'profile': 'delvetalk-local-v1', 'initial': {},
-            'commands': {'report': {'require': [], 'set': {}, 'outbox': [], 'result': ['literal',
-                {'candidate': 'substitute', 'editor': EDITOR, 'generation': plan['generation'],
-                 'target': TARGET, 'baselineVersion': plan['baselineVersion'], 'status': 'pending', 'program': ''}]}}}
+        fake_modules = source_object.read_closure([('SubstituteReporter', ROOT / 'conformance/fixtures/SubstituteReporter.obend')])
+        fake_protocol = source_object.load(fake_modules, syntax='objective-bend-object')
         fake = self.client.exchange({'op': 'create', 'object': 'substitute', 'principal': MAKER,
-            'intent': self.intent('create-substitute'), 'protocol': fake_protocol, 'law': [MAKER]})
+            'intent': self.intent('create-substitute'), 'protocol': fake_protocol,
+            'law': {'profile': 'delvetalk-scoped-law', 'invoke': {'report': [MAKER]},
+                    'law': [MAKER], 'reprogram': [], 'read': 'public'}})
         self.assertEqual(fake['kind'], 'committed', fake)
         before = {identity: self.root(identity) for identity in (EDITOR, expected_candidate, 'substitute')}
         report = self.client.exchange({'op': 'transaction', 'principal': MAKER, 'intent': self.intent('substitute-report'),
@@ -175,9 +180,10 @@ class EditorGenerations(unittest.TestCase):
         generation, _, _ = self.prepared('wrong-digest')
         candidate = generation['candidate']
         expected = self.root(candidate)
-        build = desk.bounded_compile(expected, profile='compiled', artifact_store=self.client.artifact_store)
+        work = desk.compiler_work(expected, candidate, COMPILER, self.client.database)
+        build = desk.bounded_compile(expected, work=work, profile='compiled', artifact_store=self.client.artifact_store)
         self.assertTrue(build['passed'], build)
-        inputs = {'object': candidate, 'principal': COMPILER, 'intent': self.intent('valid-check'), 'expected': expected}
+        inputs = {'object': candidate, 'principal': COMPILER, 'intent': work['intent'], 'expected': expected}
         entry = self.client.prepare_check(inputs, build, desk.execution_profile('compiled'))
         wrong = copy.deepcopy(entry['request'])
         wrong['intent'] = self.intent('incorrect-compiler-digest')
@@ -242,14 +248,14 @@ class EditorGenerations(unittest.TestCase):
         rebased, rebased_queue, rebased_job = self.prepared('rebased', DOUBLE, 'double.examples')
         self.assertEqual(self.compile(rebased, rebased_queue, rebased_job), 'ready')
         self.assertEqual(self.review(rebased)['kind'], 'committed')
-        state_before = copy.deepcopy(self.root(TARGET)['state'])
+        state_before = source_object.state_data(self.root(TARGET))
         adopted = self.adopt(rebased)
         successful_adoption_request = copy.deepcopy(self.last_adoption_request)
         self.assertEqual(adopted['kind'], 'committed', adopted)
         self.assertEqual(self.phase(), 'adopted')
         def field(wire, name):
             return next(item['value'] for item in wire['fields'] if item['name'] == name)
-        entries = field(self.root(EDITOR)['state']['model'], 'entries')
+        entries = field(source_object.state_data(self.root(EDITOR)), 'entries')
         adopted_entries = []
         while entries['label'] == 'cons':
             entry = field(entries['payload'], 'head')
@@ -257,7 +263,7 @@ class EditorGenerations(unittest.TestCase):
                 adopted_entries.append(field(entry, 'candidate')['value'])
             entries = field(entries['payload'], 'tail')
         self.assertEqual(adopted_entries, [rebased['candidate']])
-        self.assertEqual(self.root(TARGET)['state'], state_before)
+        self.assertEqual(source_object.state_data(self.root(TARGET)), state_before)
         actual = adopted['data']['results'][3]
         self.assertEqual(actual['object'], TARGET)
         self.assertEqual(actual['version'], self.root(TARGET)['version'])
@@ -274,9 +280,10 @@ class EditorGenerations(unittest.TestCase):
         self.assertEqual(self.phase(), 'pending')
 
         bundle, restored = self.base / 'history', self.base / 'restored'
-        exported = workspace.bootstrap.export_bootstrap(self.home, bundle)
-        workspace.bootstrap.restore_bootstrap(bundle, restored,
-            expected_genesis=exported['genesis'], expected_head=exported['head'])
+        exported = desk.history.export_history(self.client.database, bundle, inline_reprogram=True)
+        restored.mkdir()
+        desk.history.verify_history(bundle, expected_genesis=exported['genesis'], expected_head=exported['head'],
+                                    output=restored / 'world.json')
         self.assertEqual(desk.loads((restored / 'world.json').read_bytes()), desk.loads(self.client.database.read_bytes()))
         for generation, status in ((first, 'ready'), (second, 'ready'), (failed, 'failed'), (rebased, 'ready'), (pending, 'pending')):
             self.assertEqual(self.candidate_state(generation['candidate'])['status'], status)

@@ -3,9 +3,16 @@ import ./Base.obend as Base
 import ./Doubling.obend as Doubling
 record State:
   value: Nat
+record Origin:
+  kind: String
+  object: String
+  command: String
+  program: String
+  immediatelyPrevious: Bool
 record Context:
   object: String
   principal: String
+  inputOrigin: Origin
 record Decision:
   accepted: Bool
   reason: String
@@ -24,10 +31,19 @@ record Action:
   text: String
   command: String
   input: {}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
 record View:
   title: String
   prose: String
   actions: {ring: Action, stamp: Action, base: Action}
+  children: Children
 def assembled() -> Base.Counter:
   fix(compose(Base.BaseLayer, Doubling.DoubleLayer), {})
 def describe() -> Description:
@@ -39,4 +55,4 @@ def stamp(state: State, input: {}, context: Context) -> Decision:
 def base(state: State, input: {}, context: Context) -> Decision:
   {accepted: true, reason: "", state: state, result: fix(Base.BaseLayer, {}).act(40)}
 def view(state: State, panel: String) -> View:
-  {title: "The peer bell", prose: "One voice supplied the bell; another gave its inherited notes a new interval.", actions: {ring: {visible: true, text: "Ring the inherited bell", command: "ring", input: {}}, stamp: {visible: true, text: "Read the inherited stamp", command: "stamp", input: {}}, base: {visible: true, text: "Hear the original layer", command: "base", input: {}}}}
+  {title: "The peer bell", prose: "One voice supplied the bell; another gave its inherited notes a new interval.", actions: {ring: {visible: true, text: "Ring the inherited bell", command: "ring", input: {}}, stamp: {visible: true, text: "Read the inherited stamp", command: "stamp", input: {}}, base: {visible: true, text: "Hear the original layer", command: "base", input: {}}}, children: Children.nil()}

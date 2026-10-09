@@ -4,6 +4,10 @@ import ./Encounter.obend as E
 import ./Preparation.obend as P
 import ./Allocation.obend as A
 
+record Config:
+  compiler: String
+  reporters: P.Value
+  candidate: P.Value
 record State:
   compiler: String
   reporters: P.Value
@@ -22,18 +26,25 @@ record Decision:
   state: State
   result: Plan
   allocations: A.Allocations
-def initial(config: P.Value) -> State:
-  {compiler: P.text(P.get(config, "compiler")), reporters: P.get(config, "reporters"), candidate: P.get(config, "candidate"), last: ""}
+def blank() -> State:
+  {compiler: "", reporters: P.Value.none(), candidate: P.Value.none(), last: ""}
+def initial(config: Config) -> State:
+  {compiler: config.compiler, reporters: config.reporters, candidate: config.candidate, last: ""}
 def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
   P.Fields.cons({head: {name: name, value: value}, tail: tail})
 def principal(who: String) -> P.Value:
   P.Value.array({values: P.Values.cons({head: P.Value.text({value: who}), tail: P.Values.nil()})})
 # A review relationship is configured explicitly, separately from reporting.
 # The ordinary maker-only authority remains the default for Editor candidates.
+def samePrincipal(value: P.Value, who: String) -> Bool:
+  match P.asText(value):
+    case found(t): t.value == who
+    case missing(_): false
+    case wrongKind(_): false
 def withoutMaker(values: P.Values, maker: String) -> P.Values:
   match values:
     case nil(_): P.Values.nil()
-    case cons(c): if P.text(c.head) == maker then withoutMaker(c.tail, maker) else P.Values.cons({head: c.head, tail: withoutMaker(c.tail, maker)})
+    case cons(c): if samePrincipal(c.head, maker) then withoutMaker(c.tail, maker) else P.Values.cons({head: c.head, tail: withoutMaker(c.tail, maker)})
 def reviewersWithMaker(reviewers: P.Value, maker: String) -> P.Value:
   match reviewers:
     case array(r): P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: withoutMaker(r.values, maker)})})
@@ -57,16 +68,20 @@ def members(value: P.Value) -> P.Values:
 def mergedMembers(values: P.Values, into: P.Values) -> P.Values:
   match values:
     case nil(_): into
-    case cons(c): P.Values.cons({head: c.head, tail: withoutMaker(mergedMembers(c.tail, into), P.text(c.head))})
+    case cons(c):
+      match P.asText(c.head):
+        case found(t): P.Values.cons({head: c.head, tail: withoutMaker(mergedMembers(c.tail, into), t.value)})
+        case missing(_): P.Values.cons({head: c.head, tail: mergedMembers(c.tail, into)})
+        case wrongKind(_): P.Values.cons({head: c.head, tail: mergedMembers(c.tail, into)})
 def readingAuthority(state: State, maker: String, reviewers: P.Value) -> P.Value:
   let people: P.Values = mergedMembers(members(state.reporters), mergedMembers(members(reviewers), P.Values.nil()))
   P.Value.array({values: P.Values.cons({head: P.Value.text({value: maker}), tail: withoutMaker(P.Values.cons({head: P.Value.text({value: state.compiler}), tail: withoutMaker(people, state.compiler)}), maker)})})
 def authority(state: State, maker: String) -> P.Value:
   authorityWithReviewers(state, maker, P.Value.none())
 def authorityWithReviewers(state: State, maker: String, reviewers: P.Value) -> P.Value:
-  let methods: P.Value = P.Value.record({fields: pair("submit", principal(maker), pair("adopt", reviewersWithMaker(reviewers, maker), pair("compiled", principal(state.compiler), pair("failed", principal(state.compiler), pair("report", state.reporters, P.Fields.nil())))))})
+  let methods: P.Value = P.Value.record({fields: pair("requestCheck", principal(maker), pair("submit", principal(maker), pair("adopt", reviewersWithMaker(reviewers, maker), pair("adoptApproved", reviewersWithMaker(reviewers, maker), pair("compiled", principal(state.compiler), pair("failed", principal(state.compiler), pair("report", state.reporters, P.Fields.nil())))))))})
   let nobody: P.Value = P.Value.array({values: P.Values.nil()})
-  P.Value.record({fields: pair("profile", P.Value.text({value: "delvetalk-scoped-law"}), pair("invoke", methods, pair("reprogram", nobody, pair("law", nobody, pair("read", readingAuthority(state, maker, reviewers), P.Fields.nil())))))})
+  P.Value.record({fields: pair("profile", P.Value.text({value: "delvetalk-scoped-law"}), pair("invoke", methods, pair("reprogram", nobody, pair("law", nobody, pair("read", readingAuthority(state, maker, reviewers), pair("view", P.Value.record({fields: pair("main", P.Value.text({value: "public"}), P.Fields.nil())}), P.Fields.nil()))))))})
 def remembered(state: State, name: String) -> State:
   extend(state, {last: name})
 def make(state: State, input: Plan, context: Abi.Context) -> Decision:
@@ -86,7 +101,7 @@ def textField() -> Abi.StringField:
 def numberField() -> Abi.NatField:
   {type: "nat", minimum: 0n, maximum: 9007199254740991n}
 def describe() -> Description:
-  {name: "Candidate workshop", initial: initial(P.Value.none()), methods: {make: {label: "Make the planned variation", fields: {factory: textField(), name: {type: "string", minLength: 1n, maxLength: 64n}, editor: textField(), generation: numberField(), target: textField(), baselineVersion: numberField()}}}, panels: {main: "Workshop"}, allocation: {limit: 32n}}
+  {name: "Candidate workshop", initial: blank(), methods: {make: {label: "Make the planned variation", fields: {factory: textField(), name: {type: "string", minLength: 1n, maxLength: 64n}, editor: textField(), generation: numberField(), target: textField(), baselineVersion: numberField()}}}, panels: {main: "Workshop"}, allocation: {limit: 32n}}
 record View:
   title: String
   prose: String

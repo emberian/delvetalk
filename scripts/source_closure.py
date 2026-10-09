@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # An explicit shared allowlist, selected by callers; never compiler ambient imports.
 LIBRARY = tuple((name, path) for name, path in (
     ('Abi', 'world/lib/prelude/Abi.obend'),
+    ('Authority', 'world/lib/prelude/Authority.obend'),
     ('Allocation', 'world/lib/prelude/Allocation.obend'),
     ('Emissions', 'world/lib/prelude/Emissions.obend'),
     ('Encounter', 'world/lib/prelude/Encounter.obend'),
@@ -21,6 +22,7 @@ LIBRARY = tuple((name, path) for name, path in (
     ('List', 'world/lib/prelude/List.obend'),
     ('Preparation', 'world/lib/prelude/Preparation.obend'),
     ('Reflection', 'world/lib/prelude/Reflection.obend'),
+    ('RevisionReport', 'world/lib/prelude/RevisionReport.obend'),
     ('Document', 'world/lib/document/Document.obend'),
 ))
 

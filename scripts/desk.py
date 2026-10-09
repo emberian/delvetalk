@@ -32,7 +32,7 @@ source_offers = module('desk_source_offers', 'scripts/source_offers.py')
 projection = module('desk_projection', 'scene/projection.py')
 canonical, loads = translate.canonical, translate.load_json
 SOURCE_CANDIDATE_FILES = ('protocols/editor/generate.py', 'protocols/editor/Candidate.obend',
-                          'world/lib/prelude/List.obend', 'world/lib/prelude/Preparation.obend', 'world/lib/prelude/Abi.obend',
+                          'world/lib/prelude/RevisionReport.obend', 'world/lib/prelude/List.obend', 'world/lib/prelude/Preparation.obend', 'world/lib/prelude/Abi.obend',
                           'protocols/contract-workshop/generate.py',
                           'protocols/contract-workshop/Workshop.obend',
                           'protocols/contract-workshop/ContractCandidate.obend')
