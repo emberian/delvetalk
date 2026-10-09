@@ -1,7 +1,7 @@
 # Source-authored Spween handlers
 
-`scene/handlers.py` compiles a pinned Spween scene into ordinary Objective Bend
-source. It installs a native typed object with `start` and `choose` methods and a
+`scene/handlers.py` serializes a pinned Spween scene as typed data for the
+ordinary Objective Bend runtime in `scene/runtime/SceneRuntime.obend`. It installs a native typed object with `start` and `choose` methods and a
 computed menu. `Handler.obend` is executable source, not a Python callback registry.
 The explicit profile is **`spween-obend-handlers-i64-v1`**. Existing
 `spween-scene-i64-v1/v2` retain their fixed membership and call-batch semantics.
@@ -22,12 +22,17 @@ and `work == 11`.
 
 ## One typed relation
 
-The compiler supplies `Kernel` and generates `Scene`; the author explicitly
-supplies `Handler`, optionally preceded by supporting modules. Imports resolve
+The adapter supplies retained `Abi`, `Encounter`, `Kernel`, scene types, the
+reusable `BaseRuntime`, serialized `Score`, and a fixed `Scene` adapter. The
+author explicitly supplies `Handler`, optionally preceded by supporting modules,
+and can select an ordinary `SceneRuntime` extension. Imports resolve
 only in that ordered package. `compile_source(source, handler_modules=[...])`
 accepts exact `{name, source}` records, requires the last module to be `Handler`,
-and reserves `Kernel`/`Scene`. Native parsing, type checking and execution own
-meaning. Python emits source and frames the native protocol.
+and reserves the library/data/adapter module names. `runtime_modules=[...]`
+selects an explicit ordered runtime ending in `SceneRuntime`; it can import
+`BaseRuntime` and compose its `Default` extension. Native source evaluation owns
+the configuration check and all scene behavior. Python emits data constructors
+and frames the native protocol.
 
 The handler ABI is ordinary source definitions:
 
@@ -52,7 +57,7 @@ call names and wrong argument counts. It exports useful ordinary helper function
 for variables, membership, integer arithmetic and emission accumulation; these
 are reusable source, not extra host opcodes.
 
-The generated state is `{handler, passage, visited, started, ended}` inside the
+The shared source state is `{handler, passage, visited, started, ended}` inside the
 host's single typed `model`. Each choice checks its guard against that state,
 threads effects in source order, navigates, then executes previously unvisited
 passage entry effects. Later modification observes an earlier handler call's
@@ -86,7 +91,7 @@ message profile owns retries, capacity, receipts and explicit consumption.
 ## Source, views and revisions
 
 The protocol retains exact scene bytes and the pinned AST in `spweenSource`, plus
-all executable module bytes in its object-local source table. Generated menu
+all executable module bytes in its object-local source table. Runtime menu
 availability runs as Bend against the committed typed model. Reading a menu
 never executes entry effects. Old captured cards retain old roots; programming a
 new source revision makes their actions stale. Revision/restart uses the same
@@ -113,3 +118,6 @@ completion and all possible Rust embeddings are not claimed equivalent.
 Run `conformance/test_spween_handlers.py` for native ordered mutation, rollback,
 source revision and authenticated delivery, and `test_spween_handler_oracle.py`
 for the independent actual-Rust comparison including its partial-error behavior.
+
+The executable relation and a small composable runtime override are documented
+in [the source runtime](../../scene/runtime/README.md).

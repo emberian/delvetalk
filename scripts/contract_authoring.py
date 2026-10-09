@@ -26,7 +26,7 @@ def validate(proposal):
     inputs, build = proposal['inputs'], proposal['build']
     if set(inputs) != {'candidate', 'target', 'principal', 'intent', 'candidateRoot', 'targetRoot', 'entry'}:
         raise ValueError('invalid contract release inputs')
-    state = inputs['candidateRoot']['state']
+    state = desk.candidate_state(inputs['candidateRoot'])
     if (state['status'] != 'ready' or state['target'] != inputs['target']
             or state['proposal'] != build['proposal'] or state['protocol'] != build['protocol']
             or state['artifact'] != desk.digest(build) or build.get('passed') is not True):
@@ -77,7 +77,7 @@ class Contracts:
             return validate(retained)
         if candidate == target:
             raise ValueError('contract candidate and governed target must be distinct')
-        state = candidate_root['state']
+        state = desk.candidate_state(candidate_root)
         if state['status'] != 'ready' or state['target'] != target:
             raise ValueError('contract requires a ready candidate for this target')
         if not desk.is_source_desk_protocol(candidate_root['protocol']):
@@ -139,7 +139,7 @@ class Contracts:
             raise ValueError('contract release differs from its immutable reviewed proposal')
         if proposal['executionProfile'] != execution_profile():
             raise ValueError('contract release runtime changed')
-        desk.proposal_material(inputs['candidateRoot']['state']['proposal'], self.client.artifact_store)
+        desk.proposal_material(desk.candidate_state(inputs['candidateRoot'])['proposal'], self.client.artifact_store)
         desk.preserve_build_dependencies(self.client.artifact_store, proposal['build'])
         if before_exchange is not None:
             before_exchange()

@@ -1,0 +1,47 @@
+examples DelveTalk 1
+case keyed consent preserves the global epoch after withdrawal
+law keeper
+observe main
+  title: Repair exchange
+  prose: Offer help or report ready. Two notices fit on this shared workbench; acknowledge one when its work is understood.
+  offer configure -> configure: Consent or subscribe
+expect view
+as keeper
+send configure
+  side: listen
+  slot (Nat): 100
+  enabled (Bool): true
+  object: neighbor
+  program: 0000000000000000000000000000000000000000000000000000000000000000
+  generation (Nat): 1
+expect result: configured
+as keeper
+send configure
+  side: listen
+  slot (Nat): 100
+  enabled (Bool): false
+  object: neighbor
+  program: 0000000000000000000000000000000000000000000000000000000000000000
+  generation (Nat): 2
+expect result: configured
+as keeper
+send configure
+  side: listen
+  slot (Nat): 200
+  enabled (Bool): true
+  object: neighbor
+  program: 0000000000000000000000000000000000000000000000000000000000000000
+  generation (Nat): 1
+expect refusal: source refused: Use a fresh consent epoch, unique incoming source and an available collection key.
+as keeper
+send configure
+  side: listen
+  slot (Nat): 200
+  enabled (Bool): true
+  object: neighbor
+  program: 0000000000000000000000000000000000000000000000000000000000000000
+  generation (Nat): 3
+expect result: configured
+as keeper
+send acknowledge
+expect refusal: source refused: Mailbox is empty.

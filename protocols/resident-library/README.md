@@ -7,12 +7,12 @@ engine or a generated copy of the behavior.
 
 | Module | Reusable behavior |
 | --- | --- |
-| [Consent.obend](Consent.obend) | Four outgoing subscriptions and four recipient-owned incoming consents; a global monotone consent epoch; four bounded native emission descriptors |
-| [Mailbox.obend](Mailbox.obend) | A typed FIFO notice list, explicit acknowledgement, contextual forms/view, and an open-recursive receiving layer |
+| [Consent.obend](Consent.obend) | Ordered keyed consent/subscription collections, a global monotone consent epoch, cursor pagination, and a four-descriptor native boundary encoder |
+| [Mailbox.obend](Mailbox.obend) | A two-list FIFO with cached size, explicit acknowledgement, contextual forms/view, and an open-recursive receiving layer |
 
 `Mailbox.Inbox` calls `self.accepts`, `self.capacity`, and `self.maxUnits`.
-The repair layer uses `super` to derive two slots and four units; the circle
-layer derives three slots and six units and accepts an additional `reading`
+The repair layer uses `super` to derive room for two notices and four units; the circle
+layer derives room for three notices and six units and accepts an additional `reading`
 topic. Both accept `help` and `ready`. The inherited store method therefore
 follows each final object's policy without being copied or replaced.
 The description evaluates that same assembled behavior to obtain form limits:
@@ -20,7 +20,8 @@ four units for the repair board, six for the reading circle.
 
 ## Compose and use
 
-Supply ordered exact modules `Consent`, `Mailbox`, then `RepairBoard` or
+Supply ordered exact modules `Abi`, `Encounter` (from `world/lib/prelude`),
+`Consent`, `Mailbox`, then `RepairBoard` or
 `ReadingCircle` to the existing `objective-bend-spell@3` module adapter. Imports
 resolve those supplied bytes. The adapter derives state, methods, forms and
 panels from source. No Python source generator is involved.
@@ -38,13 +39,17 @@ method. Law management and reprogramming have their own grants. Names in the
 local tests are caller assertions, not authenticated remote identities.
 
 1. The recipient's keeper calls `configure` with `side="listen"`, the sender's
-   object and exact native program digest, a slot from 1–4, and a generation
+   object and exact native program digest, a numeric collection key (`slot`, 1–65535), and a generation
    greater than its global epoch, bounded by 65535. A source already enabled in
-   another incoming slot cannot be added twice.
-2. The sender's keeper calls `configure` with `side="send"`, a slot from 1–4,
+   another incoming entry cannot be added twice.
+2. The sender's keeper calls `configure` with `side="send"`, an unused or existing collection key,
    the recipient's object/program digest, and that recipient's generation.
-3. A member calls `announce {topic,units}`. Native admission retains addressed
-   message evidence and validates target program identity.
+3. A member calls `announce {topic,units,after,limit}`, starting with `after=0`
+   and `limit=4`. Native admission retains addressed message evidence and
+   validates target program identity. The result `{next,count,more}` identifies
+   the admitted page; passing `after=next` requests the next page. Keys are sorted,
+   so insertion order does not affect paging. Each invocation faces current state
+   and current authority; the cursor is neither a snapshot nor a delivery grant.
 4. A currently authorized relay explicitly delivers a retained event. The
    recipient's source checks native sender facts and its current consent,
    vocabulary, unit limit and mailbox capacity, with the outcomes below.
@@ -52,8 +57,8 @@ local tests are caller assertions, not authenticated remote identities.
    that space. Answering a notice requires an explicit new announcement.
 
 `configure` also takes `enabled`; disabling or renewing incoming consent must
-advance the global epoch. A slot can keep its existing generation while other
-slots change. Moving a withdrawn source to another slot requires a fresh epoch,
+advance the global epoch. An entry can keep its existing generation while other
+entries change. Moving a withdrawn source to another key requires a fresh epoch,
 so it cannot revive old events. Program values come from native
 `program-digest` results; an event's source identity and program come from native
 delivery facts, never a copied generation or payload assertion.
@@ -78,9 +83,20 @@ retrying the old request itself still recovers the old refusal.
 
 ## Boundaries
 
-The source stores at most four outgoing and four incoming consents and the
-layer's two or three notices. Topics and units have semantic bounds; generation
-is bounded. Address/program form lengths are UI bounds, while native emission
+The default behavior permits 16 outgoing and 16 incoming entries independently,
+with an explicit 64-entry traversal bound and at most four emissions per invocation.
+These are policy/traversal bounds, not record fields or enumerated storage
+positions. Each invocation also faces the native machine's total work budget.
+Disabling an entry removes it and recovers capacity; the global epoch survives
+removal. Updating an existing key uses no additional capacity. The final
+`a/b/c/d` descriptor record exists only because the native emission ABI requires
+it. No subscriber storage is hand-enumerated.
+
+The FIFO stores `size`, `front`, and reversed `rear` lists. Enqueue adds one
+node; acknowledgement reverses the rear only when the front empties. Oldest
+notice projection and capacity checks use constant-size source operations.
+The object layers keep room for two or three notices. Topics and units have
+semantic bounds; generation is bounded. Address/program form lengths are UI bounds, while native emission
 and delivery validate addresses, hashes, payload size and exact program identity.
 Bad subscription text cannot grant delivery authority. All four descriptors,
 including disabled slots, remain structurally valid.
@@ -94,10 +110,45 @@ implicit forwarding, external publication or exactly-once network claim.
 
 The joined checks cover traffic both directions, both inherited capacities,
 FIFO acknowledgement, finite vocabulary/unit guards, consent withdrawal and
-renewal across independent sources, slot/generation ABA refusal, copied-generation
+renewal across independent sources, key/generation ABA refusal, copied-generation
 forgery, current relay grant changes, retained refusals and declines,
 an outside sender's impossible generations,
 direct/forged receive attempts, exact retries, four-slot fanout, target program
 changes, assembled form limits, and installed pure views. The actual local relay
 drains 32 obsolete events, recovers the pending quota and accepts a newly enrolled
 notice. Worlds and participant activity stay in temporary private custody.
+
+
+## Source examples and collection measurements
+
+[RepairBoard.examples](RepairBoard.examples) runs through the existing proposal
+fixture runner and actual compiled admission. It exercises sparse key 100,
+withdrawal, attempted ABA at key 200, renewed consent and an empty FIFO refusal.
+It also checks the source-owned initial menu. Cross-object delivery and custody
+remain in the native receiving tests, since this example notation has one object.
+
+[CollectionStudy.obend](CollectionStudy.obend) contains ordinary pure source
+exports for collection measurements: `study(n)` fills and drains the FIFO,
+selects the last subscription page, and checks an absent consent; `queue(n)` and
+`subscriptions(n)` materialize typed data separately. These are synthetic values,
+not installed authority or claimed delivery history. The conformance test runs
+all algorithms with default machine limits and materializes sizes through 64.
+
+Measured with copied native binaries and a private source snapshot on 2026-10-09:
+
+| Entries | Combined algorithm ticks | Queue ticks + conversion | Consent pair ticks + conversion |
+| --- | ---: | ---: | ---: |
+| 8 | 3,824 | 939 + 251 | 1,080 + 383 |
+| 32 | 13,832 | 3,555 + 755 | 4,056 + 1,295 |
+| 64 | 27,176 | 7,043 + 1,427 | 8,024 + 2,511 |
+| 128 | 53,864 | typed data nesting refusal | typed data nesting refusal |
+| 200 | 83,888 | typed data nesting refusal | typed data nesting refusal |
+
+The combined result adds 33 conversion nodes and stays below the default 100,000
+work budget at 200. This establishes source algorithm execution, **not** support
+for a 200-entry installed resident. Linked data exceeds the bridge's current
+nesting bound before that size can be retained or passed back as state. More fuel
+would not fix the representation limit. A future chunked/balanced source
+representation must preserve these APIs and be checked through actual receiving
+semantics before increasing installed capacities. Native request-byte and causal
+budgets remain separate constraints.

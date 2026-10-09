@@ -65,6 +65,16 @@ current implementation-pin checks: a committed or refused admission can repair
 a lost journal reply without executing again. If no receipt exists, changed
 pins block execution. Editing a source record cannot replace the attempt.
 
+Captured source invitations may first return an authored question or refusal.
+The Clerk retains these as `delvetalk-clerk-preparation-v1`, with the verified
+reply source, exact record, outcome, and implementation profile. No native
+admission, semantic receipt, or world intent is reserved. The same URI/CID
+returns that retained conversation outcome without fetching or reevaluating
+source; answering a question uses a new immutable reply. Ordinary Town cards
+show these invitations directly. Source prepares complete turns; the transport
+has no alias, substitution, or workflow interpreter. See
+[pure preparation](PREPARATION.md).
+
 Clerk operations serialize their own journals. Backend accessors own world
 access: the resident daemon holds its SQLite writer lock, while file admissions
 use their file lock. Snapshot export is explicit; ordinary resident receiving

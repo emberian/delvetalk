@@ -1,50 +1,48 @@
 # Appointments
 
-**Leave work for an explicit logical time.** [Clock.obend](Clock.obend) admits
-requests and cancellations; bounded ticks send native messages to independent
-[task objects](Task.obend). Lean decides deadlines, ownership and delivery.
+**Book work against explicit logical time.** [Clock](Clock.obend) owns scheduling;
+[Appointments](Appointments.obend) implements its typed queue. Independently
+governed [tasks](Task.obend) receive native messages. Use the `compiled` host and
+initialize its message registry.
 
-Translate with `objective-bend-spell@3` for authored menus and compact source.
-Raw bindings remain available. Use the `compiled` host;
-initialize its message registry first. Grant `request`/`cancel` to participants, `tick` to the named
-driver, and task `wake` to a relay. Set each task's owner and clock identity.
+Supply sealed modules in order: shared `Abi`, shared `Encounter`, `Appointments`,
+then `Clock` or `Task`. The `objective-bend-spell@3` adapter binds authored menus.
+Evaluate `configured({capacity: 16})` or `configured({owner: "moss", clock: "clock"})`
+for typed initial state; configuration never rewrites source. Grant participants
+`request`, `cancel`, `page`; grant the named driver `tick`, and a relay task `wake`.
 
-| Command | Explicit input |
+| Command | Input |
 |---|---|
-| `request` | `slot`, `generation`, `due`, `deadline`, `to`, `recipientProgram`, `topic` |
-| `cancel` | `slot`, `generation` |
+| `request` | `id`, `generation`, `due`, `deadline`, `to`, `recipientProgram`, `topic` |
+| `cancel` | `id`, `generation` |
 | `tick` | `now` |
+| `page` | `offset` |
 
-Slots are 0–7. Booking requires a free or terminal slot, its next generation,
-`due >= now`, and `deadline >= due`. Only its owner can cancel its queued
-generation. Slot panels bind the exact generation; booking forms collect due time,
-deadline, recipient, program digest and activity. Read-only inspection exposes
-exact state independently. Recipient digests come from `program-digest`.
+Booking requires a unique active id, the clock's `nextGeneration`, `due >= now`,
+and `deadline >= due`. The global generation increases only on admitted booking.
+Send, expiry and owner cancellation remove entries and reclaim capacity. Reusing
+an id requires a later generation: old cancellations cannot affect new work.
+The last terminal summary remains in state; full outcomes remain in receipts.
 
-Each tick checks **four slots**, alternates halves, and emits at most four events.
-Two admitted ticks inspect every slot; rebooking an early slot cannot jump the
-queue. Explicit migration from the older two-slot clock must set cursor 0 or 4.
-Equal-time ticks drain work. Time cannot decrease. Work sends when
-`due <= now <= deadline`; otherwise overdue work expires. Deadlines bound sends,
-not later relay delivery. No wall clock is read.
+Capacity is configured from 1–24, default 16. Actual text/source still face native
+byte and fuel limits. Each tick inspects at most four
+original entries, rotating future work behind existing entries. New bookings
+join the tail. Four emission descriptors bound a turn, not storage. With no new
+work, admitted ticks visit every queued entry within `ceil(size/4)` turns.
+Queue reversal and inspection cost linear work. Menus display four entries per
+page; exact state remains inspectable.
 
-A sent appointment cannot be recalled, even before delivery. Relay admission
-still checks the recipient's current authority and captured program. Invalid
-recipients, changed programs or full mailboxes refuse the whole tick without
-advancing time or cursor. Owners can cancel blocked queued work. Fairness depends
-on admitted ticks; it is not a wall-time guarantee.
-
-Persist a tick before submitting it:
+Time cannot decrease. Sends require `due <= now <= deadline`; later work expires.
+Deadlines bound sending, not relay delivery. An admitted send cannot be recalled.
+Current recipient authority and captured program still govern delivery. Invalid
+recipients, changed programs or message capacity refuse the whole tick, preserving
+time and queue. The retained refusal explains the blocker; owners may cancel it.
 
 ```sh
 python3 protocols/appointments/clock_driver.py WORLD PRIVATE_ATTEMPT \
   --principal driver --intent tick-5 --now 5
 ```
 
-Retry the same attempt after an uncertain reply. After confirmed refusal, use a fresh
-intent and attempt. The driver never chooses time or due work.
-
-[Receiving and menu tests](../../conformance/test_appointments.py) cover both raw
-bindings and authored objects, including killed-reply recovery.
-[Menu examples](menu-examples.md) show booking, cancellation and refusal. Run
-`python3 conformance/test_appointments.py`.
+The driver persists this exact tick before submission and retries without refreshing
+its root. It never reads wall time or chooses due work. See [menu examples](menu-examples.md)
+and [receiving tests](../../conformance/test_appointments.py).

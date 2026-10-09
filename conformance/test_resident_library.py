@@ -5,6 +5,8 @@ Every effect, delivery, refusal and retry uses the compiled receiving host. No
 remote transport, Python semantic implementation or generated Bend source.
 """
 import importlib.util
+import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -26,10 +28,19 @@ projection = module('resident_library_projection', 'scene/projection.py')
 relay_module = module('resident_library_relay', 'scripts/message_relay.py')
 
 
-def authored(name):
-    return adapter.lower_data_modules([
+def prelude():
+    return [{'name': key, 'source': (ROOT / 'world/lib/prelude' / (key + '.obend')).read_text()}
+            for key in ('Abi', 'Encounter')]
+
+
+def sources(name):
+    return prelude() + [
         {'name': key, 'source': (PACKAGE / (key + '.obend')).read_text()}
-        for key in ('Consent', 'Mailbox', name)])
+        for key in ('Consent', 'Mailbox', name)]
+
+
+def authored(name):
+    return adapter.lower_data_modules(sources(name))
 
 
 def record_fields(wire):
@@ -39,14 +50,18 @@ def record_fields(wire):
 
 def notes(root):
     """Read native DataWire for assertions; never decide admission."""
-    current = record_fields(root['state']['model'])['notes']
-    result = []
-    while current['label'] == 'cons':
-        fields = record_fields(current['payload'])
-        result.append({key: (int(value['value']) if value['tag'] == 'natural' else value['value'])
-                       for key, value in record_fields(fields['head']).items()})
-        current = fields['tail']
-    assert current['label'] == 'nil', current
+    queue = record_fields(record_fields(root['state']['model'])['notes'])
+    def decode(current):
+        result = []
+        while current['label'] == 'cons':
+            fields = record_fields(current['payload'])
+            result.append({key: (int(value['value']) if value['tag'] == 'natural' else value['value'])
+                           for key, value in record_fields(fields['head']).items()})
+            current = fields['tail']
+        assert current['label'] == 'nil', current
+        return result
+    result = decode(queue['front']) + list(reversed(decode(queue['rear'])))
+    assert len(result) == int(queue['size']['value'])
     return result
 
 
@@ -107,8 +122,8 @@ class ResidentLibrary(unittest.TestCase):
         self.configure(target, source, side='listen', generation=generation, slot=listen_slot)
         self.configure(source, target, side='send', generation=generation, slot=slot)
 
-    def announce(self, source, topic='ready', units=1, kind='committed'):
-        reply = self.invoke(source, 'announce', {'topic': topic, 'units': units}, kind=kind)
+    def announce(self, source, topic='ready', units=1, kind='committed', after=0, limit=4):
+        reply = self.invoke(source, 'announce', {'topic': topic, 'units': units, 'after': after, 'limit': limit}, kind=kind)
         return reply['data']['messages'] if kind == 'committed' else reply
 
     def delivery(self, target, event, principal='relay'):
@@ -230,7 +245,7 @@ class ResidentLibrary(unittest.TestCase):
         self.assertEqual(len(notes(self.root('repair'))), 2)
         self.assertEqual(self.pending(), {})
         before = self.root('repair')
-        self.configure('repair', 'circle', side='send', slot=5, kind='refused')
+        self.configure('repair', 'circle', side='send', slot=65536, kind='refused')
         self.assertEqual(self.root('repair'), before)
         # A changed program at the destination invalidates the stored subscription.
         current = self.root('circle')
@@ -337,27 +352,10 @@ class ResidentLibrary(unittest.TestCase):
     def test_external_emitter_cannot_strand_impossible_consent_generations(self):
         # A separately authored sender deliberately omits this library's generation
         # guard. Its admitted events still carry authentic native source facts.
-        source = """edition ObjectiveBend 1
-import ./Consent.obend as Consent
-record Input:
-  program: String
-  generation: Nat
-record Context:
-  object: String
-  principal: String
-  inputOrigin: {kind: String, object: String, command: String, immediatelyPrevious: Bool}
-record Effects:
-  accepted: Bool
-  reason: String
-  state: {}
-  result: {}
-  emissions: Consent.Slots
-def emit(state: {}, input: Input, context: Context) -> Effects:
-  {accepted: true, reason: "", state: state, result: {}, emissions: Consent.emit({epoch: 0, inbound: Consent.peers(), outbound: {a: {enabled: true, object: "circle", program: input.program, generation: input.generation}, b: Consent.empty(), c: Consent.empty(), d: Consent.empty()}}, "ready", 1)}
-"""
+        source = (PACKAGE / 'OutsideEmitter.obend').read_text()
         program = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'emit': {
             'transition': {'profile': 'delvetalk-source-effects-v1', 'package': {
-                'modules': [{'name': 'Consent', 'source': (PACKAGE / 'Consent.obend').read_text()},
+                'modules': prelude() + [{'name': 'Consent', 'source': (PACKAGE / 'Consent.obend').read_text()},
                             {'name': 'Outside', 'source': source}], 'entry': 'emit'}}}}}
         self.call({'op': 'create', 'object': 'outsider', 'principal': 'bootstrap',
                    'intent': 'create-outsider', 'protocol': program, 'law': ['outsider-member']})
@@ -367,6 +365,64 @@ def emit(state: {}, input: Input, context: Context) -> Effects:
             self.assertEqual(self.deliver('circle', event)['data']['result'], 'declined-consent')
             self.assertNotIn(event['id'], self.pending())
         self.assertEqual(notes(self.root('circle')), [])
+
+    def test_ordered_collection_pages_capacity_reclamation_and_native_fanout(self):
+        self.configure('circle', 'repair', side='listen')
+        # Keys are identities, not four storage positions; insertion order is irrelevant.
+        keys = [160, 10, 90, 30, 70, 150, 20, 40, 60, 50, 140, 80, 130, 100, 120, 110]
+        for key in keys:
+            self.configure('repair', 'circle', side='send', slot=key)
+        before = self.root('repair')
+        self.configure('repair', 'circle', side='send', slot=170, kind='refused')
+        self.assertEqual(self.root('repair'), before)
+        # Replacement consumes no capacity. Removal really frees a collection entry.
+        self.configure('repair', 'circle', side='send', slot=10)
+        self.configure('repair', 'circle', side='send', slot=90, enabled=False)
+        self.configure('repair', 'circle', side='send', slot=170)
+        expected_keys = sorted((set(keys) - {90}) | {170})
+        cursor = 0
+        for offset in range(0, 16, 4):
+            reply = self.invoke('repair', 'announce', {'topic': 'help', 'units': 1,
+                                                     'after': cursor, 'limit': 4})
+            page = reply['data']['result']
+            self.assertEqual(page, {'next': expected_keys[offset + 3], 'count': 4, 'more': offset < 12})
+            self.assertEqual(len(reply['data']['messages']), 4)
+            for event in reply['data']['messages']:
+                self.deliver('circle', event)
+                self.assertEqual(notes(self.root('circle'))[0]['event'], event['id'])
+                self.invoke('circle', 'acknowledge', {})
+            cursor = page['next']
+        self.announce('repair', after=cursor, kind='refused')
+        self.announce('repair', limit=5, kind='refused')
+        self.announce('repair', limit=0, kind='refused')
+        self.assertEqual(self.pending(), {})
+
+    def test_five_independent_sources_use_sparse_incoming_keys(self):
+        for index in range(1, 6):
+            name = 'neighbor-' + str(index)
+            self.call({'op': 'create', 'principal': 'bootstrap', 'intent': self.identity(),
+                       'object': name, 'protocol': self.programs['repair'], 'law': policy(name)})
+            self.digests[name] = self.digests['repair']
+            self.connect(name, 'circle', generation=index, listen_slot=index * 100)
+        for index in range(1, 6):
+            name = 'neighbor-' + str(index)
+            event = self.announce(name)[0]
+            self.deliver('circle', event)
+            self.assertEqual(notes(self.root('circle'))[0]['source'], name)
+            self.invoke('circle', 'acknowledge', {})
+        # Removing a middle entry preserves the remaining source's older epoch.
+        self.configure('circle', 'neighbor-3', side='listen', generation=6, slot=300, enabled=False)
+        stale = self.announce('neighbor-3')[0]
+        self.assertEqual(self.deliver('circle', stale)['data']['result'], 'declined-consent')
+        self.deliver('circle', self.announce('neighbor-5')[0])
+        self.assertEqual(notes(self.root('circle'))[0]['source'], 'neighbor-5')
+
+    def test_authored_examples_use_real_source_receiving(self):
+        proposal = module('resident_library_proposal', 'scripts/propose.py')
+        examples = module('resident_library_examples', 'syntaxes/spell_examples.py')
+        outcomes = proposal.run_scenarios(self.programs['repair'],
+            examples.parse((PACKAGE / 'RepairBoard.examples').read_text()), profile='compiled')
+        self.assertEqual([item['failures'] for item in outcomes], [[]])
 
     def test_forms_use_the_assembled_behavior_limits(self):
         for name, maximum in [('repair', 4), ('circle', 6)]:
@@ -378,6 +434,48 @@ def emit(state: {}, input: Input, context: Context) -> Effects:
             self.deliver(name, event)
             self.assertEqual(notes(self.root(name))[0]['units'], maximum)
             self.announce(name, units=maximum + 1, kind='refused')
+
+
+@unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-obend').is_file(), 'prebuilt source runner required')
+class ResidentCollections(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.artifacts = {}
+        for entry in ('study', 'queue', 'subscriptions'):
+            compiled = cls.native({'op': 'compile', 'modules': sources('CollectionStudy'), 'entry': entry})
+            if compiled.get('status') != 'compiled':
+                raise AssertionError(compiled)
+            cls.artifacts[entry] = compiled['artifact']
+
+    @staticmethod
+    def native(request):
+        process = subprocess.run([str(ROOT / '.lake/build/bin/delvetalk-obend')],
+            input=json.dumps(request) + '\n', text=True, capture_output=True, check=True, timeout=15)
+        return json.loads(process.stdout)
+
+    def run_source(self, entry, size):
+        return self.native({'op': 'run-data-v1', 'artifact': self.artifacts[entry],
+                            'arguments': [{'tag': 'natural', 'value': str(size)}]})
+
+    def test_collection_algorithms_scale_to_200_with_default_machine_budget(self):
+        for size in (8, 32, 64, 128, 200):
+            result = self.run_source('study', size)
+            self.assertEqual(result['status'], 'finished', result)
+            values = record_fields(result['value'])
+            self.assertEqual(int(values['queued']['value']), size)
+            self.assertEqual(int(values['total']['value']), size * (size + 1) // 2)
+            self.assertEqual(int(values['selected']['value']), 4)
+            self.assertEqual(int(values['next']['value']), size)
+            self.assertFalse(values['more']['value'])
+            self.assertTrue(values['absent']['value'])
+            self.assertLess(result['ticksUsed'] + result['conversionNodes'], 100000)
+
+    def test_representative_collections_materialize_without_a_fuel_override(self):
+        for entry in ('queue', 'subscriptions'):
+            for size in (8, 32, 64):
+                result = self.run_source(entry, size)
+                self.assertEqual(result['status'], 'finished', result)
+                self.assertLess(result['ticksUsed'] + result['conversionNodes'], 100000)
 
 
 if __name__ == '__main__':

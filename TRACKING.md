@@ -52,16 +52,43 @@ The previous integration wave is checkpointed at `f2fb492`. Current ownership:
 | Measured 8–200 element source collection workloads; isolate actual limits | `authored_action_examples` |
 | Source pins, integration, repository cleanup and scoped checkpoints | Root |
 
-Two native compiler seats are allocated to text and preparation. Builds use
+Text-capable binaries are built in an isolated snapshot; preparation is integrating.
+At most two native compiler seats are used. Builds use
 independent writable package snapshots or explicit serial handoff; shared binary
 replacement waits for an announced freeze. Pure source lanes use stable binaries.
 
-Further concrete work remains: collection-based appointments and physical tick
-driver; bounded message descendants and governed terminal settlement; source
-allocation/contract workshop and commit/reveal ports; collapse remaining JSON
+Collection-based appointments now have 16 focused checks; source ticket/exhibition
+ports pass their receiving journeys and remove their behavioral generators. Shared
+prelude and action-list projection are checkpointed; other source replacements
+await combined receiver qualification. Factory/Candidate replacement is now owned
+by `card_affordance_pass`, coordinated with native preparation.
+
+Further concrete work remains: physical time observation and a source-authored
+appointment relationship; bounded message descendants and governed terminal
+settlement; contract workshop and commit/reveal ports; collapse remaining JSON
 expression/profile ladders; room-local intentions/reference clarification; scratch
 editing; physical repository moves. These are not silently assigned or completed
 by the current lanes. Shared source APIs should make these subsequent cuts smaller.
+
+### Integration findings
+
+- Full-preimage requests duplicate retained code/state. The expanded native limit
+  is now 1 MiB in source; authored input remains 64 KiB. Qualify actual scene
+  adoption and 200-entry gallery after rebuilding. A root-reference transport
+  should ultimately remove repeated bodies rather than keep raising limits.
+- Preparation questions/refusals must remain source-authored no-effect outcomes
+  through Town and Portal. Preparation and portal lanes own this joint repair.
+- `World.readObject` currently ignores principal. Exact captured inputs are not
+  read authorization; governed acquisition needs an explicit native policy and
+  receiving-path tests before claiming private inspection.
+- Scene behavior is now authored in Bend, but the workshop still fixes the final
+  `start`/`choose` interface. An explicit authored final Scene module should let
+  inhabitants add methods while preserving sealed imports and generic binding.
+- Shared source continuation offers, domain-preserving paged collections, and
+  bounded emission framing should replace repeated consumer recipes. Old-program
+  durable events need an explicit governed settlement path, never silent deletion.
+- Source alias updates need investigation: domain constructors currently work
+  around rejected `extend(state, patch)` expressions. The language lane owns it.
 
 Opening requires a coherent fresh seed, installed game, named seats and agreed
 private move handoff. Capture actual cards before preparing publication bindings.

@@ -44,6 +44,7 @@ inductive Frame where
   | reflect | metadata | project
   | extend (fields : List (String × Term)) (environment : Environment)
   | condition (zero successorBody : Term) (environment : Environment)
+  | unary (primitive : UnaryPrimitive)
   | binaryLeft (primitive : Primitive) (right : Term) (environment : Environment)
   | binaryRight (primitive : Primitive) (left : RuntimeValue)
   | case (arms : List (String × Term)) (environment : Environment)
@@ -131,6 +132,7 @@ def stepRaw (state : State) : State :=
     | .get target name => {state with control:=.evaluate target environment,stack:=.field name::state.stack}
     | .extend inherited fields => {state with control:=.evaluate inherited environment, stack:=.extend fields environment::state.stack}
     | .ifZero value zero successorBody => {state with control:=.evaluate value environment, stack:=.condition zero successorBody environment::state.stack}
+    | .unary primitive argument => {state with control:=.evaluate argument environment,stack:=.unary primitive::state.stack}
     | .binary primitive left right => {state with control:=.evaluate left environment, stack:=.binaryLeft primitive right environment::state.stack}
     | .inject tag payload =>
       let address := state.heap.size
@@ -178,6 +180,12 @@ def stepRaw (state : State) : State :=
         | .natural 0 => {state with control:=.evaluate zero environment,stack:=rest}
         | .natural (n+1) => {state with heap:=state.heap.push (.cached ⟨.nat n,[]⟩ (.natural n)), control:=.evaluate successorBody (state.heap.size::environment),stack:=rest}
         | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .unary primitive =>
+        match (valueTerm value).bind (unaryResult primitive) with
+        | some result => match scalarValue result with
+          | some next => {state with control:=.returned next,stack:=rest}
+          | none => {state with control:=.refused .wrongValue,stack:=rest}
+        | none => {state with control:=.refused .wrongValue,stack:=rest}
       | .binaryLeft primitive right environment =>
         {state with control:=.evaluate right environment,stack:=.binaryRight primitive value::rest}
       | .binaryRight primitive left =>

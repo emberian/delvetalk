@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./Preparation.obend as P
 record Entry:
   name:String
   candidate:String
@@ -83,7 +84,7 @@ def refused(state:State,reason:String)->Decision:
 def observed(state:State,input:Witness,context:Context)->Bool:
   context.inputOrigin.kind=="observe"&&context.inputOrigin.object==state.target&&context.inputOrigin.command==""&&context.inputOrigin.immediatelyPrevious&&input.object==state.target
 def reported(state:State,input:Report,context:Context)->Bool:
-  context.inputOrigin.kind=="invoke"&&context.inputOrigin.command=="report"&&context.inputOrigin.object==input.candidate&&context.inputOrigin.immediatelyPrevious&&input.editor==context.object&&input.generation==state.g&&input.target==state.target&&input.baselineVersion==state.baseline
+  context.inputOrigin.kind=="invoke"&&context.inputOrigin.command=="report"&&context.inputOrigin.object==input.candidate&&context.inputOrigin.immediatelyPrevious&&input.candidate==candidate(state)&&input.editor==context.object&&input.generation==state.g&&input.target==state.target&&input.baselineVersion==state.baseline
 def drafted(state:State,input:Draft)->State:
   extend(state,{g:state.next,next:state.next+1n,name:input.name,candidate:"",baseline:0n,phase:"draft",code:""})
 def planned(state:State,input:Witness)->State:
@@ -166,17 +167,83 @@ def witnessMethod(label:String)->WitnessMethod:
 def reportMethod(label:String)->ReportMethod:
   {label:label,fields:{candidate:textField(),editor:textField(),generation:numberField(),target:textField(),baselineVersion:numberField(),status:textField(),program:textField()}}
 def describe()->Description:
-  {name:"Workshop",initial:{target:"EDITOR_TARGET",factory:"EDITOR_FACTORY",next:1n,g:0n,name:"",candidate:"",baseline:0n,phase:"idle",code:"",entries:Entries.nil()},methods:{draft:{label:"New variation",fields:{name:nameField()}},plan:witnessMethod("Capture baseline"),review:reportMethod("Review candidate"),approve:witnessMethod("Approve baseline"),finish:{label:"Record installation",fields:{object:textField(),version:numberField(),program:textField()}}},panels:{phase:"Current generation",candidate:"Current candidate",target:"Edited object"}}
+  {name:"Workshop",initial:{target:"",factory:"",next:1n,g:0n,name:"",candidate:"",baseline:0n,phase:"idle",code:"",entries:Entries.nil()},methods:{draft:{label:"New variation",fields:{name:nameField()}},plan:witnessMethod("Capture baseline"),review:reportMethod("Review candidate"),approve:witnessMethod("Approve baseline"),finish:{label:"Record installation",fields:{object:textField(),version:numberField(),program:textField()}}},panels:{phase:"Current generation",candidate:"Current candidate",target:"Edited object"}}
 def baseView(state:State,panel:String)->BaseView:
   {title:"Workshop",prose:if panel=="phase" then state.phase else if panel=="candidate" then state.candidate else if panel=="target" then state.target else if state.phase=="ready" then "Checked. Compare with the captured target." else if state.phase=="failed" then "Failed. Retained for inspection. Try another variation." else if state.phase=="adopted" then "Installed. Make another variation." else "Make a variation,try examples,compare,then deliberately adopt.",actions:{draft:{visible:state.target!="",text:"New variation",command:"draft",input:{}}},children:children(state.entries)}
 
 # Authored captured workflow offers
-record OffersView:
-  title:String
-  prose:String
-  actions:{}
-  children:Children
-  offers:{make:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},target:{object:String,child:String},factory:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{name:String},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c2:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c3:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{name:{type:String,label:String,minLength:Nat,maxLength:Nat}},bindings:{b0:{field:String,call:Nat,input:String}},absentChildren:{a0:{factory:String,field:String}},captures:{}},submit:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},target:{object:String,child:String},candidate:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{proposal:{syntax:String,source:String,scenarios:String},migration:{},target:String,editor:String,generation:Nat,baselineVersion:Nat},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c2:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{syntax:{type:String,label:String,options:{ordinary:String,typed:String}},source:{type:String,label:String,minLength:Nat,maxLength:Nat},examples:{type:String,label:String,minLength:Nat,maxLength:Nat}},bindings:{b0:{field:String,call:Nat,input:String},b1:{field:String,call:Nat,input:String},b2:{field:String,call:Nat,input:String}},absentChildren:{},captures:{s0:{read:String,call:Nat,input:String,rootField:String},s1:{read:String,call:Nat,input:String,rootField:String}}},review:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},candidate:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{},bindings:{},absentChildren:{},captures:{}},adopt:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},candidate:{object:String,child:String},target:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c2:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c3:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c4:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{},bindings:{},absentChildren:{},captures:{}}}
-def view(state:State,panel:String)->OffersView:
-  let prior:BaseView = baseView(state,panel)
-  {title:prior.title,prose:prior.prose,actions:{},children:prior.children,offers:{make:{visible:state.next<=32n,title:"Workshop",label:"Make a new variation or rebase",command:"make",reads:{editor:{object:"$self",child:""},target:{object:state.target,child:""},factory:{object:state.factory,child:""}},calls:{c0:{op:"invoke",object:"editor",command:"draft",input:{name:""},fromResult:false,inputFrom:0n},c1:{op:"observe",object:"target",command:"",input:{},fromResult:false,inputFrom:0n},c2:{op:"invoke",object:"editor",command:"plan",input:{},fromResult:true,inputFrom:1n},c3:{op:"invoke",object:"factory",command:"make",input:{},fromResult:true,inputFrom:2n}},fields:{name:{type:"string",label:"Variation name",minLength:1n,maxLength:64n}},bindings:{b0:{field:"name",call:0n,input:"name"}},absentChildren:{a0:{factory:"factory",field:"name"}},captures:{}},submit:{visible:state.phase=="planned",title:"Workshop",label:"Submit source and examples",command:"submit",reads:{editor:{object:"$self",child:""},target:{object:state.target,child:""},candidate:{object:if state.candidate=="" then state.factory else state.candidate,child:if state.candidate=="" then state.name else ""}},calls:{c0:{op:"invoke",object:"candidate",command:"submit",input:{proposal:{syntax:"",source:"",scenarios:""},migration:{},target:state.target,editor:"",generation:state.g,baselineVersion:state.baseline},fromResult:false,inputFrom:0n},c1:{op:"invoke",object:"candidate",command:"report",input:{},fromResult:false,inputFrom:0n},c2:{op:"invoke",object:"editor",command:"review",input:{},fromResult:true,inputFrom:1n}},fields:{syntax:{type:"enum",label:"Source language",options:{ordinary:"objective-bend-spell@2",typed:"objective-bend-spell@3"}},source:{type:"string",label:"Bend source",minLength:1n,maxLength:32768n},examples:{type:"string",label:"Examples",minLength:1n,maxLength:16384n}},bindings:{b0:{field:"syntax",call:0n,input:"proposal.syntax"},b1:{field:"source",call:0n,input:"proposal.source"},b2:{field:"examples",call:0n,input:"proposal.scenarios"}},absentChildren:{},captures:{s0:{read:"editor",call:0n,input:"editor",rootField:"object"},s1:{read:"target",call:0n,input:"migration",rootField:"state"}}},review:{visible:state.phase=="pending"||state.phase=="ready"||state.phase=="failed",title:"Workshop",label:"Review the current candidate",command:"review",reads:{editor:{object:"$self",child:""},candidate:{object:if state.candidate=="" then state.factory else state.candidate,child:if state.candidate=="" then state.name else ""}},calls:{c0:{op:"invoke",object:"candidate",command:"report",input:{},fromResult:false,inputFrom:0n},c1:{op:"invoke",object:"editor",command:"review",input:{},fromResult:true,inputFrom:0n}},fields:{},bindings:{},absentChildren:{},captures:{}},adopt:{visible:state.phase=="ready",title:"Workshop",label:"Adopt this checked variation",command:"adopt",reads:{editor:{object:"$self",child:""},candidate:{object:if state.candidate=="" then state.factory else state.candidate,child:if state.candidate=="" then state.name else ""},target:{object:state.target,child:""}},calls:{c0:{op:"observe",object:"target",command:"",input:{},fromResult:false,inputFrom:0n},c1:{op:"invoke",object:"editor",command:"approve",input:{},fromResult:true,inputFrom:0n},c2:{op:"invoke",object:"candidate",command:"adopt",input:{},fromResult:true,inputFrom:1n},c3:{op:"reprogram",object:"target",command:"",input:{},fromResult:true,inputFrom:2n},c4:{op:"invoke",object:"editor",command:"finish",input:{},fromResult:true,inputFrom:3n}},fields:{},bindings:{},absentChildren:{},captures:{}}}}
+record Config:
+  target: String
+  factory: String
+def initial(config: Config) -> State:
+  extend(describe().initial, {target: config.target, factory: config.factory})
+def names1(a: String) -> P.Names:
+  P.Names.cons({head: a, tail: P.Names.nil()})
+def names2(a: String, b: String) -> P.Names:
+  P.Names.cons({head: a, tail: names1(b)})
+def names3(a: String, b: String, c: String) -> P.Names:
+  P.Names.cons({head: a, tail: names2(b, c)})
+def read1(a: String) -> P.Reads:
+  P.Reads.cons({head: P.Read.existing({object: a}), tail: P.Reads.nil()})
+def read2(a: String, b: String) -> P.Reads:
+  P.Reads.cons({head: P.Read.existing({object: a}), tail: read1(b)})
+def effect1(a: P.Effect) -> P.Effects:
+  P.Effects.cons({head: a, tail: P.Effects.nil()})
+def effect2(a: P.Effect, b: P.Effect) -> P.Effects:
+  P.Effects.cons({head: a, tail: effect1(b)})
+def effect3(a: P.Effect, b: P.Effect, c: P.Effect) -> P.Effects:
+  P.Effects.cons({head: a, tail: effect2(b, c)})
+def effect4(a: P.Effect, b: P.Effect, c: P.Effect, d: P.Effect) -> P.Effects:
+  P.Effects.cons({head: a, tail: effect3(b, c, d)})
+def effect5(a: P.Effect, b: P.Effect, c: P.Effect, d: P.Effect, e: P.Effect) -> P.Effects:
+  P.Effects.cons({head: a, tail: effect4(b, c, d, e)})
+def candidate(state: State) -> String:
+  if state.candidate == "" then textConcat(textConcat(state.factory, "/"), state.name) else state.candidate
+def question(message: String, field: String) -> P.Preparation:
+  P.Preparation.question({message: message, needs: names1(field)})
+def refusal(message: String) -> P.Preparation:
+  P.Preparation.refused({message: message})
+def prepareMake(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let name: String = P.text(P.get(contribution, "name"))
+  if state.target == "" || state.factory == "" then refusal("This workshop needs a target and a candidate factory.") else if state.next > 32n then refusal("This workshop has retained its 32 generations.") else if name == "" then question("What shall we call this variation?", "name") else if textLength(name) > 64n then refusal("Use a variation name of at most 64 characters.") else P.Preparation.ready({summary: "Make a new variation with the captured target baseline.", reads: P.Reads.cons({head: P.Read.absent({object: textConcat(textConcat(state.factory, "/"), name)}), tail: read2(state.target, state.factory)}), calls: effect4(P.Effect.invoke({object: context.object, command: "draft", input: P.oneField("name", P.Value.text({value: name}))}), P.Effect.observe({object: state.target}), P.Effect.invokeResult({object: context.object, command: "plan", result: 1n}), P.Effect.invokeResult({object: state.factory, command: "make", result: 2n}))})
+def proposal(syntax: String, source: String, examples: String) -> P.Value:
+  P.Value.record({fields: P.Fields.cons({head: {name: "syntax", value: P.Value.text({value: syntax})}, tail: P.Fields.cons({head: {name: "source", value: P.Value.text({value: source})}, tail: P.Fields.cons({head: {name: "scenarios", value: P.Value.text({value: examples})}, tail: P.Fields.nil()})})})})
+def submission(state: State, target: P.Observation, input: P.Value, context: P.Context) -> P.Value:
+  P.Value.record({fields: P.Fields.cons({head: {name: "proposal", value: proposal(P.text(P.get(input, "syntax")), P.text(P.get(input, "source")), P.text(P.get(input, "examples")))}, tail: P.Fields.cons({head: {name: "migration", value: target.state}, tail: P.Fields.cons({head: {name: "target", value: P.Value.text({value: state.target})}, tail: P.Fields.cons({head: {name: "editor", value: P.Value.text({value: context.object})}, tail: P.Fields.cons({head: {name: "generation", value: P.Value.natural({value: state.g})}, tail: P.Fields.cons({head: {name: "baselineVersion", value: P.Value.natural({value: state.baseline})}, tail: P.Fields.nil()})})})})})})})
+def prepareSubmit(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let target: P.Observation = P.observation(observations, state.target)
+  let syntax: String = P.text(P.get(contribution, "syntax"))
+  if state.phase != "planned" then refusal("Make a fresh variation before submitting source.") else if target.object == "" then refusal("Capture the target before submitting source.") else if target.version != state.baseline then refusal("The target changed. Make a new variation to rebase.") else if syntax == "" then question("Which source language are you using?", "syntax") else if syntax != "objective-bend-spell@2" && syntax != "objective-bend-spell@3" then refusal("Choose ordinary or typed Objective Bend source.") else if P.text(P.get(contribution, "source")) == "" then question("What source shall this variation use?", "source") else if P.text(P.get(contribution, "examples")) == "" then question("Which examples should the compiler check?", "examples") else if textLength(P.text(P.get(contribution, "source"))) > 32768n then refusal("Keep this source within 32768 characters.") else if textLength(P.text(P.get(contribution, "examples"))) > 16384n then refusal("Keep these examples within 16384 characters.") else P.Preparation.ready({summary: "Submit this source and examples to the immutable candidate.", reads: read2(state.target, candidate(state)), calls: effect3(P.Effect.invoke({object: candidate(state), command: "submit", input: submission(state, target, contribution, context)}), P.Effect.invoke({object: candidate(state), command: "report", input: P.Value.record({fields: P.Fields.nil()})}), P.Effect.invokeResult({object: context.object, command: "review", result: 1n}))})
+def prepareReview(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  if state.candidate == "" then refusal("Submit a variation before reviewing it.") else if state.phase != "pending" && state.phase != "ready" && state.phase != "failed" then refusal("This variation is not awaiting review.") else P.Preparation.ready({summary: "Review the current generation's actual compiler report.", reads: read1(state.candidate), calls: effect2(P.Effect.invoke({object: state.candidate, command: "report", input: P.Value.record({fields: P.Fields.nil()})}), P.Effect.invokeResult({object: context.object, command: "review", result: 0n}))})
+def prepareAdopt(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let target: P.Observation = P.observation(observations, state.target)
+  if state.phase != "ready" then refusal("Review a checked variation before adopting it.") else if target.object == "" then refusal("Capture the target before adoption.") else if target.version != state.baseline then refusal("The target changed. Make a new variation to rebase.") else P.Preparation.ready({summary: "Adopt the checked variation under current authority and retain the actual reprogram evidence.", reads: read2(state.target, state.candidate), calls: effect5(P.Effect.observe({object: state.target}), P.Effect.invokeResult({object: context.object, command: "approve", result: 0n}), P.Effect.invokeResult({object: state.candidate, command: "adopt", result: 1n}), P.Effect.reprogramResult({object: state.target, result: 2n}), P.Effect.invokeResult({object: context.object, command: "finish", result: 3n}))})
+record NameInvitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {name: StringField}
+  observations: P.Names
+record SubmitInvitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {syntax: {type: String, options: {ordinary: String, typed: String}}, source: StringField, examples: StringField}
+  observations: P.Names
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {}
+  observations: P.Names
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Children
+  invitations: {make: NameInvitation, submit: SubmitInvitation, review: Invitation, adopt: Invitation}
+def view(state: State, panel: String) -> View:
+  let prior: BaseView = baseView(state, panel)
+  let configured: Bool = state.target != "" && state.factory != ""
+  {title: prior.title, prose: prior.prose, actions: {}, children: prior.children, invitations: {make: {visible: configured && state.next <= 32n, text: "Make a new variation or rebase", prepare: "prepareMake", fields: {name: nameField()}, observations: if configured then names2(state.target, state.factory) else P.Names.nil()}, submit: {visible: state.phase == "planned", text: "Submit source and examples", prepare: "prepareSubmit", fields: {syntax: {type: "enum", options: {ordinary: "objective-bend-spell@2", typed: "objective-bend-spell@3"}}, source: {type: "string", minLength: 1n, maxLength: 32768n}, examples: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: if configured then names2(state.target, candidate(state)) else P.Names.nil()}, review: {visible: state.phase == "pending" || state.phase == "ready" || state.phase == "failed", text: "Review the current candidate", prepare: "prepareReview", fields: {}, observations: if state.candidate != "" then names1(state.candidate) else P.Names.nil()}, adopt: {visible: state.phase == "ready", text: "Adopt this checked variation", prepare: "prepareAdopt", fields: {}, observations: if state.candidate != "" then names2(state.target, state.candidate) else P.Names.nil()}}}

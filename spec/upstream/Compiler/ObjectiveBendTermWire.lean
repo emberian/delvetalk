@@ -17,14 +17,14 @@ namespace Minidregg.Compiler.ObjectiveBendTermWire
 open Lean
 open Minidregg.Compiler.ObjectiveBendElaborate
 open Minidregg.Theory.ObjectiveBendTyping (DecodedPacket decodePacket decodeTerm decodePrimitive jsonNat
-  termNestingCapacity requireSome)
+  termNestingCapacity requireSome decodeUnaryPrimitive)
 set_option autoImplicit false
 
 mutual
 /-- The nesting depth of an elaborated term: what `decodeTerm`'s fuel must cover. -/
 def depth : ATerm → Nat
   | .bound _ | .nat _ | .boolean _ | .label _ => 1
-  | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b => depth b + 1
+  | .unary _ b | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b => depth b + 1
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b => max (depth a) (depth b) + 1
   | .ifZero a b c | .ifBool a b c => max (depth a) (max (depth b) (depth c)) + 1
   | .extend a fs | .case a fs => max (depth a) (fieldsDepth fs) + 1
@@ -64,6 +64,11 @@ theorem primitive_round {p : String} {prim : CorePrimitive} (h : primitiveOf p =
     decodePrimitive (Json.str p) = .ok prim := by
   unfold primitiveOf at h
   split at h <;> simp_all [decodePrimitive]
+
+theorem unary_primitive_round {p : String} {prim : CoreUnaryPrimitive} (h : unaryPrimitiveOf p = .ok prim) :
+    decodeUnaryPrimitive (Json.str p) = .ok prim := by
+  unfold unaryPrimitiveOf at h
+  split at h <;> simp_all [decodeUnaryPrimitive]
 
 mutual
 theorem decode_json : (t : ATerm) → (n : Nat) → (e : CoreTerm) → depth t ≤ n → t.erase = .ok e →
@@ -118,6 +123,15 @@ theorem decode_json : (t : ATerm) → (n : Nat) → (e : CoreTerm) → depth t �
     have db := decode_json b n eb (by omega) hb
     simp at he; subst he
     rw [decodeTerm]; simp [ATerm.json, db]
+
+  | .unary p a, n+1, e, hd, he => by
+    simp only [ATerm.erase, bind_ok] at he
+    obtain ⟨prim, hp, ea, ha, he⟩ := he
+    simp only [depth] at hd
+    have da := decode_json a n ea (by omega) ha
+    have dp := unary_primitive_round hp
+    simp at he; subst he
+    rw [decodeTerm]; simp [ATerm.json, da, dp]
 
   | .app f a, n+1, e, hd, he => by
     simp only [ATerm.erase, bind_ok] at he

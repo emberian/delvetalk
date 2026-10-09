@@ -328,14 +328,14 @@ def source_document(view):
         for key in ('sourcePackages', 'spweenSource'):
             if key in protocol:
                 source[key] = copy.deepcopy(protocol[key])
-        if view.get("source", {}).get("profile") in ("delvetalk-obend-menu-v1", "delvetalk-obend-data-menu-v1", "delvetalk-obend-data-offers-v1"):
+        if view.get("source", {}).get("profile") in ("delvetalk-obend-menu-v1", "delvetalk-obend-data-menu-v1"):
             source.update(rawViewData=copy.deepcopy(view["rawData"]),
                           publicViewData=copy.deepcopy(view["data"]))
-            if view["source"]["profile"] in ("delvetalk-obend-data-menu-v1", "delvetalk-obend-data-offers-v1"):
+            if view["source"]["profile"] in ("delvetalk-obend-data-menu-v1"):
                 projection = module("room_projection", "scene/projection.py")
                 source["children"] = projection.children(view)
-                if view["source"]["profile"] == "delvetalk-obend-data-offers-v1":
-                    source["offers"] = projection.offers(view)
+                if "invitations" in view:
+                    source["invitations"] = projection.invitations(view)
         return source
     return {**common, "kind": "protocol", "program": copy.deepcopy(protocol)}
 

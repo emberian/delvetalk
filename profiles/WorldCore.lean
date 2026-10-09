@@ -59,7 +59,7 @@ structure Runtime where
     fun _ _ _ => throw "unknown expression"
   validateTransition : Json → Json → Except String Unit :=
     fun _ _ => throw "source transitions require compiled profile"
-  executeTransition : CallContext → Json → Json → String → Json → Evaluation (Json × Json × Array Json) :=
+  executeTransition : CallContext → Json → Json → String → Json → Evaluation (Json × Json × Array Json × Array Json) :=
     fun _ _ _ _ _ => throw "source transitions require compiled profile"
   reprogramResult : String → Json → Evaluation Json := fun _ _ => pure .null
   checkSourceContract : Json → Json → Bool → Evaluation Unit :=
@@ -338,7 +338,7 @@ def receipt (request : Json) (kind : String) (data : Json) : Json :=
        ("kind", .str kind), ("data", data)]
 
 def executeCommandWith (runtime : Runtime) (o request : Json) (principal : String)
-    (inputOrigin : Json := noInputOrigin) (eventFacts : Option Json := none) : Evaluation (Json × Json × Array Json) := do
+    (inputOrigin : Json := noInputOrigin) (eventFacts : Option Json := none) : Evaluation (Json × Json × Array Json × Array Json) := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   let state ← field o "state"
@@ -357,7 +357,7 @@ def executeCommandWith (runtime : Runtime) (o request : Json) (principal : Strin
     nextState ← put nextState k (← eval e)
   let result ← eval (← field command "result")
   let outbox ← (← (← field command "outbox").getArr?).mapM eval
-  return (nextState, result, outbox)
+  return (nextState, result, outbox, #[])
 
 -- Both standalone and transaction admission install exactly this replacement.
 -- Authorization belongs to the caller's current-law check, never the candidate.
@@ -393,41 +393,51 @@ def directChild (parent child : String) : Bool :=
   let namespacePrefix := parent ++ "/"
   namespacePrefix.isPrefixOf child && !(child.drop namespacePrefix.length).toString.contains '/'
 
--- Every descriptor uses the factory pre-state. Staging makes collisions and
--- quota checks compose across a batch; failures discard parent and children.
+-- Every explicit descriptor faces the same local quota, absence and child-law
+-- checks, whether authored as source data or a legacy expression. No descriptor
+-- transfers parent authority to a later child invocation.
+def allocateDescriptorsWith (runtime : Runtime) (objects protocol : Json)
+    (parent principal : String) (absent : Array String) (allocations : Array Json)
+    (readDescriptor : Json → String → Evaluation Json := fun value key => field value key) :
+    Evaluation (Json × Json) := do
+  if allocations.isEmpty then return (objects, obj [])
+  let limit ← (← allocationLimit protocol).toExcept "allocation requires factory policy"
+  let mut staged := objects
+  let mut roots : Array (String × Json) := #[]
+  let mut childCount := (← pairs objects).countP (fun entry => directChild parent entry.1)
+  for allocation in allocations do
+    tick
+    if (← pairs allocation).map Prod.fst != ["law", "name", "protocol"] then
+      throw "allocation requires exactly name, protocol and law"
+    let name ← (← readDescriptor allocation "name").getStr?
+    if !childName name then throw "invalid child name"
+    let id := parent ++ "/" ++ name
+    if !absent.contains id then throw "allocation target missing absence root"
+    if (field staged id).isOk then throw "object exists"
+    if childCount >= limit then throw "factory child quota exhausted"
+    let child ← newObjectWith runtime (← readDescriptor allocation "protocol") (← readDescriptor allocation "law")
+    checkCandidateWith runtime child child (obj [("op", .str "create"), ("object", .str id)]) principal
+    staged ← put staged id child
+    roots := roots.push (id, child)
+    childCount := childCount + 1
+  return (staged, obj roots.toList)
+
+-- Legacy expressions read the factory pre-state. Source transitions have
+-- already produced their explicit descriptors in the same metered execution.
 def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
     (principal : String) (absent : Array String)
-    (inputOrigin : Json := noInputOrigin) : Evaluation (Json × Json) := do
+    (inputOrigin : Json := noInputOrigin) (sourceAllocations : Array Json := #[]) : Evaluation (Json × Json) := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
+  let parent ← str request "object"
   match (field command "allocate").toOption with
-  | none => return (objects, obj [])
-  | some allocations =>
-    let limit ← (← allocationLimit protocol).toExcept "allocation requires factory policy"
-    let parent ← str request "object"
+  | none => allocateDescriptorsWith runtime objects protocol parent principal absent sourceAllocations
+  | some legacy => do
+    if !sourceAllocations.isEmpty then throw "cannot mix source and legacy allocations"
     let eval := evaluateWith runtime { object := parent, protocol := protocol, inputOrigin := inputOrigin }
       64 (← field o "state") (← field request "input") principal
-    let mut staged := objects
-    let mut roots : Array (String × Json) := #[]
-    -- Only successful direct allocations change this count during this call.
-    -- A subsequent transaction call counts from its own already-staged world.
-    let mut childCount := (← pairs objects).countP (fun entry => directChild parent entry.1)
-    for allocation in (← allocations.getArr?) do
-      tick
-      let name ← (← eval (← field allocation "name")).getStr?
-      if !childName name then throw "invalid child name"
-      let id := parent ++ "/" ++ name
-      if !absent.contains id then throw "allocation target missing absence root"
-      if (field staged id).isOk then throw "object exists"
-      if childCount >= limit then throw "factory child quota exhausted"
-      let childProtocol ← eval (← field allocation "protocol")
-      let childLaw ← eval (← field allocation "law")
-      let child ← newObjectWith runtime childProtocol childLaw
-      checkCandidateWith runtime child child (obj [("op", .str "create"), ("object", .str id)]) principal
-      staged ← put staged id child
-      roots := roots.push (id, child)
-      childCount := childCount + 1
-    return (staged, obj roots.toList)
+    allocateDescriptorsWith runtime objects protocol parent principal absent (← legacy.getArr?)
+      (fun descriptor key => do eval (← field descriptor key))
 
 def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String) : Evaluation (Json × Json) := do
   let objects ← field world "objects"
@@ -466,10 +476,10 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",result), ("outbox", .arr #[])]))
   if op != "invoke" then throw "unknown operation"
   let absent ← absenceReads objects request
-  let (nextState, result, outbox) ← executeCommandWith runtime o request principal
+  let (nextState, result, outbox, allocations) ← executeCommandWith runtime o request principal
   let nextObj ← put (← put o "state" nextState) "version" (toJson (n+1))
   checkCandidateWith runtime o nextObj request principal
-  let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o request principal absent
+  let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o request principal absent noInputOrigin allocations
   let (next, messages, ordinaryOutbox) ← runtime.stageMessages
     (← put world "objects" staged) request request o 0 outbox
   let mut data := obj [("root",nextObj), ("result",result), ("outbox", .arr ordinaryOutbox)]
@@ -481,8 +491,9 @@ def transitionWith (runtime : Runtime) (world request : Json) (principal : Strin
   let (result, _) ← (transitionEvaluationWith runtime world request principal).run runtime.budget
   return result
 
-def executeCommand (o request : Json) (principal : String) : Evaluation (Json × Json × Array Json) :=
-  executeCommandWith {} o request principal
+def executeCommand (o request : Json) (principal : String) : Evaluation (Json × Json × Array Json) := do
+  let (state, result, outbox, _) ← executeCommandWith {} o request principal
+  return (state, result, outbox)
 
 def reprogramObject (o protocol state : Json) : Except String Json :=
   reprogramObjectWith {} o protocol state
@@ -509,10 +520,14 @@ def retainedReply (receipts : Array Json) (request : Json) : Except String Json 
   if (← field entry "request") == request then return ← field entry "receipt"
   return .null
 
+-- Expanded internal envelopes contain retained source and exact state preimages.
+-- Authored post/body limits are enforced separately by their transports.
+def maxRequestBytes : Nat := 1024 * 1024
+
 def handleWith
     (admit : Json → Json → String → Except String (Json × Json))
     (world request : Json) : Except String (Json × Json) := do
-  if request.compress.utf8ByteSize > 65536 then throw "request exceeds 64 KiB"
+  if request.compress.utf8ByteSize > maxRequestBytes then throw "expanded request exceeds 1 MiB"
   let principal ← str request "principal"
   if principal.isEmpty then throw "empty principal"
   if (← str request "op") == "inspect" then
@@ -543,7 +558,7 @@ def jobWith (receive : Json → Json → Except String (Json × Json)) (j : Json
 
 def job (j : Json) : Json := jobWith handle j
 
-def serve (process : Json → Json) : IO Unit := do
+def serve (process : Json → Json) (encode : Json → String := Json.compress) : IO Unit := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   repeat
@@ -554,6 +569,6 @@ def serve (process : Json → Json) : IO Unit := do
       else match Lean.Json.parse line with
         | .ok j => process j
         | .error e => World.obj [("error", .str e)]
-    stdout.putStrLn out.compress
+    stdout.putStrLn (encode out)
 
 end World

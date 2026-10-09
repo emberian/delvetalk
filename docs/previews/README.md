@@ -12,3 +12,6 @@ before presenting it as a launch. Ember owns publication.
 opening under the same completed-system assumption. It includes proposed read
 protection, source-owned conversations/factories, and durable settlement; it is
 not a report that those implementation or deployment obligations have passed.
+Its root/forge/workshop invitations and `using/when/ask/prepare` dialect propose
+concrete language surfaces to implement; they are not current parser examples.
+The Bend block is an excerpt assuming a declared `Door` type.

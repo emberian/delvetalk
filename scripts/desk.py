@@ -26,6 +26,7 @@ world = module('desk_world', 'scripts/world.py')
 runtime_profile = module('desk_runtime_profile', 'scripts/runtime_profile.py')
 source_store = module('desk_source_store', 'scripts/source_store.py')
 process_custody = module('desk_process_custody', 'scripts/process_custody.py')
+source_object = module('desk_source_object', 'scripts/source_object.py')
 history = module('desk_history', 'scripts/history.py')
 adoption = module('desk_adoption', 'scripts/adoption.py')
 canonical, loads = translate.canonical, translate.load_json
@@ -36,24 +37,66 @@ SOURCE_DESK_PROTOCOL_PATHS = (
     'protocols/editor/candidate.json',
     'protocols/spween-handler-workshop/source-desk.json',
 )
+_REVIEWED_CANDIDATE = None
+SOURCE_CANDIDATE_FILES = ('protocols/editor/generate.py', 'protocols/editor/Candidate.obend',
+                          'world/lib/prelude/Preparation.obend')
 
 
 def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
+def candidate_state(root):
+    """Project Candidate custody data without replacing its exact native root."""
+    state = root['state']
+    if set(state) != {'model'}:
+        return state  # Historical plain Candidate roots retain their original shape.
+    model = state['model']
+    if (not isinstance(model, dict) or set(model) != {'tag', 'fields'}
+            or model['tag'] != 'record' or not isinstance(model['fields'], list)):
+        raise ValueError('typed candidate state requires a DataWire record')
+    fields = {}
+    for field in model['fields']:
+        if (not isinstance(field, dict) or set(field) != {'name', 'value'}
+                or not isinstance(field['name'], str) or field['name'] in fields):
+            raise ValueError('typed candidate state requires distinct named fields')
+        fields[field['name']] = field['value']
+    names = ('proposal', 'migration', 'protocol', 'diagnostics', 'roomArtifact')
+    decoded = source_object.values('decode', [fields[name] for name in names])
+    result = {name: source_object.plain(value) for name, value in fields.items() if name not in names}
+    result.update(zip(names, decoded))
+    return result
+
+
 def is_source_desk_protocol(protocol):
     """Recognize only reviewed complete bodies; this selection grants no authority."""
     expected = canonical(protocol)
-    return any(expected == canonical(loads((ROOT / path).read_bytes()))
-               for path in SOURCE_DESK_PROTOCOL_PATHS)
+    if any(expected == canonical(loads((ROOT / path).read_bytes()))
+           for path in SOURCE_DESK_PROTOCOL_PATHS):
+        return True
+    if not isinstance(protocol, dict) or 'sourcePackages' not in protocol:
+        return False
+    global _REVIEWED_CANDIDATE
+    pin = {'source': runtime_profile.hash_paths(SOURCE_CANDIDATE_FILES, root=ROOT),
+           'loader': source_object.pins('objective-bend-spell@3')}
+    if _REVIEWED_CANDIDATE is None or _REVIEWED_CANDIDATE[0] != pin:
+        reviewed = module('desk_candidate_package', 'protocols/editor/generate.py').candidate()
+        if pin != {'source': runtime_profile.hash_paths(SOURCE_CANDIDATE_FILES, root=ROOT),
+                   'loader': source_object.pins('objective-bend-spell@3')}:
+            raise ValueError('reviewed source candidate changed during loading')
+        _REVIEWED_CANDIDATE = pin, reviewed
+    def body(value):
+        return {key: item for key, item in value.items() if key not in ('initial', 'sourceConfiguration')}
+    return canonical(body(protocol)) == canonical(body(_REVIEWED_CANDIDATE[1]))
 
 
 def execution_paths(profile='transactions'):
     """Return custody dependency names independently from byte hashing."""
-    return tuple(sorted(set(runtime_profile.paths(profile)) | set(SOURCE_DESK_PROTOCOL_PATHS) | {
+    return tuple(sorted(set(runtime_profile.paths(profile)) | set(SOURCE_DESK_PROTOCOL_PATHS)
+        | set(SOURCE_CANDIDATE_FILES)
+        | set(source_store.adapter_pin('objective-bend-spell@3')['files']) | {
         'scripts/desk.py', 'scripts/adoption.py', 'scripts/history.py', 'scripts/source_store.py',
-        'scripts/process_custody.py'}))
+        'scripts/process_custody.py', 'scripts/source_object.py'}))
 
 
 def execution_profile(profile='transactions'):
@@ -183,7 +226,7 @@ def compile_proposal(payload):
     """Trusted worker computation only; all world transitions happen elsewhere."""
     proposal = module('desk_proposal', 'scripts/propose.py')
     profile = payload.get('profile', 'transactions')
-    state = payload['root']['state']
+    state = candidate_state(payload['root'])
     source = state['proposal']
     artifact = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(payload['root']),
                 'proposal': source, 'migration': state['migration'], 'target': state['target'], 'admissionProfile': profile,
@@ -216,6 +259,8 @@ def compile_proposal(payload):
             artifact['roomArtifact'] = wrapped
             protocol = wrapped['protocol']
         artifact.update(passed=True, diagnostics=[], protocol=protocol)
+        if set(payload['root']['state']) == {'model'}:
+            artifact['program'] = source_object.values('digest', [protocol])[0]
     except (ValueError, TypeError, KeyError, OSError, RuntimeError, RecursionError, AttributeError) as error:
         artifact.update(passed=False, diagnostics=[{'kind': 'compile-error', 'message': str(error)}])
     return artifact
@@ -224,8 +269,9 @@ def compile_proposal(payload):
 def bounded_compile(root, *, timeout=45, profile='transactions', artifact_store=None):
     """Run the trusted compiler with wall/CPU/file bounds; never execute source text."""
     failed = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root), 'passed': False}
-    if isinstance(root.get('state', {}).get('proposal'), dict):
-        proposed = root['state']['proposal']
+    state = candidate_state(root)
+    if isinstance(state.get('proposal'), dict):
+        proposed = state['proposal']
         failed['proposal'] = proposed
         if proposed.get('format') == source_store.PROPOSAL:
             failed['sourceBindings'] = {key: proposed[key] for key in ('syntax', 'sourceRef', 'scenariosRef', 'adapterPin')}
@@ -267,8 +313,11 @@ class Desk:
         return self.exchange({'op': 'inspect', 'object': object_id, 'principal': 'source-desk-reader'})
 
     def create(self, object_id, principal, intent, law):
+        protocol = (module('desk_candidate_package', 'protocols/editor/generate.py').candidate(editor_mode=False)
+                    if self.profile == 'compiled' else
+                    loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes()))
         return self.exchange({'op': 'create', 'object': object_id, 'principal': principal, 'intent': intent,
-                              'protocol': loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes()), 'law': law})
+                              'protocol': protocol, 'law': law})
 
     def submit(self, object_id, principal, intent, expected, syntax, source, scenarios, migration, target):
         request = {'op': 'invoke', 'object': object_id, 'principal': principal, 'intent': intent,
@@ -320,6 +369,8 @@ class Desk:
                 room = module('desk_room_store', 'scene/room.py')
                 room_id = room.store_artifact(self.artifact_store / 'rooms', build['roomArtifact'])
             command, payload = 'compiled', {'artifact': identity, 'protocol': build['protocol'], 'roomArtifact': room_id}
+            if set(inputs['expected']['state']) == {'model'}:
+                payload['program'] = build['program']
         else:
             command, payload = 'failed', {'artifact': identity, 'diagnostics': build['diagnostics']}
         if execution_profile(self.profile) != profile:
@@ -336,7 +387,7 @@ class Desk:
             return retained
         if entry.get('executionProfile') != execution_profile(self.profile):
             raise ValueError('pending desk admission runtime pins changed or missing')
-        proposal = entry['inputs']['expected']['state']['proposal']
+        proposal = candidate_state(entry['inputs']['expected'])['proposal']
         if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
             proposal_material(proposal, self.artifact_store)
         build = load_artifact(self.artifact_store, entry['request']['input']['artifact'])
@@ -351,8 +402,9 @@ class Desk:
         if entry is None:
             profile = execution_profile(self.profile)
             options = {'profile': self.profile}
-            if expected['state']['proposal'].get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
-                proposal_material(expected['state']['proposal'], self.artifact_store)
+            proposal = candidate_state(expected)['proposal']
+            if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
+                proposal_material(proposal, self.artifact_store)
                 options['artifact_store'] = self.artifact_store
             entry = self.prepare_check(inputs, bounded_compile(expected, **options), profile)
         return self.admit_check(entry)

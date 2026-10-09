@@ -182,8 +182,8 @@ class WorldTests(unittest.TestCase):
                            "protocol":p,"law":["a"]})
         self.assertEqual(refused["kind"],"refused")
         self.assertEqual(json.loads(self.db.read_text())["objects"],{})
-        with self.assertRaisesRegex(ValueError,"request exceeds 64 KiB"):
-            self.call({"op":"create","principal":"a","intent":"large","payload":"x"*66000})
+        with self.assertRaisesRegex(ValueError,"expanded request exceeds 1 MiB"):
+            self.call({"op":"create","principal":"a","intent":"large","payload":"x"*(1024*1024)})
 
     def test_concurrent_scanners(self):
         self.assertTrue((ROOT/'.lake/build/bin/delvetalk-world').exists(),

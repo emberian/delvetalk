@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / 'protocols/work-ticket'
@@ -21,14 +22,31 @@ def module(name, path):
     return result
 
 
-author = module('ticket_author', 'protocols/work-ticket/generate.py')
+author = module('ticket_author', 'protocols/work-ticket/package.py')
 world = module('ticket_world', 'scripts/world.py')
 room = module('ticket_room', 'scene/room.py')
 affordances = module('ticket_affordances', 'scripts/affordances.py')
 interpret = module('ticket_interpret', 'scripts/interpret.py')
 
 
+def plain(value):
+    if value['tag'] == 'record': return {f['name']: plain(f['value']) for f in value['fields']}
+    if value['tag'] == 'variant': return {'variant': value['label'], 'payload': plain(value['payload'])}
+    if value['tag'] == 'natural': return int(value['value'])
+    return value['value']
+
+
 class WorkTicket(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.program = author.build()
+
+    def state(self, root=None):
+        result = plain((self.root() if root is None else root)['state']['model'])
+        result['status'] = result['phase']['variant']
+        result['links'] = {key: val['payload'] for key, val in result['links'].items() if val['variant'] == 'present'}
+        return result
+
     def setUp(self):
         for executable in ('delvetalk-transactions', 'delvetalk-world'):
             self.assertTrue((ROOT / '.lake/build/bin' / executable).is_file(), 'prebuilt host required')
@@ -36,10 +54,10 @@ class WorkTicket(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.db = Path(self.temp.name) / 'world.json'
         self.serial = 0
-        self.create('ticket', author.build(), author.law())
+        self.create('ticket', copy.deepcopy(self.program), author.law())
 
     def call(self, request):
-        return world.exchange(self.db, request, profile='transactions')
+        return world.exchange(self.db, request, profile='compiled')
 
     def create(self, object_id, protocol, law):
         reply = self.call({'op': 'create', 'object': object_id, 'principal': 'operator',
@@ -62,14 +80,14 @@ class WorkTicket(unittest.TestCase):
         return result
 
     def posted(self):
-        self.invoke('requester', 'post', {'task': 'Inspect the moth wing.', 'author': 'forged'})
-        self.assertEqual(self.root()['state']['author'], 'requester')
+        self.invoke('requester', 'post', {'task': 'Inspect the moth wing.'})
+        self.assertEqual(self.state()['author'], 'requester')
         return self.root()
 
     def submitted(self):
         self.posted()
-        self.invoke('moss', 'claim', {'claimant': 'iris'})
-        self.assertEqual(self.root()['state']['claimant'], 'moss')
+        self.invoke('moss', 'claim')
+        self.assertEqual(self.state()['claimant'], 'moss')
         self.invoke('moss', 'submit', {'result': 'The wing is aligned.'})
         return self.root()
 
@@ -79,16 +97,46 @@ class WorkTicket(unittest.TestCase):
             'intent': 'law-' + str(self.serial), 'expected': self.root(), 'law': law})
         self.assertEqual(reply['kind'], 'committed', reply)
 
-    def test_generated_sources_and_discovered_scenarios(self):
-        for name, expected in [('protocol.json', author.build()), ('migration.json', author.build()['initial']),
-                               ('law.json', author.law()), ('scenarios.json', author.scenarios())]:
-            self.assertEqual(json.loads((PACKAGE / name).read_text()), expected)
-        for index, scenario in enumerate(author.scenarios()):
-            self.db = Path(self.temp.name) / ('scenario-' + str(index) + '.json')
-            initial = self.create('ticket', author.build(), scenario['law'])
-            for step in scenario['steps']:
-                expected = initial if step['root'] == 'initial' else self.root()
-                self.invoke(step['principal'], step['command'], step['input'], step['kind'], expected)
+    def test_reusable_source_and_domain_examples(self):
+        store = module('ticket_source_store', 'scripts/source_store.py')
+        propose = module('ticket_propose', 'scripts/propose.py')
+        path = Path(self.temp.name) / 'sources'
+        entries = [{'name': item['name'], 'sourceRef': store.store_bytes(path, item['source'].encode())}
+                   for item in author.modules()]
+        material = store.resolve_modules(path, store.seal_modules(entries))
+        report = propose.propose('objective-bend-spell@3', b'', (PACKAGE / 'ticket.examples').read_bytes(),
+                                 profile='compiled', modules=material)
+        self.assertTrue(report['passed'], report)
+        other = author.build(requester='iris')
+        self.assertEqual(other['sourcePackages'], self.program['sourcePackages'])
+        self.create('other-ticket', other, ['iris', 'moss'])
+        root = self.root('other-ticket')
+        refused = self.call({'op':'invoke','object':'other-ticket','principal':'moss','intent':'wrong-requester',
+                            'expected':root,'command':'post','input':{'task':'Cannot impersonate Iris.'}})
+        self.assertEqual(refused['kind'], 'refused', refused)
+        result = self.call({'op':'invoke','object':'other-ticket','principal':'iris','intent':'other-post',
+                           'expected':root,'command':'post','input':{'task':'A separate shared-source ticket.'}})
+        self.assertEqual(result['kind'], 'committed', result)
+        self.assertEqual(self.state()['status'], 'draft')
+
+    def test_source_constructor_rejects_other_state_and_runtime_drift(self):
+        loader = author.source_object
+        with self.assertRaisesRegex(ValueError, 'state schema'):
+            loader.load(author.modules(), syntax='objective-bend-spell@3',
+                        constructor='describe', arguments=[])
+        config = json.loads((PACKAGE / 'configuration.json').read_bytes())
+        real_pins = loader.pins
+        reads = []
+        def changed_runtime(syntax):
+            actual = real_pins(syntax)
+            reads.append(actual)
+            return actual if len(reads)==1 else {**actual,'loader':'changed-after-native-evaluation'}
+        # Native compilation, schema comparison and constructor evaluation all
+        # actually run; only the physical runtime measurement reports drift.
+        with patch.object(loader, 'pins', side_effect=changed_runtime):
+            with self.assertRaisesRegex(ValueError, 'runtime changed'):
+                loader.load(author.modules(), syntax='objective-bend-spell@3',
+                            constructor='initial', arguments=[config])
 
     def test_two_actual_callers_race_for_one_claim(self):
         root = self.posted()
@@ -97,10 +145,10 @@ class WorkTicket(unittest.TestCase):
             replies = list(pool.map(self.call, requests))
         self.assertEqual(sorted(r['kind'] for r in replies), ['committed', 'refused'])
         winner = next(request['principal'] for request, reply in zip(requests, replies) if reply['kind'] == 'committed')
-        self.assertEqual(self.root()['state']['claimant'], winner)
+        self.assertEqual(self.state()['claimant'], winner)
         loser = 'iris' if winner == 'moss' else 'moss'
         self.invoke(loser, 'submit', {'result': 'Forged claim.'}, 'refused')
-        self.assertEqual(self.root()['state']['status'], 'claimed')
+        self.assertEqual(self.state()['status'], 'claimed')
 
     def test_authored_references_are_bounded_data_and_do_not_grant(self):
         reference = {'format': 'delvetalk-object-ref-v1', 'world': 'urn:uuid:fixture',
@@ -108,10 +156,10 @@ class WorkTicket(unittest.TestCase):
         links = {key: reference for key in ('context', 'about', 'replyTo')}
         self.db = Path(self.temp.name) / 'linked.json'
         root = self.create('ticket', author.build(links=links), author.law())
-        self.assertEqual(root['state']['links'], links)
+        self.assertEqual(self.state(root)['links'], links)
         self.invoke('room:moth', 'post', {'task': 'A link is not a role.'}, 'refused')
         self.posted()
-        self.assertEqual(self.root()['state']['links'], links)
+        self.assertEqual(self.state()['links'], links)
         for invalid in ({**reference, 'world': 'x' * 257}, {**reference, 'object': '\ud800'},
                         {**reference, 'object': 'bad\nname'}, {**reference, 'permissions': ['claim']},
                         {**reference, 'format': 'delvetalk-object-ref-v2'}):
@@ -153,7 +201,7 @@ class WorkTicket(unittest.TestCase):
         self.assertEqual(self.root('target'), target)
         # Omitting a target call is legal. Acceptance means review, never evidence of that call.
         self.invoke('requester', 'accept', {'review': 'Accepted independently.'})
-        self.assertEqual(self.root()['state']['status'], 'accepted')
+        self.assertEqual(self.state()['status'], 'accepted')
         self.assertEqual(self.root('target'), target)
 
     def test_successful_composition(self):
@@ -166,7 +214,7 @@ class WorkTicket(unittest.TestCase):
                 {'object': 'target', 'command': 'change', 'input': {}},
                 {'object': 'ticket', 'command': 'accept', 'input': {'review': 'Received.'}}]})
         self.assertEqual(reply['kind'], 'committed', reply)
-        self.assertEqual(reply['data']['roots']['ticket']['state']['status'], 'accepted')
+        self.assertEqual(self.state(reply['data']['roots']['ticket'])['status'], 'accepted')
         self.assertTrue(reply['data']['roots']['target']['state']['changed'])
 
     def test_lost_reply_retry_after_revocation_and_collision(self):
@@ -177,13 +225,13 @@ class WorkTicket(unittest.TestCase):
         law['invoke']['accept'] = []
         self.change_law(law)
         process = subprocess.run([sys.executable, str(ROOT / 'scripts/world.py'), '--profile',
-            'transactions', str(self.db), '-'], input=json.dumps(request), text=True,
+            'compiled', str(self.db), '-'], input=json.dumps(request), text=True,
             capture_output=True, check=True)
         self.assertEqual(json.loads(process.stdout), receipt)
         changed = copy.deepcopy(request)
         changed['input']['review'] = 'Different review.'
         self.assertEqual(self.call(changed)['data'], 'intent reused for different request')
-        self.assertEqual(self.root()['state']['review'], 'Received.')
+        self.assertEqual(self.state()['review'], 'Received.')
 
     def test_typed_tokens_preserve_source_and_exact_root(self):
         view = room.inspect_object(self.root(), 'ticket')
@@ -221,7 +269,7 @@ class WorkTicket(unittest.TestCase):
         for terminal in ('accept', 'reject'):
             with self.subTest(terminal=terminal):
                 self.db = Path(self.temp.name) / ('view-' + terminal + '.json')
-                self.create('ticket', author.build(), author.law())
+                self.create('ticket', copy.deepcopy(self.program), author.law())
                 check('draft', 'Post a task for another participant.', ['post'])
                 self.invoke('requester', 'post', {'task': 'Describe the wing.'})
                 check('open', 'Describe the wing.', ['claim'])

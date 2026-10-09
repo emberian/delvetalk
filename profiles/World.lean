@@ -3,6 +3,8 @@ import WorldCore
 import FileCustody
 import ResidentStore
 
+def retainedHandle := RetainedRoots.handleWith World.transition
+
 def main (args : List String) : IO Unit :=
   if args == ["--resident"] then ResidentStore.serve World.transition
-  else FileCustody.mainWith World.handle World.job args
+  else FileCustody.mainWith retainedHandle (World.jobWith retainedHandle) args

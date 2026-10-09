@@ -35,6 +35,7 @@ PROFILES = {
 BACKEND_FORMAT = 'delvetalk-resident-backend-v1'
 IPC_FORMAT = 'delvetalk-resident-ipc-v1'
 MAX_IPC_FRAME = 64 * 1024 * 1024
+MAX_EXPANDED_REQUEST_BYTES = 1024 * 1024
 
 
 def _descriptor_path(database):

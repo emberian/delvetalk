@@ -93,20 +93,3 @@ def modify(value: Value, positive: Bool, magnitude: Nat) -> Modified:
     case integer(c): shift(c.value, positive, magnitude)
     case boolean(_): {valid: true, value: value}
     case string(_): {valid: true, value: value}
-record Origin:
-  kind: String
-  object: String
-  command: String
-  immediatelyPrevious: Bool
-record Context:
-  object: String
-  principal: String
-  inputOrigin: Origin
-record Child:
-  key: String
-  label: String
-  object: String
-  panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}

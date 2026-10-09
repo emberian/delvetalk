@@ -46,12 +46,12 @@ class ContractAuthoring(unittest.TestCase):
         checked = self.client.check(name, 'compiler', 'check-' + name, submitted['data']['root'])
         self.assertEqual(checked['kind'], 'committed', checked)
         root = self.client.inspect(name)
-        self.assertEqual(root['state']['status'], 'ready', root['state']['diagnostics'])
+        self.assertEqual(desk.candidate_state(root)['status'], 'ready', desk.candidate_state(root)['diagnostics'])
         self.names[desk.digest(root)] = name
         return root
 
     def target(self, candidate):
-        made = self.call({'op': 'create', 'object': 'counter', 'protocol': candidate['state']['protocol'],
+        made = self.call({'op': 'create', 'object': 'counter', 'protocol': desk.candidate_state(candidate)['protocol'],
                           'law': self.target_law})
         self.assertEqual(made['kind'], 'committed', made)
         return made['data']['root']
@@ -97,7 +97,7 @@ class ContractAuthoring(unittest.TestCase):
         # Export/replay the real admitted history, including exact source bytes
         # and the source-derived release journal, then recover from a fresh client.
         attachments = {}
-        build_path = self.client.artifact_store / 'builds' / (candidate['state']['artifact'] + '.json')
+        build_path = self.client.artifact_store / 'builds' / (desk.candidate_state(candidate)['artifact'] + '.json')
         for receipt in desk.world.snapshot(self.client.database)['receipts']:
             refs = source_store.collect_references(receipt['request'])
             if refs:
@@ -114,7 +114,7 @@ class ContractAuthoring(unittest.TestCase):
                                                          profile='compiled'))
         self.assertEqual(restored.release(proposal), committed)
         self.assertEqual(restored.client.inspect('counter'), locked['data']['root'])
-        ref = candidate['state']['proposal']['sourceRef']
+        ref = desk.candidate_state(candidate)['proposal']['sourceRef']
         source_store.blob_path(self.client.artifact_store, ref['sha256']).unlink()
         self.contracts.path('steward', 'promise').unlink()
         self.assertEqual(self.contracts.release(proposal), committed)
@@ -126,7 +126,7 @@ class ContractAuthoring(unittest.TestCase):
         candidate = self.candidate('proposal')
         root = self.target(candidate)
         proposal = self.prepare(candidate, root)
-        ref = candidate['state']['proposal']['sourceRef']
+        ref = desk.candidate_state(candidate)['proposal']['sourceRef']
         path = source_store.blob_path(self.client.artifact_store, ref['sha256'])
         raw = path.read_bytes()
         path.write_bytes(raw + b'\n')
@@ -182,7 +182,7 @@ class ContractAuthoring(unittest.TestCase):
             'methods: {add: {label: "Add to the counter", fields: {amount: {type: "nat", maximum: 100}}}, reset: {label: "Reset", fields: {}}}')
         upgraded = self.candidate('broader', source.encode())
         replaced = self.call({'op': 'reprogram', 'object': 'counter', 'principal': 'maker', 'expected': root,
-            'protocol': upgraded['state']['protocol'], 'state': root['state']})
+            'protocol': desk.candidate_state(upgraded)['protocol'], 'state': root['state']})
         self.assertEqual(replaced['kind'], 'committed', replaced)
         strengthened = self.contracts.release(self.prepare(upgraded, replaced['data']['root'], intent='broader'))
         self.assertEqual(strengthened['kind'], 'committed', strengthened)

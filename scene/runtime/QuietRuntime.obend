@@ -1,0 +1,9 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./SceneData.obend as D
+import ./SceneModel.obend as M
+import ./BaseRuntime.obend as Base
+extension Quiet(self: M.Behavior, super: M.Behavior) -> M.Behavior:
+  extend(super, {choose: fn(scene: D.Scene, state: M.State, input: M.Choice, context: Abi.Context) -> M.Decision: if context.principal == "sleeper" then Base.refuse(state, "Let the moth rest.") else super.choose(scene, state, input, context), view: fn(scene: D.Scene, state: M.State, panel: String) -> M.View: let prior: M.View = super.view(scene, state, panel) in {title: "The quiet workshop", prose: prior.prose, actions: prior.actions, children: prior.children}})
+def behavior() -> M.Behavior:
+  fix(compose(Base.Default, Quiet), {})

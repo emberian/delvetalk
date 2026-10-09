@@ -78,32 +78,23 @@ object 512 and existing local identity constraints. Excess entries refuse rather
 than truncate. Captured observations retain the exact typed result and revalidate
 its normalized catalogue when read.
 
-Source-owned transaction menus use `delvetalk-obend-data-offers-v1`: the same four
-fields plus `offers`. The @3 adapter selects it only when the source declares that
-fifth field; four-field menus retain their original profile.
+Source preparation invitations are an optional `invitations` record in the current
+typed view, with no new view profile. Each value contains exactly
+`{visible:Bool,text:String,prepare:String,fields:Record,observations:Names}`.
+`Names` is the source nil/cons list of exact object identities. All descriptors,
+including hidden invitations, are checked before filtering; retained source keys
+remain stable across canonical storage. The decoder reads no world state.
 
-Each offered record declares visibility, human copy, read aliases, fixed calls,
-scalar input fields, bindings, optional captured root fields and explicit absent
-factory children. Reads name `{object,child}`: `$self` anchors the viewed object;
-empty `child` names it directly. Calls name read aliases. Ordered slots (`c0`,
-`c1`, …) declare their sequencing; only explicit bindings replace existing input
-paths. These are transaction descriptions, never endpoints or ambient authority.
-
-All descriptors—including hidden ones—are checked before visibility filtering.
-Capture resolves declared references from one snapshot and retains their exact
-roots; preparation substitutes supplied fields without refreshing those reads.
-Source inspection retains the unfiltered result. Native transaction admission
-still checks exact roots, absence and current law for every affected object.
-
-Offer records have exactly `visible,title,label,command,reads,calls,fields,bindings,
-absentChildren,captures`. A call slot has `op,object,command,input,fromResult,inputFrom`;
-`object` names a read alias. Bindings `{field,call,input}` replace an existing dotted
-input path (≤4 record components). Captures `{read,call,input,rootField}` copy a named
-read's `object`, `state`, `version`, `protocol` or `law`; absent children name
-`{factory,field}`. `factory` is a read alias; the field supplies a validated unused
-child name. Descriptor bounds are checked by [source_offers](../scripts/source_offers.py);
-[source examples and rejection checks](../conformance/test_source_view_offers.py)
-exercise the same native view path.
+Capture must retain the owner's exact root/table and the explicitly supplied
+requested roots. The current inspection route does not enforce read permissions;
+this framing is not a read-protection claim. Answers supply contribution data only; they cannot
+replace the captured export, package or observation list. The @3 adapter marks
+invitation-bearing objects with `preparation =
+{profile:"delvetalk-source-preparation-v1",sourcePackage:TABLE_NAME}`. This profile
+uses typed state. The native preparation boundary checks the actual
+selected export signature and observations; source produces a turn, a question or
+a refusal. Invocation and admission remain separate. Native resolution combines that owning
+table with the captured invitation's actual export; no placeholder function is claimed.
 
 If typed projection fails, ordinary inspection still exposes the retained source
 and state. That recovery card offers no actions or children and claims no successful
@@ -135,8 +126,8 @@ HTML escapes data; CSP forbids scripts, remote resources and form submission.
 
 Conversion/reduction/materialization share 10,000 ticks for core views or the
 compiled host's 100,000 for source views. Effects, closures,
-stuckness and exhaustion refuse. Bounds: 64 KiB input, ten-second deadline,
-1 MiB output checked **after capture**. Fuel does not bound arbitrary arithmetic
+stuckness and exhaustion refuse. Bounds: 1 MiB expanded internal input, ten-second deadline,
+1 MiB output checked **after capture**. External authored records retain their separate 64 KiB bound. Fuel does not bound arbitrary arithmetic
 or memory: this remains a trusted local workbench. Hashes prove neither semantic
 equivalence nor compiler refinement.
 

@@ -1,19 +1,45 @@
 # The Room Between
 
-A small exhibition jointly authored by two artists and a curator. Each artist
-offers one piece with a title, note, display time, fragility flag and lighting
-choice. The curator sets a caption and viewing order. Both artists must approve
-that exact arrangement before the curator can open the room.
+Two artists offer pieces; a curator arranges them; both artists approve that
+particular arrangement before the room opens.
 
-The installed pure Bend view offers the actions appropriate to the observed
-phase. Its declared `north` and `south` panels show the artists' notes and appear
-alongside the overview in portal navigation. Both artists can
-submit first and either can approve first. Actions remain subject to current
-law and their captured exact root; a visible action is not a grant.
+[Agreement.obend](Agreement.obend) is reusable ordinary Bend behavior. It owns
+piece validation, participant rules, arrangement, approvals and the encounter.
+[Exhibition.obend](Exhibition.obend) supplies the concrete object's methods, forms
+and panels. Shared Abi and Encounter definitions arrive as explicit sealed
+modules. The previous Python guard/write/menu generator and generated executable
+JSON are removed.
 
-## Use
+An approval is a typed pending/approved variant. The approved payload carries the
+actual arrangement revision. Opening checks both proofs against that revision;
+old approval of different text/order cannot open a changed arrangement. The normal
+object remains one-shot: contributions and arrangement cannot be overwritten, and
+opening cannot repeat. Current law management and authorized reprogramming keep
+their ordinary meaning; approval is neither a programming veto nor a grant.
 
-With the existing `delvetalk-world` and `delvetalk-transactions` binaries:
+The source declares offerNorth/offerSouth, arrange, consentNorth/consentSouth and
+open. It validates nonempty title/note/caption, Nat display time 1–30, lighting
+choice, role, once-only ordering and exact arrangement approval. Typed input
+checking enforces Nat/Bool/String distinctions. Form upper string bounds live in
+source presentation; raw invocation retains the host input bound. Piece notes
+remain claims about the work, not certified physical properties.
+
+The pure source view offers applicable actions and north/south note panels. It
+has no actions after opening. Visible actions remain subject to the caller's
+current grant and captured exact root.
+
+[package.py](package.py) loads exact modules. An explicit participants configuration
+can be supplied to the source `initial(participants)` constructor; the native
+compiler checks/evaluates it and retains those arguments in the object's root.
+Python authors no behavior or workflow here.
+
+[exhibition.examples](exhibition.examples) records source-level success and
+refusal cases: both artists' approvals, opening too early, impersonation, invalid
+display time, attempted rearrangement and repeated opening. The separate physical
+[runner](run.py) exercises ordinary source submission, queued native compilation,
+current-granted adoption, portal forms, stale views, exact retries and continuation
+export/replay on the `compiled` host. It submits the exact ordered module manifest,
+not generated protocol-json behavior.
 
 ```sh
 python3 protocols/shared-exhibition/run.py /PRIVATE/new-exhibition
@@ -21,75 +47,8 @@ python3 scripts/portal.py /PRIVATE/new-exhibition --allow-local-actions --princi
 python3 conformance/test_exhibition_journey.py
 ```
 
-The runner performs a complete local journey using generic fixture content,
-then leaves the opened room and its continuation available for inspection. Use
-a fresh destination. To supply your own text, pass `--content /PRIVATE/content.json`
-with `north`, `south`, and `arrangement` objects matching the forms below. Its
-private `events/`, portal custody, compiler queue, world and continuation remain
-in that destination. No network, model API, external publication or build runs.
-
-To inspect the resulting room, open the portal. Its final view has no mutations
-left to offer. Use “Look inside” to inspect its source, state, current law and
-admitted history. For an interactive new session, use the same desk and adoption
-sequence in [run.py](run.py), stopping before its participant turns.
-
-## Source and authority
-
-- [generate.py](generate.py) is readable source authoring code. Running it writes
-  the byte-stable [protocol.json](protocol.json), [scenarios.json](scenarios.json)
-  and [migration.json](migration.json).
-- The `protocol-json@1` source desk receives exact protocol and scenario bytes.
-  The local compiler queue checks them without installing. Only the curator
-  has the target's programming grant and the desk's adoption grant.
-- The named host profile is `transactions`; pure projections use the prebuilt
-  world host. Lean checks protocol transitions, laws, exact roots and adoption.
-  The runner and portal only construct requests and retain custody.
-- Artists `north` and `south` may only offer and approve their own slots.
-  `curator` may arrange and open, `builder` submits source, `compiler` records
-  checks, and `operator` manages current law. Local names are caller assertions.
-- The empty migration is for a fresh exhibition. Adopting it over an inhabited
-  room would replace the complete state; it does not preserve existing pieces.
-
-The offered forms are:
-
-| Command | Fields |
-| --- | --- |
-| `offer-north`, `offer-south` | `title`: nonempty string ≤120 scalars; `note`: nonempty string ≤320; `minutes`: Nat 1–30; `fragile`: Bool; `light`: `dim` or `bright` |
-| `arrange` | `caption`: nonempty string ≤400; `first`: `north` or `south` |
-| `consent-north`, `consent-south`, `open` | No fields |
-
-Copied text inputs use `do CARD ACTION` followed by one JSON object. All four
-field types are carried through the same saved card, interpretation, draft and
-explicit execution path. The tests use actual copied tokens, including a
-Boolean supplied where a Nat is required, and require clarification without
-an admission for that malformed token.
-
-Protocol guards independently enforce nonempty text, Nat range, Bool type,
-enum membership, principal and lifecycle. String upper bounds and rejection of
-extra fields belong to offered-form validation, not the protocol's raw invoke
-semantics. Piece descriptions are claims, not certified physical properties.
-
-## Coordination and evidence
-
-Contributions and arrangements are one-shot. Neither artist can overwrite the
-other's piece; nobody can change the arrangement after either consent. There
-is no revision/cancellation flow in this small version. Law management and
-reprogramming retain their normal authority and are not vetoed by these
-invocation guards.
-
-[scenarios.json](scenarios.json) contains two scenario groups and 27 turns:
-complete agreement; role impersonation; empty and malformed values; Nat
-bounds; duplicate offerings; stale reads; opening without both consents;
-rearrangement after consent; and duplicate opening. The complete success case
-asserts the exact final state, result and empty outbox.
-
-[The composition test](../../conformance/test_exhibition_journey.py) exercises
-source submission, queued compilation, denied compiler adoption, authorized
-curator adoption, installed Bend projection, typed token preparation, denied
-visitor admission, stale participant reads, exact receipt recovery, both
-consents, opening, panel reads, and source-bound continuation export and replay.
-Source authoring parity is checked separately. Participant content and saved
-requests belong in private worlds, not this reusable package.
-
-The continuation proves replay of its exact local artifacts and admissions;
-it does not establish authenticated remote participants or public deployment.
+Use a fresh directory. `--content /PRIVATE/content.json` supplies north/south pieces
+and caption/order as private fixture data. No network, publication or native build
+runs. Tests additionally show that approval from a different arrangement cannot
+open the room, that renewed approval does not bypass current law revocation, and
+that two separately configured exhibitions reuse the same exact source table.

@@ -1,0 +1,14 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Consent.obend as Consent
+record Input:
+  program: String
+  generation: Nat
+record Effects:
+  accepted: Bool
+  reason: String
+  state: {}
+  result: {}
+  emissions: Consent.Slots
+def emit(state: {}, input: Input, context: Abi.Context) -> Effects:
+  {accepted: true, reason: "", state: state, result: {}, emissions: Consent.emit(Consent.Peers.cons({head: {slot: 1, object: "circle", program: input.program, generation: input.generation}, tail: Consent.Peers.nil()}), "ready", 1)}

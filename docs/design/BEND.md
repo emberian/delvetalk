@@ -120,3 +120,12 @@ intention when ambiguous, and must not gain unrestricted read access by being a
 parser. Model-assisted interpretation can use the same finite set of affordances.
 Physical clock drivers and bounded receive-to-send chains connect this library to
 the durable collaboration design in [composition](COMPOSITION.md).
+
+### Conditional record updates
+
+A conditional may return an existing record on one branch and `extend(record,
+{field: value})` on another. Equivalent record fields may appear in a different
+order; both branches must still agree on each field's type. This also works for
+an updated record nested inside a decision. An unchosen branch stays lazy.
+The frontend aligns equivalent row types through ordinary checked conversions;
+core branch equality and restricted-value sharing rules remain unchanged.

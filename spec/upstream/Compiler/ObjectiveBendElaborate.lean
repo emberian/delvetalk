@@ -21,6 +21,7 @@ set_option autoImplicit false
 
 abbrev CoreTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term
 abbrev CorePrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.Primitive
+abbrev CoreUnaryPrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.UnaryPrimitive
 
 /-! String helpers (ASCII whitespace, as the TS `trim`). -/
 def isSpace (c : Char) : Bool := c == ' ' || c == '\t' || c == '\n' || c == '\r'
@@ -343,6 +344,7 @@ inductive ATerm where
   | reflect (value : ATerm) | metadata (value : ATerm) | project (value : ATerm)
   | nat (value : String) | boolean (value : Bool) | label (value : String)
   | binary (primitive : String) (left right : ATerm)
+  | unary (primitive : String) (argument : ATerm)
   | extend (inherited : ATerm) (fields : List (String × ATerm))
   | record (fields : List (String × ATerm))
   | get (target : ATerm) (name : String)
@@ -371,6 +373,7 @@ def ATerm.json : ATerm → Json
   | .nat v => Json.mkObj [("tag", "nat"), ("value", v)]
   | .boolean v => Json.mkObj [("tag", "boolean"), ("value", toJson v)]
   | .label v => Json.mkObj [("tag", "label"), ("value", v)]
+  | .unary p a => Json.mkObj [("tag", "unary"), ("primitive", p), ("argument", a.json)]
   | .binary p l r => Json.mkObj [("tag", "binary"), ("primitive", p), ("left", l.json), ("right", r.json)]
   | .extend i fs => Json.mkObj [("tag", "extend"), ("inherited", i.json), ("fields", fieldsJson fs)]
   | .record fs => Json.mkObj [("tag", "record"), ("fields", fieldsJson fs)]
@@ -399,7 +402,12 @@ def primitiveOf : String → Except String CorePrimitive
   | "labelEqual" => .ok .labelEqual
   | "subtract" => .ok .subtract | "divide" => .ok .divide | "less" => .ok .less | "lessEqual" => .ok .lessEqual
   | "modulo" => .ok .modulo
+  | "textConcat" => .ok .textConcat | "textTake" => .ok .textTake | "textDrop" => .ok .textDrop
   | other => .error ("primitive " ++ other ++ " is not a Core4 constructor yet")
+
+def unaryPrimitiveOf : String → Except String CoreUnaryPrimitive
+  | "natText" => .ok .natText | "textLength" => .ok .textLength
+  | other => .error ("unknown hosted unary primitive " ++ other)
 
 mutual
 def ATerm.erase : ATerm → Except String CoreTerm
@@ -418,6 +426,7 @@ def ATerm.erase : ATerm → Except String CoreTerm
     | none => .error "non-canonical natural"
   | .boolean v => .ok (.boolean v)
   | .label v => .ok (.label v)
+  | .unary p a => return .unary (← unaryPrimitiveOf p) (← a.erase)
   | .binary p l r => return .binary (← primitiveOf p) (← l.erase) (← r.erase)
   | .extend i fs => return .extend (← i.erase) (← eraseFields fs)
   | .record fs => return .record (← eraseFields fs)
@@ -1013,6 +1022,11 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
         return (← get).effect.map fun (p, r) => .computation p r r
       if let some sc := sumCase c callee env m then return ← sourceType c fuel sc.2.2 sc.2.1 []
       if let .var name := callee then
+        if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
+          if name == "natText" && args.length == 1 then return some .label
+          if name == "textLength" && args.length == 1 then return some .natural
+          if name == "textConcat" && args.length == 2 then return some .label
+          if name == "textSlice" && args.length == 3 then return some .label
         if ["reflect", "metadata", "targetOf", "prototype"].contains name &&
             !env.any (·.name == name) && (lookupGlobal c name m).isNone then
           match name, args with
@@ -1158,6 +1172,7 @@ def ATerm.mapTypes (f : PTy → PTy) : ATerm → ATerm
   | .nat v => .nat v
   | .boolean v => .boolean v
   | .label v => .label v
+  | .unary p a => .unary p (a.mapTypes f)
   | .binary p x y => .binary p (x.mapTypes f) (y.mapTypes f)
   | .extend x fs => .extend (x.mapTypes f) (ATerm.mapFieldTypes f fs)
   | .record fs => .record (ATerm.mapFieldTypes f fs)
@@ -1460,6 +1475,16 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       let ct ← expression c fuel condition env m
       let tt ← expression c fuel whenTrue env m
       let ft ← expression c fuel whenFalse env m
+      -- Core conditionals require identical branch types. Conversion at an ordinary
+      -- linear identity application canonicalizes equivalent rows without relaxing
+      -- `agree` (in particular its no-manufactured-shareability check).
+      let leftType ← synth c fuel whenTrue env m
+      let rightType ← synth c fuel whenFalse env m
+      if sameTy leftType rightType then
+        if let some ty := leftType then
+          let canonical := ty.canonical
+          let identity := ATerm.lam ⟨some canonical, some canonical, "linear", "reusable", none⟩ (.bound 0)
+          return .ifBool ct (.app identity tt) (.app identity ft)
       return .ifBool ct tt ft
     | .letE name type value bodyE =>
       -- Not a tail position: the body is a pure expression even inside an activity body.
@@ -1509,6 +1534,14 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
+          if ["natText", "textLength", "textConcat", "textSlice"].contains name then
+            for a in args do noActivity c fuel a env m "effect-in-text" "text operands are pure"
+            match name, args with
+            | "natText", [a] | "textLength", [a] => return .unary name (← expression c fuel a env m)
+            | "textConcat", [a,b] => return .binary "textConcat" (← expression c fuel a env m) (← expression c fuel b env m)
+            | "textSlice", [a,start,count] =>
+              return .binary "textTake" (.binary "textDrop" (← expression c fuel a env m) (← expression c fuel start env m)) (← expression c fuel count env m)
+            | _, _ => fail (name ++ " has wrong arity")
           if ["reflect", "metadata", "targetOf"].contains name then
             match args with
             | [a] =>
@@ -2117,6 +2150,7 @@ def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String
   | .app f a, path => return (← annotate bounds f (path ++ [0])) ++ (← annotate bounds a (path ++ [1]))
   | .fix s i, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds i (path ++ [1]))
   | .mix l u, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds u (path ++ [1]))
+  | .unary _ a, path => annotate bounds a (path ++ [0])
   | .binary _ l r, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds r (path ++ [1]))
   | .prototype s t, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds t (path ++ [1]))
   | .specification md e, path => return (← annotate bounds md (path ++ [0])) ++ (← annotate bounds e (path ++ [1]))

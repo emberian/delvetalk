@@ -71,6 +71,13 @@ def inspect (t : Term) : View t :=
       | .step n h => .step (.get n key) (.target key h)
       | .yield p c h => .yield p (c ++ [.field key]) (.field key h)
       | _ => .stuck
+  | .unary op a => match inspect a with
+    | .step n h => .step (.unary op n) (.unaryArgument op h)
+    | .yield p c h => .yield p (c ++ [.unary op]) (.unary op h)
+    | .stuck => .stuck
+    | .value ha => match h : unaryResult op a with
+      | some n => .step n (.unaryPrimitive op a n ha h)
+      | none => .stuck
   | .binary op l r => match inspect l with
     | .step n h => .step (.binary op n r) (.binaryLeft op r h)
     | .yield p c h => .yield p (c ++ [.binaryLeft op r]) (.binaryLeft op r h)
@@ -112,7 +119,7 @@ termination_by sizeOf t
 private def primNames : List (String × Primitive) :=
   [("add",.add),("multiply",.multiply),("equal",.equal),("conjunction",.conjunction),
    ("labelEqual",.labelEqual),("subtract",.subtract),("divide",.divide),
-   ("less",.less),("lessEqual",.lessEqual),("modulo",.modulo)]
+   ("less",.less),("lessEqual",.lessEqual),("modulo",.modulo),("textConcat",.textConcat),("textTake",.textTake),("textDrop",.textDrop)]
 private def primName (p : Primitive) : String :=
   ((primNames.find? (fun x => x.2 == p)).map Prod.fst).getD "unknown"
 
@@ -166,6 +173,13 @@ partial def decode (j : Json) : Except String Term := do
   | "case" => arity 2; return .case (← t 1) (← fields 2)
   | "ifBool" => arity 3; return .ifBool (← t 1) (← t 2) (← t 3)
   | "perform" => arity 1; return .perform (← t 1)
+  | "unary" =>
+    arity 2
+    let op ← match ← str 1 with
+      | "natText" => pure UnaryPrimitive.natText
+      | "textLength" => pure UnaryPrimitive.textLength
+      | _ => throw "unknown unary primitive"
+    return .unary op (← t 2)
   | "done" => arity 1; return .done (← t 1)
   | _ => throw s!"unknown term constructor {tag}"
 
@@ -186,6 +200,7 @@ partial def encode (t : Term) : Json :=
   | .reflect x => arr "reflect" [encode x]
   | .metadata x => arr "metadata" [encode x]
   | .project x => arr "project" [encode x]
+  | .unary p a => arr "unary" [.str (match p with | .natText => "natText" | .textLength => "textLength"),encode a]
   | .binary p l r => arr "binary" [.str (primName p),encode l,encode r]
   | .extend x fs => arr "extend" [encode x,fields fs]
   | .record fs => arr "record" [fields fs]

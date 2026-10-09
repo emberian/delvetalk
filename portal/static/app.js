@@ -2,7 +2,7 @@
 
 // World text is data: no HTML insertion, source evaluation, or generated URLs.
 const $ = id => document.getElementById(id);
-const state = { world: null, card: null, draft: null, detail: null, generation: 0, routeGeneration: 0, location: location.href, sending: false, uncertain: false };
+const state = { world: null, card: null, draft: null, preparation: null, preparationGeneration: 0, detail: null, generation: 0, routeGeneration: 0, location: location.href, sending: false, uncertain: false };
 const authoring = { draft: null, pending: false, preparing: false, uncertain: false, source: null, sourceText: null, rawFiles: {}, status: null };
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
 function element(tag, className, content) {
@@ -11,6 +11,8 @@ function element(tag, className, content) {
   if (content !== undefined) node.textContent = text(content);
   return node;
 }
+const preparationAnswers = element('div', 'preparation-answers');
+$('draft-panel').append(preparationAnswers);
 function notice(message, error = false) {
   $('notice').textContent = text(message);
   $('notice').classList.toggle('error', error);
@@ -115,7 +117,10 @@ function writeLocation(url, push = false) {
   state.location = String(url);
 }
 function clearDraft(updateUrl = true) {
+  if (updateUrl) ++state.preparationGeneration;
   state.draft = null;
+  state.preparation = null;
+  preparationAnswers.replaceChildren();
   state.uncertain = false;
   clearRepositoryRecord();
   $('draft-panel').hidden = true;
@@ -123,16 +128,20 @@ function clearDraft(updateUrl = true) {
   if (!updateUrl) return;
   const url = new URL(location.href);
   url.searchParams.delete('draft');
+  url.searchParams.delete('preparation');
   writeLocation(url);
 }
-async function openObject(id, focus = false, panel = 'main', navigation = 'replace', childSelection = null) {
+async function openObject(id, focus = false, panel = 'main', navigation = 'replace', childSelection = null, retainedCard = null) {
   if (state.sending) return notice('Wait for the send result before replacing this reading.');
   const generation = ++state.generation;
   ++state.routeGeneration;
   notice('');
   try {
     let card;
-    if (childSelection) {
+    if (retainedCard) {
+      card = await api(`/api/card?card=${encodeURIComponent(retainedCard)}`);
+      id = card.object;
+    } else if (childSelection) {
       const result = await api(`/api/child?card=${encodeURIComponent(childSelection.card)}&key=${encodeURIComponent(childSelection.key)}`);
       if (result.status !== 'opened') throw new Error(result.message || 'This child is unavailable.');
       card = result.card;
@@ -176,6 +185,7 @@ async function openObject(id, focus = false, panel = 'main', navigation = 'repla
     else url.searchParams.delete('panel');
     if (state.uncertain && state.draft) url.searchParams.set('draft', state.draft.draft);
     else url.searchParams.delete('draft');
+    url.searchParams.delete('preparation');
     writeLocation(url, navigation === 'push');
     document.title = `${card.title || id} · DelveTalk`;
     if (focus) $('object-card').focus({ preventScroll: true });
@@ -200,21 +210,21 @@ function renderPanels(card) {
   $('panel-warning').textContent = card.panelWarning || '';
   $('panel-warning').hidden = !card.panelWarning;
 }
-function fieldInput(field, actionId, index) {
+function fieldInput(field, actionId, index, partial = false) {
   const label = element('label', 'field-label');
   const id = `field-${actionId}-${index}`;
   label.htmlFor = id;
   const caption = element('span', '', field.label || field.name);
-  if (field.required) caption.append(element('span', 'required', ' · required'));
+  if (field.required && !partial) caption.append(element('span', 'required', ' · required'));
   let input;
-  if (field.type === 'enum') {
+  if (field.type === 'enum' || (field.type === 'bool' && partial)) {
     input = element('select');
     const empty = element('option', '', 'Choose…');
     empty.value = '';
     input.append(empty);
-    for (const [optionIndex, option] of (field.options || []).entries()) {
+    for (const [optionIndex, option] of (field.type === 'bool' ? ['Yes', 'No'] : field.options || []).entries()) {
       const choice = element('option', '', option);
-      choice.value = String(optionIndex);
+      choice.value = field.type === 'bool' ? String(optionIndex === 0) : String(optionIndex);
       input.append(choice);
     }
   } else {
@@ -234,10 +244,10 @@ function fieldInput(field, actionId, index) {
   }
   input.id = id;
   input.name = field.name;
-  input.required = Boolean(field.required) && (field.type === 'enum' || field.type === 'nat'
+  input.required = !partial && Boolean(field.required) && (field.type === 'enum' || field.type === 'nat'
     || (field.type === 'string' && field.minLength > 0));
   input.dataset.fieldType = field.type;
-  if (field.type === 'bool') label.append(input, caption);
+  if (field.type === 'bool' && !partial) label.append(input, caption);
   else label.append(caption, input);
   if (Object.hasOwn(field, 'example')) {
     // An authored example is guidance, never a default or a bound input.
@@ -248,13 +258,17 @@ function fieldInput(field, actionId, index) {
     input.setAttribute('aria-describedby', hint.id);
     label.append(hint);
   }
-  return { label, input, field };
+  return { label, input, field, partial };
 }
 function readFields(controls) {
   const fields = Object.create(null);
-  for (const { field, input } of controls) {
+  for (const { field, input, partial } of controls) {
     input.setCustomValidity('');
-    if (field.type === 'bool') fields[field.name] = input.checked;
+    if (partial && input.value === '') continue;
+    if (field.type === 'bool') {
+      if (partial && !['true', 'false'].includes(input.value)) throw new Error('Choose Yes or No.');
+      fields[field.name] = partial ? input.value === 'true' : input.checked;
+    }
     else if (!input.value && !field.required) continue;
     else if (field.type === 'enum') {
       if (input.value === '') {
@@ -310,7 +324,8 @@ function renderActions(card) {
     }
     if (action.observedAvailable === false)
       form.append(element('p', 'help', 'Its condition was false when this room was read. The world checks it again when you send.'));
-    const controls = (action.fields || []).map((field, i) => fieldInput(field, index, i));
+    const controls = (action.fields || []).map((field, i) => fieldInput(field, index, i, action.preparation === true));
+    if (action.preparation) form.append(element('p', 'help', 'Start with what you know. The object can ask for more before proposing an action.'));
     for (const control of controls) {
       if (action.children?.some(child => child.field === control.field.name)) {
         control.input.pattern = '[A-Za-z0-9_-]{1,64}';
@@ -353,12 +368,73 @@ function renderActions(card) {
 async function prepare(card, action, fields) {
   if (state.sending) throw new Error('Wait for the send result before preparing another action.');
   if (state.uncertain) throw new Error('Resolve or dismiss the uncertain draft before preparing another action.');
+  if (authoring.pending || authoring.preparing || authoring.uncertain) throw new Error('Finish or resolve the source desk work before preparing another action.');
+  const generation = ++state.preparationGeneration;
+  const route = state.routeGeneration;
   const draft = await api('/api/prepare', { card, action, fields });
-  if (state.card?.card !== card || state.sending || state.uncertain) return;
-  showDraft(draft);
+  if (generation !== state.preparationGeneration || route !== state.routeGeneration || state.card?.card !== card
+      || state.sending || state.uncertain || authoring.pending || authoring.preparing || authoring.uncertain) return;
+  if (draft.format === 'delvetalk-portal-preparation-v1') showPreparation(draft);
+  else showDraft(draft);
+}
+function showPreparation(result) {
+  state.draft = null;
+  state.preparation = result;
+  state.uncertain = false;
+  clearRepositoryRecord();
+  preparationAnswers.replaceChildren();
+  const question = result.outcome.kind === 'question';
+  $('draft-title').textContent = question ? 'A question from this object' : 'Preparation declined';
+  $('draft-summary').textContent = text(result.outcome.message);
+  $('draft-fields').replaceChildren();
+  $('draft-target').textContent = `${text(result.object)} · read at version ${text(result.version)}`;
+  for (const id of ['draft-absence', 'draft-command-row', 'preview-copy', 'send-draft', 'repository-export']) $(id).hidden = true;
+  $('send-draft').disabled = true;
+  $('draft-wire').textContent = '';
+  document.querySelector('.draft-exact').hidden = true;
+  $('draft-state').textContent = '';
+  $('draft-help').textContent = 'Nothing has been submitted. These answers belong to the captured reading.';
+  const needs = Array.isArray(result.outcome.needs) ? [...new Set(result.outcome.needs.filter(name => typeof name === 'string'))] : [];
+  if (question && needs.length) {
+    const action = state.card?.actions?.find(item => item.id === result.action);
+    const form = element('form', 'action');
+    const controls = needs.map((name, index) => {
+      const field = action?.fields?.find(item => item.name === name)
+        || { name, label: name, type: 'string', minLength: 0, maxLength: 65536 };
+      const control = fieldInput(field, 'answer', index, true);
+      if (Object.hasOwn(result.fields || {}, name)) {
+        const value = result.fields[name];
+        control.input.value = field.type === 'enum' ? String(field.options.indexOf(value)) : text(value);
+      }
+      form.append(control.label);
+      return control;
+    });
+    const submit = element('button', 'secondary', 'Continue');
+    submit.type = 'submit';
+    form.append(submit);
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      busy(submit, 'Preparing…', async () => {
+        const answers = Object.assign(Object.create(null), result.fields || {}, readFields(controls));
+        if (!form.reportValidity()) return;
+        await prepare(result.card, result.action, answers);
+      });
+    });
+    preparationAnswers.append(form);
+  }
+  const url = new URL(location.href);
+  url.searchParams.delete('draft');
+  url.searchParams.set('preparation', result.preparation);
+  writeLocation(url);
+  $('draft-panel').hidden = false;
+  $('draft-panel').focus({ preventScroll: true });
 }
 function showDraft(draft, restored = false) {
   state.draft = draft;
+  state.preparation = null;
+  preparationAnswers.replaceChildren();
+  document.querySelector('.draft-exact').hidden = false;
+  $('repository-export').hidden = state.world.mode === 'public-preview' || state.world.capabilities?.repository === false;
   clearRepositoryRecord();
   state.uncertain = restored && draft.outcome == null && state.world.mode !== 'public-preview';
   const preview = state.world.mode === 'public-preview';
@@ -399,6 +475,7 @@ function showDraft(draft, restored = false) {
       ? 'This world is read-only. You can copy the proposal and inspect its exact details.'
       : 'This proposal cannot be sent here. You can copy it and inspect its exact details.';
   const url = new URL(location.href);
+  url.searchParams.delete('preparation');
   url.searchParams.set('draft', draft.draft);
   writeLocation(url);
   $('draft-panel').hidden = false;
@@ -769,6 +846,8 @@ async function openLocation() {
     const requestedParams = new URL(location.href).searchParams;
     const requested = requestedParams.get('object');
     const savedDraftId = requestedParams.get('draft');
+    const preparationId = requestedParams.get('preparation');
+    const preparationGeneration = state.preparationGeneration;
     const workId = requestedParams.get('work');
     if (authoring.uncertain && authoring.draft && workId !== authoring.draft.draft) {
       const url = new URL(location.href);
@@ -778,17 +857,36 @@ async function openLocation() {
     const world = state.world;
     let savedDraft = state.uncertain ? state.draft : null;
     let draftError = null;
+    let savedPreparation = null;
+    let preparationError = null;
     if (savedDraftId && !state.uncertain) {
       try { savedDraft = await api(`/api/draft?draft=${encodeURIComponent(savedDraftId)}`); }
       catch (error) { draftError = error; }
     }
+    if (preparationId && !savedDraftId && !state.uncertain) {
+      try { savedPreparation = await api(`/api/preparation?preparation=${encodeURIComponent(preparationId)}`); }
+      catch (error) { preparationError = error; }
+    }
     if (routeGeneration !== state.routeGeneration) return;
-    const id = (world.objects || []).find(object => object.id === requested)?.id
+    if (savedPreparation && (preparationGeneration !== state.preparationGeneration || state.sending || state.uncertain
+        || authoring.pending || authoring.preparing || authoring.uncertain)) {
+      if (state.uncertain && state.draft) {
+        const kept = new URL(state.location);
+        kept.searchParams.set('draft', state.draft.draft);
+        kept.searchParams.delete('preparation');
+        writeLocation(kept);
+      } else if (state.sending || authoring.pending || authoring.preparing || authoring.uncertain) writeLocation(state.location);
+      return;
+    }
+    const id = savedPreparation?.object || (world.objects || []).find(object => object.id === requested)?.id
       || savedDraft?.object || world.defaultObject || world.objects?.[0]?.id;
     const panel = requestedParams.get('panel') || (savedDraft?.object === id ? savedDraft.panel : null) || 'main';
-    if (id && !await openObject(id, false, panel)) return;
+    if (id && !await openObject(id, false, panel, 'replace', null, savedPreparation?.card)) return;
     if (savedDraft) showDraft(savedDraft, true);
     else if (draftError) notice(`The saved draft could not be opened: ${draftError.message}`, true);
+    else if (savedPreparation && preparationGeneration === state.preparationGeneration && !state.sending && !state.uncertain
+        && !authoring.pending && !authoring.preparing && !authoring.uncertain) showPreparation(savedPreparation);
+    else if (preparationError) notice(`The saved preparation could not be opened: ${preparationError.message}`, true);
     if (workId && !authoring.uncertain && world.authoring && world.capabilities?.authoring !== false) {
       // openObject advances the route generation. Capture its winning route,
       // then recheck after loading: a newer route or local work may now own the UI.

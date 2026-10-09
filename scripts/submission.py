@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 
 import worker
+import world
 from history import canonical
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,8 @@ def execute(portal, saved, cached_reply, directory, check_pins):
     reply = cached_reply or portal._retained(request)
     if reply is not None:
         return reply, None
+    if len(canonical(request)) > world.MAX_EXPANDED_REQUEST_BYTES:
+        raise ValueError('Expanded request exceeds the 1 MiB local host envelope')
     check_pins(saved)
     try:
         with tempfile.NamedTemporaryFile('wb', dir=directory) as stream:

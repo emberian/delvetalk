@@ -16,6 +16,12 @@ set_option autoImplicit false
 inductive Primitive where
   | add | multiply | equal | conjunction | labelEqual
   | subtract | divide | less | lessEqual | modulo
+  | textConcat | textTake | textDrop
+  deriving Repr, DecidableEq
+
+/-- DelveTalk hosted text extension; not part of the pinned upstream edition. -/
+inductive UnaryPrimitive where
+  | natText | textLength
   deriving Repr, DecidableEq
 
 inductive Term where
@@ -33,6 +39,7 @@ inductive Term where
   | boolean (value : Bool)
   | label (value : String)
   | binary (primitive : Primitive) (left right : Term)
+  | unary (primitive : UnaryPrimitive) (argument : Term)
   | extend (inherited : Term) (fields : List (String × Term))
   | record (fields : List (String × Term))
   | get (target : Term) (name : String)
@@ -68,6 +75,7 @@ def Term.rename (rename : Nat → Nat) : Term → Term
   | .boolean value => .boolean value
   | .label value => .label value
   | .binary primitive left right => .binary primitive (left.rename rename) (right.rename rename)
+  | .unary primitive argument => .unary primitive (argument.rename rename)
   | .extend inherited fields => .extend (inherited.rename rename)
       (fields.map fun field => (field.1,field.2.rename rename))
   | .record fields => .record (fields.map fun field => (field.1,field.2.rename rename))
@@ -114,6 +122,7 @@ def Term.substitute (substitution : Nat → Term) : Term → Term
   | .boolean value => .boolean value
   | .label value => .label value
   | .binary primitive left right => .binary primitive (left.substitute substitution) (right.substitute substitution)
+  | .unary primitive argument => .unary primitive (argument.substitute substitution)
   | .extend inherited fields => .extend (inherited.substitute substitution)
       (fields.map fun field => (field.1,field.2.substitute substitution))
   | .record fields => .record (fields.map fun field => (field.1,field.2.substitute substitution))
@@ -177,7 +186,15 @@ def primitiveResult : Primitive → Term → Term → Option Term
   | .less, .nat a, .nat b => some (.boolean (decide (a < b)))
   | .lessEqual, .nat a, .nat b => some (.boolean (decide (a ≤ b)))
   | .modulo, .nat a, .nat b => some (.nat (a % b))
+  | .textConcat, .label a, .label b => some (.label (a ++ b))
+  | .textTake, .label a, .nat n => some (.label (String.ofList (a.toList.take n)))
+  | .textDrop, .label a, .nat n => some (.label (String.ofList (a.toList.drop n)))
   | _, _, _ => none
+
+def unaryResult : UnaryPrimitive → Term → Option Term
+  | .natText, .nat n => some (.label (toString n))
+  | .textLength, .label s => some (.nat s.length)
+  | _, _ => none
 
 /-- All String labels, including true/false, are excluded from Boolean operations. -/
 theorem conjunction_labels_refused (left right : String) :
@@ -267,6 +284,11 @@ inductive Step : Term → Term → Prop where
       Step inherited next → Step (.extend inherited fields) (.extend next fields)
   | extendRecord (inherited fields : List (String × Term)) :
       Step (.extend (.record inherited) fields) (.record (extendFields inherited fields))
+  | unaryArgument {argument next : Term} (primitive : UnaryPrimitive) :
+      Step argument next → Step (.unary primitive argument) (.unary primitive next)
+  | unaryPrimitive (primitive : UnaryPrimitive) (argument result : Term) :
+      Value argument → unaryResult primitive argument = some result →
+      Step (.unary primitive argument) result
   | binaryLeft {left next : Term} (primitive : Primitive) (right : Term) :
       Step left next → Step (.binary primitive left right) (.binary primitive next right)
   | binaryRight {right next : Term} (primitive : Primitive) (left : Term) :
@@ -311,6 +333,7 @@ inductive SourceFrame where
   | application (argument : Term)
   | field (name : String)
   | extend (fields : List (String × Term))
+  | unary (primitive : UnaryPrimitive)
   | binaryLeft (primitive : Primitive) (right : Term)
   | binaryRight (primitive : Primitive) (left : Term)
   | condition (zero successorBody : Term)
@@ -323,6 +346,7 @@ def SourceFrame.plug : SourceFrame → Term → Term
   | .application argument, hole => .app hole argument
   | .field name, hole => .get hole name
   | .extend fields, hole => .extend hole fields
+  | .unary primitive, hole => .unary primitive hole
   | .binaryLeft primitive right, hole => .binary primitive hole right
   | .binaryRight primitive left, hole => .binary primitive left hole
   | .condition zero successorBody, hole => .ifZero hole zero successorBody
@@ -346,6 +370,8 @@ inductive Yields : Term → Term → List SourceFrame → Prop where
       Yields target plan context → Yields (.get target name) plan (context ++ [.field name])
   | extend {inherited plan : Term} {context : List SourceFrame} (fields : List (String × Term)) :
       Yields inherited plan context → Yields (.extend inherited fields) plan (context ++ [.extend fields])
+  | unary {argument plan : Term} {context : List SourceFrame} (primitive : UnaryPrimitive) :
+      Yields argument plan context → Yields (.unary primitive argument) plan (context ++ [.unary primitive])
   | binaryLeft {left plan : Term} {context : List SourceFrame} (primitive : Primitive) (right : Term) :
       Yields left plan context →
       Yields (.binary primitive left right) plan (context ++ [.binaryLeft primitive right])
@@ -511,6 +537,10 @@ theorem yields_no_step {term plan : Term} {context : List SourceFrame}
       intro next step; cases step with
       | extendTarget _ prior => exact ih _ prior
       | extendRecord => cases inner
+  | unary primitive inner ih =>
+      intro next step; cases step with
+      | unaryArgument _ prior => exact ih _ prior
+      | unaryPrimitive _ _ _ value _ => exact yields_not_value inner value
   | binaryLeft primitive right inner ih =>
       intro next step; cases step with
       | binaryLeft _ _ prior => exact ih _ prior
@@ -563,6 +593,9 @@ theorem yields_deterministic {term plan plan' : Term} {context context' : List S
   | extend fields inner ih =>
       cases second with
       | extend _ inner' => obtain ⟨h1,h2⟩ := ih inner'; exact ⟨h1,by rw [h2]⟩
+  | unary primitive inner ih =>
+      cases second with
+      | unary _ inner' => obtain ⟨h1,h2⟩ := ih inner'; exact ⟨h1,by rw [h2]⟩
   | binaryLeft primitive right inner ih =>
       cases second with
       | binaryLeft _ _ inner' => obtain ⟨h1,h2⟩ := ih inner'; exact ⟨h1,by rw [h2]⟩

@@ -38,8 +38,8 @@ class ModuleDeskChecks(unittest.TestCase):
     def assert_ready(self, name, reply):
         self.assertEqual(reply['kind'], 'committed', reply)
         root = self.client.inspect(name)
-        self.assertEqual(root['state']['status'], 'ready', root['state'].get('diagnostics'))
-        build = desk.load_artifact(self.client.artifact_store, root['state']['artifact'])
+        self.assertEqual(desk.candidate_state(root)['status'], 'ready', desk.candidate_state(root).get('diagnostics'))
+        build = desk.load_artifact(self.client.artifact_store, desk.candidate_state(root)['artifact'])
         self.assertTrue(build['passed'], build)
         self.assertEqual(build['sourceBindings']['manifest'], self.proposal['manifest'])
         self.assertEqual([entry['name'] for entry in build['sourceMaterial']['modules']], ['Base', 'Doubling', 'Main'])

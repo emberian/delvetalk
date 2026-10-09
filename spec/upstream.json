@@ -6,13 +6,99 @@
       "sha256": "85544c12394d2ea951c610d383e7786b7d871042699cb92f4b61efd0ee81b4da"
     },
     "Theory/ObjectiveBendOpenRecursion.lean": {
-      "sha256": "6e0d410ca4d9a0d1e139448cbd290519596ea159a0c5b531e6df43341fd97808"
+      "sha256": "6e0d410ca4d9a0d1e139448cbd290519596ea159a0c5b531e6df43341fd97808",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Theory/ObjectiveBendOpenRecursion.lean"
+        },
+        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly.",
+        "replacements": [
+          {
+            "from": "inductive Primitive where\n  | add | multiply | equal | conjunction | labelEqual\n  | subtract | divide | less | lessEqual | modulo\n  deriving Repr, DecidableEq\n\ninductive Term where\n",
+            "to": "inductive Primitive where\n  | add | multiply | equal | conjunction | labelEqual\n  | subtract | divide | less | lessEqual | modulo\n  | textConcat | textTake | textDrop\n  deriving Repr, DecidableEq\n\n/-- DelveTalk hosted text extension; not part of the pinned upstream edition. -/\ninductive UnaryPrimitive where\n  | natText | textLength\n  deriving Repr, DecidableEq\n\ninductive Term where\n"
+          },
+          {
+            "from": "  | boolean (value : Bool)\n  | label (value : String)\n  | binary (primitive : Primitive) (left right : Term)\n  | extend (inherited : Term) (fields : List (String \u00d7 Term))\n  | record (fields : List (String \u00d7 Term))\n  | get (target : Term) (name : String)\n",
+            "to": "  | boolean (value : Bool)\n  | label (value : String)\n  | binary (primitive : Primitive) (left right : Term)\n  | unary (primitive : UnaryPrimitive) (argument : Term)\n  | extend (inherited : Term) (fields : List (String \u00d7 Term))\n  | record (fields : List (String \u00d7 Term))\n  | get (target : Term) (name : String)\n"
+          },
+          {
+            "from": "  | .boolean value => .boolean value\n  | .label value => .label value\n  | .binary primitive left right => .binary primitive (left.rename rename) (right.rename rename)\n  | .extend inherited fields => .extend (inherited.rename rename)\n      (fields.map fun field => (field.1,field.2.rename rename))\n  | .record fields => .record (fields.map fun field => (field.1,field.2.rename rename))\n",
+            "to": "  | .boolean value => .boolean value\n  | .label value => .label value\n  | .binary primitive left right => .binary primitive (left.rename rename) (right.rename rename)\n  | .unary primitive argument => .unary primitive (argument.rename rename)\n  | .extend inherited fields => .extend (inherited.rename rename)\n      (fields.map fun field => (field.1,field.2.rename rename))\n  | .record fields => .record (fields.map fun field => (field.1,field.2.rename rename))\n"
+          },
+          {
+            "from": "  | .boolean value => .boolean value\n  | .label value => .label value\n  | .binary primitive left right => .binary primitive (left.substitute substitution) (right.substitute substitution)\n  | .extend inherited fields => .extend (inherited.substitute substitution)\n      (fields.map fun field => (field.1,field.2.substitute substitution))\n  | .record fields => .record (fields.map fun field => (field.1,field.2.substitute substitution))\n",
+            "to": "  | .boolean value => .boolean value\n  | .label value => .label value\n  | .binary primitive left right => .binary primitive (left.substitute substitution) (right.substitute substitution)\n  | .unary primitive argument => .unary primitive (argument.substitute substitution)\n  | .extend inherited fields => .extend (inherited.substitute substitution)\n      (fields.map fun field => (field.1,field.2.substitute substitution))\n  | .record fields => .record (fields.map fun field => (field.1,field.2.substitute substitution))\n"
+          },
+          {
+            "from": "  | .less, .nat a, .nat b => some (.boolean (decide (a < b)))\n  | .lessEqual, .nat a, .nat b => some (.boolean (decide (a \u2264 b)))\n  | .modulo, .nat a, .nat b => some (.nat (a % b))\n  | _, _, _ => none\n\n/-- All String labels, including true/false, are excluded from Boolean operations. -/\ntheorem conjunction_labels_refused (left right : String) :\n",
+            "to": "  | .less, .nat a, .nat b => some (.boolean (decide (a < b)))\n  | .lessEqual, .nat a, .nat b => some (.boolean (decide (a \u2264 b)))\n  | .modulo, .nat a, .nat b => some (.nat (a % b))\n  | .textConcat, .label a, .label b => some (.label (a ++ b))\n  | .textTake, .label a, .nat n => some (.label (String.ofList (a.toList.take n)))\n  | .textDrop, .label a, .nat n => some (.label (String.ofList (a.toList.drop n)))\n  | _, _, _ => none\n\ndef unaryResult : UnaryPrimitive \u2192 Term \u2192 Option Term\n  | .natText, .nat n => some (.label (toString n))\n  | .textLength, .label s => some (.nat s.length)\n  | _, _ => none\n\n/-- All String labels, including true/false, are excluded from Boolean operations. -/\ntheorem conjunction_labels_refused (left right : String) :\n"
+          },
+          {
+            "from": "      Step inherited next \u2192 Step (.extend inherited fields) (.extend next fields)\n  | extendRecord (inherited fields : List (String \u00d7 Term)) :\n      Step (.extend (.record inherited) fields) (.record (extendFields inherited fields))\n  | binaryLeft {left next : Term} (primitive : Primitive) (right : Term) :\n      Step left next \u2192 Step (.binary primitive left right) (.binary primitive next right)\n  | binaryRight {right next : Term} (primitive : Primitive) (left : Term) :\n",
+            "to": "      Step inherited next \u2192 Step (.extend inherited fields) (.extend next fields)\n  | extendRecord (inherited fields : List (String \u00d7 Term)) :\n      Step (.extend (.record inherited) fields) (.record (extendFields inherited fields))\n  | unaryArgument {argument next : Term} (primitive : UnaryPrimitive) :\n      Step argument next \u2192 Step (.unary primitive argument) (.unary primitive next)\n  | unaryPrimitive (primitive : UnaryPrimitive) (argument result : Term) :\n      Value argument \u2192 unaryResult primitive argument = some result \u2192\n      Step (.unary primitive argument) result\n  | binaryLeft {left next : Term} (primitive : Primitive) (right : Term) :\n      Step left next \u2192 Step (.binary primitive left right) (.binary primitive next right)\n  | binaryRight {right next : Term} (primitive : Primitive) (left : Term) :\n"
+          },
+          {
+            "from": "  | application (argument : Term)\n  | field (name : String)\n  | extend (fields : List (String \u00d7 Term))\n  | binaryLeft (primitive : Primitive) (right : Term)\n  | binaryRight (primitive : Primitive) (left : Term)\n  | condition (zero successorBody : Term)\n",
+            "to": "  | application (argument : Term)\n  | field (name : String)\n  | extend (fields : List (String \u00d7 Term))\n  | unary (primitive : UnaryPrimitive)\n  | binaryLeft (primitive : Primitive) (right : Term)\n  | binaryRight (primitive : Primitive) (left : Term)\n  | condition (zero successorBody : Term)\n"
+          },
+          {
+            "from": "  | .application argument, hole => .app hole argument\n  | .field name, hole => .get hole name\n  | .extend fields, hole => .extend hole fields\n  | .binaryLeft primitive right, hole => .binary primitive hole right\n  | .binaryRight primitive left, hole => .binary primitive left hole\n  | .condition zero successorBody, hole => .ifZero hole zero successorBody\n",
+            "to": "  | .application argument, hole => .app hole argument\n  | .field name, hole => .get hole name\n  | .extend fields, hole => .extend hole fields\n  | .unary primitive, hole => .unary primitive hole\n  | .binaryLeft primitive right, hole => .binary primitive hole right\n  | .binaryRight primitive left, hole => .binary primitive left hole\n  | .condition zero successorBody, hole => .ifZero hole zero successorBody\n"
+          },
+          {
+            "from": "      Yields target plan context \u2192 Yields (.get target name) plan (context ++ [.field name])\n  | extend {inherited plan : Term} {context : List SourceFrame} (fields : List (String \u00d7 Term)) :\n      Yields inherited plan context \u2192 Yields (.extend inherited fields) plan (context ++ [.extend fields])\n  | binaryLeft {left plan : Term} {context : List SourceFrame} (primitive : Primitive) (right : Term) :\n      Yields left plan context \u2192\n      Yields (.binary primitive left right) plan (context ++ [.binaryLeft primitive right])\n",
+            "to": "      Yields target plan context \u2192 Yields (.get target name) plan (context ++ [.field name])\n  | extend {inherited plan : Term} {context : List SourceFrame} (fields : List (String \u00d7 Term)) :\n      Yields inherited plan context \u2192 Yields (.extend inherited fields) plan (context ++ [.extend fields])\n  | unary {argument plan : Term} {context : List SourceFrame} (primitive : UnaryPrimitive) :\n      Yields argument plan context \u2192 Yields (.unary primitive argument) plan (context ++ [.unary primitive])\n  | binaryLeft {left plan : Term} {context : List SourceFrame} (primitive : Primitive) (right : Term) :\n      Yields left plan context \u2192\n      Yields (.binary primitive left right) plan (context ++ [.binaryLeft primitive right])\n"
+          },
+          {
+            "from": "      intro next step; cases step with\n      | extendTarget _ prior => exact ih _ prior\n      | extendRecord => cases inner\n  | binaryLeft primitive right inner ih =>\n      intro next step; cases step with\n      | binaryLeft _ _ prior => exact ih _ prior\n",
+            "to": "      intro next step; cases step with\n      | extendTarget _ prior => exact ih _ prior\n      | extendRecord => cases inner\n  | unary primitive inner ih =>\n      intro next step; cases step with\n      | unaryArgument _ prior => exact ih _ prior\n      | unaryPrimitive _ _ _ value _ => exact yields_not_value inner value\n  | binaryLeft primitive right inner ih =>\n      intro next step; cases step with\n      | binaryLeft _ _ prior => exact ih _ prior\n"
+          },
+          {
+            "from": "  | extend fields inner ih =>\n      cases second with\n      | extend _ inner' => obtain \u27e8h1,h2\u27e9 := ih inner'; exact \u27e8h1,by rw [h2]\u27e9\n  | binaryLeft primitive right inner ih =>\n      cases second with\n      | binaryLeft _ _ inner' => obtain \u27e8h1,h2\u27e9 := ih inner'; exact \u27e8h1,by rw [h2]\u27e9\n",
+            "to": "  | extend fields inner ih =>\n      cases second with\n      | extend _ inner' => obtain \u27e8h1,h2\u27e9 := ih inner'; exact \u27e8h1,by rw [h2]\u27e9\n  | unary primitive inner ih =>\n      cases second with\n      | unary _ inner' => obtain \u27e8h1,h2\u27e9 := ih inner'; exact \u27e8h1,by rw [h2]\u27e9\n  | binaryLeft primitive right inner ih =>\n      cases second with\n      | binaryLeft _ _ inner' => obtain \u27e8h1,h2\u27e9 := ih inner'; exact \u27e8h1,by rw [h2]\u27e9\n"
+          }
+        ],
+        "builtSha256": "cdd46f9ed09a83c570a667561d8bc8cd61eff7ad201b0cb46828aa55126064c0"
+      }
     },
     "Theory/ObjectiveBendTypes.lean": {
       "sha256": "7947a70676509eba82577f6c86859999002e713ff53150fa43c72dbe8c1bd064"
     },
     "Theory/ObjectiveBendTyping.lean": {
-      "sha256": "cef31eb29f977d8c032ec75769d75cfaa48af4e6a96089bec1806141536477b8"
+      "sha256": "cef31eb29f977d8c032ec75769d75cfaa48af4e6a96089bec1806141536477b8",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Theory/ObjectiveBendTyping.lean"
+        },
+        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly.",
+        "replacements": [
+          {
+            "from": "  | .field name member rest, inherited => .field name member (overlay rest inherited)\n  | _, inherited => inherited\n\ndef primitiveTypes : Primitive \u2192 Ty \u00d7 Ty\n  | .add | .multiply | .subtract | .divide | .modulo => (.natural, .natural)\n  | .equal | .less | .lessEqual => (.natural, .boolean)\n  | .conjunction => (.boolean, .boolean)\n  | .labelEqual => (.label, .boolean)\n\ndef literalType (_value : String) : Ty := .label\n\n",
+            "to": "  | .field name member rest, inherited => .field name member (overlay rest inherited)\n  | _, inherited => inherited\n\ndef primitiveTypes : Primitive \u2192 Ty \u00d7 Ty \u00d7 Ty\n  | .add | .multiply | .subtract | .divide | .modulo => (.natural, .natural, .natural)\n  | .equal | .less | .lessEqual => (.natural, .natural, .boolean)\n  | .conjunction => (.boolean, .boolean, .boolean)\n  | .labelEqual => (.label, .label, .boolean)\n  | .textConcat => (.label, .label, .label)\n  | .textTake | .textDrop => (.label, .natural, .label)\n\ndef unaryTypes : UnaryPrimitive \u2192 Ty \u00d7 Ty\n  | .natText => (.natural, .label)\n  | .textLength => (.label, .natural)\n\ndef literalType (_value : String) : Ty := .label\n\n"
+          },
+          {
+            "from": "      argumentAllowed assumptions .unrestricted context inherited iu = true \u2192\n      reusableCaptures assumptions.shareableVariables context su = true \u2192\n      PartialTyping assumptions context (.fix spec inheritedTerm) target (addUses su iu)\n  | binary {context : Context} {primitive : Primitive} {left right : Term} {input output : Ty} {lu ru : Uses} :\n      primitiveTypes primitive = (input, output) \u2192\n      PartialTyping assumptions context left input lu \u2192 PartialTyping assumptions context right input ru \u2192\n      PartialTyping assumptions context (.binary primitive left right) output (addUses lu ru)\n  | ifZero {context : Context} {value zero successor : Term} {result : Ty} {vu zu su : Uses} :\n      PartialTyping assumptions context value .natural vu \u2192 PartialTyping assumptions context zero result zu \u2192\n      PartialTyping assumptions (\u27e8.natural,.unrestricted\u27e9 :: context) successor result su \u2192\n",
+            "to": "      argumentAllowed assumptions .unrestricted context inherited iu = true \u2192\n      reusableCaptures assumptions.shareableVariables context su = true \u2192\n      PartialTyping assumptions context (.fix spec inheritedTerm) target (addUses su iu)\n  | binary {context : Context} {primitive : Primitive} {left right : Term} {input rightInput output : Ty} {lu ru : Uses} :\n      primitiveTypes primitive = (input, rightInput, output) \u2192\n      PartialTyping assumptions context left input lu \u2192 PartialTyping assumptions context right rightInput ru \u2192\n      PartialTyping assumptions context (.binary primitive left right) output (addUses lu ru)\n  | unary {context : Context} {primitive : UnaryPrimitive} {argument : Term} {input output : Ty} {uses : Uses} :\n      unaryTypes primitive = (input, output) \u2192\n      PartialTyping assumptions context argument input uses \u2192\n      PartialTyping assumptions context (.unary primitive argument) output uses\n  | ifZero {context : Context} {value zero successor : Term} {result : Ty} {vu zu su : Uses} :\n      PartialTyping assumptions context value .natural vu \u2192 PartialTyping assumptions context zero result zu \u2192\n      PartialTyping assumptions (\u27e8.natural,.unrestricted\u27e9 :: context) successor result su \u2192\n"
+          },
+          {
+            "from": "      let l \u2190 infer assumptions annotations context (position ++ [0]) fuel left\n      let r \u2190 infer assumptions annotations context (position ++ [1]) fuel right\n      if hl : l.type = (primitiveTypes primitive).1 then\n        if hr : r.type = (primitiveTypes primitive).1 then\n          some \u27e8(primitiveTypes primitive).2, addUses l.uses r.uses,\n            .binary (Prod.eta _) (hl \u25b8 l.derivation) (hr \u25b8 r.derivation)\u27e9\n        else none\n      else none\n  | fuel + 1, .ifZero value zero successor => do\n      let condition \u2190 infer assumptions annotations context (position ++ [0]) fuel value\n",
+            "to": "      let l \u2190 infer assumptions annotations context (position ++ [0]) fuel left\n      let r \u2190 infer assumptions annotations context (position ++ [1]) fuel right\n      if hl : l.type = (primitiveTypes primitive).1 then\n        if hr : r.type = (primitiveTypes primitive).2.1 then\n          some \u27e8(primitiveTypes primitive).2.2, addUses l.uses r.uses,\n            .binary (by simp)  (hl \u25b8 l.derivation) (hr \u25b8 r.derivation)\u27e9\n        else none\n      else none\n  | fuel + 1, .unary primitive argument => do\n      let a \u2190 infer assumptions annotations context (position ++ [0]) fuel argument\n      if ha : a.type = (unaryTypes primitive).1 then\n        some \u27e8(unaryTypes primitive).2, a.uses, .unary (Prod.eta _) (ha \u25b8 a.derivation)\u27e9\n      else none\n  | fuel + 1, .ifZero value zero successor => do\n      let condition \u2190 infer assumptions annotations context (position ++ [0]) fuel value\n"
+          },
+          {
+            "from": "  | \"labelEqual\" => pure .labelEqual\n  | \"subtract\" => pure .subtract | \"divide\" => pure .divide\n  | \"less\" => pure .less | \"lessEqual\" => pure .lessEqual | \"modulo\" => pure .modulo\n  | _ => .error \"unknown Objective primitive\"\n\n/-- Decodes exactly the existing world lowerer's runtime core wire; no second\nsource translator or alternate fixture term is introduced by the type checker. -/\n",
+            "to": "  | \"labelEqual\" => pure .labelEqual\n  | \"subtract\" => pure .subtract | \"divide\" => pure .divide\n  | \"less\" => pure .less | \"lessEqual\" => pure .lessEqual | \"modulo\" => pure .modulo\n  | \"textConcat\" => pure .textConcat | \"textTake\" => pure .textTake | \"textDrop\" => pure .textDrop\n  | _ => .error \"unknown Objective primitive\"\n\ndef decodeUnaryPrimitive (value : Json) : Except String UnaryPrimitive := do\n  match \u2190 value.getStr? with\n  | \"natText\" => pure .natText | \"textLength\" => pure .textLength\n  | _ => .error \"unknown Objective unary primitive\"\n\n/-- Decodes exactly the existing world lowerer's runtime core wire; no second\nsource translator or alternate fixture term is introduced by the type checker. -/\n"
+          },
+          {
+            "from": "    | \"reflect\" => return .reflect (\u2190 sub \"value\")\n    | \"metadata\" => return .metadata (\u2190 sub \"value\")\n    | \"project\" => return .project (\u2190 sub \"value\")\n    | \"binary\" => return .binary (\u2190 decodePrimitive (\u2190 value.getObjVal? \"primitive\")) (\u2190 sub \"left\") (\u2190 sub \"right\")\n    | \"record\" => return .record (\u2190 fields ())\n    | \"extend\" => return .extend (\u2190 sub \"inherited\") (\u2190 fields ())\n",
+            "to": "    | \"reflect\" => return .reflect (\u2190 sub \"value\")\n    | \"metadata\" => return .metadata (\u2190 sub \"value\")\n    | \"project\" => return .project (\u2190 sub \"value\")\n    | \"unary\" => return .unary (\u2190 decodeUnaryPrimitive (\u2190 value.getObjVal? \"primitive\")) (\u2190 decodeTerm fuel (\u2190 value.getObjVal? \"argument\"))\n    | \"binary\" => return .binary (\u2190 decodePrimitive (\u2190 value.getObjVal? \"primitive\")) (\u2190 sub \"left\") (\u2190 sub \"right\")\n    | \"record\" => return .record (\u2190 fields ())\n    | \"extend\" => return .extend (\u2190 sub \"inherited\") (\u2190 fields ())\n"
+          }
+        ],
+        "builtSha256": "f21acac1f722ff4a38737331fda1cd1742a2efc9b872b44aa9eee54416486393"
+      }
     },
     "Theory/AssertAxioms.lean": {
       "sha256": "221ad34010d85dedf2a449772393e5451b85c7f0861786ac9d1368a5ff38e90a",
@@ -68,8 +154,8 @@
           "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
           "path": "Compiler/ObjectiveBendElaborate.lean"
         },
-        "purpose": "Expose existing checked prototype types and synthesize record extension results; no runtime or typing-rule changes.",
-        "builtSha256": "5b671902a99d2d0bc449d7001505fca96f6d8ba6bda53e7e0a42141fbad09bbc",
+        "purpose": "Expose existing checked prototype types and synthesize record extension results; no runtime or typing-rule changes.; explicit DelveTalk hosted text extension (Unicode scalar text, checked unary and heterogeneous binary primitives, bounded allocation/work). Canonically equivalent pure conditional branches are explicitly converted through checked linear identity applications; checker agreement and shareability rules remain unchanged.",
+        "builtSha256": "81a174985d0c2e71a338e86d5951745f9c7bca1cca6e9b68917d02500bc2622c",
         "replacements": [
           {
             "from": "  | specification (metadata extension : PTy)\n",
@@ -114,6 +200,46 @@
           {
             "from": "      return lookupRow (\u2190 synth c fuel target env m) name\n",
             "to": "      let targetType \u2190 synth c fuel target env m\n      return lookupRowBounded (\u2190 get).sumBounds fuel targetType name\n"
+          },
+          {
+            "from": "\nabbrev CoreTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term\nabbrev CorePrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.Primitive\n\n/-! String helpers (ASCII whitespace, as the TS `trim`). -/\ndef isSpace (c : Char) : Bool := c == ' ' || c == '\\t' || c == '\\n' || c == '\\r'\n",
+            "to": "\nabbrev CoreTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term\nabbrev CorePrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.Primitive\nabbrev CoreUnaryPrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.UnaryPrimitive\n\n/-! String helpers (ASCII whitespace, as the TS `trim`). -/\ndef isSpace (c : Char) : Bool := c == ' ' || c == '\\t' || c == '\\n' || c == '\\r'\n"
+          },
+          {
+            "from": "  | reflect (value : ATerm) | metadata (value : ATerm) | project (value : ATerm)\n  | nat (value : String) | boolean (value : Bool) | label (value : String)\n  | binary (primitive : String) (left right : ATerm)\n  | extend (inherited : ATerm) (fields : List (String \u00d7 ATerm))\n  | record (fields : List (String \u00d7 ATerm))\n  | get (target : ATerm) (name : String)\n",
+            "to": "  | reflect (value : ATerm) | metadata (value : ATerm) | project (value : ATerm)\n  | nat (value : String) | boolean (value : Bool) | label (value : String)\n  | binary (primitive : String) (left right : ATerm)\n  | unary (primitive : String) (argument : ATerm)\n  | extend (inherited : ATerm) (fields : List (String \u00d7 ATerm))\n  | record (fields : List (String \u00d7 ATerm))\n  | get (target : ATerm) (name : String)\n"
+          },
+          {
+            "from": "  | .nat v => Json.mkObj [(\"tag\", \"nat\"), (\"value\", v)]\n  | .boolean v => Json.mkObj [(\"tag\", \"boolean\"), (\"value\", toJson v)]\n  | .label v => Json.mkObj [(\"tag\", \"label\"), (\"value\", v)]\n  | .binary p l r => Json.mkObj [(\"tag\", \"binary\"), (\"primitive\", p), (\"left\", l.json), (\"right\", r.json)]\n  | .extend i fs => Json.mkObj [(\"tag\", \"extend\"), (\"inherited\", i.json), (\"fields\", fieldsJson fs)]\n  | .record fs => Json.mkObj [(\"tag\", \"record\"), (\"fields\", fieldsJson fs)]\n",
+            "to": "  | .nat v => Json.mkObj [(\"tag\", \"nat\"), (\"value\", v)]\n  | .boolean v => Json.mkObj [(\"tag\", \"boolean\"), (\"value\", toJson v)]\n  | .label v => Json.mkObj [(\"tag\", \"label\"), (\"value\", v)]\n  | .unary p a => Json.mkObj [(\"tag\", \"unary\"), (\"primitive\", p), (\"argument\", a.json)]\n  | .binary p l r => Json.mkObj [(\"tag\", \"binary\"), (\"primitive\", p), (\"left\", l.json), (\"right\", r.json)]\n  | .extend i fs => Json.mkObj [(\"tag\", \"extend\"), (\"inherited\", i.json), (\"fields\", fieldsJson fs)]\n  | .record fs => Json.mkObj [(\"tag\", \"record\"), (\"fields\", fieldsJson fs)]\n"
+          },
+          {
+            "from": "  | \"labelEqual\" => .ok .labelEqual\n  | \"subtract\" => .ok .subtract | \"divide\" => .ok .divide | \"less\" => .ok .less | \"lessEqual\" => .ok .lessEqual\n  | \"modulo\" => .ok .modulo\n  | other => .error (\"primitive \" ++ other ++ \" is not a Core4 constructor yet\")\n\nmutual\ndef ATerm.erase : ATerm \u2192 Except String CoreTerm\n",
+            "to": "  | \"labelEqual\" => .ok .labelEqual\n  | \"subtract\" => .ok .subtract | \"divide\" => .ok .divide | \"less\" => .ok .less | \"lessEqual\" => .ok .lessEqual\n  | \"modulo\" => .ok .modulo\n  | \"textConcat\" => .ok .textConcat | \"textTake\" => .ok .textTake | \"textDrop\" => .ok .textDrop\n  | other => .error (\"primitive \" ++ other ++ \" is not a Core4 constructor yet\")\n\ndef unaryPrimitiveOf : String \u2192 Except String CoreUnaryPrimitive\n  | \"natText\" => .ok .natText | \"textLength\" => .ok .textLength\n  | other => .error (\"unknown hosted unary primitive \" ++ other)\n\nmutual\ndef ATerm.erase : ATerm \u2192 Except String CoreTerm\n"
+          },
+          {
+            "from": "    | none => .error \"non-canonical natural\"\n  | .boolean v => .ok (.boolean v)\n  | .label v => .ok (.label v)\n  | .binary p l r => return .binary (\u2190 primitiveOf p) (\u2190 l.erase) (\u2190 r.erase)\n  | .extend i fs => return .extend (\u2190 i.erase) (\u2190 eraseFields fs)\n  | .record fs => return .record (\u2190 eraseFields fs)\n",
+            "to": "    | none => .error \"non-canonical natural\"\n  | .boolean v => .ok (.boolean v)\n  | .label v => .ok (.label v)\n  | .unary p a => return .unary (\u2190 unaryPrimitiveOf p) (\u2190 a.erase)\n  | .binary p l r => return .binary (\u2190 primitiveOf p) (\u2190 l.erase) (\u2190 r.erase)\n  | .extend i fs => return .extend (\u2190 i.erase) (\u2190 eraseFields fs)\n  | .record fs => return .record (\u2190 eraseFields fs)\n"
+          },
+          {
+            "from": "        return (\u2190 get).effect.map fun (p, r) => .computation p r r\n      if let some sc := sumCase c callee env m then return \u2190 sourceType c fuel sc.2.2 sc.2.1 []\n      if let .var name := callee then\n        if [\"reflect\", \"metadata\", \"targetOf\", \"prototype\"].contains name &&\n            !env.any (\u00b7.name == name) && (lookupGlobal c name m).isNone then\n          match name, args with\n",
+            "to": "        return (\u2190 get).effect.map fun (p, r) => .computation p r r\n      if let some sc := sumCase c callee env m then return \u2190 sourceType c fuel sc.2.2 sc.2.1 []\n      if let .var name := callee then\n        if !env.any (\u00b7.name == name) && (lookupGlobal c name m).isNone then\n          if name == \"natText\" && args.length == 1 then return some .label\n          if name == \"textLength\" && args.length == 1 then return some .natural\n          if name == \"textConcat\" && args.length == 2 then return some .label\n          if name == \"textSlice\" && args.length == 3 then return some .label\n        if [\"reflect\", \"metadata\", \"targetOf\", \"prototype\"].contains name &&\n            !env.any (\u00b7.name == name) && (lookupGlobal c name m).isNone then\n          match name, args with\n"
+          },
+          {
+            "from": "  | .nat v => .nat v\n  | .boolean v => .boolean v\n  | .label v => .label v\n  | .binary p x y => .binary p (x.mapTypes f) (y.mapTypes f)\n  | .extend x fs => .extend (x.mapTypes f) (ATerm.mapFieldTypes f fs)\n  | .record fs => .record (ATerm.mapFieldTypes f fs)\n",
+            "to": "  | .nat v => .nat v\n  | .boolean v => .boolean v\n  | .label v => .label v\n  | .unary p a => .unary p (a.mapTypes f)\n  | .binary p x y => .binary p (x.mapTypes f) (y.mapTypes f)\n  | .extend x fs => .extend (x.mapTypes f) (ATerm.mapFieldTypes f fs)\n  | .record fs => .record (ATerm.mapFieldTypes f fs)\n"
+          },
+          {
+            "from": "        return .inject caseLabel type (if type.isSome then none else some (\"sum \" ++ key ++ \" type unresolved\")) payload\n      if let .var name := callee then\n        if !env.any (\u00b7.name == name) && (lookupGlobal c name m).isNone then\n          if [\"reflect\", \"metadata\", \"targetOf\"].contains name then\n            match args with\n            | [a] =>\n",
+            "to": "        return .inject caseLabel type (if type.isSome then none else some (\"sum \" ++ key ++ \" type unresolved\")) payload\n      if let .var name := callee then\n        if !env.any (\u00b7.name == name) && (lookupGlobal c name m).isNone then\n          if [\"natText\", \"textLength\", \"textConcat\", \"textSlice\"].contains name then\n            for a in args do noActivity c fuel a env m \"effect-in-text\" \"text operands are pure\"\n            match name, args with\n            | \"natText\", [a] | \"textLength\", [a] => return .unary name (\u2190 expression c fuel a env m)\n            | \"textConcat\", [a,b] => return .binary \"textConcat\" (\u2190 expression c fuel a env m) (\u2190 expression c fuel b env m)\n            | \"textSlice\", [a,start,count] =>\n              return .binary \"textTake\" (.binary \"textDrop\" (\u2190 expression c fuel a env m) (\u2190 expression c fuel start env m)) (\u2190 expression c fuel count env m)\n            | _, _ => fail (name ++ \" has wrong arity\")\n          if [\"reflect\", \"metadata\", \"targetOf\"].contains name then\n            match args with\n            | [a] =>\n"
+          },
+          {
+            "from": "  | .app f a, path => return (\u2190 annotate bounds f (path ++ [0])) ++ (\u2190 annotate bounds a (path ++ [1]))\n  | .fix s i, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds i (path ++ [1]))\n  | .mix l u, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds u (path ++ [1]))\n  | .binary _ l r, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds r (path ++ [1]))\n  | .prototype s t, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds t (path ++ [1]))\n  | .specification md e, path => return (\u2190 annotate bounds md (path ++ [0])) ++ (\u2190 annotate bounds e (path ++ [1]))\n",
+            "to": "  | .app f a, path => return (\u2190 annotate bounds f (path ++ [0])) ++ (\u2190 annotate bounds a (path ++ [1]))\n  | .fix s i, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds i (path ++ [1]))\n  | .mix l u, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds u (path ++ [1]))\n  | .unary _ a, path => annotate bounds a (path ++ [0])\n  | .binary _ l r, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds r (path ++ [1]))\n  | .prototype s t, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds t (path ++ [1]))\n  | .specification md e, path => return (\u2190 annotate bounds md (path ++ [0])) ++ (\u2190 annotate bounds e (path ++ [1]))\n"
+          },
+          {
+            "from": "      let ft \u2190 expression c fuel whenFalse env m\n      return .ifBool ct tt ft\n",
+            "to": "      let ft \u2190 expression c fuel whenFalse env m\n      -- Core conditionals require identical branch types. Conversion at an ordinary\n      -- linear identity application canonicalizes equivalent rows without relaxing\n      -- `agree` (in particular its no-manufactured-shareability check).\n      let leftType \u2190 synth c fuel whenTrue env m\n      let rightType \u2190 synth c fuel whenFalse env m\n      if sameTy leftType rightType then\n        if let some ty := leftType then\n          let canonical := ty.canonical\n          let identity := ATerm.lam \u27e8some canonical, some canonical, \"linear\", \"reusable\", none\u27e9 (.bound 0)\n          return .ifBool ct (.app identity tt) (.app identity ft)\n      return .ifBool ct tt ft\n"
           }
         ]
       }
@@ -122,7 +248,7 @@
       "sha256": "6778e47ca4993aec68cb8ff791860fe44eed43b91a42d13d63dbe3b137a48f94",
       "compatibility": {
         "source": "spec/original/Compiler/ObjectiveBendTermWire.lean.txt",
-        "builtSha256": "fc18742c3a94219c8e086dd14fbc8892d402e5cf0c7c3559180318c812595d0f",
+        "builtSha256": "49e638b675df4f531bc437c1e3ca595447095fe2ff4f529df77009b816ce3fbd",
         "replacements": [
           {
             "from": "simp [ATerm.json, jsonNat, toJson, Json.getNat?, JsonNumber.fromNat]",
@@ -131,8 +257,21 @@
           {
             "from": "cases hj; cases rest; exact ht",
             "to": "simp_all only [Except.ok.injEq]"
+          },
+          {
+            "from": "open Lean\nopen Minidregg.Compiler.ObjectiveBendElaborate\nopen Minidregg.Theory.ObjectiveBendTyping (DecodedPacket decodePacket decodeTerm decodePrimitive jsonNat\n  termNestingCapacity requireSome)\nset_option autoImplicit false\n\nmutual\n/-- The nesting depth of an elaborated term: what `decodeTerm`'s fuel must cover. -/\ndef depth : ATerm \u2192 Nat\n  | .bound _ | .nat _ | .boolean _ | .label _ => 1\n  | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b => depth b + 1\n  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b => max (depth a) (depth b) + 1\n  | .ifZero a b c | .ifBool a b c => max (depth a) (max (depth b) (depth c)) + 1\n  | .extend a fs | .case a fs => max (depth a) (fieldsDepth fs) + 1\n",
+            "to": "open Lean\nopen Minidregg.Compiler.ObjectiveBendElaborate\nopen Minidregg.Theory.ObjectiveBendTyping (DecodedPacket decodePacket decodeTerm decodePrimitive jsonNat\n  termNestingCapacity requireSome decodeUnaryPrimitive)\nset_option autoImplicit false\n\nmutual\n/-- The nesting depth of an elaborated term: what `decodeTerm`'s fuel must cover. -/\ndef depth : ATerm \u2192 Nat\n  | .bound _ | .nat _ | .boolean _ | .label _ => 1\n  | .unary _ b | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b => depth b + 1\n  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b => max (depth a) (depth b) + 1\n  | .ifZero a b c | .ifBool a b c => max (depth a) (max (depth b) (depth c)) + 1\n  | .extend a fs | .case a fs => max (depth a) (fieldsDepth fs) + 1\n"
+          },
+          {
+            "from": "    decodePrimitive (Json.str p) = .ok prim := by\n  unfold primitiveOf at h\n  split at h <;> simp_all [decodePrimitive]\n\nmutual\ntheorem decode_json : (t : ATerm) \u2192 (n : Nat) \u2192 (e : CoreTerm) \u2192 depth t \u2264 n \u2192 t.erase = .ok e \u2192\n",
+            "to": "    decodePrimitive (Json.str p) = .ok prim := by\n  unfold primitiveOf at h\n  split at h <;> simp_all [decodePrimitive]\n\ntheorem unary_primitive_round {p : String} {prim : CoreUnaryPrimitive} (h : unaryPrimitiveOf p = .ok prim) :\n    decodeUnaryPrimitive (Json.str p) = .ok prim := by\n  unfold unaryPrimitiveOf at h\n  split at h <;> simp_all [decodeUnaryPrimitive]\n\nmutual\ntheorem decode_json : (t : ATerm) \u2192 (n : Nat) \u2192 (e : CoreTerm) \u2192 depth t \u2264 n \u2192 t.erase = .ok e \u2192\n"
+          },
+          {
+            "from": "    have db := decode_json b n eb (by omega) hb\n    simp at he; subst he\n    rw [decodeTerm]; simp [ATerm.json, db]\n\n  | .app f a, n+1, e, hd, he => by\n    simp only [ATerm.erase, bind_ok] at he\n",
+            "to": "    have db := decode_json b n eb (by omega) hb\n    simp at he; subst he\n    rw [decodeTerm]; simp [ATerm.json, db]\n\n  | .unary p a, n+1, e, hd, he => by\n    simp only [ATerm.erase, bind_ok] at he\n    obtain \u27e8prim, hp, ea, ha, he\u27e9 := he\n    simp only [depth] at hd\n    have da := decode_json a n ea (by omega) ha\n    have dp := unary_primitive_round hp\n    simp at he; subst he\n    rw [decodeTerm]; simp [ATerm.json, da, dp]\n\n  | .app f a, n+1, e, hd, he => by\n    simp only [ATerm.erase, bind_ok] at he\n"
           }
-        ]
+        ],
+        "purpose": "Compatibility projection; explicit DelveTalk hosted text extension (Unicode scalar text, checked unary and heterogeneous binary primitives, bounded allocation/work)."
       }
     },
     "Compiler/Sha256.lean": {
@@ -142,13 +281,90 @@
       "sha256": "7588706ddd6bfd154526e9c0ffe3d4f85b1cd799795158b975b407ff070cc7f4"
     },
     "Theory/ObjectiveBendDemandMachine.lean": {
-      "sha256": "946c05b26c378dff016368241c34f19d41c456ddec4aa84a8e14224fdc7d67a8"
+      "sha256": "946c05b26c378dff016368241c34f19d41c456ddec4aa84a8e14224fdc7d67a8",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Theory/ObjectiveBendDemandMachine.lean"
+        },
+        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly.",
+        "replacements": [
+          {
+            "from": "  | reflect | metadata | project\n  | extend (fields : List (String \u00d7 Term)) (environment : Environment)\n  | condition (zero successorBody : Term) (environment : Environment)\n  | binaryLeft (primitive : Primitive) (right : Term) (environment : Environment)\n  | binaryRight (primitive : Primitive) (left : RuntimeValue)\n  | case (arms : List (String \u00d7 Term)) (environment : Environment)\n",
+            "to": "  | reflect | metadata | project\n  | extend (fields : List (String \u00d7 Term)) (environment : Environment)\n  | condition (zero successorBody : Term) (environment : Environment)\n  | unary (primitive : UnaryPrimitive)\n  | binaryLeft (primitive : Primitive) (right : Term) (environment : Environment)\n  | binaryRight (primitive : Primitive) (left : RuntimeValue)\n  | case (arms : List (String \u00d7 Term)) (environment : Environment)\n"
+          },
+          {
+            "from": "    | .get target name => {state with control:=.evaluate target environment,stack:=.field name::state.stack}\n    | .extend inherited fields => {state with control:=.evaluate inherited environment, stack:=.extend fields environment::state.stack}\n    | .ifZero value zero successorBody => {state with control:=.evaluate value environment, stack:=.condition zero successorBody environment::state.stack}\n    | .binary primitive left right => {state with control:=.evaluate left environment, stack:=.binaryLeft primitive right environment::state.stack}\n    | .inject tag payload =>\n      let address := state.heap.size\n",
+            "to": "    | .get target name => {state with control:=.evaluate target environment,stack:=.field name::state.stack}\n    | .extend inherited fields => {state with control:=.evaluate inherited environment, stack:=.extend fields environment::state.stack}\n    | .ifZero value zero successorBody => {state with control:=.evaluate value environment, stack:=.condition zero successorBody environment::state.stack}\n    | .unary primitive argument => {state with control:=.evaluate argument environment,stack:=.unary primitive::state.stack}\n    | .binary primitive left right => {state with control:=.evaluate left environment, stack:=.binaryLeft primitive right environment::state.stack}\n    | .inject tag payload =>\n      let address := state.heap.size\n"
+          },
+          {
+            "from": "        | .natural 0 => {state with control:=.evaluate zero environment,stack:=rest}\n        | .natural (n+1) => {state with heap:=state.heap.push (.cached \u27e8.nat n,[]\u27e9 (.natural n)), control:=.evaluate successorBody (state.heap.size::environment),stack:=rest}\n        | _ => {state with control:=.refused .wrongValue,stack:=rest}\n      | .binaryLeft primitive right environment =>\n        {state with control:=.evaluate right environment,stack:=.binaryRight primitive value::rest}\n      | .binaryRight primitive left =>\n",
+            "to": "        | .natural 0 => {state with control:=.evaluate zero environment,stack:=rest}\n        | .natural (n+1) => {state with heap:=state.heap.push (.cached \u27e8.nat n,[]\u27e9 (.natural n)), control:=.evaluate successorBody (state.heap.size::environment),stack:=rest}\n        | _ => {state with control:=.refused .wrongValue,stack:=rest}\n      | .unary primitive =>\n        match (valueTerm value).bind (unaryResult primitive) with\n        | some result => match scalarValue result with\n          | some next => {state with control:=.returned next,stack:=rest}\n          | none => {state with control:=.refused .wrongValue,stack:=rest}\n        | none => {state with control:=.refused .wrongValue,stack:=rest}\n      | .binaryLeft primitive right environment =>\n        {state with control:=.evaluate right environment,stack:=.binaryRight primitive value::rest}\n      | .binaryRight primitive left =>\n"
+          }
+        ],
+        "builtSha256": "9aa9c523e3291cb455d0fa2e619cfce050d0ba7031dd76be29e65f2967733e20"
+      }
     },
     "Theory/ObjectiveBendDemandMachineFast.lean": {
-      "sha256": "3a307bf8b18ffb9500d54604bb6160fdda576c55c161e1a4afedffe576973004"
+      "sha256": "3a307bf8b18ffb9500d54604bb6160fdda576c55c161e1a4afedffe576973004",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Theory/ObjectiveBendDemandMachineFast.lean"
+        },
+        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly.",
+        "replacements": [
+          {
+            "from": "    | .specification _ _ | .prototype _ _ => (size+2,depth)\n    | .record fields => (size+fields.length,depth)\n    | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _\n    | .ifZero _ _ _ | .binary _ _ _ | .case _ _ | .ifBool _ _ _ => (size,depth+1)\n    | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)\n    | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ => (size,depth)\n  | .returned value => match state.stack with\n",
+            "to": "    | .specification _ _ | .prototype _ _ => (size+2,depth)\n    | .record fields => (size+fields.length,depth)\n    | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _\n    | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ => (size,depth+1)\n    | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)\n    | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ => (size,depth)\n  | .returned value => match state.stack with\n"
+          },
+          {
+            "from": "#print axioms allocateFieldsFast_eq\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms stepRawFast_eq_stepRaw\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms stepRaw_eq_fast\n",
+            "to": "#print axioms allocateFieldsFast_eq\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms stepRawFast_eq_stepRaw\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms stepRaw_eq_fast\n"
+          },
+          {
+            "from": "#print axioms allocateFields_size\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms sizesAfter_eq\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms stepFast_eq_step\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms step_eq_fast\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms runFrom_eq_runBounded\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms runBounded_eq_fast\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms step_of_moving\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms runBounded_zero_of_moving\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stopped' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms runBounded_zero_of_stopped\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms forceWithFast_unique\n",
+            "to": "#print axioms allocateFields_size\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms sizesAfter_eq\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms stepFast_eq_step\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms step_eq_fast\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms runFrom_eq_runBounded\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms runBounded_eq_fast\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms step_of_moving\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms runBounded_zero_of_moving\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stopped' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms runBounded_zero_of_stopped\n\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n-/\n#guard_msgs in\n#print axioms forceWithFast_unique\n"
+          }
+        ],
+        "builtSha256": "de0ed1a94b816d6f6ba640f34fa1a89eed76383bf8eeafbb051f01c1f938f905"
+      }
     },
     "Theory/ObjectiveBendDemandData.lean": {
-      "sha256": "1aa32d2a9ed037deedf2800a020efc3fefc0b07e0f3a7c253188f8ea245c6f68"
+      "sha256": "1aa32d2a9ed037deedf2800a020efc3fefc0b07e0f3a7c253188f8ea245c6f68",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Theory/ObjectiveBendDemandData.lean"
+        },
+        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly.",
+        "replacements": [
+          {
+            "from": "@[csimp] theorem forceWith_eq_fast : @forceWith = @ObjectiveBendDemandMachineFast.forceWithFast :=\n  ObjectiveBendDemandMachineFast.forceWithFast_unique forceWith (fun _ _ _ => rfl) (fun _ _ _ _ => rfl)\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandData.forceWith_eq_fast' depends on axioms: [propext, Quot.sound]\n-/\n#guard_msgs in\n#print axioms forceWith_eq_fast\n\n/-- Materialization threads the remaining budget through failures as well as successes.\nTick counts come directly from forceWith; failed children retain all earlier field spend. -/\n",
+            "to": "@[csimp] theorem forceWith_eq_fast : @forceWith = @ObjectiveBendDemandMachineFast.forceWithFast :=\n  ObjectiveBendDemandMachineFast.forceWithFast_unique forceWith (fun _ _ _ => rfl) (fun _ _ _ _ => rfl)\n/--\ninfo: 'Minidregg.Theory.ObjectiveBendDemandData.forceWith_eq_fast' depends on axioms: [propext, Classical.choice, Quot.sound]\n-/\n#guard_msgs in\n#print axioms forceWith_eq_fast\n\n/-- Hosted text work and conservative result allocation bound, checked before\n`stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.\nUnicode operations traverse scalar sequences; their UTF-8 size bounds both the\nscalar traversal and copied bytes. Decimal conversion uses a conservative\nquadratic bit-work allowance and bit-count allocation bound. -/\ndef textStepCost (state : State) : Nat \u00d7 Nat :=\n  match state.control,state.stack with\n  | .returned (.label right), .binaryRight .textConcat (.label left) :: _ =>\n      let bytes := left.utf8ByteSize + right.utf8ByteSize\n      (1 + 2 * bytes, bytes)\n  | .returned (.natural _), .binaryRight .textTake (.label text) :: _\n  | .returned (.natural _), .binaryRight .textDrop (.label text) :: _ =>\n      (1 + 2 * text.utf8ByteSize, text.utf8ByteSize)\n  | .returned (.label text), .unary .textLength :: _ => (1 + text.utf8ByteSize, 0)\n  | .returned (.natural n), .unary .natText :: _ =>\n      let bits := n.log2 + 1\n      (1 + bits * bits, bits)\n  | _,_ => (1,0)\n\n/-- Explicit hosted extension of forcing. No primitive is entered before its\nwhole work/allocation allowance is admitted. Insufficient work retains the\npre-step graph. The pinned unit-cost `forceWith` and its fast proof stay intact. -/\ndef forceHostedFrom (policy : State \u2192 Bool) (limits : Limits) (bytes : Nat)\n    (ticks : Nat) (state : State) (depth : Nat) : Outcome \u00d7 Nat :=\n  match ticks with\n  | 0 => (runBounded limits 0 state,0)\n  | remaining+1 =>\n    let ticks := remaining+1\n    match state.control with\n    | .complete _ | .refused _ | .blackhole _ | .yielded _ => (runBounded limits 0 state,ticks)\n    | _ =>\n      let cost := textStepCost state\n      if !policy state || cost.2 > bytes then (.suspended .capacity state,ticks)\n      else if cost.1 > ticks then (.suspended .ticks state,ticks)\n      else\n        let sizes := ObjectiveBendDemandMachineFast.sizesAfter state depth\n        if sizes.1 \u2264 limits.heap && sizes.2 \u2264 limits.stack then\n          forceHostedFrom policy limits bytes (ticks - max 1 cost.1)\n            (ObjectiveBendDemandMachineFast.stepRawFast state) sizes.2\n        else (.suspended .capacity state,ticks - max 1 cost.1)\ntermination_by ticks\ndecreasing_by\n  simp_wf\n  omega\n\ndef forceHostedWith (policy : State \u2192 Bool) (limits : Limits) (bytes ticks : Nat) (state : State) : Outcome \u00d7 Nat :=\n  forceHostedFrom policy limits bytes ticks state state.stack.length\n\n/-- Materialization threads the remaining budget through failures as well as successes.\nTick counts come directly from forceWith; failed children retain all earlier field spend. -/\n"
+          },
+          {
+            "from": "        let bytes := field.1.utf8ByteSize+(toString field.1.utf8ByteSize).utf8ByteSize+1\n        if bytes > prior.2.2.bytes || prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)\n        let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}\n        let (outcome,ticks) := forceWith policy limits prior.2.2.ticks entered\n        let nextBudget := {prior.2.2 with ticks:=ticks,bytes:=prior.2.2.bytes-bytes}\n        match outcome with\n        | .finished forced retained =>\n",
+            "to": "        let bytes := field.1.utf8ByteSize+(toString field.1.utf8ByteSize).utf8ByteSize+1\n        if bytes > prior.2.2.bytes || prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)\n        let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}\n        let (outcome,ticks) := forceHostedWith policy limits prior.2.2.bytes prior.2.2.ticks entered\n        let nextBudget := {prior.2.2 with ticks:=ticks,bytes:=prior.2.2.bytes-bytes}\n        match outcome with\n        | .finished forced retained =>\n"
+          },
+          {
+            "from": "      let bytes := label.utf8ByteSize+(toString label.utf8ByteSize).utf8ByteSize+2\n      if bytes > remaining.bytes || remaining.nodes = 0 then throw (.budget,state,remaining)\n      let entered : State := {state with control:=.enter payload,stack:=[]}\n      let (outcome,ticks) := forceWith policy limits remaining.ticks entered\n      let nextBudget := {remaining with ticks:=ticks,bytes:=remaining.bytes-bytes}\n      match outcome with\n      | .finished forced retained =>\n",
+            "to": "      let bytes := label.utf8ByteSize+(toString label.utf8ByteSize).utf8ByteSize+2\n      if bytes > remaining.bytes || remaining.nodes = 0 then throw (.budget,state,remaining)\n      let entered : State := {state with control:=.enter payload,stack:=[]}\n      let (outcome,ticks) := forceHostedWith policy limits remaining.bytes remaining.ticks entered\n      let nextBudget := {remaining with ticks:=ticks,bytes:=remaining.bytes-bytes}\n      match outcome with\n      | .finished forced retained =>\n"
+          },
+          {
+            "from": "  value : RuntimeValue\n  state : State\n  remainingTicks : Nat\n  runExact : forceWith policy limits budget.ticks (initial term) =\n    (.finished value state,remainingTicks)\n  extraction : ExtractionWith policy limits {budget with ticks:=remainingTicks} state\n\ndef executeWith (policy : State \u2192 Bool) (limits : Limits) (budget : Budget)\n    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :\n    Except (Failure \u00d7 State \u00d7 Budget) (ExecutionWith policy limits budget term) :=\n  match equation : forceWith policy limits budget.ticks (initial term) with\n  | (.finished value state,ticks) => do\n    let extraction \u2190 extractWith policy limits {budget with ticks:=ticks} state\n    pure \u27e8value,state,ticks,equation,extraction\u27e9\n",
+            "to": "  value : RuntimeValue\n  state : State\n  remainingTicks : Nat\n  runExact : forceHostedWith policy limits budget.bytes budget.ticks (initial term) =\n    (.finished value state,remainingTicks)\n  extraction : ExtractionWith policy limits {budget with ticks:=remainingTicks} state\n\ndef executeWith (policy : State \u2192 Bool) (limits : Limits) (budget : Budget)\n    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :\n    Except (Failure \u00d7 State \u00d7 Budget) (ExecutionWith policy limits budget term) :=\n  match equation : forceHostedWith policy limits budget.bytes budget.ticks (initial term) with\n  | (.finished value state,ticks) => do\n    let extraction \u2190 extractWith policy limits {budget with ticks:=ticks} state\n    pure \u27e8value,state,ticks,equation,extraction\u27e9\n"
+          },
+          {
+            "from": "  match state.control with\n  | .yielded plan =>\n    let entered : State := {state with control:=.enter plan,stack:=[]}\n    match forceWith policy limits budget.ticks entered with\n    | (.finished forced retained,ticks) => do\n      -- Materialization runs on the scratch copy; the checkpoint keeps its stack.\n      let result \u2190 materializeWith policy limits budget.nodes {budget with ticks:=ticks} forced retained\n",
+            "to": "  match state.control with\n  | .yielded plan =>\n    let entered : State := {state with control:=.enter plan,stack:=[]}\n    match forceHostedWith policy limits budget.bytes budget.ticks entered with\n    | (.finished forced retained,ticks) => do\n      -- Materialization runs on the scratch copy; the checkpoint keeps its stack.\n      let result \u2190 materializeWith policy limits budget.nodes {budget with ticks:=ticks} forced retained\n"
+          }
+        ],
+        "builtSha256": "f2a71e397392b5e89805dc296c902bf7cc325d863bb2cb9c2e04f016762a47eb"
+      }
     },
     "Compiler/ObjectiveBendDataWire.lean": {
       "sha256": "283c33824d44f64feb43fcd861d4751f2d71477e42f9165b5d4425feefcd6655"

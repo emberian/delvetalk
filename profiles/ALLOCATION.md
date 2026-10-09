@@ -15,6 +15,17 @@ field:
 }]
 ```
 
+Typed Bend decisions may instead return `allocations: Allocations`, importing
+[the allocation prelude](../world/lib/prelude/Allocation.obend):
+`nil:{} | cons:{head:{name:String,protocol:Value,law:Value},tail:Allocations}`.
+The source constructs every child program and law. The existing typed evaluator
+decodes at most 32 descriptors under the turn's shared budget; the same native
+quota, absence, protocol and child-law checks admit both forms. A declared
+`allocation.limit` is still required. Receiving a message cannot allocate children.
+[Factory](../protocols/editor/Factory.obend) and
+[Candidate](../protocols/editor/Candidate.obend) demonstrate source-owned creation,
+compiler reports and approval guards; no Python workflow generator owns them.
+
 Expressions share the command's budget and read its pre-call state. The factory's
 **current invocation grant and predicate** govern admission; management grants
 alone confer no allocation authority.
@@ -49,7 +60,8 @@ Local `create` remains operator bootstrap. Public authentication and child custo
 belong to the receiving adapter; allocation establishes local admission.
 
 [World admission](WorldCore.lean) · [Transactions](TransactionsCore.lean) ·
-[Receiving tests](../conformance/test_allocation.py)
+[Receiving tests](../conformance/test_allocation.py) ·
+[Source allocation tests](../conformance/test_source_allocation.py)
 
 After building all three receivers, run `python3 conformance/test_allocation.py`.
 

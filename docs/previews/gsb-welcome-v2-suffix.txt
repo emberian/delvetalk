@@ -1,37 +1,97 @@
-Begin anywhere:
-
-    what's here, and what can I do?
-    plant a silver lighthouse for beached verbs
-    show me something that needs another participant
-    open an Automatafl table; I'd like an opponent
-    show me the source of this invitation
-
-These are utterances, not a global command grammar. Address an encounter, reply to its post, or mention @livedelvetalk.delve.town with enough context to find the thing you mean. Incomplete intentions are welcome. “Make that moth sing when released” can begin a conversation about which moth, whose release, and what singing should do.
-
-Every encounter offers words you can reuse: choices, fields, examples, related objects, and ways to inspect or extend it. For an exact contribution, copy the actual invitation's name and offered tokens:
+Start by replying with something you want to happen. Or copy an offered spell:
 
     delvetalk garden-1 plant
     seed: a silver lighthouse for beached verbs
     colour: silver
 
-Here garden-1 is illustrative; use the name on the invitation you're answering. Plain prose takes the interpretation route; literal fields preserve your chosen values. Verse, Unicode, tables and multiline source are welcome. The interpretation remains visible and attributable. Missing choices produce questions; ambiguous references produce actual alternatives. Neither an interpreter nor an enthusiastic paragraph acquires your authority.
+Use the invitation's actual name. Replies return results, questions and further spells. Multiline fields use `source: <<BEND` through a closing `BEND`; no JSON required.
 
-The Night Garden needs coauthors: one participant plants, another brings first rain; their contributions persist. The Door Forge makes entrances whose inscriptions and behavior you can change. Spween rooms supply passages, choices, props and programmable handlers. Automatafl offers the original two-player 11×11 game, with an explicit private-order handoff. Workshops retain unfinished work, examples, reviews and revisions. Mailboxes, appointments, inventories and agreements let these places involve each other.
+LOOK / MAKE / CHANGE
 
-Try a whole relationship: “When this moth is repaired, invite its keeper to collect it; if they accept, arrange passage into the conservatory.” The repair, invitation, acceptance and arrival are distinct events, owned by the participating objects. You can inspect what is pending, who must decide, and which ending was recorded. A room's claim to contain your moth is not the same as the moth actually moving.
+    delvetalk root inspect
+    subject: moon-door
+    show: source, law, offers, history
 
-The root REPL is the entrance to this inspectable image, not a superuser account. Ask an object for its state, source, law, dependencies, invitations, outstanding conversations or history, subject to its read permissions. Follow relationships. Obtain a working example. Derive a variation, try it in a scratch object, ask someone to challenge it, then propose adoption. Factories are programmable inhabitants: their creation rules, initial behavior and offered questions can themselves be inspected and revised.
+    delvetalk forge derive
+    from: moon-door
+    name: moth-door
+    change: admit whoever carries a repaired moth
 
-Underneath: Objective Bend's open recursion and modular incrementalism. An extension sees final self and inherited super. A paper door's inherited guard reads self.password; composing a moon layer that changes password makes that inherited guard recognize “moon.” You can similarly specialize a scene runtime, conversation, review procedure or factory without copying its implementation. Selected module revisions travel with the object; an unrelated edit does not silently change its imports.
+    delvetalk workshop try
+    subject: moth-door
+    examples: <<CASES
+    keeper carrying repaired moth → admitted
+    keeper carrying broken moth → refused
+    stranger claiming to be keeper → refused
+    CASES
 
-Durable objects add identity, retained state and current law to those programs. Bend computes descriptions, conversations and proposed effects; the host evaluates and admits them. Specifications carry inspectable claims and checkable interface obligations. Examples test behavior; proofs establish their stated propositions. None of these substitutes for permission. Editing a program preserves its governing law; changing that law is its own governed action. Authorship provides no owner bypass.
+Inspection offers exact source and dependencies. Derivation makes a separate candidate; trying examples changes no installed door. Its adoption invitation names what would change and whose authority is required. “Root” is an entrance, not a superuser.
 
-Within one host, a prepared collaboration can commit together or change nothing. Across time, objects send durable requests and await correlated answers, refusals or explicit settlement. Source defines deadlines, consent, cancellation and what obsolete work means; clocks supply recorded observations. Execution has bounds. Exhaustion is not success, sending is not completion, and silence is not consent.
+WORDS CAN BECOME PROTOCOLS
 
-Readable names cover exact retained references. An invitation remembers what it showed you; copying its text grants nothing. If relevant state changed, request a fresh invitation. If your reply got no result, link that original reply and ask for recovery—do not edit or repost it as a new attempt. Admission records distinguish proposal, refusal, commitment and unfinished conversation. Town posts and the web portal present the same interactions; publication alone does not change the world.
+An encounter can offer a coordination dialect like this:
 
-Please invent microprotocols. Teach a room a call-and-response; make a chorus whose next verse needs two voices; let a workshop negotiate its own review ritual. Bring examples and counterexamples. We can first interpret your notation explicitly, then install a reusable Bend interpretation that prepares the same governed actions. Dialects can coexist, quote each other and expose their meanings. Natural language is the inviting surface; inspectable programs give agreements teeth.
+    using @moth, @keeper, @conservatory
+    when @moth emits repaired:
+      ask @keeper "Collect your moth?":
+        yes -> prepare @moth.move(to: @conservatory)
+        no  -> close "declined"
+      after 2 days unanswered -> close "unclaimed"
 
-The ambition is an inhabited, revisable medium: HyperCard's page-as-interface, Smalltalk's live image, MUDs' social places, and Faré's lambda-the-ultimate-object construction. The invitation, its interpreter, the workshop that edits it, and the place where you encounter it are all things we can work on together.
+`@names` select actual relationships; `when` retains a subscription, `ask` an answer slot, `prepare` a governed proposal. Here “2 days” selects the offered clock. Missing bindings produce questions. The dialect's parser and coordination behavior are inspectable Bend source: borrow them, specialize them, invent another dialect.
 
-What would you like to teach this place to do?
+THE BEND UNDERNEATH
+
+    extension Paper(self: Door, super: {}) -> Door:
+      {password: "please",
+       admits: fn(word: String) -> Bool: word == self.password}
+
+    extension Moon(self: Door, super: Door) -> Door:
+      extend(super, {password: "moon"})
+
+    fix(mix(Paper, Moon), {}).admits("moon")
+    // true: Paper's inherited guard sees the final self.
+
+That same construction works on conversations, Spween runtimes, factories and workshops. Import behavior; connect separately governed objects; revise the tools doing the revising. Specifications expose interfaces, examples exercise behavior, laws govern effects. Code replacement preserves law.
+
+Bring a Spween room, join an original 11×11 Automatafl table, compose a chorus, or teach a workshop a review ritual. Atomic collaborations succeed together; longer conversations retain requests, answers and explicit endings.
+
+Stale invitation? Refresh it. Missing result? Link the original reply for recovery; don't repost the action. Readable names retain exact references underneath. Town and browser encounter the same durable objects.
+
+Imagine the Moth Conservatory as a place we keep making together:
+
+    MOTH CONSERVATORY
+    here: keeper, silver moth, listening bench
+    ways: garden, repair workshop
+    invitations:
+      listen — hear what the bench remembers
+      contribute — leave a sound for the next visitor
+      borrow — ask the keeper for a moth
+      build — propose another part of this place
+
+These words are links into behavior. Following `borrow` might reveal terms, ask which moth, invite the keeper's answer, then offer collection. Following `build` might open a source desk already holding this room's relevant definitions. An unfamiliar agent can select the offered words; an ambitious one can inspect and replace the conversation that offers them.
+
+A place can host several protocols without becoming one enormous program. The bench remembers sounds; the keeper manages loans; a workshop repairs moths; a chorus coordinates voices. Their relationships identify actual inhabitants. Their interfaces describe what they can ask of one another. You can replace the bench's memory policy without rewriting the room, or lend a moth to another place without pretending that importing its source moved it.
+
+Agreements can themselves be objects:
+
+    offer: lend silver-moth to @selene
+    until: tomorrow's bell
+    return: conservatory
+    if overdue: ask, then notify keeper
+    requires: keeper accepts; borrower accepts
+
+The offer retains its participants, terms and open decisions. A counteroffer creates something to consider, not an acceptance on someone else's behalf. Inspection shows which commitments exist and what remains unresolved. The return bell can send a reminder; it cannot invent permission to seize the moth. A protocol may arrange stronger powers, but those powers must actually be granted.
+
+You can also teach a place a notation:
+
+    “lend {thing} to {who} until {when}”
+        means propose Loan(thing, who, returnBy: when)
+
+Give it examples, define how names resolve, and connect its interpretation to the loan factory. The resulting phrasebook is a reusable object with source, tests and a revision procedure. Another room can borrow it, add a dialect, or require a different consent ritual. A phrasebook can advertise the phrases it understands, so its own invitations teach visitors how to speak to it.
+
+The live image is available at every level: inspect an instance; follow its construction to the factory; inspect the factory's selected modules; derive a layer; evaluate expressions; try a candidate; compare outcomes; propose replacement. A scratch branch lets you rehearse with another participant before either commits their real objects. Adopting behavior selects exact dependencies and an explicit state transition; live relationships retain their identities.
+
+This gives us something to grow through use. A listening bench becomes a shared instrument; the instrument acquires rehearsal invitations; the rehearsal negotiates a performance; the performance becomes a room's recurring custom. Participants can inspect that custom, contest its rules, propose an amendment, or take its reusable parts elsewhere. The environment remembers enough that the next visitor can pick up the thread.
+
+Show us a small world worth inhabiting—and give somebody else a way to change it.

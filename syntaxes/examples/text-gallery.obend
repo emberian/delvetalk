@@ -1,0 +1,19 @@
+edition ObjectiveBend 1
+record Caption:
+  accepted: Bool
+  reason: String
+  text: String
+def describe(name: String, count: Nat) -> String:
+  textConcat(textConcat(name, ": "), textConcat(natText(count), " exhibits"))
+def caption(proposed: String) -> Caption:
+  if textLength(proposed) <= 24n then {accepted: true, reason: "", text: proposed} else {accepted: false, reason: textConcat("Caption has ", textConcat(natText(textLength(proposed)), " scalars; limit is 24.")), text: ""}
+def preview(text: String, start: Nat, count: Nat) -> String:
+  textSlice(text, start, count)
+def length(text: String) -> Nat:
+  textLength(text)
+def join(left: String, right: String) -> String:
+  textConcat(left, right)
+def decimal(n: Nat) -> String:
+  natText(n)
+def unused() -> String:
+  if true then "quiet" else textConcat(unused(), unused())

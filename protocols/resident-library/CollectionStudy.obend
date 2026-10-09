@@ -1,0 +1,21 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Consent.obend as Consent
+import ./Mailbox.obend as Mailbox
+def fill(n: Nat, queue: Mailbox.Queue) -> Mailbox.Queue:
+  if n == 0 then queue else fill(n - 1, Mailbox.enqueue(queue, {topic: "ready", units: n, event: "study", source: "source", author: "member"}))
+def queue(n: Nat) -> Mailbox.Queue:
+  fill(n, Mailbox.empty())
+def drain(queue: Mailbox.Queue) -> Nat:
+  match queue.front:
+    case nil(_): 0
+    case cons(c): c.head.units + drain(Mailbox.advance(queue, c.tail))
+def peers(n: Nat, key: Nat) -> Consent.Peers:
+  if n == 0 then Consent.Peers.nil() else Consent.Peers.cons({head: {slot: key, object: "source", program: "0000000000000000000000000000000000000000000000000000000000000000", generation: key}, tail: peers(n - 1, key + 1)})
+def subscriptions(n: Nat) -> Consent.Links:
+  {epoch: n, inbound: peers(n, 1), outbound: peers(n, 1)}
+def study(n: Nat) -> {queued: Nat, total: Nat, selected: Nat, next: Nat, more: Bool, absent: Bool}:
+  let inbox: Mailbox.Queue = queue(n)
+  let links: Consent.Links = subscriptions(n)
+  let page: Consent.Page = Consent.page(links, n - 4, 4)
+  {queued: inbox.size, total: drain(inbox), selected: page.count, next: page.next, more: page.more, absent: Consent.allows(links, {topic: "ready", units: 1, generation: n + 1}, {id: "study", source: "source", sourceProgram: "0000000000000000000000000000000000000000000000000000000000000000", originatingPrincipal: "member"}) == false}

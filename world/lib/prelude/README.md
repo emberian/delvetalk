@@ -27,3 +27,23 @@ and delivers a real retained sound. `conformance/test_source_prelude.py` compose
 source extensions over a shared encounter collection and runs inspection,
 bounded addition and revision through the compiler and machine. Missing imports
 are refused; there is no fallback to a host-installed library.
+
+`EncounterPages.obend` stores those same children in pages of at most sixteen.
+Starting empty, `append` fills the last page; `offer` first rejects duplicate keys
+and the caller's total capacity. `remove` preserves order, removes every matching
+key and drops empty pages without repacking survivors. `page` uses a zero-based
+index and returns an ordinary `Encounter.Children` (empty when absent).
+`length`, `pageCount` and `contains` inspect the collection. Constructors remain
+ordinary public source data; the chunk bound is maintained by these operations,
+not a privileged host invariant. This concrete module does not discard fields
+from other protocols' richer records.
+
+`examples/PageGallery.obend` retains pages and a shared selected page in a real
+source object. Its view offers previous/next actions and at most sixteen children;
+links do not grant access to their targets. The authored capacity is 200, subject
+to the separate receiving and view wire limits. `test_encounter_pages.py` checks
+200-entry source roundtrips and a seventeen-offer native object journey through
+checkpoint, restart, exact retry, stale-root refusal and live page projection.
+The opt-in `bench_source_collections.py --representation pages` records source
+work at 8/32/50/200. Chunking solves the measured flat-list depth failure; it does
+not promise unbounded storage or remove the full-root 64 KiB request/view limits.

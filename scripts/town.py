@@ -170,7 +170,7 @@ class Town:
                 try:
                     receipt = (self.clerk.receive_interpreted(uri, cid, interpretation)
                                if interpretation is not None else self.clerk.receive(uri, cid))
-                    if receipt.get('format') != 'delvetalk-clerk-receipt-v1' or any(receipt['source'][k] != source[k] for k in source):
+                    if receipt.get('format') not in ('delvetalk-clerk-receipt-v1', 'delvetalk-clerk-preparation-v1') or any(receipt['source'][k] != source[k] for k in source):
                         raise ValueError('clerk receipt differs from the selected original reply')
                     entry['receipt'] = receipt
                     save(path, entry)
@@ -181,6 +181,13 @@ class Town:
                             'body': 'No confirmed outcome. Ask us to check your original reply. Do not repost the command.',
                             'detail': type(error).__name__}
             receipt = entry['receipt']
+            if receipt['format'] == 'delvetalk-clerk-preparation-v1':
+                outcome = receipt['outcome']
+                response = {'status': outcome['kind'], 'source': source, 'publication': 'paused',
+                            'body': outcome['message'], 'preparation': outcome, 'receipt': receipt}
+                entry['response'] = response
+                save(path, entry)
+                return response
             if 'views' not in entry:
                 # Snapshot presentation after receipt recovery. Other admitted turns may
                 # have advanced the world; the reply distinguishes receipt from current view.
@@ -205,7 +212,9 @@ class Town:
                     capture = town_cards.source_offers.capture_available(view, snapshot['objects'])
                     entry['offerRoots'][view['object']] = view['root']
                     for offer in capture['offers'].values():
-                        entry['offerRoots'].update(offer['reads'])
+                        entry['offerRoots'][offer['object']] = offer['root']
+                        for observation in offer['observations']:
+                            entry['offerRoots'][observation['object']] = observation['root']
                 entry['aliases'] = ['reply-' + str(entry['sequence']) + '-' + str(n + 1) for n in range(len(entry['views']))]
                 save(path, entry)  # Capture exact views before allocating any follow-up card.
             cards = []

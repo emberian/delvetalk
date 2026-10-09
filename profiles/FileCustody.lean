@@ -8,8 +8,8 @@ namespace FileCustody
 -- JsonNumber equality includes decimal scale. Json.compress erases trailing
 -- zeros, so using it for custody can make an exact retry collide after restart.
 -- Scientific notation preserves the stored mantissa and exponent without a
--- decimal expansion proportional to the exponent. The framed legacy CLI keeps
--- its existing serializer; this transport changes no receiving equality rule.
+-- decimal expansion proportional to the exponent. Framed and file transports
+-- preserve the same values; this changes no receiving equality rule.
 partial def encode : Json → String
   | .num number => toString number.mantissa ++
       (if number.exponent == 0 then "" else "e-" ++ toString number.exponent)
@@ -24,7 +24,8 @@ def readRequest : IO Json := do
   repeat
     let chunk ← stdin.read 4096
     if chunk.isEmpty then break
-    if bytes.size + chunk.size > 65537 then throw (IO.userError "request exceeds 64 KiB")
+    if bytes.size + chunk.size > World.maxRequestBytes + 1 then
+      throw (IO.userError "expanded request exceeds 1 MiB")
     bytes := bytes ++ chunk
   let some line := String.fromUTF8? bytes | throw (IO.userError "request is not UTF-8")
   IO.ofExcept (Json.parse line)
@@ -58,7 +59,7 @@ def run (receive : Json → Json → Except String (Json × Json))
 def mainWith (receive : Json → Json → Except String (Json × Json))
     (framed : Json → Json) (args : List String) : IO Unit :=
   match args with
-  | [] => World.serve framed
+  | [] => World.serve framed encode
   | ["--files", snapshot, candidate] => run receive snapshot candidate
   | ["--lookup-files", snapshot] => lookup snapshot
   | _ => throw (IO.userError "expected no arguments, --files SNAPSHOT CANDIDATE, or --lookup-files SNAPSHOT")

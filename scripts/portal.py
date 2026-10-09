@@ -156,7 +156,7 @@ class Portal:
         stored = bootstrap.desk_module.immutable(self.state / 'binding.json', binding)
         if canonical(stored) != canonical(binding):
             raise ValueError('Portal custody belongs to a different world/runtime')
-        for name in ('cards', 'drafts', 'interpretations'):
+        for name in ('cards', 'drafts', 'interpretations', 'preparations'):
             (self.state / name).mkdir(exist_ok=True, mode=0o700)
 
     custody_lock = staticmethod(bounded_lock)
@@ -400,10 +400,20 @@ class Portal:
         exact(payload, ('card', 'action'), ('fields',))
         saved = self._read('cards', payload['card'])
         principal = self.principal or 'portal-preview'
-        request = self.captured_request(saved, payload['action'], principal,
-                    'portal:' + secrets.token_hex(16), payload.get('fields', {}))
-        if len(canonical(request)) > MAX_BODY:
-            raise ValueError('Exact request exceeds the host envelope; a smaller program/view is required')
+        import source_offers
+        try:
+            request = self.captured_request(saved, payload['action'], principal,
+                        'portal:' + secrets.token_hex(16), payload.get('fields', {}))
+        except source_offers.PreparationOutcome as result:
+            action = next(a for a in saved['card']['actions'] if a['id'] == payload['action'])
+            identity = self._store('preparations', {
+                'card': payload['card'], 'action': payload['action'],
+                'fields': copy.deepcopy(payload.get('fields', {})),
+                'object': saved['card']['object'], 'version': saved['card']['version'],
+                'summary': action['label'], 'outcome': copy.deepcopy(result.outcome)})
+            return self.preparation(identity)
+        if len(canonical(request)) > world.MAX_EXPANDED_REQUEST_BYTES:
+            raise ValueError('Expanded request exceeds the 1 MiB local host envelope')
         wire = self.request_wire(request)
         action = next(action for action in saved['card']['actions'] if action['id'] == payload['action'])
         draft = {'panel': saved['card'].get('panel', 'main'), 'card': payload['card'], 'action': payload['action'], 'fields': payload.get('fields', {}),
@@ -419,6 +429,16 @@ class Portal:
                                      'token': 'do ' + payload['card'] + ' ' + payload['action']}
         identity = self._store('drafts', draft)
         return self.draft(identity)
+
+    def preparation(self, identity):
+        """Retained source conversation; never an admission or executable draft."""
+        saved = self._read('preparations', identity)
+        result = {**saved, 'format': 'delvetalk-portal-preparation-v1',
+                  'preparation': identity, 'canExecute': False,
+                  'links': {'self': '/api/preparation?preparation=' + identity}}
+        if self.public:
+            result.update(ephemeral=True, expiresInSeconds=self.preview.lifetime('preparations', identity))
+        return result
 
     @staticmethod
     def captured_request(saved, action, principal, intent, fields):
@@ -561,7 +581,7 @@ def make_server(portal, port=0):
                 raise PermissionError('Cross-site requests are refused')
             if portal.public:
                 allowed = {'GET': {'/', '/static/app.js', '/static/style.css', '/api/world',
-                                   '/api/object', '/api/card', '/api/child', '/api/detail', '/api/draft'},
+                                   '/api/object', '/api/card', '/api/child', '/api/detail', '/api/draft', '/api/preparation'},
                            'HEAD': {'/', '/static/app.js', '/static/style.css', '/api/world'},
                            'POST': {'/api/prepare', '/api/interpret'}}
                 if url.path not in allowed.get(method, set()):
@@ -591,6 +611,8 @@ def make_server(portal, port=0):
                     exact(q, ('draft',)); result = portal.authoring.draft(q['draft'])
                 elif url.path == '/api/authoring/status':
                     exact(q, ('draft',)); result = portal.authoring.status(q['draft'])
+                elif url.path == '/api/preparation':
+                    exact(q, ('preparation',)); result = portal.preparation(q['preparation'])
                 elif url.path == '/api/draft':
                     exact(q, ('draft',)); result = portal.draft(q['draft'])
                 else:

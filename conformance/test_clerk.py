@@ -190,12 +190,12 @@ class ClerkTests(unittest.TestCase):
 
     def test_oversized_resolved_request_never_reserves_journal_or_blocks_upgrade(self):
         oversized = copy.deepcopy(self.root)
-        oversized['state']['large'] = 'x' * 65536
+        oversized['state']['large'] = 'x' * clerk.world.MAX_EXPANDED_REQUEST_BYTES
         reference = self.root_record(root=oversized)
         uri, cid = self.feed_record('oversized-ref', reference)
         self.assertLess(len(self.pds.records[uri][1]['text'].encode()), 1024)
         before = self.c.database.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'derived request exceeds 64 KiB'):
+        with self.assertRaisesRegex(ValueError, 'derived request exceeds 1 MiB'):
             self.c.receive(uri, cid)
         self.assertEqual(list((self.state / 'requests').glob('*.json')), [])
         self.assertEqual(self.c.database.read_bytes(), before)

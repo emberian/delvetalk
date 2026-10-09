@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Source-owned logical time, bounded appointments and native message delivery."""
+"""Actual authored collections, explicit logical time and native durable delivery."""
 import copy
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -13,10 +14,10 @@ FIXTURES = ROOT / 'protocols/appointments'
 sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / 'syntaxes'))
 import world
-import source_bundle
-import source_packages
-import translate
 import affordances
+import obend_object
+import propose
+import spell_examples
 
 
 def load_driver():
@@ -26,21 +27,41 @@ def load_driver():
     return module
 
 
-def protocol(name, **initial):
-    result = source_bundle.load(FIXTURES / (name.lower() + '.binding.json'),
-                                [(name, FIXTURES / (name + '.obend'))])
-    fields = result['initial']['model']['fields']
-    for key, value in initial.items():
-        next(field for field in fields if field['name'] == key)['value'] = {'tag': 'label', 'value': value}
-    return result
+def modules(name):
+    return [{'name': n, 'source': path.read_text()} for n, path in [
+        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
+        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+        ('Appointments', FIXTURES / 'Appointments.obend'), (name, FIXTURES / (name + '.obend'))]]
+
+
+def native(request):
+    result = subprocess.run([str(ROOT / '.lake/build/bin/delvetalk-obend')],
+        input=json.dumps(request) + '\n', capture_output=True, text=True, timeout=30, check=True)
+    return json.loads(result.stdout)
+
+
+def wire(value):
+    if isinstance(value, dict):
+        return {'tag': 'record', 'fields': [{'name': k, 'value': wire(v)} for k, v in value.items()]}
+    return {'tag': 'natural' if isinstance(value, int) else 'label', 'value': str(value)}
 
 
 def plain(value):
     if value['tag'] == 'record':
         return {field['name']: plain(field['value']) for field in value['fields']}
+    if value['tag'] == 'variant':
+        return {'label': value['label'], **plain(value['payload'])}
     if value['tag'] == 'natural':
         return int(value['value'])
     return value['value']
+
+
+def entries(xs):
+    result = []
+    while xs['label'] == 'cons':
+        result.append(xs['head'])
+        xs = xs['tail']
+    return result
 
 
 def law(commands):
@@ -49,6 +70,9 @@ def law(commands):
 
 
 class Appointments(unittest.TestCase):
+    lowered = {}
+    constructors = {}
+
     def setUp(self):
         self.assertTrue((ROOT / '.lake/build/bin/delvetalk-compiled').exists(),
                         'Build compiled host first; tests must not spawn native compilers')
@@ -73,18 +97,36 @@ class Appointments(unittest.TestCase):
     def state(self, name='clock'):
         return plain(self.root(name)['state']['model'])
 
+    def active(self):
+        queue = self.state()['queue']
+        return entries(queue['front']) + list(reversed(entries(queue['back'])))
+
     def create(self, name, program, authority):
         return self.call({'op': 'create', 'object': name, 'principal': 'bootstrap',
                           'intent': 'create-' + name, 'protocol': program, 'law': authority}, 'committed')
 
-    def program(self, name, **initial):
-        return protocol(name, **initial)
+    def program(self, name, **configuration):
+        # Compile the exact sealed imports, then evaluate an authored constructor
+        # on checked configuration data. No source/AST specialization in Python.
+        if name not in self.lowered:
+            material = modules(name)
+            self.lowered[name] = obend_object.lower_data_modules(material)
+            compiled = native({'op': 'compile', 'modules': material, 'entry': 'configured'})
+            self.assertEqual(compiled['status'], 'compiled', compiled)
+            self.constructors[name] = compiled['artifact']
+        protocol = copy.deepcopy(self.lowered[name])
+        config = {'capacity': 16} if name == 'Clock' else {'owner': 'moss', 'clock': 'clock'}
+        config.update(configuration)
+        result = native({'op': 'run-data-v1', 'artifact': self.constructors[name], 'arguments': [wire(config)]})
+        self.assertIn('value', result, result)
+        protocol['initial']['model'] = result['value']
+        return protocol
 
-    def setup_world(self, capacity=128):
+    def setup_world(self, pending_capacity=128, capacity=16):
         self.call({'op': 'messages-init', 'principal': 'bootstrap', 'intent': 'init',
-                   'lineage': 'appointments-journey', 'pendingLimit': capacity}, 'committed')
-        self.create('clock', self.program('Clock'), law({'request': ['moss', 'iris'],
-                    'cancel': ['moss', 'iris'], 'tick': ['driver']}))
+                   'lineage': 'appointments-journey', 'pendingLimit': pending_capacity}, 'committed')
+        self.create('clock', self.program('Clock', capacity=capacity), law({'request': ['moss', 'iris'],
+                    'cancel': ['moss', 'iris'], 'tick': ['driver'], 'page': ['moss', 'iris']}))
         self.create('garden-task', self.program('Task', owner='moss'), law({'wake': ['relay']}))
         self.create('lantern-task', self.program('Task', owner='iris'), law({'wake': ['relay']}))
         self.create('digest', {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {
@@ -92,16 +134,17 @@ class Appointments(unittest.TestCase):
                      'outbox': []}}}, ['reader'])
         self.programs = {}
         for name in ('garden-task', 'lantern-task'):
-            r = self.invoke('digest', 'hash', {'protocol': self.root(name)['protocol']}, 'reader')
-            self.programs[name] = self.call(r, 'committed')['data']['result']
+            self.programs[name] = self.call(self.invoke('digest', 'hash',
+                {'protocol': self.root(name)['protocol']}, 'reader'), 'committed')['data']['result']
 
     def invoke(self, object, command, input, principal):
         return {'op': 'invoke', 'object': object, 'command': command, 'input': input,
                 'principal': principal, 'intent': self.intent(), 'expected': self.root(object)}
 
-    def booking(self, slot=0, owner='moss', to=None, generation=1, due=5, deadline=10, **changes):
+    def booking(self, id='garden', owner='moss', to=None, generation=None, due=5, deadline=10, **changes):
         to = to or ('garden-task' if owner == 'moss' else 'lantern-task')
-        return self.invoke('clock', 'request', {'slot': slot, 'generation': generation,
+        generation = self.state()['nextGeneration'] if generation is None else generation
+        return self.invoke('clock', 'request', {'id': id, 'generation': generation,
             'due': due, 'deadline': deadline, 'to': to, 'recipientProgram': self.programs[to],
             'topic': 'water the garden' if owner == 'moss' else 'light the lanterns', **changes}, owner)
 
@@ -114,31 +157,35 @@ class Appointments(unittest.TestCase):
     def tick(self, now):
         return self.call(self.tick_request(now), 'committed')
 
-    def cancel(self, slot=0, generation=1, principal='moss'):
-        return self.invoke('clock', 'cancel', {'slot': slot, 'generation': generation}, principal)
+    def cancel(self, id='garden', generation=1, principal='moss'):
+        return self.invoke('clock', 'cancel', {'id': id, 'generation': generation}, principal)
 
     def delivery(self, reference, target):
         return {'op': 'deliver', 'object': target, 'event': reference,
                 'principal': 'relay', 'intent': self.intent(), 'expected': self.root(target)}
 
+    def project(self, object='clock', panel='main'):
+        spec = importlib.util.spec_from_file_location('appointment_projection', ROOT / 'scene/projection.py')
+        projection = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(projection)
+        return projection.project(self.root(object), object, panel=panel)
+
     def test_two_agents_deadlines_and_explicit_ticks_drive_independent_tasks(self):
         self.setup_world()
-        self.book(slot=0)
-        self.book(slot=4, owner='iris', due=6, deadline=6)
+        self.book()
+        self.book(id='lanterns', owner='iris', due=6, deadline=6)
         self.assertEqual(self.tick(4)['data'].get('messages', []), [])
-        self.assertEqual(self.state()['a']['status'], 'queued')
-        self.assertEqual(self.tick(5)['data'].get('messages', []), [])  # second half not yet due
+        self.assertEqual(self.state()['size'], 2)
         garden = self.tick(5)['data']['messages']
-        self.assertEqual(len(garden), 1)
         lanterns = self.tick(6)['data']['messages']
-        self.assertEqual(len(lanterns), 1)
         for refs, target in [(garden, 'garden-task'), (lanterns, 'lantern-task')]:
+            self.assertEqual(len(refs), 1)
             self.call(self.delivery(refs[0], target), 'committed')
             self.assertEqual(self.state(target)['runs'], 1)
         self.assertEqual(self.state('garden-task')['lastTopic'], 'water the garden')
         self.assertEqual(self.state('lantern-task')['lastTick'], 6)
-        self.assertEqual(self.state()['a']['status'], 'sent')
-        self.assertEqual(self.state()['e']['status'], 'sent')
+        self.assertEqual(self.state()['size'], 0)
+        self.assertEqual(self.active(), [])
 
     def test_authority_monotone_time_generation_and_owner_guards(self):
         self.setup_world()
@@ -148,7 +195,7 @@ class Appointments(unittest.TestCase):
         before = self.root()
         self.call(self.cancel(principal='iris'), 'refused')
         self.call(self.cancel(generation=2), 'refused')
-        self.call(self.booking(generation=2), 'refused')
+        self.call(self.booking(), 'refused')  # active id already used
         self.assertEqual(self.root(), before)
         self.call(self.cancel(), 'committed')
         self.call(self.booking(generation=1), 'refused')
@@ -157,144 +204,139 @@ class Appointments(unittest.TestCase):
         current = self.root()
         self.assertIn('backwards', self.call(self.tick_request(5), 'refused')['data'])
         self.assertEqual(self.root(), current)
-        for changes in [dict(slot=8), dict(due=5), dict(due=9, deadline=8)]:
-            self.call(self.booking(slot=1, **{k: v for k, v in changes.items() if k != 'slot'})
-                      if 'slot' not in changes else self.booking(**changes), 'refused')
+        for changes in [dict(id=''), dict(due=5), dict(due=9, deadline=8), dict(generation=99)]:
+            self.call(self.booking(**changes), 'refused')
 
-    def test_cancellation_wins_before_send_and_cannot_recall_an_admitted_send(self):
-        self.setup_world()
+    def test_cancellation_race_and_id_reuse_cannot_recall_or_cancel_a_later_generation(self):
+        self.setup_world(capacity=1)
         self.book()
         stale_tick = self.tick_request(5)
         self.call(self.cancel(), 'committed')
         self.assertEqual(self.call(stale_tick, 'refused')['data'], 'stale read root')
         self.assertEqual(self.tick(5)['data'].get('messages', []), [])
         self.book(generation=2, due=5)
-        self.tick(5)  # other half
         stale_cancel = self.cancel(generation=2)
-        sent = self.tick(5)
-        ref = sent['data']['messages'][0]
+        ref = self.tick(5)['data']['messages'][0]
         self.assertEqual(self.call(stale_cancel, 'refused')['data'], 'stale read root')
         self.assertIn('cannot be recalled', self.call(self.cancel(generation=2), 'refused')['data'])
-        self.tick(11)  # deadlines bound admission of sends, not later relay delivery
-        self.call(self.delivery(ref, 'garden-task'), 'committed')
-        self.assertEqual(self.state('garden-task')['runs'], 1)
+        self.tick(11)
+        self.call(self.delivery(ref, 'garden-task'), 'committed')  # send deadline, not delivery deadline
         self.call(self.delivery(ref, 'garden-task'), 'refused')
-        self.book(generation=3, due=12, deadline=15)
-        self.call(self.cancel(generation=2), 'refused')
-        self.assertEqual(self.state()['a']['status'], 'queued')
+        self.book(generation=3, due=12, deadline=15, owner='iris')
+        self.call(self.cancel(generation=2), 'refused')  # fresh root still cannot target reused id
+        self.call(self.cancel(generation=3), 'refused')  # current generation but previous owner
+        self.assertEqual(self.active()[0]['owner'], 'iris')
+        self.call(self.cancel(generation=3, principal='iris'), 'committed')
+        self.assertEqual(self.state()['nextGeneration'], 4)
+        self.assertEqual(self.active(), [])
 
-    def test_four_slot_batches_alternate_without_starving_the_second_half(self):
+    def test_four_entry_rotation_passes_future_work_and_new_bookings_cannot_jump_queue(self):
         self.setup_world()
-        for slot in range(8):
-            self.book(slot=slot, owner='moss' if slot < 4 else 'iris')
+        for number in range(12):
+            self.book(id=str(number), owner='moss' if number < 8 else 'iris',
+                      due=50 if number < 4 else 5, deadline=60)
+        self.assertEqual(self.tick(5)['data'].get('messages', []), [])
+        self.assertEqual([x['id'] for x in self.active()][:4], ['4', '5', '6', '7'])
         first = self.tick(5)
         self.assertEqual(len(first['data']['messages']), 4)
-        self.assertEqual(self.state()['cursor'], 4)
-        # Rebooking an early slot cannot jump ahead of the later half.
-        self.book(slot=0, generation=2, due=5)
+        self.book(id='late', due=5)
         second = self.tick(5)
         self.assertEqual(len(second['data']['messages']), 4)
-        self.assertEqual(self.state()['cursor'], 0)
-        self.assertEqual(self.state()['a']['status'], 'queued')
-        self.assertTrue(all(self.state()[key]['status'] == 'sent' for key in 'bcdefgh'))
-        # All eight messages have distinct native identities and slot ordinals.
-        for receipt, target, offset in [(first, 'garden-task', 0), (second, 'lantern-task', 4)]:
-            self.assertEqual(len({ref['id'] for ref in receipt['data']['messages']}), 4)
+        for receipt, target, start in [(first, 'garden-task', 4), (second, 'lantern-task', 8)]:
             for ordinal, ref in enumerate(receipt['data']['messages']):
                 evidence = world.query(self.db, {'op': 'message-event', 'principal': 'reader', 'event': ref},
                                        profile='compiled')['event']['evidence']
                 self.assertEqual(evidence['slot'], ordinal)
-                self.assertEqual(evidence['payload']['slot'], offset + ordinal)
+                self.assertEqual(evidence['payload']['id'], str(start + ordinal))
                 self.call(self.delivery(ref, target), 'committed')
             self.assertEqual(self.state(target)['runs'], 4)
-        self.assertEqual(len(self.tick(5)['data']['messages']), 1)
-        self.assertEqual(self.tick(5)['data'].get('messages', []), [])
+        self.assertEqual(self.tick(5)['data'].get('messages', []), [])  # future four rotate
+        self.assertEqual(len(self.tick(5)['data']['messages']), 1)  # late now gets its turn
+        self.assertEqual(self.state()['size'], 4)
 
-    def test_explicit_migration_rejects_old_two_slot_cursor_before_emitting(self):
-        self.setup_world()
-        self.book(slot=7)
-        for cursor in (2, 6):
-            root = self.root()
-            migrated = copy.deepcopy(root['state'])
-            next(field for field in migrated['model']['fields'] if field['name'] == 'cursor')['value']['value'] = str(cursor)
-            # The legacy inline root stays the exact preimage. Compact the
-            # replacement's repeated source so explicit migration fits the wire.
-            candidate = copy.deepcopy(root['protocol'])
-            if 'sourcePackages' not in candidate:
-                modules = candidate['commands']['tick']['transition']['package']['modules']
-                candidate['sourcePackages'] = {'resident': source_packages.table(modules)}
-                for command in candidate['commands'].values():
-                    package = command['transition']['package']
-                    command['transition']['package'] = source_packages.selector(package['entry'])
-            self.call({'op': 'reprogram', 'object': 'clock', 'principal': 'builder',
-                'intent': self.intent(), 'expected': root, 'protocol': candidate,
-                'state': migrated}, 'committed')
-            before = self.root()
-            self.assertIn('migration requires cursor 0 or 4', self.call(self.tick_request(5), 'refused')['data'])
-            self.assertEqual(self.root(), before)
-            self.assertEqual(world.query(self.db, {'op': 'messages-pending', 'principal': 'reader'},
-                                        profile='compiled')['pending'], {})
-        root = self.root()
-        migrated = copy.deepcopy(root['state'])
-        next(field for field in migrated['model']['fields'] if field['name'] == 'cursor')['value']['value'] = '4'
-        self.call({'op': 'reprogram', 'object': 'clock', 'principal': 'builder',
-            'intent': self.intent(), 'expected': root, 'protocol': root['protocol'],
-            'state': migrated}, 'committed')
-        receipt = self.tick(5)
-        self.assertEqual(len(receipt['data']['messages']), 1)
-        self.assertEqual(self.state()['h']['status'], 'sent')
+    def test_configured_capacity_is_reclaimed_without_retaining_terminal_tombstones(self):
+        self.setup_world(capacity=3)
+        for number in range(3):
+            self.book(id=str(number))
+        before = self.root()
+        self.call(self.booking(id='full'), 'refused')
+        self.assertEqual(self.root(), before)
+        self.call(self.cancel(id='1', generation=2), 'committed')
+        self.book(id='1', generation=4)
+        self.call(self.cancel(id='1', generation=2), 'refused')
+        self.assertEqual(len(self.tick(5)['data']['messages']), 3)
+        self.assertEqual(self.state()['size'], 0)
+        self.assertEqual(self.active(), [])
+        self.book(id='0', due=5)
+        self.assertEqual(self.state()['nextGeneration'], 6)
+
+    def test_twenty_four_entry_configuration_projects_pages_and_emits_a_bounded_batch(self):
+        self.setup_world(capacity=24)
+        for number in range(24):
+            self.book(id=str(number))
+        self.assertEqual(self.state()['size'], 24)
+        self.assertEqual(len(self.project()['children']), 4)
+        self.call(self.invoke('clock', 'page', {'offset': 20}, 'moss'), 'committed')
+        self.assertEqual([c['key'] for c in self.project()['children']], ['20', '21', '22', '23'])
+        self.call(self.booking(id='full'), 'refused')
+        self.assertEqual(len(self.tick(5)['data']['messages']), 4)
+        self.assertEqual(self.state()['size'], 20)
+        self.assertEqual(self.state()['offset'], 0)
 
     def test_expired_work_emits_nothing_and_cancelled_bad_descriptor_cannot_poison_ticks(self):
         self.setup_world()
         self.book(deadline=5)
-        expired = self.tick(6)
-        self.assertEqual(expired['data'].get('messages', []), [])
-        self.assertEqual(self.state()['a']['status'], 'expired')
-        self.book(generation=2, due=6, recipientProgram='bad hash')
-        self.tick(6)  # bad descriptor in other half is not inspected or emitted
+        self.assertEqual(self.tick(6)['data'].get('messages', []), [])
+        self.assertEqual(self.state()['last'], {'id': 'garden', 'generation': 1, 'status': 'expired'})
+        self.assertEqual(self.state()['size'], 0)
+        self.book(due=6, recipientProgram='bad hash')
         before = self.root()
         self.call(self.tick_request(6), 'refused')
         self.assertEqual(self.root(), before)
         self.call(self.cancel(generation=2), 'committed')
         self.assertEqual(self.tick(6)['data'].get('messages', []), [])
 
-    def test_pending_capacity_refuses_the_whole_batch_without_skipping_work(self):
-        self.setup_world(capacity=3)
-        for slot in range(4):
-            self.book(slot=slot, owner='iris' if slot == 3 else 'moss')
+    def test_pending_capacity_refuses_whole_batch_without_skipping_work(self):
+        self.setup_world(pending_capacity=3)
+        for number in range(4):
+            self.book(id=str(number), owner='iris' if number == 3 else 'moss')
         before = self.root()
         self.assertIn('capacity', self.call(self.tick_request(5), 'refused')['data'])
         self.assertEqual(self.root(), before)
-        pending = world.query(self.db, {'op': 'messages-pending', 'principal': 'reader'}, profile='compiled')
-        self.assertEqual(pending['pending'], {})
-        self.call(self.cancel(slot=3, principal='iris'), 'committed')
+        self.assertEqual(world.query(self.db, {'op': 'messages-pending', 'principal': 'reader'},
+                                    profile='compiled')['pending'], {})
+        self.call(self.cancel(id='3', generation=4, principal='iris'), 'committed')
         refs = self.tick(5)['data']['messages']
         self.assertEqual(len(refs), 3)
         for ref in refs:
             self.call(self.delivery(ref, 'garden-task'), 'committed')
         self.assertEqual(self.state('garden-task')['runs'], 3)
 
-    def test_recipient_revision_blocks_send_until_owner_cancels_and_rebooks(self):
+    def test_recipient_revision_returns_exact_refusal_and_leaves_inspectable_queue(self):
         self.setup_world()
         self.book()
         original = self.root('garden-task')
-        changed = copy.deepcopy(original['protocol'])
-        changed['revision'] = 2
+        changed = {**original['protocol'], 'revision': 2}
         self.call({'op': 'reprogram', 'object': 'garden-task', 'principal': 'builder',
             'intent': self.intent(), 'expected': original, 'protocol': changed,
             'state': original['state']}, 'committed')
-        before = self.root()
-        self.assertIn('program changed', self.call(self.tick_request(5), 'refused')['data'])
-        self.assertEqual(self.root(), before)
+        request = self.tick_request(5)
+        refused = self.call(request, 'refused')
+        self.assertEqual(refused['data'], 'message recipient program changed before emission')
+        self.assertEqual(self.call(request), refused)
+        self.assertEqual(self.root(), request['expected'])
+        view = self.project()
+        self.assertIn('retained receipt', view['data']['prose'])
+        self.assertEqual(view['data']['title'], 'Queued appointments')
+        self.assertEqual(view['children'][0]['object'], 'garden-task')
         self.call(self.cancel(), 'committed')
         self.programs['garden-task'] = self.call(self.invoke('digest', 'hash', {'protocol': changed}, 'reader'), 'committed')['data']['result']
-        self.book(generation=2)
-        refs = self.tick(5)['data']['messages']
-        self.call(self.delivery(refs[0], 'garden-task'), 'committed')
+        self.book()
+        self.call(self.delivery(self.tick(5)['data']['messages'][0], 'garden-task'), 'committed')
 
-    def test_relay_authority_and_owner_binding_are_separate_from_driver_authority(self):
+    def test_relay_current_authority_and_owner_binding_remain_separate_from_driver(self):
         self.setup_world()
-        self.book(to='lantern-task')  # moss cannot make iris's task act on moss's appointment
+        self.book(to='lantern-task')
         ref = self.tick(5)['data']['messages'][0]
         before = self.root('lantern-task')
         request = self.delivery(ref, 'lantern-task')
@@ -311,7 +353,7 @@ class Appointments(unittest.TestCase):
         first = driver.tick(self.db, attempt, clock='clock', principal='driver', intent='driver-5', now=5)
         self.assertEqual(first['kind'], 'committed')
         self.assertEqual(driver.tick(self.db, attempt, clock='clock', principal='driver', intent='driver-5', now=5), first)
-        self.assertEqual(self.state()['cursor'], 4)
+        self.assertEqual(self.state()['size'], 0)
         with self.assertRaisesRegex(ValueError, 'different custody or explicit inputs'):
             driver.tick(self.db, attempt, clock='clock', principal='driver', intent='driver-5', now=6)
         request = self.tick_request(6)
@@ -323,7 +365,25 @@ class Appointments(unittest.TestCase):
         self.assertEqual(driver.tick(self.db, stale, clock='clock', principal='driver', intent=request['intent'], now=6), refused)
         self.assertEqual(world.wire_loads(stale.read_text())['request'], request)
 
-    def test_killed_tick_reply_recovers_exact_request_without_duplicate_scheduled_send(self):
+    def test_terminal_driver_retries_the_retained_tick_after_cancellation(self):
+        self.setup_world()
+        self.book()
+        self.call(self.cancel(), 'committed')
+        attempt = Path(self.temp.name) / 'terminal-tick.json'
+        command = [sys.executable, str(FIXTURES / 'clock_driver.py'), str(self.db), str(attempt),
+                   '--principal', 'driver', '--intent', 'terminal-5', '--now', '5']
+        first = subprocess.run(command, capture_output=True, text=True, check=True, timeout=20)
+        receipt = world.wire_loads(first.stdout)
+        self.assertEqual(receipt['kind'], 'committed')
+        self.assertEqual(receipt['data'].get('messages', []), [])
+        retained = attempt.read_bytes()
+        self.book(due=5)
+        second = subprocess.run(command, capture_output=True, text=True, check=True, timeout=20)
+        self.assertEqual(world.wire_loads(second.stdout), receipt)
+        self.assertEqual(attempt.read_bytes(), retained)
+        self.assertEqual(self.state()['size'], 1)  # retry did not target the later generation
+
+    def test_killed_tick_reply_recovers_without_duplicate_scheduled_send(self):
         self.setup_world()
         self.book()
         attempt = Path(self.temp.name) / 'durable-tick.json'
@@ -344,94 +404,52 @@ clock_driver.tick(sys.argv[2],sys.argv[3],clock='clock',principal='driver',inten
         self.assertEqual(receipt['kind'], 'committed')
         self.assertEqual(len(receipt['data']['messages']), 1)
         self.assertEqual(self.call(request), receipt)
-        self.assertEqual(self.state()['cursor'], 4)
+        self.assertEqual(self.state()['size'], 0)
         ref = receipt['data']['messages'][0]
-        observed = world.query(self.db, {'op': 'message-event', 'principal': 'reader', 'event': ref}, profile='compiled')
-        evidence = observed['event']['evidence']
+        evidence = world.query(self.db, {'op': 'message-event', 'principal': 'reader', 'event': ref},
+                               profile='compiled')['event']['evidence']
         self.assertEqual(evidence['sourcePreimage'], request['expected'])
         self.assertEqual(evidence['source'], 'clock')
         self.assertEqual(evidence['originatingPrincipal'], 'driver')
         self.assertEqual(evidence['payload']['owner'], 'moss')
+        self.assertEqual(evidence['payload']['id'], 'garden')
         self.assertEqual(evidence['payload']['generation'], 1)
         self.assertEqual(evidence['payload']['tick'], 5)
-        delivered = self.call(self.delivery(ref, 'garden-task'), 'committed')
-        self.assertEqual(delivered['data']['result']['runs'], 1)
-        for _ in range(4):
-            self.assertEqual(self.tick(5)['data'].get('messages', []), [])
+        self.call(self.delivery(ref, 'garden-task'), 'committed')
+        self.assertEqual(self.tick(5)['data'].get('messages', []), [])
 
-
-class AuthoredAppointmentMenus(Appointments):
-    """Run the same receiving contract through actual @3 source-authored objects."""
-    lowered_programs = {}
-
-    def program(self, name, **initial):
-        source = (FIXTURES / (name + '.obend')).read_text()
-        if name == 'Task':
-            source = source.replace('owner: "moss"', 'owner: "' + initial.get('owner', 'moss') + '"')
-        key = (name, source)
-        if key not in self.lowered_programs:
-            self.lowered_programs[key] = translate.translate('objective-bend-spell@3', source.encode())['lowered']
-        return copy.deepcopy(self.lowered_programs[key])
-
-    def project(self, object='clock', panel='main'):
-        spec = importlib.util.spec_from_file_location('appointment_projection', ROOT / 'scene/projection.py')
-        projection = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(projection)
-        return projection.project(self.root(object), object, panel=panel)
-
-    def test_slot_panels_offer_exact_generation_booking_and_owner_cancellation(self):
+    def test_source_menu_books_cancels_and_paginates_more_than_four_entries(self):
         self.setup_world()
         before = self.root()
-        view = self.project(panel='h')
-        self.assertEqual(view['data']['title'], 'empty')
-        self.assertEqual(view['data']['actions']['book']['input'], {'slot': 7, 'generation': 1})
+        view = self.project()
         card = affordances.card(view)
+        self.assertEqual(view['data']['actions']['book']['input'], {'generation': 1})
         self.assertEqual({f['name'] for f in card['actions'][0]['fields']},
-                         {'due', 'deadline', 'to', 'recipientProgram', 'topic'})
+                         {'id', 'due', 'deadline', 'to', 'recipientProgram', 'topic'})
         request = affordances.request(view, card['actions'][0]['id'], 'moss', self.intent(), {
-            'due': 5, 'deadline': 8, 'to': 'garden-task',
+            'id': 'night', 'due': 5, 'deadline': 8, 'to': 'garden-task',
             'recipientProgram': self.programs['garden-task'], 'topic': 'water the night garden'})
-        self.assertEqual(self.root(), before)  # pure view and request preparation
+        self.assertEqual(self.root(), before)
         self.call(request, 'committed')
-        booked = self.root()
-        # Exact numeric status remains independently available through read-only inspection.
-        self.assertEqual({key: self.state()['h'][key] for key in ('generation', 'due', 'deadline', 'status')},
-                         {'generation': 1, 'due': 5, 'deadline': 8, 'status': 'queued'})
-        observed = self.project(panel='h')
-        self.assertEqual(observed['data']['title'], 'queued')
-        self.assertEqual(set(observed['data']['actions']), {'cancel'})
-        self.assertEqual(observed['data']['actions']['cancel']['input'], {'slot': 7, 'generation': 1})
-        self.assertEqual(observed['children'][0]['object'], 'garden-task')
-        self.assertEqual(self.root(), booked)
-        action = affordances.card(observed)['actions'][0]['id']
-        self.call(affordances.request(observed, action, 'iris', self.intent()), 'refused')
-        self.assertEqual(self.root(), booked)
-        self.call(affordances.request(observed, action, 'moss', self.intent()), 'committed')
-        cancelled = self.project(panel='h')
-        self.assertEqual(cancelled['data']['title'], 'cancelled')
-        self.assertEqual(cancelled['data']['actions']['book']['input'], {'slot': 7, 'generation': 2})
+        for number in range(1, 7):
+            self.book(id=str(number))
+        first = self.project()
+        self.assertEqual(len(first['children']), 4)
+        next_action = next(a for a in affordances.card(first)['actions'] if a['command'] == 'page')
+        self.call(affordances.request(first, next_action['id'], 'moss', self.intent()), 'committed')
+        second = self.project()
+        self.assertEqual([c['key'] for c in second['children']], ['4', '5', '6'])
+        self.assertEqual(second['data']['actions']['a']['input'], {'id': '4', 'generation': 5})
+        before = self.root()
+        action = next(a for a in affordances.card(second)['actions'] if a['command'] == 'cancel')
+        self.call(affordances.request(second, action['id'], 'iris', self.intent()), 'refused')
+        self.assertEqual(self.root(), before)
+        self.call(affordances.request(second, action['id'], 'moss', self.intent()), 'committed')
+        self.assertEqual(self.state()['offset'], 0)
+        self.assertEqual([x['id'] for x in self.active()], ['night', '1', '2', '3', '5', '6'])
+        self.assertEqual(self.project()['data']['actions']['book']['input'], {'generation': 8})
 
-    def test_refused_tick_retains_exact_reason_and_menu_never_claims_a_send(self):
-        self.setup_world()
-        self.book()
-        recipient = self.root('garden-task')
-        changed = {**recipient['protocol'], 'revision': 2}
-        self.call({'op': 'reprogram', 'object': 'garden-task', 'principal': 'builder',
-            'intent': self.intent(), 'expected': recipient, 'protocol': changed,
-            'state': recipient['state']}, 'committed')
-        tick = self.tick_request(5)
-        refusal = self.call(tick, 'refused')
-        self.assertEqual(refusal['data'], 'message recipient program changed before emission')
-        self.assertEqual(self.call(tick), refusal)
-        view = self.project(panel='a')
-        self.assertEqual(view['data']['title'], 'queued')
-        self.assertIn('retained receipt', view['data']['prose'])
-        self.assertEqual(view['children'][0]['object'], 'garden-task')
-        self.assertEqual(self.root(), tick['expected'])
-        self.assertEqual(world.query(self.db, {'op': 'messages-pending', 'principal': 'reader'},
-                                    profile='compiled')['pending'], {})
-
-    def test_task_view_exposes_activity_and_clock_without_offering_direct_wake(self):
+    def test_task_view_exposes_activity_and_clock_without_direct_wake(self):
         self.setup_world()
         before = self.root('garden-task')
         waiting = self.project('garden-task')
@@ -441,16 +459,19 @@ class AuthoredAppointmentMenus(Appointments):
         self.assertEqual(self.project('garden-task', 'owner')['data']['prose'], 'moss')
         self.assertEqual(self.root('garden-task'), before)
         self.book()
-        ref = self.tick(5)['data']['messages'][0]
-        self.call(self.delivery(ref, 'garden-task'), 'committed')
+        self.call(self.delivery(self.tick(5)['data']['messages'][0], 'garden-task'), 'committed')
         current = self.root('garden-task')
         active = self.project('garden-task', 'activity')
         self.assertEqual(active['data']['title'], 'Appointment received')
         self.assertEqual(active['data']['prose'], 'water the garden')
         self.assertEqual(active['data']['actions'], {})
-        self.assertEqual(self.state('garden-task')['lastGeneration'], 1)
-        self.assertEqual(self.state('garden-task')['lastTick'], 5)
+        self.assertEqual(self.state('garden-task')['lastId'], 'garden')
         self.assertEqual(self.root('garden-task'), current)
+
+    def test_examples_beside_source_run_through_receiving(self):
+        outcomes = propose.run_scenarios(self.program('Clock'),
+            spell_examples.parse((FIXTURES / 'Clock.examples').read_text()), profile='compiled')
+        self.assertEqual([outcome['failures'] for outcome in outcomes], [[]])
 
 
 if __name__ == '__main__':

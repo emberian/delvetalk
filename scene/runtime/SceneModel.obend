@@ -1,0 +1,58 @@
+edition ObjectiveBend 1
+import ./Kernel.obend as K
+import ./SceneData.obend as D
+import ./Handler.obend as H
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
+record State:
+  handler: H.State
+  passage: Nat
+  visited: K.Visits
+  started: Bool
+  ended: Bool
+record Result:
+  passage: Nat
+  ended: Bool
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+  emissions: H.Slots
+record Choice:
+  choice: Nat
+sum FoundPassage:
+  missing: {}
+  found: {index: Nat, passage: D.Passage}
+sum FoundChoice:
+  missing: {}
+  found: {choice: D.Choice}
+sum Action:
+  start: {key: String, text: String, command: String, input: {}, visible: Bool}
+  choice: {key: String, text: String, command: String, input: Choice, visible: Bool}
+sum Actions:
+  nil: {}
+  cons: {head: Action, tail: Actions}
+record Validation:
+  valid: Bool
+  reason: String
+record Description:
+  name: String
+  initial: State
+  methods: {start: {label: String, fields: {}}, choose: {label: String, fields: {choice: Abi.NatField}}}
+  panels: {}
+record Prose:
+  text: String
+  seen: Bool
+record View:
+  title: String
+  prose: String
+  actions: Actions
+  children: Encounter.Children
+record Behavior:
+  validate: D.Scene -> Validation
+  describe: D.Scene -> Description
+  start: D.Scene -> State -> {} -> Abi.Context -> Decision
+  choose: D.Scene -> State -> Choice -> Abi.Context -> Decision
+  requirements: D.Scene -> State -> Bool
+  view: D.Scene -> State -> String -> View

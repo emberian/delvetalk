@@ -98,6 +98,12 @@ class ActionListFraming(unittest.TestCase):
 
 
 class NativeActionLists(unittest.TestCase):
+    def test_unselected_nonserializable_action_alternative_is_rejected(self):
+        source = SOURCE.replace('sum Action:\n',
+            'sum Action:\n  executable: {key: String, text: String, command: String, input: {callback: Nat -> Nat}, visible: Bool}\n')
+        with self.assertRaises(ValueError):
+            obend_object.lower_data(source)
+
     def test_heterogeneous_source_list_reaches_town_and_portal_without_dummy_input(self):
         protocol = obend_object.lower_data(SOURCE)
         with tempfile.TemporaryDirectory() as temporary:

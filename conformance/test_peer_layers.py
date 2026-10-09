@@ -82,7 +82,7 @@ class PeerLayers(helpers.TownForgeJourneyTests):
         self.committed(reply)
         self.assertEqual(reply['receipt']['request']['principal'], helpers.MAKER)
         self.assertEqual(reply['receipt']['interpretation']['decision'], decision)
-        self.assertEqual(self.root(candidate)['state']['proposal'], proposal)
+        self.assertEqual(desk.candidate_state(self.root(candidate))['proposal'], proposal)
         return candidate, (uri, cid), proposal
 
     def play(self, target, command, expected, author=helpers.VISITOR):
@@ -107,7 +107,7 @@ class PeerLayers(helpers.TownForgeJourneyTests):
             ready = self.check(candidate, source)
             self.assertEqual(ready['status'], 'ready', ready)
             build = helpers.compiler_queue.desk.load_artifact(self.home / 'artifacts',
-                self.root(candidate)['state']['artifact'])
+                desk.candidate_state(self.root(candidate))['artifact'])
             self.assertEqual(build['sourceBindings']['manifest'], proposal['manifest'])
             self.assertEqual(build['sourceMaterial']['manifest'], proposal['manifest'])
             self.assertEqual(build['sourceMaterial']['modules'], [{**entry,
@@ -123,7 +123,7 @@ class PeerLayers(helpers.TownForgeJourneyTests):
                 'source': source_store.read_bytes(self.home / 'artifacts', entry['sourceRef'], kind='source').decode()}
                 for entry in modules])
             candidates.append(candidate)
-            self.assertEqual(self.root(candidate)['state']['proposal'], proposal)
+            self.assertEqual(desk.candidate_state(self.root(candidate))['proposal'], proposal)
         self.play(first, 'ring', 42)
         self.play(first, 'stamp', 11)
         self.play(first, 'base', 41)
@@ -176,7 +176,7 @@ class PeerLayers(helpers.TownForgeJourneyTests):
         unchanged = self.play(second, 'ring', 42)
         candidates.append(revision)
         self.assertEqual(source_store.read_bytes(self.home / 'artifacts', base['sourceRef'], kind='source'), base_bytes)
-        self.assertEqual(self.root(revision)['state']['proposal'], proposal)
+        self.assertEqual(desk.candidate_state(self.root(revision))['proposal'], proposal)
 
         bundle, restored = self.base / 'peer-history', self.base / 'restored'
         exported = workspace.bootstrap.export_bootstrap(self.home, bundle)
@@ -190,7 +190,7 @@ class PeerLayers(helpers.TownForgeJourneyTests):
             self.assertEqual(source_store.read_bytes(restored / 'artifacts', entry['sourceRef'], kind='source'),
                              source_store.read_bytes(self.home / 'artifacts', entry['sourceRef'], kind='source'))
         for candidate in candidates:
-            artifact = self.root(candidate)['state']['artifact']
+            artifact = desk.candidate_state(self.root(candidate))['artifact']
             self.assertEqual((restored / 'artifacts/builds' / (artifact + '.json')).read_bytes(),
                              (self.home / 'artifacts/builds' / (artifact + '.json')).read_bytes())
         recovered = helpers.compiler_queue.desk.Desk(restored / 'world.json', restored / 'artifacts', profile='compiled')

@@ -20,7 +20,7 @@ def compiler_pins(profile, expected):
     """Reviewed runtime plus the selected registered compiler dependency closure."""
     proposal = desk.module('queue_proposal', 'scripts/propose.py')
     registry = loads((ROOT / 'syntaxes/registry.json').read_bytes())
-    adapter = registry['syntaxes'].get(expected['state']['proposal']['syntax'], {})
+    adapter = registry['syntaxes'].get(desk.candidate_state(expected)['proposal']['syntax'], {})
     validator = registry['targets'].get(adapter.get('target'), {})
     paths = {'scripts/compiler_queue.py', 'scripts/worker.py', 'scripts/clerk.py',
              'scripts/translate.py', 'syntaxes/registry.json',
@@ -61,7 +61,7 @@ def execute_job(path):
             raise ValueError('queued compiler runtime changed')
 
     check_pins()  # Requires the built host binary; never falls back to Lean builds.
-    material = desk.proposal_material(inputs['expected']['state']['proposal'], client.artifact_store)[2]
+    material = desk.proposal_material(desk.candidate_state(inputs['expected'])['proposal'], client.artifact_store)[2]
     if 'sourceBindings' in job and canonical(material) != canonical(job['sourceBindings']):
         raise ValueError('queued source bindings changed')
     if canonical(client.inspect(inputs['object'])) != canonical(inputs['expected']):
@@ -144,9 +144,9 @@ class CompilerQueue:
                     return {'job': path.stem, 'status': 'already-queued', **self.status(path.stem)}
             if len(paths) >= 10000:
                 raise ValueError('compiler queue retention bound reached (10000 jobs)')
-            if expected['state']['status'] != 'pending':
+            if desk.candidate_state(expected)['status'] != 'pending':
                 raise ValueError('compiler queue requires an exact pending source-desk root')
-            material = desk.proposal_material(expected['state']['proposal'], self.artifacts)[2]
+            material = desk.proposal_material(desk.candidate_state(expected)['proposal'], self.artifacts)[2]
             runtime = compiler_pins(self.profile, expected)
             remaining = deadline - time.monotonic()
             if remaining <= 0:

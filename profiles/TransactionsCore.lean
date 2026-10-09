@@ -108,12 +108,12 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         continue
       -- The operation is explicit; the principal remains the global caller.
       -- Both profiles use one authority engine.
-      let (nextObj, result, emitted, invocation, inputOrigin) ← if op == "reprogram" then do
+      let (nextObj, result, emitted, allocations, invocation, inputOrigin) ← if op == "reprogram" then do
         authorizeRequest o (← put call "op" (.str op)) principal
         let candidate ← reprogramCandidate call results
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
         checkCandidateWith runtime o nextObj (← put call "op" (.str op)) principal
-        pure (nextObj, ← runtime.reprogramResult id nextObj, (#[] : Array Json), Json.null, World.noInputOrigin)
+        pure (nextObj, ← runtime.reprogramResult id nextObj, (#[] : Array Json), (#[] : Array Json), Json.null, World.noInputOrigin)
       else if op == "law" then do
         for (key, _) in (← pairs call) do
           if !(["op", "object", "law"].contains key) then
@@ -126,20 +126,20 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         -- Both current and proposed law check the already-staged program/state.
         -- Later steps see this law immediately, including deliberate lockout.
         checkCandidateWith runtime o nextObj call principal
-        pure (nextObj, Json.null, (#[] : Array Json), Json.null, World.noInputOrigin)
+        pure (nextObj, Json.null, (#[] : Array Json), (#[] : Array Json), Json.null, World.noInputOrigin)
       else do
         let input ← callInput call results
         let inputOrigin ← callInputOrigin call calls results.size
         let invocation ← put (← put call "input" input) "op" (.str op)
         authorizeRequest o invocation principal
-        let (nextState, result, emitted) ← executeCommandWith runtime o invocation principal inputOrigin
+        let (nextState, result, emitted, allocations) ← executeCommandWith runtime o invocation principal inputOrigin
         let n ← (← field o "version").getNat?
         let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
         checkCandidateWith runtime o nextObj invocation principal
-        pure (nextObj, result, emitted, invocation, inputOrigin)
+        pure (nextObj, result, emitted, allocations, invocation, inputOrigin)
       staged ← put staged id nextObj
       if op == "invoke" then
-        let (nextObjects, created) ← allocateChildrenWith runtime staged o invocation principal absent inputOrigin
+        let (nextObjects, created) ← allocateChildrenWith runtime staged o invocation principal absent inputOrigin allocations
         staged := nextObjects
         -- Preserve creation evidence even when later calls replace a child.
         for (child, initialRoot) in (← pairs created) do

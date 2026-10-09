@@ -14,6 +14,8 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import source_offers
 
 def module(name, path):
     spec = importlib.util.spec_from_file_location(name, ROOT / path)
@@ -400,8 +402,12 @@ class Clerk:
         value = self.fetch_record(uri, cid, (COLLECTION, FEED))
         inline_card = None
         if collection == FEED and isinstance(value, dict) and isinstance(value.get('text'), str) and value['text'].strip().startswith('delvetalk '):
-            payload, inline_card = self.resolve_card(value, author, {'uri': uri, 'cid': cid,
-                                                                   'author': author, 'pds': PDS}, config)
+            source = {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS}
+            try:
+                payload, inline_card = self.resolve_card(value, author, source, config)
+            except source_offers.PreparationOutcome as result:
+                return {'source': source, 'record': value, 'preparation': result.outcome,
+                        'profile': config['profile']}
             raw = world.wire_dumps(payload)
         elif collection == FEED:
             raw = feed_request(value)
@@ -410,8 +416,9 @@ class Clerk:
             if value['$type'] != COLLECTION or value['profile'] != 'delvetalk-live-v1':
                 raise ValueError('unsupported request record profile')
             raw = value['requestJson']
-        if not isinstance(raw, str) or len(raw.encode('utf-8')) > 64 * 1024:
-            raise ValueError('requestJson must be a string of at most 64 KiB')
+        maximum = 1024 * 1024 if inline_card is not None else 64 * 1024
+        if not isinstance(raw, str) or len(raw.encode('utf-8')) > maximum:
+            raise ValueError('requestJson exceeds its authored or expanded envelope bound')
         payload = loads(raw)
         entry = self.normalize_payload(payload, author, uri, cid, value, config)
         if inline_card is not None:
@@ -455,8 +462,8 @@ class Clerk:
         request = {'op': operation, 'principal': author, 'intent': 'delve:' + uri, **payload}
         # Root references and derived identity can expand a small source envelope.
         # Host transport-envelope errors have no retained terminal receipt.
-        if len(canonical(request)) > 65536:
-            raise ValueError('derived request exceeds 64 KiB')
+        if len(canonical(request)) > world.MAX_EXPANDED_REQUEST_BYTES:
+            raise ValueError('derived request exceeds 1 MiB')
         entry = {'source': {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS},
                  'record': value, 'request': request, 'profile': config['profile'],
                  'admissionProfile': self.execution_profile(request, config)}
@@ -544,6 +551,14 @@ class Clerk:
                 # Binding is durable before Lean admission, not after its reply.
                 if config['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
                     raise ValueError('clerk implementation pins changed; use the pinned checkout')
+                if 'preparation' in entry:
+                    receipt = {'format': 'delvetalk-clerk-preparation-v1', 'source': entry['source'],
+                               'record': entry['record'], 'outcome': entry['preparation'],
+                               'profile': entry['profile'], 'publication': 'paused'}
+                    receipt['id'] = digest(receipt)
+                    entry['receipt'] = receipt
+                    save(path, entry)
+                    return receipt
                 save(path, entry)
             retained = world.retained_reply(self.database, entry['request'])
             if retained is None and entry['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):

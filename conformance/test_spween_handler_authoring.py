@@ -49,6 +49,28 @@ class SourceFences(unittest.TestCase):
         self.assertEqual([m['name'] for m in parsed['modules']], ['Helpers', 'Handler'])
         self.assertEqual(parsed['modules'][0]['source'], 'edition ObjectiveBend 1\r\ndef number() -> Nat:\r\n  1n\r\n')
 
+    def test_runtime_selection_keeps_explicit_order_and_exact_originals(self):
+        base = 'edition ObjectiveBend 1\r\ndef marker() -> Nat:\r\n  7n\r\n'
+        runtime = 'edition ObjectiveBend 1\r\nimport ./BaseRuntime.obend as BaseRuntime\r\n'
+        source = workshop.authoring_source() + ('\n```obend RuntimeLayer\r\n' + base +
+            '```\r\n```obend SceneRuntime\r\n' + runtime + '```\r\n')
+        parsed = adapter.parse_source(source)
+        self.assertEqual([m['name'] for m in parsed['handlerModules']], ['Handler'])
+        self.assertEqual(parsed['runtimeModules'], [{'name': 'RuntimeLayer', 'source': base},
+                                                   {'name': 'SceneRuntime', 'source': runtime}])
+        self.assertEqual(parsed['modules'], parsed['handlerModules'] + parsed['runtimeModules'])
+        self.assertEqual(adapter.parse_source(workshop.authoring_source())['runtimeModules'], [])
+        authored = adapter.parse_source(workshop.authoring_source(2))
+        self.assertEqual(authored['runtimeModules'], [{'name': 'SceneRuntime', 'source':
+            (workshop.HERE / 'LanternRuntime.obend').read_bytes().decode('utf-8')}])
+        self.assertLessEqual(len(workshop.authoring_source(2)), 4096)
+        for invalid in (source.replace('obend RuntimeLayer', 'obend BaseRuntime'),
+                        source.replace('obend SceneRuntime', 'obend Tail'),
+                        source.replace('obend Handler', 'obend SceneRuntime', 1),
+                        source + '\n```obend Handler\nsecond\n```\n'):
+            with self.subTest(source=invalid[-80:]), self.assertRaises(ValueError):
+                adapter.parse_source(invalid)
+
     def test_ambiguous_or_unclosed_source_blocks_refuse(self):
         good = workshop.authoring_source()
         invalid = [good[:-4], good + '\n```spween\n=== duplicate\n```\n',
@@ -177,6 +199,7 @@ class HandlerAuthoring(helpers.TownForgeJourneyTests):
         self.assertEqual(client.inspect(target), final)
         view = workspace.bootstrap.room.inspect_object(client.inspect(target), target)
         self.assertEqual(view['mode'], 'projection')
+        self.assertEqual(view['data']['title'], 'The Moth Workshop by Lanternlight')
         self.assertIn('Release the brass moth', [a['text'] for a in view['data']['actions'].values()])
         before_retry = client.database.read_bytes()
         self.assertEqual(client.exchange(response['receipt']['request']), response['receipt']['reply'])

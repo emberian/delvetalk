@@ -274,3 +274,125 @@ assert.equal(requests.at(-1).options.method, undefined);
 assert.equal(catalogue.card, 'parent-capture');
 assert.equal(catalogue.object, 'index');
 console.log('Portal authored children: safe read-only labels, fresh child capture, unavailable-row recovery passed.');
+
+// Native preparations can ask source-owned questions before there is a Turn.
+// Empty contribution fields (including booleans) are omitted, not defaulted.
+const partialBool = context.fieldInput({name: 'consent', type: 'bool', required: true}, 0, 0, true);
+const partialText = context.fieldInput({name: 'name', type: 'string', required: true,
+  minLength: 1, maxLength: 64}, 0, 1, true);
+assert.equal(partialBool.input.tag, 'select');
+assert.equal(partialBool.input.required, false);
+assert.equal(partialText.input.required, false);
+assert.deepEqual(read([partialBool, partialText]), {});
+partialBool.input.value = 'false';
+assert.deepEqual(read([partialBool, partialText]), {consent: false});
+const preparationCard = {card: 'source-capture', object: 'workshop', version: 4, title: 'An invitation',
+  panel: 'main', actions: [{id: 'o1', label: 'Greet', command: 'prepareGreeting', preparation: true,
+    available: true, fields: []}]};
+context.preparationCard = preparationCard;
+vm.runInContext("state.world = {mode: 'public-preview', objects: [{id: 'workshop'}]}; state.card = preparationCard; state.draft = null; state.uncertain = false; authoring.uncertain = false; authoring.pending = false; authoring.preparing = false;", context);
+const question = {format: 'delvetalk-portal-preparation-v1', preparation: 'question-one',
+  card: 'source-capture', action: 'o1', object: 'workshop', version: 4, fields: {},
+  summary: 'Greet', outcome: {kind: 'question', message: malicious, needs: ['gesture']}, canExecute: false};
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  assert.equal(url, '/api/prepare');
+  return {ok: true, json: async () => question};
+};
+context.renderActions(preparationCard);
+document.getElementById('actions').children[0].listeners.submit({preventDefault() {}});
+await new Promise(resolve => setImmediate(resolve));
+assert.deepEqual(JSON.parse(requests.at(-1).options.body).fields, {});
+assert.equal(vm.runInContext('state.draft', context), null);
+assert.equal(vm.runInContext('state.preparation.preparation', context), 'question-one');
+assert.equal(document.getElementById('draft-title').textContent, 'A question from this object');
+assert.equal(document.getElementById('draft-summary').textContent, malicious);
+assert.equal(document.getElementById('send-draft').hidden, true);
+assert.equal(document.getElementById('repository-export').hidden, true);
+assert.equal(document.querySelector('.draft-exact').hidden, true);
+assert.equal(new URL(location.href).searchParams.has('draft'), false);
+assert.equal(new URL(location.href).searchParams.get('preparation'), 'question-one');
+const answerForm = vm.runInContext('preparationAnswers.children[0]', context);
+assert.equal(answerForm.children[0].children[0].textContent, 'gesture');
+assert.equal(answerForm.children[0].children[1].value, '');
+answerForm.children[0].children[1].value = 'a wave';
+const ready = {draft: 'ready-turn', object: 'workshop', version: 4, summary: 'Wave',
+  fields: {gesture: 'a wave'}, canExecute: false, wireJson: '{}', outcome: null};
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  assert.equal(url, '/api/prepare');
+  assert.deepEqual(JSON.parse(options.body), {card: 'source-capture', action: 'o1', fields: {gesture: 'a wave'}});
+  return {ok: true, json: async () => ready};
+};
+answerForm.listeners.submit({preventDefault() {}});
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(vm.runInContext('state.draft.draft', context), 'ready-turn');
+assert.equal(vm.runInContext('state.preparation', context), null);
+assert.equal(document.querySelector('.draft-exact').hidden, false);
+assert.equal(new URL(location.href).searchParams.has('preparation'), false);
+assert.equal(new URL(location.href).searchParams.get('draft'), 'ready-turn');
+
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  return {ok: true, json: async () => ({...question, preparation: 'declined',
+    outcome: {kind: 'refused', message: 'Choose a gentler greeting.'}})};
+};
+await context.prepare('source-capture', 'o1', {gesture: 'shout'});
+assert.equal(vm.runInContext('state.draft', context), null);
+assert.equal(vm.runInContext('state.uncertain', context), false);
+assert.equal(document.getElementById('draft-title').textContent, 'Preparation declined');
+assert.equal(document.getElementById('draft-summary').textContent, 'Choose a gentler greeting.');
+assert.equal(document.getElementById('draft-state').textContent, '');
+assert.equal(vm.runInContext('preparationAnswers.children.length', context), 0);
+
+// Restore the exact invitation card, not a fresh world reading. The next answer
+// extends the retained contribution and cannot overwrite pending/uncertain work.
+const restoredQuestion = {...question, preparation: 'question-two', fields: {gesture: 'a wave'},
+  outcome: {kind: 'question', message: 'Who should receive it?', needs: ['recipient']}};
+const restoreStart = requests.length;
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  assert.ok(url === '/api/preparation?preparation=question-two' || url === '/api/card?card=source-capture');
+  return {ok: true, json: async () => url.startsWith('/api/card') ? preparationCard : restoredQuestion};
+};
+location.href = 'https://example.invalid/?object=workshop&preparation=question-two';
+await events.popstate();
+assert.equal(vm.runInContext('state.card.card', context), 'source-capture');
+assert.equal(vm.runInContext('state.preparation.preparation', context), 'question-two');
+assert.equal(requests.slice(restoreStart).some(item => item.url.startsWith('/api/object')), false);
+const restoredForm = vm.runInContext('preparationAnswers.children[0]', context);
+restoredForm.children[0].children[1].value = 'Iris';
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  assert.deepEqual(JSON.parse(options.body).fields, {gesture: 'a wave', recipient: 'Iris'});
+  return {ok: true, json: async () => ready};
+};
+restoredForm.listeners.submit({preventDefault() {}});
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(vm.runInContext('state.draft.draft', context), 'ready-turn');
+
+let resolveOldPreparation;
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  return new Promise(resolve => { resolveOldPreparation = () => resolve({ok: true, json: async () => restoredQuestion}); });
+};
+location.href = 'https://example.invalid/?object=workshop&preparation=question-two';
+const latePreparation = events.popstate();
+await new Promise(resolve => setImmediate(resolve));
+vm.runInContext("state.uncertain = true; state.draft = {draft: 'keep-uncertain'}", context);
+resolveOldPreparation();
+await latePreparation;
+assert.equal(vm.runInContext('state.draft.draft', context), 'keep-uncertain');
+assert.equal(vm.runInContext('state.uncertain', context), true);
+assert.equal(new URL(location.href).searchParams.get('draft'), 'keep-uncertain');
+assert.equal(new URL(location.href).searchParams.has('preparation'), false);
+assert.equal(requests.slice(restoreStart).some(item => item.url === '/api/execute'), false);
+vm.runInContext('state.uncertain = false; state.draft = null', context);
+const dismissedPreparation = context.prepare('source-capture', 'o1', {});
+await new Promise(resolve => setImmediate(resolve));
+context.clearDraft();
+resolveOldPreparation();
+await dismissedPreparation;
+assert.equal(vm.runInContext('state.preparation', context), null);
+assert.equal(document.getElementById('draft-panel').hidden, true);
+console.log('Portal native preparations: partial answers, authored questions/refusals, exact-card restore and ready drafts passed.');

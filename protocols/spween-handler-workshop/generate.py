@@ -27,7 +27,11 @@ def authoring_source(revision=1):
         raise ValueError('fixture revision must be 1 or 2')
     scene = (HERE / 'moth.scene').read_bytes().decode('utf-8')
     handler = (HERE / ('Handler.obend' if revision == 1 else 'Chorus.obend')).read_bytes().decode('utf-8')
-    return 'spween handler workshop 1\n\n```spween\n' + scene + '```\n\n```obend Handler\n' + handler + '```\n'
+    text = 'spween handler workshop 1\n\n```spween\n' + scene + '```\n\n```obend Handler\n' + handler + '```\n'
+    if revision == 2:
+        runtime = (HERE / 'LanternRuntime.obend').read_bytes().decode('utf-8')
+        text += '\n```obend SceneRuntime\n' + runtime + '```\n'
+    return text
 
 
 def examples():

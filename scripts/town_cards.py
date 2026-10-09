@@ -170,11 +170,13 @@ def spell(alias, action, fields, *, selector=None):
 
 def _spell_fields(action, supplied):
     names = field_words(action)
-    if set(supplied) != set(names):
+    if not action.get('preparation') and set(supplied) != set(names):
         raise ValueError('supply exactly the offered field words')
     schema = {field['name']: field for field in action['fields']}
-    values = {}
+    values = {key: value for key, value in supplied.items() if key not in names} if action.get('preparation') else {}
     for token, name in names.items():
+        if token not in supplied:
+            continue
         value, kind = supplied[token], schema[name]['type']
         if kind == 'nat':
             if not re.fullmatch(r'0|[1-9][0-9]*', value):
@@ -188,6 +190,8 @@ def _spell_fields(action, supplied):
                 raise ValueError('Boolean requires true or false')
             value = value == 'true'
         values[name] = value
+    if action.get('preparation'):
+        return values
     return affordances.validate_fields(action, values)
 
 
@@ -430,17 +434,15 @@ class CardBook:
         return self.capture_composite(captured['offers'][key], alias=alias)
 
     def capture_composite(self, offer, *, alias=None):
-        """Retain a fixed transaction offer, including every exact known read."""
+        """Retain one pure source invitation and its exact captured observations."""
         metadata = self.metadata()
         offer = composite_offers.validate(offer)
         action = composite_offers.action(offer)
         def build(name):
             lines = ['[[delvetalk-card ' + name + ']]', offer['title'], offer['label'],
-                     ('All steps commit together or none do. Writes check your current permissions.'
-                      if any(call.get('op') == 'observe' for call in offer['calls']) else
-                      'All steps commit together or none do. Each checks your current permissions.'),
+                     'The object may ask a question or prepare a turn for your review.',
                      'Reply here, or describe your intention for us to interpret:',
-                     spell(name, action, _example(action), selector=offer['command'])]
+                     spell(name, action, _example(action), selector=action['command'])]
             lines.extend(_field(field, token) for token, field_name in field_words(action).items()
                          for field in action['fields'] if field['name'] == field_name)
             lines.extend(['If refused because the world changed, ask for a fresh card. No result? Ask us to check your original reply; do not repeat it.',
@@ -615,8 +617,8 @@ class CardBook:
         if wire['op'] == 'transaction':
             # Clerk's transport resolves explicit descriptors before Lean admission.
             wire['reads'] = {key: {'expected': value} for key, value in wire['reads'].items()}
-        if len(canonical(wire).encode('utf-8')) > MAX_REPLY_BYTES:
-            raise ValueError('derived card request exceeds 64 KiB')
+        if len(canonical(wire).encode('utf-8')) > 1024 * 1024:
+            raise ValueError('derived card request exceeds 1 MiB')
         evidence = {'format': 'delvetalk-town-resolution-v1', 'metadata': metadata,
                     'card': captured, 'publication': bound, 'replySource': copy.deepcopy(source),
                     'parsed': parsed, 'wireSha256': sha(canonical(wire))}

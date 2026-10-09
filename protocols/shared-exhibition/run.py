@@ -16,10 +16,16 @@ import bootstrap
 import compiler_queue
 import continuation
 import portal
+import source_object
+import source_store
+import importlib.util
+_spec = importlib.util.spec_from_file_location("exhibition_package", HERE / "package.py")
+package = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(package)
 
 TARGET = 'exhibition:room-between'
 CANDIDATE = 'proposal:exhibition'
-PROFILE = 'transactions'
+PROFILE = 'compiled'
 
 
 def law(invoke, reprogram=(), managers=('operator',)):
@@ -39,8 +45,8 @@ def run(directory, content=None):
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=False, mode=0o700)
     content = fixture_content() if content is None else content
-    source = (HERE / 'protocol.json').read_bytes()
-    program = bootstrap.loads(source)
+    modules = package.modules()
+    program = package.build()
     runtime = bootstrap.history.runtime(PROFILE)
     desk = bootstrap.desk_module.Desk(directory / 'world.json', directory / 'artifacts', profile=PROFILE)
     events = []
@@ -56,10 +62,10 @@ def run(directory, content=None):
     (directory / 'events').mkdir()
     # Every creation and replacement retains its original source envelope.
     placeholder = (ROOT / 'protocols/counter/protocol.json').read_bytes()
-    for raw in (placeholder, (ROOT / 'protocols/source-desk/protocol.json').read_bytes(), source):
+    for raw in (placeholder, (ROOT / 'protocols/source-desk/protocol.json').read_bytes()):
         bootstrap.preserve_lowering(directory, raw)
-    target_law = law({'offer-north': ['north'], 'offer-south': ['south'],
-                      'consent-north': ['north'], 'consent-south': ['south'],
+    target_law = law({'offerNorth': ['north'], 'offerSouth': ['south'],
+                      'consentNorth': ['north'], 'consentSouth': ['south'],
                       'arrange': ['curator'], 'open': ['curator']}, reprogram=['curator'])
     target = record('create-target', desk.exchange({'op': 'create', 'object': TARGET,
         'principal': 'operator', 'intent': 'exhibition-create',
@@ -67,8 +73,12 @@ def run(directory, content=None):
     candidate = record('create-source-desk', desk.create(CANDIDATE, 'operator', 'desk-create',
         law({'submit': ['builder'], 'compiled': ['compiler'], 'failed': ['compiler'],
              'adopt': ['curator']})))['data']['root']
-    pending = record('submit-original-source', desk.submit(CANDIDATE, 'builder', 'source-submit', candidate,
-        'protocol-json@1', source, (HERE / 'scenarios.json').read_bytes(), program['initial'], TARGET))['data']['root']
+    entries = [{'name': item['name'], 'sourceRef': source_store.store_bytes(desk.artifact_store, item['source'].encode())}
+               for item in modules]
+    proposal = source_store.prepare_module_proposal(desk.artifact_store, source_store.seal_modules(entries),
+        (HERE / 'exhibition.examples').read_bytes(), syntax='objective-bend-spell@3')
+    pending = record('submit-original-source', desk.submit_refs(CANDIDATE, 'builder', 'source-submit', candidate,
+        proposal, program['initial'], TARGET))['data']['root']
     queue = compiler_queue.CompilerQueue(directory / 'queue', desk.database, desk.artifact_store, profile=PROFILE)
     job = queue.enqueue(CANDIDATE, 'compiler', 'compile-source', pending)['job']
     queue_report = queue.run()
@@ -76,9 +86,9 @@ def run(directory, content=None):
         raise AssertionError(queue_report)
     compiled = queue.inspect(job)
     ready = record('queued-compilation', compiled['receipt'])['data']['root']
-    if ready['state']['status'] != 'ready':
+    if bootstrap.desk_module.candidate_state(ready)['status'] != 'ready':
         raise AssertionError(ready['state']['diagnostics'])
-    bootstrap.preserve_build(directory, ready['state']['artifact'])
+    bootstrap.preserve_build(directory, bootstrap.desk_module.candidate_state(ready)['artifact'])
     assert desk.inspect(TARGET) == target, 'compilation must not adopt'
     record('compiler-cannot-adopt', desk.adopt(CANDIDATE, TARGET, 'compiler', 'bad-adopt', ready, target), 'refused')
     record('curator-adopts', desk.adopt(CANDIDATE, TARGET, 'curator', 'adopt', ready, target))
@@ -109,31 +119,31 @@ def run(directory, content=None):
     assert first_card['mode'] == 'projection', first_card
     assert first_card['panel'] == 'main'
     assert {panel['id'] for panel in first_card['panels']} == {'main', 'north', 'south'}
-    assert {a['command'] for a in first_card['actions']} == {'offer-north', 'offer-south'}
+    assert {a['command'] for a in first_card['actions']} == {'offerNorth', 'offerSouth'}
     before = desk.database.read_bytes()
-    invalid_action = next(a for a in first_card['actions'] if a['command'] == 'offer-north')
+    invalid_action = next(a for a in first_card['actions'] if a['command'] == 'offerNorth')
     malformed = apps['north'].interpretation({'card': first_card['card'],
         'text': invalid_action['token'] + ' ' + json.dumps({**content['north'], 'minutes': True})})
     record('typed-token-rejects-boolean-nat', malformed, 'clarify')
     assert desk.database.read_bytes() == before
-    play('visitor', 'offer-north', content['north'], card=first_card, kind='refused')
-    first_draft, first_reply = play('north', 'offer-north', content['north'], card=first_card)
+    play('visitor', 'offerNorth', content['north'], card=first_card, kind='refused')
+    first_draft, first_reply = play('north', 'offerNorth', content['north'], card=first_card)
     before = desk.database.read_bytes()
     assert apps['north'].execute({'draft': first_draft['draft']}) == first_reply
     assert before == desk.database.read_bytes(), 'retry must not append or execute'
-    play('south', 'offer-south', content['south'], card=first_card, kind='refused')
-    play('south', 'offer-south', content['south'])
+    play('south', 'offerSouth', content['south'], card=first_card, kind='refused')
+    play('south', 'offerSouth', content['south'])
     play('curator', 'arrange', content['arrangement'])
     agreed = apps['north'].object(TARGET)
     assert agreed['prose'] == content['arrangement']['caption']
-    assert {a['command'] for a in agreed['actions']} == {'consent-north', 'consent-south'}
-    play('south', 'consent-south', {})
+    assert {a['command'] for a in agreed['actions']} == {'consentNorth', 'consentSouth'}
+    play('south', 'consentSouth', {})
     # A direct invocation bypasses the view but cannot bypass semantic consent.
     record('curator-cannot-open-before-both', desk.exchange({'op': 'invoke', 'object': TARGET,
         'principal': 'curator', 'intent': 'premature-open', 'expected': desk.inspect(TARGET),
         'command': 'open', 'input': {}}), 'refused')
-    play('north', 'consent-north', {}, card=agreed, kind='refused')
-    play('north', 'consent-north', {})
+    play('north', 'consentNorth', {}, card=agreed, kind='refused')
+    play('north', 'consentNorth', {})
     play('curator', 'open', {})
     final = apps['curator'].object(TARGET)
     assert final['actions'] == []
@@ -143,7 +153,7 @@ def run(directory, content=None):
         assert panel['panels'] == first_card['panels']
         assert panel['prose'] == content[artist]['note']
     detail = apps['curator'].detail(final['card'])
-    assert detail['root']['state']['opened'] is True
+    assert source_object.plain(detail['root']['state']['model'])['opened'] is True
     assert detail['root']['protocol'] == program
     if bootstrap.canonical(runtime) != bootstrap.canonical(bootstrap.history.runtime(PROFILE)):
         raise RuntimeError('Runtime changed during journey; retained private run is not stable-runtime evidence')
@@ -152,7 +162,7 @@ def run(directory, content=None):
     anchors = {'expected_genesis': index['history']['genesis'], 'expected_head': index['history']['head']}
     checked = continuation.verify(directory / 'continuation', **anchors)
     report = {'profile': PROFILE, 'object': TARGET, 'job': job, 'events': len(events),
-              'version': final['version'], 'state': detail['state'],
+              'version': final['version'], 'state': source_object.plain(detail['state']['model']),
               'continuation': exported, 'verification': checked}
     bootstrap.save_new(directory / 'journey.json', report)
     return report

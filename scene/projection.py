@@ -15,8 +15,7 @@ PROFILE = 'delvetalk-bend-view-v1'
 SOURCE_PROFILE = 'delvetalk-obend-view-v1'
 MENU_PROFILE = 'delvetalk-obend-menu-v1'
 DATA_MENU_PROFILE = 'delvetalk-obend-data-menu-v1'
-DATA_OFFERS_PROFILE = 'delvetalk-obend-data-offers-v1'
-DATA_PROFILES = (DATA_MENU_PROFILE, DATA_OFFERS_PROFILE)
+DATA_PROFILES = (DATA_MENU_PROFILE,)
 SOURCE_PROFILES = (SOURCE_PROFILE, MENU_PROFILE, *DATA_PROFILES)
 FORMAT = 'delvetalk-projection-view-v1'
 _spec = importlib.util.spec_from_file_location('projection_world', ROOT / 'scripts/world.py')
@@ -188,8 +187,8 @@ def _typed_actions(value, budget):
 def _typed_menu(raw, root):
     fields = _wire_record(raw)
     expected = {'title', 'prose', 'actions', 'children'}
-    if root['protocol']['viewProgram']['profile'] == DATA_OFFERS_PROFILE:
-        expected.add('offers')
+    if 'invitations' in fields:
+        expected.add('invitations')
     if set(fields) != expected:
         raise ProjectionError('typed menu fields differ from its declared profile')
     budget = [100000]
@@ -239,35 +238,69 @@ def inspection_only(view):
             and program.get('profile') in DATA_PROFILES)
 
 
-def _typed_offers(raw):
-    descriptors = _plain_data(_wire_record(raw)['offers'], [100000])
-    # This shared validator checks framing, never reads other objects or executes
-    # source. Validate hidden descriptors before applying authored visibility.
-    spec = importlib.util.spec_from_file_location('projection_source_offers', ROOT / 'scripts/source_offers.py')
-    helper = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(helper)
-    checked = helper.validate_descriptors(descriptors)
-    return {key: value for key, value in checked.items() if value['visible']}
+def _typed_invitations(raw):
+    """Decode source presentation only; do not fetch observations or prepare turns."""
+    rows = _wire_record(_wire_record(raw)['invitations'])
+    if len(rows) > 16:
+        raise ProjectionError('view invitations exceed 16 entries')
+    spec = importlib.util.spec_from_file_location('invitation_affordances', ROOT / 'scripts/affordances.py')
+    forms = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(forms)
+    result, budget = {}, [100000]
+    for key in sorted(rows):
+        _text_bound(key, 128, 'invitation key')
+        fields = _wire_record(rows[key])
+        if set(fields) != {'visible', 'text', 'prepare', 'fields', 'observations'}:
+            raise ProjectionError('invitation requires visible, text, prepare, fields and observations')
+        item = {name: _plain_data(value, budget) for name, value in fields.items() if name != 'observations'}
+        if type(item['visible']) is not bool:
+            raise ProjectionError('invitation visible requires Bool')
+        _text_bound(item['text'], 4096, 'invitation text')
+        _text_bound(item['prepare'], 128, 'preparation export')
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', item['prepare']):
+            raise ProjectionError('preparation requires a source export name')
+        metadata = item['fields']
+        if not isinstance(metadata, dict) or len(metadata) > 32:
+            raise ProjectionError('invitation fields require a bounded record')
+        for name, field in metadata.items():
+            value = copy.deepcopy(field)
+            if isinstance(value, dict) and value.get('type') == 'enum' and isinstance(value.get('options'), dict):
+                value['options'] = [value['options'][key] for key in sorted(value['options'])]
+            forms._normalize_field(name, value)
+        names = [_plain_data(value, budget) for value in _typed_list(fields['observations'], 8, 'observations')]
+        for name in names:
+            _text_bound(name, 512, 'observed object', identity=True)
+        if len(set(names)) != len(names):
+            raise ProjectionError('duplicate observation identity')
+        item['observations'] = names
+        if item['visible']:
+            result[key] = item
+    return result
 
 
-def offers(view):
-    """Read validated source-owned plans; capture resolves their declared reads."""
+def invitations(view):
+    """Retained source invitations; capture separately binds explicit observations."""
     if view.get('mode') == 'raw':
         return {}
     profile = view.get('root', {}).get('protocol', {}).get('viewProgram', {}).get('profile')
-    if profile != DATA_OFFERS_PROFILE:
-        if view.get('offers', {}) != {}:
-            raise ProjectionError('offers require an explicit source offers profile')
+    if profile not in DATA_PROFILES:
+        if view.get('invitations', {}) != {}:
+            raise ProjectionError('invitations require a typed source view')
         return {}
     if view.get('mode') != 'projection' or 'rawData' not in view:
-        raise ProjectionError('typed offers observation is unavailable')
+        raise ProjectionError('typed invitation observation is unavailable')
+    fields = _wire_record(view['rawData'])
+    if 'invitations' not in fields:
+        if view.get('invitations', {}) != {}:
+            raise ProjectionError('retained invitations have no source result')
+        return {}
     children(view)
     try:
-        checked = _typed_offers(view['rawData'])
+        checked = _typed_invitations(view['rawData'])
     except (KeyError, ValueError, TypeError) as error:
-        raise ProjectionError('invalid source offers: ' + str(error)) from error
-    if _canonical(view.get('offers')) != _canonical(checked):
-        raise ProjectionError('retained offers differ from their raw source result')
+        raise ProjectionError('invalid source invitation: ' + str(error)) from error
+    if _canonical(view.get('invitations')) != _canonical(checked):
+        raise ProjectionError('retained invitations differ from their source result')
     return copy.deepcopy(checked)
 
 
@@ -384,7 +417,8 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
                'request': {'op': 'invoke', 'object': 'projection', 'principal': 'projection',
                            'intent': 'projection', 'expected': local, 'command': 'project', 'input': {}}}
         wire = world.wire_dumps(job)
-        if len(wire.encode('utf-8')) > 65536: raise ProjectionError('view input exceeds 64 KiB')
+        if len(wire.encode('utf-8')) > world.MAX_EXPANDED_REQUEST_BYTES:
+            raise ProjectionError('expanded view input exceeds 1 MiB')
         host = 'compiled' if source_view else 'world'
         binary = runtime_profile.PROFILES[host][0]
         binary_path = '.lake/build/bin/' + binary
@@ -422,8 +456,8 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
             view['rawData'] = copy.deepcopy(raw)
         if data_menu:
             view['children'] = copy.deepcopy(descriptors)
-        if program['profile'] == DATA_OFFERS_PROFILE:
-            view['offers'] = _typed_offers(raw)
+        if data_menu and 'invitations' in _wire_record(raw):
+            view['invitations'] = _typed_invitations(raw)
         return view
     except ProjectionError:
         raise
@@ -439,7 +473,7 @@ def request(view, action_id, principal, intent):
         raise ProjectionError('expected a projected view')
     _validate(view['data'], view['root'])
     children(view)
-    offers(view)
+    invitations(view)
     if not isinstance(principal, str) or not principal or not isinstance(intent, str) or not intent:
         raise ProjectionError('principal and intent must be nonempty strings')
     try: action = view['data']['actions'][action_id]

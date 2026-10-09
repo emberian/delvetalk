@@ -167,11 +167,17 @@ def overlay : Ty → Ty → Ty
   | .field name member rest, inherited => .field name member (overlay rest inherited)
   | _, inherited => inherited
 
-def primitiveTypes : Primitive → Ty × Ty
-  | .add | .multiply | .subtract | .divide | .modulo => (.natural, .natural)
-  | .equal | .less | .lessEqual => (.natural, .boolean)
-  | .conjunction => (.boolean, .boolean)
-  | .labelEqual => (.label, .boolean)
+def primitiveTypes : Primitive → Ty × Ty × Ty
+  | .add | .multiply | .subtract | .divide | .modulo => (.natural, .natural, .natural)
+  | .equal | .less | .lessEqual => (.natural, .natural, .boolean)
+  | .conjunction => (.boolean, .boolean, .boolean)
+  | .labelEqual => (.label, .label, .boolean)
+  | .textConcat => (.label, .label, .label)
+  | .textTake | .textDrop => (.label, .natural, .label)
+
+def unaryTypes : UnaryPrimitive → Ty × Ty
+  | .natText => (.natural, .label)
+  | .textLength => (.label, .natural)
 
 def literalType (_value : String) : Ty := .label
 
@@ -257,10 +263,14 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       argumentAllowed assumptions .unrestricted context inherited iu = true →
       reusableCaptures assumptions.shareableVariables context su = true →
       PartialTyping assumptions context (.fix spec inheritedTerm) target (addUses su iu)
-  | binary {context : Context} {primitive : Primitive} {left right : Term} {input output : Ty} {lu ru : Uses} :
-      primitiveTypes primitive = (input, output) →
-      PartialTyping assumptions context left input lu → PartialTyping assumptions context right input ru →
+  | binary {context : Context} {primitive : Primitive} {left right : Term} {input rightInput output : Ty} {lu ru : Uses} :
+      primitiveTypes primitive = (input, rightInput, output) →
+      PartialTyping assumptions context left input lu → PartialTyping assumptions context right rightInput ru →
       PartialTyping assumptions context (.binary primitive left right) output (addUses lu ru)
+  | unary {context : Context} {primitive : UnaryPrimitive} {argument : Term} {input output : Ty} {uses : Uses} :
+      unaryTypes primitive = (input, output) →
+      PartialTyping assumptions context argument input uses →
+      PartialTyping assumptions context (.unary primitive argument) output uses
   | ifZero {context : Context} {value zero successor : Term} {result : Ty} {vu zu su : Uses} :
       PartialTyping assumptions context value .natural vu → PartialTyping assumptions context zero result zu →
       PartialTyping assumptions (⟨.natural,.unrestricted⟩ :: context) successor result su →
@@ -472,10 +482,15 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       let l ← infer assumptions annotations context (position ++ [0]) fuel left
       let r ← infer assumptions annotations context (position ++ [1]) fuel right
       if hl : l.type = (primitiveTypes primitive).1 then
-        if hr : r.type = (primitiveTypes primitive).1 then
-          some ⟨(primitiveTypes primitive).2, addUses l.uses r.uses,
-            .binary (Prod.eta _) (hl ▸ l.derivation) (hr ▸ r.derivation)⟩
+        if hr : r.type = (primitiveTypes primitive).2.1 then
+          some ⟨(primitiveTypes primitive).2.2, addUses l.uses r.uses,
+            .binary (by simp)  (hl ▸ l.derivation) (hr ▸ r.derivation)⟩
         else none
+      else none
+  | fuel + 1, .unary primitive argument => do
+      let a ← infer assumptions annotations context (position ++ [0]) fuel argument
+      if ha : a.type = (unaryTypes primitive).1 then
+        some ⟨(unaryTypes primitive).2, a.uses, .unary (Prod.eta _) (ha ▸ a.derivation)⟩
       else none
   | fuel + 1, .ifZero value zero successor => do
       let condition ← infer assumptions annotations context (position ++ [0]) fuel value
@@ -1115,7 +1130,13 @@ def decodePrimitive (value : Json) : Except String Primitive := do
   | "labelEqual" => pure .labelEqual
   | "subtract" => pure .subtract | "divide" => pure .divide
   | "less" => pure .less | "lessEqual" => pure .lessEqual | "modulo" => pure .modulo
+  | "textConcat" => pure .textConcat | "textTake" => pure .textTake | "textDrop" => pure .textDrop
   | _ => .error "unknown Objective primitive"
+
+def decodeUnaryPrimitive (value : Json) : Except String UnaryPrimitive := do
+  match ← value.getStr? with
+  | "natText" => pure .natText | "textLength" => pure .textLength
+  | _ => .error "unknown Objective unary primitive"
 
 /-- Decodes exactly the existing world lowerer's runtime core wire; no second
 source translator or alternate fixture term is introduced by the type checker. -/
@@ -1141,6 +1162,7 @@ def decodeTerm : Nat → Json → Except String Term
     | "reflect" => return .reflect (← sub "value")
     | "metadata" => return .metadata (← sub "value")
     | "project" => return .project (← sub "value")
+    | "unary" => return .unary (← decodeUnaryPrimitive (← value.getObjVal? "primitive")) (← decodeTerm fuel (← value.getObjVal? "argument"))
     | "binary" => return .binary (← decodePrimitive (← value.getObjVal? "primitive")) (← sub "left") (← sub "right")
     | "record" => return .record (← fields ())
     | "extend" => return .extend (← sub "inherited") (← fields ())

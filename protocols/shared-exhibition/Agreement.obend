@@ -1,0 +1,77 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
+record Participants:
+  north: String
+  south: String
+  curator: String
+record Piece:
+  title: String
+  note: String
+  minutes: Nat
+  fragile: Bool
+  light: String
+record Arrangement:
+  revision: Nat
+  caption: String
+  first: String
+sum Approval:
+  pending: {}
+  approved: {revision: Nat}
+record State:
+  participants: Participants
+  northOffered: Bool
+  southOffered: Bool
+  arranged: Bool
+  opened: Bool
+  north: Piece
+  south: Piece
+  arrangement: Arrangement
+  northConsent: Approval
+  southConsent: Approval
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+record Proposal:
+  caption: String
+  first: String
+def blankPiece() -> Piece:
+  {title:"",note:"",minutes:0n,fragile:false,light:""}
+def initial(participants: Participants) -> State:
+  {participants:participants,northOffered:false,southOffered:false,arranged:false,opened:false,north:blankPiece(),south:blankPiece(),arrangement:{revision:0n,caption:"",first:""},northConsent:Approval.pending(),southConsent:Approval.pending()}
+def refused(state: State, reason: String) -> Decision:
+  {accepted:false,reason:reason,state:state,result:""}
+def valid(piece: Piece) -> Bool:
+  piece.title!=""&&piece.note!=""&&piece.minutes>=1n&&piece.minutes<=30n&&(piece.light=="dim"||piece.light=="bright")
+def approved(approval: Approval, arrangement: Arrangement) -> Bool:
+  match approval:
+    case pending(_): false
+    case approved(proof): proof.revision==arrangement.revision
+def offered(state: State, piece: Piece, context: Abi.Context, north: Bool) -> Decision:
+  let actor: String = if north then state.participants.north else state.participants.south
+  let already: Bool = if north then state.northOffered else state.southOffered
+  if context.principal!=actor||already||state.arranged||valid(piece)==false then refused(state,"Only this artist may offer one valid piece before arrangement.") else {accepted:true,reason:"",state:{participants:state.participants,northOffered:if north then true else state.northOffered,southOffered:if north then state.southOffered else true,arranged:state.arranged,opened:state.opened,north:if north then piece else state.north,south:if north then state.south else piece,arrangement:state.arrangement,northConsent:state.northConsent,southConsent:state.southConsent},result:piece.title}
+def arranged(state: State, input: Proposal, context: Abi.Context) -> Decision:
+  if context.principal!=state.participants.curator||state.northOffered==false||state.southOffered==false||state.arranged||input.caption==""||(input.first!="north"&&input.first!="south") then refused(state,"The curator must arrange both pieces once.") else {accepted:true,reason:"",state:{participants:state.participants,northOffered:state.northOffered,southOffered:state.southOffered,arranged:true,opened:state.opened,north:state.north,south:state.south,arrangement:{revision:state.arrangement.revision+1n,caption:input.caption,first:input.first},northConsent:Approval.pending(),southConsent:Approval.pending()},result:input.caption}
+def consented(state: State, context: Abi.Context, north: Bool) -> Decision:
+  let actor: String = if north then state.participants.north else state.participants.south
+  let prior: Approval = if north then state.northConsent else state.southConsent
+  if context.principal!=actor||state.arranged==false||state.opened||approved(prior,state.arrangement) then refused(state,"Only this artist may approve the current arrangement once.") else {accepted:true,reason:"",state:{participants:state.participants,northOffered:state.northOffered,southOffered:state.southOffered,arranged:state.arranged,opened:state.opened,north:state.north,south:state.south,arrangement:state.arrangement,northConsent:if north then Approval.approved({revision:state.arrangement.revision}) else state.northConsent,southConsent:if north then state.southConsent else Approval.approved({revision:state.arrangement.revision})},result:state.arrangement.caption}
+def opened(state: State, context: Abi.Context) -> Decision:
+  if context.principal!=state.participants.curator||state.arranged==false||state.opened||approved(state.northConsent,state.arrangement)==false||approved(state.southConsent,state.arrangement)==false then refused(state,"Opening requires both approvals of this exact arrangement.") else {accepted:true,reason:"",state:{participants:state.participants,northOffered:state.northOffered,southOffered:state.southOffered,arranged:state.arranged,opened:true,north:state.north,south:state.south,arrangement:state.arrangement,northConsent:state.northConsent,southConsent:state.southConsent},result:state.arrangement.caption}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record View:
+  title: String
+  prose: String
+  actions: {offerNorth: Action, offerSouth: Action, arrange: Action, consentNorth: Action, consentSouth: Action, open: Action}
+  children: Encounter.Children
+def view(state: State, panel: String) -> View:
+  let active: Bool = state.opened==false
+  let prose: String = if panel=="north" then if state.northOffered then state.north.note else "This artist has not offered a piece." else if panel=="south" then if state.southOffered then state.south.note else "This artist has not offered a piece." else if state.arranged then state.arrangement.caption else "Two pieces, one room. Offer each piece, arrange them, then approve together."
+  {title:"The Room Between",prose:prose,actions:{offerNorth:{visible:active&&state.arranged==false&&state.northOffered==false,text:"Offer the north piece",command:"offerNorth",input:{}},offerSouth:{visible:active&&state.arranged==false&&state.southOffered==false,text:"Offer the south piece",command:"offerSouth",input:{}},arrange:{visible:active&&state.arranged==false&&state.northOffered&&state.southOffered,text:"Propose the exhibition arrangement",command:"arrange",input:{}},consentNorth:{visible:active&&state.arranged&&approved(state.northConsent,state.arrangement)==false,text:"Approve this arrangement as north",command:"consentNorth",input:{}},consentSouth:{visible:active&&state.arranged&&approved(state.southConsent,state.arrangement)==false,text:"Approve this arrangement as south",command:"consentSouth",input:{}},open:{visible:active&&state.arranged&&approved(state.northConsent,state.arrangement)&&approved(state.southConsent,state.arrangement),text:"Open the exhibition",command:"open",input:{}}},children:Encounter.Children.nil()}

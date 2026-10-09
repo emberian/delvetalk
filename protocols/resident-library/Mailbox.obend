@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
 import ./Consent.obend as Consent
 record Note:
   topic: String
@@ -9,16 +11,18 @@ record Note:
 sum Notes:
   nil: {}
   cons: {head: Note, tail: Notes}
+record Queue:
+  size: Nat
+  front: Notes
+  rear: Notes
 record State:
   links: Consent.Links
-  notes: Notes
-record Context:
-  object: String
-  principal: String
-  inputOrigin: {kind: String, object: String, command: String, immediatelyPrevious: Bool}
+  notes: Queue
 record Input:
   topic: String
   units: Nat
+  after: Nat
+  limit: Nat
 record Decision:
   accepted: Bool
   reason: String
@@ -28,78 +32,74 @@ record Effects:
   accepted: Bool
   reason: String
   state: State
-  result: String
+  result: {next: Nat, count: Nat, more: Bool}
   emissions: Consent.Slots
 record Behavior:
   capacity: Nat
   maxUnits: Nat
+  consent: Consent.Limits
+  batch: Nat
   accepts: String -> Bool
-  store: State -> Consent.Payload -> Consent.Event -> Decision
-def count(notes: Notes) -> Nat:
-  match notes:
-    case nil(_): 0
-    case cons(c): 1 + count(c.tail)
-def append(notes: Notes, note: Note) -> Notes:
-  match notes:
-    case nil(_): Notes.cons({head: note, tail: Notes.nil()})
-    case cons(c): Notes.cons({head: c.head, tail: append(c.tail, note)})
+  store: State -> Consent.Payload -> Abi.Event -> Decision
+def reverse(xs: Notes, acc: Notes) -> Notes:
+  match xs:
+    case nil(_): acc
+    case cons(c): reverse(c.tail, Notes.cons({head: c.head, tail: acc}))
+def empty() -> Queue:
+  {size: 0, front: Notes.nil(), rear: Notes.nil()}
+def enqueue(queue: Queue, note: Note) -> Queue:
+  if queue.size == 0 then {size: 1, front: Notes.cons({head: note, tail: Notes.nil()}), rear: Notes.nil()} else {size: queue.size + 1, front: queue.front, rear: Notes.cons({head: note, tail: queue.rear})}
 def initial() -> State:
-  {links: Consent.initial(), notes: Notes.nil()}
+  {links: Consent.initial(), notes: empty()}
 def decision(ok: Bool, state: State, reason: String, result: String) -> Decision:
   {accepted: ok, reason: if ok then "" else reason, state: state, result: result}
-def store(behavior: Behavior, state: State, input: Consent.Payload, event: Consent.Event) -> Decision:
-  if Consent.obsolete(state.links, input, event) then decision(true, state, "", "declined-consent") else if Consent.allows(state.links, input, event) == false then decision(false, state, "Consent is not yet granted.", "pending-consent") else if behavior.accepts(input.topic) == false || input.units == 0 || input.units > behavior.maxUnits then decision(true, state, "", "declined-notice") else decision(count(state.notes) < behavior.capacity, {links: state.links, notes: append(state.notes, {topic: input.topic, units: input.units, event: event.id, source: event.source, author: event.originatingPrincipal})}, "Mailbox is full; acknowledge a notice and retry.", "stored")
+def store(behavior: Behavior, state: State, input: Consent.Payload, event: Abi.Event) -> Decision:
+  if Consent.obsolete(state.links, input, event) then decision(true, state, "", "declined-consent") else if Consent.allows(state.links, input, event) == false then decision(false, state, "Consent is not yet granted.", "pending-consent") else if behavior.accepts(input.topic) == false || input.units == 0 || input.units > behavior.maxUnits then decision(true, state, "", "declined-notice") else if state.notes.size >= behavior.capacity then decision(false, state, "Mailbox is full; acknowledge a notice and retry.", "pending-capacity") else decision(true, {links: state.links, notes: enqueue(state.notes, {topic: input.topic, units: input.units, event: event.id, source: event.source, author: event.originatingPrincipal})}, "Mailbox is full; acknowledge a notice and retry.", "stored")
 extension Inbox(self: Behavior, super: {}) -> Behavior:
-  {capacity: 4, maxUnits: 8, accepts: fn(topic: String) -> Bool: false, store: fn(state: State, input: Consent.Payload, event: Consent.Event) -> Decision: store(self, state, input, event)}
-def configure(state: State, input: Consent.Configure) -> Decision:
-  decision(Consent.valid(state.links, input), {links: Consent.update(state.links, input), notes: state.notes}, "Use a fresh global consent epoch, a unique incoming source and a slot from one to four.", "configured")
+  {capacity: 4, maxUnits: 8, consent: {capacity: 16, work: 64}, batch: 4, accepts: fn(topic: String) -> Bool: false, store: fn(state: State, input: Consent.Payload, event: Abi.Event) -> Decision: store(self, state, input, event)}
+def configure(behavior: Behavior, state: State, input: Consent.Configure) -> Decision:
+  if Consent.valid(state.links, input, behavior.consent) then decision(true, {links: Consent.update(state.links, input), notes: state.notes}, "", "configured") else decision(false, state, "Use a fresh consent epoch, unique incoming source and an available collection key.", "not-configured")
+def pageLimit(behavior: Behavior) -> Nat:
+  if behavior.batch > 4 then 4 else behavior.batch
 def announce(behavior: Behavior, state: State, input: Input) -> Effects:
-  let ok: Bool = behavior.accepts(input.topic) && input.units > 0 && input.units <= behavior.maxUnits && Consent.sending(state.links)
-  {accepted: ok, reason: if ok then "" else "Choose an allowed topic, bounded units and a subscription.", state: state, result: "announced", emissions: Consent.emit(state.links, input.topic, input.units)}
+  let bounds: Bool = input.limit > 0 && input.limit <= pageLimit(behavior) && input.after <= 65535 && Consent.within(state.links.outbound, behavior.consent.work)
+  let page: Consent.Page = if bounds then Consent.page(state.links, input.after, input.limit) else {items: Consent.Peers.nil(), next: input.after, count: 0, more: false}
+  let ok: Bool = bounds && behavior.accepts(input.topic) && input.units > 0 && input.units <= behavior.maxUnits && page.count > 0
+  {accepted: ok, reason: if ok then "" else "Choose an allowed topic, bounded units and a nonempty subscription page.", state: state, result: {next: page.next, count: page.count, more: page.more}, emissions: Consent.emit(page.items, input.topic, input.units)}
+def advance(queue: Queue, tail: Notes) -> Queue:
+  match tail:
+    case nil(_): {size: queue.size - 1, front: reverse(queue.rear, Notes.nil()), rear: Notes.nil()}
+    case cons(_): {size: queue.size - 1, front: tail, rear: queue.rear}
 def acknowledge(state: State) -> Decision:
-  match state.notes:
+  match state.notes.front:
     case nil(_): decision(false, state, "Mailbox is empty.", "empty")
-    case cons(c): decision(true, {links: state.links, notes: c.tail}, "", c.head.topic)
-def oldest(notes: Notes) -> String:
-  match notes:
+    case cons(c):
+      let queue: Queue = advance(state.notes, c.tail)
+      decision(true, {links: state.links, notes: queue}, "", c.head.topic)
+def oldest(queue: Queue) -> String:
+  match queue.front:
     case nil(_): "No notices are waiting."
     case cons(c): c.head.topic
-record Text:
-  type: String
-  minLength: Nat
-  maxLength: Nat
-record Number:
-  type: String
-  minimum: Nat
-  maximum: Nat
 record ConfigForm:
   label: String
-  fields: {side: {type: String, options: {a: String, b: String}}, slot: Number, enabled: {type: String}, object: Text, program: Text, generation: Number}
+  fields: {side: {type: String, options: {a: String, b: String}}, slot: Abi.NatField, enabled: {type: String}, object: Abi.StringField, program: Abi.StringField, generation: Abi.NatField}
 record PostForm:
   label: String
-  fields: {topic: Text, units: Number}
+  fields: {topic: Abi.StringField, units: Abi.NatField, after: Abi.NatField, limit: Abi.NatField}
 record ReceiveForm:
   label: String
-  fields: {topic: Text, units: Number, generation: Number}
+  fields: {topic: Abi.StringField, units: Abi.NatField, generation: Abi.NatField}
 record Description:
   name: String
   initial: State
   methods: {configure: ConfigForm, announce: PostForm, receive: ReceiveForm, acknowledge: {label: String, fields: {}}}
   panels: {oldest: String}
-def text(max: Nat) -> Text:
+def text(max: Nat) -> Abi.StringField:
   {type: "string", minLength: 1, maxLength: max}
-def number(max: Nat) -> Number:
+def number(max: Nat) -> Abi.NatField:
   {type: "nat", minimum: 1, maximum: max}
 def describe(name: String, behavior: Behavior) -> Description:
-  {name: name, initial: initial(), methods: {configure: {label: "Consent or subscribe", fields: {side: {type: "enum", options: {a: "listen", b: "send"}}, slot: number(4), enabled: {type: "bool"}, object: text(128), program: text(64), generation: number(65535)}}, announce: {label: "Announce to subscribers", fields: {topic: text(16), units: number(behavior.maxUnits)}}, receive: {label: "Receive an admitted notice", fields: {topic: text(16), units: number(behavior.maxUnits), generation: number(65535)}}, acknowledge: {label: "Acknowledge oldest notice", fields: {}}}, panels: {oldest: "Oldest notice"}}
-record Child:
-  key: String
-  label: String
-  object: String
-  panel: String
-sum Children:
-  nil: {}
-  cons: {head: Child, tail: Children}
+  {name: name, initial: initial(), methods: {configure: {label: "Consent or subscribe", fields: {side: {type: "enum", options: {a: "listen", b: "send"}}, slot: number(65535), enabled: {type: "bool"}, object: text(128), program: text(64), generation: number(65535)}}, announce: {label: "Announce to subscribers", fields: {topic: text(16), units: number(behavior.maxUnits), after: {type: "nat", minimum: 0, maximum: 65535}, limit: number(pageLimit(behavior))}}, receive: {label: "Receive an admitted notice", fields: {topic: text(16), units: number(behavior.maxUnits), generation: number(65535)}}, acknowledge: {label: "Acknowledge oldest notice", fields: {}}}, panels: {oldest: "Oldest notice"}}
 record Action:
   visible: Bool
   text: String
@@ -109,8 +109,8 @@ record View:
   title: String
   prose: String
   actions: {configure: Action, announce: Action, acknowledge: Action}
-  children: Children
+  children: Encounter.Children
 def action(command: String, visible: Bool, text: String) -> Action:
   {visible: visible, text: text, command: command, input: {}}
 def view(state: State, panel: String, title: String, prose: String) -> View:
-  {title: title, prose: if panel == "oldest" then oldest(state.notes) else prose, actions: {configure: action("configure", true, "Consent or subscribe"), announce: action("announce", Consent.sending(state.links), "Announce to subscribers"), acknowledge: action("acknowledge", count(state.notes) > 0, "Acknowledge oldest notice")}, children: Children.nil()}
+  {title: title, prose: if panel == "oldest" then oldest(state.notes) else prose, actions: {configure: action("configure", true, "Consent or subscribe"), announce: action("announce", Consent.sending(state.links), "Announce to subscribers"), acknowledge: action("acknowledge", state.notes.size > 0, "Acknowledge oldest notice")}, children: Encounter.Children.nil()}

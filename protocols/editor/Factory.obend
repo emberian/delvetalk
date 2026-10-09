@@ -1,0 +1,84 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Allocation.obend as A
+
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record State:
+  compiler: String
+  reporters: P.Value
+  candidate: P.Value
+  last: String
+record Plan:
+  factory: String
+  name: String
+  editor: String
+  generation: Nat
+  target: String
+  baselineVersion: Nat
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Plan
+  allocations: A.Allocations
+def initial(config: P.Value) -> State:
+  {compiler: P.text(P.get(config, "compiler")), reporters: P.get(config, "reporters"), candidate: P.get(config, "candidate"), last: ""}
+def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def principal(who: String) -> P.Value:
+  P.Value.array({values: P.Values.cons({head: P.Value.text({value: who}), tail: P.Values.nil()})})
+def authority(state: State, maker: String) -> P.Value:
+  let methods: P.Value = P.Value.record({fields: pair("submit", principal(maker), pair("adopt", principal(maker), pair("compiled", principal(state.compiler), pair("failed", principal(state.compiler), pair("report", state.reporters, P.Fields.nil())))))})
+  let nobody: P.Value = P.Value.array({values: P.Values.nil()})
+  P.Value.record({fields: pair("profile", P.Value.text({value: "delvetalk-scoped-law-v1"}), pair("invoke", methods, pair("reprogram", nobody, pair("law", nobody, P.Fields.nil()))))})
+def remembered(state: State, name: String) -> State:
+  extend(state, {last: name})
+def make(state: State, input: Plan, context: Context) -> Decision:
+  let planned: Bool = context.inputOrigin.kind == "invoke" && context.inputOrigin.object == input.editor && context.inputOrigin.command == "plan" && context.inputOrigin.immediatelyPrevious && input.factory == context.object && input.editor != "" && input.target != "" && input.generation > 0n && state.compiler != ""
+  {accepted: planned, reason: if planned then "" else "Use the actual immediately preceding editor plan.", state: if planned then remembered(state, input.name) else state, result: input, allocations: if planned then A.Allocations.cons({head: {name: input.name, protocol: state.candidate, law: authority(state, context.principal)}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
+record TextField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record NumberField:
+  type: String
+  minimum: Nat
+  maximum: Nat
+record Method:
+  label: String
+  fields: {factory: TextField, name: TextField, editor: TextField, generation: NumberField, target: TextField, baselineVersion: NumberField}
+record Description:
+  name: String
+  initial: State
+  methods: {make: Method}
+  panels: {main: String}
+  allocation: {limit: Nat}
+def textField() -> TextField:
+  {type: "string", minLength: 1n, maxLength: 256n}
+def numberField() -> NumberField:
+  {type: "nat", minimum: 0n, maximum: 9007199254740991n}
+def describe() -> Description:
+  {name: "Candidate workshop", initial: initial(P.Value.none()), methods: {make: {label: "Make the planned variation", fields: {factory: textField(), name: {type: "string", minLength: 1n, maxLength: 64n}, editor: textField(), generation: numberField(), target: textField(), baselineVersion: numberField()}}}, panels: {main: "Workshop"}, allocation: {limit: 32n}}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Children
+def view(state: State, panel: String) -> View:
+  {title: "Candidate workshop", prose: "Each editor plan can make one fresh immutable candidate. Earlier experiments remain.", actions: {}, children: Children.nil()}

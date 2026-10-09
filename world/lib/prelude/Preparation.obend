@@ -1,0 +1,94 @@
+edition ObjectiveBend 1
+# JSON is data. Source functions choose effects; this codec has no substitutions.
+sum Value:
+  none: {}
+  boolean: {value: Bool}
+  natural: {value: Nat}
+  number: {encoded: String}
+  text: {value: String}
+  array: {values: Values}
+  record: {fields: Fields}
+sum Values:
+  nil: {}
+  cons: {head: Value, tail: Values}
+record Field:
+  name: String
+  value: Value
+sum Fields:
+  nil: {}
+  cons: {head: Field, tail: Fields}
+sum Names:
+  nil: {}
+  cons: {head: String, tail: Names}
+record Observation:
+  object: String
+  version: Nat
+  program: String
+  state: Value
+sum Observations:
+  nil: {}
+  cons: {head: Observation, tail: Observations}
+sum Read:
+  existing: {object: String}
+  absent: {object: String}
+sum Reads:
+  nil: {}
+  cons: {head: Read, tail: Reads}
+sum Effect:
+  invoke: {object: String, command: String, input: Value}
+  invokeResult: {object: String, command: String, result: Nat}
+  observe: {object: String}
+  reprogram: {object: String, protocol: Value, state: Value}
+  reprogramResult: {object: String, result: Nat}
+  law: {object: String, law: Value}
+sum Effects:
+  nil: {}
+  cons: {head: Effect, tail: Effects}
+record Turn:
+  summary: String
+  reads: Reads
+  calls: Effects
+sum Preparation:
+  ready: Turn
+  question: {message: String, needs: Names}
+  refused: {message: String}
+record Context:
+  object: String
+  principal: String
+def field(fields: Fields, name: String) -> Value:
+  match fields:
+    case nil(_): Value.none()
+    case cons(c): if c.head.name == name then c.head.value else field(c.tail, name)
+def get(value: Value, name: String) -> Value:
+  match value:
+    case record(r): field(r.fields, name)
+    case none(_): Value.none()
+    case boolean(_): Value.none()
+    case natural(_): Value.none()
+    case number(_): Value.none()
+    case text(_): Value.none()
+    case array(_): Value.none()
+def text(value: Value) -> String:
+  match value:
+    case text(t): t.value
+    case none(_): ""
+    case boolean(_): ""
+    case natural(_): ""
+    case number(_): ""
+    case array(_): ""
+    case record(_): ""
+def natural(value: Value) -> Nat:
+  match value:
+    case natural(n): n.value
+    case none(_): 0n
+    case boolean(_): 0n
+    case number(_): 0n
+    case text(_): 0n
+    case array(_): 0n
+    case record(_): 0n
+def observation(xs: Observations, object: String) -> Observation:
+  match xs:
+    case nil(_): {object: "", version: 0n, program: "", state: Value.none()}
+    case cons(c): if c.head.object == object then c.head else observation(c.tail, object)
+def oneField(name: String, value: Value) -> Value:
+  Value.record({fields: Fields.cons({head: {name: name, value: value}, tail: Fields.nil()})})

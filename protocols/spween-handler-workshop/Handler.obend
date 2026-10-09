@@ -1,5 +1,6 @@
 edition ObjectiveBend 1
 import ./Kernel.obend as K
+import ./Abi.obend as Abi
 record State:
   variables: K.Variables
   members: K.Members
@@ -44,5 +45,5 @@ def local(step: Step, name: String, args: K.Values) -> Step:
   match args:
     case cons(_): refuse(step, "This workshop takes no call arguments.")
     case nil(_): if name == "repair" then changed(step, repair(step.state)) else if name == "release" then changed(step, release(step.state)) else refuse(step, "The hinge refuses to bend.")
-def call(step: Step, name: String, args: K.Values, context: K.Context) -> Step:
+def call(step: Step, name: String, args: K.Values, context: Abi.Context) -> Step:
   if step.accepted == false then step else local(step, name, args)

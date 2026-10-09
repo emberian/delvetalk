@@ -201,7 +201,7 @@ def _describe(view):
         raise AffordanceError("captured version must be a natural number")
     program = protocol.get("viewProgram")
     if (view.get("mode") == "raw" and isinstance(program, dict)
-            and program.get("profile") in ("delvetalk-obend-data-menu-v1", "delvetalk-obend-data-offers-v1")):
+            and program.get("profile") == "delvetalk-obend-data-menu-v1"):
         # A failed typed projection is a recovery surface, not a replacement
         # menu synthesized from method metadata. Even malformed metadata must
         # not prevent inspection of the retained program and state.

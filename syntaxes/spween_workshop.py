@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SYNTAX = 'spween-handler-workshop@1'
 HEADER = 'spween handler workshop 1'
 MODULE_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]{0,127}\Z')
+RESERVED = {'Abi', 'Encounter', 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'Score', 'Scene'}
 
 
 def parse_source(source):
@@ -41,8 +42,8 @@ def parse_source(source):
             kind = 'spween'
         elif marker.startswith('```obend '):
             name = marker[len('```obend '):]
-            if not MODULE_NAME.fullmatch(name) or name in names or name in ('Kernel', 'Scene'):
-                raise ValueError('module name must be distinct and cannot replace Kernel or Scene')
+            if not MODULE_NAME.fullmatch(name) or name in names or name in RESERVED:
+                raise ValueError('module name must be distinct and cannot replace a sealed ABI or scene-data module')
             names.add(name)
             kind = 'obend'
         elif marker.startswith('```'):
@@ -50,11 +51,17 @@ def parse_source(source):
         # All remaining surrounding prose is retained opaque authoring data.
     if kind is not None:
         raise ValueError('unclosed source fence')
-    if scene is None or not modules or modules[-1]['name'] != 'Handler':
-        raise ValueError('one scene and ordered modules ending in Handler are required')
-    if len(modules) > 62:
-        raise ValueError('at most 62 authored modules may accompany the generated kernel and scene')
-    return {'scene': scene, 'modules': modules}
+    if scene is None or 'Handler' not in names:
+        raise ValueError('one scene and ordered handler modules ending in Handler are required')
+    boundary = next(i for i, item in enumerate(modules) if item['name'] == 'Handler') + 1
+    handlers, runtime = modules[:boundary], modules[boundary:]
+    if any(item['name'] == 'SceneRuntime' for item in handlers):
+        raise ValueError('runtime modules must follow Handler')
+    if runtime and runtime[-1]['name'] != 'SceneRuntime':
+        raise ValueError('runtime modules must end in SceneRuntime')
+    if len(modules) + len(RESERVED) + (0 if runtime else 1) > 64:
+        raise ValueError('authored and sealed package together exceed 64 modules')
+    return {'scene': scene, 'modules': modules, 'handlerModules': handlers, 'runtimeModules': runtime}
 
 
 def lower(source):
@@ -62,7 +69,8 @@ def lower(source):
     spec = importlib.util.spec_from_file_location('spween_workshop_compiler', ROOT / 'scene/handlers.py')
     compiler = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(compiler)
-    bundle = compiler.compile_source(material['scene'], handler_modules=material['modules'])
+    bundle = compiler.compile_source(material['scene'], handler_modules=material['handlerModules'],
+                                     runtime_modules=material['runtimeModules'] or None)
     protocol = bundle['protocol']
     # Exact document custody belongs to the translation envelope; extracted text
     # stays with the program too, independently of the generated source modules.

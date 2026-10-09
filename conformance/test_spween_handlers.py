@@ -171,8 +171,38 @@ class SpweenHandlers(unittest.TestCase):
                 self.assertEqual(self.root(name), before)
         self.assertEqual(world.wire_loads(self.path.read_text())['messages']['events'], {})
 
+    def test_inhabitant_composes_retained_runtime_source(self):
+        runtime = (handlers.RUNTIME / 'QuietRuntime.obend').read_text()
+        protocol = handlers.compile_source(self.repair_source,
+            runtime_modules=[{'name': 'SceneRuntime', 'source': runtime}])['protocol']
+        self.install(protocol, law=policy(['start', 'choose'], ('player', 'sleeper')))
+        self.invoke('start')
+        before = self.root()
+        self.assertEqual(room.inspect_object(before, 'scene')['data']['title'], 'The quiet workshop')
+        denied = self.invoke(choice=0, principal='sleeper', kind='refused')
+        self.assertIn('Let the moth rest.', denied['data'])
+        self.assertEqual(self.root(), before)
+        self.invoke(choice=0)
+        self.assertEqual(self.model()['handler']['repairs'], 1)
+        modules = {m['name']: m['source'] for m in protocol['sourcePackages']['resident']['modules']}
+        self.assertEqual(modules['SceneRuntime'], runtime)
+        self.assertEqual(modules['BaseRuntime'], (handlers.RUNTIME / 'SceneRuntime.obend').read_text())
+        self.assertEqual(modules['Scene'], (handlers.RUNTIME / 'Scene.obend').read_text())
+        # A source-only extension changed actual admission without rewriting the
+        # parser adapter, the data, the handler, or any host behavior.
+        self.assertEqual(protocol['spweenSource']['source'], self.repair_source)
+
+    def test_runtime_prose_join_matches_actual_upstream(self):
+        source = scene('=== room\nA moth 🦋 waits.\n* [Stay]\n  -> room\nThe é-shaped key shines.\n')
+        expected = handlers.bridge({'op': 'replay', 'source': source})['trace'][0]['snapshot']['prose']
+        self.install(handlers.compile_source(source)['protocol'])
+        self.invoke('start')
+        view = room.inspect_object(self.root(), 'scene')
+        self.assertEqual(view['data']['prose'], expected)
+
     def test_explicit_subset_and_module_boundaries(self):
-        for source in [scene('=== p\n~ v = 1.5\n'), scene('=== p\n* [Order] { v < "a" }\n  -> END\n')]:
+        for source in [scene('=== p\n~ v = 1.5\n'), scene('=== p\n* [Order] { v < "a" }\n  -> END\n'),
+                       scene('=== p\n* [Missing]\n  -> missing\n'), scene('=== p\nOne.\n=== p\nTwo.\n')]:
             with self.assertRaises(ValueError): handlers.compile_source(source)
         for modules in ([], [{'name': 'Kernel', 'source': 'anything'}], [{'name': 'Other', 'source': 'anything'}]):
             with self.assertRaises(ValueError): handlers.compile_source(self.repair_source, handler_modules=modules)

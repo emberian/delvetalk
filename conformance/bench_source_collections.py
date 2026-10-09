@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {'ExhibitList': 'protocols/place-index/ExhibitList.obend',
            'Main': 'protocols/place-index/Main.obend',
            'RoomBench': 'conformance/fixtures/source-collections/RoomBench.obend'}
+PAGE_MODULES = {'Encounter': 'world/lib/prelude/Encounter.obend',
+                'EncounterPages': 'world/lib/prelude/EncounterPages.obend',
+                'PagesBench': 'conformance/fixtures/source-collections/PagesBench.obend'}
 DIAGNOSTICS = ('spec/Delvetalk/Package.lean', 'spec/Delvetalk/PackageData.lean',
                'scene/projection.py', 'protocols/place-index/README.md')
 
@@ -28,7 +31,7 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def snapshot(directory):
+def snapshot(directory, modules=MODULES):
     """Copy one immutable evidence bundle; never overwrite an existing bundle."""
     if directory.exists():
         manifest = json.loads((directory / 'manifest.json').read_bytes())
@@ -45,7 +48,7 @@ def snapshot(directory):
     if before != after or sha(directory / 'delvetalk-obend') != before:
         raise RuntimeError('native binary changed during snapshot; keep evidence and choose a new snapshot')
     manifest = {'binarySha256': before, 'repository': str(ROOT), 'files': {}}
-    for name in (*MODULES.values(), *DIAGNOSTICS):
+    for name in (*modules.values(), *DIAGNOSTICS):
         source = ROOT / name
         target = directory / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -101,11 +104,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--snapshot', required=True, type=Path, help='new private snapshot directory')
     parser.add_argument('--output', required=True, type=Path, help='private JSON result path')
+    parser.add_argument('--representation', choices=('flat', 'pages'), default='flat')
     parser.add_argument('--sizes', default='8,32,50,200')
     parser.add_argument('--repeats', default=3, type=int)
     parser.add_argument('--exports', default='count,listing,select,prepare,add')
     args = parser.parse_args()
     sizes = [int(n) for n in args.sizes.split(',')]
+    if args.representation == 'pages':
+        return run_pages(args, sizes)
     exports = args.exports.split(',')
     if not exports or any(entry not in ('count', 'listing', 'select', 'prepare', 'add') for entry in exports):
         parser.error('unknown source export')
@@ -179,6 +185,112 @@ def main():
             results['cases'].append({'entry': 'count', 'mode': mode, 'medianMs': ms, **reply})
     save()
     if len(artifacts) != len(exports): raise SystemExit('Some source exports failed compilation; inspect recorded diagnostics')
+
+
+def children(size, start=0):
+    value = variant('nil', record())
+    for i in reversed(range(start, start + size)):
+        value = variant('cons', record(head=child(i), tail=value))
+    return value
+
+
+def child(i):
+    return record(key=text(f'k{i}'), label=text(f'Exhibit {i}'), object=text(f'o{i}'), panel=text('main'))
+
+
+def pages(size):
+    value = variant('nil', record())
+    for start in reversed(range(0, size, 16)):
+        value = variant('cons', record(items=children(min(16, size - start), start), tail=value))
+    return value
+
+
+def child_keys(value):
+    result = []
+    while value['label'] == 'cons':
+        row = fields(value['payload'])
+        result.append(fields(row['head'])['key']['value'])
+        value = row['tail']
+    return result
+
+
+def page_keys(value):
+    result = []
+    while value['label'] == 'cons':
+        row = fields(value['payload'])
+        keys = child_keys(row['items'])
+        assert 0 < len(keys) <= 16
+        result.extend(keys)
+        value = row['tail']
+    return result
+
+
+def run_pages(args, sizes):
+    if any(n < 0 or n > 200 for n in sizes) or not 1 <= args.repeats <= 5:
+        raise SystemExit('bounded experiment: sizes 0..200, repeats 1..5')
+    frozen = args.snapshot.resolve()
+    manifest = snapshot(frozen, PAGE_MODULES)
+    modules = [{'name': name, 'source': (frozen / path).read_text()} for name, path in PAGE_MODULES.items()]
+    binary = frozen / 'delvetalk-obend'
+    def call(request):
+        begin = time.perf_counter()
+        raw = json.dumps(request, separators=(',', ':')).encode() + b'\n'
+        done = subprocess.run([str(binary)], input=raw, capture_output=True, timeout=30, check=True)
+        assert len(done.stdout) <= 8 * 1024 * 1024
+        return json.loads(done.stdout), (time.perf_counter() - begin) * 1000
+    artifacts = {}
+    for entry in ('count', 'pages', 'listing', 'select', 'prepare', 'add', 'remove'):
+        compiled, _ = call({'op': 'compile', 'modules': modules, 'entry': entry})
+        assert compiled['status'] == 'compiled', compiled
+        artifacts[entry] = compiled['artifact']
+    result = {'manifest': manifest, 'representation': '16-child pages; source-owned operations',
+              'limits': 'Native defaults, no increases',
+              'scope': 'PackageData counters exclude artifact reverification, process startup, admission and custody; wall includes startup and reverification.', 'cases': []}
+    for size in sizes:
+        state = pages(size)
+        last = max(0, (size - 1) // 16)
+        cases = [('count', [], 'ordinary'), ('pages', [], 'ordinary'),
+                 ('listing', [natural(last)], 'last-page'),
+                 ('listing', [natural(999)], 'absent-page'),
+                 ('select', [text(f'k{size-1}')], 'last'),
+                 ('select', [text('absent')], 'missing'),
+                 ('prepare', [record(page=natural(last), target=text(f'k{size-1}'))], 'last'),
+                 ('add', [child(size), natural(size+1)], 'append'),
+                 ('add', [child(size), natural(size)], 'full'),
+                 ('remove', [text('k0')], 'first'),
+                 ('remove', [text('absent')], 'missing')]
+        if size: cases.append(('add', [child(0), natural(size+1)], 'duplicate'))
+        for entry, extra, mode in cases:
+            runs = [call({'op': 'run-data-v1', 'artifact': artifacts[entry], 'arguments': [state] + extra}) for _ in range(args.repeats)]
+            reply = runs[-1][0]
+            case = {'size': size, 'entry': entry, 'mode': mode, 'status': reply.get('status'),
+                    'message': reply.get('message'), 'failure': reply.get('failure'),
+                    'medianMs': statistics.median(ms for _, ms in runs),
+                    'counters': {k: reply[k] for k in ('ticksUsed', 'conversionNodes', 'heapCells', 'nodesUsed') if k in reply}}
+            if reply.get('status') == 'finished':
+                v = reply['value']; expected = [f'k{i}' for i in range(size)]
+                if entry == 'count': assert v == natural(size)
+                elif entry == 'pages': assert v == natural((size+15)//16)
+                elif entry == 'listing': assert child_keys(v) == (expected[last*16:] if mode == 'last-page' else [])
+                elif entry == 'select': assert v['value'] == (mode == 'last' and size > 0)
+                elif entry == 'prepare':
+                    assert fields(v)['found']['value'] == (size > 0)
+                    assert child_keys(fields(v)['children']) == expected[last*16:]
+                elif entry == 'add':
+                    assert fields(v)['accepted']['value'] == (mode == 'append')
+                    assert page_keys(fields(v)['pages']) == expected + ([f'k{size}'] if mode == 'append' else [])
+                elif entry == 'remove': assert page_keys(v) == (expected[1:] if mode == 'first' else expected)
+            result['cases'].append(case)
+            print(json.dumps(case), flush=True)
+    for mode, arguments, limits in [('low-work', [pages(8)], {'work': 1}),
+                                    ('bad-shape', [variant('cons', natural(1))], {})]:
+        reply, ms = call({'op': 'run-data-v1', 'artifact': artifacts['count'], 'arguments': arguments, 'limits': limits})
+        assert reply['status'] != 'finished', reply
+        result['cases'].append({'mode': mode, 'medianMs': ms, **reply})
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(result, indent=2) + '\n')
+    if any(case.get('status') != 'finished' for case in result['cases'] if 'size' in case):
+        raise SystemExit('A collection operation reached a recorded native limit')
 
 
 if __name__ == '__main__': main()

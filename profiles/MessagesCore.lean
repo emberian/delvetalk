@@ -188,9 +188,10 @@ def deliverWith (runtime : Runtime) (world request : Json) (principal : String) 
     ("originatingPrincipal", ← field evidence "originatingPrincipal")]
   let execution : Evaluation (Json × Json) := do
     authorizeRequest preimage invocation principal
-    let (state, result, emitted) ← executeCommandWith runtime preimage invocation principal
+    let (state, result, emitted, allocations) ← executeCommandWith runtime preimage invocation principal
       noInputOrigin (some facts)
     if !emitted.isEmpty then throw "message delivery cannot emit descendants"
+    if !allocations.isEmpty then throw "message delivery cannot allocate children"
     let version ← (← field preimage "version").getNat?
     let nextObject ← put (← put preimage "state" state) "version" (toJson (version + 1))
     checkCandidateWith runtime preimage nextObject invocation principal

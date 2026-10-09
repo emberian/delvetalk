@@ -146,7 +146,7 @@ class TownAuthoring:
         data, request = receipt['reply']['data'], receipt['request']
         roots = data['roots'] if request['op'] == 'transaction' else {request['object']: data['root'], **data.get('allocated', {})}
         same(roots.get(job['inputs']['object']), job['inputs']['expected'], 'job and original submission candidate root')
-        if job['inputs']['expected']['state']['status'] != 'pending':
+        if desk.candidate_state(job['inputs']['expected'])['status'] != 'pending':
             raise ValueError('job must retain an exact pending candidate')
         return receipt
 
@@ -180,7 +180,7 @@ class TownAuthoring:
         compiled = loads((self.queue.state / 'compiled' / (digest(job) + '.json')).read_bytes())
         same(compiled, {'artifact': artifact_id}, 'queued compiled build')
         build = desk.load_artifact(self.queue.artifacts, artifact_id)
-        expected = inputs['expected']['state']
+        expected = desk.candidate_state(inputs['expected'])
         for key, value in {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(inputs['expected']),
                            'proposal': expected['proposal'], 'migration': expected['migration'],
                            'target': expected['target'], 'admissionProfile': job['profile'],
@@ -269,12 +269,13 @@ class TownAuthoring:
                 evidence = {'completion': completion, 'target': None, 'notices': []}
                 if ready:
                     candidate = reply['data']['root']
-                    same(candidate['state']['artifact'], completion['artifact'], 'ready candidate artifact')
+                    candidate_data = desk.candidate_state(candidate)
+                    same(candidate_data['artifact'], completion['artifact'], 'ready candidate artifact')
                     for key in ('protocol', 'migration', 'target'):
-                        same(candidate['state'][key], completion['build'][key], 'ready candidate ' + key)
-                    if candidate['state']['status'] != 'ready':
+                        same(candidate_data[key], completion['build'][key], 'ready candidate ' + key)
+                    if candidate_data['status'] != 'ready':
                         raise ValueError('compiler admission did not retain a ready candidate')
-                    target = job['inputs']['expected']['state']['target']
+                    target = desk.candidate_state(job['inputs']['expected'])['target']
                     if target not in config['objects'] or job['inputs']['object'] not in config['objects']:
                         evidence['notices'].append('No adoption card: the candidate or target is not enrolled for town replies.')
                     else:

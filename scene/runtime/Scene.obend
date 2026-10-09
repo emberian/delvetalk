@@ -1,0 +1,17 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./SceneModel.obend as M
+import ./SceneRuntime.obend as Runtime
+import ./Score.obend as Score
+def validate() -> M.Validation:
+  Runtime.behavior().validate(Score.scene())
+def describe() -> M.Description:
+  Runtime.behavior().describe(Score.scene())
+def start(state: M.State, input: {}, context: Abi.Context) -> M.Decision:
+  Runtime.behavior().start(Score.scene(), state, input, context)
+def choose(state: M.State, input: M.Choice, context: Abi.Context) -> M.Decision:
+  Runtime.behavior().choose(Score.scene(), state, input, context)
+def requirements(state: M.State) -> Bool:
+  Runtime.behavior().requirements(Score.scene(), state)
+def view(state: M.State, panel: String) -> M.View:
+  Runtime.behavior().view(Score.scene(), state, panel)

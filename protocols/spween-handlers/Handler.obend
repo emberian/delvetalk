@@ -1,5 +1,6 @@
 edition ObjectiveBend 1
 import ./Kernel.obend as K
+import ./Abi.obend as Abi
 record State:
   variables: K.Variables
   members: K.Members
@@ -66,5 +67,5 @@ def local(step: Step, name: String, args: K.Values) -> Step:
   match args:
     case cons(_): reject(step, "local handler takes no arguments")
     case nil(_): if name == "repair" then withState(step, extend(set_var(step.state, "work", K.Value.integer({value: 9223372036854775818n})), {members: K.grant(step.state.members, "inventory", "moth"), repairs: step.state.repairs + 1n})) else if name == "release" then withState(step, extend(step.state, {members: K.remove(step.state.members, "inventory", "moth")})) else if name == "reject" then reject(step, "handler declined") else reject(step, "unknown handler command")
-def call(step: Step, name: String, args: K.Values, context: K.Context) -> Step:
+def call(step: Step, name: String, args: K.Values, context: Abi.Context) -> Step:
   if step.accepted == false then step else if name == "send" then send(step, args) else local(step, name, args)

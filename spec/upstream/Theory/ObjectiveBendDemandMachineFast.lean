@@ -107,7 +107,7 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
     | .specification _ _ | .prototype _ _ => (size+2,depth)
     | .record fields => (size+fields.length,depth)
     | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _
-    | .ifZero _ _ _ | .binary _ _ _ | .case _ _ | .ifBool _ _ _ => (size,depth+1)
+    | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ => (size,depth+1)
     | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)
     | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ => (size,depth)
   | .returned value => match state.stack with
@@ -312,13 +312,17 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.allocateFieldsFast_eq' do
 #print axioms allocateFieldsFast_eq
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms stepRawFast_eq_stepRaw
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms stepRaw_eq_fast
@@ -330,55 +334,73 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.allocateFields_size' depe
 #print axioms allocateFields_size
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms sizesAfter_eq
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms stepFast_eq_step
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms step_eq_fast
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms runFrom_eq_runBounded
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms runBounded_eq_fast
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms step_of_moving
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms runBounded_zero_of_moving
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stopped' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stopped' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms runBounded_zero_of_stopped
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
 -/
 #guard_msgs in
 #print axioms forceWithFast_unique

@@ -52,8 +52,8 @@ class DeskProfiles(unittest.TestCase):
         checked = worker.check('candidate', 'a', 'check', pending)
         self.assertEqual(checked['kind'], 'committed')
         ready = checked['data']['root']
-        self.assertEqual(ready['state']['status'], 'ready', ready['state'])
-        artifact = desk.load_artifact(self.artifacts, ready['state']['artifact'])
+        self.assertEqual(desk.candidate_state(ready)['status'], 'ready', ready['state'])
+        artifact = desk.load_artifact(self.artifacts, desk.candidate_state(ready)['artifact'])
         self.assertEqual(artifact['report']['execution']['admissionProfile'], 'compiled')
         adopted = worker.adopt('candidate', 'target', 'a', 'adopt', ready, target)
         self.assertEqual(adopted['kind'], 'committed', adopted)

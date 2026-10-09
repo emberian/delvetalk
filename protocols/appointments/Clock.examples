@@ -1,0 +1,48 @@
+examples DelveTalk 1
+case cancellation reclaims capacity but never reuses a generation
+law moss iris
+as moss
+send request
+  id: garden
+  generation (Nat): 1
+  due (Nat): 5
+  deadline (Nat): 10
+  to: garden-task
+  recipientProgram: 0000000000000000000000000000000000000000000000000000000000000000
+  topic: water the night garden
+expect committed
+as iris
+send cancel
+  id: garden
+  generation (Nat): 1
+expect refusal: source refused: Only the owner can cancel this queued generation. An admitted send cannot be recalled.
+as moss
+send cancel
+  id: garden
+  generation (Nat): 1
+expect committed
+as moss
+send request
+  id: garden
+  generation (Nat): 1
+  due (Nat): 5
+  deadline (Nat): 10
+  to: garden-task
+  recipientProgram: 0000000000000000000000000000000000000000000000000000000000000000
+  topic: water the night garden
+expect refusal: source refused: Use a unique active id, the clock's next generation, available capacity (1..24), and ordered future times.
+as iris
+send request
+  id: garden
+  generation (Nat): 2
+  due (Nat): 5
+  deadline (Nat): 10
+  to: lantern-task
+  recipientProgram: 0000000000000000000000000000000000000000000000000000000000000000
+  topic: light the lanterns
+expect committed
+as moss
+send cancel
+  id: garden
+  generation (Nat): 1
+expect refusal: source refused: Only the owner can cancel this queued generation. An admitted send cannot be recalled.

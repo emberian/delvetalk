@@ -1,0 +1,96 @@
+edition ObjectiveBend 1
+record Item:
+  id: String
+  owner: String
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  to: String
+  recipientProgram: String
+  topic: String
+sum Entries:
+  nil: {}
+  cons: {head: Item, tail: Entries}
+record Queue:
+  front: Entries
+  back: Entries
+record Last:
+  id: String
+  generation: Nat
+  status: String
+record Payload:
+  owner: String
+  id: String
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  tick: Nat
+  topic: String
+record Emission:
+  enabled: Bool
+  to: String
+  command: String
+  recipientProgram: String
+  payload: Payload
+record Slots:
+  a: Emission
+  b: Emission
+  c: Emission
+  d: Emission
+record Step:
+  queue: Queue
+  last: Last
+  removed: Nat
+  emission: Emission
+def empty() -> Queue:
+  {front: Entries.nil(), back: Entries.nil()}
+def reverse(xs: Entries, acc: Entries) -> Entries:
+  match xs:
+    case nil(_): acc
+    case cons(c): reverse(c.tail, Entries.cons({head: c.head, tail: acc}))
+def contains(xs: Entries, id: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): c.head.id == id || contains(c.tail, id)
+def owns(xs: Entries, id: String, generation: Nat, owner: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): (c.head.id == id && c.head.generation == generation && c.head.owner == owner) || owns(c.tail, id, generation, owner)
+def remove(xs: Entries, id: String) -> Entries:
+  match xs:
+    case nil(_): xs
+    case cons(c): if c.head.id == id then c.tail else Entries.cons({head: c.head, tail: remove(c.tail, id)})
+def push(queue: Queue, item: Item) -> Queue:
+  {front: queue.front, back: Entries.cons({head: item, tail: queue.back})}
+def normalize(queue: Queue) -> Queue:
+  match queue.front:
+    case nil(_): {front: reverse(queue.back, Entries.nil()), back: Entries.nil()}
+    case cons(c): queue
+def disabled() -> Emission:
+  {enabled: false, to: "unused", command: "wake", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", payload: {owner: "", id: "", generation: 0n, due: 0n, deadline: 0n, tick: 0n, topic: ""}}
+def send(item: Item, now: Nat) -> Emission:
+  {enabled: true, to: item.to, command: "wake", recipientProgram: item.recipientProgram, payload: {owner: item.owner, id: item.id, generation: item.generation, due: item.due, deadline: item.deadline, tick: now, topic: item.topic}}
+def step(ready: Queue, last: Last, now: Nat) -> Step:
+  match ready.front:
+    case nil(_): {queue: ready, last: last, removed: 0n, emission: disabled()}
+    case cons(c):
+      let rest: Queue = {front: c.tail, back: ready.back}
+      let due = c.head.due <= now
+      let timely = now <= c.head.deadline
+      {queue: if due then rest else push(rest, c.head), last: if due then {id: c.head.id, generation: c.head.generation, status: if timely then "sent" else "expired"} else last, removed: if due then 1n else 0n, emission: if due && timely then send(c.head, now) else disabled()}
+def advance(queue: Queue, last: Last, now: Nat, enabled: Bool) -> Step:
+  if enabled then step(normalize(queue), last, now) else {queue: queue, last: last, removed: 0n, emission: disabled()}
+def append(xs: Entries, ys: Entries) -> Entries:
+  match xs:
+    case nil(_): ys
+    case cons(c): Entries.cons({head: c.head, tail: append(c.tail, ys)})
+def ordered(queue: Queue) -> Entries:
+  append(queue.front, reverse(queue.back, Entries.nil()))
+def skip(xs: Entries, offset: Nat) -> Entries:
+  match xs:
+    case nil(_): xs
+    case cons(c): if offset == 0n then xs else skip(c.tail, offset - 1n)
+def tail(xs: Entries) -> Entries:
+  match xs:
+    case nil(_): xs
+    case cons(c): c.tail

@@ -35,6 +35,14 @@ def children() -> Children:
   Children.nil()
 '''
 
+NAMES_SOURCE = '''edition ObjectiveBend 1
+sum Names:
+  nil: {}
+  cons: {head: String, tail: Names}
+def names() -> Names:
+  Names.nil()
+'''
+
 
 def _native(request, deadline):
     wire = json.dumps(request, ensure_ascii=False, separators=(',', ':')).encode() + b'\n'
@@ -104,39 +112,6 @@ def _type(value, depth=64):
     if value.get('tag') != 'emptyRow':
         raise ValueError('Bend object ABI requires closed first-order data')
     return fields
-
-
-def _offers_type(offers):
-    """Check the plain source ABI; capture helpers validate descriptor values."""
-    if not isinstance(offers, dict) or len(offers) > 16:
-        raise ValueError('view offers require a record of at most 16 entries')
-    for offer in offers.values():
-        _exact(offer, ('visible', 'title', 'label', 'command', 'reads', 'calls', 'fields',
-                       'bindings', 'absentChildren', 'captures'), 'view offer')
-        if offer['visible'] != 'boolean' or any(offer[key] != 'label' for key in ('title', 'label', 'command')):
-            raise ValueError('view offer requires visible Bool and title/label/command String')
-        for key, maximum in [('reads', 8), ('calls', 8), ('fields', 32),
-                             ('bindings', 32), ('absentChildren', 8), ('captures', 32)]:
-            if not isinstance(offer[key], dict) or len(offer[key]) > maximum:
-                raise ValueError('view offer ' + key + ' requires a bounded record')
-        if any(value != {'object': 'label', 'child': 'label'} for value in offer['reads'].values()):
-            raise ValueError('view offer read references require object/child Strings')
-        for call in offer['calls'].values():
-            _exact(call, ('op', 'object', 'command', 'input', 'fromResult', 'inputFrom'), 'view offer call')
-            if (any(call[key] != 'label' for key in ('op', 'object', 'command'))
-                    or call['fromResult'] != 'boolean' or call['inputFrom'] != 'natural'
-                    or not isinstance(call['input'], dict)):
-                raise ValueError('view offer call requires text selectors, record input and Bool/Nat result selector')
-        shapes = {
-            'bindings': {'field': 'label', 'call': 'natural', 'input': 'label'},
-            'absentChildren': {'factory': 'label', 'field': 'label'},
-            'captures': {'read': 'label', 'call': 'natural', 'input': 'label', 'rootField': 'label'},
-        }
-        for key, shape in shapes.items():
-            if any(value != shape for value in offer[key].values()):
-                raise ValueError('view offer ' + key + ' has an invalid descriptor type')
-        if any(not isinstance(field, dict) or field.get('type') != 'label' for field in offer['fields'].values()):
-            raise ValueError('view offer fields require scalar field descriptor records')
 
 
 def _signature(value, count):
@@ -240,10 +215,27 @@ def _lower_modules(modules, *, typed):
         if reply.get('equal') is not True:
             raise ValueError(label + ': incompatible serializable state schema')
 
+    contracts = {}
+    def contract(kind):
+        if kind not in contracts:
+            names = ['Preparation'] + (['Allocation'] if kind == 'allocations' else [])
+            sources = [{'name': name, 'source': (ROOT / 'world/lib/prelude' / (name + '.obend')).read_text()}
+                       for name in names]
+            source = ('edition ObjectiveBend 1\nimport ./Preparation.obend as P\n'
+                      + ('import ./Allocation.obend as A\ndef value() -> A.Allocations:\n  A.Allocations.nil()\n'
+                         if kind == 'allocations' else 'def value() -> P.Value:\n  P.Value.none()\n'))
+            contracts[kind] = _native({'op': 'compile', 'modules': sources + [{'name': 'Contract', 'source': source}],
+                                       'entry': 'value', 'limits': LIMITS}, deadline)['artifact']
+        return contracts[kind]
+
     described = _native({'op': 'run-data-v1' if typed else 'run',
                          'artifact': artifact, 'arguments': [], 'limits': LIMITS}, deadline)['value']
     if typed:
-        values = _wire_record(described, ('name', 'initial', 'methods', 'panels'))
+        description_keys = set(_row_members(artifact['type']))
+        if description_keys not in ({'name', 'initial', 'methods', 'panels'},
+                                    {'name', 'initial', 'methods', 'panels', 'allocation'}):
+            raise ValueError('describe() requires name/initial/methods/panels and optional allocation')
+        values = _wire_record(described, description_keys)
         initial = deepcopy(values['initial'])
         if initial.get('tag') != 'record':
             raise ValueError('describe.initial must have a closed record root')
@@ -254,7 +246,12 @@ def _lower_modules(modules, *, typed):
     else:
         declared = _type(artifact['type'])
         description = _data(described)
-    _exact(description, ('name', 'initial', 'methods', 'panels'), 'describe()')
+    _exact(description, description_keys if typed else ('name', 'initial', 'methods', 'panels'), 'describe()')
+    allocation = description.get('allocation')
+    if allocation is not None:
+        _exact(allocation, ('limit',), 'allocation policy')
+        if type(allocation['limit']) is not int or allocation['limit'] < 0:
+            raise ValueError('allocation limit requires Nat')
     affordances._string(description['name'], 'object name', 256, nonempty=True)
     if not isinstance(description['initial'], dict):
         raise ValueError('describe.initial must be a record')
@@ -271,8 +268,13 @@ def _lower_modules(modules, *, typed):
     for name, form in methods.items():
         if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) or name in ('describe', 'view'):
             raise ValueError('method must name a distinct Bend definition: ' + name)
-        _exact(form, ('label', 'fields'), 'method ' + name)
-        form = deepcopy(form)
+        if not isinstance(form, dict):
+            raise ValueError('method ' + name + ' requires a metadata record')
+        codecs = {key: form[key] for key in ('inputCodec', 'resultCodec') if key in form}
+        if codecs and (not typed or any(value != 'value' for value in codecs.values())):
+            raise ValueError(name + ': typed method codec must be value')
+        _exact(form, ('label', 'fields', *codecs), 'method ' + name)
+        form = {key: deepcopy(value) for key, value in form.items() if key not in codecs}
         if not isinstance(form['fields'], dict):
             raise ValueError('method fields must be a record')
         for field in form['fields'].values():
@@ -299,8 +301,14 @@ def _lower_modules(modules, *, typed):
         effects = 'emissions' in decision_fields
         if receiving and effects:
             raise ValueError(name + ': receive cannot emit new messages in this profile')
-        _exact(decision_fields, ('accepted', 'reason', 'state', 'result', 'emissions') if effects
-               else ('accepted', 'reason', 'state', 'result'), name + ' decision')
+        allocating = 'allocations' in decision_fields
+        if allocating and (not typed or allocation is None):
+            raise ValueError(name + ': typed allocations require a declared allocation policy')
+        _exact(decision_fields, ('accepted', 'reason', 'state', 'result')
+               + (('emissions',) if effects else ()) + (('allocations',) if allocating else ()), name + ' decision')
+        if allocating:
+            compare(method, ['codomain'] * argument_count + [{'field': 'allocations'}],
+                    contract('allocations'), [], name + ' allocations')
         if effects:
             slots = _type(decision_fields['emissions'])
             _exact(slots, ('a', 'b', 'c', 'd'), name + ' emissions')
@@ -314,9 +322,17 @@ def _lower_modules(modules, *, typed):
             compare(artifact, [{'field': 'initial'}], method, ['domain'], name + ' state input')
             compare(artifact, [{'field': 'initial'}], method,
                     ['codomain'] * argument_count + [{'field': 'state'}], name + ' state output')
-            if [_type(raw_parameters[1]), _type(raw_parameters[2])] != [expected_input, context2]:
-                raise ValueError(name + ': input/context signature differs from describe()')
-            decision = {key: _type(value) for key, value in decision_fields.items() if key not in ('state', 'emissions')}
+            if 'inputCodec' in codecs:
+                compare(method, ['codomain', 'domain'], contract('value'), [], name + ' input codec')
+            elif _type(raw_parameters[1]) != expected_input:
+                raise ValueError(name + ': input signature differs from describe()')
+            if _type(raw_parameters[2]) != context2:
+                raise ValueError(name + ': context signature differs from describe()')
+            if 'resultCodec' in codecs:
+                compare(method, ['codomain'] * argument_count + [{'field': 'result'}],
+                        contract('value'), [], name + ' result codec')
+            decision = {key: _type(value) for key, value in decision_fields.items()
+                        if key not in ('state', 'emissions', 'allocations') and not (key == 'result' and 'resultCodec' in codecs)}
             if decision['accepted'] != 'boolean' or decision['reason'] != 'label':
                 raise ValueError(name + ': decision requires accepted Bool and reason String')
             transition_profile = ('delvetalk-source-data-receive-v1' if receiving else
@@ -336,7 +352,7 @@ def _lower_modules(modules, *, typed):
                 transition_profile = 'delvetalk-source-receive-v1' if receiving else 'delvetalk-source-effects-v1'
         forms[name] = form
         commands[name] = {'transition': {'profile': transition_profile,
-            'package': source_packages.selector(name)}}
+            'package': source_packages.selector(name), **codecs}}
     view_artifact = compile_entry('view')
     if typed:
         raw_parameters, raw_view = _raw_signature(view_artifact['type'], 2)
@@ -345,14 +361,26 @@ def _lower_modules(modules, *, typed):
             raise ValueError('view requires panel String')
         members = _row_members(raw_view)
         if set(members) not in ({'title', 'prose', 'actions', 'children'},
-                                {'title', 'prose', 'actions', 'children', 'offers'}):
-            raise ValueError('typed view requires title/prose/actions/children and optional offers')
-        if 'offers' in members:
-            _offers_type(_type(members['offers']))
+                                {'title', 'prose', 'actions', 'children', 'invitations'}):
+            raise ValueError('typed view requires title/prose/actions/children and optional invitations')
+        if 'invitations' in members:
+            invitations = _row_members(members['invitations'])
+            if len(invitations) > 16:
+                raise ValueError('view invitations require at most 16 entries')
+            names_contract = _native({'op': 'compile', 'modules': [{'name': 'NamesContract', 'source': NAMES_SOURCE}],
+                                      'entry': 'names', 'limits': LIMITS}, deadline)['artifact']
+            for name, raw_invitation in invitations.items():
+                invitation = _row_members(raw_invitation)
+                _exact(invitation, ('visible', 'text', 'prepare', 'fields', 'observations'), 'view invitation')
+                if (_type(invitation['visible']) != 'boolean' or _type(invitation['text']) != 'label'
+                        or _type(invitation['prepare']) != 'label' or not isinstance(_type(invitation['fields']), dict)):
+                    raise ValueError('view invitation requires visible Bool, text/prepare String and field metadata')
+                compare(view_artifact, ['codomain', 'codomain', {'field': 'invitations'},
+                        {'field': name}, {'field': 'observations'}], names_contract, [], 'invitation observations')
         child_contract = _native({'op': 'compile', 'modules': [{'name': 'ChildrenContract', 'source': CHILDREN_SOURCE}],
                                  'entry': 'children', 'limits': LIMITS}, deadline)['artifact']
         compare(view_artifact, ['codomain', 'codomain', {'field': 'children'}], child_contract, [], 'view children')
-        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'offers', 'actions')}
+        view = {key: _type(value) for key, value in members.items() if key not in ('children', 'invitations', 'actions')}
         try:
             view['actions'] = _type(members['actions'])
         except ValueError:
@@ -379,10 +407,15 @@ def _lower_modules(modules, *, typed):
         affordances._string(label, 'panel label', 128, nonempty=True)
     if runtime_profile.file_hashes('compiled') != pins or hashlib.sha256(RUNNER.read_bytes()).hexdigest() != native:
         raise ValueError('Bend object runtime changed during translation')
-    return {'profile': 'delvetalk-local-v1', 'runtimeProfile': 'compiled', 'name': description['name'],
+    protocol = {'profile': 'delvetalk-local-v1', 'runtimeProfile': 'compiled', 'name': description['name'],
             'sourcePackages': {source_packages.NAME: source_packages.table(modules)},
             'initial': description['initial'], 'commands': commands, 'affordances': forms,
             'viewPanels': [{'id': name, 'label': label} for name, label in sorted(panels.items())],
-            'viewProgram': {'profile': ('delvetalk-obend-data-offers-v1' if 'offers' in members else
-                                        'delvetalk-obend-data-menu-v1') if typed else 'delvetalk-obend-menu-v1',
+            'viewProgram': {'profile': 'delvetalk-obend-data-menu-v1' if typed else 'delvetalk-obend-menu-v1',
                             'package': source_packages.selector('view')}}
+    if allocation is not None:
+        protocol['allocation'] = deepcopy(allocation)
+    if typed and 'invitations' in members:
+        protocol['preparation'] = {'profile': 'delvetalk-source-preparation-v1',
+            'sourcePackage': source_packages.NAME}
+    return protocol

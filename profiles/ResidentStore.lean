@@ -2,6 +2,7 @@
    Physical custody may retain bytes, but receipt selection and admission remain
    here. Export alone expands the ordered receipt history into its legacy array. -/
 import FileCustody
+import RetainedRoots
 import Compiler.Sha256
 import Std.Data.TreeMap
 open Lean World
@@ -22,6 +23,7 @@ def digest (value : Json) : String := Minidregg.Compiler.Sha256.hexString (FileC
 structure State where
   base : Json := World.empty
   index : Index := {}
+  roots : RetainedRoots.Index := {}
   history : List Json := []
   sequence : Nat := 0
   head : String := genesis
@@ -42,8 +44,12 @@ def exactFields (value : Json) (keys : List String) : Except String Unit := do
 def requestKey (request : Json) : Except String Key := do
   return (← str request "principal", ← str request "intent")
 
-def remember (state : State) (key : Key) (admission base : Json) (head : String) : State :=
-  { base, index := state.index.insert key admission, history := admission :: state.history,
+def remember (state : State) (key : Key) (admission base : Json) (head : String)
+    (trackChanges : Bool := true) : State :=
+  { base, index := state.index.insert key admission,
+    roots := RetainedRoots.admission
+      (if trackChanges then RetainedRoots.changed state.roots state.base base else state.roots) admission,
+    history := admission :: state.history,
     sequence := state.sequence + 1, head }
 
 def selected (state : State) (request : Json) : Array Json :=
@@ -83,7 +89,7 @@ def prepare (admit : Admit) (state : State) (request : Json) :
     Except String (Json × Option Prepared) := do
   let prior := selected state request
   let input ← put state.base "receipts" (.arr prior)
-  let (next, reply) ← World.handleWith admit input request
+  let (next, reply) ← World.handleWith (RetainedRoots.wrap admit state.roots) input request
   let retained ← (← field next "receipts").getArr?
   if retained.size == prior.size then
     return (obj [("status", .str "settled"), ("reply", reply),
@@ -158,18 +164,20 @@ def checkedAppend (state : State) (entry : Json) : Except String State := do
   let some key := admissionKey entry | throw "invalid checkpoint receipt identity"
   validateCheckpointAdmission entry key
   if state.index[key]?.isSome then throw "duplicate checkpoint receipt identity"
-  return remember state key entry state.base state.head
+  return remember state key entry state.base state.head false
 
 def loadCheckpoint (world : Json) (sequence : Nat) (head : String) : Except String State := do
   discard (pairs (← field world "objects"))
   let history ← (← field world "receipts").getArr?
   if history.size != sequence then throw "checkpoint sequence differs from retained history"
   let base ← put world "receipts" (.arr #[])
-  history.foldlM checkedAppend { base, head }
+  history.foldlM checkedAppend { base, head,
+    roots := RetainedRoots.collect {} (← field world "objects") }
 
 abbrev Query := Json → Json → Except String Json
 
-def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable in this profile") : IO Unit := do
+def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable in this profile")
+    (capturedPreparation : RetainedRoots.Index → Query := fun _ _ _ => .error "preparation unavailable in this profile") : IO Unit := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout
   let mut session : Session := {}
@@ -183,7 +191,14 @@ def serve (admit : Admit) (query : Query := fun _ _ => .error "query unavailable
       if op == "query" then
         IO.ofExcept (exactFields frame ["op", "request"])
         if session.pending.isSome then throw (IO.userError "cannot query a pending preparation")
-        let reply ← IO.ofExcept (query session.committed.base (← IO.ofExcept (field frame "request")))
+        let request ← IO.ofExcept (field frame "request")
+        let operation ← IO.ofExcept (str request "op")
+        let reply ← IO.ofExcept (
+          if operation == "retained-root" then RetainedRoots.mint session.committed.roots request
+          else if operation == "prepare-retained" then do
+            let captured ← put request "op" (.str "prepare")
+            RetainedRoots.prepareCaptured session.committed.roots capturedPreparation captured
+          else query session.committed.base request)
         pure (obj [("status", .str "query"), ("reply", reply)])
       else if op == "export" then
         IO.ofExcept (exactFields frame ["op", "path"])

@@ -1,0 +1,11 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+
+# Names are local child names. Descriptions carry data, never creation authority.
+record Allocation:
+  name: String
+  protocol: P.Value
+  law: P.Value
+sum Allocations:
+  nil: {}
+  cons: {head: Allocation, tail: Allocations}

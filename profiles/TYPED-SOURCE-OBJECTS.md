@@ -6,7 +6,7 @@ source adapter still binds `describe`, methods and a view from the same exact
 ordered Bend package, retained once in the owning protocol's `sourcePackages` table.
 Native local selectors resolve method/view entries against those exact bytes. Lean owns checking, evaluation and receiving admission.
 
-`describe()` returns exactly `{name,initial,methods,panels}`. The adapter executes
+`describe()` returns `{name,initial,methods,panels}` and optional `allocation:{limit:Nat}`. The adapter executes
 it through the explicit native `run-data-v1` route, preserving `initial` as the
 existing Objective Bend DataWire. Installed state is exactly `{model:DataWire}`;
 the model's declared root must be a closed record. Nested closed recursive-sum
@@ -21,6 +21,19 @@ The receiver explicitly converts the persisted model against the declared source
 schema, runs the real checker and retains the new typed state. Failure rolls the
 whole admission back. The ordinary transition profile emits no events; addressed messages require the
 explicit additional ABIs described below.
+
+Open structural data uses the shared [Preparation.Value](../world/lib/prelude/Preparation.obend)
+sum. Method metadata may declare `inputCodec:"value"` or `resultCodec:"value"`;
+the corresponding checked source argument/result must have that structural type.
+The existing typed evaluator converts JSON through the same bounded native codec
+used by preparation. State remains the declared typed record under `model`.
+Arrays, null and numeric values need no application-specific Python decoder.
+The native JSON representation normalizes signed zero; this is not preservation
+of arbitrary numeric spelling. Codec metadata grants no authority or defaults.
+
+A decision may also include [source-owned allocations](ALLOCATION.md). These are
+explicit data effects, admitted atomically with state through the shared factory
+checks. There is no second evaluator or source workflow interpreter.
 
 `Context2` is `{object,principal,inputOrigin:{kind,object,command,immediatelyPrevious}}`.
 The host supplies `kind` as `none`, `invoke` or `observe`. It grants no authority.

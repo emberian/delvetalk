@@ -10,7 +10,7 @@ import references
 b = workspace.bootstrap
 ROOT = Path(__file__).resolve().parents[1]
 commons = b.module('workshop_commons', 'protocols/commons/generate.py')
-ticket = b.module('workshop_ticket', 'protocols/work-ticket/generate.py')
+ticket = b.module('workshop_ticket', 'protocols/work-ticket/package.py')
 table = b.module('workshop_table', 'game/table/protocol.py')
 
 
@@ -61,7 +61,10 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
     desks['initial']['compiler'] = compiler
     add('factory:desks', desks, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('ticket:welcome', ticket.build(requester=builders[0], links={'context': ref('commons')}),
-        ticket.law(requester=builders[0], workers=builders, managers=(steward,)))
+        {'profile': 'delvetalk-scoped-law-v1',
+         'invoke': {'post': [builders[0]], 'claim': list(builders), 'submit': list(builders),
+                    'accept': [builders[0]], 'reject': [builders[0]]},
+         'reprogram': [], 'law': [steward]})
     add('table:automatafl', table.protocol('table:automatafl'), table.law(*builders))
     return workspace.initialize(directory, seeds,
         entry_objects=['commons', 'factory:objects', 'factory:desks', 'ticket:welcome', 'table:automatafl'],

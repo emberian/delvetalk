@@ -33,11 +33,19 @@ name = "SourceContract"
 srcDir = "profiles"
 
 [[lean_lib]]
+name = "Preparation"
+srcDir = "profiles"
+
+[[lean_lib]]
 name = "FileCustody"
 srcDir = "profiles"
 
 [[lean_lib]]
 name = "ResidentStore"
+srcDir = "profiles"
+
+[[lean_lib]]
+name = "RetainedRoots"
 srcDir = "profiles"
 
 [[lean_exe]]

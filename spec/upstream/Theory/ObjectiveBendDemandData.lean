@@ -64,10 +64,58 @@ allowance); this is `forceWith` exactly (ObjectiveBendDemandMachineFast). -/
 @[csimp] theorem forceWith_eq_fast : @forceWith = @ObjectiveBendDemandMachineFast.forceWithFast :=
   ObjectiveBendDemandMachineFast.forceWithFast_unique forceWith (fun _ _ _ => rfl) (fun _ _ _ _ => rfl)
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandData.forceWith_eq_fast' depends on axioms: [propext, Quot.sound]
+info: 'Minidregg.Theory.ObjectiveBendDemandData.forceWith_eq_fast' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs in
 #print axioms forceWith_eq_fast
+
+/-- Hosted text work and conservative result allocation bound, checked before
+`stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.
+Unicode operations traverse scalar sequences; their UTF-8 size bounds both the
+scalar traversal and copied bytes. Decimal conversion uses a conservative
+quadratic bit-work allowance and bit-count allocation bound. -/
+def textStepCost (state : State) : Nat × Nat :=
+  match state.control,state.stack with
+  | .returned (.label right), .binaryRight .textConcat (.label left) :: _ =>
+      let bytes := left.utf8ByteSize + right.utf8ByteSize
+      (1 + 2 * bytes, bytes)
+  | .returned (.natural _), .binaryRight .textTake (.label text) :: _
+  | .returned (.natural _), .binaryRight .textDrop (.label text) :: _ =>
+      (1 + 2 * text.utf8ByteSize, text.utf8ByteSize)
+  | .returned (.label text), .unary .textLength :: _ => (1 + text.utf8ByteSize, 0)
+  | .returned (.natural n), .unary .natText :: _ =>
+      let bits := n.log2 + 1
+      (1 + bits * bits, bits)
+  | _,_ => (1,0)
+
+/-- Explicit hosted extension of forcing. No primitive is entered before its
+whole work/allocation allowance is admitted. Insufficient work retains the
+pre-step graph. The pinned unit-cost `forceWith` and its fast proof stay intact. -/
+def forceHostedFrom (policy : State → Bool) (limits : Limits) (bytes : Nat)
+    (ticks : Nat) (state : State) (depth : Nat) : Outcome × Nat :=
+  match ticks with
+  | 0 => (runBounded limits 0 state,0)
+  | remaining+1 =>
+    let ticks := remaining+1
+    match state.control with
+    | .complete _ | .refused _ | .blackhole _ | .yielded _ => (runBounded limits 0 state,ticks)
+    | _ =>
+      let cost := textStepCost state
+      if !policy state || cost.2 > bytes then (.suspended .capacity state,ticks)
+      else if cost.1 > ticks then (.suspended .ticks state,ticks)
+      else
+        let sizes := ObjectiveBendDemandMachineFast.sizesAfter state depth
+        if sizes.1 ≤ limits.heap && sizes.2 ≤ limits.stack then
+          forceHostedFrom policy limits bytes (ticks - max 1 cost.1)
+            (ObjectiveBendDemandMachineFast.stepRawFast state) sizes.2
+        else (.suspended .capacity state,ticks - max 1 cost.1)
+termination_by ticks
+decreasing_by
+  simp_wf
+  omega
+
+def forceHostedWith (policy : State → Bool) (limits : Limits) (bytes ticks : Nat) (state : State) : Outcome × Nat :=
+  forceHostedFrom policy limits bytes ticks state state.stack.length
 
 /-- Materialization threads the remaining budget through failures as well as successes.
 Tick counts come directly from forceWith; failed children retain all earlier field spend. -/
@@ -98,7 +146,7 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
         let bytes := field.1.utf8ByteSize+(toString field.1.utf8ByteSize).utf8ByteSize+1
         if bytes > prior.2.2.bytes || prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
         let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
-        let (outcome,ticks) := forceWith policy limits prior.2.2.ticks entered
+        let (outcome,ticks) := forceHostedWith policy limits prior.2.2.bytes prior.2.2.ticks entered
         let nextBudget := {prior.2.2 with ticks:=ticks,bytes:=prior.2.2.bytes-bytes}
         match outcome with
         | .finished forced retained =>
@@ -113,7 +161,7 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
       let bytes := label.utf8ByteSize+(toString label.utf8ByteSize).utf8ByteSize+2
       if bytes > remaining.bytes || remaining.nodes = 0 then throw (.budget,state,remaining)
       let entered : State := {state with control:=.enter payload,stack:=[]}
-      let (outcome,ticks) := forceWith policy limits remaining.ticks entered
+      let (outcome,ticks) := forceHostedWith policy limits remaining.bytes remaining.ticks entered
       let nextBudget := {remaining with ticks:=ticks,bytes:=remaining.bytes-bytes}
       match outcome with
       | .finished forced retained =>
@@ -154,14 +202,14 @@ structure ExecutionWith (policy : State → Bool) (limits : Limits) (budget : Bu
   value : RuntimeValue
   state : State
   remainingTicks : Nat
-  runExact : forceWith policy limits budget.ticks (initial term) =
+  runExact : forceHostedWith policy limits budget.bytes budget.ticks (initial term) =
     (.finished value state,remainingTicks)
   extraction : ExtractionWith policy limits {budget with ticks:=remainingTicks} state
 
 def executeWith (policy : State → Bool) (limits : Limits) (budget : Budget)
     (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :
     Except (Failure × State × Budget) (ExecutionWith policy limits budget term) :=
-  match equation : forceWith policy limits budget.ticks (initial term) with
+  match equation : forceHostedWith policy limits budget.bytes budget.ticks (initial term) with
   | (.finished value state,ticks) => do
     let extraction ← extractWith policy limits {budget with ticks:=ticks} state
     pure ⟨value,state,ticks,equation,extraction⟩
@@ -233,7 +281,7 @@ def yieldedPlanWith (policy : State → Bool) (limits : Limits) (budget : Budget
   match state.control with
   | .yielded plan =>
     let entered : State := {state with control:=.enter plan,stack:=[]}
-    match forceWith policy limits budget.ticks entered with
+    match forceHostedWith policy limits budget.bytes budget.ticks entered with
     | (.finished forced retained,ticks) => do
       -- Materialization runs on the scratch copy; the checkpoint keeps its stack.
       let result ← materializeWith policy limits budget.nodes {budget with ticks:=ticks} forced retained

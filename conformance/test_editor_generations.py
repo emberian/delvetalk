@@ -17,6 +17,8 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import compiler_queue
 import editor
 import source_store
+import source_offers
+import source_object
 import workspace
 
 
@@ -42,11 +44,11 @@ class EditorGenerations(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.base = Path(temporary.name)
         self.home = self.base / 'world'
-        source_editor = generator.editor_source(TARGET, FACTORY)
+        source_editor = generator.editor_artifact(TARGET, FACTORY)['protocol']
         seeds = [{'id': TARGET, 'syntax': 'objective-bend-spell@2', 'source': SOURCE.encode(),
             'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'add': [MAKER, VISITOR]},
                     'reprogram': [MAKER], 'law': [MAKER]}},
-            {'id': EDITOR, 'syntax': 'objective-bend-spell@3', 'source': source_editor.encode(),
+            {'id': EDITOR, 'syntax': 'protocol-json@1', 'source': desk.canonical(source_editor),
              'law': generator.editor_law([MAKER])},
             {'id': FACTORY, 'syntax': 'protocol-json@1', 'source': desk.canonical(generator.factory(COMPILER, [MAKER])),
              'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'make': [MAKER]},
@@ -69,12 +71,18 @@ class EditorGenerations(unittest.TestCase):
         self.assertEqual(view['mode'], 'projection', view)
         return view['data']['prose']
 
-    def prepared(self, name, source=SOURCE, examples='counter.examples', migration=None):
-        proposal = source_store.prepare_proposal(self.client.artifact_store, 'objective-bend-spell@2',
-            source.encode(), (PACKAGE / examples).read_bytes())
-        args = (EDITOR, TARGET, FACTORY, name, MAKER, self.intent('generation'),
-                self.root(EDITOR), self.root(TARGET), self.root(FACTORY), proposal,
-                copy.deepcopy(self.root(TARGET)['state']) if migration is None else migration)
+    def invitation(self, key):
+        snapshot = workspace.bootstrap.world.snapshot(self.client.database)
+        view = workspace.bootstrap.room.inspect_object(snapshot['objects'][EDITOR], EDITOR)
+        self.assertEqual(view['mode'], 'projection', view)
+        return source_offers.capture(view, snapshot['objects'])[key]
+
+    def candidate_state(self, candidate):
+        return desk.candidate_state(self.root(candidate))
+
+    def prepared(self, name, source=SOURCE, examples='counter.examples'):
+        invitation = self.invitation('make')
+        intent = self.intent('make')
         if name == 'first':
             exchange = self.client.exchange
             def lost_allocation_reply(request):
@@ -83,14 +91,20 @@ class EditorGenerations(unittest.TestCase):
                 raise RuntimeError('lost allocation reply after actual admission')
             with patch.object(self.client, 'exchange', side_effect=lost_allocation_reply):
                 with self.assertRaisesRegex(RuntimeError, 'lost allocation reply'):
-                    self.editor.generation(*args)
-        generation = self.editor.generation(*args)
-        self.assertEqual(generation['phase'], 'retained', generation)
-        self.assertEqual(self.editor.generation(*args), generation)
-        candidate = generation['candidate']
-        self.assertEqual(self.root(candidate)['state']['generation'], generation['generation'])
-        self.assertEqual(self.root(candidate)['state']['status'], 'pending')
-        self.assertEqual(generation['baseline'], args[7])
+                    self.editor.interact(invitation, {'name': name}, MAKER, intent)
+        allocation = self.editor.interact(invitation, {'name': name}, MAKER, intent)
+        self.assertEqual(allocation['receipt']['kind'], 'committed', allocation)
+        self.assertEqual(self.editor.interact(invitation, {'name': name}, MAKER, intent), allocation)
+        plan = allocation['receipt']['data']['results'][2]
+        candidate = next(iter(allocation['receipt']['data']['allocated']))
+        baseline = allocation['preparation']['request']['reads'][TARGET]
+        submission = self.editor.interact(self.invitation('submit'),
+            {'syntax': 'objective-bend-spell@2', 'source': source,
+             'examples': (PACKAGE / examples).read_text()}, MAKER, self.intent('submit'))
+        self.assertEqual(submission['receipt']['kind'], 'committed', submission)
+        generation = {'candidate': candidate, 'generation': plan['generation'], 'baseline': baseline}
+        self.assertEqual(self.candidate_state(candidate)['generation'], generation['generation'])
+        self.assertEqual(self.candidate_state(candidate)['status'], 'pending')
         queue = compiler_queue.CompilerQueue(self.base / ('queue-' + name), self.client.database,
             self.client.artifact_store, profile='compiled')
         job = queue.enqueue(candidate, COMPILER, self.intent('check'), self.root(candidate))['job']
@@ -101,22 +115,79 @@ class EditorGenerations(unittest.TestCase):
         self.assertEqual(outcome['errors'], [], outcome)
         self.assertEqual(outcome['blocked'], [], outcome)
         self.assertEqual(queue.inspect(job)['phase'], 'finished')
-        return self.root(generation['candidate'])['state']['status']
+        return self.candidate_state(generation['candidate'])['status']
 
     def review(self, generation):
-        return self.editor.review(EDITOR, generation['candidate'], MAKER, self.intent('review'),
-                                 self.root(EDITOR), self.root(generation['candidate']))
+        if generation['candidate'] != self.current_candidate():
+            # Adversarial stale report: source does not offer this recipe.
+            return self.client.exchange({'op': 'transaction', 'principal': MAKER,
+                'intent': self.intent('late-report'),
+                'reads': {EDITOR: self.root(EDITOR), generation['candidate']: self.root(generation['candidate'])},
+                'calls': [{'object': generation['candidate'], 'command': 'report', 'input': {}},
+                          {'object': EDITOR, 'command': 'review', 'inputFrom': 0}]})
+        result = self.editor.interact(self.invitation('review'), {}, MAKER, self.intent('review'))
+        return result['receipt']
+
+    def current_candidate(self):
+        return source_object.plain(self.root(EDITOR)['state']['model'])['candidate']
 
     def adopt(self, generation):
-        self.last_adoption_request = editor.adoption_request(EDITOR, generation['candidate'], TARGET, MAKER,
-            self.intent('adopt'), self.root(EDITOR), self.root(generation['candidate']), self.root(TARGET))
-        return self.client.exchange(self.last_adoption_request)
+        result = self.editor.interact(self.invitation('adopt'), {}, MAKER, self.intent('adopt'))
+        if result['preparation']['kind'] != 'ready':
+            return {'kind': result['preparation']['kind'], 'data': result['preparation']['message']}
+        self.last_adoption_request = result['preparation']['request']
+        return result['receipt']
 
     def play(self, amount=1):
         reply = self.client.exchange({'op': 'invoke', 'object': TARGET, 'principal': VISITOR,
             'intent': self.intent('play'), 'expected': self.root(TARGET), 'command': 'add', 'input': {'amount': amount}})
         self.assertEqual(reply['kind'], 'committed', reply)
         return reply
+
+    def test_substitute_reporter_cannot_replace_planned_candidate(self):
+        made = self.editor.interact(self.invitation('make'), {'name': 'named'}, MAKER, self.intent('make-named'))
+        self.assertEqual(made['receipt']['kind'], 'committed', made)
+        plan = made['receipt']['data']['results'][2]
+        expected_candidate = next(iter(made['receipt']['data']['allocated']))
+        fake_protocol = {'profile': 'delvetalk-local-v1', 'initial': {},
+            'commands': {'report': {'require': [], 'set': {}, 'outbox': [], 'result': ['literal',
+                {'candidate': 'substitute', 'editor': EDITOR, 'generation': plan['generation'],
+                 'target': TARGET, 'baselineVersion': plan['baselineVersion'], 'status': 'pending', 'program': ''}]}}}
+        fake = self.client.exchange({'op': 'create', 'object': 'substitute', 'principal': MAKER,
+            'intent': self.intent('create-substitute'), 'protocol': fake_protocol, 'law': [MAKER]})
+        self.assertEqual(fake['kind'], 'committed', fake)
+        before = {identity: self.root(identity) for identity in (EDITOR, expected_candidate, 'substitute')}
+        report = self.client.exchange({'op': 'transaction', 'principal': MAKER, 'intent': self.intent('substitute-report'),
+            'reads': {EDITOR: before[EDITOR], 'substitute': before['substitute']},
+            'calls': [{'object': 'substitute', 'command': 'report', 'input': {}},
+                      {'object': EDITOR, 'command': 'review', 'inputFrom': 0}]})
+        self.assertEqual(report['kind'], 'refused', report)
+        self.assertIn('Wrong generation', report['data'])
+        for identity, root in before.items():
+            self.assertEqual(self.root(identity), root)
+        self.assertEqual(self.phase(), 'planned')
+
+    def test_wrong_compiler_digest_rolls_back_entire_adoption(self):
+        generation, _, _ = self.prepared('wrong-digest')
+        candidate = generation['candidate']
+        expected = self.root(candidate)
+        build = desk.bounded_compile(expected, profile='compiled', artifact_store=self.client.artifact_store)
+        self.assertTrue(build['passed'], build)
+        inputs = {'object': candidate, 'principal': COMPILER, 'intent': self.intent('valid-check'), 'expected': expected}
+        entry = self.client.prepare_check(inputs, build, desk.execution_profile('compiled'))
+        wrong = copy.deepcopy(entry['request'])
+        wrong['intent'] = self.intent('incorrect-compiler-digest')
+        wrong['input']['program'] = 'a deliberately incorrect compiler digest'
+        compiled = self.client.exchange(wrong)
+        self.assertEqual(compiled['kind'], 'committed', compiled)
+        self.assertEqual(self.review(generation)['kind'], 'committed')
+        roots = {identity: self.root(identity) for identity in (EDITOR, TARGET, candidate)}
+        refused = self.adopt(generation)
+        self.assertEqual(refused['kind'], 'refused', refused)
+        self.assertIn('actual approved reprogram', refused['data'])
+        for identity, root in roots.items():
+            self.assertEqual(self.root(identity), root, 'all staged approval/adopt/reprogram steps roll back')
+        self.assertEqual(self.phase(), 'ready')
 
     def test_overlapping_jobs_rebase_adopt_restore_and_edit_again(self):
         initial_editor, initial_factory = self.root(EDITOR), self.root(FACTORY)
@@ -155,7 +226,7 @@ class EditorGenerations(unittest.TestCase):
         before_editor, before_candidate, before_target = self.root(EDITOR), self.root(second['candidate']), self.root(TARGET)
         drift = self.adopt(second)
         self.assertEqual(drift['kind'], 'refused')
-        self.assertIn('Target drifted', drift['data'])
+        self.assertIn('target changed', drift['data'])
         self.assertEqual(self.root(EDITOR), before_editor)
         self.assertEqual(self.root(second['candidate']), before_candidate)
         self.assertEqual(self.root(TARGET), before_target)
@@ -204,7 +275,7 @@ class EditorGenerations(unittest.TestCase):
             expected_genesis=exported['genesis'], expected_head=exported['head'])
         self.assertEqual(desk.loads((restored / 'world.json').read_bytes()), desk.loads(self.client.database.read_bytes()))
         for generation, status in ((first, 'ready'), (second, 'ready'), (failed, 'failed'), (rebased, 'ready'), (pending, 'pending')):
-            self.assertEqual(self.root(generation['candidate'])['state']['status'], status)
+            self.assertEqual(self.candidate_state(generation['candidate'])['status'], status)
         self.client = desk.Desk(restored / 'world.json', restored / 'artifacts', profile='compiled')
         self.editor = editor.Editor(self.client, self.base / 'restored-editor-custody')
         retry_before = self.client.database.read_bytes()

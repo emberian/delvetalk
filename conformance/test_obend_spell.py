@@ -124,8 +124,8 @@ class ObjectiveBendSpell(unittest.TestCase):
         checked = worker.check('candidate', 'maker', 'check', pending)
         self.assertEqual(checked['kind'], 'committed', checked)
         ready = checked['data']['root']
-        self.assertEqual(ready['state']['status'], 'ready', ready)
-        artifact = desk.load_artifact(self.path / 'artifacts', ready['state']['artifact'])
+        self.assertEqual(desk.candidate_state(ready)['status'], 'ready', ready)
+        artifact = desk.load_artifact(self.path / 'artifacts', desk.candidate_state(ready)['artifact'])
         self.assertEqual(artifact['sourceMaterial']['source'].encode(), source('moon'))
         self.assertEqual(worker.inspect('door'), target)
         adopted = worker.adopt('candidate', 'door', 'maker', 'adopt', ready, target)

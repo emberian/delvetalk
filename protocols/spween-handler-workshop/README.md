@@ -1,12 +1,14 @@
 # The moth workshop
 
 One author writes a Spween scene and its ordinary Bend handlers. Another changes
-the repair from one counted repair to two. The same moth, inventory and passage
+the repair from one counted repair to two and composes a lanternlight runtime
+view over the ordinary base behavior. The same moth, inventory and passage
 survive the revision. Old action cards refuse; restored history retains both
 complete source documents and the installed state.
 
 The explicit syntax `spween-handler-workshop@1` accepts one `spween` block and
-ordered `obend NAME` blocks, ending in `Handler`. For example:
+ordered `obend NAME` blocks ending in `Handler`. Optional runtime modules follow
+Handler and end in `SceneRuntime`. For example:
 
 ````text
 spween handler workshop 1
@@ -36,9 +38,23 @@ python3 protocols/spween-handler-workshop/generate.py --source --revision 2
 
 [Scene](moth.scene), [first handler](Handler.obend), [revision](Chorus.obend), and
 [text examples](moth.examples) are editable source. The compiler supplies a pinned
-Kernel and generates Scene; authors cannot replace those reserved modules. Every
-other dependency is an explicit ordered module block. The native frontend resolves
-and checks those modules. Python neither executes handlers nor searches for imports.
+ABI, encounter helpers, typed scene data and model, plus the final score and entry
+module. Names `Abi`, `Encounter`, `Kernel`, `SceneData`, `SceneModel`, `Score`,
+`BaseRuntime` and `Scene` are reserved. Handlers receive `Abi.Context`.
+
+Without runtime blocks, the compiler selects the pinned ordinary Bend
+`SceneRuntime`. To select another, append its ordered dependency blocks and a
+final `obend SceneRuntime` block after Handler. That module exports the same
+`behavior()` contract; a replacement can compose the pinned
+`BaseRuntime.Default` with its own extension. The sealed package includes that
+pinned ordinary base source; an import never looks it up elsewhere. The
+[lanternlight revision](LanternRuntime.obend) changes the view while inheriting
+start, choice and validation behavior. Its full source document fits the existing
+4096-scalar post form. Larger replacements use the source-reference/Desk API.
+The complete selected runtime and dependency text stays in source custody.
+
+The native frontend resolves and checks only the explicitly sealed package.
+Python neither executes handlers nor searches for imports.
 
 `generate.build(authors, compiler)` supplies ordinary governed factories. Its
 initial placeholder state comes from native `describe()`. Each proposal gets a
@@ -52,7 +68,7 @@ arbitrary replacement handler accepts that schema; incompatible migrations remai
 a matter for explicit examples and receiving checks.
 
 The source wrapper retains the complete document; the lowered program retains
-exact scene and ordered handler strings. Adapter, parser, generated-source helper
+exact scene and ordered handler/runtime strings. Adapter, parser, source-data helper
 and native runtime dependencies are pinned with compiler custody. A source block
 confers no authority. Two authors in the demonstration have explicit shared grants.
 

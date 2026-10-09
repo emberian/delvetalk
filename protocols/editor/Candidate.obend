@@ -1,0 +1,110 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+
+# The compiler reports data; this object owns submission and release policy.
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Config:
+  editorMode: Bool
+record State:
+  editorMode: Bool
+  status: String
+  proposal: P.Value
+  migration: P.Value
+  target: String
+  submitter: String
+  artifact: String
+  protocol: P.Value
+  diagnostics: P.Value
+  compiler: String
+  roomArtifact: P.Value
+  lastRelease: String
+  editor: String
+  generation: Nat
+  baselineVersion: Nat
+  program: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: P.Value
+def initial(config: Config) -> State:
+  {editorMode: config.editorMode, status: "empty", proposal: P.Value.none(), migration: P.Value.none(), target: "", submitter: "", artifact: "", protocol: P.Value.none(), diagnostics: P.Value.array({values: P.Values.nil()}), compiler: "", roomArtifact: P.Value.none(), lastRelease: "", editor: "", generation: 0n, baselineVersion: 0n, program: ""}
+def ordinary() -> State:
+  initial({editorMode: false})
+def isRecord(value: P.Value) -> Bool:
+  match value:
+    case record(_): true
+    case none(_): false
+    case boolean(_): false
+    case natural(_): false
+    case number(_): false
+    case text(_): false
+    case array(_): false
+def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def text(value: String) -> P.Value:
+  P.Value.text({value: value})
+def number(value: Nat) -> P.Value:
+  P.Value.natural({value: value})
+def refused(state: State, reason: String) -> Decision:
+  {accepted: false, reason: reason, state: state, result: P.Value.none()}
+def accepted(state: State, result: P.Value) -> Decision:
+  {accepted: true, reason: "", state: state, result: result}
+def submit(state: State, input: P.Value, context: Context) -> Decision:
+  let editor: String = P.text(P.get(input, "editor"))
+  let generation: Nat = P.natural(P.get(input, "generation"))
+  let target: String = P.text(P.get(input, "target"))
+  if state.status != "empty" then refused(state, "This immutable candidate already has a submission.") else if isRecord(P.get(input, "proposal")) == false || isRecord(P.get(input, "migration")) == false || target == "" then refused(state, "Submit a proposal, complete migration and target.") else if state.editorMode && (editor == "" || generation == 0n) then refused(state, "Name the planned editor generation.") else accepted(extend(state, {status: "pending", proposal: P.get(input, "proposal"), migration: P.get(input, "migration"), target: target, submitter: context.principal, editor: editor, generation: generation, baselineVersion: P.natural(P.get(input, "baselineVersion"))}), text("submitted"))
+def compiled(state: State, input: P.Value, context: Context) -> Decision:
+  let program: String = P.text(P.get(input, "program"))
+  let artifact: String = P.text(P.get(input, "artifact"))
+  if state.status != "pending" then refused(state, "Only a pending candidate accepts a compiler report.") else if isRecord(P.get(input, "protocol")) == false || program == "" || artifact == "" then refused(state, "A checked program and its retained artifact are required.") else accepted(extend(state, {status: "ready", artifact: artifact, protocol: P.get(input, "protocol"), program: program, diagnostics: P.Value.array({values: P.Values.nil()}), compiler: context.principal, roomArtifact: P.get(input, "roomArtifact")}), text("compiled"))
+def failed(state: State, input: P.Value, context: Context) -> Decision:
+  if state.status != "pending" then refused(state, "Only a pending candidate accepts a compiler report.") else accepted(extend(state, {status: "failed", artifact: P.text(P.get(input, "artifact")), diagnostics: P.get(input, "diagnostics"), compiler: context.principal}), text("failed"))
+def report(state: State, input: {}, context: Context) -> Decision:
+  accepted(state, P.Value.record({fields: pair("candidate", text(context.object), pair("editor", text(state.editor), pair("generation", number(state.generation), pair("target", text(state.target), pair("baselineVersion", number(state.baselineVersion), pair("status", text(state.status), pair("program", text(state.program), P.Fields.nil())))))))}))
+def approved(state: State, input: P.Value, context: Context) -> Bool:
+  context.inputOrigin.kind == "invoke" && context.inputOrigin.object == state.editor && context.inputOrigin.command == "approve" && context.inputOrigin.immediatelyPrevious && P.text(P.get(input, "editor")) == state.editor && P.natural(P.get(input, "generation")) == state.generation && P.text(P.get(input, "candidate")) == context.object
+def adopt(state: State, input: P.Value, context: Context) -> Decision:
+  if state.status != "ready" then refused(state, "Check this candidate before adopting it.") else if P.text(P.get(input, "target")) != state.target then refused(state, "This candidate names another target.") else if state.editorMode && approved(state, input, context) == false then refused(state, "Use the actual immediately preceding editor approval.") else accepted(extend(state, {lastRelease: context.principal}), P.Value.record({fields: pair("protocol", state.protocol, pair("state", state.migration, P.Fields.nil()))}))
+record OpenMethod:
+  label: String
+  fields: {}
+  inputCodec: String
+  resultCodec: String
+record ReportMethod:
+  label: String
+  fields: {}
+  resultCodec: String
+record Description:
+  name: String
+  initial: State
+  methods: {submit: OpenMethod, compiled: OpenMethod, failed: OpenMethod, report: ReportMethod, adopt: OpenMethod}
+  panels: {status: String}
+def method(label: String) -> OpenMethod:
+  {label: label, fields: {}, inputCodec: "value", resultCodec: "value"}
+def describe() -> Description:
+  {name: "Candidate", initial: initial({editorMode: true}), methods: {submit: method("Submit source and examples"), compiled: method("Retain a checked compiler result"), failed: method("Retain compiler diagnostics"), report: {label: "Report this candidate", fields: {}, resultCodec: "value"}, adopt: method("Release the approved candidate")}, panels: {status: "Compiler report"}}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Children
+def view(state: State, panel: String) -> View:
+  {title: "Candidate", prose: if state.status == "empty" then "A fresh variation awaits source and examples." else if state.status == "pending" then "Source retained; awaiting its compiler report." else if state.status == "ready" then if state.editorMode then "Checked and ready for its editor's approval." else "Checked and ready for adoption under current law." else "Compilation or examples refused; this experiment remains inspectable.", actions: {}, children: Children.nil()}

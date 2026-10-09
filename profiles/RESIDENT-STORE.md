@@ -51,7 +51,8 @@ This is not an O(1) world. Admission and delta comparison can traverse current
 objects and retained event maps; roots, authored state, payloads and individual
 replies can grow. Index/history occupy memory. Checkpoints, full export and full
 audit deliberately scale with history. RPC frames are bounded at 64 MiB; native
-user requests retain their existing 64 KiB bound. The frame bound is not a limit
+expanded native requests are bounded at 1 MiB; authored intake remains 64 KiB.
+The frame bound is not a limit
 on checkpoint/export file size.
 
 `ResidentStoreProofs.lean` connects the actual index selection and `remember`
