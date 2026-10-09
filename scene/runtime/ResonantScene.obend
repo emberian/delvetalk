@@ -1,5 +1,7 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
+import ./SceneData.obend as D
+import ./Emissions.obend as E
 import ./SceneModel.obend as M
 import ./DefaultScene.obend as Default
 import ./Kernel.obend as K
@@ -18,8 +20,11 @@ record Description:
   initial: M.State
   methods: {start: {label: String, fields: {}}, choose: {label: String, fields: {choice: Abi.NatField}}, tune: {label: String, fields: {amount: Abi.NatField}}, hear: {label: String, fields: {chord: Abi.StringField}}}
   panels: {}
-def validate() -> M.Validation:
-  Default.validate()
+def validate(scene: D.Scene) -> M.Validation:
+  Default.validate(scene)
+def configure(scene: D.Scene) -> M.State:
+  Default.configure(scene)
+
 def describe() -> Description:
   let prior: M.Description = Default.describe()
   {name: prior.name, initial: prior.initial, methods: {start: prior.methods.start, choose: prior.methods.choose, tune: {label: "Tune the workshop", fields: {amount: {type: "nat", minimum: 1n, maximum: 8n}}}, hear: {label: "Hear the courtyard bell", fields: {chord: {type: "string", minLength: 1n, maxLength: 128n}}}}, panels: prior.panels}
@@ -31,7 +36,7 @@ def tune(state: M.State, input: Tune, context: Abi.Context) -> M.Decision:
   let accepted: Bool = state.started && input.amount >= 1n && input.amount <= 8n
   let handler: H.State = H.set_var(state.handler, "tuning", K.Value.integer({value: 9223372036854775808n + input.amount}))
   {accepted: accepted, reason: if accepted then "" else "Start the workshop and choose a tuning from one to eight.", state: extend(state, {handler: handler}), result: {passage: state.passage, ended: state.ended}, emissions: H.begin(handler).emissions}
-def hear(state: M.State, input: Chord, context: Abi.Context, event: Abi.Event) -> Heard:
+def hear(state: M.State, input: Chord, context: Abi.Context, event: E.CausalEvent) -> Heard:
   let accepted: Bool = event.source == "bell" && input.chord == "C E G"
   let handler: H.State = extend(state.handler, {members: K.grant(state.handler.members, "inventory", "resonance")})
   {accepted: accepted, reason: if accepted then "" else "This workshop listens for the courtyard bell's C E G chord.", state: extend(state, {handler: handler}), result: {source: event.source, player: event.originatingPrincipal}}

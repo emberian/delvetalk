@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_appointment_relationship as relationship
 import test_appointments as appointments
 
@@ -66,7 +67,7 @@ class EveningCourtyard(unittest.TestCase):
         self.make('lights', 'iris', 'lantern')
         self.assertEqual(self.fx.state('iris/door')['recipient'], 'lights/lantern')
         self.relay = message_relay.MessageRelay(Path(self.fx.temp.name) / 'relay', self.fx.db, 'relay')
-        places = [{'key': key, 'label': label, 'object': name, 'panel': ''} for key, label, name in [
+        places = [{'key': key, 'label': label, 'object': name, 'panel': 'main'} for key, label, name in [
             ('clock', 'The courtyard clock', 'clock'), ('bell', "Moss's bell", 'moss/bell'),
             ('door', "Iris's door", 'iris/door'), ('lantern', "Iris's lantern", 'lights/lantern')]]
         self.fx.create('courtyard', courtyard.book(places),
@@ -87,7 +88,7 @@ class EveningCourtyard(unittest.TestCase):
 
     def make(self, factory, principal, name):
         offer = self.capture(factory, 'make', principal)
-        request = source_offers.request(offer, principal, self.fx.intent(), {'name': name})
+        request = source_offers.request(offer, principal, self.fx.intent(), {'name': name}, database=self.fx.db)
         receipt = self.fx.call(request, 'committed')
         self.assertEqual(self.fx.call(request), receipt)
         self.assertEqual(affordances.allocated_refs(receipt)[0]['object'], factory + '/' + name)
@@ -112,22 +113,23 @@ class EveningCourtyard(unittest.TestCase):
         # this neighbour's private state on behalf of its reader.
         public_book = projection.project(self.fx.root('courtyard'), 'courtyard')['data']
         self.assertIn('Iris', public_book['prose'])
+        refused = self.prepare('moss/bell', 'schedule', {'due': 5, 'deadline': 10, 'chord': 'C E G'}, 'iris')
+        self.assertEqual(refused['kind'], 'refused')
         arranged = self.ready('moss/bell', 'schedule', {'due': 5, 'deadline': 10, 'chord': 'C E G'}, 'moss')
         booked = self.fx.call(arranged, 'committed')
         self.assertEqual(self.fx.call(arranged), booked)
-        refused = self.prepare('moss/bell', 'schedule', {'due': 5, 'deadline': 10, 'chord': 'C E G'}, 'iris')
-        self.assertEqual(refused['kind'], 'refused')
         # Every exchange is a fresh native receiver; restart the relay's custody.
         relationship.AppointmentRelationship.sample(self, 6000)
         for _ in range(3):
             report = self.relay.run(limit=16)
             self.assertEqual(report['errors'], [], report)
+            self.assertEqual(report['blocked'], [], report)
         self.relay = message_relay.MessageRelay(Path(self.fx.temp.name) / 'relay', self.fx.db, 'relay')
         self.relay.run(limit=16)
         self.assertEqual(self.fx.state('moss/bell')['phase'], 'rang')
         self.assertEqual(self.fx.state('iris/door')['heard'], 1)
-        light = source_object.plain(self.fx.call({'op': 'inspect', 'object': 'lights/lantern',
-            'principal': 'iris'})['state']['model'])
+        light = source_object.plain(source_object.state_data(self.fx.call(
+            {'op': 'inspect', 'object': 'lights/lantern', 'principal': 'iris'})))
         self.assertEqual(light['glows'], 1)
         self.assertEqual(light['lastRootPlayer'], 'driver')
         self.assertEqual(light['lastEmitterActor'], 'relay')
@@ -165,20 +167,31 @@ class EveningCourtyard(unittest.TestCase):
         submitted = client.submit_refs('proposals/afterglow', 'moss', self.fx.intent(),
             candidate, proposal, target['state'], 'courtyard')
         self.assertEqual(submitted['kind'], 'committed', submitted)
-        checked = client.check('proposals/afterglow', 'compiler', self.fx.intent(), submitted['data']['root'])
+        requested = self.fx.call({'op': 'invoke', 'object': 'proposals/afterglow',
+            'principal': 'moss', 'intent': self.fx.intent(),
+            'expected': submitted['data']['root'], 'command': 'requestCheck',
+            'input': {}}, 'committed')['data']['root']
+        work = desk.compiler_work(requested, 'proposals/afterglow', 'compiler', self.fx.db)
+        self.assertIsNotNone(work)
+        checked = client.check('proposals/afterglow', 'compiler', work['intent'], requested)
         self.assertEqual(checked['kind'], 'committed', checked)
         ready = checked['data']['root']
         self.assertEqual(desk.candidate_state(ready)['status'], 'ready', desk.candidate_state(ready))
         offer = self.capture('proposals/afterglow', 'release', 'steward')
-        for principal in ['moss', 'iris']:
-            refused = self.fx.call(source_offers.request(offer, principal, self.fx.intent(), {}), 'refused')
-            self.assertEqual(self.fx.root('courtyard'), target)
-            self.assertEqual(self.fx.call({'op': 'inspect', 'object': 'proposals/afterglow', 'principal': 'steward'}), ready)
-        request = source_offers.request(offer, 'steward', self.fx.intent(), {})
+        # The maker can read the proposal, but the target's current law
+        # still rejects its release. Iris has no proposal read grant.
+        self.fx.call(source_offers.request(offer, 'moss', self.fx.intent(), {},
+            database=self.fx.db), 'refused')
+        self.assertEqual(self.fx.root('courtyard'), target)
+        self.assertEqual(self.fx.call({'op': 'inspect', 'object': 'proposals/afterglow',
+            'principal': 'steward'}), ready)
+        with self.assertRaisesRegex((ValueError, RuntimeError), 'read unauthorized'):
+            source_offers.request(offer, 'iris', self.fx.intent(), {}, database=self.fx.db)
+        request = source_offers.request(offer, 'steward', self.fx.intent(), {}, database=self.fx.db)
         accepted = self.fx.call(request, 'committed')
         self.assertEqual(self.fx.call(request), accepted)
         installed = self.fx.root('courtyard')
-        self.assertEqual(installed['state'], target['state'])
+        self.assertEqual(source_object.state_data(installed), source_object.state_data(target))
         self.assertEqual(installed['law'], target['law'])
         view = projection.project(installed, 'courtyard')['data']
         self.assertIn('afterglow', view['prose'])

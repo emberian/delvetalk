@@ -2,9 +2,11 @@ edition ObjectiveBend 1
 import ./Kernel.obend as K
 import ./SceneData.obend as D
 import ./Handler.obend as H
+import ./Emissions.obend as E
 import ./Abi.obend as Abi
 import ./Encounter.obend as Encounter
 record State:
+  scene: D.Scene
   handler: H.State
   passage: Nat
   visited: K.Visits
@@ -18,7 +20,7 @@ record Decision:
   reason: String
   state: State
   result: Result
-  emissions: H.Slots
+  emissions: E.Emissions
 record Choice:
   choice: Nat
 sum FoundPassage:

@@ -23,7 +23,7 @@ record Decision:
 def policy() -> C.Policy:
   {revision: "courtyard-notes", capacity: 32n, window: 8n, accepts: fn(fields: P.Fields) -> Bool: true, needs: fn(fields: P.Fields) -> P.Names: P.Names.nil()}
 def configured(config: Config) -> State:
-  {conversation: C.initial(config.title, {object: config.object, revision: 1n, meaning: "an-evening-built-together", entry: "", token: "note"}, P.Names.nil()), places: config.places}
+  {conversation: C.initial(config.title, {object: config.object, revision: 1n, meaning: "an-evening-built-together", entry: "note", token: "note"}, P.Names.nil()), places: config.places}
 def note(state: State, input: Note, context: Abi.Context) -> Decision:
   let valid = textLength(input.line) > 0n && textLength(input.line) <= 512n
   let contribution = if valid then C.contribute(policy(), state.conversation, C.literal(state.conversation, input.line, P.Fields.nil()), context) else C.decided(state.conversation, false, "Leave one short line for the next visitor.")
@@ -42,11 +42,11 @@ def describe() -> Description:
 record View:
   title: String
   prose: String
-  actions: {note: {text: String, command: String, input: {}}}
+  actions: {note: {visible: Bool, text: String, command: String, input: {}}}
   children: E.Children
   document: D.Document
 def render(state: State, introduction: String) -> View:
   let doc = D.concat(D.text(textConcat(introduction, "\n")), D.concat(D.Document.sequence({items: references(state.places)}), C.render(policy(), state.conversation, 0n, 8n)))
-  {title: state.conversation.focus, prose: D.plain(doc), actions: {note: {text: "Leave a line", command: "note", input: {}}}, children: state.places, document: doc}
+  {title: state.conversation.focus, prose: D.plain(doc), actions: {note: {visible: true, text: "Leave a line", command: "note", input: {}}}, children: state.places, document: doc}
 def view(state: State, panel: String) -> View:
   render(state, "Moss makes the bell; Iris makes the door and its light. Follow a place to make, connect, or arrange its next chord. Each thing keeps its own rules. Leave a line here for whoever returns.")

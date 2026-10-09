@@ -40,3 +40,6 @@ record Scene:
   title: String
   requires: Condition
   passages: Passages
+
+def empty() -> Scene:
+  {title: "", requires: Condition.always(), passages: Passages.nil()}

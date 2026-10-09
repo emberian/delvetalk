@@ -1,71 +1,33 @@
-# Spween scenes as DelveTalk protocols
+# Spween scenes
 
-The pinned Rust parser supplies Spween's AST. `lower.py` compiles supported scenes
-into Objective Bend protocols; Lean evaluates them and owns admission.
-
-```sh
-CARGO_BUILD_JOBS=2 cargo build --locked --manifest-path scene/spween-bridge/Cargo.toml
-LEAN_NUM_THREADS=1 lake build delvetalk-world
-python3 scene/lower.py scene/examples/door.scene > /tmp/door-bundle.json
-python3 conformance/test_scene.py
-```
-
-Bundles retain source, AST, provenance, initial configuration and `protocol`.
-`--protocol-only` emits the definition; `--state FILE` supplies initial variables
-and membership. Narrative text remains data.
-
-## A durable run
-
-After building above:
+Spween supplies prose, passages, choices, guards and ordered effects. Bend supplies
+authored handler behavior and the source scene runtime. The native source host
+admits the resulting decisions under exact roots and current law.
 
 ```sh
-python3 - <<'PY'
-import json, tempfile
-from pathlib import Path
-from scripts.world import exchange
-p = json.loads(Path('/tmp/door-bundle.json').read_text())['protocol']
-db = Path(tempfile.mkdtemp()) / 'world.json'
-r = exchange(db, dict(op='create', object='scene:door', principal='operator',
-    intent='create', protocol=p, law=['visitor']))
-for i, command in enumerate(['start', 'choose:0:0']):
-    assert r['kind'] == 'committed', r
-    r = exchange(db, dict(op='invoke', object='scene:door', principal='visitor',
-        intent=str(i), expected=r['data']['root'], command=command, input={}))
-    print(r)
-print(db)
-PY
+make build scene-build
 ```
 
-`start` admits initialization once. Choices use passage/choice indices; guards,
-current passage, whole root and law must match. Exact retries recover receipts;
-new choices need fresh intents. Principals are local assertions.
+Use [the handler workshop](../protocols/spween-handler-workshop/README.md) to submit
+scene text and ordered Bend modules, inspect compiler results and explicitly
+adopt. [Runtime source](runtime/) and [handler definitions](../protocols/spween-handlers/)
+are the behavior owners; physical packaging retains exact source and parsed data.
+[UPSTREAM](UPSTREAM.md) describes parser provenance and interchange.
 
-## Executable profile: `spween-scene-i64-v2`
+Effects thread one handler state in authored order. A call sees prior assignments;
+subsequent effects see its returned state. A late refusal or budget overflow rolls
+back the admitted turn. Looking at a view does not execute passage entry effects.
+Choices bind captured state, so concurrent changes refuse stale requests instead
+of silently redirecting them. Recover uncertain choices using their original
+attempt.
 
-Supported values are Null, Boolean, signed i64 and String. The profile supports
-ordered effects, comparisons, membership, guarded navigation and termination.
-Entry effects run once per passage per session. Requirements are reported, not
-initialization gates. Spween equality includes `true == 1` and `false == 0`.
-Membership is fixed; metadata creates no scheduler. Unknown targets and duplicate
-passage names refuse before installation.
+Scene scalar operations use explicit Null, Boolean, signed i64 and text semantics.
+Float execution and string ordering are unsupported in the handler profile.
+Membership may query authored handler state; it grants no ambient object reads.
+Handler sends use the shared bounded source emissions collection and later
+recipient admission. Source requests determine clock/scheduling behavior;
+physical timers do not become history by themselves.
 
-V2 derives string ordering from stored text inside Bend, ignoring old cached ranks.
-An unknown migrated string outside the source's closed string domain refuses
-ordering; equality still compares exact text. New room compilation and the CLI
-use v2. Request `spween-scene-i64@2` through the syntax registry. Historical `@1`
-and explicit v1 lowering remain available for reproduction; their ranks are not
-portable between source revisions. Existing admitted objects are not rewritten.
-
-Overflow refuses, even before a later overwrite. Executable Float values refuse;
-unevaluated metadata survives. Calls become ordered `spween-call-batch` outbox
-intents, including empty batches; delivery needs a separate authorization/retry
-contract. No caller-supplied handler executes.
-
-## Evidence
-
-[Tests](../conformance/test_scene.py) compare successful transitions and guard
-refusals against pinned Rust, including 384 guard observations, ordering, replay
-and overflow. Upstream can partially mutate before errors; Lean refuses atomically.
-This is cross-validation, not general refinement. Host fuel and 64 KiB request
-limits apply. [UPSTREAM.md](UPSTREAM.md) defines interchange; [lower.py](lower.py)
-defines tagged state/values; [protocols](../protocols/README.md) defines custody.
+Scenes and handlers retain exact modules with explicit migration on revision.
+Copying a scene or object reference grants no authority. Current source/runtime
+changes require matching receiving qualification; see [BACKLOG](../BACKLOG.md).

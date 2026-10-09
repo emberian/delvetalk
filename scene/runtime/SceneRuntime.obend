@@ -5,14 +5,14 @@ import ./Handler.obend as H
 import ./Abi.obend as Abi
 import ./Encounter.obend as Encounter
 import ./SceneModel.obend as M
-def initial() -> M.State:
-  {handler: H.initial(), passage: 0n, visited: K.Visits.nil(), started: false, ended: false}
+def initial(scene: D.Scene) -> M.State:
+  {scene: scene, handler: H.initial(), passage: 0n, visited: K.Visits.nil(), started: false, ended: false}
 def updated(step: H.Step, state: H.State) -> H.Step:
   {accepted: step.accepted, reason: step.reason, state: state, emissions: step.emissions}
 def rejected(step: H.Step, reason: String) -> H.Step:
   {accepted: false, reason: reason, state: step.state, emissions: step.emissions}
 def finish(state: M.State, step: H.Step) -> M.Decision:
-  {accepted: step.accepted, reason: step.reason, state: {handler: step.state, passage: state.passage, visited: state.visited, started: state.started, ended: state.ended}, result: {passage: state.passage, ended: state.ended}, emissions: step.emissions}
+  {accepted: step.accepted, reason: step.reason, state: {scene: state.scene, handler: step.state, passage: state.passage, visited: state.visited, started: state.started, ended: state.ended}, result: {passage: state.passage, ended: state.ended}, emissions: step.emissions}
 def refuse(state: M.State, reason: String) -> M.Decision:
   finish(state, rejected(H.begin(state.handler), reason))
 def indexed(xs: D.Passages, index: Nat, position: Nat) -> M.FoundPassage:
@@ -63,9 +63,9 @@ def entry(items: D.Contents, step: H.Step, context: Abi.Context) -> H.Step:
 def enter(found: M.FoundPassage, state: M.State, step: H.Step, context: Abi.Context) -> M.Decision:
   match found:
     case missing(_): finish(state, rejected(step, "unknown passage target"))
-    case found(c): let done: H.Step = if K.visited(state.visited, c.index) then step else entry(c.passage.content, step, context) in finish({handler: state.handler, passage: c.index, visited: K.visit(state.visited, c.index), started: true, ended: false}, done)
+    case found(c): let done: H.Step = if K.visited(state.visited, c.index) then step else entry(c.passage.content, step, context) in finish({scene: state.scene, handler: state.handler, passage: c.index, visited: K.visit(state.visited, c.index), started: true, ended: false}, done)
 def end(state: M.State, step: H.Step) -> M.Decision:
-  finish({handler: state.handler, passage: state.passage, visited: state.visited, started: state.started, ended: true}, step)
+  finish({scene: state.scene, handler: state.handler, passage: state.passage, visited: state.visited, started: state.started, ended: true}, step)
 def navigate(scene: D.Scene, target: D.Target, state: M.State, step: H.Step, context: Abi.Context) -> M.Decision:
   match target:
     case absent(_): end(state, step)
@@ -89,7 +89,7 @@ def choosePassage(scene: D.Scene, found: M.FoundPassage, state: M.State, input: 
     case found(c): chooseFound(scene, selected(c.passage.content, input.choice, 0n), state, context)
 def startPassages(scene: D.Scene, state: M.State, context: Abi.Context) -> M.Decision:
   match scene.passages:
-    case nil(_): finish({handler: state.handler, passage: state.passage, visited: state.visited, started: true, ended: true}, H.begin(state.handler))
+    case nil(_): finish({scene: state.scene, handler: state.handler, passage: state.passage, visited: state.visited, started: true, ended: true}, H.begin(state.handler))
     case cons(_): enter(indexed(scene.passages, 0n, 0n), state, H.begin(state.handler), context)
 def start(scene: D.Scene, state: M.State, input: {}, context: Abi.Context) -> M.Decision:
   if state.started then refuse(state, "scene already started") else startPassages(scene, state, context)
@@ -184,7 +184,7 @@ def validate(scene: D.Scene) -> M.Validation:
 def title(scene: D.Scene) -> String:
   if scene.title == "" then "Spween scene" else scene.title
 def describe(scene: D.Scene) -> M.Description:
-  {name: title(scene), initial: initial(), methods: {start: {label: "Start", fields: {}}, choose: {label: "Choose", fields: {choice: {type: "nat", minimum: 0n, maximum: 255n}}}}, panels: {}}
+  {name: title(scene), initial: initial(scene), methods: {start: {label: "Start", fields: {}}, choose: {label: "Choose", fields: {choice: {type: "nat", minimum: 0n, maximum: 255n}}}}, panels: {}}
 def proseItem(item: D.Content, result: M.Prose) -> M.Prose:
   match item:
     case prose(c): {text: if result.seen then textConcat(result.text, textConcat("\n\n", c.text)) else c.text, seen: true}
