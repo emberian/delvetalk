@@ -46,12 +46,26 @@ def closed(body: String, before: String, at: Nat) -> Block:
   if rest == "" then Block.none({}) else if textTake(rest, 3n) == "```" then Block.some({source: textConcat(before, textTake(body, at))}) else closing(textDrop(rest, 1n), textConcat(before, textConcat(textTake(body, at), "`")))
 def cat(left: String, right: String) -> String:
   textConcat(left, right)
+# The host's check answers "<module>:<line>: <stage>: <message>", and, when the
+# kernel has a dialect hint for it, "<module>:<line>: hint: <hint>" as the next line.
+# A hint is shown indented under its problem and is not counted as one.
+def hintMark() -> String:
+  ": hint: "
+# Where ": hint: " starts in a diagnostic, or its length when it has none.
+def hintAt(text: String, from: Nat) -> Nat:
+  let rest = textDrop(text, from)
+  let at = from + textBreak(rest, ":")
+  if at >= textLength(text) then textLength(text) else if textTake(textDrop(text, at), 8n) == hintMark() then at else hintAt(text, at + 1n)
+def isHint(diagnostic: String) -> Bool:
+  hintAt(diagnostic, 0n) < textLength(diagnostic)
 def problem(diagnostic: String) -> Document.Document:
-  Document.text(cat("- ", cat(diagnostic, "\n")))
+  if isHint(diagnostic) then Document.text(cat("  hint: ", cat(textDrop(diagnostic, hintAt(diagnostic, 0n) + 8n), "\n"))) else Document.text(cat("- ", cat(diagnostic, "\n")))
+def problems(diagnostics: Form.Names) -> Nat:
+  Lists.length::<String>(Lists.filter::<String>(diagnostics, fn(d: String) -> Bool: isHint(d) == false))
 def checkedCard(diagnostics: Form.Names) -> Document.Document:
   match diagnostics:
     case nil(_): Document.text("✾ WORKSHOP\n\nChecked: it compiles.\n")
-    case cons(_): Document.Document.sequence({items: Document.Documents.cons({head: Document.text(cat("✾ WORKSHOP\n\nChecked: ", cat(natText(Lists.length::<String>(diagnostics)), " problems.\n\n"))), tail: Lists.map::<String, Document.Document>(diagnostics, problem)})})
+    case cons(_): Document.Document.sequence({items: Document.Documents.cons({head: Document.text(cat("✾ WORKSHOP\n\nChecked: ", cat(natText(problems(diagnostics)), if problems(diagnostics) == 1n then " problem.\n\n" else " problems.\n\n"))), tail: Lists.map::<String, Document.Document>(diagnostics, problem)})})
 def reprogrammedCard(target: String, was: String, pin: String) -> Document.Document:
   Document.text(cat("✾ WORKSHOP\n\nReprogrammed ", cat(target, cat(".\nWas: ", cat(was, cat("\nNow: ", cat(pin, "\n")))))))
 def refusedCard(reason: String) -> Document.Document:
