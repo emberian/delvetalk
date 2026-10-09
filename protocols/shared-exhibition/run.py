@@ -107,6 +107,8 @@ def run(directory, content=None):
 
     first_card = apps['north'].object(TARGET)
     assert first_card['mode'] == 'projection', first_card
+    assert first_card['panel'] == 'main'
+    assert {panel['id'] for panel in first_card['panels']} == {'main', 'north', 'south'}
     assert {a['command'] for a in first_card['actions']} == {'offer-north', 'offer-south'}
     before = desk.database.read_bytes()
     invalid_action = next(a for a in first_card['actions'] if a['command'] == 'offer-north')
@@ -135,8 +137,11 @@ def run(directory, content=None):
     play('curator', 'open', {})
     final = apps['curator'].object(TARGET)
     assert final['actions'] == []
-    assert apps['north'].object(TARGET, panel='north')['prose'] == content['north']['note']
-    assert apps['south'].object(TARGET, panel='south')['prose'] == content['south']['note']
+    for artist in ('north', 'south'):
+        panel = apps[artist].object(TARGET, panel=artist)
+        assert panel['panel'] == artist
+        assert panel['panels'] == first_card['panels']
+        assert panel['prose'] == content[artist]['note']
     detail = apps['curator'].detail(final['card'])
     assert detail['root']['state']['opened'] is True
     assert detail['root']['protocol'] == program

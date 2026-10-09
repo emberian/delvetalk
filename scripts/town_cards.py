@@ -17,6 +17,7 @@ import world
 import references
 import adoption
 import composite_offers
+import source_offers
 
 _projection_spec = importlib.util.spec_from_file_location('town_projection',
     Path(__file__).resolve().parents[1] / 'scene/projection.py')
@@ -226,6 +227,8 @@ def _example(action):
 
 
 def _panels(view, expected_runtime):
+    if projection.inspection_only(view):
+        return []  # Do not execute more views while recovering a failed menu.
     declared = view['root']['protocol'].get('viewPanels', [])
     if not isinstance(declared, list) or len(declared) > 8:
         raise ValueError('viewPanels must be an array of at most eight panels')
@@ -259,6 +262,11 @@ def render_card(alias, card, view, panels=(), display_names=None):
         return '\n'.join('| ' + line for line in shown.split('\n'))
     if card['prose']:
         lines.append(prose(card['prose']))
+    catalogue = projection.children(view)
+    if catalogue:
+        lines.append('Look around (read only):')
+        lines.extend(str(index) + '. ' + canonical(child['label']) for index, child in enumerate(catalogue, 1))
+        lines.append('Ask to see a named exhibit or its number; we will bring back its current card.')
     for panel in panels:
         data = panel['view']['data']
         if not data['prose'].strip():
@@ -394,6 +402,14 @@ class CardBook:
                     'body': body, 'textSha256': sha(body)}
         return self._capture(alias, build)
 
+    def capture_source_offer(self, view, roots, key, *, alias=None):
+        """Retain one visible authored plan from the same complete observation."""
+        captured = source_offers.capture_available(view, roots)
+        if key not in captured['offers']:
+            detail = captured['unavailable'].get(key, {}).get('reason', 'source does not offer this action')
+            raise ValueError(detail)
+        return self.capture_composite(captured['offers'][key], alias=alias)
+
     def capture_composite(self, offer, *, alias=None):
         """Retain a fixed transaction offer, including every exact known read."""
         metadata = self.metadata()
@@ -401,7 +417,9 @@ class CardBook:
         action = composite_offers.action(offer)
         def build(name):
             lines = ['[[delvetalk-card ' + name + ']]', offer['title'], offer['label'],
-                     'All steps commit together or none do. Each checks your current permissions.',
+                     ('All steps commit together or none do. Writes check your current permissions.'
+                      if any(call.get('op') == 'observe' for call in offer['calls']) else
+                      'All steps commit together or none do. Each checks your current permissions.'),
                      'Reply here, or describe your intention for us to interpret:',
                      spell(name, action, _example(action), selector=offer['command'])]
             lines.extend(_field(field, token) for token, field_name in field_words(action).items()
@@ -487,6 +505,10 @@ class CardBook:
         value = loads(row[0])
         if value['alias'] != alias or sha(value['body']) != value['textSha256']:
             raise ValueError('captured card content mismatch')
+        if 'view' in value:
+            projection.children(value['view'])
+            for panel in value.get('panels', []):
+                projection.children(panel['view'])
         return value
 
     def publication(self, alias):

@@ -96,6 +96,11 @@ assert.deepEqual(read([optional]), {});
 const empty = input({ name: 'note', type: 'string', example: '' });
 assert.equal(empty.label.children.at(-1).textContent, 'Example: ""');
 assert.equal(input({ name: 'plain', type: 'string' }).label.children.length, 2);
+const sourceText = input({ name: 'source', label: 'Source', type: 'string', required: true,
+  minLength: 1, maxLength: 4096 });
+assert.equal(sourceText.input.tag, 'textarea');
+sourceText.input.value = 'edition ObjectiveBend 1\n\ndef main()->String:\n  "a literal <tag>"\n';
+assert.deepEqual(read([sourceText]), { source: sourceText.input.value });
 
 // Public card fields exclude projection-bound input. Rendering must neither
 // invent controls for that input nor submit example text on the user's behalf.
@@ -150,6 +155,12 @@ assert.equal(document.getElementById('send-draft').hidden, true);
 assert.equal(document.getElementById('draft-command-row').hidden, true);
 assert.equal(document.getElementById('preview-copy').hidden, false);
 assert.equal(document.getElementById('draft-fields').children[1].textContent, malicious);
+context.showDraft({ ...draft, reads: [{ object: 'workshop', version: 2 }, { object: malicious, version: 0 }],
+  absence: ['candidates/new'] });
+assert.equal(document.getElementById('draft-target').textContent,
+  `Captured together: workshop · version 2; ${malicious} · version 0. All steps commit together.`);
+assert.equal(document.getElementById('draft-absence').textContent,
+  'Creates: candidates/new. These object names must still be absent.');
 vm.runInContext("state.world.mode = 'local-interactive'; state.uncertain = true;", context);
 location.href = 'https://example.invalid/?object=door&panel=ink%20%26%20light';
 await events.popstate();
@@ -222,3 +233,44 @@ for (const guard of ['pending', 'uncertain', 'preparing']) {
   assert.equal(document.getElementById('authoring-alias').textContent, 'work new');
 }
 console.log('Portal delayed authoring responses: newest route and pending/uncertain work remain intact.');
+
+// Authored catalogues contain reads, not invocations. The child endpoint selects
+// from the retained parent card and returns its own fresh object/card/panel.
+vm.runInContext("state.sending = false; state.uncertain = false; state.draft = null; authoring.pending = false; authoring.uncertain = false; authoring.preparing = false; state.world = { mode: 'public-preview', objects: [{id: 'index'}, {id: 'lantern'}] };", context);
+const catalogue = { card: 'parent-capture', object: 'index', panel: 'main', title: 'An exhibition',
+  actions: [], children: [{ key: 'lamp & one', label: malicious, object: 'lantern', panel: 'glow' },
+    { key: 'missing', label: 'An absent exhibit', object: 'absent', panel: 'main' }] };
+const childCard = { card: 'child-current-capture', object: 'lantern', panel: 'glow', title: 'The lantern now',
+  actions: [], children: [], panels: [{id: 'main', label: 'Overview'}, {id: 'glow', label: 'Glow'}] };
+context.fetch = async (url, options) => {
+  requests.push({url, options});
+  let value = catalogue;
+  if (url.startsWith('/api/child')) {
+    assert.equal(new URL(url, location.href).searchParams.get('card'), 'parent-capture');
+    value = new URL(url, location.href).searchParams.get('key') === 'missing'
+      ? {status: 'unavailable', message: 'Unknown object'}
+      : {status: 'opened', card: childCard};
+  }
+  return {ok: true, json: async () => value};
+};
+await context.openObject('index');
+const children = document.getElementById('view-children').children.at(-1).children;
+assert.equal(children[0].textContent, malicious);
+assert.equal(children[0].tag, 'button');
+assert.equal(document.getElementById('actions').textContent, 'No actions are offered in this reading.');
+await children[1].listeners.click();
+assert.equal(vm.runInContext('state.card.card', context), 'parent-capture');
+assert.match(document.getElementById('notice').textContent, /Unavailable: An absent exhibit/);
+assert.equal(document.getElementById('view-children').hidden, false);
+const childRequestStart = requests.length;
+await children[0].listeners.click();
+assert.equal(vm.runInContext('state.card.card', context), 'child-current-capture');
+assert.equal(new URL(location.href).searchParams.get('object'), 'lantern');
+assert.equal(new URL(location.href).searchParams.get('panel'), 'glow');
+assert.equal(navigation.at(-1).method, 'pushState');
+assert.equal(document.getElementById('view-children').hidden, true);
+assert.equal(requests.slice(childRequestStart).length, 1);
+assert.equal(requests.at(-1).options.method, undefined);
+assert.equal(catalogue.card, 'parent-capture');
+assert.equal(catalogue.object, 'index');
+console.log('Portal authored children: safe read-only labels, fresh child capture, unavailable-row recovery passed.');

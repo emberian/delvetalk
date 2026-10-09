@@ -1,0 +1,58 @@
+edition ObjectiveBend 1
+
+# Reflection observes source assembly. The raw prototype below does not certify
+# that its target was constructed by its specification, or grant object rights.
+record Door:
+  answer(n: Nat) -> Nat
+
+spec Base for Door:
+  def answer(n: Nat) -> Nat:
+    n + 1n
+  claim positive(n: Nat): true
+
+spec Grow for Door:
+  def answer(n: Nat) -> Nat:
+    super.answer(n) + 10n
+
+def unfinished() -> Door:
+  unfinished()
+
+# The reflected specification remains reusable; its lazy target is untouched.
+def reflected() -> Specification<Door>:
+  reflect(prototype(Base, unfinished()))
+
+def assembly() -> Specification<Door>:
+  compose(reflected(), Grow)
+
+def answer() -> Nat:
+  fix(assembly(), {answer: fn(n: Nat) -> Nat: n}).answer(2n)
+
+# The same observer is available to ordinary Bend programs, not just the CLI.
+def inspect() -> SpecMeta:
+  metadata(assembly())
+
+def name() -> String:
+  match metadata(reflected()):
+    case declared(d): d.name
+    case composed(c): "composed"
+    case extension(e): "extension"
+
+# This deliberately unrelated target demonstrates the raw-pair boundary.
+def unrelatedTarget() -> Nat:
+  targetOf(prototype(Base, 7n))
+
+# Selecting the unfinished target really does demand it, unlike reflection.
+def demandAnswer() -> Nat:
+  targetOf(prototype(Base, unfinished())).answer(2n)
+
+def leftAssociated() -> Specification<Door>:
+  compose(compose(Base, Grow), Grow)
+
+def rightAssociated() -> Specification<Door>:
+  compose(Base, compose(Grow, Grow))
+
+def leftAnswer() -> Nat:
+  fix(leftAssociated(), {answer: fn(n: Nat) -> Nat: n}).answer(2n)
+
+def rightAnswer() -> Nat:
+  fix(rightAssociated(), {answer: fn(n: Nat) -> Nat: n}).answer(2n)

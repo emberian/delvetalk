@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Incremental native receiving, durable commit and exact retained retries."""
 import copy
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 import sqlite3
@@ -118,6 +119,30 @@ class ResidentTests(unittest.TestCase):
             self.assertEqual(resident.audit()['sequence'], 2)
             self.assertEqual(resident.export_world(), expected)
 
+    def test_checkpoint_native_fold_rejects_duplicate_or_miskeyed_history_atomically(self):
+        with self.open('origin.sqlite', profile='world') as origin:
+            origin.exchange(create())
+            snapshot = origin.export_world()
+        duplicate = copy.deepcopy(snapshot)
+        duplicate['receipts'].append(copy.deepcopy(duplicate['receipts'][0]))
+        wrong_intent = copy.deepcopy(snapshot)
+        wrong_intent['receipts'][0]['receipt']['intent'] = 'another'
+        missing_key = copy.deepcopy(snapshot)
+        del missing_key['receipts'][0]['request']['principal']
+        extra_field = copy.deepcopy(snapshot)
+        extra_field['receipts'][0]['extra'] = True
+        for i, value in enumerate((duplicate, wrong_intent, missing_key, extra_field)):
+            raw = world.wire_dumps(value).encode()
+            path = self.directory / f'checkpoint-{i}.json'
+            path.write_bytes(raw)
+            with self.open(f'check-{i}.sqlite', profile='world') as resident:
+                with self.assertRaises(resident_store.ReceivingError):
+                    resident._rpc({'op': 'load', 'path': str(path), 'seal': {
+                        'sequence': len(value['receipts']), 'head': 'trusted-test-head',
+                        'sha256': hashlib.sha256(raw).hexdigest()}})
+                self.assertEqual(resident._rpc({'op': 'status'})['sequence'], 0)
+                self.assertEqual(resident.exchange(create())['kind'], 'committed')
+
     def test_modified_frame_refused_by_exact_native_reexecution(self):
         with self.open(profile='world') as resident:
             resident.exchange(create())
@@ -161,6 +186,33 @@ class ResidentTests(unittest.TestCase):
                 self.assertEqual(resident.retained_reply(candidate), expected)
             self.assertEqual(resident.sequence, 1)
         self.assertEqual(len(world.wire_loads(snapshot.read_bytes())['receipts']), 1)
+
+    def test_delta_preserves_numeric_scale_array_atomicity_and_ordered_map_edits(self):
+        with self.open(profile='world') as resident:
+            root = resident.exchange(create())['data']['root']
+            def write(value, serial):
+                nonlocal root
+                request = {'op': 'invoke', 'principal': 'keeper', 'intent': str(serial), 'object': 'room',
+                           'expected': root, 'command': 'write', 'input': {'value': value}}
+                root = resident.exchange(request)['data']['root']
+                raw = resident.connection.execute('select frame from entries order by sequence desc limit 1').fetchone()[0]
+                return [change for change in world.wire_loads(raw)['delta']
+                        if change['path'][:3] == ['objects', 'room', 'state']]
+            prefix = ['objects', 'room', 'state', 'value']
+            changes = write(Decimal('1.23'), 0)
+            self.assertEqual(changes, [{'path': prefix, 'value': Decimal('1.23')}])
+            self.assertEqual(changes[0]['value'].as_tuple().exponent, -2)
+            write({'old': None, 'same': {'x': 1}}, 1)
+            changes = write({'same': {'x': 1}, 'a': {}, 'z': False}, 2)
+            self.assertEqual(changes, [{'path': prefix + ['a'], 'value': {}},
+                                      {'path': prefix + ['z'], 'value': False},
+                                      {'path': prefix + ['old'], 'remove': True}])
+            self.assertEqual(write({'z': False, 'a': {}, 'same': {'x': 1}}, 3), [])
+            write([Decimal('2.300')], 4)
+            changes = write([Decimal('2.30')], 5)
+            self.assertEqual(changes, [{'path': prefix, 'value': [Decimal('2.30')]}])
+            self.assertEqual(changes[0]['value'][0].as_tuple().exponent, -2)
+            self.assertEqual(write([Decimal('2.30')], 6), [])
 
     def test_restart_rechecks_captured_runtime_before_accepting_work(self):
         with self.open(profile='world') as resident:

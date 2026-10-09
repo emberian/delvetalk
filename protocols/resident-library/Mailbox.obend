@@ -1,0 +1,116 @@
+edition ObjectiveBend 1
+import ./Consent.obend as Consent
+record Note:
+  topic: String
+  units: Nat
+  event: String
+  source: String
+  author: String
+sum Notes:
+  nil: {}
+  cons: {head: Note, tail: Notes}
+record State:
+  links: Consent.Links
+  notes: Notes
+record Context:
+  object: String
+  principal: String
+  inputOrigin: {kind: String, object: String, command: String, immediatelyPrevious: Bool}
+record Input:
+  topic: String
+  units: Nat
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+record Effects:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+  emissions: Consent.Slots
+record Behavior:
+  capacity: Nat
+  maxUnits: Nat
+  accepts: String -> Bool
+  store: State -> Consent.Payload -> Consent.Event -> Decision
+def count(notes: Notes) -> Nat:
+  match notes:
+    case nil(_): 0
+    case cons(c): 1 + count(c.tail)
+def append(notes: Notes, note: Note) -> Notes:
+  match notes:
+    case nil(_): Notes.cons({head: note, tail: Notes.nil()})
+    case cons(c): Notes.cons({head: c.head, tail: append(c.tail, note)})
+def initial() -> State:
+  {links: Consent.initial(), notes: Notes.nil()}
+def decision(ok: Bool, state: State, reason: String, result: String) -> Decision:
+  {accepted: ok, reason: if ok then "" else reason, state: state, result: result}
+def store(behavior: Behavior, state: State, input: Consent.Payload, event: Consent.Event) -> Decision:
+  if Consent.obsolete(state.links, input, event) then decision(true, state, "", "declined-consent") else if Consent.allows(state.links, input, event) == false then decision(false, state, "Consent is not yet granted.", "pending-consent") else if behavior.accepts(input.topic) == false || input.units == 0 || input.units > behavior.maxUnits then decision(true, state, "", "declined-notice") else decision(count(state.notes) < behavior.capacity, {links: state.links, notes: append(state.notes, {topic: input.topic, units: input.units, event: event.id, source: event.source, author: event.originatingPrincipal})}, "Mailbox is full; acknowledge a notice and retry.", "stored")
+extension Inbox(self: Behavior, super: {}) -> Behavior:
+  {capacity: 4, maxUnits: 8, accepts: fn(topic: String) -> Bool: false, store: fn(state: State, input: Consent.Payload, event: Consent.Event) -> Decision: store(self, state, input, event)}
+def configure(state: State, input: Consent.Configure) -> Decision:
+  decision(Consent.valid(state.links, input), {links: Consent.update(state.links, input), notes: state.notes}, "Use a fresh global consent epoch, a unique incoming source and a slot from one to four.", "configured")
+def announce(behavior: Behavior, state: State, input: Input) -> Effects:
+  let ok: Bool = behavior.accepts(input.topic) && input.units > 0 && input.units <= behavior.maxUnits && Consent.sending(state.links)
+  {accepted: ok, reason: if ok then "" else "Choose an allowed topic, bounded units and a subscription.", state: state, result: "announced", emissions: Consent.emit(state.links, input.topic, input.units)}
+def acknowledge(state: State) -> Decision:
+  match state.notes:
+    case nil(_): decision(false, state, "Mailbox is empty.", "empty")
+    case cons(c): decision(true, {links: state.links, notes: c.tail}, "", c.head.topic)
+def oldest(notes: Notes) -> String:
+  match notes:
+    case nil(_): "No notices are waiting."
+    case cons(c): c.head.topic
+record Text:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Number:
+  type: String
+  minimum: Nat
+  maximum: Nat
+record ConfigForm:
+  label: String
+  fields: {side: {type: String, options: {a: String, b: String}}, slot: Number, enabled: {type: String}, object: Text, program: Text, generation: Number}
+record PostForm:
+  label: String
+  fields: {topic: Text, units: Number}
+record ReceiveForm:
+  label: String
+  fields: {topic: Text, units: Number, generation: Number}
+record Description:
+  name: String
+  initial: State
+  methods: {configure: ConfigForm, announce: PostForm, receive: ReceiveForm, acknowledge: {label: String, fields: {}}}
+  panels: {oldest: String}
+def text(max: Nat) -> Text:
+  {type: "string", minLength: 1, maxLength: max}
+def number(max: Nat) -> Number:
+  {type: "nat", minimum: 1, maximum: max}
+def describe(name: String, behavior: Behavior) -> Description:
+  {name: name, initial: initial(), methods: {configure: {label: "Consent or subscribe", fields: {side: {type: "enum", options: {a: "listen", b: "send"}}, slot: number(4), enabled: {type: "bool"}, object: text(128), program: text(64), generation: number(65535)}}, announce: {label: "Announce to subscribers", fields: {topic: text(16), units: number(behavior.maxUnits)}}, receive: {label: "Receive an admitted notice", fields: {topic: text(16), units: number(behavior.maxUnits), generation: number(65535)}}, acknowledge: {label: "Acknowledge oldest notice", fields: {}}}, panels: {oldest: "Oldest notice"}}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record View:
+  title: String
+  prose: String
+  actions: {configure: Action, announce: Action, acknowledge: Action}
+  children: Children
+def action(command: String, visible: Bool, text: String) -> Action:
+  {visible: visible, text: text, command: command, input: {}}
+def view(state: State, panel: String, title: String, prose: String) -> View:
+  {title: title, prose: if panel == "oldest" then oldest(state.notes) else prose, actions: {configure: action("configure", true, "Consent or subscribe"), announce: action("announce", Consent.sending(state.links), "Announce to subscribers"), acknowledge: action("acknowledge", count(state.notes) > 0, "Acknowledge oldest notice")}, children: Children.nil()}

@@ -21,6 +21,7 @@ import bootstrap
 import affordances
 import interpret
 import submission
+import world
 from delve import save
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -132,7 +133,7 @@ class Portal:
         self.directory = Path(directory).resolve()
         self.database = self.directory / 'world.json'
         self.metadata = loads((self.directory / 'manifest.json').read_bytes())
-        if not self.database.is_file():
+        if not world.exists(self.database):
             raise ValueError('World database is missing')
         self.runtime = self.metadata.get('runtime')
         if not isinstance(self.runtime, dict):
@@ -171,12 +172,9 @@ class Portal:
         return Authoring(self)
 
     def snapshot(self):
-        if self.public:
-            # world.exchange atomically replaces this file. Inspection needs
-            # one complete snapshot, not a newly created/writable lock file.
-            return loads(self.database.read_bytes())
-        with bounded_lock(str(self.database) + '.lock'):
-            return loads(self.database.read_bytes())
+        # The selected backend owns synchronization. A resident daemon may hold
+        # the JSON-world lock itself; never acquire it around an IPC read.
+        return world.snapshot(self.database)
 
     def world(self):
         snapshot = self.snapshot()
@@ -281,7 +279,7 @@ class Portal:
         return bootstrap.room.inspect_object(root, object_id, artifact, panel=panel,
                                              expected_runtime=self.runtime)
 
-    def object(self, object_id=None, panel='main'):
+    def object(self, object_id=None, panel='main', *, navigation=False):
         if not isinstance(panel, str) or len(panel) > 128:
             raise ValueError('Invalid view panel')
         object_id = object_id or bootstrap.default_object(self.metadata)
@@ -289,6 +287,8 @@ class Portal:
         if object_id not in snapshot['objects']:
             raise ValueError('Unknown object')
         root = snapshot['objects'][object_id]
+        if navigation:
+            bootstrap.projection.validate_panel(root, panel)
         panel_warning = None
         try:
             panels = self.panels(root)
@@ -297,6 +297,9 @@ class Portal:
         if panel not in {item['id'] for item in panels}:
             raise ValueError('Unknown declared panel; read the object overview')
         view = self._view(root, object_id, panel)
+        if navigation and (('viewProgram' in root['protocol'] and view['mode'] != 'projection')
+                           or ('roomArtifact' in root['protocol'] and view['mode'] != 'room')):
+            raise ValueError('The child’s authored view is unavailable')
         if view['mode'] != 'projection':
             panels = [{'id': 'main', 'label': 'Overview'}]
             if panel != 'main':
@@ -304,14 +307,34 @@ class Portal:
         try:
             card = affordances.card(view)
         except affordances.AffordanceError as error:
+            if navigation:
+                raise ValueError('The child’s action metadata is unavailable: ' + str(error)) from error
             card = {'format': affordances.FORMAT, 'object': object_id,
                     'version': view['root']['version'], 'mode': view['mode'],
                     'title': object_id, 'prose': 'Action metadata is unsupported. Exact source, state and law remain available in Look inside.',
                     'actions': [], 'unsupported': str(error)}
+        bootstrap.projection.children(view)  # Validate before retaining any observation.
+        import composite_offers
+        import source_offers
+        captured_offers = source_offers.capture_available(view, snapshot['objects'])
+        offers = {}
+        for index, key in enumerate(sorted(set(captured_offers['offers']) | set(captured_offers['unavailable'])), 1):
+            action_id = 'o' + str(index)
+            if key in captured_offers['offers']:
+                offer = captured_offers['offers'][key]
+                action = composite_offers.action(offer)
+                action.update(id=action_id, offer=key)
+                offers[action_id] = offer
+            else:
+                unavailable = captured_offers['unavailable'][key]
+                action = {'id': action_id, 'offer': key, 'label': unavailable['label'],
+                          'command': unavailable['command'], 'available': False, 'inspectOnly': True,
+                          'fields': [], 'reason': unavailable['reason']}
+            card['actions'].append(action)
         card.update(panel=panel, panels=panels)
         if panel_warning:
             card['panelWarning'] = panel_warning
-        identity = self._store('cards', {'view': view, 'card': card,
+        identity = self._store('cards', {'view': view, 'card': card, 'offers': offers,
             'historyLength': len(snapshot['receipts']), 'runtime': self.runtime})
         return self.card(identity)
 
@@ -333,6 +356,7 @@ class Portal:
     def card(self, identity):
         saved = self._read('cards', identity)
         card = copy.deepcopy(saved['card'])
+        card['children'] = bootstrap.projection.children(saved['view'])
         card.update(self.object_ref(card['object']))
         card.update(card=identity, links={'self': '/api/card?card=' + identity,
             'details': '/api/detail?card=' + identity,
@@ -343,6 +367,18 @@ class Portal:
         if self.public:
             card.update(ephemeral=True, expiresInSeconds=self.preview.lifetime('cards', identity))
         return card
+
+    def child(self, identity, key):
+        parent = self._read('cards', identity)
+        descriptor = bootstrap.projection.child(parent['view'], key)
+        navigation = {'card': identity, 'object': parent['view']['object'],
+                      'key': descriptor['key'], 'label': descriptor['label']}
+        try:
+            captured = self.object(descriptor['object'], descriptor['panel'], navigation=True)
+        except (ValueError, RuntimeError, OSError) as error:
+            return {'status': 'unavailable', 'navigation': navigation,
+                    'message': str(error)}
+        return {'status': 'opened', 'navigation': navigation, 'card': captured}
 
     def detail(self, identity):
         saved = self._read('cards', identity)
@@ -364,18 +400,19 @@ class Portal:
         exact(payload, ('card', 'action'), ('fields',))
         saved = self._read('cards', payload['card'])
         principal = self.principal or 'portal-preview'
-        request = affordances.request(saved['view'], payload['action'], principal,
+        request = self.captured_request(saved, payload['action'], principal,
                     'portal:' + secrets.token_hex(16), payload.get('fields', {}))
         if len(canonical(request)) > MAX_BODY:
             raise ValueError('Exact request exceeds the host envelope; a smaller program/view is required')
-        wire = {key: value for key, value in request.items() if key not in ('principal', 'intent')}
+        wire = self.request_wire(request)
+        action = next(action for action in saved['card']['actions'] if action['id'] == payload['action'])
         draft = {'panel': saved['card'].get('panel', 'main'), 'card': payload['card'], 'action': payload['action'], 'fields': payload.get('fields', {}),
+                 'object': saved['card']['object'], 'version': saved['card']['version'], 'command': action['command'],
                  'request': request, 'runtime': saved['runtime'], 'localPrincipal': self.principal,
                  'wire': wire, 'reply': None}
         if self.public:
             # The existing constructor's preview identity is only a framing
             # sentinel. Public custody retains no principal or submission intent.
-            action = next(action for action in saved['card']['actions'] if action['id'] == payload['action'])
             draft['request'] = wire
             del draft['localPrincipal']
             draft['presentation'] = {'summary': action['label'],
@@ -383,20 +420,43 @@ class Portal:
         identity = self._store('drafts', draft)
         return self.draft(identity)
 
+    @staticmethod
+    def captured_request(saved, action, principal, intent, fields):
+        """Frame only a retained offer; never refresh its roots during preparation."""
+        if action in saved.get('offers', {}):
+            import composite_offers
+            return composite_offers.request(saved['offers'][action], principal, intent, fields)
+        return affordances.request(saved['view'], action, principal, intent, fields)
+
+    @staticmethod
+    def request_wire(request):
+        wire = copy.deepcopy({key: value for key, value in request.items()
+                              if key not in ('principal', 'intent')})
+        if wire.get('op') == 'transaction':
+            wire['reads'] = {name: {'expected': root} for name, root in wire['reads'].items()}
+        return wire
+
     def draft(self, identity):
         saved = self._read('drafts', identity)
         action = ({'label': saved['presentation']['summary'], 'token': saved['presentation']['token']}
                   if self.public else next(a for a in self.card(saved['card'])['actions'] if a['id'] == saved['action']))
         suffix = (' ' + canonical(saved['fields']).decode()) if saved['fields'] else ''
-        result = {'draft': identity, 'panel': saved.get('panel', 'main'), 'fields': saved['fields'], 'summary': action['label'], 'command': saved['request']['command'],
-                'object': saved['request']['object'], 'version': saved['request']['expected']['version'],
+        request = saved['request']
+        transaction = request.get('op') == 'transaction'
+        result = {'draft': identity, 'panel': saved.get('panel', 'main'), 'fields': saved['fields'], 'summary': action['label'], 'command': saved.get('command', request.get('command')),
+                'object': saved.get('object', request.get('object')), 'version': saved.get('version', request.get('expected', {}).get('version')),
                 'canExecute': self.interactive and saved['localPrincipal'] == self.principal,
                 'token': action['token'] + suffix, 'wire': saved['wire'],
                 'wireJson': canonical(saved['wire']).decode(),
                 'links': {'self': '/api/draft?draft=' + identity, 'execute': '/api/execute'},
                 'outcome': saved['reply']['kind'] if saved.get('reply') else None,
-                'absence': saved['request'].get('absent', []),
+                'absence': ([name for name, descriptor in saved['wire']['reads'].items() if descriptor['expected'] is None]
+                            if transaction else request.get('absent', [])),
                 'scope': 'Preparing does not submit. Execute or retry retains this draft’s original intent.'}
+        if transaction:
+            result['reads'] = [{'object': name, 'version': descriptor['expected']['version']}
+                              for name, descriptor in saved['wire']['reads'].items()
+                              if descriptor['expected'] is not None]
         if self.public:
             result.update(ephemeral=True, expiresInSeconds=self.preview.lifetime('drafts', identity),
                           links={'self': '/api/draft?draft=' + identity},
@@ -404,10 +464,7 @@ class Portal:
         return result
 
     def _retained(self, request):
-        for entry in self.snapshot()['receipts']:
-            if canonical(entry['request']) == canonical(request):
-                return entry['receipt']
-        return None
+        return world.retained_reply(self.database, request)
 
     def _pins(self, saved):
         if canonical(self.current_runtime()) != canonical(saved['runtime']):
@@ -433,7 +490,7 @@ class Portal:
             return {'kind': kind, 'draft': identity, 'reply': reply,
                     'children': self.child_links(reply),
                     'summary': 'Action committed.' if kind == 'committed' else str(reply.get('data', 'Action refused.')),
-                    'links': {'refresh': '/api/object?object=' + quote(saved['request']['object'], safe=''),
+                    'links': {'refresh': '/api/object?object=' + quote(saved.get('object', saved['request'].get('object')), safe=''),
                               'retry': '/api/execute'}}
 
     def repository_prepare(self, payload):
@@ -504,7 +561,7 @@ def make_server(portal, port=0):
                 raise PermissionError('Cross-site requests are refused')
             if portal.public:
                 allowed = {'GET': {'/', '/static/app.js', '/static/style.css', '/api/world',
-                                   '/api/object', '/api/card', '/api/detail', '/api/draft'},
+                                   '/api/object', '/api/card', '/api/child', '/api/detail', '/api/draft'},
                            'HEAD': {'/', '/static/app.js', '/static/style.css', '/api/world'},
                            'POST': {'/api/prepare', '/api/interpret'}}
                 if url.path not in allowed.get(method, set()):
@@ -524,6 +581,8 @@ def make_server(portal, port=0):
                     exact(q, (), ('object', 'panel')); result = portal.object(q.get('object'), q.get('panel', 'main'))
                 elif url.path == '/api/card':
                     exact(q, ('card',)); result = portal.card(q['card'])
+                elif url.path == '/api/child':
+                    exact(q, ('card', 'key')); result = portal.child(q['card'], q['key'])
                 elif url.path == '/api/detail':
                     exact(q, ('card',)); result = portal.detail(q['card'])
                 elif url.path == '/api/authoring/source':

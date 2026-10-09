@@ -1,0 +1,172 @@
+edition ObjectiveBend 1
+record Slot:
+  status: String
+  owner: String
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  to: String
+  recipientProgram: String
+  topic: String
+record State:
+  now: Nat
+  cursor: Nat
+  a: Slot
+  b: Slot
+  c: Slot
+  d: Slot
+  e: Slot
+  f: Slot
+  g: Slot
+  h: Slot
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Request:
+  slot: Nat
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  to: String
+  recipientProgram: String
+  topic: String
+record Cancel:
+  slot: Nat
+  generation: Nat
+record Tick:
+  now: Nat
+record Result:
+  status: String
+  slot: Nat
+  generation: Nat
+  now: Nat
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+record Payload:
+  owner: String
+  slot: Nat
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  tick: Nat
+  topic: String
+record Emission:
+  enabled: Bool
+  to: String
+  command: String
+  recipientProgram: String
+  payload: Payload
+record Slots:
+  a: Emission
+  b: Emission
+  c: Emission
+  d: Emission
+record Effects:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+  emissions: Slots
+def selected(state: State, index: Nat) -> Slot:
+  if index == 0n then state.a else if index == 1n then state.b else if index == 2n then state.c else if index == 3n then state.d else if index == 4n then state.e else if index == 5n then state.f else if index == 6n then state.g else state.h
+def stored(state: State, index: Nat, value: Slot) -> State:
+  {now: state.now, cursor: state.cursor, a: if index == 0n then value else state.a, b: if index == 1n then value else state.b, c: if index == 2n then value else state.c, d: if index == 3n then value else state.d, e: if index == 4n then value else state.e, f: if index == 5n then value else state.f, g: if index == 6n then value else state.g, h: if index == 7n then value else state.h}
+def status(slot: Slot, phase: String) -> Slot:
+  {status: phase, owner: slot.owner, generation: slot.generation, due: slot.due, deadline: slot.deadline, to: slot.to, recipientProgram: slot.recipientProgram, topic: slot.topic}
+def request(state: State, input: Request, context: Context) -> Decision:
+  let prior = selected(state, input.slot)
+  let ok = input.slot < 8n && prior.status != "queued" && input.generation == prior.generation + 1n && input.due >= state.now && input.deadline >= input.due && input.to != "" && input.topic != ""
+  let appointment: Slot = {status: "queued", owner: context.principal, generation: input.generation, due: input.due, deadline: input.deadline, to: input.to, recipientProgram: input.recipientProgram, topic: input.topic}
+  {accepted: ok, reason: if ok then "" else "Choose a free slot, its next generation, and an ordered future deadline.", state: stored(state, input.slot, appointment), result: {status: "queued", slot: input.slot, generation: input.generation, now: state.now}}
+def cancel(state: State, input: Cancel, context: Context) -> Decision:
+  let prior = selected(state, input.slot)
+  let ok = input.slot < 8n && prior.status == "queued" && prior.owner == context.principal && prior.generation == input.generation
+  {accepted: ok, reason: if ok then "" else "Only the owner can cancel this queued generation. An admitted send cannot be recalled.", state: stored(state, input.slot, {status: "cancelled", owner: prior.owner, generation: prior.generation, due: prior.due, deadline: prior.deadline, to: "unused", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", topic: ""}), result: {status: "cancelled", slot: input.slot, generation: input.generation, now: state.now}}
+def due(slot: Slot, now: Nat) -> Bool:
+  slot.status == "queued" && slot.due <= now
+def completed(slot: Slot, now: Nat) -> Slot:
+  if due(slot, now) then status(slot, if now <= slot.deadline then "sent" else "expired") else slot
+def emission(slot: Slot, index: Nat, now: Nat) -> Emission:
+  if due(slot, now) && now <= slot.deadline then {enabled: true, to: slot.to, command: "wake", recipientProgram: slot.recipientProgram, payload: {owner: slot.owner, slot: index, generation: slot.generation, due: slot.due, deadline: slot.deadline, tick: now, topic: slot.topic}} else {enabled: false, to: "unused", command: "wake", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", payload: {owner: "", slot: 0n, generation: 0n, due: 0n, deadline: 0n, tick: 0n, topic: ""}}
+def tick(state: State, input: Tick, context: Context) -> Effects:
+  let i = state.cursor
+  let cursorOk = i == 0n || i == 4n
+  let ok = input.now >= state.now && cursorOk
+  let a = selected(state, i)
+  let b = selected(state, i + 1n)
+  let c = selected(state, i + 2n)
+  let d = selected(state, i + 3n)
+  let updated = stored(stored(stored(stored(state, i, completed(a, input.now)), i + 1n, completed(b, input.now)), i + 2n, completed(c, input.now)), i + 3n, completed(d, input.now))
+  let next: State = {now: input.now, cursor: if i == 0n then 4n else 0n, a: updated.a, b: updated.b, c: updated.c, d: updated.d, e: updated.e, f: updated.f, g: updated.g, h: updated.h}
+  {accepted: ok, reason: if cursorOk == false then "Clock migration requires cursor 0 or 4." else if ok then "" else "Logical time cannot run backwards.", state: next, result: {status: "swept", slot: i, generation: 0n, now: input.now}, emissions: {a: emission(a, i, input.now), b: emission(b, i + 1n, input.now), c: emission(c, i + 2n, input.now), d: emission(d, i + 3n, input.now)}}
+record StringField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record NatField:
+  type: String
+  minimum: Nat
+  maximum: Nat
+record RequestForm:
+  label: String
+  fields: {slot: NatField, generation: NatField, due: NatField, deadline: NatField, to: StringField, recipientProgram: StringField, topic: StringField}
+record CancelForm:
+  label: String
+  fields: {slot: NatField, generation: NatField}
+record TickForm:
+  label: String
+  fields: {now: NatField}
+record Description:
+  name: String
+  initial: State
+  methods: {request: RequestForm, cancel: CancelForm, tick: TickForm}
+  panels: {a: String, b: String, c: String, d: String, e: String, f: String, g: String, h: String}
+def naturalField() -> NatField:
+  {type: "nat", minimum: 0n, maximum: 9007199254740991n}
+def textField() -> StringField:
+  {type: "string", minLength: 1n, maxLength: 256n}
+def vacant() -> Slot:
+  {status: "empty", owner: "", generation: 0n, due: 0n, deadline: 0n, to: "unused", recipientProgram: "0000000000000000000000000000000000000000000000000000000000000000", topic: ""}
+def describe() -> Description:
+  {name: "Appointments", initial: {now: 0n, cursor: 0n, a: vacant(), b: vacant(), c: vacant(), d: vacant(), e: vacant(), f: vacant(), g: vacant(), h: vacant()}, methods: {request: {label: "Schedule this slot", fields: {slot: {type: "nat", minimum: 0n, maximum: 7n}, generation: naturalField(), due: naturalField(), deadline: naturalField(), to: textField(), recipientProgram: {type: "string", minLength: 64n, maxLength: 64n}, topic: textField()}}, cancel: {label: "Cancel my queued appointment", fields: {slot: {type: "nat", minimum: 0n, maximum: 7n}, generation: naturalField()}}, tick: {label: "Driver: advance explicit logical time", fields: {now: naturalField()}}}, panels: {a: "Slot 0", b: "Slot 1", c: "Slot 2", d: "Slot 3", e: "Slot 4", f: "Slot 5", g: "Slot 6", h: "Slot 7"}}
+record BookAction:
+  visible: Bool
+  text: String
+  command: String
+  input: Cancel
+record CancelAction:
+  visible: Bool
+  text: String
+  command: String
+  input: Cancel
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {book: BookAction, cancel: CancelAction}
+  children: Children
+def panelSlot(panel: String) -> Nat:
+  if panel == "b" then 1n else if panel == "c" then 2n else if panel == "d" then 3n else if panel == "e" then 4n else if panel == "f" then 5n else if panel == "g" then 6n else if panel == "h" then 7n else 0n
+def explanation(slot: Slot) -> String:
+  if slot.status == "queued" then "Queued for its logical due time. The exact generation, due time and deadline are available in Look inside. A refused tick keeps this appointment queued; its retained receipt explains the failure. Inspect the recipient before rebooking a changed program." else if slot.status == "sent" then "Sent. Delivery may still be pending; this appointment cannot be recalled. Its recorded deadline bounded sending, not later delivery." else if slot.status == "cancelled" then "Cancelled before sending. This slot can be booked with its next generation." else if slot.status == "expired" then "The send deadline passed before this slot received an eligible tick. Nothing was sent." else "Choose a due time, deadline, recipient, exact recipient program and activity. The form starts with this slot's next generation. Logical time advances only when the named driver submits a tick."
+def view(state: State, panel: String) -> View:
+  let index = panelSlot(panel)
+  let slot = selected(state, index)
+  let active = slot.status == "queued"
+  {title: slot.status, prose: explanation(slot), actions: {book: {visible: active == false, text: "Schedule this slot", command: "request", input: {slot: index, generation: slot.generation + 1n}}, cancel: {visible: active, text: "Cancel my queued generation", command: "cancel", input: {slot: index, generation: slot.generation}}}, children: if slot.to == "unused" then Children.nil() else Children.cons({head: {key: "recipient", label: if slot.topic == "" then "Recipient" else slot.topic, object: slot.to, panel: "main"}, tail: Children.nil()})}

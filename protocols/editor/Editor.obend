@@ -1,0 +1,182 @@
+edition ObjectiveBend 1
+record Entry:
+  name:String
+  candidate:String
+  adopted:Bool
+sum Entries:
+  nil:{}
+  cons:{head:Entry,tail:Entries}
+record State:
+  target:String
+  factory:String
+  next:Nat
+  g:Nat
+  name:String
+  candidate:String
+  baseline:Nat
+  phase:String
+  code:String
+  entries:Entries
+record Origin:
+  kind:String
+  object:String
+  command:String
+  immediatelyPrevious:Bool
+record Context:
+  object:String
+  principal:String
+  inputOrigin:Origin
+record Draft:
+  name:String
+record Witness:
+  object:String
+  version:Nat
+record Plan:
+  factory:String
+  name:String
+  editor:String
+  generation:Nat
+  target:String
+  baselineVersion:Nat
+record Report:
+  candidate:String
+  editor:String
+  generation:Nat
+  target:String
+  baselineVersion:Nat
+  status:String
+  program:String
+record Reprogrammed:
+  object:String
+  version:Nat
+  program:String
+record Approval:
+  candidate:String
+  editor:String
+  generation:Nat
+  target:String
+record Decision:
+  accepted:Bool
+  reason:String
+  state:State
+  result:String
+record PlanDecision:
+  accepted:Bool
+  reason:String
+  state:State
+  result:Plan
+record ApprovalDecision:
+  accepted:Bool
+  reason:String
+  state:State
+  result:Approval
+def append(xs:Entries,entry:Entry)->Entries:
+  match xs:
+    case nil(_):Entries.cons({head:entry,tail:Entries.nil()})
+    case cons(c):Entries.cons({head:c.head,tail:append(c.tail,entry)})
+def installed(xs:Entries,candidate:String)->Entries:
+  match xs:
+    case nil(_):Entries.nil()
+    case cons(c):Entries.cons({head:{name:c.head.name,candidate:c.head.candidate,adopted:c.head.adopted||c.head.candidate==candidate},tail:installed(c.tail,candidate)})
+def refused(state:State,reason:String)->Decision:
+  {accepted:false,reason:reason,state:state,result:""}
+def observed(state:State,input:Witness,context:Context)->Bool:
+  context.inputOrigin.kind=="observe"&&context.inputOrigin.object==state.target&&context.inputOrigin.command==""&&context.inputOrigin.immediatelyPrevious&&input.object==state.target
+def reported(state:State,input:Report,context:Context)->Bool:
+  context.inputOrigin.kind=="invoke"&&context.inputOrigin.command=="report"&&context.inputOrigin.object==input.candidate&&context.inputOrigin.immediatelyPrevious&&input.editor==context.object&&input.generation==state.g&&input.target==state.target&&input.baselineVersion==state.baseline
+def drafted(state:State,input:Draft)->State:
+  extend(state,{g:state.next,next:state.next+1n,name:input.name,candidate:"",baseline:0n,phase:"draft",code:""})
+def planned(state:State,input:Witness)->State:
+  extend(state,{baseline:input.version,phase:"planned"})
+def approving(state:State)->State:
+  extend(state,{phase:"adopting"})
+def finished(state:State)->State:
+  extend(state,{phase:"adopted",entries:installed(state.entries,state.candidate)})
+def activated(state:State,input:Report)->State:
+  extend(state,{candidate:input.candidate,phase:"pending",entries:append(state.entries,{name:state.name,candidate:input.candidate,adopted:false})})
+def reviewState(state:State,input:Report)->State:
+  extend(state,{phase:input.status,code:input.program})
+def draft(state:State,input:Draft,context:Context)->Decision:
+  if state.target==""||input.name==""||state.next>32n then refused(state,"Name a new generation (maximum 32).") else {accepted:true,reason:"",state:drafted(state,input),result:"A fresh generation awaits its exact target baseline."}
+def plan(state:State,input:Witness,context:Context)->PlanDecision:
+  let accepted:Bool = state.phase=="draft"&&observed(state,input,context)
+  {accepted:accepted,reason:if accepted then "" else "Observe the target first.",state:planned(state,input),result:{factory:state.factory,name:state.name,editor:context.object,generation:state.g,target:state.target,baselineVersion:input.version}}
+def review(state:State,input:Report,context:Context)->Decision:
+  if reported(state,input,context)==false||state.phase=="adopted" then refused(state,"Wrong generation report.") else if state.phase=="planned" then if input.status!="pending" then refused(state,"A new candidate must be pending.") else {accepted:true,reason:"",state:activated(state,input),result:"Generation retained."} else if input.candidate!=state.candidate||(input.status!="pending"&&input.status!="ready"&&input.status!="failed") then refused(state,"Not the current candidate.") else {accepted:true,reason:"",state:reviewState(state,input),result:input.status}
+def approve(state:State,input:Witness,context:Context)->ApprovalDecision:
+  let accepted:Bool = state.phase=="ready"&&observed(state,input,context)&&input.version==state.baseline
+  {accepted:accepted,reason:if accepted then "" else "Target drifted or not ready. Rebase.",state:approving(state),result:{candidate:state.candidate,editor:context.object,generation:state.g,target:state.target}}
+def finish(state:State,input:Reprogrammed,context:Context)->Decision:
+  if state.phase!="adopting"||context.inputOrigin.kind!="reprogram"||context.inputOrigin.object!=state.target||context.inputOrigin.command!=""||context.inputOrigin.immediatelyPrevious==false||input.object!=state.target||input.version!=state.baseline+1n||input.program!=state.code then refused(state,"Expected the actual approved reprogram.") else {accepted:true,reason:"",state:finished(state),result:"Installed; earlier experiments remain."}
+record Child:
+  key:String
+  label:String
+  object:String
+  panel:String
+sum Children:
+  nil:{}
+  cons:{head:Child,tail:Children}
+def children(xs:Entries)->Children:
+  match xs:
+    case nil(_):Children.nil()
+    case cons(c):Children.cons({head:{key:c.head.candidate,label:if c.head.adopted then "Installed variation" else c.head.name,object:c.head.candidate,panel:"main"},tail:children(c.tail)})
+record StringField:
+  type:String
+  minLength:Nat
+  maxLength:Nat
+record NatField:
+  type:String
+  minimum:Nat
+  maximum:Nat
+record DraftMethod:
+  label:String
+  fields:{name:StringField}
+record WitnessMethod:
+  label:String
+  fields:{object:StringField,version:NatField}
+record ReportMethod:
+  label:String
+  fields:{candidate:StringField,editor:StringField,generation:NatField,target:StringField,baselineVersion:NatField,status:StringField,program:StringField}
+record FinishMethod:
+  label:String
+  fields:{object:StringField,version:NatField,program:StringField}
+record Description:
+  name:String
+  initial:State
+  methods:{draft:DraftMethod,plan:WitnessMethod,review:ReportMethod,approve:WitnessMethod,finish:FinishMethod}
+  panels:{phase:String,candidate:String,target:String}
+record Action:
+  visible:Bool
+  text:String
+  command:String
+  input:{}
+record BaseView:
+  title:String
+  prose:String
+  actions:{draft:Action}
+  children:Children
+def textField()->StringField:
+  {type:"string",minLength:1n,maxLength:256n}
+def nameField()->StringField:
+  {type:"string",minLength:1n,maxLength:64n}
+def numberField()->NatField:
+  {type:"nat",minimum:0n,maximum:9007199254740991n}
+def witnessMethod(label:String)->WitnessMethod:
+  {label:label,fields:{object:textField(),version:numberField()}}
+def reportMethod(label:String)->ReportMethod:
+  {label:label,fields:{candidate:textField(),editor:textField(),generation:numberField(),target:textField(),baselineVersion:numberField(),status:textField(),program:textField()}}
+def describe()->Description:
+  {name:"Workshop",initial:{target:"EDITOR_TARGET",factory:"EDITOR_FACTORY",next:1n,g:0n,name:"",candidate:"",baseline:0n,phase:"idle",code:"",entries:Entries.nil()},methods:{draft:{label:"New variation",fields:{name:nameField()}},plan:witnessMethod("Capture baseline"),review:reportMethod("Review candidate"),approve:witnessMethod("Approve baseline"),finish:{label:"Record installation",fields:{object:textField(),version:numberField(),program:textField()}}},panels:{phase:"Current generation",candidate:"Current candidate",target:"Edited object"}}
+def baseView(state:State,panel:String)->BaseView:
+  {title:"Workshop",prose:if panel=="phase" then state.phase else if panel=="candidate" then state.candidate else if panel=="target" then state.target else if state.phase=="ready" then "Checked. Compare with the captured target." else if state.phase=="failed" then "Failed. Retained for inspection. Try another variation." else if state.phase=="adopted" then "Installed. Make another variation." else "Make a variation,try examples,compare,then deliberately adopt.",actions:{draft:{visible:state.target!="",text:"New variation",command:"draft",input:{}}},children:children(state.entries)}
+
+# Authored captured workflow offers
+record OffersView:
+  title:String
+  prose:String
+  actions:{}
+  children:Children
+  offers:{make:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},target:{object:String,child:String},factory:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{name:String},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c2:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c3:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{name:{type:String,label:String,minLength:Nat,maxLength:Nat}},bindings:{b0:{field:String,call:Nat,input:String}},absentChildren:{a0:{factory:String,field:String}},captures:{}},submit:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},target:{object:String,child:String},candidate:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{proposal:{syntax:String,source:String,scenarios:String},migration:{},target:String,editor:String,generation:Nat,baselineVersion:Nat},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c2:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{syntax:{type:String,label:String,options:{ordinary:String,typed:String}},source:{type:String,label:String,minLength:Nat,maxLength:Nat},examples:{type:String,label:String,minLength:Nat,maxLength:Nat}},bindings:{b0:{field:String,call:Nat,input:String},b1:{field:String,call:Nat,input:String},b2:{field:String,call:Nat,input:String}},absentChildren:{},captures:{s0:{read:String,call:Nat,input:String,rootField:String},s1:{read:String,call:Nat,input:String,rootField:String}}},review:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},candidate:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{},bindings:{},absentChildren:{},captures:{}},adopt:{visible:Bool,title:String,label:String,command:String,reads:{editor:{object:String,child:String},candidate:{object:String,child:String},target:{object:String,child:String}},calls:{c0:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c1:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c2:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c3:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat},c4:{op:String,object:String,command:String,input:{},fromResult:Bool,inputFrom:Nat}},fields:{},bindings:{},absentChildren:{},captures:{}}}
+def view(state:State,panel:String)->OffersView:
+  let prior:BaseView = baseView(state,panel)
+  {title:prior.title,prose:prior.prose,actions:{},children:prior.children,offers:{make:{visible:state.next<=32n,title:"Workshop",label:"Make a new variation or rebase",command:"make",reads:{editor:{object:"$self",child:""},target:{object:state.target,child:""},factory:{object:state.factory,child:""}},calls:{c0:{op:"invoke",object:"editor",command:"draft",input:{name:""},fromResult:false,inputFrom:0n},c1:{op:"observe",object:"target",command:"",input:{},fromResult:false,inputFrom:0n},c2:{op:"invoke",object:"editor",command:"plan",input:{},fromResult:true,inputFrom:1n},c3:{op:"invoke",object:"factory",command:"make",input:{},fromResult:true,inputFrom:2n}},fields:{name:{type:"string",label:"Variation name",minLength:1n,maxLength:64n}},bindings:{b0:{field:"name",call:0n,input:"name"}},absentChildren:{a0:{factory:"factory",field:"name"}},captures:{}},submit:{visible:state.phase=="planned",title:"Workshop",label:"Submit source and examples",command:"submit",reads:{editor:{object:"$self",child:""},target:{object:state.target,child:""},candidate:{object:if state.candidate=="" then state.factory else state.candidate,child:if state.candidate=="" then state.name else ""}},calls:{c0:{op:"invoke",object:"candidate",command:"submit",input:{proposal:{syntax:"",source:"",scenarios:""},migration:{},target:state.target,editor:"",generation:state.g,baselineVersion:state.baseline},fromResult:false,inputFrom:0n},c1:{op:"invoke",object:"candidate",command:"report",input:{},fromResult:false,inputFrom:0n},c2:{op:"invoke",object:"editor",command:"review",input:{},fromResult:true,inputFrom:1n}},fields:{syntax:{type:"enum",label:"Source language",options:{ordinary:"objective-bend-spell@2",typed:"objective-bend-spell@3"}},source:{type:"string",label:"Bend source",minLength:1n,maxLength:32768n},examples:{type:"string",label:"Examples",minLength:1n,maxLength:16384n}},bindings:{b0:{field:"syntax",call:0n,input:"proposal.syntax"},b1:{field:"source",call:0n,input:"proposal.source"},b2:{field:"examples",call:0n,input:"proposal.scenarios"}},absentChildren:{},captures:{s0:{read:"editor",call:0n,input:"editor",rootField:"object"},s1:{read:"target",call:0n,input:"migration",rootField:"state"}}},review:{visible:state.phase=="pending"||state.phase=="ready"||state.phase=="failed",title:"Workshop",label:"Review the current candidate",command:"review",reads:{editor:{object:"$self",child:""},candidate:{object:if state.candidate=="" then state.factory else state.candidate,child:if state.candidate=="" then state.name else ""}},calls:{c0:{op:"invoke",object:"candidate",command:"report",input:{},fromResult:false,inputFrom:0n},c1:{op:"invoke",object:"editor",command:"review",input:{},fromResult:true,inputFrom:0n}},fields:{},bindings:{},absentChildren:{},captures:{}},adopt:{visible:state.phase=="ready",title:"Workshop",label:"Adopt this checked variation",command:"adopt",reads:{editor:{object:"$self",child:""},candidate:{object:if state.candidate=="" then state.factory else state.candidate,child:if state.candidate=="" then state.name else ""},target:{object:state.target,child:""}},calls:{c0:{op:"observe",object:"target",command:"",input:{},fromResult:false,inputFrom:0n},c1:{op:"invoke",object:"editor",command:"approve",input:{},fromResult:true,inputFrom:0n},c2:{op:"invoke",object:"candidate",command:"adopt",input:{},fromResult:true,inputFrom:1n},c3:{op:"reprogram",object:"target",command:"",input:{},fromResult:true,inputFrom:2n},c4:{op:"invoke",object:"editor",command:"finish",input:{},fromResult:true,inputFrom:3n}},fields:{},bindings:{},absentChildren:{},captures:{}}}}

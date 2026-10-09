@@ -1,0 +1,7 @@
+examples DelveTalk 1
+case independent implementation obeys its declared method boundary
+law maker visitor
+as visitor
+send add
+  amount (Nat): 2
+expect result (Nat): 2

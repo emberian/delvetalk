@@ -1,0 +1,28 @@
+---
+id: handler_repair
+title: The living repair bench
+---
+=== bench
+~ entries += 1
+A moth and a little brass bell wait on the workbench.
+* [Repair the moth] { !inventory.moth }
+  ~ work = 1
+  ~ repair
+  ~ work += 1
+  -> bench
+* [Release the moth] { inventory.moth && work == 11 }
+  ~ release
+  -> window
+* [Try a refused repair]
+  ~ repair
+  ~ reject
+  ~ work = 999
+  -> bench
+* [Try an unknown handler]
+  ~ repair
+  ~ unknown
+  -> bench
+=== window
+The moth flies through the open window.
+* [Return]
+  -> bench

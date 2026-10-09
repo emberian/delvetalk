@@ -1,0 +1,57 @@
+edition ObjectiveBend 1
+
+record Door:
+  answer(n: Nat) -> Nat
+
+spec Base for Door:
+  def answer(n: Nat) -> Nat:
+    n + 1n
+
+spec Grow for Door:
+  def answer(n: Nat) -> Nat:
+    super.answer(n) + 10n
+
+def unfinished() -> Door:
+  unfinished()
+
+def carry() -> Prototype<Specification<Door>, Door>:
+  prototype(Base, unfinished())
+
+def revise(p: Prototype<Specification<Door>, Door>) -> Prototype<Specification<Door>, Door>:
+  prototype(compose(reflect(p), Grow), targetOf(p))
+
+def use(p: Prototype<Specification<Door>, Door>) -> Nat:
+  fix(reflect(p), {answer: fn(n: Nat) -> Nat: n}).answer(2n)
+
+def twice() -> Nat:
+  let p = revise(carry()) in use(p) + use(p)
+
+def inspect(p: Prototype<Specification<Door>, Door>) -> SpecMeta:
+  metadata(reflect(p))
+
+def history() -> SpecMeta:
+  inspect(revise(carry()))
+
+def projected() -> Nat:
+  let p = prototype(Base, 7n) in targetOf(p)
+
+def revisedRecord() -> {x: Nat, title: String}:
+  let original: {x: Nat, title: String} = {x: 1n, title: "paper"} in extend(original, {title: "moon"})
+
+def inferredRecord():
+  let original = {x: 1n} in extend(original, {x: 2n})
+
+extension AddY[Self has {x: Nat}, Super has {x: Nat}](self: Self, super: Super) -> Super with {y: Nat}:
+  let original: Super = super in extend(original, {y: self.x + 1n})
+
+record XYZW:
+  x: Nat
+  y: Nat
+  z: Nat
+  w: Nat
+
+extension AddZW(self: XYZW, super: {x: Nat, y: Nat}) -> XYZW:
+  let inherited = super in extend(inherited, {z: self.y, w: self.z + 1n})
+
+def openLayers() -> Nat:
+  fix(compose(AddY, AddZW), {x: 5n}).w

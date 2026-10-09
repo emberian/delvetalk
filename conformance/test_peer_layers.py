@@ -115,7 +115,10 @@ class PeerLayers(helpers.TownForgeJourneyTests):
                 for entry in modules])
             _, adopted = self.reply(ready['cards'][0], {})
             self.committed(adopted)
-            installed_modules = self.root(target)['protocol']['commands']['ring']['transition']['package']['modules']
+            installed_protocol = self.root(target)['protocol']
+            package_selector = installed_protocol['commands']['ring']['transition']['package']
+            self.assertEqual(package_selector['format'], 'delvetalk-source-package-ref-v1')
+            installed_modules = installed_protocol['sourcePackages'][package_selector['name']]['modules']
             self.assertEqual(installed_modules, [{'name': entry['name'],
                 'source': source_store.read_bytes(self.home / 'artifacts', entry['sourceRef'], kind='source').decode()}
                 for entry in modules])

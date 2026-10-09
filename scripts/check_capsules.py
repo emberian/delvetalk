@@ -19,7 +19,20 @@ for name, entry in upstream["files"].items():
     raw = (root / "spec/upstream" / name).read_bytes()
     compatibility = entry.get("compatibility")
     if compatibility:
-        original = (root / compatibility["source"]).read_bytes()
+        if "sourceGit" in compatibility:
+            assert "source" not in compatibility, (name, "ambiguous compatibility source")
+            assert compatibility["sourceGit"] == {
+                "repository": upstream["repository"], "commit": upstream["commit"], "path": name
+            }, (name, "compatibility Git pin differs")
+            # Reconstruct the byte-exact upstream Git version without copying a
+            # historical source file into the project or requiring network/Git IO.
+            original = raw
+            for edit in reversed(compatibility["replacements"]):
+                before, after = edit["from"].encode(), edit["to"].encode()
+                assert after and original.count(after) == 1, (name, "ambiguous reverse compatibility edit")
+                original = original.replace(after, before, 1)
+        else:
+            original = (root / compatibility["source"]).read_bytes()
         assert hashlib.sha256(original).hexdigest() == entry["sha256"], name
         projected = original
         for edit in compatibility["replacements"]:

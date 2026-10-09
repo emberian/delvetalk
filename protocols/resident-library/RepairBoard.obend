@@ -1,0 +1,19 @@
+edition ObjectiveBend 1
+import ./Consent.obend as Consent
+import ./Mailbox.obend as Mailbox
+extension Repair(self: Mailbox.Behavior, super: Mailbox.Behavior) -> Mailbox.Behavior:
+  extend(super, {capacity: super.capacity - 2, maxUnits: super.maxUnits - 4, accepts: fn(topic: String) -> Bool: topic == "help" || topic == "ready"})
+def behavior() -> Mailbox.Behavior:
+  fix(compose(Mailbox.Inbox, Repair), {})
+def describe() -> Mailbox.Description:
+  Mailbox.describe("Repair exchange", behavior())
+def configure(state: Mailbox.State, input: Consent.Configure, context: Mailbox.Context) -> Mailbox.Decision:
+  Mailbox.configure(state, input)
+def announce(state: Mailbox.State, input: Mailbox.Input, context: Mailbox.Context) -> Mailbox.Effects:
+  Mailbox.announce(behavior(), state, input)
+def receive(state: Mailbox.State, input: Consent.Payload, context: Mailbox.Context, event: Consent.Event) -> Mailbox.Decision:
+  behavior().store(state, input, event)
+def acknowledge(state: Mailbox.State, input: {}, context: Mailbox.Context) -> Mailbox.Decision:
+  Mailbox.acknowledge(state)
+def view(state: Mailbox.State, panel: String) -> Mailbox.View:
+  Mailbox.view(state, panel, "Repair exchange", "Offer help or report ready. Two notices fit on this shared workbench; acknowledge one when its work is understood.")

@@ -174,7 +174,9 @@ def execution_paths(profile='world'):
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
     return tuple(sorted(set(runtime_profile.paths(profile)) | {
-        'scene/projection.py', 'syntaxes/spell_examples.py', 'scripts/propose.py'}))
+        'scene/projection.py', 'scripts/source_packages.py', 'scripts/source_offers.py',
+        'scripts/composite_offers.py', 'scripts/affordances.py',
+        'syntaxes/spell_examples.py', 'scripts/propose.py'}))
 
 
 def execution_pin(profile='world'):

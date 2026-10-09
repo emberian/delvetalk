@@ -1,0 +1,19 @@
+edition ObjectiveBend 1
+import ./Consent.obend as Consent
+import ./Mailbox.obend as Mailbox
+extension Circle(self: Mailbox.Behavior, super: Mailbox.Behavior) -> Mailbox.Behavior:
+  extend(super, {capacity: super.capacity - 1, maxUnits: super.maxUnits - 2, accepts: fn(topic: String) -> Bool: topic == "help" || topic == "ready" || topic == "reading"})
+def behavior() -> Mailbox.Behavior:
+  fix(compose(Mailbox.Inbox, Circle), {})
+def describe() -> Mailbox.Description:
+  Mailbox.describe("Reading circle", behavior())
+def configure(state: Mailbox.State, input: Consent.Configure, context: Mailbox.Context) -> Mailbox.Decision:
+  Mailbox.configure(state, input)
+def announce(state: Mailbox.State, input: Mailbox.Input, context: Mailbox.Context) -> Mailbox.Effects:
+  Mailbox.announce(behavior(), state, input)
+def receive(state: Mailbox.State, input: Consent.Payload, context: Mailbox.Context, event: Consent.Event) -> Mailbox.Decision:
+  behavior().store(state, input, event)
+def acknowledge(state: Mailbox.State, input: {}, context: Mailbox.Context) -> Mailbox.Decision:
+  Mailbox.acknowledge(state)
+def view(state: Mailbox.State, panel: String) -> Mailbox.View:
+  Mailbox.view(state, panel, "Reading circle", "Coordinate a reading, request help, or announce ready. Three notices fit here; responses happen through explicit new announcements.")

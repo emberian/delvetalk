@@ -67,8 +67,14 @@ def validate(payload):
                   ['op', 'object', 'protocol', 'state'], 'reprogram call')
             if 'inputFrom' not in call and (not isinstance(call['protocol'], dict) or not isinstance(call['state'], dict)):
                 raise ValueError('reprogram protocol and state must be objects')
+        elif operation == 'law':
+            exact(call, ['op', 'object', 'law'], 'law call')
+            if not isinstance(call['law'], (dict, list)):
+                raise ValueError('law must be an explicit record or array')
+        elif operation == 'observe':
+            exact(call, ['op', 'object'], 'observe call')
         else:
-            raise ValueError('transaction calls allow only invoke or reprogram')
+            raise ValueError('transaction calls allow only invoke, reprogram, law or observe')
         if 'inputFrom' in call and (type(call['inputFrom']) is not int or call['inputFrom'] < 0):
             raise ValueError('inputFrom must be a natural index')
     return payload

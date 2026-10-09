@@ -1,0 +1,26 @@
+examples DelveTalk 1
+case repair and release
+law maker visitor
+as maker
+send start
+expect committed
+as visitor
+send choose
+  choice (Nat): 1
+expect refusal: source refused: choice unavailable
+as maker
+send choose
+  choice (Nat): 2
+expect refusal: source refused: The hinge refuses to bend.
+as maker
+send choose
+  choice (Nat): 0
+expect committed
+as visitor
+send choose
+  choice (Nat): 1
+expect committed
+as visitor
+send choose
+  choice (Nat): 0
+expect committed

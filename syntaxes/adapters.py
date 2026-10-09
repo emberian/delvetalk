@@ -91,7 +91,11 @@ def protocol_shape(value):
         raise ValueError("protocol needs initial and commands objects")
     for command in value['commands'].values():
         if (isinstance(command, dict) and isinstance(command.get('transition'), dict)
-                and command['transition'].get('profile') == 'delvetalk-source-transition-v1'):
+                and command['transition'].get('profile') in (
+                    'delvetalk-source-transition-v1', 'delvetalk-source-transition-v2',
+                    'delvetalk-source-data-transition-v1',
+                    'delvetalk-source-effects-v1', 'delvetalk-source-receive-v1',
+                    'delvetalk-source-data-effects-v1', 'delvetalk-source-data-receive-v1')):
             if set(command) != {'transition'} or set(command['transition']) != {'profile', 'package'}:
                 raise ValueError('source transition requires an exclusive profile/package descriptor')
             continue  # Lean validates the package, source, typed call and decision.

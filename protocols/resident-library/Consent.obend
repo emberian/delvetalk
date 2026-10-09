@@ -1,0 +1,72 @@
+edition ObjectiveBend 1
+record Peer:
+  enabled: Bool
+  object: String
+  program: String
+  generation: Nat
+record Peers:
+  a: Peer
+  b: Peer
+  c: Peer
+  d: Peer
+record Links:
+  epoch: Nat
+  inbound: Peers
+  outbound: Peers
+record Configure:
+  side: String
+  slot: Nat
+  enabled: Bool
+  object: String
+  program: String
+  generation: Nat
+record Event:
+  id: String
+  source: String
+  sourceProgram: String
+  originatingPrincipal: String
+record Payload:
+  topic: String
+  units: Nat
+  generation: Nat
+record Emission:
+  enabled: Bool
+  to: String
+  command: String
+  recipientProgram: String
+  payload: Payload
+record Slots:
+  a: Emission
+  b: Emission
+  c: Emission
+  d: Emission
+def empty() -> Peer:
+  {enabled: false, object: "unconfigured", program: "0000000000000000000000000000000000000000000000000000000000000000", generation: 0}
+def peers() -> Peers:
+  {a: empty(), b: empty(), c: empty(), d: empty()}
+def initial() -> Links:
+  {epoch: 0, inbound: peers(), outbound: peers()}
+def conflict(peer: Peer, input: Configure, slot: Nat) -> Bool:
+  input.enabled && peer.enabled && slot != input.slot && peer.object == input.object
+def unique(peers: Peers, input: Configure) -> Bool:
+  conflict(peers.a, input, 1) == false && conflict(peers.b, input, 2) == false && conflict(peers.c, input, 3) == false && conflict(peers.d, input, 4) == false
+def valid(links: Links, input: Configure) -> Bool:
+  input.generation > 0 && input.generation <= 65535 && input.slot >= 1 && input.slot <= 4 && input.object != "" && input.program != "" && ((input.side == "listen" && input.generation > links.epoch && unique(links.inbound, input)) || input.side == "send")
+def configured(input: Configure) -> Peer:
+  {enabled: input.enabled, object: input.object, program: input.program, generation: input.generation}
+def replace(peers: Peers, input: Configure) -> Peers:
+  {a: if input.slot == 1 then configured(input) else peers.a, b: if input.slot == 2 then configured(input) else peers.b, c: if input.slot == 3 then configured(input) else peers.c, d: if input.slot == 4 then configured(input) else peers.d}
+def update(links: Links, input: Configure) -> Links:
+  {epoch: if input.side == "listen" then input.generation else links.epoch, inbound: if input.side == "listen" then replace(links.inbound, input) else links.inbound, outbound: if input.side == "send" then replace(links.outbound, input) else links.outbound}
+def matches(peer: Peer, payload: Payload, event: Event) -> Bool:
+  peer.enabled && peer.object == event.source && peer.program == event.sourceProgram && peer.generation == payload.generation
+def allows(links: Links, payload: Payload, event: Event) -> Bool:
+  matches(links.inbound.a, payload, event) || matches(links.inbound.b, payload, event) || matches(links.inbound.c, payload, event) || matches(links.inbound.d, payload, event)
+def obsolete(links: Links, payload: Payload, event: Event) -> Bool:
+  payload.generation > 65535 || (allows(links, payload, event) == false && payload.generation <= links.epoch)
+def emission(peer: Peer, topic: String, units: Nat) -> Emission:
+  {enabled: peer.enabled, to: peer.object, command: "receive", recipientProgram: peer.program, payload: {topic: topic, units: units, generation: peer.generation}}
+def emit(links: Links, topic: String, units: Nat) -> Slots:
+  {a: emission(links.outbound.a, topic, units), b: emission(links.outbound.b, topic, units), c: emission(links.outbound.c, topic, units), d: emission(links.outbound.d, topic, units)}
+def sending(links: Links) -> Bool:
+  links.outbound.a.enabled || links.outbound.b.enabled || links.outbound.c.enabled || links.outbound.d.enabled

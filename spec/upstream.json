@@ -61,7 +61,62 @@
       "sha256": "50ebe0d47da7192a1c5437b414b726f572fcc8ddaef1809bb69e409a2049ae49"
     },
     "Compiler/ObjectiveBendElaborate.lean": {
-      "sha256": "31a82d6b1ba2e160467bafb32b5da908145715aad0126c0a602b5fdd9c82d674"
+      "sha256": "31a82d6b1ba2e160467bafb32b5da908145715aad0126c0a602b5fdd9c82d674",
+      "compatibility": {
+        "sourceGit": {
+          "repository": "https://github.com/emberian/minidregg",
+          "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
+          "path": "Compiler/ObjectiveBendElaborate.lean"
+        },
+        "purpose": "Expose existing checked prototype types and synthesize record extension results; no runtime or typing-rule changes.",
+        "builtSha256": "5b671902a99d2d0bc449d7001505fca96f6d8ba6bda53e7e0a42141fbad09bbc",
+        "replacements": [
+          {
+            "from": "  | specification (metadata extension : PTy)\n",
+            "to": "  | specification (metadata extension : PTy)\n  | prototype (spec target : PTy)\n"
+          },
+          {
+            "from": "  | .specification m e => .specification m.canonical e.canonical\n",
+            "to": "  | .specification m e => .specification m.canonical e.canonical\n  | .prototype s t => .prototype s.canonical t.canonical\n"
+          },
+          {
+            "from": "  | .specification m e => Json.mkObj [(\"tag\", \"specification\"), (\"metadata\", m.json), (\"extension\", e.json)]\n  | .variant r =>",
+            "to": "  | .specification m e => Json.mkObj [(\"tag\", \"specification\"), (\"metadata\", m.json), (\"extension\", e.json)]\n  | .prototype s t => Json.mkObj [(\"tag\", \"prototype\"), (\"spec\", s.json), (\"target\", t.json)]\n  | .variant r =>"
+          },
+          {
+            "from": "    for (generic, isExtension) in [(\"Extension<\", true), (\"Specification<\", false)] do\n",
+            "to": "    if name.startsWith \"Prototype<\" && name.endsWith \">\" then\n      let parts := splitTop (dropEndStr (dropStr name \"Prototype<\".length) 1) \",\"\n      match parts with\n      | [specText, targetText] =>\n        let spec \u2190 sourceType c fuel specText moduleName seen\n        let target \u2190 sourceType c fuel targetText moduleName seen\n        return match spec, target with\n          | some s, some t => some (.prototype s t)\n          | _, _ => none\n      | _ => do typeError \"Prototype<Spec, Target> takes two types\"; return none\n    for (generic, isExtension) in [(\"Extension<\", true), (\"Specification<\", false)] do\n"
+          },
+          {
+            "from": "      return some (PTy.row row)\n    | .binary op left right =>",
+            "to": "      return some (PTy.row row)\n    | .extend inherited fields =>\n      let some base \u2190 synth c fuel inherited env m | return none\n      let some provided \u2190 synth c fuel (.record fields) env m | return none\n      let bounds := (\u2190 get).sumBounds\n      let rowVariable := match base with\n        | .variable k => (bounds.lookup k).map isRowTy | _ => none\n      if !(isRowTy base || rowVariable.getD false) then return none\n      -- Keep an abstract Super as the row tail; a lower bound is not its alias.\n      return some (PTy.overlay provided base).canonical\n    | .binary op left right =>"
+          },
+          {
+            "from": "        if [\"reflect\", \"metadata\", \"targetOf\", \"prototype\"].contains name && !env.any (\u00b7.name == name) then\n          -- metadata(s) of a specification-typed s is its SpecMeta; the prototype\n          -- forms have no synthesized type (annotate a let).\n          if name == \"metadata\" then\n            if let [a] := args then\n              if let some (.specification metaTy _) := (\u2190 synth c fuel a env m) then return some metaTy\n          return none\n",
+            "to": "        if [\"reflect\", \"metadata\", \"targetOf\", \"prototype\"].contains name &&\n            !env.any (\u00b7.name == name) && (lookupGlobal c name m).isNone then\n          match name, args with\n          | \"prototype\", [s, t] =>\n            let spec \u2190 synth c fuel s env m\n            let target \u2190 synth c fuel t env m\n            return match spec, target with\n              | some s, some t => some (.prototype s t)\n              | _, _ => none\n          | \"metadata\", [value] =>\n            match \u2190 synth c fuel value env m with\n            | some (.specification metaTy _) => return some metaTy\n            | _ => return none\n          | \"reflect\", [value] =>\n            match \u2190 synth c fuel value env m with\n            | some (.prototype spec _) => return some spec\n            | _ => return none\n          | \"targetOf\", [value] =>\n            match \u2190 synth c fuel value env m with\n            | some (.prototype _ target) => return some target\n            | _ => return none\n          | _, _ => return none\n"
+          },
+          {
+            "from": "  | .specification m e => .specification (m.subst \u03c3) (e.subst \u03c3)\n",
+            "to": "  | .specification m e => .specification (m.subst \u03c3) (e.subst \u03c3)\n  | .prototype s t => .prototype (s.subst \u03c3) (t.subst \u03c3)\n"
+          },
+          {
+            "from": "    internNode (Json.mkObj [(\"tag\", \"specification\"), (\"metadata\", mj), (\"extension\", ej)])\n  | .variant r => do",
+            "to": "    internNode (Json.mkObj [(\"tag\", \"specification\"), (\"metadata\", mj), (\"extension\", ej)])\n  | .prototype s t => do\n    let sj \u2190 s.intern\n    let tj \u2190 t.intern\n    internNode (Json.mkObj [(\"tag\", \"prototype\"), (\"spec\", sj), (\"target\", tj)])\n  | .variant r => do"
+          },
+          {
+            "from": "      return t\n    | _ => return none\n\ndef synthBody",
+            "to": "      return t\n\ndef synthBody"
+          },
+          {
+            "from": "def PTy.json : PTy \u2192 Json\n",
+            "to": "/-- Member reads may use a declared lower bound without equating its abstract\n    Self/Super variable with that row. Mirrors the core checker's bounded lookup. -/\ndef lookupRowBounded (bounds : List (Nat \u00d7 PTy)) : Nat \u2192 Option PTy \u2192 String \u2192 Option PTy\n  | 0, _, _ => none\n  | fuel + 1, some (.field n member tail), name =>\n    if n == name then some member else lookupRowBounded bounds fuel (some tail) name\n  | fuel + 1, some (.variable index), name =>\n    lookupRowBounded bounds fuel (bounds.lookup index) name\n  | _, _, _ => none\n\ndef PTy.json : PTy \u2192 Json\n"
+          },
+          {
+            "from": "      return lookupRow (\u2190 synth c fuel target env m) name\n",
+            "to": "      let targetType \u2190 synth c fuel target env m\n      return lookupRowBounded (\u2190 get).sumBounds fuel targetType name\n"
+          }
+        ]
+      }
     },
     "Compiler/ObjectiveBendTermWire.lean": {
       "sha256": "6778e47ca4993aec68cb8ff791860fe44eed43b91a42d13d63dbe3b137a48f94",

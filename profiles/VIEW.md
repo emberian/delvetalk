@@ -26,6 +26,12 @@ it. World-bound observations check their retained compiled-runtime pins before
 execution. Captured cards must agree with their book's runtime, including panels.
 Standalone observations retain their actual runtime instead of claiming a world's.
 
+A package may be inline `{modules,entry}` or an object-local
+`{format:"delvetalk-source-package-ref-v1",name,entry}` selector. The latter names
+`protocol.sourcePackages[name] = {format:"delvetalk-source-package-table-v1",modules}`.
+Projection preserves that owning table and selector; native code resolves it.
+Inspection retains both, without fetching imports or expanding executable source.
+
 Contextual menus use `delvetalk-obend-menu-v1` with the same package descriptor.
 Each source action adds `visible:Bool`, allowing a fixed typed row to offer different
 actions as state changes:
@@ -38,8 +44,71 @@ light: {visible: if state.lit then false else true,
 Every descriptor is materialized and validated, including hidden entries; then
 only visible actions enter ordinary `ViewData`, with `visible` removed. Inspection
 retains both the raw source result and normalized view. Existing v1 is unchanged.
+Spween handler scenes use this same path: generated Bend computes prose and choice
+visibility from committed handler state. Town and portal cards share those bound
+choices; inspection includes the exact scene and handler modules. Inventory is not
+a child catalogue. A rejected turn does not change the current view.
+
 Views receive state and panel, **no authenticated viewer**. Hiding a method neither
 denies its direct invocation nor replaces current-law checks or receiving guards.
+
+Typed menus use `delvetalk-obend-data-menu-v1`. Their state is exactly
+`{model:DataWire(State)}`; the native `package-data-v1` evaluator receives that model
+and a typed panel string. The source returns four fields: `title`, `prose`, `actions`
+and `children`. The first three retain the menu contract. Children is a typed
+`nil:{}` / `cons:{head:Child,tail:Children}` list; each Child contains exactly
+`{key:String,label:String,object:String,panel:String}`. No ordinary JSON record is
+heuristically treated as a list.
+
+Projection checks every entry, then retains ordered children separately from
+ordinary action data. Limits: 32 unique keys; key/panel 128 UTF-8 bytes, label 256,
+object 512 and existing local identity constraints. Excess entries refuse rather
+than truncate. Captured observations retain the exact typed result and revalidate
+its normalized catalogue when read.
+
+Source-owned transaction menus use `delvetalk-obend-data-offers-v1`: the same four
+fields plus `offers`. The @3 adapter selects it only when the source declares that
+fifth field; four-field menus retain their original profile.
+
+Each offered record declares visibility, human copy, read aliases, fixed calls,
+scalar input fields, bindings, optional captured root fields and explicit absent
+factory children. Reads name `{object,child}`: `$self` anchors the viewed object;
+empty `child` names it directly. Calls name read aliases. Ordered slots (`c0`,
+`c1`, …) declare their sequencing; only explicit bindings replace existing input
+paths. These are transaction descriptions, never endpoints or ambient authority.
+
+All descriptors—including hidden ones—are checked before visibility filtering.
+Capture resolves declared references from one snapshot and retains their exact
+roots; preparation substitutes supplied fields without refreshing those reads.
+Source inspection retains the unfiltered result. Native transaction admission
+still checks exact roots, absence and current law for every affected object.
+
+Offer records have exactly `visible,title,label,command,reads,calls,fields,bindings,
+absentChildren,captures`. A call slot has `op,object,command,input,fromResult,inputFrom`;
+`object` names a read alias. Bindings `{field,call,input}` replace an existing dotted
+input path (≤4 record components). Captures `{read,call,input,rootField}` copy a named
+read's `object`, `state`, `version`, `protocol` or `law`; absent children name
+`{factory,field}`. `factory` is a read alias; the field supplies a validated unused
+child name. Descriptor bounds are checked by [source_offers](../scripts/source_offers.py);
+[source examples and rejection checks](../conformance/test_source_view_offers.py)
+exercise the same native view path.
+
+If typed projection fails, ordinary inspection still exposes the retained source
+and state. That recovery card offers no actions or children and claims no successful
+source evaluation. Child navigation instead reports the failed view as unavailable.
+
+Children offer **looking**, not invoking. Town cards show numbered labels. An
+operator selects a captured key, reads the child's current root and declared panel,
+and prepares a distinct card:
+
+```sh
+python3 scripts/town.py --clerk-state STATE capture-child PARENT KEY --alias CHILD
+```
+
+The target must already be enrolled; missing objects, undeclared panels and failed
+views report unavailable. No recursive traversal, enrollment, admission or external
+publication occurs. Old parent references survive later catalogue removal; child
+actions still face that child's current law and the new card's exact read root.
 
 ```python
 view = projection.project(committed_root, "workshop-sign", panel="main")
@@ -64,3 +133,4 @@ equivalence nor compiler refinement.
 Check: `python3 conformance/test_projection.py` for upgrades, stale actions,
 independent panels, escaping and adversarial results; `python3 conformance/test_obend_menu.py`
 for source menus, hidden-descriptor validation, town/portal agreement and real admission.
+Typed checks: `test_typed_view.py` and `test_child_navigation.py` under `conformance/`.

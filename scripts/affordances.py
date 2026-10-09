@@ -49,7 +49,7 @@ def _normalize_field(name, specification):
     field = {"name": name, "label": _string(specification.get("label", name), "field label", 256),
              "type": kind, "required": True}
     if kind == "string":
-        maximum = _integer(specification.get("maxLength"), "maxLength", 0, 4096)
+        maximum = _integer(specification.get("maxLength"), "maxLength", 0, 65536)
         field.update(minLength=_integer(specification.get("minLength", 0), "minLength", 0, maximum), maxLength=maximum)
     elif kind == "nat":
         maximum = _integer(specification.get("maximum"), "maximum")
@@ -199,6 +199,14 @@ def _describe(view):
         raise AffordanceError("captured protocol commands missing")
     if type(root.get("version")) is not int or root["version"] < 0:
         raise AffordanceError("captured version must be a natural number")
+    program = protocol.get("viewProgram")
+    if (view.get("mode") == "raw" and isinstance(program, dict)
+            and program.get("profile") in ("delvetalk-obend-data-menu-v1", "delvetalk-obend-data-offers-v1")):
+        # A failed typed projection is a recovery surface, not a replacement
+        # menu synthesized from method metadata. Even malformed metadata must
+        # not prevent inspection of the retained program and state.
+        return (_string(protocol.get("name", view["object"]), "card title"),
+                _string(view.get("reason", "View unavailable; inspect its source and state."), "card prose"), [])
     metadata = _metadata(protocol)
     mode = view.get("mode")
     descriptions = []

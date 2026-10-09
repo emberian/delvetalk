@@ -1,0 +1,79 @@
+{
+  "profile": "delvetalk-local-v1",
+  "runtimeProfile": "compiled",
+  "name": "Scheduled task",
+  "initial": {
+    "model": {
+      "tag": "record",
+      "fields": [
+        {
+          "name": "owner",
+          "value": {
+            "tag": "label",
+            "value": ""
+          }
+        },
+        {
+          "name": "clock",
+          "value": {
+            "tag": "label",
+            "value": "clock"
+          }
+        },
+        {
+          "name": "runs",
+          "value": {
+            "tag": "natural",
+            "value": "0"
+          }
+        },
+        {
+          "name": "lastTopic",
+          "value": {
+            "tag": "label",
+            "value": ""
+          }
+        },
+        {
+          "name": "lastTick",
+          "value": {
+            "tag": "natural",
+            "value": "0"
+          }
+        },
+        {
+          "name": "lastSlot",
+          "value": {
+            "tag": "natural",
+            "value": "0"
+          }
+        },
+        {
+          "name": "lastGeneration",
+          "value": {
+            "tag": "natural",
+            "value": "0"
+          }
+        },
+        {
+          "name": "lastEvent",
+          "value": {
+            "tag": "label",
+            "value": ""
+          }
+        }
+      ]
+    }
+  },
+  "commands": {
+    "wake": {
+      "transition": {
+        "profile": "delvetalk-source-data-receive-v1",
+        "package": {
+          "modules": [],
+          "entry": "wake"
+        }
+      }
+    }
+  }
+}

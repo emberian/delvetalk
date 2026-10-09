@@ -198,6 +198,88 @@ class TransactionTests(unittest.TestCase):
         request['intent'] = 'one-fits'
         self.assertEqual(self.call(request)['kind'], 'committed')
 
+    def test_law_step_grants_staged_invocation_and_commits_deliberate_lockout(self):
+        self.a = self.call({'op': 'law', 'object': 'a', 'principal': 'owner',
+            'intent': 'initial-management-only', 'expected': self.a,
+            'law': {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'credit': []},
+                    'reprogram': [], 'law': ['alice']}})['data']['root']
+        authority = {'profile': 'delvetalk-scoped-law-v1',
+                     'invoke': {'credit': ['alice']}, 'reprogram': [], 'law': []}
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'revise-and-credit',
+                   'reads': {'a': self.a}, 'calls': [
+                       {'op': 'law', 'object': 'a', 'law': authority},
+                       {'object': 'a', 'command': 'credit', 'input': {'amount': 1}}]}
+        receipt = self.call(request)
+        self.assertEqual(receipt['kind'], 'committed', receipt)
+        current = self.inspect('a')
+        self.assertEqual(current['law'], authority)
+        self.assertEqual(current['state']['balance'], 101)
+        self.assertEqual(current['version'], self.a['version'] + 2)
+        self.assertEqual(receipt['data']['results'], [None, {'amount': 1, 'by': 'alice'}])
+        self.assertEqual(len(receipt['data']['outbox']), 1)
+        self.assertEqual(receipt['data']['outbox'][0]['step'], 1)
+        locked = self.call({'op': 'law', 'object': 'a', 'principal': 'owner',
+            'intent': 'no-owner-bypass', 'expected': current, 'law': ['owner']})
+        self.assertEqual(locked['data'], 'unauthorized')
+        self.assertEqual(self.call(request), receipt)  # recovery precedes stale roots/current law
+        changed = copy.deepcopy(request)
+        changed['calls'][0]['law']['law'] = ['alice']
+        self.assertEqual(self.call(changed)['data'], 'intent reused for different request')
+
+    def test_law_revocation_and_later_refusal_roll_back_prior_effects(self):
+        request = self.transfer('revoke-inside-batch')
+        request['calls'].extend([
+            {'op': 'law', 'object': 'a', 'law': []},
+            {'object': 'a', 'command': 'credit', 'input': {'amount': 1}}])
+        refused = self.call(request)
+        self.assertEqual(refused['data'], 'unauthorized')
+        self.assert_unchanged()
+        self.assertEqual(self.call(request), refused)
+        # A final self-lockout can commit; law is not unconditionally rejected.
+        request['intent'] = 'final-self-lockout'
+        request['calls'].pop()
+        self.assertEqual(self.call(request)['kind'], 'committed')
+        self.assertEqual(self.inspect('a')['law'], [])
+
+    def test_reprogram_then_law_preserves_staged_program_state_and_permissions(self):
+        replacement = account(999)
+        authority = {'profile': 'delvetalk-scoped-law-v1',
+                     'invoke': {'credit': ['alice']}, 'reprogram': ['owner'], 'law': ['owner']}
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'program-and-law',
+                   'reads': {'a': self.a}, 'calls': [
+                       {'op': 'reprogram', 'object': 'a', 'protocol': replacement,
+                        'state': {'balance': 7}},
+                       {'op': 'law', 'object': 'a', 'law': authority}]}
+        receipt = self.call(request)
+        self.assertEqual(receipt['kind'], 'committed', receipt)
+        current = self.inspect('a')
+        self.assertEqual(current['protocol'], replacement)
+        self.assertEqual(current['state'], {'balance': 7})
+        self.assertEqual(current['law'], authority)
+        self.assertEqual(current['version'], 2)
+        self.assertEqual(receipt['data']['results'], [None, None])
+        self.assertEqual(receipt['data']['outbox'], [])
+
+    def test_law_checks_old_and_new_invariants_on_staged_state(self):
+        common = {'profile': 'delvetalk-scoped-law-v2', 'invoke': {'credit': ['alice']},
+                  'reprogram': ['alice'], 'law': ['alice']}
+        bound = ['lam', ['binary', 'lessEqual',
+                 ['get', ['get', ['bound', 0], 'nextState'], 'balance'], ['nat', '100']]]
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'bad-new-law',
+                   'reads': {'a': self.a}, 'calls': [
+                       {'object': 'a', 'command': 'credit', 'input': {'amount': 1}},
+                       {'op': 'law', 'object': 'a', 'law': {**common, 'invariant': bound}}]}
+        self.assertEqual(self.call(request)['data'], 'state invariant refused')
+        self.assert_unchanged()
+        no_revision = ['lam', ['ifBool', ['binary', 'labelEqual',
+            ['get', ['bound', 0], 'op'], ['label', 'law']], ['boolean', False], ['boolean', True]]]
+        fixed = self.create('fixed', account(1), {**common, 'invariant': no_revision})
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'old-law-still-binds',
+                   'reads': {'fixed': fixed}, 'calls': [
+                       {'op': 'law', 'object': 'fixed', 'law': ['alice']}]}
+        self.assertEqual(self.call(request)['data'], 'state invariant refused')
+        self.assertEqual(self.inspect('fixed'), fixed)
+
     def test_no_implicit_reads_forward_references_or_authority_overrides(self):
         cases = [
             ('missing-read', lambda r: r['reads'].pop('b'), 'missing from read set'),

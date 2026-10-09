@@ -44,7 +44,8 @@ class SourceObjectTests(unittest.TestCase):
             self.assertEqual(set(command), {'transition'})
             package = command['transition']['package']
             self.assertEqual(package['entry'], method)
-            self.assertEqual(package['modules'], [{'name': 'Main', 'source': raw.decode()}])
+            self.assertEqual(package['format'], 'delvetalk-source-package-ref-v1')
+            self.assertEqual(protocol['sourcePackages'][package['name']]['modules'], [{'name': 'Main', 'source': raw.decode()}])
         self.assertTrue(set(runtime_profile.paths('compiled')) <= set(artifact['translation']['files']))
         self.assertIn('.lake/build/bin/delvetalk-obend', artifact['translation']['files'])
 

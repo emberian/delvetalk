@@ -1,0 +1,84 @@
+edition ObjectiveBend 1
+record Member:
+  object: String
+  owner: String
+  holder: String
+  place: String
+  offer: String
+  role: String
+sum Members:
+  nil: {}
+  cons: {head: Member, tail: Members}
+def member(object: String, owner: String, holder: String, place: String, offer: String, role: String) -> Member:
+  {object: object, owner: owner, holder: holder, place: place, offer: offer, role: role}
+def empty() -> Member:
+  member("", "", "", "", "", "")
+def get(xs: Members, object: String) -> Member:
+  match xs:
+    case nil(_): empty()
+    case cons(c): if c.head.object == object then c.head else get(c.tail, object)
+def body(xs: Members, principal: String) -> Member:
+  match xs:
+    case nil(_): empty()
+    case cons(c): if c.head.role == "resident" && c.head.owner == principal then c.head else body(c.tail, principal)
+def size(xs: Members) -> Nat:
+  match xs:
+    case nil(_): 0n
+    case cons(c): 1n + size(c.tail)
+def put(xs: Members, m: Member) -> Members:
+  match xs:
+    case nil(_): Members.cons({head: m, tail: Members.nil()})
+    case cons(c): if c.head.object == m.object then Members.cons({head: m, tail: c.tail}) else Members.cons({head: c.head, tail: put(c.tail, m)})
+def occupancy(xs: Members, place: String) -> Nat:
+  match xs:
+    case nil(_): 0n
+    case cons(c): (if c.head.place == place && c.head.holder == "" && c.head.role != "room" then 1n else 0n) + occupancy(c.tail, place)
+def located(xs: Members, m: Member) -> String:
+  if m.holder == "" then m.place else body(xs, m.holder).place
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+def follows(ctx: Context, object: String, command: String) -> Bool:
+  ctx.inputOrigin.kind == "invoke" && ctx.inputOrigin.object == object && ctx.inputOrigin.command == command && ctx.inputOrigin.immediatelyPrevious
+record Transfer:
+  object: String
+  destination: String
+  previous: String
+  holder: String
+  occupancy: Nat
+  actor: String
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+def children(xs: Members) -> Children:
+  match xs:
+    case nil(_): Children.nil()
+    case cons(c): Children.cons({head: {key: c.head.object, label: c.head.object, object: c.head.object, panel: "main"}, tail: children(c.tail)})
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record TextField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+def textField() -> TextField:
+  {type: "string", minLength: 0n, maxLength: 128n}
+record NatField:
+  type: String
+  minimum: Nat
+  maximum: Nat
+def natField() -> NatField:
+  {type: "nat", minimum: 0n, maximum: 9007199254740991n}

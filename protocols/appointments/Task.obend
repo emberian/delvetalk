@@ -1,0 +1,80 @@
+edition ObjectiveBend 1
+record State:
+  owner: String
+  clock: String
+  runs: Nat
+  lastTopic: String
+  lastTick: Nat
+  lastSlot: Nat
+  lastGeneration: Nat
+  lastEvent: String
+record Payload:
+  owner: String
+  slot: Nat
+  generation: Nat
+  due: Nat
+  deadline: Nat
+  tick: Nat
+  topic: String
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Event:
+  id: String
+  source: String
+  sourceProgram: String
+  originatingPrincipal: String
+record Result:
+  action: String
+  runs: Nat
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+def wake(state: State, input: Payload, context: Context, event: Event) -> Decision:
+  let ok = event.source == state.clock && input.owner == state.owner && input.tick >= input.due && input.tick <= input.deadline
+  {accepted: ok, reason: if ok then "" else "This task accepts its owner's timely appointments from its named clock.", state: {owner: state.owner, clock: state.clock, runs: state.runs + 1n, lastTopic: input.topic, lastTick: input.tick, lastSlot: input.slot, lastGeneration: input.generation, lastEvent: event.id}, result: {action: input.topic, runs: state.runs + 1n}}
+record StringField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record NatField:
+  type: String
+  minimum: Nat
+  maximum: Nat
+record WakeForm:
+  label: String
+  fields: {owner: StringField, slot: NatField, generation: NatField, due: NatField, deadline: NatField, tick: NatField, topic: StringField}
+record Description:
+  name: String
+  initial: State
+  methods: {wake: WakeForm}
+  panels: {owner: String, clock: String, activity: String}
+def textField() -> StringField:
+  {type: "string", minLength: 1n, maxLength: 256n}
+def naturalField() -> NatField:
+  {type: "nat", minimum: 0n, maximum: 9007199254740991n}
+def describe() -> Description:
+  {name: "Scheduled task", initial: {owner: "moss", clock: "clock", runs: 0n, lastTopic: "", lastTick: 0n, lastSlot: 0n, lastGeneration: 0n, lastEvent: ""}, methods: {wake: {label: "Receive an admitted appointment", fields: {owner: textField(), slot: {type: "nat", minimum: 0n, maximum: 7n}, generation: naturalField(), due: naturalField(), deadline: naturalField(), tick: naturalField(), topic: textField()}}}, panels: {owner: "Task owner", clock: "Appointment clock", activity: "Latest activity"}}
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Children
+def view(state: State, panel: String) -> View:
+  {title: if state.runs == 0n then "Waiting for an appointment" else "Appointment received", prose: if panel == "owner" then state.owner else if panel == "clock" then state.clock else if state.runs == 0n then "This task listens to its owner's admitted appointments. Only native delivery can wake it. Look inside shows exact run count, tick, slot, generation and event identity." else state.lastTopic, actions: {}, children: Children.cons({head: {key: "clock", label: "Appointment clock", object: state.clock, panel: "main"}, tail: Children.nil()})}

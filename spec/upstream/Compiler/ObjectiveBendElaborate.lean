@@ -255,6 +255,7 @@ inductive PTy where
   | arrow (reuse parameter : String) (domain codomain : PTy)
   | field (name : String) (member tail : PTy)
   | specification (metadata extension : PTy)
+  | prototype (spec target : PTy)
   | variant (row : PTy)
   | computation (plan response result : PTy)
   deriving Inhabited, Repr, BEq
@@ -276,6 +277,7 @@ def PTy.insertCanonical : PTy → String → PTy → PTy
 def PTy.canonical : PTy → PTy
   | .arrow r q d c => .arrow r q d.canonical c.canonical
   | .specification m e => .specification m.canonical e.canonical
+  | .prototype s t => .prototype s.canonical t.canonical
   | .variant r => .variant r.canonical
   | .computation p r a => .computation p.canonical r.canonical a.canonical
   | .field n m t => t.canonical.insertCanonical n m.canonical
@@ -293,6 +295,16 @@ def lookupRow : Option PTy → String → Option PTy
   | some (.field n m t), name => if n == name then some m else lookupRow (some t) name
   | _, _ => none
 
+/-- Member reads may use a declared lower bound without equating its abstract
+    Self/Super variable with that row. Mirrors the core checker's bounded lookup. -/
+def lookupRowBounded (bounds : List (Nat × PTy)) : Nat → Option PTy → String → Option PTy
+  | 0, _, _ => none
+  | fuel + 1, some (.field n member tail), name =>
+    if n == name then some member else lookupRowBounded bounds fuel (some tail) name
+  | fuel + 1, some (.variable index), name =>
+    lookupRowBounded bounds fuel (bounds.lookup index) name
+  | _, _, _ => none
+
 def PTy.json : PTy → Json
   | .natural => Json.mkObj [("tag", "natural")]
   | .boolean => Json.mkObj [("tag", "boolean")]
@@ -302,6 +314,7 @@ def PTy.json : PTy → Json
   | .arrow r q d c => Json.mkObj [("tag", "arrow"), ("reuse", r), ("parameter", q), ("domain", d.json), ("codomain", c.json)]
   | .field n m t => Json.mkObj [("tag", "field"), ("name", n), ("member", m.json), ("tail", t.json)]
   | .specification m e => Json.mkObj [("tag", "specification"), ("metadata", m.json), ("extension", e.json)]
+  | .prototype s t => Json.mkObj [("tag", "prototype"), ("spec", s.json), ("target", t.json)]
   | .variant r => Json.mkObj [("tag", "variant"), ("row", r.json)]
   | .computation p r a => Json.mkObj [("tag", "computation"), ("plan", p.json), ("response", r.json), ("result", a.json)]
 
@@ -738,6 +751,16 @@ def sourceType (c : Ctx) : Nat → String → String → List String → M (Opti
           | some p, some r, some a => some (.computation p r a)
           | _, _, _ => none
       | _ => do typeError "Activity<Plan, Response, Result> takes three types"; return none
+    if name.startsWith "Prototype<" && name.endsWith ">" then
+      let parts := splitTop (dropEndStr (dropStr name "Prototype<".length) 1) ","
+      match parts with
+      | [specText, targetText] =>
+        let spec ← sourceType c fuel specText moduleName seen
+        let target ← sourceType c fuel targetText moduleName seen
+        return match spec, target with
+          | some s, some t => some (.prototype s t)
+          | _, _ => none
+      | _ => do typeError "Prototype<Spec, Target> takes two types"; return none
     for (generic, isExtension) in [("Extension<", true), ("Specification<", false)] do
       if name.startsWith generic && name.endsWith ">" && name.length > generic.length + 1 then
         let some target ← sourceType c fuel (dropEndStr (dropStr name generic.length) 1) moduleName seen | return none
@@ -939,7 +962,8 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
         if !env.any (·.name == alias) then
           if let some importedModule := importOf m alias then
             return ← globalType c fuel (importedModule ++ "." ++ name)
-      return lookupRow (← synth c fuel target env m) name
+      let targetType ← synth c fuel target env m
+      return lookupRowBounded (← get).sumBounds fuel targetType name
     | .record fields =>
       let mut row : List (String × PTy) := []
       for (n, v) in fields do
@@ -947,6 +971,15 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
         | some t => row := row ++ [(n, t)]
         | none => return none
       return some (PTy.row row)
+    | .extend inherited fields =>
+      let some base ← synth c fuel inherited env m | return none
+      let some provided ← synth c fuel (.record fields) env m | return none
+      let bounds := (← get).sumBounds
+      let rowVariable := match base with
+        | .variable k => (bounds.lookup k).map isRowTy | _ => none
+      if !(isRowTy base || rowVariable.getD false) then return none
+      -- Keep an abstract Super as the row tail; a lower bound is not its alias.
+      return some (PTy.overlay provided base).canonical
     | .binary op left right =>
       if op == "!=" || op == "==" then return some .boolean
       if op == "||" then
@@ -980,20 +1013,34 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
         return (← get).effect.map fun (p, r) => .computation p r r
       if let some sc := sumCase c callee env m then return ← sourceType c fuel sc.2.2 sc.2.1 []
       if let .var name := callee then
-        if ["reflect", "metadata", "targetOf", "prototype"].contains name && !env.any (·.name == name) then
-          -- metadata(s) of a specification-typed s is its SpecMeta; the prototype
-          -- forms have no synthesized type (annotate a let).
-          if name == "metadata" then
-            if let [a] := args then
-              if let some (.specification metaTy _) := (← synth c fuel a env m) then return some metaTy
-          return none
+        if ["reflect", "metadata", "targetOf", "prototype"].contains name &&
+            !env.any (·.name == name) && (lookupGlobal c name m).isNone then
+          match name, args with
+          | "prototype", [s, t] =>
+            let spec ← synth c fuel s env m
+            let target ← synth c fuel t env m
+            return match spec, target with
+              | some s, some t => some (.prototype s t)
+              | _, _ => none
+          | "metadata", [value] =>
+            match ← synth c fuel value env m with
+            | some (.specification metaTy _) => return some metaTy
+            | _ => return none
+          | "reflect", [value] =>
+            match ← synth c fuel value env m with
+            | some (.prototype spec _) => return some spec
+            | _ => return none
+          | "targetOf", [value] =>
+            match ← synth c fuel value env m with
+            | some (.prototype _ target) => return some target
+            | _ => return none
+          | _, _ => return none
       let mut t ← synth c fuel callee env m
       for _ in args do
         match callable t with
         | some (.arrow _ _ _ codomain) => t := some codomain
         | _ => return none
       return t
-    | _ => return none
 
 def synthBody (c : Ctx) : Nat → Body → List Binding → Module → M (Option PTy)
   | 0, _, _, _ => fail "type synthesis fuel"
@@ -1090,6 +1137,7 @@ def PTy.subst (σ : Nat → Option PTy) : PTy → PTy
   | .arrow r q d c => .arrow r q (d.subst σ) (c.subst σ)
   | .field n m t => .field n (m.subst σ) (t.subst σ)
   | .specification m e => .specification (m.subst σ) (e.subst σ)
+  | .prototype s t => .prototype (s.subst σ) (t.subst σ)
   | .variant r => .variant (r.subst σ)
   | .computation p r a => .computation (p.subst σ) (r.subst σ) (a.subst σ)
   | other => other
@@ -2128,6 +2176,10 @@ def PTy.intern : PTy → InternM Json
     let mj ← m.intern
     let ej ← e.intern
     internNode (Json.mkObj [("tag", "specification"), ("metadata", mj), ("extension", ej)])
+  | .prototype s t => do
+    let sj ← s.intern
+    let tj ← t.intern
+    internNode (Json.mkObj [("tag", "prototype"), ("spec", sj), ("target", tj)])
   | .variant r => do
     let rj ← r.intern
     internNode (Json.mkObj [("tag", "variant"), ("row", rj)])

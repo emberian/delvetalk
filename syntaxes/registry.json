@@ -83,7 +83,8 @@
         "scripts/process_custody.py",
         "scripts/affordances.py",
         "spec/PackageMain.lean",
-        ".lake/build/bin/delvetalk-obend"
+        ".lake/build/bin/delvetalk-obend",
+        "scripts/source_packages.py"
       ]
     },
     "spween-scene-i64@2": {
@@ -104,6 +105,48 @@
         "scene/lower.py"
       ],
       "lowering_profile": "spween-scene-i64-v2"
+    },
+    "objective-bend-spell@3": {
+      "reviewed": true,
+      "module": "syntaxes/obend_object.py",
+      "entry": "lower_data",
+      "modulesEntry": "lower_data_modules",
+      "target": "local-protocol-v1",
+      "runtimeProfile": "compiled",
+      "closure": [
+        "syntaxes/obend_object.py",
+        "scripts/source_store.py",
+        "scripts/process_custody.py",
+        "scripts/affordances.py",
+        "spec/PackageMain.lean",
+        ".lake/build/bin/delvetalk-obend",
+        "scripts/source_packages.py"
+      ]
+    },
+    "spween-handler-workshop@1": {
+      "reviewed": true,
+      "module": "syntaxes/spween_workshop.py",
+      "entry": "lower",
+      "target": "local-protocol-v1",
+      "runtimeProfile": "compiled",
+      "closure": [
+        "syntaxes/obend_object.py",
+        "scripts/source_store.py",
+        "scripts/process_custody.py",
+        "scripts/affordances.py",
+        "spec/PackageMain.lean",
+        ".lake/build/bin/delvetalk-obend",
+        "scripts/source_packages.py",
+        "syntaxes/spween.py",
+        "scene/spween-bridge/src/main.rs",
+        "scene/spween-bridge/Cargo.toml",
+        "scene/spween-bridge/Cargo.lock",
+        "scene/UPSTREAM.md",
+        "syntaxes/spween_workshop.py",
+        "scene/handlers.py",
+        "scene/lower.py",
+        "protocols/spween-handlers/Kernel.obend"
+      ]
     }
   },
   "targets": {

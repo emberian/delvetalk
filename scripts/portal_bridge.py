@@ -42,10 +42,10 @@ class Bridge:
               'Draft local identity differs from its captured session')
         derived = request
         if reconstruct:
-            derived = affordances.request(card['view'], saved['action'], request['principal'],
-                                          request['intent'], saved['fields'])
+            derived = self.app.captured_request(card, saved['action'], request['principal'],
+                                               request['intent'], saved['fields'])
             equal(request, derived, 'Draft request differs from captured action')
-        wire = {key: value for key, value in derived.items() if key not in ('principal', 'intent')}
+        wire = self.app.request_wire(derived)
         equal(saved['wire'], wire, 'Draft wire differs from captured action')
         raw = clerk.canonical(wire).decode('utf-8')
         if len(raw.encode('utf-8')) > portal.MAX_BODY:
@@ -120,15 +120,13 @@ class Bridge:
                 if not journal.is_file():
                     return self._uncertain(draft, source)
                 entry = clerk.loads(journal.read_bytes())
-                expected = {'principal': source['author'], 'intent': 'delve:' + source['uri'],
-                            **saved['prepared']['wire']}
+                original = self.app._read('drafts', draft)
+                expected = {**original['request'], 'principal': source['author'],
+                            'intent': 'delve:' + source['uri']}
                 equal(entry['source'], source, 'Clerk source identity differs from bound repository request')
                 equal(entry['record'], saved['prepared']['record'], 'Clerk record differs from prepared draft')
                 equal(entry['request'], expected, 'Clerk derived request differs from prepared draft')
-                with portal.bounded_lock(str(receiver.database) + '.lock'):
-                    world = clerk.loads(receiver.database.read_bytes())
-                retained = next((item['receipt'] for item in world['receipts']
-                                 if clerk.canonical(item['request']) == clerk.canonical(expected)), None)
+                retained = clerk.world.retained_reply(receiver.database, expected)
                 if retained is None:
                     if 'receipt' in entry:
                         raise ValueError('Clerk receipt has no matching retained world admission')
@@ -144,7 +142,7 @@ class Bridge:
             outcome = {'draft': draft, 'kind': kind, 'source': source, 'reply': retained,
                        'receipt': receipt, 'summary': 'Action committed.' if kind == 'committed'
                        else str(retained.get('data', 'Action refused.')),
-                       'links': {'refresh': '/api/object?object=' + quote(expected['object'], safe='')}}
+                       'links': {'refresh': '/api/object?object=' + quote(original.get('object', expected.get('object')), safe='')}}
             if 'outcome' in saved:
                 equal(saved['outcome'], outcome, 'Retained repository outcome changed')
             else:

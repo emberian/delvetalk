@@ -1,0 +1,40 @@
+edition ObjectiveBend 1
+record Entry:
+  object: String
+  label: String
+  addedBy: String
+  observedVersion: Nat
+sum Entries:
+  nil: {}
+  cons: {head: Entry, tail: Entries}
+def length(xs: Entries) -> Nat:
+  match xs:
+    case nil(_): 0n
+    case cons(c): 1n + length(c.tail)
+def contains(xs: Entries, object: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): c.head.object == object || contains(c.tail, object)
+def append(xs: Entries, entry: Entry) -> Entries:
+  match xs:
+    case nil(_): Entries.cons({head: entry, tail: Entries.nil()})
+    case cons(c): Entries.cons({head: c.head, tail: append(c.tail, entry)})
+def remove(xs: Entries, object: String) -> Entries:
+  match xs:
+    case nil(_): Entries.nil()
+    case cons(c): if c.head.object == object then c.tail else Entries.cons({head: c.head, tail: remove(c.tail, object)})
+def caption(xs: Entries, object: String, text: String) -> Entries:
+  match xs:
+    case nil(_): Entries.nil()
+    case cons(c): Entries.cons({head: if c.head.object == object then {object: c.head.object, label: text, addedBy: c.head.addedBy, observedVersion: c.head.observedVersion} else c.head, tail: caption(c.tail, object, text)})
+def insertBefore(xs: Entries, entry: Entry, before: String) -> Entries:
+  match xs:
+    case nil(_): Entries.cons({head: entry, tail: Entries.nil()})
+    case cons(c): if c.head.object == before then Entries.cons({head: entry, tail: xs}) else Entries.cons({head: c.head, tail: insertBefore(c.tail, entry, before)})
+def reorderFind(xs: Entries, all: Entries, object: String, before: String) -> Entries:
+  match xs:
+    case nil(_): all
+    case cons(c): if c.head.object == object then insertBefore(remove(all, object), c.head, before) else reorderFind(c.tail, all, object, before)
+def reorder(xs: Entries, object: String, before: String) -> Entries:
+  reorderFind(xs, xs, object, before)
+

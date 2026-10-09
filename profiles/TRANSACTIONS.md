@@ -19,7 +19,7 @@ python3 scripts/world.py --profile transactions /path/to/world.json request.json
 Replace roots with complete protocol/law/version/state records. All targets must
 appear in `reads`; extra roots guard commits. Lean checks every initial root
 before any call. Calls are nonempty and ordered; each checks the global
-principal's current target authority. No law change or delegation occurs.
+principal's current staged target authority. No delegation occurs.
 For [governed allocation](ALLOCATION.md), a `null` read asserts initial absence;
 factory calls may create that child for subsequent calls in the same transaction.
 
@@ -28,7 +28,13 @@ Invocation permits only `object`, `command`, exactly one of record `input` or
 whole record result. Programming permits `op:"reprogram",object,protocol,state`
 or `op:"reprogram",object,inputFrom`; the latter requires exactly
 `{protocol,state}`, without overrides. [Programming](PROGRAMMING.md) preserves
-law/identity, returns null and emits nothing.
+law/identity and emits nothing; compiled hosts return a checked program receipt.
+Law revision permits exactly `op:"law",object,law`: current management authority,
+old constraints and proposed constraints must all admit the staged program/state.
+It advances the version, returns null and emits nothing. Later calls use the new
+law immediately. A deliberate lockout may commit; a subsequent unauthorized call
+refuses the whole batch. Programming and law revision can commit together only
+when each ordered intermediate candidate satisfies its current constraints.
 
 `["input-origin"]` returns host-derived
 `{present,object,command,immediatelyPrevious}`. For `inputFrom`, it names the
@@ -41,7 +47,7 @@ each callee still checks the global principal. A [gated commons move](../conform
 its input from the immediately preceding named door command. This expression
 is separate from the source-transition context `{object,principal}`.
 
-Later calls see staged state/programs. Each success increments version once.
+Later calls see staged state, programs and laws. Each success increments version once.
 Within a legacy call, require/set/result/outbox expressions all read its original
 state; writes are simultaneous. Compiled [source transitions](COMPILED.md) instead
 replace the whole state from one evaluated decision, retaining the same atomicity.

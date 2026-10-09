@@ -95,7 +95,7 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
       let op ← match (field call "op").toOption with
         | some value => value.getStr?
         | none => pure "invoke"
-      if op != "invoke" && op != "reprogram" && op != "observe" then
+      if op != "invoke" && op != "reprogram" && op != "law" && op != "observe" then
         throw "unsupported transaction operation"
       let o ← if op == "observe" then readObject staged id principal else field staged id
       if op == "observe" then
@@ -114,6 +114,19 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
         checkCandidateWith runtime o nextObj (← put call "op" (.str op)) principal
         pure (nextObj, ← runtime.reprogramResult id nextObj, (#[] : Array Json), Json.null, World.noInputOrigin)
+      else if op == "law" then do
+        for (key, _) in (← pairs call) do
+          if !(["op", "object", "law"].contains key) then
+            throw "unsupported transaction law field"
+        authorizeRequest o call principal
+        let authority ← field call "law"
+        validateLaw authority
+        let n ← (← field o "version").getNat?
+        let nextObj ← put (← put o "law" authority) "version" (toJson (n + 1))
+        -- Both current and proposed law check the already-staged program/state.
+        -- Later steps see this law immediately, including deliberate lockout.
+        checkCandidateWith runtime o nextObj call principal
+        pure (nextObj, Json.null, (#[] : Array Json), Json.null, World.noInputOrigin)
       else do
         let input ← callInput call results
         let inputOrigin ← callInputOrigin call calls results.size

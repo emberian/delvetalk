@@ -59,14 +59,19 @@ def expand (state : State) : Except String Json :=
 -- arrays/scalars remain atomic. Traversal may scale with current data, never with
 -- the receipt history kept separately below.
 partial def changes (before after : Json) (path : List String := []) : Array Json := Id.run do
-  if before == after then return #[]
   let location := .arr (path.map Json.str).toArray
   match before, after with
   | .obj old, .obj next =>
     let mut result := #[]
     for (key, value) in next.toList do
       match old[key]? with
-      | some prior => result := result ++ changes prior value (path ++ [key])
+      | some prior =>
+        -- Prune unchanged object children before constructing their paths. The
+        -- outer object is already being compared by this traversal.
+        match prior, value with
+        | .obj _, .obj _ =>
+          if prior != value then result := result ++ changes prior value (path ++ [key])
+        | _, _ => result := result ++ changes prior value (path ++ [key])
       | none => result := result.push (obj [
           ("path", .arr ((path ++ [key]).map Json.str).toArray), ("value", value)])
     for (key, _) in old.toList do
@@ -74,7 +79,9 @@ partial def changes (before after : Json) (path : List String := []) : Array Jso
         result := result.push (obj [
           ("path", .arr ((path ++ [key]).map Json.str).toArray), ("remove", .bool true)])
     return result
-  | _, _ => return #[obj [("path", location), ("value", after)]]
+  | _, _ =>
+    if before == after then return #[]
+    return #[obj [("path", location), ("value", after)]]
 
 -- The selected receipt is only an optimization of handleWith's search. Its
 -- own envelope checks and full Json equality still decide retry/collision.
@@ -143,23 +150,29 @@ def applyFrame (admit : Admit) (session : Session) (frame : Json) : Except Strin
 -- A checkpoint is trusted local custody sealed by this receiver. Its content
 -- digest and journal anchor must be retained by the physical custodian. Rebuild
 -- the index here; physical storage never supplies selected authority/receipts.
+def admissionKey (entry : Json) : Option Key :=
+  ((field entry "request").bind requestKey).toOption
+
+def validateCheckpointAdmission (entry : Json) (key : Key) : Except String Unit := do
+  exactFields entry ["request", "receipt"]
+  let request ← field entry "request"
+  if key.1.isEmpty || key.2.isEmpty || (← str request "op") == "inspect" then
+    throw "invalid checkpoint receipt identity"
+  if (← field (← field entry "receipt") "intent") != .str key.2 then
+    throw "checkpoint receipt intent differs"
+
+def checkedAppend (state : State) (entry : Json) : Except String State := do
+  let some key := admissionKey entry | throw "invalid checkpoint receipt identity"
+  validateCheckpointAdmission entry key
+  if state.index[key]?.isSome then throw "duplicate checkpoint receipt identity"
+  return remember state key entry state.base state.head
+
 def loadCheckpoint (world : Json) (sequence : Nat) (head : String) : Except String State := do
   discard (pairs (← field world "objects"))
   let history ← (← field world "receipts").getArr?
   if history.size != sequence then throw "checkpoint sequence differs from retained history"
-  let mut index : Index := {}
-  for entry in history do
-    exactFields entry ["request", "receipt"]
-    let request ← field entry "request"
-    let key ← requestKey request
-    if key.1.isEmpty || key.2.isEmpty || (← str request "op") == "inspect" then
-      throw "invalid checkpoint receipt identity"
-    if index[key]?.isSome then throw "duplicate checkpoint receipt identity"
-    if (← field (← field entry "receipt") "intent") != .str key.2 then
-      throw "checkpoint receipt intent differs"
-    index := index.insert key entry
   let base ← put world "receipts" (.arr #[])
-  return { base, index, history := history.toList.reverse, sequence, head }
+  history.foldlM checkedAppend { base, head }
 
 abbrev Query := Json → Json → Except String Json
 

@@ -325,9 +325,17 @@ def source_document(view):
                 "artifactId": view["artifactId"], "pins": copy.deepcopy(view["pins"])}
     if "viewProgram" in protocol:
         source = {**common, "kind": "bend-view", "program": copy.deepcopy(protocol["viewProgram"])}
-        if view.get("source", {}).get("profile") == "delvetalk-obend-menu-v1":
+        for key in ('sourcePackages', 'spweenSource'):
+            if key in protocol:
+                source[key] = copy.deepcopy(protocol[key])
+        if view.get("source", {}).get("profile") in ("delvetalk-obend-menu-v1", "delvetalk-obend-data-menu-v1", "delvetalk-obend-data-offers-v1"):
             source.update(rawViewData=copy.deepcopy(view["rawData"]),
                           publicViewData=copy.deepcopy(view["data"]))
+            if view["source"]["profile"] in ("delvetalk-obend-data-menu-v1", "delvetalk-obend-data-offers-v1"):
+                projection = module("room_projection", "scene/projection.py")
+                source["children"] = projection.children(view)
+                if view["source"]["profile"] == "delvetalk-obend-data-offers-v1":
+                    source["offers"] = projection.offers(view)
         return source
     return {**common, "kind": "protocol", "program": copy.deepcopy(protocol)}
 

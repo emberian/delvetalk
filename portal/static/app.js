@@ -125,13 +125,19 @@ function clearDraft(updateUrl = true) {
   url.searchParams.delete('draft');
   writeLocation(url);
 }
-async function openObject(id, focus = false, panel = 'main', navigation = 'replace') {
+async function openObject(id, focus = false, panel = 'main', navigation = 'replace', childSelection = null) {
   if (state.sending) return notice('Wait for the send result before replacing this reading.');
   const generation = ++state.generation;
   ++state.routeGeneration;
   notice('');
   try {
-    const card = await api(`/api/object?object=${encodeURIComponent(id)}&panel=${encodeURIComponent(panel)}`);
+    let card;
+    if (childSelection) {
+      const result = await api(`/api/child?card=${encodeURIComponent(childSelection.card)}&key=${encodeURIComponent(childSelection.key)}`);
+      if (result.status !== 'opened') throw new Error(result.message || 'This child is unavailable.');
+      card = result.card;
+      id = card.object;
+    } else card = await api(`/api/object?object=${encodeURIComponent(id)}&panel=${encodeURIComponent(panel)}`);
     if (generation !== state.generation || state.sending || authoring.pending) return;
     state.card = card;
     state.detail = null;
@@ -160,6 +166,7 @@ async function openObject(id, focus = false, panel = 'main', navigation = 'repla
       const listed = state.world.objects.find(object => object.id === id);
       if (listed && card.title) listed.title = card.title;
     }
+    renderViewChildren(card);
     $('object-children').replaceChildren();
     $('object-children').hidden = true;
     renderObjects();
@@ -173,7 +180,10 @@ async function openObject(id, focus = false, panel = 'main', navigation = 'repla
     document.title = `${card.title || id} · DelveTalk`;
     if (focus) $('object-card').focus({ preventScroll: true });
     return true;
-  } catch (error) { if (generation === state.generation) notice(error.message, true); }
+  } catch (error) {
+    if (generation === state.generation) notice(childSelection
+      ? `Unavailable: ${childSelection.label}. ${error.message}` : error.message, true);
+  }
 }
 function renderPanels(card) {
   const nav = $('object-panels');
@@ -208,8 +218,10 @@ function fieldInput(field, actionId, index) {
       input.append(choice);
     }
   } else {
-    input = element('input');
-    input.type = field.type === 'bool' ? 'checkbox' : 'text';
+    const longText = field.type === 'string' && field.maxLength > 256;
+    input = element(longText ? 'textarea' : 'input');
+    if (longText) input.rows = 6;
+    else input.type = field.type === 'bool' ? 'checkbox' : 'text';
     if (field.type === 'nat') {
       input.inputMode = 'numeric';
       input.pattern = '0|[1-9][0-9]*';
@@ -359,8 +371,9 @@ function showDraft(draft, restored = false) {
   $('preview-copy').hidden = !preview;
   $('draft-command-row').hidden = preview;
   $('send-draft').hidden = preview;
-  $('draft-target').textContent = draft.object
-    ? `${text(draft.object)}${draft.version == null ? '' : ` · read at version ${text(draft.version)}`}` : '';
+  $('draft-target').textContent = draft.reads?.length
+    ? `Captured together: ${draft.reads.map(read => `${text(read.object)} · version ${text(read.version)}`).join('; ')}. All steps commit together.`
+    : draft.object ? `${text(draft.object)}${draft.version == null ? '' : ` · read at version ${text(draft.version)}`}` : '';
   $('draft-absence').hidden = !draft.absence?.length;
   $('draft-absence').textContent = draft.absence?.length ? `Creates: ${draft.absence.join(', ')}. These object names must still be absent.` : '';
   $('draft-command').textContent = text(draft.token || draft.command || draft.draft);
@@ -530,6 +543,24 @@ $('interpret-form').addEventListener('submit', event => {
     }
   });
 });
+function renderViewChildren(card) {
+  const target = $('view-children');
+  target.replaceChildren();
+  const children = card.children || [];
+  target.hidden = children.length === 0;
+  if (!children.length) return;
+  target.append(element('h3', '', 'Look around'));
+  target.append(element('p', 'help', 'These are places to read, not actions. Opening one reads its current state separately from this catalogue.'));
+  const links = element('div', 'child-links');
+  for (const child of children) {
+    const button = element('button', 'secondary', child.label);
+    button.type = 'button';
+    button.addEventListener('click', () => openObject(child.object, true, child.panel, 'push',
+      { card: card.card, key: child.key, label: child.label }));
+    links.append(button);
+  }
+  target.append(links);
+}
 function renderCreatedChildren(children) {
   const target = $('object-children');
   target.replaceChildren();

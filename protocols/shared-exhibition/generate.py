@@ -92,6 +92,8 @@ def build():
     return {'profile': 'delvetalk-local-v1', 'name': 'shared-exhibition-v1',
             'description': 'A two-artist exhibition opens only after both approve the curator arrangement.',
             'initial': initial, 'commands': commands, 'affordances': forms,
+            'viewPanels': [{'id': 'north', 'label': 'North artist’s note'},
+                           {'id': 'south', 'label': 'South artist’s note'}],
             'viewProgram': {'profile': 'delvetalk-bend-view-v1', 'term': term}}
 
 

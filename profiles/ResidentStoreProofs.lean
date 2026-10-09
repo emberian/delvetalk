@@ -25,10 +25,6 @@ private theorem compareKey_eq_iff (a b : Key) :
   simp only [compareLex_eq_eq, compareOn, Std.compare_eq_iff_eq]
   exact Prod.ext_iff.symm
 
-/-- The same principal/intent key extracted from a retained admission. -/
-def admissionKey (entry : Json) : Option Key :=
-  ((field entry "request").bind requestKey).toOption
-
 /-- The oldest matching receipt in the actual reverse-ordered history. -/
 def firstReceipt (history : List Json) (key : Key) : Option Json :=
   history.reverse.find? (fun entry => admissionKey entry == some key)
@@ -102,5 +98,83 @@ theorem expand_remember (state : State) (key : Key)
     expand (remember state key admission base head) =
       put base "receipts" (.arr (state.history.reverse ++ [admission]).toArray) := by
   simp [expand, remember]
+
+private theorem bind_success {α β : Type} {first : Except String α}
+    {next : α → Except String β} {result : β}
+    (success : first.bind next = .ok result) :
+    ∃ value, first = .ok value ∧ next value = .ok result := by
+  cases computed : first with
+  | error error =>
+      rw [computed] at success
+      cases success
+  | ok value =>
+      rw [computed] at success
+      exact ⟨value, computed, success⟩
+
+/-- Successful checkpoint admission uses the actual parser, rejects an occupied
+    index key, and performs exactly the same remember operation as live admission. -/
+theorem checkedAppend_success (state final : State) (entry : Json)
+    (success : checkedAppend state entry = .ok final) :
+    ∃ key, admissionKey entry = some key ∧ state.index[key]? = none ∧
+      final = remember state key entry state.base state.head := by
+  unfold checkedAppend at success
+  cases keyed : admissionKey entry with
+  | none => simp [keyed] at success
+  | some key =>
+      simp only [keyed] at success
+      obtain ⟨validated, _, success⟩ := bind_success success
+      cases validated
+      cases fresh : state.index[key]? with
+      | none =>
+          have output : remember state key entry state.base state.head = final := by
+            simpa [fresh] using success
+          exact ⟨key, keyed, fresh, output.symm⟩
+      | some prior => simp [fresh] at success
+
+/-- A successful checked checkpoint append preserves the real receipt index. -/
+theorem indexCorrect_checkedAppend (state final : State) (entry : Json)
+    (correct : IndexCorrect state)
+    (success : checkedAppend state entry = .ok final) : IndexCorrect final := by
+  obtain ⟨key, keyed, fresh, rfl⟩ := checkedAppend_success state final entry success
+  exact indexCorrect_remember state key entry state.base state.head correct fresh keyed
+
+private theorem indexCorrect_listFold (entries : List Json) (state final : State)
+    (correct : IndexCorrect state)
+    (success : entries.foldlM checkedAppend state = .ok final) : IndexCorrect final := by
+  induction entries generalizing state final with
+  | nil =>
+      simp only [List.foldlM_nil] at success
+      cases success
+      exact correct
+  | cons entry entries ih =>
+      rw [List.foldlM_cons] at success
+      obtain ⟨next, appended, success⟩ := bind_success success
+      exact ih next final (indexCorrect_checkedAppend state next entry correct appended) success
+
+/-- Native checkpoint reconstruction uses Array.foldlM. The list induction is a
+    proof transport only; the receiver need not allocate an intermediate list. -/
+theorem indexCorrect_checkpointFold (entries : Array Json) (state final : State)
+    (correct : IndexCorrect state)
+    (success : entries.foldlM checkedAppend state = .ok final) : IndexCorrect final := by
+  apply indexCorrect_listFold entries.toList state final correct
+  simpa only [Array.foldlM_toList] using success
+
+/-- Every successful loadCheckpoint rebuilds an index agreeing with chronological
+    first-match history. This does not authenticate the checkpoint's custodian. -/
+theorem indexCorrect_loadCheckpoint (world : Json) (sequence : Nat) (head : String)
+    (state : State) (success : loadCheckpoint world sequence head = .ok state) :
+    IndexCorrect state := by
+  unfold loadCheckpoint at success
+  obtain ⟨objects, _, success⟩ := bind_success success
+  obtain ⟨objectFields, _, success⟩ := bind_success success
+  obtain ⟨receipts, _, success⟩ := bind_success success
+  obtain ⟨history, _, success⟩ := bind_success success
+  split at success
+  · cases success
+  · obtain ⟨base, _, success⟩ := bind_success success
+    apply indexCorrect_checkpointFold history { base, head } state ?_ success
+    intro key
+    change (∅ : Index)[key]? = ([] : List Json).reverse.find? _
+    simp
 
 end ResidentStore

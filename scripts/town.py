@@ -11,6 +11,7 @@ import bootstrap
 import clerk
 import town_cards
 import worker
+import world
 
 FORMAT = 'delvetalk-town-operator-v1'
 canonical, loads, digest, save = clerk.canonical, clerk.loads, clerk.digest, clerk.save
@@ -50,8 +51,7 @@ class Town:
         return config, book
 
     def _views(self, object_ids, expected_runtime):
-        with _lock(Path(str(self.clerk.database) + '.lock')):
-            snapshot = loads(self.clerk.database.read_bytes())
+        snapshot = world.snapshot(self.clerk.database)
         views = []
         for object_id in object_ids:
             root = snapshot['objects'].get(object_id)
@@ -69,6 +69,59 @@ class Town:
                 raise ValueError('object is not enrolled in this clerk')
             captured = book.capture(self._views([object_id], book.metadata()['runtime'])[0], alias=alias)
             return {'status': 'prepared', **captured}
+
+    def capture_offer(self, object_id, key, *, alias=None):
+        """Capture one source-authored transaction using one current snapshot."""
+        with self.lock():
+            config, book = self._configuration()
+            if object_id not in config['objects']:
+                raise ValueError('object is not enrolled in this clerk')
+            snapshot = world.snapshot(self.clerk.database)
+            root = snapshot['objects'].get(object_id)
+            if root is None:
+                raise ValueError('object absent from current world: ' + object_id)
+            artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
+            view = bootstrap.room.inspect_object(root, object_id, artifact,
+                expected_runtime=book.metadata()['runtime'])
+            captured = book.capture_source_offer(view, snapshot['objects'], key, alias=alias)
+            return {'status': 'prepared', **captured}
+
+    def capture_child(self, parent_alias, child_key, *, alias=None):
+        """Select one retained catalogue entry, then capture that object's fresh view."""
+        with self.lock():
+            config, book = self._configuration()
+            parent = book.card(parent_alias)
+            if 'view' not in parent:
+                raise ValueError('parent card has no source-authored catalogue')
+            descriptor = town_cards.projection.child(parent['view'], child_key)
+            if alias == parent_alias:
+                raise ValueError('child card requires a distinct alias')
+            object_id, panel = descriptor['object'], descriptor['panel']
+            selected = {'parent': parent_alias, 'key': child_key}
+            def unavailable(reason, detail):
+                return {'status': 'unavailable', **selected, 'object': object_id,
+                        'panel': panel, 'reason': reason, 'detail': detail}
+            if object_id not in config['objects']:
+                return unavailable('unenrolled', 'This object is not enrolled for town replies.')
+            snapshot = world.snapshot(self.clerk.database)
+            root = snapshot['objects'].get(object_id)
+            if root is None:
+                return unavailable('absent', 'This object is absent from the current world.')
+            try:
+                town_cards.projection.validate_panel(root, panel)
+            except ValueError as error:
+                return unavailable('panel-unavailable', str(error))
+            try:
+                artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
+                view = bootstrap.room.inspect_object(root, object_id, artifact, panel=panel,
+                    expected_runtime=book.metadata()['runtime'])
+                if (('viewProgram' in root['protocol'] and view.get('mode') != 'projection')
+                        or ('roomArtifact' in root['protocol'] and view.get('mode') != 'room')):
+                    raise ValueError(view.get('reason', 'Child view is unavailable.'))
+            except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
+                return unavailable('view-unavailable', str(error)[:2000])
+            captured = book.capture(view, alias=alias)
+            return {'status': 'prepared', **selected, 'card': captured}
 
     def bind(self, alias, uri, cid):
         with self.lock():
@@ -132,8 +185,7 @@ class Town:
                 request = receipt['request']
                 targets = [request['object']] if 'object' in request else sorted(request['reads'])
                 targets = list(dict.fromkeys(targets + [child['object'] for child in town_cards.affordances.allocated_refs(receipt['reply'])]))
-                with _lock(Path(str(self.clerk.database) + '.lock')):
-                    snapshot = loads(self.clerk.database.read_bytes())
+                snapshot = world.snapshot(self.clerk.database)
                 entry['views'], entry['notices'] = [], []
                 for target in targets:
                     root = snapshot['objects'].get(target)
@@ -196,6 +248,11 @@ def main():
     capture = commands.add_parser('capture')
     capture.add_argument('object')
     capture.add_argument('--alias')
+    capture.add_argument('--offer', help='visible source-authored composite action key')
+    child = commands.add_parser('capture-child')
+    child.add_argument('parent')
+    child.add_argument('key')
+    child.add_argument('--alias')
     bind = commands.add_parser('bind')
     bind.add_argument('card')
     bind.add_argument('uri')
@@ -208,7 +265,13 @@ def main():
     try:
         operator = Town(args.clerk_state, state=args.state)
         if args.operation == 'capture':
-            result = operator.capture(args.object, alias=args.alias)
+            result = (operator.capture_offer(args.object, args.offer, alias=args.alias) if args.offer
+                      else operator.capture(args.object, alias=args.alias))
+        elif args.operation == 'capture-child':
+            result = operator.capture_child(args.parent, args.key, alias=args.alias)
+            if args.text and result['status'] == 'prepared':
+                print(result['card']['body'])
+                return 0
         elif args.operation == 'bind':
             result = operator.bind(args.card, args.uri, args.cid)
         else:

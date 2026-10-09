@@ -72,6 +72,31 @@ class CompositeShapeTests(unittest.TestCase):
         for value in changes:
             with self.subTest(value=value), self.assertRaises(ValueError): offers.validate(value)
 
+    def test_fixed_observation_then_result_and_caption_binding(self):
+        offer = copy.deepcopy(self.offer)
+        offer['calls'] = [{'op': 'observe', 'object': 'door'},
+                          {'object': 'commons', 'command': 'add', 'inputFrom': 0},
+                          {'object': 'commons', 'command': 'caption', 'input': {'object': 'door', 'label': None}}]
+        offer['bindings'] = [{'field': 'word', 'call': 2, 'input': 'label'}]
+        request = offers.request(offer, 'curator', 'exhibit', {'word': 'The lantern'})
+        self.assertEqual(request['calls'][0], {'op': 'observe', 'object': 'door'})
+        self.assertEqual(request['calls'][1]['inputFrom'], 0)
+        self.assertEqual(request['calls'][2]['input'], {'object': 'door', 'label': 'The lantern'})
+        for change in (lambda p: p['calls'][0].update(input={}),
+                       lambda p: p['calls'][0].update(command='add'),
+                       lambda p: p['calls'][0].update(inputFrom=0),
+                       lambda p: p['calls'][0].update(principal='owner'),
+                       lambda p: p['reads'].update(door=None),
+                       lambda p: p['bindings'][0].update(call=0)):
+            invalid = copy.deepcopy(offer); change(invalid)
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError): offers.validate(invalid)
+        with tempfile.TemporaryDirectory() as directory:
+            book = town_cards.CardBook.create(Path(directory), issuer_did=ISSUER,
+                world_id='composite-shape-test', runtime={'name': 'compiled'})
+            captured = book.capture_composite(offer)
+            self.assertIn('Writes check your current permissions.', captured['body'])
+            self.assertEqual(book.card(captured['alias'])['offer']['calls'][0], offer['calls'][0])
+
 
 class CompositePostTests(unittest.TestCase):
     def setUp(self):

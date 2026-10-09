@@ -1,0 +1,112 @@
+edition ObjectiveBend 1
+sum Value:
+  null: {}
+  boolean: {value: Bool}
+  integer: {value: Nat}
+  string: {value: String}
+sum Values:
+  nil: {}
+  cons: {head: Value, tail: Values}
+record Variable:
+  name: String
+  value: Value
+sum Variables:
+  nil: {}
+  cons: {head: Variable, tail: Variables}
+def get(xs: Variables, name: String) -> Value:
+  match xs:
+    case nil(_): Value.null()
+    case cons(c): if c.head.name == name then c.head.value else get(c.tail, name)
+def put(xs: Variables, name: String, value: Value) -> Variables:
+  match xs:
+    case nil(_): Variables.cons({head: {name: name, value: value}, tail: Variables.nil()})
+    case cons(c): if c.head.name == name then Variables.cons({head: {name: name, value: value}, tail: c.tail}) else Variables.cons({head: c.head, tail: put(c.tail, name, value)})
+record Member:
+  category: String
+  key: String
+sum Members:
+  nil: {}
+  cons: {head: Member, tail: Members}
+def has(xs: Members, category: String, key: String) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): (c.head.category == category && c.head.key == key) || has(c.tail, category, key)
+def grant(xs: Members, category: String, key: String) -> Members:
+  if has(xs, category, key) then xs else Members.cons({head: {category: category, key: key}, tail: xs})
+def remove(xs: Members, category: String, key: String) -> Members:
+  match xs:
+    case nil(_): xs
+    case cons(c): if c.head.category == category && c.head.key == key then remove(c.tail, category, key) else Members.cons({head: c.head, tail: remove(c.tail, category, key)})
+sum Visits:
+  nil: {}
+  cons: {head: Nat, tail: Visits}
+def visited(xs: Visits, passage: Nat) -> Bool:
+  match xs:
+    case nil(_): false
+    case cons(c): c.head == passage || visited(c.tail, passage)
+def visit(xs: Visits, passage: Nat) -> Visits:
+  if visited(xs, passage) then xs else Visits.cons({head: passage, tail: xs})
+def integerEq(a: Nat, b: Value) -> Bool:
+  match b:
+    case null(_): false
+    case boolean(c): a == (if c.value then 9223372036854775809n else 9223372036854775808n)
+    case integer(c): a == c.value
+    case string(_): false
+def nullEq(b: Value) -> Bool:
+  match b:
+    case null(_): true
+    case boolean(_): false
+    case integer(_): false
+    case string(_): false
+def boolEq(a: Bool, b: Value) -> Bool:
+  match b:
+    case null(_): false
+    case boolean(c): a == c.value
+    case integer(c): c.value == (if a then 9223372036854775809n else 9223372036854775808n)
+    case string(_): false
+def stringEq(a: String, b: Value) -> Bool:
+  match b:
+    case null(_): false
+    case boolean(_): false
+    case integer(_): false
+    case string(c): a == c.value
+def equal(a: Value, b: Value) -> Bool:
+  match a:
+    case null(_): nullEq(b)
+    case boolean(c): boolEq(c.value, b)
+    case integer(c): integerEq(c.value, b)
+    case string(c): stringEq(c.value, b)
+def order(a: Value, b: Nat, op: String) -> Bool:
+  match a:
+    case null(_): false
+    case boolean(_): false
+    case integer(c): if op == "lt" then c.value < b else if op == "le" then c.value <= b else if op == "gt" then c.value > b else c.value >= b
+    case string(_): false
+record Modified:
+  valid: Bool
+  value: Value
+def shift(n: Nat, positive: Bool, magnitude: Nat) -> Modified:
+  {valid: if positive then n <= 18446744073709551615n - magnitude else n >= magnitude, value: Value.integer({value: if positive then n + magnitude else n - magnitude})}
+def modify(value: Value, positive: Bool, magnitude: Nat) -> Modified:
+  match value:
+    case null(_): shift(9223372036854775808n, positive, magnitude)
+    case integer(c): shift(c.value, positive, magnitude)
+    case boolean(_): {valid: true, value: value}
+    case string(_): {valid: true, value: value}
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}

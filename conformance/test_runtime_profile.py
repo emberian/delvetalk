@@ -95,7 +95,16 @@ class RuntimeProfileTests(unittest.TestCase):
                 if name.startswith('spec/upstream/'):
                     provenance = manifest['files'][name.removeprefix('spec/upstream/')]
                     if 'compatibility' in provenance:
-                        self.assertIn(provenance['compatibility']['source'], selected)
+                        compatibility = provenance['compatibility']
+                        if 'sourceGit' in compatibility:
+                            self.assertIn('spec/upstream.json', selected)
+                            self.assertIn(name, selected)
+                            self.assertEqual(compatibility['sourceGit'], {
+                                'repository': manifest['repository'], 'commit': manifest['commit'],
+                                'path': name.removeprefix('spec/upstream/')})
+                            self.assertNotIn('source', compatibility)
+                        else:
+                            self.assertIn(compatibility['source'], selected)
 
 
 if __name__ == '__main__':

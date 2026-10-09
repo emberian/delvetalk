@@ -1,0 +1,19 @@
+---
+id: handled_moth
+title: The Moth Workshop
+---
+=== bench
+A moth of folded brass waits on the workbench. One person can mend it; another can carry it into the garden.
+* [Mend the brass moth] { !inventory.moth }
+  ~ repair
+  -> bench
+* [Release the brass moth] { inventory.moth }
+  ~ release
+  -> garden
+* [Try the impossible hinge]
+  ~ reject
+  -> bench
+=== garden
+The moth traces a small constellation over the flowers. The workshop remembers who changed its score.
+* [Return to the workbench]
+  -> bench

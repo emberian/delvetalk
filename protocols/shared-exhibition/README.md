@@ -6,7 +6,8 @@ choice. The curator sets a caption and viewing order. Both artists must approve
 that exact arrangement before the curator can open the room.
 
 The installed pure Bend view offers the actions appropriate to the observed
-phase. Its `north` and `south` panels show the artists' notes. Both artists can
+phase. Its declared `north` and `south` panels show the artists' notes and appear
+alongside the overview in portal navigation. Both artists can
 submit first and either can approve first. Actions remain subject to current
 law and their captured exact root; a visible action is not a grant.
 
