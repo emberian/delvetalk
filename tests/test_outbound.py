@@ -309,6 +309,26 @@ class Offers(Reflection):
         self.assertEqual(self.offers("kim"), ["woken"])
         self.assertEqual(self.offers("glm"), [])
 
+    def test_a_turn_that_offers_nothing_carries_no_offers_and_journals_like_any_other(self):
+        """Rehearsal finding 3: prose addressed to no card gets nothing back. A turn that performs
+        no `offer` answers without an `offers` field (not an empty one), its entry retains none,
+        and it is journaled, retried and replayed as any admitted turn, so transport drafts
+        exactly when `offers` is present."""
+        height = self.host.send(op="world-status")["height"]
+        quiet = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
+        self.assertEqual(quiet["status"], "admitted", quiet)
+        self.assertNotIn("offers", quiet)
+        self.assertNotIn("offers", quiet["receipt"])
+        self.assertEqual(quiet["receipt"]["height"], height + 1)
+        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
+        self.assertEqual(field(self.host.send(op="world-view", principal="ann", object="teller")["state"], "note"),
+                         label("noted"))
+        self.assertEqual(self.offers("ann"), [])
+        again = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
+        self.assertEqual(again, quiet)
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-receipt", principal="ann", identity="quiet")["receipt"], quiet["receipt"])
+        self.assertEqual(self.offers("ann"), [])
 
 class Publish(Reflection):
     """publish is retained like an addressed offer, for transport to post as the object's page."""
