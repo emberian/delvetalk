@@ -30,7 +30,7 @@ FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
 TRANSPORT_PIN_PATHS = ['scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py']
-RUNTIME_CHOICES = ('world', 'compiled')
+RUNTIME_CHOICES = tuple(world.PROFILES)
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
 
@@ -74,7 +74,7 @@ def digest(value):
 def pins(runtime_profile='world'):
     if runtime_profile not in RUNTIME_CHOICES:
         raise ValueError('unsupported clerk runtime profile')
-    profiles = ('world', 'transactions') if runtime_profile == 'world' else ('compiled',)
+    profiles = ('world', 'transactions') if runtime_profile == 'world' else (runtime_profile,)
     result = {}
     for profile in profiles:
         result.update(runtime_profiles.file_hashes(profile))
@@ -148,8 +148,18 @@ def feed_request(record):
 class Clerk:
     def __init__(self, state, request=None):
         self.state = Path(state).expanduser().resolve()
-        self.database = self.state / 'world.json'
         self.http = request or PublicHTTP()
+
+    @property
+    def database(self):
+        path = self.state / 'clerk.json'
+        binding = loads(path.read_bytes()).get('database') if path.exists() else None
+        if binding is None:
+            return (self.state / 'world.json').resolve()
+        if (not isinstance(binding, str) or not Path(binding).is_absolute()
+                or str(Path(binding).resolve()) != binding):
+            raise ValueError('clerk database binding must remain an exact canonical path')
+        return Path(binding)
 
     def config(self):
         result = loads((self.state / 'clerk.json').read_text())
@@ -160,8 +170,8 @@ class Clerk:
 
     def execution_profile(self, request, config=None):
         config = self.config() if config is None else config
-        if config.get('runtimeProfile', 'world') == 'compiled':
-            return 'compiled'
+        if config.get('runtimeProfile', 'world') != 'world':
+            return config['runtimeProfile']
         return 'transactions' if request['op'] == 'transaction' else 'world'
 
     def bootstrap(self, object_id, protocol, law, repositories, runtime_profile='world'):
@@ -185,6 +195,100 @@ class Clerk:
                 # Retain bootstrap preimage before admission so interruption is replayable.
                 save(path, config)
             return world.exchange(self.database, config['bootstrap'], profile=self.execution_profile(config['bootstrap'], config))
+
+    def attach(self, workspace, expected_roots, repositories, *, expected_genesis,
+               expected_seed_head, runtime_profile):
+        """Enroll an existing workspace after exact anchors and Lean reconstruction."""
+        directory = Path(workspace).expanduser().resolve()
+        database = (directory / 'world.json').resolve()
+        if runtime_profile not in world.PROFILES:
+            raise ValueError('unknown attachment runtime profile')
+        if (not isinstance(expected_roots, dict) or not expected_roots
+                or any(not isinstance(key, str) or not key or not isinstance(root, dict)
+                       for key, root in expected_roots.items())):
+            raise ValueError('expected roots must explicitly map object IDs to full roots')
+        if not repositories or any(not isinstance(repo, str) or not DID.fullmatch(repo) for repo in repositories):
+            raise ValueError('repositories must be an explicit nonempty did:plc allowlist')
+        for anchor in (expected_genesis, expected_seed_head):
+            if not isinstance(anchor, str) or not re.fullmatch('[0-9a-f]{64}', anchor):
+                raise ValueError('attachment requires exact genesis and seed head SHA256 anchors')
+        selection = {'workspace': str(directory), 'database': str(database), 'roots': expected_roots,
+                     'repositories': sorted(set(repositories)), 'runtimeProfile': runtime_profile,
+                     'genesis': expected_genesis, 'seedHead': expected_seed_head}
+        with delve.locked(self.state / 'clerk.lock'):
+            path = self.state / 'clerk.json'
+            if path.exists():
+                configured = self.config()
+                if canonical(configured.get('attachment', {}).get('selection')) != canonical(selection):
+                    raise ValueError('clerk already configured with a different attachment or bootstrap')
+                if self.database != database:
+                    raise ValueError('clerk database differs from retained attachment')
+                return {'status': 'already-attached', 'attachment': configured['attachment']}
+            local = self.state / 'world.json'
+            if (local.exists() or local.is_symlink()) and local.resolve() != database:
+                raise ValueError('clerk state already contains a different world')
+            if any((self.state / 'requests').glob('*.json')):
+                raise ValueError('existing request journals cannot be rebound to another world')
+            if not database.is_file():
+                raise ValueError('workspace world.json does not exist')
+            # Keep custody order identical to receiving/upgrade; all reconstruction
+            # runs against independent temporary databases, never this locked world.
+            with delve.locked(Path(str(database) + '.lock')):
+                bootstrap = module('clerk_attach_bootstrap', 'scripts/bootstrap.py')
+                history = bootstrap.history
+                metadata = loads((directory / 'manifest.json').read_bytes())
+                seed = loads((directory / 'seed.json').read_bytes())
+                seed_manifest = loads((directory / 'seed-history/manifest.json').read_bytes())
+                runtime = history.runtime(runtime_profile)
+                if (metadata.get('format') != 'delvetalk-workspace-v1'
+                        or canonical(metadata.get('runtime')) != canonical(runtime)
+                        or canonical(metadata.get('genesis')) != canonical(seed_manifest.get('genesis'))
+                        or metadata['genesis'].get('id') != expected_genesis
+                        or seed.get('format') != 'delvetalk-workspace-seed-v1'
+                        or seed.get('genesis') != expected_genesis or seed.get('head') != expected_seed_head
+                        or seed.get('worldId') != bootstrap.world_id(metadata)
+                        or seed.get('entryObjects') != bootstrap.entry_objects(metadata)
+                        or seed.get('defaultObject') != bootstrap.default_object(metadata)):
+                    raise ValueError('workspace manifest, runtime or seed anchors mismatch')
+                snapshot = loads(database.read_bytes())
+                exact(snapshot, ['objects', 'receipts'], 'workspace world')
+                prefix = [{'request': entry['request'], 'receipt': entry['reply']}
+                          for entry in seed_manifest['entries']]
+                if (not isinstance(snapshot['receipts'], list)
+                        or canonical({'receipts': snapshot['receipts'][:len(prefix)]}) != canonical({'receipts': prefix})):
+                    raise ValueError('workspace world does not extend its exact seed prefix')
+                bootstrap.validate_workspace_identity(metadata, snapshot['receipts'])
+                selected_runtime = runtime_profile
+                profile = {'name': PROFILE, 'pins': pins(selected_runtime)}
+                with tempfile.TemporaryDirectory(prefix='clerk-attach-') as temporary:
+                    replay = Path(temporary) / 'world.json'
+                    evidence = history.verify_history(directory / 'seed-history', expected_genesis=expected_genesis,
+                                                      expected_head=expected_seed_head, output=replay)
+                    if any(seed.get(key) != evidence[key] for key in ('entries', 'worldSha256')):
+                        raise ValueError('workspace seed evidence mismatch')
+                    for retained in snapshot['receipts'][len(prefix):]:
+                        exact(retained, ['request', 'receipt'], 'retained admission')
+                        reply = world.exchange(replay, retained['request'], profile=runtime_profile)
+                        if canonical(reply) != canonical(retained['receipt']):
+                            raise ValueError('workspace retained receipt does not replay under selected runtime')
+                    if canonical(loads(replay.read_bytes())) != canonical(snapshot):
+                        raise ValueError('workspace world cannot be reconstructed from retained admissions')
+                for object_id, expected in expected_roots.items():
+                    if canonical(snapshot['objects'].get(object_id)) != canonical(expected):
+                        raise ValueError('attachment expected root mismatch: ' + object_id)
+                if (canonical(history.runtime(runtime_profile)) != canonical(runtime)
+                        or pins(selected_runtime) != profile['pins']):
+                    raise ValueError('attachment implementation changed during verification')
+                attachment = {'selection': selection, 'worldSha256': digest(snapshot),
+                              'worldId': metadata['worldId'], 'entries': len(snapshot['receipts'])}
+                attachment['id'] = digest(attachment)
+                config = {'format': PROFILE, 'pds': PDS, 'repositories': selection['repositories'],
+                          'objects': sorted(expected_roots), 'profile': profile, 'database': str(database),
+                          'attachment': attachment}
+                if selected_runtime != 'world':
+                    config['runtimeProfile'] = selected_runtime
+                save(path, config)
+                return {'status': 'attached', 'attachment': attachment}
 
     def verify_repository(self, author):
         description = self.http('GET', PDS, 'com.atproto.repo.describeRepo', params={'repo': author})
@@ -428,6 +532,13 @@ def main():
     authority.add_argument('--law-file', type=Path, help='complete law JSON; validated by Lean')
     init.add_argument('--repository', action='append', required=True)
     init.add_argument('--runtime-profile', choices=RUNTIME_CHOICES, default='world')
+    attach = commands.add_parser('attach', help='enroll an existing verified workspace without creating objects')
+    attach.add_argument('--workspace', required=True, type=Path)
+    attach.add_argument('--expected-roots', required=True, type=Path, help='JSON object mapping selected IDs to exact full roots')
+    attach.add_argument('--repository', action='append', required=True)
+    attach.add_argument('--genesis', required=True)
+    attach.add_argument('--seed-head', required=True)
+    attach.add_argument('--runtime-profile', choices=world.PROFILES, required=True)
     receive = commands.add_parser('receive')
     receive.add_argument('uri')
     receive.add_argument('--cid', required=True)
@@ -443,6 +554,10 @@ def main():
         if args.op == 'bootstrap':
             law = loads(args.law_file.read_bytes()) if args.law_file else args.law
             result = clerk.bootstrap(args.object, loads(args.protocol.read_text()), law, args.repository, args.runtime_profile)
+        elif args.op == 'attach':
+            result = clerk.attach(args.workspace, loads(args.expected_roots.read_bytes()), args.repository,
+                                  expected_genesis=args.genesis, expected_seed_head=args.seed_head,
+                                  runtime_profile=args.runtime_profile)
         elif args.op == 'receive':
             result = clerk.receive(args.uri, args.cid)
         elif args.op == 'profile':

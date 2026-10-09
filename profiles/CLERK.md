@@ -16,6 +16,54 @@ python3 scripts/clerk.py --state "$STATE" receive \
 
 `--repository` enrolls transport; `--law` grants initial Lean authority. Repeat either; empty law is permitted. `--law-file` supplies complete scoped law instead. Exact bootstrap retries recover the create receipt; different bootstrap cannot overwrite custody. [Management](MANAGEMENT.md) adds reviewed objects.
 
+## Attach an existing workspace
+
+`attach` enrolls an existing generic workspace without creating another object
+or changing its world, law or receipts:
+
+```sh
+python3 scripts/clerk.py --state /private/path/receiver attach \
+  --workspace /private/path/shared-world --runtime-profile transactions \
+  --genesis EXACT_GENESIS_SHA256 --seed-head EXACT_SEED_HEAD_SHA256 \
+  --expected-roots /private/path/selected-roots.json --repository AUTHOR_DID
+```
+
+The roots file maps selected object IDs to **complete current root objects**,
+for example `{"entry:one": FULL_ROOT, "desk:one": FULL_ROOT}`. Its keys select
+initial remote enrollment. Select genesis and seed head from workspace
+initialization evidence; the command requires its `manifest.json`, `seed.json`
+and `seed-history/`, not arbitrary world JSON. The Python API is
+`Clerk.attach(workspace, expected_roots, repositories, expected_genesis=...,
+expected_seed_head=..., runtime_profile=...)` with the last three arguments
+keyword-only.
+
+Attachment verifies namespace, runtime and anchors, replays the exact seed
+through the selected Lean host, and checks that current history extends that
+seed prefix. Later admissions are replayed in temporary custody; the full world
+and selected roots must reconstruct exactly. Runtime pins must remain stable.
+No external HTTP or workspace world write occurs. Repository and object
+enrollment confer no authority.
+
+Configuration binds the canonical absolute `world.json` path, with no copy or
+symlink. Restarted receiving, snapshots, management and upgrades use that path
+and its stable world lock; lock order remains clerk, then world. A different
+existing clerk, local world or orphaned journal cannot be overwritten or
+rebound. Retargeting the bound path through a symlink is refused.
+
+The only commit is atomic clerk configuration replacement after verification.
+Interruption before it permits repeating verification. A lost reply after it
+is recovered by repeating the original selection: `already-attached` returns
+historical attachment evidence even after later admissions advance the world.
+It neither claims those original roots are current nor resets later enrollment.
+Different selections refuse rather than silently rebinding custody.
+
+The selected `transactions` or `compiled` runtime remains explicit for all
+operations, including single-object requests. Default `world` preserves legacy
+world/transaction dispatch. Runtime changes still require quiescent upgrade.
+[Attachment tests](../conformance/test_clerk_attach.py) cover actual Lean replay,
+fake-PDS receiving, unchanged law, restart/retry, mismatched anchors/roots,
+forged state, interruption and canonical-path custody.
+
 ## Wire
 
 An author's own `org.delvetalk.request` record contains exactly:
@@ -66,7 +114,7 @@ python3 scripts/clerk.py --state "$STATE" upgrade --from-profile EXACT_OLD_SHA25
 
 New admissions refuse changed pins. Recover every pending remote/management request with its old implementation before upgrading. Upgrade holds clerk/world locks, records old/new profiles and unchanged world digest, and leaves world/history intact. Exact upgrade retries are idempotent; completed historical receipts keep original pins.
 
-Bootstrap or quiescent upgrade accepts `--runtime-profile compiled`; omission preserves the default/configured runtime. Only the operator selects it. Compiled source execution stays inside Lean; journals bind the selected admission host. Returning explicitly to `world` makes installed compiled expressions refuse there.
+Bootstrap or quiescent upgrade accepts `--runtime-profile transactions` or `compiled`; omission preserves the default/configured runtime. Only the operator selects it. Compiled source execution stays inside Lean; journals bind the selected admission host. Returning explicitly to `world` makes installed compiled expressions refuse there.
 
 Publication remains separate and paused; see [receipts](RECEIPTS.md). An outbox intent is not delivery.
 

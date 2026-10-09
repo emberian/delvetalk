@@ -1,0 +1,166 @@
+{
+  "profile": "delvetalk-local-v1",
+  "name": "object factory",
+  "description": "Create a small editable object, governed by its maker.",
+  "initial": {
+    "last": null
+  },
+  "allocation": {
+    "limit": 16
+  },
+  "affordances": {
+    "make": {
+      "label": "Create object",
+      "fields": {
+        "name": {
+          "type": "string",
+          "label": "Child name",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "children": [
+        "name"
+      ]
+    }
+  },
+  "commands": {
+    "make": {
+      "require": [],
+      "set": {
+        "last": [
+          "input",
+          "name"
+        ]
+      },
+      "result": [
+        "input",
+        "name"
+      ],
+      "outbox": [],
+      "allocate": [
+        {
+          "name": [
+            "input",
+            "name"
+          ],
+          "protocol": [
+            "literal",
+            {
+              "profile": "delvetalk-local-v1",
+              "name": "A small editable object",
+              "description": "An object whose maker can write and reprogram it.",
+              "initial": {
+                "text": ""
+              },
+              "commands": {
+                "write": {
+                  "require": [],
+                  "set": {
+                    "text": [
+                      "input",
+                      "text"
+                    ]
+                  },
+                  "result": [
+                    "input",
+                    "text"
+                  ],
+                  "outbox": []
+                }
+              },
+              "affordances": {
+                "write": {
+                  "label": "Write on this object",
+                  "fields": {
+                    "text": {
+                      "type": "string",
+                      "maxLength": 512
+                    }
+                  }
+                }
+              },
+              "viewProgram": {
+                "profile": "delvetalk-bend-view-v1",
+                "term": [
+                  "lam",
+                  [
+                    "lam",
+                    [
+                      "record",
+                      [
+                        [
+                          "title",
+                          [
+                            "label",
+                            "A small editable object"
+                          ]
+                        ],
+                        [
+                          "prose",
+                          [
+                            "get",
+                            [
+                              "bound",
+                              1
+                            ],
+                            "text"
+                          ]
+                        ],
+                        [
+                          "actions",
+                          [
+                            "record",
+                            [
+                              [
+                                "write",
+                                [
+                                  "record",
+                                  [
+                                    [
+                                      "text",
+                                      [
+                                        "label",
+                                        "Write on this object"
+                                      ]
+                                    ],
+                                    [
+                                      "command",
+                                      [
+                                        "label",
+                                        "write"
+                                      ]
+                                    ],
+                                    [
+                                      "input",
+                                      [
+                                        "record",
+                                        []
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              }
+            }
+          ],
+          "law": [
+            "array",
+            [
+              [
+                "principal"
+              ]
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

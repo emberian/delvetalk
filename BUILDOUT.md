@@ -111,10 +111,49 @@ The efficiency checkpoint `d3f3828` also passes
 Browser acceptance then prepares, reloads, commits and recovers a retained receipt;
 the resulting 21-admission continuation replays through Lean.
 
+## Shared workshop and public preview
+
+Generic workspaces now bind an immutable namespace and exact seed extent. Factory
+cards declare child absences and return committed child references. Source desks
+retain large source/scenario bytes, pinned translations and recoverable compiler
+jobs. The bounded operator joins receiving, compilation and offline continuation;
+compilation still grants no installation authority.
+
+Ordinary protocols supply authored places/paths, declared presence and
+claim/submit/review work tickets. They add no kernel authority. `inputFrom` carries
+data, not proof that another transaction leg occurred. Two fresh participants used
+only documented portal interfaces to create a lantern, propose/compile/adopt a
+Spween room, exercise its choices and accept its work ticket. An initial scoped
+`write` grant correctly blocked the new scene commands; an explicit steward law
+revision repaired it. New shared workshop creations explicitly grant both builders
+use, programming and management; the game table remains separately governed.
+
+Review found and repaired missing seed custody on restore, unrelated command-name
+artifact obligations, lost diagnostic artifacts hiding retained receipts, blocking
+nonregular source files, and missing compiled-scene dependency custody. Cards now
+show written text and the ticket's current submission/review.
+
+A third participant independently replayed all 36 admissions, recovered matching
+Spween source and used the restored room through a fresh portal. This was
+same-host exact replay. The earlier private manifest lacks the new explicit seed
+extent, so operator enrollment remained explicitly unavailable on that restore.
+
+The explicit HTTPS public preview uses bounded temporary memory, no public disk
+custody and no visitor authority. It exposes inspection and exact request export;
+operator execution, source upload, compiler jobs and repository custody stay
+private. Local durable sessions retain their original recovery contract. Focused
+HTTP checks cover origins, route isolation, eviction, byte bounds and unchanged
+world/custody bytes. Joined `make check`: **71 Python groups / 562 methods**, one Linux-only skip,
+plus core/JS/Rust/package/source checks. Native Linux public-preview/workshop/service
+acceptance: **18 tests**. The external portal is deployed on the existing
+edge/workhorse; HTTPS, restart, refusal and unchanged-world checks pass. Its
+operator produced an anchored offline continuation; its timer remains disabled.
+This establishes an external inspection route, not an in-town social action loop.
+
 ## Scope
 
 Local principals are assertions; Delve identity comes through the separate clerk.
 No external messages, PDS publication, model API calls or live-custody upgrade
 occurred during this construction. Git checkpoints are authorized.
-[Outstanding work](TRACKING.md) includes public continuation, compiler scheduling
-and factory cards. Compact-language experiments remain concluded.
+[Outstanding work](TRACKING.md) includes hosted receiving and public continuation
+delivery; factory cards and bounded compiler scheduling are implemented. Compact-language experiments remain concluded.

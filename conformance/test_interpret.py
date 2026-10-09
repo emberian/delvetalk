@@ -27,6 +27,21 @@ def card():
 
 
 class InterpretTests(unittest.TestCase):
+    def test_namespaced_factory_card_tokens_preserve_declared_child_bounds(self):
+        value = card()
+        value['objectRef'] = {'format': 'delvetalk-object-ref-v1', 'world': 'world-one', 'object': 'room:one'}
+        value['actions'] = [{'id': 'make', 'label': 'Create', 'available': True,
+            'fields': [{'name': 'name', 'label': 'Name', 'type': 'string', 'required': True,
+                        'minLength': 1, 'maxLength': 64}], 'children': [{'field': 'name'}]}]
+        proposer = Mock(side_effect=AssertionError('no model needed'))
+        self.assertEqual(module.interpret('do c123 make {"name":"lamp"}', value, proposer=proposer)['status'], 'proposed')
+        for name in ('../lamp', 'two/parts', 'é'):
+            self.assertEqual(module.interpret('do c123 make ' + json.dumps({'name': name}), value)['status'], 'clarify')
+        invalid = copy.deepcopy(value); invalid['objectRef']['object'] = 'different'
+        self.assertEqual(module.interpret('do c123 make {"name":"lamp"}', invalid)['status'], 'clarify')
+        invalid = copy.deepcopy(value); invalid['actions'][0]['children'] = [{'field': 'missing'}]
+        self.assertEqual(module.interpret('do c123 make {"name":"lamp"}', invalid)['status'], 'clarify')
+
     def test_copied_token_bypasses_model_and_never_constructs_a_request(self):
         proposer = Mock(side_effect=AssertionError('a copied token needs no model'))
         with patch.object(module.affordances, 'request', side_effect=AssertionError('no execution path')):

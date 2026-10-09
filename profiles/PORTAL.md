@@ -50,10 +50,45 @@ is capped at 4,096 records; nothing is silently evicted. Runtime changes refuse
 pending execution; existing receipts remain recoverable. Host subprocesses are
 bounded to 20 seconds. Resource bounds are not an OS sandbox.
 
+## Public preview
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/portal.py /srv/delvetalk/world \
+  --public-origin https://delvetalk.fg-goose.online
+```
+
+The process still binds `127.0.0.1`. A TLS proxy must preserve the configured
+public `Host`; forwarded headers do not establish an origin. HTTPS origin checks
+apply directly. Cross-site top-level navigation to `/` is allowed so shared
+links open normally; cross-site API requests and frames are refused.
+
+Public mode exposes assets, the object catalogue, captured cards, exact source,
+state, law and history, plus token interpretation and request export. It cannot
+configure a principal, local actions, paid interpretation or a custody directory.
+Execution, source uploads, authoring, compiler jobs/status and repository custody
+routes are unavailable. Existing local draft aliases are never read.
+
+Public requests write no files. Cards and export drafts use a shared in-memory
+cache capped at **256 entries and 8 MiB**, with a **15-minute maximum lifetime**.
+Pressure or restart may expire aliases earlier. An expired reference refuses;
+read the object again to obtain a fresh view. Copy `wireJson` to keep exact
+request material: public previews retain neither principal nor submission intent,
+and their aliases cannot recover an uncertain admission. The API distinguishes
+`public-preview`/`custody.kind=ephemeral` from local durable custody.
+
+Serve only a world whose source, law and admission history are intended to be
+public. A read-only filesystem mount and service resource limits complement the
+portal's application bounds. [Public HTTP tests](../conformance/test_portal_public.py)
+exercise origin checks, route isolation, disk invariance, expiry and both cache bounds.
+
 **Delve supplies repository identity and publication context; Lean supplies
 admission; the portal supplies a local view.** [Continuation export](CONTINUATION.md) and a [compiler queue](COMPILER-QUEUE.md)
-are available separately. Public synchronization, unattended operation and
-factory allocation cards remain [work](../TRACKING.md).
+are available alongside the integrated [retained authoring flow](AUTHORING.md).
+Factory drafts preview exact required absences; committed receipts provide child
+links and creation roots. Generic workspaces choose their own title and entry object.
+When present, the workspace namespace qualifies copied object references; legacy
+worlds do not acquire a fabricated global identity. Public synchronization and
+unattended operation remain [work](../TRACKING.md).
 
 [Implementation](../scripts/portal.py) · [composition tests](../conformance/test_portal.py)
 

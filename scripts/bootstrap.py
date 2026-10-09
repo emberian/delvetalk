@@ -227,22 +227,74 @@ def run_bootstrap(directory, *, profile='transactions'):
     return report
 
 
+def world_id(metadata):
+    if metadata.get('format') != 'delvetalk-workspace-v1':
+        return None  # Legacy demos did not establish this namespace contract.
+    value = metadata.get('worldId')
+    if not isinstance(value, str) or not value or len(value) > 256:
+        raise ValueError('workspace requires an immutable world identity')
+    return value
+
+
+def validate_workspace_identity(metadata, records):
+    if metadata.get('format') != 'delvetalk-workspace-v1':
+        return
+    identity = world_id(metadata)
+    seeds = []
+    for record in records:
+        request = record['request']
+        intent = request.get('intent', '')
+        if isinstance(intent, str) and intent.startswith('workspace-seed:'):
+            if request.get('op') != 'create' or intent != f'workspace-seed:{identity}:{len(seeds)}':
+                raise ValueError('workspace worldId differs from its admitted seed identities')
+            seeds.append(request['object'])
+    if not seeds or any(object_id not in seeds for object_id in entry_objects(metadata)):
+        raise ValueError('workspace entry objects lack namespace-bound seed admissions')
+
+
+def default_object(metadata):
+    """A workspace selects entry objects explicitly; legacy demos retain their cafe."""
+    value = metadata.get('defaultObject') if metadata.get('format') == 'delvetalk-workspace-v1' else metadata.get('cafe')
+    if not isinstance(value, str) or not value:
+        raise ValueError('world index has no explicit default object')
+    return value
+
+
+def entry_objects(metadata):
+    if metadata.get('format') != 'delvetalk-workspace-v1':
+        return [default_object(metadata)]
+    values = metadata.get('entryObjects')
+    if (not isinstance(values, list) or not values or any(not isinstance(x, str) or not x for x in values)
+            or len(set(values)) != len(values) or default_object(metadata) not in values):
+        raise ValueError('workspace entry objects must be distinct explicit object IDs')
+    return values
+
+
+def bound_room_artifact(directory, root):
+    """Resolve only exact admitted bindings; unrelated corrupt files do not select content."""
+    if 'roomArtifact' not in root['protocol']:
+        return None
+    encoded = canonical(root['protocol'])
+    for path in sorted((Path(directory) / 'artifacts/rooms').glob('*.json')):
+        try:
+            candidate = loads(path.read_bytes())
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if not isinstance(candidate, dict) or canonical(candidate.get('protocol')) != encoded:
+            continue
+        return room.load_artifact(path.parent, path.stem)
+    raise ValueError('exact admitted room artifact is unavailable')
+
+
 def inspect_view(directory, object_id=None, panel='main'):
     directory = Path(directory)
-    manifest = loads((directory / 'manifest.json').read_bytes())
-    object_id = object_id or manifest['cafe']
+    metadata = loads((directory / 'manifest.json').read_bytes())
+    object_id = object_id or default_object(metadata)
     desk = desk_module.Desk(directory / 'world.json', directory / 'artifacts',
-                            profile=manifest.get('runtime', {}).get('name', 'transactions'))
+                           profile=metadata.get('runtime', {}).get('name', 'transactions'))
     root = desk.inspect(object_id)
-    artifact = None
-    if object_id == manifest['cafe']:
-        artifact = room.load_artifact(directory / 'artifacts/rooms', manifest['currentCafeArtifact'])
-    if hasattr(room, 'inspect_object'):
-        return room.inspect_object(root, object_id, artifact, panel=panel)
-    if 'viewProgram' in root['protocol']:
-        return projection.project(root, object_id, panel)
-    return room.room_view(root, artifact, object_id)
-
+    artifact = bound_room_artifact(directory, root)
+    return room.inspect_object(root, object_id, artifact, panel=panel)
 
 
 def artifact_envelopes(value):
@@ -327,7 +379,7 @@ def retained_prefix(directory, snapshot):
             'expected_prefix_head': manifest['head']}
 
 
-def export_bootstrap(directory, bundle):
+def export_bootstrap(directory, bundle, *, extra_attachments=None):
     """Export exact source-bound history, never silently substitute inline provenance."""
     directory, bundle = Path(directory).resolve(), Path(bundle).resolve()
     metadata = loads((directory / 'manifest.json').read_bytes())
@@ -337,7 +389,24 @@ def export_bootstrap(directory, bundle):
     with open(str(directory / 'world.json') + '.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         snapshot = loads((directory / 'world.json').read_bytes())
+    validate_workspace_identity(metadata, snapshot['receipts'])
+    extra_attachments = extra_attachments or {}
+    if not isinstance(extra_attachments, dict):
+        raise ValueError('attachments must map retained request digests to explicit file arrays')
     prefix = retained_prefix(directory, snapshot)
+    if prefix:
+        checkpoint_manifest = history.loads((prefix['prefix_bundle'] / 'manifest.json').read_bytes())
+        anchored_indices = []
+        for entry in checkpoint_manifest['entries']:
+            for ref in entry['artifacts']:
+                try:
+                    value = history.loads(history.read_blob(prefix['prefix_bundle'], ref['sha256']).read_bytes())
+                except (ValueError, UnicodeError):
+                    continue
+                if isinstance(value, dict) and value.get('format') in ('delvetalk-workspace-v1', 'delvetalk-inhabited-bootstrap-v1'):
+                    anchored_indices.append(value)
+        if not anchored_indices or any(canonical(value) != canonical(metadata) for value in anchored_indices):
+            raise ValueError('local world index differs from its retained public history')
     artifacts = artifact_catalog(directory)
     attachments = {}
     prefix_length = (len(history.loads((prefix['prefix_bundle'] / 'manifest.json').read_bytes())['entries'])
@@ -347,6 +416,12 @@ def export_bootstrap(directory, bundle):
             continue  # Retained byte-identical source links come from the anchored checkpoint.
         request, reply = retained['request'], retained['receipt']
         paths = []
+        source_store = module('bootstrap_source_store_export', 'scripts/source_store.py')
+        for sha in source_store.declared_dependencies(request).values():
+            paths.append(history.read_blob(directory / 'artifacts/pins', sha))
+        for reference in source_store.collect_references(request):
+            source_store.read_bytes(directory / 'artifacts', reference, kind='scenarios')
+            paths.append(source_store.blob_path(directory / 'artifacts', reference['sha256']))
         for protocol, is_reprogram in history.program_targets(request, reply):
             if protocol is None:
                 continue
@@ -363,7 +438,9 @@ def export_bootstrap(directory, bundle):
                 paths.append(path)
                 for sha in history.declared_files(value).values():
                     paths.append(history.read_blob(directory / 'artifacts/pins', sha))
-        if request.get('op') == 'invoke' and request.get('command') in ('compiled', 'failed'):
+        source_desk_protocol = loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes())
+        if (request.get('op') == 'invoke' and request.get('command') in ('compiled', 'failed')
+                and canonical(request.get('expected', {}).get('protocol')) == canonical(source_desk_protocol)):
             identity = request.get('input', {}).get('artifact')
             if identity:
                 artifact = desk_module.load_artifact(directory / 'artifacts', identity)
@@ -377,12 +454,64 @@ def export_bootstrap(directory, bundle):
     # The index is descriptive, but its bytes must be in the checked chain too.
     if not prefix:
         attachments[first].append(directory / 'manifest.json')
+    for request_digest, paths in extra_attachments.items():
+        if not isinstance(paths, list):
+            raise ValueError('extra attachment paths must be arrays')
+        attachments.setdefault(request_digest, []).extend(Path(path) for path in paths)
     result = history.export_history(directory / 'world.json', bundle, profile=pinned['name'],
                                     attachments=attachments, inline_reprogram=False, **prefix)
     if result['worldSha256'] != history.digest(snapshot):
         raise ValueError('world changed while preparing export; retry into a fresh destination')
     remember_history(directory, bundle, result)
     return {**result, 'bundle': str(bundle), 'inlineReprogram': False}
+
+
+
+def restore_workspace_seed(directory, metadata, manifest, bundle):
+    """Preserve the original namespace-bound seed prefix, never rebase onto later work."""
+    identity = world_id(metadata)
+    seed_objects = metadata.get('seedObjects')
+    if seed_objects is None:
+        # Earlier private workspaces did not bind their original seed extent.
+        # Their world remains inspectable; do not invent operator enrollment evidence.
+        return False
+    if (not isinstance(seed_objects, list) or not seed_objects
+            or any(not isinstance(item, str) or not item for item in seed_objects)
+            or len(set(seed_objects)) != len(seed_objects)):
+        raise ValueError('workspace seedObjects must be exact distinct ordered object IDs')
+    entries = manifest['entries'][:len(seed_objects)]
+    if len(entries) != len(seed_objects):
+        raise ValueError('workspace seed prefix is truncated')
+    for index, (entry, object_id) in enumerate(zip(entries, seed_objects)):
+        request = entry['request']
+        if (request.get('op') != 'create' or request.get('object') != object_id
+                or request.get('intent') != f'workspace-seed:{identity}:{index}'):
+            raise ValueError('workspace seed prefix differs from its anchored seedObjects')
+    seed_manifest = {**manifest, 'entries': entries, 'head': entries[-1]['id'],
+                     'worldSha256': entries[-1]['worldSha256']}
+    seed_bundle = Path(directory) / 'seed-history'
+    (seed_bundle / 'blobs').mkdir(parents=True)
+    required = set(seed_manifest['genesis']['profile']['files'].values())
+    for entry in entries:
+        for ref in entry['artifacts']:
+            required.add(ref['sha256'])
+            try:
+                value = history.loads(history.read_blob(bundle, ref['sha256']).read_bytes())
+            except (ValueError, UnicodeError):
+                continue
+            required.update(history.declared_files(value).values())
+    for sha in required:
+        if history.store_file(seed_bundle, history.read_blob(bundle, sha)) != sha:
+            raise ValueError('seed dependency changed during restoration')
+    save_new(seed_bundle / 'manifest.json', seed_manifest)
+    save_new(Path(directory) / 'genesis.json', metadata['genesis'])
+    seed = {'format': 'delvetalk-workspace-seed-v1', 'genesis': metadata['genesis']['id'],
+            'head': seed_manifest['head'], 'entries': len(entries),
+            'worldSha256': seed_manifest['worldSha256'], 'worldId': identity,
+            'entryObjects': entry_objects(metadata), 'defaultObject': default_object(metadata),
+            'scope': 'Explicit seed admissions only; no demonstration or private history was copied.'}
+    save_new(Path(directory) / 'seed.json', seed)
+    return True
 
 
 def _restore_contents(bundle, directory, *, expected_genesis, expected_head, base_head=None):
@@ -395,6 +524,13 @@ def _restore_contents(bundle, directory, *, expected_genesis, expected_head, bas
     if manifest['inlineReprogram'] is not False:
         raise ValueError('inhabited reconstruction requires original source artifacts; inline-only bundles refuse')
     roots = loads((directory / 'world.json').read_bytes())['objects']
+    source_store = module('bootstrap_source_store_restore', 'scripts/source_store.py')
+    for entry in manifest['entries']:
+        for reference in source_store.collect_references(entry['request']):
+            raw = history.read_blob(bundle, reference['sha256']).read_bytes()
+            stored = source_store.store_bytes(directory / 'artifacts', raw, kind='scenarios')
+            if canonical(stored) != canonical(reference):
+                raise ValueError('restored source reference metadata differs from its exact bytes')
     metadata_by_hash = {}
     restored_rooms, restored_builds, restored_lowerings = set(), set(), set()
     source_values = []
@@ -411,7 +547,7 @@ def _restore_contents(bundle, directory, *, expected_genesis, expected_head, bas
                 continue
             if not isinstance(value, dict):
                 continue
-            if value.get('format') == 'delvetalk-inhabited-bootstrap-v1':
+            if value.get('format') in ('delvetalk-inhabited-bootstrap-v1', 'delvetalk-workspace-v1'):
                 metadata_by_hash[history.digest(value)] = value
             source_values.append(value)
             if value.get('format') == 'delvetalk-desk-build-v1':
@@ -429,34 +565,65 @@ def _restore_contents(bundle, directory, *, expected_genesis, expected_head, bas
     metadata = next(iter(metadata_by_hash.values()))
     if canonical(metadata.get('runtime')) != canonical(manifest['genesis']['profile']):
         raise ValueError('inhabited index runtime differs from replay genesis')
-    for key in ('cafe', 'table', 'candidate', 'sign', 'signCandidate'):
-        if not isinstance(metadata.get(key), str) or metadata[key] not in roots:
-            raise ValueError('inhabited index references a missing object: ' + key)
-    if metadata['initialCafeArtifact'] not in restored_rooms or metadata['currentCafeArtifact'] not in restored_rooms:
-        raise ValueError('inhabited index room artifact is absent from verified history')
-    for key in ('candidate', 'signCandidate'):
-        identity = roots[metadata[key]]['state'].get('artifact')
-        if identity not in restored_builds:
-            raise ValueError('candidate build artifact is absent from verified history')
+    if metadata.get('format') == 'delvetalk-workspace-v1':
+        validate_workspace_identity(metadata, manifest['entries'])
+        seed_restored = restore_workspace_seed(directory, metadata, manifest, bundle)
+        if canonical(metadata.get('genesis')) != canonical(manifest['genesis']):
+            raise ValueError('workspace genesis differs from the exact replay genesis')
+        for object_id in entry_objects(metadata):
+            if object_id not in roots:
+                raise ValueError('workspace entry object is absent from replayed world')
+    else:
+        for key in ('cafe', 'table', 'candidate', 'sign', 'signCandidate'):
+            if not isinstance(metadata.get(key), str) or metadata[key] not in roots:
+                raise ValueError('inhabited index references a missing object: ' + key)
+        if metadata['initialCafeArtifact'] not in restored_rooms or metadata['currentCafeArtifact'] not in restored_rooms:
+            raise ValueError('inhabited index room artifact is absent from verified history')
+        for key in ('candidate', 'signCandidate'):
+            identity = roots[metadata[key]]['state'].get('artifact')
+            if identity not in restored_builds:
+                raise ValueError('candidate build artifact is absent from verified history')
     # Preserve original dependency bytes as custody, never as executable code.
     pins = directory / 'artifacts/pins'
     (pins / 'blobs').mkdir(parents=True, exist_ok=True)
+    for entry in manifest['entries']:
+        for sha in source_store.declared_dependencies(entry['request']).values():
+            if history.store_file(pins, history.read_blob(bundle, sha)) != sha:
+                raise ValueError('proposal dependency changed during restore')
     for value in source_values:
         for sha in history.declared_files(value).values():
             if history.store_file(pins, history.read_blob(bundle, sha)) != sha:
                 raise ValueError('dependency changed during restore')
     save_new(directory / 'manifest.json', metadata)
-    cafe = inspect_view(directory)
-    sign = inspect_view(directory, metadata['sign'], 'details')
-    if cafe['mode'] != 'room' or sign['mode'] != 'projection':
-        raise ValueError('restored objects cannot render from restored artifact custody')
-    with (directory / 'cafe.html').open('x') as stream:
-        stream.write(room.html_view(cafe))
-    with (directory / 'sign.html').open('x') as stream:
-        stream.write(projection.html_view(sign))
-    evidence = {**result, 'format': 'delvetalk-inhabited-reconstruction-v1',
+    # Every admitted room must retain its own source custody, regardless of entry selection.
+    for root in roots.values():
+        bound_room_artifact(directory, root)
+    if metadata.get('format') == 'delvetalk-workspace-v1':
+        views = []
+        for index, object_id in enumerate(entry_objects(metadata)):
+            view = inspect_view(directory, object_id)
+            filename = 'index.html' if object_id == default_object(metadata) else f'entry-{index}.html'
+            with (directory / filename).open('x') as stream:
+                stream.write(room.html_view(view))
+            views.append({'object': object_id, 'path': filename, 'mode': view['mode']})
+        presentation = {'worldId': world_id(metadata), 'entryObjects': entry_objects(metadata), 'defaultObject': default_object(metadata),
+                        'views': views, 'viewFile': 'index.html', 'operatorEnrollmentReady': seed_restored,
+                        'seedCustody': 'original prefix restored' if seed_restored else 'legacy manifest lacks seedObjects; enrollment remains unavailable'}
+        reconstruction_format = 'delvetalk-workspace-reconstruction-v1'
+    else:
+        cafe = inspect_view(directory)
+        sign = inspect_view(directory, metadata['sign'], 'details')
+        if cafe['mode'] != 'room' or sign['mode'] != 'projection':
+            raise ValueError('restored objects cannot render from restored artifact custody')
+        with (directory / 'cafe.html').open('x') as stream:
+            stream.write(room.html_view(cafe))
+        with (directory / 'sign.html').open('x') as stream:
+            stream.write(projection.html_view(sign))
+        presentation = {'cafe': metadata['cafe'], 'sign': metadata['sign'], 'viewFile': 'cafe.html'}
+        reconstruction_format = 'delvetalk-inhabited-reconstruction-v1'
+    evidence = {**result, 'format': reconstruction_format,
                 'rooms': sorted(restored_rooms), 'builds': sorted(restored_builds),
-                'lowerings': sorted(restored_lowerings), 'cafe': metadata['cafe'], 'sign': metadata['sign'],
+                'lowerings': sorted(restored_lowerings), **presentation,
                 'authority': 'none; caller-supplied genesis and head are identity anchors, not signatures'}
     save_new(directory / 'reconstruction.json', evidence)
     remember_history(directory, bundle, evidence)
@@ -502,7 +669,7 @@ def restore_bootstrap(bundle, directory, *, expected_genesis, expected_head, bas
         result = _restore_contents(bundle, Path(temporary), expected_genesis=expected_genesis,
                                    expected_head=expected_head, base_head=base_head)
         _publish_directory(Path(temporary), directory)
-    return {**result, 'directory': str(directory), 'view': str(directory / 'cafe.html')}
+    return {**result, 'directory': str(directory), 'view': str(directory / result.get('viewFile', 'cafe.html'))}
 
 
 def main():

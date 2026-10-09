@@ -37,6 +37,7 @@ world:
 	python3 conformance/test_transactions.py
 	python3 conformance/test_reprogram.py
 	python3 conformance/test_workshop.py
+	python3 conformance/test_workshop_seed.py
 	python3 conformance/test_authority.py
 	python3 conformance/test_compiled.py
 	python3 conformance/test_runtime_profile.py
@@ -52,6 +53,11 @@ world:
 	python3 conformance/test_history.py
 	python3 conformance/test_continuation.py
 	python3 conformance/test_compiler_queue.py
+	python3 conformance/test_source_store.py
+	python3 conformance/test_source_history.py
+	python3 conformance/test_workspace.py
+	python3 conformance/test_commons.py
+	python3 conformance/test_work_ticket.py
 	python3 conformance/test_exhibition_journey.py
 wiki:
 	python3 conformance/test_wiki.py
@@ -67,6 +73,8 @@ delve:
 	python3 conformance/test_intake.py
 	python3 conformance/test_clerk.py
 	python3 conformance/test_clerk_compiled.py
+	python3 conformance/test_clerk_attach.py
+	python3 conformance/test_service.py
 	python3 conformance/test_receipts.py
 	python3 conformance/test_live_path.py
 	python3 conformance/test_management.py
@@ -81,9 +89,13 @@ scene:
 portal:
 	python3 conformance/test_portal_artifacts.py
 	python3 conformance/test_affordances.py
+	python3 conformance/test_references.py
+	python3 conformance/test_factory_affordances.py
 	python3 conformance/test_interpret.py
 	python3 conformance/test_portal.py
 	python3 conformance/test_portal_adversarial.py
 	python3 conformance/test_portal_bridge.py
+	python3 conformance/test_authoring.py
+	python3 conformance/test_portal_public.py
 	node --check portal/static/app.js
 check: build worker-resources scene-build capsules core typed packages world wiki syntax delve proposals scene portal

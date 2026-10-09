@@ -5,7 +5,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       LEAN_NUM_THREADS: 1
     steps:

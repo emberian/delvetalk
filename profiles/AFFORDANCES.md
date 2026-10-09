@@ -44,4 +44,49 @@ survive; metadata labels describe raw commands only. All supplied values enter
 Pure `validate_fields_schema` and `validate_fields` serve renderers/interpreters.
 Markup remains text. Labels are untrusted descriptions.
 
+## Declare factory absence inputs
+
+A factory form may additionally declare `children`, an ordered list of 1–32
+distinct field names. Each names a required string field whose explicit bounds
+lie within 1–64 characters:
+
+```json
+{"affordances":{"make":{"label":"Create an object","fields":{
+ "name":{"type":"string","minLength":1,"maxLength":64}
+},"children":["name"]}}}
+```
+
+For a captured object `workshop`, input `{"name":"lamp"}` prepares the existing
+invoke envelope with `absent:["workshop/lamp"]`, alongside the exact captured
+`expected` root. Child names admit only ASCII letters, digits, `_` and `-`.
+No world read, program inspection, allocation prediction or authority check
+occurs in preparation. Without a declaration, no absence root is invented,
+even when the program's allocation expression looks obvious.
+
+Public actions expose `children:[{"field":"name"}]`. When a projection binds
+that field, the declaration is `{"field":"name","value":"lamp"}` and the
+field is absent from the editable form. Bound values cannot be overridden.
+`validate_children_schema(children, fields)` checks these public declarations;
+`validate_fields` also checks supplied child-name values. Ordinary actions keep
+their existing shape. Multiple fields may contain the same value: the absence
+list is deduplicated in declaration order, while Lean owns allocation collision
+and batch rollback. A lying declaration cannot authorize a different allocation:
+Lean requires an absence root for every child actually created.
+
+Admission still checks the current factory law, parent preimage, current absence,
+child name, child law/protocol, shared direct-child quota and full batch validity.
+The same exact prepared request recovers its retained receipt after uncertainty,
+even after parent state or authority changes. Preparing another name creates
+another request; it is not a retry.
+
+`allocated_refs(receipt)` copies `[{object,root},…]` from a committed receipt's
+`data.allocated`, ordered by object ID; refused or ordinary receipts yield `[]`.
+The root is the creation root, which can already be stale after later transaction
+steps. Renderers can link these actual child IDs and inspect them afresh. They
+must authenticate receipt custody and must not manufacture successful child
+links from proposed names or arbitrary command results. References grant nothing.
+
+[Factory examples](../protocols/factories/README.md) ·
+[Factory tests](../conformance/test_factory_affordances.py)
+
 [Lean-backed tests](../conformance/test_affordances.py) · [Portal](PORTAL.md)

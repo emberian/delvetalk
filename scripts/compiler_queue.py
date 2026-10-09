@@ -73,6 +73,9 @@ def execute_job(path):
             raise ValueError('queued compiler runtime changed')
 
     check_pins()  # Requires the built host binary; never falls back to Lean builds.
+    material = desk.proposal_material(inputs['expected']['state']['proposal'], client.artifact_store)[2]
+    if 'sourceBindings' in job and canonical(material) != canonical(job['sourceBindings']):
+        raise ValueError('queued source bindings changed')
     if canonical(client.inspect(inputs['object'])) != canonical(inputs['expected']):
         raise ValueError('queued candidate changed; retain this job and enqueue a fresh intent')
 
@@ -81,17 +84,19 @@ def execute_job(path):
         if (artifact.get('format') != 'delvetalk-desk-build-v1'
                 or artifact.get('candidateRootSha256') != digest(inputs['expected'])):
             raise ValueError('saved compiler artifact does not match queued candidate')
+        if 'sourceBindings' in job and canonical(artifact.get('sourceBindings')) != canonical(job['sourceBindings']):
+            raise ValueError('saved compiler artifact does not match queued source bindings')
         return artifact
 
     if memo.exists():
         saved_build()
 
-    def compile_in_group(root, *, profile):
+    def compile_in_group(root, *, profile, artifact_store=None):
         # Reuse the trusted compiler API without desk.bounded_compile's nested
         # session: all scenario descendants remain in worker.command's kill group.
         if compiled.exists():
             return saved_build()
-        artifact = desk.compile_proposal({'root': root, 'profile': profile})
+        artifact = desk.compile_proposal({'root': root, 'profile': profile, 'artifactStore': str(client.artifact_store)})
         check_pins()  # Refuse changed compiler bytes before publishing an admission.
         identity = desk.store_artifact(client.artifact_store, artifact)
         recorded = desk.immutable(compiled, {'artifact': identity})
@@ -169,6 +174,7 @@ class CompilerQueue:
                 raise ValueError('compiler queue retention bound reached (10000 jobs)')
             if expected['state']['status'] != 'pending':
                 raise ValueError('compiler queue requires an exact pending source-desk root')
+            material = desk.proposal_material(expected['state']['proposal'], self.artifacts)[2]
             runtime = compiler_pins(self.profile, expected)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -181,7 +187,8 @@ class CompilerQueue:
             if canonical(compiler_pins(self.profile, expected)) != canonical(runtime):
                 raise ValueError('compiler runtime changed during enqueue')
             job = {'format': 'delvetalk-compiler-job-v1', 'database': str(self.database),
-                   'artifacts': str(self.artifacts), 'profile': self.profile, 'inputs': inputs, 'runtime': runtime}
+                   'artifacts': str(self.artifacts), 'profile': self.profile, 'inputs': inputs, 'runtime': runtime,
+                   'sourceBindings': material}
             identity = digest(job)
             if canonical(desk.immutable(self.job_path(identity), job)) != canonical(job):
                 raise ValueError('compiler job store mismatch')

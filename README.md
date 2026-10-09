@@ -13,7 +13,7 @@ json-c ≥0.15, pkg-config, make, and Rust with edition 2024 support. No Mathlib
 # macOS; Linux packages: build-essential pkg-config libgmp-dev libjson-c-dev
 brew install gmp json-c pkg-config
 make check
-python3 scripts/bootstrap.py run /tmp/my-delvetalk --profile compiled
+python3 scripts/workshop.py /tmp/my-delvetalk
 python3 scripts/portal.py /tmp/my-delvetalk --allow-local-actions --principal moss
 ```
 
@@ -23,13 +23,13 @@ an action, then send it. Copyable `do CARD ACTION` tokens need no model.
 Optional [Haiku interpretation](profiles/INTERPRET.md) proposes existing actions;
 it cannot grant authority. API use requires explicit configuration.
 
-```sh
-python3 scripts/bootstrap.py table /tmp/my-delvetalk
-python3 examples/shared-workshop/run.py
-```
+The [shared workshop](protocols/workshop/README.md) starts with factories,
+declared presence, a work ticket and the two-player table.
+[Retained authoring](profiles/AUTHORING.md) turns exact source into a reviewed
+candidate; another builder can install and use it.
 
-The café journey repairs a moth, changes its room and replaces a Bend view
-through a source desk. The table command plays a complete **two-player
+The separate café journey (`python3 scripts/bootstrap.py run /tmp/cafe --profile compiled`) repairs a moth, changes its room and replaces a Bend view
+through a source desk. `python3 scripts/bootstrap.py table /tmp/cafe` plays a complete **two-player
 Automatafl** match in that world. [Constellation Commons](protocols/constellation-commons/README.md)
 is an agent-authored, reviewed and played microprotocol. Try the
 [shared exhibition](protocols/shared-exhibition/README.md), [Rain Relay](examples/scene-exchange/README.md),
@@ -45,7 +45,8 @@ or [private game participant](game/table/PARTICIPANT.md) for complete agent jour
 | Invent syntax or presentation | [Adapters](syntaxes/README.md), [Spween](scene/README.md), [Bend views](profiles/VIEW.md) |
 | Recover and independently replay | [History](profiles/HISTORY.md), [continuation packages](profiles/CONTINUATION.md) |
 | Receive authenticated Delve requests | [Clerk](profiles/CLERK.md), [worker](profiles/WORKER.md) |
-| Understand the design | [Foundations](docs/FOUNDATIONS.md), [predecessors](docs/PORTAL-PRECEDENTS.md) |
+| Build a world or run its operator | [Workspaces](profiles/WORKSPACE.md), [operator service](profiles/SERVICE.md) |
+| Understand the design | [World conventions](docs/WORLD-FOUNDATIONS.md), [foundations](docs/FOUNDATIONS.md), [predecessors](docs/PORTAL-PRECEDENTS.md) |
 
 Every action names its exact reading. Current law admits or refuses it; a stale
 reading refuses. Retrying the same identity returns its retained receipt.
@@ -66,11 +67,13 @@ Finite agreement is not an equivalence theorem; see [proof scope](spec/README.md
 
 ## Deployment boundary
 
-The portal is loopback-only. Local principals are caller assertions. Delve
-identity comes through the separately configured clerk; the portal does not
-publish or synchronize PDS records. Its [repository handoff](profiles/PORTAL-BRIDGE.md)
-prepares exact records and reconciles trusted clerk receipts. Public deployment and external messages
-remain paused. [Tracking](TRACKING.md) names remaining work; [buildout](BUILDOUT.md)
-records completed checks.
+The portal binds loopback. `--public-origin https://YOUR-HOST` permits inspection
+and bounded, temporary request preparation behind an HTTPS proxy. Public visitors
+receive no principal, execution, upload or compiler authority. Local interaction
+uses explicit caller assertions; authenticated Delve requests use the separate
+clerk. [Repository handoff](profiles/PORTAL-BRIDGE.md) and the operator service
+prepare records and continuations without publishing them. External Delve messages
+remain paused. [Tracking](TRACKING.md) records deployment and receiving work;
+[buildout](BUILDOUT.md) records scoped evidence.
 
 [Contribute](CONTRIBUTING.md) · [Mini provenance](spec/upstream.json) · [AGPLv3](LICENSE)

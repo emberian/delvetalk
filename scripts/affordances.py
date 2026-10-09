@@ -119,7 +119,46 @@ def validate_fields(action, fields):
         raise AffordanceError("inspectOnly must be a Boolean")
     if action.get("inspectOnly") is True or action.get("available") is not True:
         raise AffordanceError("action is inspect-only or cannot construct a request")
-    return _validate_values(_normalized_fields(action.get("fields")), fields)
+    schema = _normalized_fields(action.get("fields"))
+    values = _validate_values(schema, fields)
+    _child_values(action.get("children", []), schema, values)
+    return values
+
+
+def _child_name(value):
+    _string(value, "child name", 64, nonempty=True)
+    if any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in value):
+        raise AffordanceError("child name must contain only ASCII letters, digits, _ or -")
+    return value
+
+
+def validate_children_schema(children, fields):
+    """Validate public child declarations against normalized, unbound fields."""
+    fields = _normalized_fields(fields)
+    if not isinstance(children, list) or len(children) > MAX_FIELDS:
+        raise AffordanceError("children must be an array of at most 32 declarations")
+    schema = {f["name"]: f for f in fields}
+    names = set()
+    for child in children:
+        if not isinstance(child, dict) or set(child) not in ({"field"}, {"field", "value"}):
+            raise AffordanceError("child declaration requires field and optional bound value")
+        name = _string(child["field"], "child field", 128, nonempty=True)
+        if name in names: raise AffordanceError("duplicate child field")
+        names.add(name)
+        if "value" in child:
+            if name in schema: raise AffordanceError("bound child field cannot also be supplied")
+            _child_name(child["value"])
+        else:
+            field = schema.get(name)
+            if field is None or field["type"] != "string" or not 1 <= field["minLength"] <= field["maxLength"] <= 64:
+                raise AffordanceError("child field must declare string bounds within 1..64")
+    return copy.deepcopy(children)
+
+
+def _child_values(children, fields, values):
+    """Check explicit form declarations, never inspect or evaluate the program."""
+    return [_child_name(child["value"] if "value" in child else values[child["field"]])
+            for child in validate_children_schema(children, fields)]
 
 
 def _metadata(protocol):
@@ -130,13 +169,20 @@ def _metadata(protocol):
     for command, entry in metadata.items():
         if command not in protocol["commands"]:
             raise AffordanceError("affordance metadata names an absent command")
-        if not isinstance(entry, dict) or set(entry) - {"label", "fields"} or "fields" not in entry:
-            raise AffordanceError("command metadata requires fields and only optional label")
+        if not isinstance(entry, dict) or set(entry) - {"label", "fields", "children"} or "fields" not in entry:
+            raise AffordanceError("command metadata requires fields and only optional label/children")
         fields = entry["fields"]
         if not isinstance(fields, dict) or len(fields) > MAX_FIELDS:
             raise AffordanceError("command fields must be an object of at most 32 entries")
         result[command] = {"label": _string(entry.get("label", command), "action label", 256),
                            "fields": [_normalize_field(k, fields[k]) for k in sorted(fields)]}
+        if "children" in entry:
+            children = entry["children"]
+            if not isinstance(children, list) or not 1 <= len(children) <= MAX_FIELDS:
+                raise AffordanceError("children requires 1..32 field names")
+            for name in children: _string(name, "child field", 128, nonempty=True)
+            declarations = [{"field": name} for name in children]
+            result[command]["children"] = validate_children_schema(declarations, result[command]["fields"])
     return result
 
 
@@ -170,6 +216,10 @@ def _describe(view):
                   "command": command, "available": kind != "raw" or annotated,
                   "fields": [copy.deepcopy(f) for f in fields if f["name"] not in bound]}
         if kind == "raw" and not annotated: public["inspectOnly"] = True
+        if annotated and "children" in metadata[command]:
+            public["children"] = [({**child, "value": _child_name(bound[child["field"]])}
+                                   if child["field"] in bound else dict(child))
+                                  for child in metadata[command]["children"]]
         if observed is not None:
             if type(observed) is not bool: raise AffordanceError("observed availability must be Boolean")
             public["observedAvailable"] = observed
@@ -235,4 +285,30 @@ def request(view, action_id, principal, intent, fields=None):
         if result["input"] != chosen["bound"]:
             raise AffordanceError("existing request factory changed the captured input")
         result["input"] = payload
+    if "children" in chosen["public"]:
+        names = _child_values(chosen["public"]["children"], chosen["public"]["fields"], supplied)
+        # Repeated values remain a program-level collision; Lean owns admission.
+        result["absent"] = list(dict.fromkeys(view["object"] + "/" + name for name in names))
+    return result
+
+
+def allocated_refs(receipt):
+    """Copy creation references from an actual committed receipt, without reads.
+
+    These are creation roots, not a claim about the child's current state or law.
+    Custody must authenticate the receipt; this pure display helper grants nothing.
+    """
+    if not isinstance(receipt, dict): raise AffordanceError("receipt must be an object")
+    if receipt.get("kind") != "committed": return []
+    data = receipt.get("data")
+    if not isinstance(data, dict): raise AffordanceError("committed receipt data must be an object")
+    allocated = data.get("allocated", {})
+    if not isinstance(allocated, dict): raise AffordanceError("allocated roots must be an object")
+    result = []
+    for name in sorted(allocated):
+        _string(name, "allocated object", nonempty=True)
+        root = allocated[name]
+        if not isinstance(root, dict) or set(root) != {"protocol", "state", "law", "version"} or type(root["version"]) is not int or root["version"] != 0:
+            raise AffordanceError("allocated entry must be a creation root")
+        result.append({"object": name, "root": copy.deepcopy(root)})
     return result

@@ -242,6 +242,18 @@ def verify_sources(request, refs, bundle, inline_reprogram, reply):
     # The request itself is a complete inline protocol. Original surface syntax
     # is a separate artifact; do not claim to have reconstructed missing text.
     targets = program_targets(request, reply)
+    # A pending or refused proposal still names exact authored bytes. Replaying
+    # its JSON without those bytes is not a complete source continuation.
+    import source_store
+    for source_ref in source_store.collect_references(request):
+        path = blob_path(bundle, source_ref['sha256'])
+        if path.stat().st_size != source_ref['bytes']:
+            raise ValueError('referenced source byte length mismatch')
+        raw = read_blob(bundle, source_ref['sha256']).read_bytes()
+        if source_store.reference(raw, kind='scenarios') != source_ref:
+            raise ValueError('referenced source metadata mismatch')
+    for dependency in source_store.declared_dependencies(request).values():
+        read_blob(bundle, dependency)
     programs, rooms = [], []
     def envelopes(value):
         if isinstance(value, dict):

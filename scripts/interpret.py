@@ -16,6 +16,7 @@ import sys
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('interpret_affordances', ROOT / 'scripts/affordances.py')
 affordances = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(affordances)
@@ -69,8 +70,14 @@ def string(value, maximum, *, token=False, nonempty=False):
 
 def validate_card(card):
     encoded(card, MAX_CARD)
-    if not isinstance(card, dict) or set(card) != {'card', 'object', 'title', 'prose', 'actions'}:
+    required = {'card', 'object', 'title', 'prose', 'actions'}
+    if (not isinstance(card, dict) or not required <= set(card)
+            or set(card) - required - {'objectRef'}):
         raise ValueError('card must contain only public presentation fields')
+    if 'objectRef' in card:
+        from references import validate_reference
+        if validate_reference(card['objectRef'])['object'] != card['object']:
+            raise ValueError('Object reference does not identify this card')
     string(card['card'], 128, token=True)
     string(card['object'], 512, nonempty=True)
     string(card['title'], 1024)
@@ -79,7 +86,7 @@ def validate_card(card):
         raise ValueError('invalid action list')
     seen = set()
     for action in card['actions']:
-        if (not isinstance(action, dict) or set(action) - {'id', 'label', 'available', 'inspectOnly', 'fields'}
+        if (not isinstance(action, dict) or set(action) - {'id', 'label', 'available', 'inspectOnly', 'fields', 'children'}
                 or not {'id', 'label', 'available', 'fields'} <= set(action)):
             raise ValueError('invalid action schema')
         string(action['id'], 128, token=True)
@@ -88,6 +95,7 @@ def validate_card(card):
             raise ValueError('ambiguous action or availability')
         seen.add(action['id'])
         affordances.validate_fields_schema(action['fields'])
+        affordances.validate_children_schema(action.get('children', []), action['fields'])
     return copy.deepcopy(card)
 
 

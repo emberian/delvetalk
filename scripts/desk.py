@@ -7,6 +7,8 @@ import importlib.util
 import os
 from pathlib import Path
 import signal
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -24,6 +26,8 @@ def module(name, path):
 translate = module('desk_translate', 'scripts/translate.py')
 world = module('desk_world', 'scripts/world.py')
 runtime_profile = module('desk_runtime_profile', 'scripts/runtime_profile.py')
+source_store = module('desk_source_store', 'scripts/source_store.py')
+history = module('desk_history', 'scripts/history.py')
 canonical, loads = translate.canonical, translate.load_json
 
 
@@ -34,7 +38,9 @@ def digest(value):
 def execution_profile(profile='transactions'):
     return {'profile': profile, 'files': {
         **runtime_profile.file_hashes(profile),
-        'scripts/desk.py': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}}
+        'scripts/desk.py': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        'scripts/history.py': hashlib.sha256((ROOT / 'scripts/history.py').read_bytes()).hexdigest(),
+        'scripts/source_store.py': hashlib.sha256((ROOT / 'scripts/source_store.py').read_bytes()).hexdigest()}}
 
 
 def immutable(path, value):
@@ -80,6 +86,77 @@ def load_artifact(directory, identity):
     return artifact
 
 
+def preserve_build_dependencies(directory, artifact):
+    """Retain exact declared compiler inputs before publishing their admission."""
+    custody = Path(directory) / 'pins'
+    def regular(path):
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        stream = os.fdopen(descriptor, 'rb')
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            stream.close()
+            raise ValueError('build dependency must be a regular file')
+        return stream
+    for name, sha in history.declared_files(artifact).items():
+        target = history.blob_path(custody, sha)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with regular(target) as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != sha:
+                    raise ValueError('retained build dependency digest mismatch: ' + name)
+            continue
+        except FileNotFoundError:
+            pass
+        source = (ROOT / name).resolve()
+        if not source.is_relative_to(ROOT):
+            raise ValueError('build dependency escapes repository: ' + name)
+        temporary = None
+        try:
+            with regular(source) as original, tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as copied:
+                temporary = Path(copied.name)
+                shutil.copyfileobj(original, copied)
+                copied.flush()
+                os.fsync(copied.fileno())
+            with regular(temporary) as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != sha:
+                    raise ValueError('original build dependency missing or changed: ' + name)
+            try:
+                os.link(temporary, target)
+            except FileExistsError:
+                pass
+            with regular(target) as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != sha:
+                    raise ValueError('retained build dependency digest mismatch: ' + name)
+            descriptor = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        finally:
+            if temporary is not None:
+                temporary.unlink()
+
+
+def proposal_material(proposal, artifact_store=None):
+    """Resolve exact bytes only from the explicitly selected local source store."""
+    if isinstance(proposal, dict) and proposal.get('format') == source_store.PROPOSAL:
+        if artifact_store is None:
+            raise ValueError('source reference proposal requires an explicit artifact store')
+        source, scenarios = source_store.validate_proposal(artifact_store, proposal)
+        bindings = {key: proposal[key] for key in ('syntax', 'sourceRef', 'scenariosRef', 'adapterPin')}
+    else:
+        if not isinstance(proposal, dict) or set(proposal) != {'syntax', 'source', 'scenarios'}:
+            raise ValueError('proposal requires inline syntax/source/scenarios or explicit source references')
+        source, scenarios = proposal['source'].encode('utf-8'), proposal['scenarios'].encode('utf-8')
+        bindings = {'syntax': proposal['syntax'],
+                    'sourceRef': {k: v for k, v in source_store.reference(source).items() if k != 'format'},
+                    'scenariosRef': {k: v for k, v in source_store.reference(scenarios, kind='scenarios').items() if k != 'format'}}
+        try:
+            bindings['adapterPin'] = source_store.adapter_pin(proposal['syntax'])
+        except ValueError:
+            bindings['adapterPin'] = None  # The compiler retains the unknown-syntax refusal.
+    return source, scenarios, bindings
+
+
 def compile_proposal(payload):
     """Trusted worker computation only; all world transitions happen elsewhere."""
     proposal = module('desk_proposal', 'scripts/propose.py')
@@ -90,12 +167,16 @@ def compile_proposal(payload):
                 'proposal': source, 'migration': state['migration'], 'target': state['target'], 'admissionProfile': profile,
                 'worker': {'scripts/desk.py': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}}
     try:
-        if not isinstance(source, dict) or set(source) != {'syntax', 'source', 'scenarios'}:
-            raise ValueError('proposal requires exactly syntax, source and scenarios')
+        raw_source, raw_scenarios, bindings = proposal_material(source, payload.get('artifactStore'))
+        artifact['sourceBindings'] = bindings
+        # Local build custody retains originals even when compilation fails.
+        artifact['sourceMaterial'] = {'source': raw_source.decode('utf-8'), 'scenarios': raw_scenarios.decode('utf-8')}
         if not isinstance(state['migration'], dict):
             raise ValueError('migration must be a complete state object')
-        report = proposal.propose(source['syntax'], source['source'].encode('utf-8'),
-                                  source['scenarios'].encode('utf-8'), profile=profile)
+        report = proposal.propose(source['syntax'], raw_source, raw_scenarios, profile=profile)
+        if (bindings['adapterPin'] is not None
+                and canonical(report['candidate']['artifact']['translation']) != canonical(bindings['adapterPin'])):
+            raise ValueError('source adapter changed during compilation')
         artifact['report'] = report
         if not report['passed']:
             artifact.update(passed=False, diagnostics=[{'kind': 'scenario-failure', 'report': report['id']}])
@@ -115,8 +196,14 @@ def compile_proposal(payload):
     return artifact
 
 
-def bounded_compile(root, *, timeout=45, profile='transactions'):
+def bounded_compile(root, *, timeout=45, profile='transactions', artifact_store=None):
     """Run the trusted compiler with wall/CPU/file bounds; never execute source text."""
+    failed = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root), 'passed': False}
+    if isinstance(root.get('state', {}).get('proposal'), dict):
+        proposed = root['state']['proposal']
+        failed['proposal'] = proposed
+        if proposed.get('format') == source_store.PROPOSAL:
+            failed['sourceBindings'] = {key: proposed[key] for key in ('syntax', 'sourceRef', 'scenariosRef', 'adapterPin')}
     def limits():
         import resource
         resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
@@ -134,11 +221,12 @@ def bounded_compile(root, *, timeout=45, profile='transactions'):
             if process.stdin is not None:
                 process.stdin.close()
         try:
-            process.communicate(canonical({'root': root, 'profile': profile}), timeout=timeout)
+            process.communicate(canonical({'root': root, 'profile': profile,
+                                           'artifactStore': str(Path(artifact_store).resolve()) if artifact_store is not None else None}),
+                                timeout=timeout)
         except subprocess.TimeoutExpired:
             terminate_group()
-            return {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root),
-                    'passed': False, 'diagnostics': [{'kind': 'worker-timeout', 'seconds': timeout}]}
+            return {**failed, 'diagnostics': [{'kind': 'worker-timeout', 'seconds': timeout}]}
         except BaseException:
             terminate_group()
             raise
@@ -146,13 +234,11 @@ def bounded_compile(root, *, timeout=45, profile='transactions'):
         raw = output.read(8 * 1024 * 1024 + 1)
         if process.returncode or len(raw) > 8 * 1024 * 1024:
             terminate_group()
-            return {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root),
-                    'passed': False, 'diagnostics': [{'kind': 'worker-failure', 'exit': process.returncode}]}
+            return {**failed, 'diagnostics': [{'kind': 'worker-failure', 'exit': process.returncode}]}
         try:
             return loads(raw)
         except (ValueError, UnicodeError):
-            return {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root),
-                    'passed': False, 'diagnostics': [{'kind': 'worker-malformed-output'}]}
+            return {**failed, 'diagnostics': [{'kind': 'worker-malformed-output'}]}
 
 
 class Desk:
@@ -189,6 +275,17 @@ class Desk:
                        'migration': migration, 'target': target}}
         return self.exchange(request)
 
+    def submit_refs(self, object_id, principal, intent, expected, proposal, migration, target):
+        request = {'op': 'invoke', 'object': object_id, 'principal': principal, 'intent': intent,
+                   'expected': expected, 'command': 'submit',
+                   'input': {'proposal': proposal, 'migration': migration, 'target': target}}
+        retained = self.retained_reply(request)
+        if retained is not None:
+            return retained
+        source_store.validate_proposal(self.artifact_store, proposal)
+        source_store.preserve_dependencies(self.artifact_store, proposal)
+        return self.exchange(request)
+
     def check(self, object_id, principal, intent, expected):
         # This memo preserves only the compiler-produced request across uncertainty.
         # Lean's world retains the actual lifecycle and all success/refusal receipts.
@@ -198,7 +295,12 @@ class Desk:
             entry = loads(path.read_bytes())
         else:
             profile = execution_profile(self.profile)
-            build = bounded_compile(expected, profile=self.profile)
+            if expected['state']['proposal'].get('format') == source_store.PROPOSAL:
+                # Custody/runtime errors remain retryable; do not admit source loss as a failed program.
+                proposal_material(expected['state']['proposal'], self.artifact_store)
+                build = bounded_compile(expected, profile=self.profile, artifact_store=self.artifact_store)
+            else:
+                build = bounded_compile(expected, profile=self.profile)
             identity = store_artifact(self.artifact_store, build)
             if build['passed']:
                 room_id = None
@@ -219,8 +321,11 @@ class Desk:
             return retained
         if entry.get('executionProfile') != execution_profile(self.profile):
             raise ValueError('pending desk admission runtime pins changed or missing')
+        if expected['state']['proposal'].get('format') == source_store.PROPOSAL:
+            proposal_material(expected['state']['proposal'], self.artifact_store)
         # Detect corruption without repeating translation or adopting a new artifact.
-        load_artifact(self.artifact_store, entry['request']['input']['artifact'])
+        build = load_artifact(self.artifact_store, entry['request']['input']['artifact'])
+        preserve_build_dependencies(self.artifact_store, build)
         return self.exchange(entry['request'])
 
     def adopt(self, object_id, target, principal, intent, expected_candidate, expected_target):
@@ -245,6 +350,7 @@ def main():
     create.add_argument('--law', required=True, type=Path)
     submit = commands.add_parser('submit')
     submit.add_argument('--syntax', required=True)
+    submit.add_argument('--references', action='store_true', help='store exact source/scenarios locally and submit compact references')
     submit.add_argument('--source', required=True, type=Path)
     submit.add_argument('--scenarios', required=True, type=Path)
     submit.add_argument('--migration', required=True, type=Path)
@@ -271,9 +377,15 @@ def main():
         else:
             expected = loads(args.expected_root.read_bytes())
             if args.command == 'submit':
-                result = desk.submit(args.object, args.principal, args.intent, expected, args.syntax,
-                                     args.source.read_bytes(), args.scenarios.read_bytes(),
-                                     loads(args.migration.read_bytes()), args.target)
+                if args.references:
+                    proposal = source_store.prepare_proposal(args.artifacts, args.syntax,
+                                                             args.source.read_bytes(), args.scenarios.read_bytes())
+                    result = desk.submit_refs(args.object, args.principal, args.intent, expected, proposal,
+                                              loads(args.migration.read_bytes()), args.target)
+                else:
+                    result = desk.submit(args.object, args.principal, args.intent, expected, args.syntax,
+                                         args.source.read_bytes(), args.scenarios.read_bytes(),
+                                         loads(args.migration.read_bytes()), args.target)
             elif args.command == 'check':
                 result = desk.check(args.object, args.principal, args.intent, expected)
             else:

@@ -23,10 +23,43 @@
     </aside>
     <section class="workspace" aria-label="Object workbench">
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <p id="preview-scope" class="preview-scope" hidden></p>
+      <details id="source-desk" class="source-desk">
+        <summary>Make something here <span>Source desk</span></summary>
+        <div class="source-desk-body">
+          <p class="help">Keep source, propose a change, and follow its checks. A prepared proposal changes nothing until you send it.</p>
+          <form id="source-form">
+            <div class="desk-grid">
+              <label class="field-label">Candidate object<input id="source-candidate" type="text" list="candidate-objects" required placeholder="candidate:my-object"><datalist id="candidate-objects"></datalist></label>
+              <label class="field-label">Target object<input id="source-target" type="text" list="target-objects" required placeholder="object:my-object"><datalist id="target-objects"></datalist></label>
+              <label class="field-label">Syntax<select id="source-syntax" required><option value="">Choose a syntax…</option></select></label>
+            </div>
+            <label class="field-label">Source<textarea id="source-text" rows="10" spellcheck="false" placeholder="Write or paste your program…"></textarea></label>
+            <div class="source-file-row"><label class="field-label">Or open a UTF-8 file<input id="source-file" type="file"></label><button id="retain-source" type="button" class="secondary">Keep source</button><span id="source-retained" class="help" role="status"></span></div>
+            <details class="desk-references"><summary>Use retained source</summary><div class="input-row"><input id="source-reference" type="text" aria-label="Retained source reference" placeholder="Exact source reference"><button id="load-source" class="secondary" type="button">Open</button></div></details>
+            <details class="desk-inputs"><summary>Scenarios & migration <span>Required for a candidate</span></summary>
+              <label class="field-label">Scenario JSON<textarea id="source-scenarios" rows="6" spellcheck="false" placeholder="Paste the scenario suite for this program"></textarea></label>
+              <label class="field-label">Scenario file<input id="scenario-file" type="file" accept=".json,application/json"></label>
+              <label class="field-label">Complete target state after adoption (JSON)<textarea id="source-migration" rows="5" spellcheck="false" placeholder="An exact JSON state object"></textarea></label>
+              <p class="help">These are retained as exact text. The compiler and world check their meaning.</p>
+            </details>
+            <div class="desk-buttons"><button id="prepare-source" type="submit" class="primary">Prepare candidate</button><button id="prepare-compile" type="button" class="secondary">Prepare compile</button><button id="prepare-adopt" type="button" class="secondary">Prepare adoption</button></div>
+          </form>
+          <section id="authoring-work" class="authoring-work" hidden aria-label="Saved source desk proposal">
+            <div class="draft-heading"><h3 id="authoring-title">Saved proposal</h3><button id="dismiss-authoring" type="button" class="icon-button" aria-label="Dismiss source desk proposal">×</button></div>
+            <p id="authoring-summary"></p><code id="authoring-alias"></code>
+            <p id="authoring-status" class="help" role="status" aria-live="polite"></p>
+            <div class="desk-buttons"><button id="send-authoring" type="button" class="primary">Send proposal</button><button id="run-authoring" type="button" class="secondary" hidden>Run compile job</button><button id="refresh-authoring" type="button" class="text-button">Check status</button></div>
+            <div id="authoring-diagnostics" class="authoring-diagnostics" hidden><h3>Compiler notes</h3><pre id="authoring-notes" tabindex="0"></pre></div>
+            <details class="desk-exact"><summary>Exact proposal & status</summary><button id="copy-authoring" type="button" class="text-button">Copy exact proposal</button><pre id="authoring-exact" tabindex="0"></pre><pre id="authoring-status-exact" tabindex="0" hidden></pre></details>
+          </section>
+        </div>
+      </details>
       <article id="object-card" class="object-card" tabindex="-1">
         <div class="card-topline"><span class="eyebrow">An object in the world</span><span id="version" class="version"></span></div>
         <h2 id="object-title">Come in. Take a look around.</h2>
         <p id="object-prose" class="prose">Choose an object to see what it has to say and what you can do together.</p>
+        <div id="object-children" class="object-children" hidden></div>
         <div id="object-meta" class="object-meta" hidden><code id="card-token"></code><button id="refresh-object" class="text-button" type="button">Read again ↻</button></div>
         <section id="actions-section" class="actions-section" aria-labelledby="actions-title" hidden>
           <h3 id="actions-title">Possibilities</h3>
@@ -43,13 +76,15 @@
         <div class="draft-heading"><div><span class="eyebrow">Before anything changes</span><h2 id="draft-title">A proposed action</h2></div><button id="dismiss-draft" class="icon-button" type="button" aria-label="Dismiss draft">×</button></div>
         <p id="draft-summary" class="prose"></p>
         <p id="draft-target" class="help"></p>
+        <p id="draft-absence" class="help" hidden></p>
         <div class="command-row"><code id="draft-command"></code><button id="copy-draft" class="text-button" type="button">Copy</button></div>
         <p id="draft-help" class="help"></p>
         <details class="draft-exact">
           <summary>Inspect the exact proposal</summary>
           <button id="copy-wire" class="text-button" type="button">Copy exact JSON</button>
+          <button id="download-wire" class="text-button" type="button">Download exact JSON</button>
           <pre id="draft-wire" tabindex="0"></pre>
-          <div class="repository-export">
+          <div id="repository-export" class="repository-export">
             <button id="prepare-repository" class="secondary" type="button">Prepare repository record</button>
             <p class="help">Prepare a record for a repository workflow. This does not publish, authenticate or send the action.</p>
             <div id="repository-record" hidden>
@@ -63,7 +98,7 @@
       </section>
       <details id="inspect" class="inspect" hidden>
         <summary>Look inside <span>Source, state & history</span></summary>
-        <div class="inspect-body"><p class="help">Exact details for this reading of the object.</p><div id="detail-tabs" class="detail-tabs" role="group" aria-label="Inspect object details"></div><button id="copy-detail" class="text-button" type="button">Copy exact JSON</button><pre id="detail-content" tabindex="0">Opening…</pre></div>
+        <div class="inspect-body"><p class="help">Exact details for this reading of the object.</p><button id="copy-reference" class="text-button" type="button" hidden>Copy object reference</button><p id="reference-status" class="help" hidden></p><p id="unsupported-status" class="help" hidden></p><div id="detail-tabs" class="detail-tabs" role="group" aria-label="Inspect object details"></div><button id="copy-detail" class="text-button" type="button">Copy exact JSON</button><pre id="detail-content" tabindex="0">Opening…</pre></div>
       </details>
     </section>
   </main>
