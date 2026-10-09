@@ -478,3 +478,26 @@ fixture recorded by the foundation binary).
   type does not synthesize is left alone for the checker. All 11 `Data.of` in world/
   are unnecessary: stripped, every one of the 717 entries compiles to the same packet
   (minus source hashes).
+- Rank-1 type-argument inference (`Generics.lean`, "Type-argument inference"). A call of a
+  generic definition or constructor without `::<...>` gets the type arguments its explicit
+  spelling would name, and is then rewritten exactly as that spelling: arguments first,
+  then the instance, its arguments instantiated left to right with nested sums first (as
+  `typeOf` does a type text), so instance numbers and packets agree. Inference never
+  instantiates: `IType` keeps a generic sum as an application (`app`) and opens an
+  existing instance back into one (`ofG`, `State.instanceByName`); `itypeOf` mirrors
+  `typeOf` without side effects; `synthI` synthesizes over the surface with locals typed
+  on demand (`List (String × M IType)`), and expected types travel the same way
+  (`rewriteExpr`/`rewriteBody` take `M IType`: a call's parameter, a record field, an
+  extended field, a definition's result, `perform`'s Plan, `if` and `match` arms, `let`
+  annotations, a lambda's result). `inferArguments` binds from declared argument types,
+  then the expected type (an activity callee's result against the expected activity, a
+  pure one against its result `A`), then record literals (weak: a literal never beats a
+  declared type, so `{head: {..}, tail: xs}` names `xs`'s record, as the explicit spelling
+  does). A parameter left unbound is refused: "cannot infer the type argument U of
+  Lists.kept (line N) from its arguments or the type its position expects; write
+  Lists.kept::<T, Rain>(...) naming T" (inferred ones are shown). A nested call whose
+  own argument is unknown makes the OUTER call the one named. Inference steps have their
+  own budget (`maxInferenceSteps`), so the node budget refuses exactly as before. All 537
+  type-argument lists in world/ (548 `::<` outside comments, 11 of them `Data.of`) are
+  unnecessary: stripped (both forms), every one of the 717 entries compiles to the same
+  packet minus source hashes. Pins test 8.3-8.9 s with either binary.

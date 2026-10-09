@@ -72,6 +72,67 @@ DATA_PAIRS = [
 ]
 
 
+LISTS_HEAD = HEAD + """import ./List.obend as Lists
+record Rain:
+  author: String
+  text: String
+record State:
+  rains: Lists.List<Rain>
+  count: Nat
+sum Plan:
+  write: {count: Nat}
+sum Response:
+  written: {}
+  refused: {clause: String}
+def line(rain: Rain) -> String:
+  rain.text
+"""
+
+# (name, explicit, sugared, entry)
+GENERIC_PAIRS = [
+    ("arguments fix both parameters",
+     LISTS_HEAD + "def lines(state: State) -> Lists.List<String>:\n  Lists.map::<Rain, String>(state.rains, line)\n",
+     LISTS_HEAD + "def lines(state: State) -> Lists.List<String>:\n  Lists.map(state.rains, line)\n",
+     "lines"),
+    ("a lambda's annotation",
+     LISTS_HEAD + "def sizes(state: State) -> Lists.List<Nat>:\n  Lists.map::<Rain, Nat>(state.rains, fn(r: Rain) -> Nat: textLength(r.text))\n",
+     LISTS_HEAD + "def sizes(state: State) -> Lists.List<Nat>:\n  Lists.map(state.rains, fn(r: Rain) -> Nat: textLength(r.text))\n",
+     "sizes"),
+    ("nested calls",
+     LISTS_HEAD + "def count(state: State) -> Nat:\n  Lists.length::<String>(Lists.map::<Rain, String>(state.rains, line)) + Lists.length::<Rain>(state.rains)\n",
+     LISTS_HEAD + "def count(state: State) -> Nat:\n  Lists.length(Lists.map(state.rains, line)) + Lists.length(state.rains)\n",
+     "count"),
+    ("constructor from its head",
+     LISTS_HEAD + "def one(rain: Rain, state: State) -> Lists.List<Rain>:\n  Lists.List::<Rain>.cons({head: rain, tail: state.rains})\n",
+     LISTS_HEAD + "def one(rain: Rain, state: State) -> Lists.List<Rain>:\n  Lists.List.cons({head: rain, tail: state.rains})\n",
+     "one"),
+    ("constructor from the expected type",
+     LISTS_HEAD + "def fresh(n: Nat) -> State:\n  {rains: Lists.List::<Rain>.nil({}), count: n}\n",
+     LISTS_HEAD + "def fresh(n: Nat) -> State:\n  {rains: Lists.List.nil({}), count: n}\n",
+     "fresh"),
+    ("a literal head with a declared tail",
+     LISTS_HEAD + "def said(text: String, state: State) -> Lists.List<Rain>:\n  Lists.List::<Rain>.cons({head: {author: \"me\", text: text}, tail: state.rains})\n",
+     LISTS_HEAD + "def said(text: String, state: State) -> Lists.List<Rain>:\n  Lists.List.cons({head: {author: \"me\", text: text}, tail: state.rains})\n",
+     "said"),
+    ("an activity's result type",
+     LISTS_HEAD + "def wrote<T>(state: State, then: Nat -> T) -> Activity<Plan, Response, T>:\n"
+     "  match perform(Plan.write({count: state.count + 1n})):\n    case _: then(state.count)\n"
+     "def bump(state: State, n: Nat) -> Activity<Plan, Response, Nat>:\n"
+     "  wrote::<Nat>(state, fn(c: Nat) -> Nat: c + n)\n",
+     LISTS_HEAD + "def wrote<T>(state: State, then: Nat -> T) -> Activity<Plan, Response, T>:\n"
+     "  match perform(Plan.write({count: state.count + 1n})):\n    case _: then(state.count)\n"
+     "def bump(state: State, n: Nat) -> Activity<Plan, Response, Nat>:\n"
+     "  wrote(state, fn(c: Nat) -> Nat: c + n)\n",
+     "bump"),
+    ("inside a generic body",
+     LISTS_HEAD + "def twice<T>(items: Lists.List<T>) -> Nat:\n  Lists.length::<T>(items) + Lists.length::<T>(items)\n"
+     "def f(state: State) -> Nat:\n  twice::<Rain>(state.rains)\n",
+     LISTS_HEAD + "def twice<T>(items: Lists.List<T>) -> Nat:\n  Lists.length(items) + Lists.length(items)\n"
+     "def f(state: State) -> Nat:\n  twice(state.rains)\n",
+     "f"),
+]
+
+
 class SugarTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -117,6 +178,31 @@ class SugarTests(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("refused (data-injection): this value is an Activity", reply["diagnostic"]["message"])
 
+    # 2. Type-argument inference.
+    def test_inferred_type_arguments_are_their_explicit_spelling(self):
+        for name, explicit, sugared, entry in GENERIC_PAIRS:
+            with self.subTest(form=name):
+                a, b = self.same(explicit, sugared, entry, ("List",))
+                # Instance records name source hashes and spans; their names and order agree.
+                self.assertEqual([i["name"] for i in a["genericInstances"]],
+                                 [i["name"] for i in b["genericInstances"]])
+
+    def test_an_uninferable_parameter_is_named_with_its_spelling(self):
+        # Neither the argument (a nil of no known type) nor the position fixes T.
+        source = LISTS_HEAD + "def zero(n: Nat) -> Nat:\n  Lists.length(Lists.List.nil({}))\n"
+        reply = self.check(source, "zero", ("List",))
+        self.assertEqual(reply["status"], "refused", reply)
+        message = reply["diagnostic"]["message"]
+        self.assertIn("cannot infer the type argument T of Lists.length (line 17)", message)
+        self.assertIn("write Lists.length::<T>(...) naming T", message)
+
+    def test_a_partly_inferred_call_shows_what_was_inferred(self):
+        # kept<T, U>(found: Maybe<U>, rest: List<U>) never mentions T.
+        source = LISTS_HEAD + "def pick(state: State) -> Lists.List<Rain>:\n  Lists.kept(Lists.Maybe.none({}), state.rains)\n"
+        reply = self.check(source, "pick", ("List",))
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("cannot infer the type argument T of Lists.kept", reply["diagnostic"]["message"])
+        self.assertIn("write Lists.kept::<T, Rain>(...) naming T", reply["diagnostic"]["message"])
 
 if __name__ == "__main__":
     unittest.main()
