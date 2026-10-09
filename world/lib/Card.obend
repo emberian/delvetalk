@@ -21,8 +21,10 @@ record Door:
   word: String
   blurb: String
 type Forms = Lists.List<Form.Form>
+# The typed fields of an acted spell.
+type Fields = Spell.Entries
 sum Routed:
-  act: {action: String, fields: Spell.Entries}
+  act: {action: String, fields: Fields}
   usage: {}
   unclear: {action: String, needs: Form.Names}
   refused: {reason: String}

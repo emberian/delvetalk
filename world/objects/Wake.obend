@@ -1,0 +1,159 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./Card.obend as Card
+import ./Event.obend as Events
+# mimo's reflex arc: an owner's triggers, each an event to match and an action to take.
+# The owner's Env sends every event to `sense`; a matching trigger notifies the owner's
+# Avatar (its id is the owner's DID), asks the Env to show itself, or calls a card.
+# The universal message is receive {text, post}, so the Env's deliveries arrive at
+# sense {event} (the town's sketch named it receive).
+sum On:
+  mention: {actor: String}
+  keyword: {term: String}
+  reply: {card: String}
+  schedule: {every: Nat}
+sum Action:
+  notify: {}
+  observe: {}
+  call: {card: String, method: String}
+record Trigger:
+  id: Nat
+  event: On
+  action: Action
+record State:
+  owner: String
+  env: Plans.Reference
+  triggers: Lists.List<Trigger>
+  nextId: Nat
+record Seed:
+  owner: String
+  env: Plans.Reference
+record Edits:
+  triggers: Plans.Entries<Trigger, {}>
+  nextId: Plans.Edit<Nat, Nat>
+# Every send carries a line of text: a note's text, or what woke the trigger.
+type Plan = Plans.Plan<Edits, {text: String}>
+type Response = Plans.Response<State, {}>
+# Only the owner changes its triggers. With request.method, sense could be opened to the
+# owner's env alone: owner: request.method == "sense" or request.subject == new.owner
+law owner: new.owner == request.subject
+law ids: monotone(nextId)
+def defaultSeed() -> Seed:
+  {owner: "", env: Plans.nobody()}
+def seeded(seed: Seed) -> State:
+  {owner: seed.owner, env: seed.env, triggers: Lists.List::<Trigger>.nil(), nextId: 1n}
+def initial() -> State:
+  seeded(defaultSeed())
+def keep() -> Edits:
+  {triggers: Plans.Entries::<Trigger, {}>.keep({}), nextId: Plans.Edit::<Nat, Nat>.keep({})}
+sum Done:
+  watching: {id: Nat}
+  fired: {count: Nat}
+  refused: {reason: String}
+def notOwner(state: State) -> Done:
+  Done.refused({reason: textConcat("Only its owner sets these triggers; that is ", Card.handle(state.owner))})
+def watched<T>(state: State, event: On, action: Action, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if context.principal != state.owner then then(notOwner(state)) else if Lists.length::<Trigger>(state.triggers) < 32n then added::<T>(state, event, action, context, then) else then(Done.refused({reason: "Thirty-two triggers is the most a wake holds."}))
+def added<T>(state: State, event: On, action: Action, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: {triggers: Plans.Entries::<Trigger, {}>.append({item: {id: state.nextId, event: event, action: action}}), nextId: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case _: then(Done.watching({id: state.nextId}))
+def same(done: Done) -> Done:
+  done
+def watch(state: State, input: {event: On, action: Action}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  watched::<Done>(state, input.event, input.action, context, same)
+# Unwatch by id: the index is found here, in Bend, and removed by index.
+def unwatched<T>(state: State, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if context.principal != state.owner then then(notOwner(state)) else removing::<T>(Lists.indexWhere::<Trigger>(state.triggers, fn(t: Trigger) -> Bool: t.id == id), id, context, then)
+def removing<T>(found: Lists.Maybe<Nat>, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match found:
+    case none(_): then(Done.refused({reason: textConcat("No trigger ", natText(id))}))
+    case some(s): removed::<T>(s.value, id, context, then)
+def removed<T>(index: Nat, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {triggers: Plans.Entries::<Trigger, {}>.remove({index: index})})})):
+    case _: then(Done.watching({id: id}))
+def unwatch(state: State, input: {id: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  unwatched::<Done>(state, input.id, context, same)
+# A schedule is an await on a height: the turn suspends on a slot nobody settles, and
+# when the clock passes `every` it resumes timedOut and acts. One firing per schedule
+# turn; schedule again to wake again.
+def schedule(state: State, input: {every: Nat, action: Action}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  if context.principal != state.owner then notOwner(state) else waited(state, input.every, input.action, context)
+def waited(state: State, every: Nat, action: Action, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  match perform(Plan.await({slot: {principal: context.object, intent: textConcat("schedule/", context.intent)}, patience: every})):
+    case timedOut(_): act(state, action, textConcat("scheduled every ", natText(every)), 0n)
+    case _: Done.refused({reason: "The schedule was answered before its time."})
+# The event that woke a trigger, as a line.
+def woke(event: Events.Event) -> String:
+  textConcat(event.kind, textConcat(" from ", textConcat(Card.handle(event.actor), textConcat(": ", event.text))))
+def contains(text: String, term: String) -> Bool:
+  if term == "" then false else found(text, term, textTake(term, 1n))
+def found(text: String, term: String, first: String) -> Bool:
+  let rest = textDrop(text, textBreak(text, first))
+  if textLength(rest) < textLength(term) then false else if textTake(rest, textLength(term)) == term then true else found(textDrop(rest, 1n), term, first)
+def matches(on: On, event: Events.Event) -> Bool:
+  match on:
+    case mention(m): event.kind == "mention" && event.actor == m.actor
+    case keyword(k): contains(event.text, k.term)
+    case reply(r): event.kind == "reply" && event.replyTo == r.card
+    case schedule(_): false
+# Each matching trigger acts, in order, by explicit recursion (a send never sits in a
+# lambda: an activity in a closure is refused).
+def fire(state: State, triggers: Lists.List<Trigger>, event: Events.Event, count: Nat) -> Activity<Plan, Response, Done>:
+  match triggers:
+    case nil(_): Done.fired({count: count})
+    case cons(c): if matches(c.head.event, event) then acted(state, c.head.action, c.tail, event, count) else fire(state, c.tail, event, count)
+def acted(state: State, action: Action, rest: Lists.List<Trigger>, event: Events.Event, count: Nat) -> Activity<Plan, Response, Done>:
+  match perform(Plan.send({object: target(state, action), method: method(action), argument: {text: woke(event)}})):
+    case _: fire(state, rest, event, count + 1n)
+def act(state: State, action: Action, text: String, count: Nat) -> Activity<Plan, Response, Done>:
+  match perform(Plan.send({object: target(state, action), method: method(action), argument: {text: text}})):
+    case _: Done.fired({count: count + 1n})
+def target(state: State, action: Action) -> Plans.Reference:
+  match action:
+    case notify(_): {world: "", object: state.owner}
+    case observe(_): state.env
+    case call(c): {world: "", object: c.card}
+def method(action: Action) -> String:
+  match action:
+    case notify(_): "note"
+    case observe(_): "observe"
+    case call(c): c.method
+# The owner's env, or the owner in a direct turn, tells the wake what happened.
+def sense(state: State, input: {event: Events.Event}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  if context.principal != state.owner then notOwner(state) else fire(state, state.triggers, input.event, 0n)
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "mention", fields: Form.Fields.cons({head: {name: "actor", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "keyword", fields: Form.Fields.cons({head: {name: "term", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "unwatch", fields: Form.Fields.cons({head: {name: "id", kind: Form.Kind.natural({min: 1n, max: 1000000n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})})
+def door() -> Card.Door:
+  {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
+def doneReply(done: Done) -> Card.Reply:
+  match done:
+    case refused(r): Card.Reply.refused({reason: r.reason})
+    case _: Card.Reply.done({action: "watch"})
+# From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  heard(state, Card.route(input.text, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): if a.action == "unwatch" then unwatched::<Card.Reply>(state, Card.natural(a.fields, "id"), context, doneReply) else watched::<Card.Reply>(state, spelled(a.action, a.fields), Action.notify({}), context, doneReply)
+    case _: Card.answer::<Edits, {text: String}, State, {}>(routed, context, forms(), render(state))
+def spelled(action: String, fields: Card.Fields) -> On:
+  if action == "mention" then On.mention({actor: Card.text(fields, "actor")}) else On.keyword({term: Card.text(fields, "term")})
+def onText(on: On) -> String:
+  match on:
+    case mention(m): textConcat("a mention by ", Card.handle(m.actor))
+    case keyword(k): textConcat("the word ", k.term)
+    case reply(r): textConcat("a reply to ", r.card)
+    case schedule(s): textConcat("every ", natText(s.every))
+def actionText(action: Action) -> String:
+  match action:
+    case notify(_): "note me"
+    case observe(_): "show my env"
+    case call(c): textConcat("call ", textConcat(c.card, textConcat(" ", c.method)))
+def line(trigger: Trigger) -> Document.Document:
+  Document.text(textConcat("#", textConcat(natText(trigger.id), textConcat(" on ", textConcat(onText(trigger.event), textConcat(": ", textConcat(actionText(trigger.action), "\n")))))))
+def render(state: State) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("WAKE of ", textConcat(Card.handle(state.owner), "\n"))), tail: Card.clipped(Lists.map::<Trigger, Document.Document>(state.triggers, line), 8n)})})
