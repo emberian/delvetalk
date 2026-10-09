@@ -9,6 +9,9 @@ record Context:
   world: String
   object: String
   principal: String
+  caller: String
+  intent: String
+  height: Nat
   inputOrigin: Origin
 record Event:
   id: String

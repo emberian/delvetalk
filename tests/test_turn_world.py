@@ -255,12 +255,11 @@ class CounterTurns(TurnWorld):
         self.assertEqual(nxt["status"], "admitted")
         self.assertEqual(self.count("c1"), (4, "4"))
 
-    def test_a_ten_tick_budget_is_refused_as_evaluation_with_a_named_reason(self):
+    def test_a_ten_tick_budget_is_refused_as_budget_naming_the_resource(self):
         self.create("c1", counter_modules(), 0)
         r = self.turn("c1", "bump", ticks="10")
         out = r["receipt"]["outcome"]
-        self.assertEqual((r["status"], out["class"]), ("refused", "evaluation"))
-        self.assertIn("tick", out["reason"])
+        self.assertEqual((r["status"], out["class"], out["reason"]), ("refused", "budget", "ticks"))
         self.assertEqual(self.count("c1"), (0, "0"))
 
 
@@ -309,10 +308,10 @@ class Plans(TurnWorld):
         self.assertEqual(self.count("b"), (0, "7"))
         self.assertEqual(self.count("a"), (1, "2"))
 
-    def test_a_viewed_object_can_be_written(self):
+    def test_a_viewed_object_still_cannot_be_written_by_another(self):
         r = self.turn("a", "peekThenWrite", self.target("b"))
-        self.assertEqual(r["status"], "admitted")
-        self.assertEqual(self.count("b"), (1, "14"))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(998)))
+        self.assertEqual(self.count("b"), (0, "7"))
 
     def test_call_commits_the_callee_and_the_caller_atomically_in_one_entry(self):
         h = self.height()
@@ -421,7 +420,7 @@ class ListEdits(TurnWorld):
         self.assertEqual(list_items(view()["state"]), ["three"])
         version = view()["version"]
         r = self.turn("n", "drop", record(index=nat(1)))
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
+        self.assertEqual(r["receipt"]["outcome"]["class"], "outOfRange")
         self.assertEqual(view()["version"], version)
         before = view()
         self.reopen()
@@ -434,7 +433,7 @@ class ListEdits(TurnWorld):
                        seed=record(names={"tag": "variant", "label": "nil", "payload": empty}))
         self.turn("n", "add", record(text=label("only")))
         r = self.turn("n", "fix", record(index=nat(5), text=label("x")))
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
+        self.assertEqual(r["receipt"]["outcome"]["class"], "outOfRange")
         self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["version"], 1)
 
 
