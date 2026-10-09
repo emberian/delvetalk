@@ -1,11 +1,14 @@
-# Host handoff (lane/host2, after the authority model and program reflection)
+# Host handoff (lane/host3, after grants, the outbound channel, time, and journal weight)
 
 For the lane that continues the host. The authority model (FOUNDATION section 11 rows 1 to 3) and
 program reflection (row 5: inspect, check, the sealed library, interpret) are built; section 5 says how.
 Everything is in `spec/Delvetalk/Host/`. Line numbers drift; grep the names.
 Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 `test_deliveries.py`, `test_reprogram.py`, `test_await.py`, `test_replay.py`, `test_authority.py`,
-`test_reflection.py`.
+`test_reflection.py`, `test_grants.py`, `test_outbound.py`, `test_journal.py`, `test_workshop.py`.
+`make check` runs everything in parallel (~2 min); `make smoke` the fast pair. Two wall-clock bounds
+(`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
+loaded box; alone they take 3.3 s and pass.
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
@@ -14,22 +17,22 @@ Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes 
 Import order: Store, Journal, Law, Ops, TurnLoop, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
-- **Store.lean** (172): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
+- **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
   `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey`. Pure data.
 - **Journal.lean** (33): `bodyHash (body : Json) : String` (SHA-256 of `body.compress`; Lean orders
   object keys so bytes are canonical), `sealEntry (height previous) (fields) : Json` (adds `hash`),
   `verify (height : Nat) (previous : String) (entry : Json) : Except String Unit` (hash, height, chain).
-- **Law.lean** (142): `Facts`, `Reading`, `denote`, `admits`, `refusedBy`. The evaluator of the law
+- **Law.lean** (213): `Facts`, `Reading`, `denote`, `admits`, `refusedBy`. The evaluator of the law
   fragment; tests are `#guard`s at the bottom. The fragment syntax itself is
   `spec/bend/Compiler/ObjectiveBendLaw.lean` (host extensions there: `request.pin`, `request.kind`,
   text constants `REF == "text"` for subject/caller/pin).
-- **Ops.lean** (807): the pure world kernel. Edits, `Proposal`, `judge`, `commit`, `record`, `push`,
+- **Ops.lean** (1464): the pure world kernel. Edits, `Proposal`, `judge`, `commit`, `record`, `push`,
   creation (`compileObject`, `makeObject`, `buildObject`, `create`), program preparation, `replayEntry`,
   `replay`, `advance`, reads (`view`, `receipt`, `history`).
-- **TurnLoop.lean** (817): `world-turn` and everything that runs activities: the `M` monad,
+- **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
-- **Session.lean** (100): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
+- **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
 
 Signatures a newcomer calls (all pure unless noted):
@@ -325,3 +328,48 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   warnings into failures; close hosts in `tearDown`.
 - **Not done**: `world-reprogram`/`amend` are gated only by the object's law;
   foreign worlds (`Reference.world != ""`) are always refused.
+
+## 7. Where lane/host3 stopped, and the queue
+
+lane/host3 is based on foundation e7faa87; foundation has since moved (kernel batch e0b46f3, transport 40d3ee0,
+FOUNDATION section 13 in c6e5586). The root merges. Done here, each with tests: the merge fix, grants, reprogram and
+amend of another object, posted/addressee/settings, listing and cards, deliveries in the settling pass and
+`awaitUntil`, `request.method` and list membership, sources by CID and the build cache, the journal lock, the
+outbound channel and projections, transient refusals, no silent defaults, publish. Test files of this lane:
+`tests/test_grants.py`, `tests/test_outbound.py`, `tests/test_journal.py`.
+
+Queued, in the coordinator's order (none started):
+
+1. **Snapshots.** Every `Limits.snapshotEvery` (1,000) entries write `<journal>.snapshot.<height>.cbor`: the
+   canonical store (objects with state, pins, laws, read policies; suspended; pending; grants; posts; outbox;
+   modules) and the chain head, plus the binary pin (new checkpoint tags in the kernel batch mean an older binary
+   cannot resume a newer snapshot). `world-open` verifies the hash walk from genesis (cheap), loads the newest valid
+   snapshot, replays only later entries; a snapshot that disagrees with replay at its height is refused by name and
+   the previous one used. `Object` holds `Ty`/`DataBounds`, so a snapshot either serializes those or recompiles by
+   pin from `world.builds` (the build cache already makes that one compile per distinct package). Test: 500 creates,
+   snapshot, reopen under 1 s.
+2. **FOUNDATION section 13**, in order: (1) commutative edits commit against moved roots (`add`/`append`-only roots
+   are checked present, steps re-applied on the current state, law re-judged; `Entries.amend/remove` by item
+   equality; test: two agents rain on one bell in one settle pass, both admit). (2) grants completed: attenuation
+   (fixed argument fields merged, conflict refused), `uses` decremented per admitted use, revocation as a write to a
+   grant object (today a grant is a record in `world.grants`, see 5.8). (3) `reprogram {mode: extend}`.
+   (4) `inspected.methods` from the artifact's `methods` table (the kernel now emits
+   `methods: [{name, input, result, activity}]`). (5) supervisors (`create {supervisor?}`, `ended {receipt}`
+   delivery on timedOut, broken, budget). (6) two-tier law (`def law(old, new, request)` under `Limits.lawTicks`,
+   reads from `lawReads()` recorded as roots; the artifact's `law: {present, reads}`). (7) `run` and `judge` Plans.
+3. **Kernel batch integration** (after the root merges e0b46f3): map "turn refused: argument does not conform to its
+   type" from `startActivity` to the journaled class `typeMismatch`; pass `profile: true` through `world-turn`;
+   when the objects lane moves `call`/`send`/`create` payloads to `Data`, delete the one-variant unwrap in
+   `mergeSeed`; a State with a `Data` field is refused by the PackageData certificate path until the kernel extends
+   it (note, do not work around).
+4. **Transport asks.** `receive {text, post, slot?}` must tolerate a missing or empty `slot`: that is the objects'
+   method signature (a record argument with a field the method's input lacks does not conform); either the objects
+   take `slot: String` always and the bridge sends "", or the host learns to drop fields an input type lacks (a
+   silent default; not done). The bridge still formats the refusal text itself from class and hash; the host's
+   `publicRefusal` is what `world-receipt {of}` returns.
+
+What was wrong in the previous version of this file: the module map line counts; section 5.1 said `reprogram` and
+`amend` of another object were `notSelf` (now judged by the target's law); section 6 said offers live on the reply
+only and history/receipt ignore read policy (both changed here); the test list omitted `test_workshop`, whose
+propose case is still an expected failure for its fixture (see its docstring); `check` refused any module without
+`initial` ("missing selected entry"), fixed in the merge commit.

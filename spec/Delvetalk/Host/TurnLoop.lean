@@ -1,18 +1,12 @@
 /- Driving an activity against the store. A turn reads committed state, collects
    the roots it viewed and the writes it performed, and ends in exactly one
-   `commit`. The wire shapes are those of `world/lib/Plan.obend`:
-
+   `commit`. The wire shapes are those of `world/lib/Plan.obend`; `answer` handles
+   every constructor of its Plan (view, write, call/callVia, send/sendVia, create,
+   await/awaitUntil, interpret, offer, publish, reprogram, amend, inspect, check,
+   grant, revoke, objects, card). A label of some other sum refuses the turn:
+   `plan not supported: <label>`. `docs/HOST-HANDOFF.md` section 5 says what each does.
    A method is `(state, [input,] context) -> Activity<Plan, Response, A>` or the
-   same with a pure data result (the new state). `context` is
-   `Abi.Context {world, object, principal, caller, intent, height, inputOrigin}`.
-   Plans answered:
-     view  {object: Reference}                     -> viewed {version, state} | denied {}
-     write {object: Reference, edits: Edits}       -> written {} | refused {clause: notSelf}
-       (a write changes only the running object; the Reference must name it)
-     call  {object: Reference, method, argument}   -> returned {result} | refused {clause}
-   A Reference `{world, object}` names an object of this world when `world` is "".
-   `viewed` carries the object's whole state. Every other Plan label refuses the
-   turn: `plan not supported: <label>`. -/
+   same with a pure data result (the new state). -/
 import Delvetalk.Host.Ops
 import Delvetalk.Turn
 import Delvetalk.Document
