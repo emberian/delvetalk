@@ -5,7 +5,7 @@ principal, and the reply card is what the turn offers.
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference
+from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
@@ -126,6 +126,27 @@ def planted(context: Abi.Context) -> String:
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
             self.assertEqual(reply["result"]["label"], "done", reply)
+
+    def test_world_create_lays_a_partial_seed_over_initial_as_the_create_plan_does(self):
+        """Genesis scripts named every field and broke whenever an object gained one (`greeted`)."""
+        create = lambda ident, seed: self.host.send(op="world-create", principal="ember", identity=ident, object=ident,
+                                                    modules=closure("Directory"), entry="initial", seed=seed)
+        doors = {"tag": "list", "items": [door("GARDEN", "Plant something.", "garden")]}
+        made = create("d1", record(owner=label("ember"), doors=doors))
+        self.assertEqual(made["status"], "created", made)
+        state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
+        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted"])
+        self.assertEqual(field(state, "doors"), doors)
+        self.assertEqual(field(state, "greeted"), {"tag": "list", "items": []})
+        self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
+        # {doors} alone is a well-typed seed: initial()'s owner "" is what the metarule then refuses.
+        alone = create("d2", record(doors=doors))
+        self.assertEqual(alone["status"], "error", alone)
+        self.assertTrue(alone["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), alone)
+        stray = create("d3", record(owner=label("ember"), colour=label("amber")))
+        self.assertEqual(stray, {"status": "error", "message": "typeMismatch: the seed names a field the state does not have"})
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="d1")["state"], state)
 
     def test_the_root_menu_card_puts_affordances_first_and_fits_a_reader(self):
         self.directory()

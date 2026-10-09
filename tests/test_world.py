@@ -130,7 +130,8 @@ class CreateAndView(WorldCase):
         self.assertEqual(self.view("nope")["status"], "unknown")
 
     def test_seed_not_conforming_to_the_entry_type_is_refused(self):
-        bad = {"tag": "record", "fields": [{"name": "count", "value": nat(1)}]}
+        # A partial seed is laid over initial() (test_receive); a field of the wrong type is refused.
+        bad = {"tag": "record", "fields": [{"name": "count", "value": {"tag": "label", "value": "one"}}]}
         r = self.host.send(op="world-create", principal="ember", identity="x", object="c1",
                            source=COUNTER, entry="initial", seed=bad)
         self.assertEqual(r["status"], "error")

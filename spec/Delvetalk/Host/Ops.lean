@@ -1386,6 +1386,23 @@ def createOutcome (id : String) (o : Object) (sources : String) (artifact seed :
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
     ("sourcesSha256", toJson sources), ("compile", artifact), ("seed", seed)]
 
+/-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
+    come from `initial()`), for `world-create` and the `create` Plan alike. -/
+def mergeSeed (initial seed : Data) (bounds : Minidregg.Theory.ObjectiveBendTypes.DataBounds)
+    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Data := do
+  if seed.conformsUnder bounds ty then return seed
+  match seed, initial with
+  | .record given, .record base =>
+    if given.any fun (k, _) => !base.any (·.1 == k) then throw "the seed names a field the state does not have"
+    return .record (base.map fun (k, v) => (k, (given.lookup k).getD v))
+  | _, _ => throw "the seed is not a record"
+
+/-- The state a package's entry (its `initial()`) evaluates to. -/
+def initialState (b : Built) : Except String Data := do
+  match Package.executeDataValues (← b.artifact.getObjVal? "packet") #[] (Json.mkObj []) with
+  | .ok (.finished v _ _ _) => pure v
+  | _ => throw "initial() did not evaluate"
+
 def create (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
@@ -1405,8 +1422,13 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if w.objects.contains id then throw s!"object {id} already exists"
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
-  let seed ← j.getObjVal? "seed"
-  let (o, sources, w) ← buildObjectIn w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
+  -- The seed is laid over initial(), as the create Plan does: a record of some of the state's
+  -- fields ({} is initial() itself). The journal keeps the whole state, so replay needs no merge.
+  let built ← compileObject w inputs
+  let given ← decodeData Limits.dataDepth (← j.getObjVal? "seed")
+  let state ← (mergeSeed (← initialState built) given built.assumptions.bounds built.ty).mapError (s!"typeMismatch: {·}")
+  let seed := dataJson state
+  let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
   let supervisor := (← optText j "supervisor").getD ""
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
   let o := { o with supervisor }
