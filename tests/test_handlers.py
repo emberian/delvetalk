@@ -109,7 +109,7 @@ class Handlers(Reflection):
         r = self.go("sandbox")
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(self.count(), "0")
-        self.assertIn({"object": "sandbox", "version": 0}, r["receipt"]["roots"])
+        self.assertIn(("sandbox", 0), [(x["object"], x["version"]) for x in r["receipt"]["roots"]])
         self.assertEqual([w["object"] for w in r["receipt"]["outcome"]["writes"]], [])
 
     def test_a_plan_the_handler_does_not_name_passes_to_the_host(self):

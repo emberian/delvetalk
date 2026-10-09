@@ -87,7 +87,7 @@ class TwoTier(Reflection):
         self.assertEqual(self.turn("gate", "open")["status"], "admitted")
         r = self.bump(2)
         self.assertEqual(r["status"], "admitted", r)
-        self.assertIn({"object": "gate", "version": 1}, r["receipt"]["roots"])
+        self.assertIn(("gate", 1), [(x["object"], x["version"]) for x in r["receipt"]["roots"]])
         self.assertEqual(r["receipt"]["outcome"]["writes"][0]["arguments"], [record(n=nat(2))])
         self.assertEqual(self.clause(self.bump(3)), "tooMuch")
         self.assertEqual(self.clause(self.turn("g", "poke")), "method")

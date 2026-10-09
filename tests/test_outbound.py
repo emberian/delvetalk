@@ -9,6 +9,7 @@ import unittest
 from tests.test_chain import field
 from tests.test_reflection import PACKAGE, Reflection, source_seed
 from tests.test_turn_world import label, nat, record
+from tests.wire import cid_of
 
 URI = "at://did:plc:world/town.delve.feed.post/3abc"
 SLOT = {"principal": "did:plc:kim", "intent": "strike-1"}
@@ -423,7 +424,41 @@ class Projection(Reflection):
                                roots=[{"object": "vault", "version": 7}], writes=[])
         self.assertEqual(stale["status"], "refused", stale)
         theirs = self.host.send(op="world-receipt", principal="cid", identity="stale", of="ann")
-        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": "vault"})
+        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7}})
+
+    def test_every_root_names_the_cid_of_the_state_the_turn_read_and_replay_checks_it(self):
+        """A card address is a versioned capability: a receipt's roots, and a public refusal's root,
+        name the exact state a turn was judged against."""
+        state = lambda name: self.host.send(op="world-view", principal="ann", object=name)["state"]
+        before = {name: cid_of(state(name)) for name in ("vault", "lamp")}
+        r = self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
+        self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0, "cid": before["vault"]},
+                                                 {"object": "lamp", "version": 0, "cid": before["lamp"]}])
+        # A refusal on a public object shows anyone the version and state it was judged against;
+        # on a private one, the version only.
+        for name in ("lamp", "vault"):
+            bad = self.turn(name, "stamp", record(wrong=label("x")), principal="ann", identity="bad-" + name)
+            self.assertEqual(bad["receipt"]["outcome"]["class"], "typeMismatch", bad)
+            self.assertEqual(bad["receipt"]["roots"], [{"object": name, "version": 1, "cid": cid_of(state(name))}])
+        lamp = self.host.send(op="world-receipt", principal="bob", identity="bad-lamp", of="ann")
+        self.assertEqual(lamp["root"], {"object": "lamp", "version": 1, "cid": cid_of(state("lamp"))})
+        vault = self.host.send(op="world-receipt", principal="bob", identity="bad-vault", of="ann")
+        self.assertEqual(vault["root"], {"object": "vault", "version": 1})
+        # Replay recomputes the state at each root's version: a resealed entry naming another state is refused.
+        self.release()
+        with open(self.path) as f:
+            lines = f.read().splitlines()
+        last = json.loads(lines[-1])
+        last["roots"][0]["cid"] = before["vault"]
+        del last["hash"]
+        last["hash"] = cid_of(last)
+        lines[-1] = json.dumps(last, separators=(",", ":"))
+        with open(self.path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual(opened["status"], "error", opened)
+        self.assertIn("root vault names a state at version 1 the journal does not hold", opened["message"])
 
     def test_history_is_denied_for_an_object_the_reader_cannot_view_and_elides_the_rest(self):
         self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
@@ -439,7 +474,7 @@ class Projection(Reflection):
     def test_an_unknown_card_is_named_with_a_hint_in_public_and_to_its_author(self):
         """Rehearsal finding 7: `delvetalk forge make` with no forge said only `unknownObject`."""
         r = self.turn("forge", "make", principal="gemini", identity="forge-1")
-        public = {"status": "refused", "class": "unknownObject", "root": "forge", "object": "forge",
+        public = {"status": "refused", "class": "unknownObject", "root": {"object": "forge"}, "object": "forge",
                   "hint": "no card named forge; reply to the directory for the list"}
         self.assertEqual((r["status"], r["public"]), ("refused", public), r)
         self.assertEqual(self.host.send(op="world-receipt", principal="cid", identity="forge-1", of="gemini"), public)
