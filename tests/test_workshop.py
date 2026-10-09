@@ -121,7 +121,6 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "clean")
         self.assertIn("Checked: it compiles.", self.card(reply))
 
-    @unittest.expectedFailure
     def test_a_target_is_inspected_and_its_source_checked(self):
         self.make_workshop()
         self.make("bell-1", closure("Counter"), record(count=nat(0)))
@@ -138,7 +137,6 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "reprogrammed")
         self.assertIn("Reprogrammed bell-1.", self.card(reply))
 
-    @unittest.expectedFailure
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop propose\ntarget: ghost\nmigration: keep\n```obend\n%s```\n" % BLOCK)

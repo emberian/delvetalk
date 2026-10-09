@@ -12,6 +12,7 @@ import Delvetalk.Document
 import Delvetalk.EvaluateTerm
 import Delvetalk.Limits
 import Delvetalk.Canonical
+import Delvetalk.Hints
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -76,8 +77,26 @@ def modulesOf (j : Json) : Except String (List SourceModule × Json) :=
 /-- A compiled package: the artifact JSON, the entry's checked type and its laws. -/
 abbrev Compiled := Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
 
+/-- The request's modules as (name, source), for hints. -/
+def requestSources (j : Json) : List (String × String) :=
+  match j.getObjVal? "modules" >>= Json.getArr? with
+  | .ok raw => raw.toList.filterMap fun m =>
+      match m.getObjValAs? String "name", m.getObjValAs? String "source" with
+      | .ok name, .ok source => some (name, source)
+      | _, _ => none
+  | .error _ => match j.getObjValAs? String "source" with
+    | .ok source => [("Package", source)]
+    | .error _ => []
+
+/-- A source refusal carries the dialect hint its source suggests, if any. -/
+def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
+  if d.stage == "package-request" || d.hint.isSome then d
+  else { d with hint := Delvetalk.Hints.hintFor (requestSources j) d.sourceModule (d.span.map (·.line)) }
+
 /-- Compilation proper, refusing with the structured diagnostic. -/
-def compileStructured (j : Json) : Except Diagnostic Compiled := do
+def compileStructured (j : Json) : Except Diagnostic Compiled :=
+  (compileStructuredBare j).mapError (withHint j)
+where compileStructuredBare (j : Json) : Except Diagnostic Compiled := do
   let (modules, sources) ← modulesOfStructured j
   let entry ← lift (j.getObjValAs? String "entry")
   let (lowered, genericInstances) ← FrontEnd.lowerWithInstances modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition"
