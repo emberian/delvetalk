@@ -25,10 +25,10 @@ type Response = Plans.Response<State, Nat>
 %s
 def initial() -> State:
   {seen: 5n}
-def receive(state: State, input: {text: String, who: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
 """
-OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", input.who))})):
+OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", context.principal))})):
     case offered(_): 1n
     case _: 0n"""
 REFUSING = """  match perform(Plan.write({object: Plans.self(context), edits: {seen: Plans.Edit::<Nat, Nat>.set({value: 0n})}})):

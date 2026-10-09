@@ -47,8 +47,8 @@ def look(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Pl
     case _: Place.Done.refused({reason: "The place did not answer."})
 def lying(state: State, by: Plans.Reference, context: Abi.Context, place: Place.State) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(place.things, Plans.self(context)):
-    case absent(_): Place.Done.refused({reason: "It is not lying in its place."})
-    case at(_): lift(state, by, context)
+    case none(_): Place.Done.refused({reason: "It is not lying in its place."})
+    case some(_): lift(state, by, context)
 def lift(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.call({object: state.location, method: "take", argument: {}})):
     case returned(r): taken(r.result, state, by, context)

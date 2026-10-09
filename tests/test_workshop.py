@@ -1,12 +1,8 @@
 """The workshop: a model takes the reins from a post.
 
-The host does not implement `check`, `inspect` or the reprogram path of these
-turns yet; a turn that performs them is refused as
-
-    {'class': 'evaluation', 'reason': 'plan not supported: check'}
-    {'class': 'evaluation', 'reason': 'plan not supported: inspect'}
-
-so the paths that reach the host are expected failures and flip when it lands.
+`check` and `inspect` are the host's; a block must be a package with `initial`
+(the host checks entry `initial`). Reprogramming another object is refused
+`notSelf`: cross-object change goes through a call under the callee's law.
 """
 import unittest
 
@@ -27,7 +23,7 @@ def size(text: String) -> Nat:
     case none(_): 0n
     case some(s): textLength(s.source)
 """
-BLOCK = "edition ObjectiveBend 1\ndef bump(count: Nat) -> Nat:\n  count + 1n\n"
+BLOCK = "edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> State:\n  {count: 0n}\n"
 
 
 def run(entry, text, limits=None):
@@ -113,7 +109,6 @@ class Workshop(Chain):
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
 
-    @unittest.expectedFailure
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check\n```obend\n%s```\n" % BLOCK)
@@ -121,7 +116,6 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "clean")
         self.assertIn("Checked: it compiles.", self.card(reply))
 
-    @unittest.expectedFailure
     def test_a_target_is_inspected_and_its_source_checked(self):
         self.make_workshop()
         self.make("bell-1", closure("Counter"), record())
@@ -129,16 +123,16 @@ class Workshop(Chain):
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertIn(self.verdict(reply), ("clean", "flawed"))
 
-    @unittest.expectedFailure
-    def test_a_clean_proposal_reprograms_the_target_and_offers_the_receipt_card(self):
+    def test_a_clean_proposal_to_another_object_is_refused_notSelf(self):
+        """Reprogram, like write, applies only to the running object: the workshop checks the
+        block, then the host answers its reprogram of bell-1 `refused {clause: notSelf}`."""
         self.make_workshop()
         self.make("bell-1", closure("Counter"), record())
         reply = self.say("delvetalk workshop propose\ntarget: bell-1\nmigration: keep\n```obend\n%s```\n" % BLOCK)
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
-        self.assertEqual(self.verdict(reply), "reprogrammed")
-        self.assertIn("Reprogrammed bell-1.", self.card(reply))
+        self.assertEqual(self.verdict(reply), "refused")
+        self.assertEqual(self.card(reply), "Not done: notSelf\n")
 
-    @unittest.expectedFailure
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop propose\ntarget: ghost\nmigration: keep\n```obend\n%s```\n" % BLOCK)

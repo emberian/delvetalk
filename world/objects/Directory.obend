@@ -29,23 +29,21 @@ def seeded(seed: Seed) -> State:
   {doors: Lists.List::<Door>.nil()}
 def initial() -> State:
   seeded(defaultSeed())
-def position(doors: Lists.List<Door>, label: String, index: Nat) -> Plans.Position:
-  match doors:
-    case nil(_): Plans.Position.absent({})
-    case cons(c): if c.head.label == label then Plans.Position.at({index: index}) else position(c.tail, label, index + 1n)
+def position(doors: Lists.List<Door>, label: String) -> Lists.Maybe<Nat>:
+  Lists.indexWhere::<Door>(doors, fn(door: Door) -> Bool: door.label == label)
 def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answer>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Answer.done({})
     case _: Answer.refused({reason: "The write was not answered."})
 # Adds a door at the end of the menu; a label names one door.
 def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  match position(state.doors, input.door.label, 0n):
-    case at(_): Answer.refused({reason: textConcat("There is already a door called ", input.door.label)})
-    case absent(_): edited(context, {doors: Plans.Entries::<Door, {}>.append({item: input.door})})
+  match position(state.doors, input.door.label):
+    case some(_): Answer.refused({reason: textConcat("There is already a door called ", input.door.label)})
+    case none(_): edited(context, {doors: Plans.Entries::<Door, {}>.append({item: input.door})})
 def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  match position(state.doors, input.label, 0n):
-    case absent(_): Answer.refused({reason: textConcat("There is no door called ", input.label)})
-    case at(a): edited(context, {doors: Plans.Entries::<Door, {}>.remove({index: a.index})})
+  match position(state.doors, input.label):
+    case none(_): Answer.refused({reason: textConcat("There is no door called ", input.label)})
+    case some(a): edited(context, {doors: Plans.Entries::<Door, {}>.remove({index: a.value})})
 def doorLine(door: Door) -> Document.Document:
   Document.text(textConcat(door.label, textConcat("\n", textConcat(door.description, "\n\n"))))
 # Affordances first, since readers clip near 1,400 characters; then the doors.

@@ -62,8 +62,8 @@ def hold(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.D
   if context.caller == "" then Place.Done.refused({reason: "Only a thing can be held."}) else holdThing(state, context)
 def holdThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(state.holding, thing(context)):
-    case at(_): Place.Done.done({})
-    case absent(_): held(context)
+    case some(_): Place.Done.done({})
+    case none(_): held(context)
 def held(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.append({item: thing(context)}), inbox: noted(context)})})):
     case _: Place.Done.done({})
@@ -73,8 +73,8 @@ def release(state: State, context: Abi.Context) -> Activity<Plan, Response, Plac
   if context.caller == "" then Place.Done.refused({reason: "Only a thing can be released."}) else releaseThing(state, context)
 def releaseThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(state.holding, thing(context)):
-    case absent(_): Place.Done.done({})
-    case at(a): released(a.index, context)
+    case none(_): Place.Done.done({})
+    case some(a): released(a.value, context)
 def released(index: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.remove({index: index})})})):
     case _: Place.Done.done({})
