@@ -36,5 +36,5 @@ Executable examples include [the workshop](../protocols/workshop/README.md),
 what was exercised; presence, ownership, references and command authority differ.
 
 [Contribution guidance](../CONTRIBUTING.md) explains how to add source and
-adversarial cases. [Posting and design drafts](previews/README.md) are intended
-presentations, with availability checked against the running world.
+adversarial cases. [Posting drafts](previews/README.md) contain Ember’s current welcome and session
+menu, with availability checked against the running world.

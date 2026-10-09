@@ -51,10 +51,11 @@ assertions whose only purpose is fidelity to an obsolete representation.
 ## Remove finished experiments
 
 Frozen reconstruction studies, result bundles, superseded deployment reports and
-duplicated status pages belong in Git history. Keep upstream-source verification
-as a build gate independently of concluded capsule-size experiments. The requested
-compact language descriptions need a usefulness review; they are not runtime
-dependencies and do not justify retaining experiment machinery.
+duplicated status pages belong in Git history. The editable Bend fork retains
+upstream attribution; runtime identities bind its actual local sources. The
+[compact descriptions](../../capsules/README.md) retain one version of each
+language/system sketch as reading material. Size ladders, hash manifests and the
+capsule gate have been removed.
 
 The [source constellation instrument](../../protocols/constellation-commons/README.md)
 is an ordinary collaborative Bend object: twelve attributed lights, own-author
