@@ -83,6 +83,8 @@ sum Plan<E, A>:
   interpret: Interpret
   offer: Offering
   publish: Publish
+  reprogram: {object: Reference, package: String, migration: String}
+  amend: {object: Reference, law: String}
 sum Response<S, R>:
   viewed: {version: Nat, state: S}
   denied: {}
@@ -99,6 +101,8 @@ sum Response<S, R>:
   unclear: {needs: Document.Names}
   offered: {}
   published: {post: String}
+  reprogrammed: {pin: String}
+  amended: {}
 # The reference of the running object, in the world the context carries (the
 # empty world is the world the turn runs in).
 def self(context: Abi.Context) -> Reference:

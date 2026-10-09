@@ -9,6 +9,7 @@ import Compiler.ObjectiveBendDataWire
 namespace Delvetalk.Host
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Minidregg.Theory.ObjectiveBendTypes (DataBounds)
 open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 /-! ## Wire forms -/
@@ -91,6 +92,16 @@ structure Proposal where
   roots : List (String × Nat)
   writes : List (String × List Step)
   turn : Nat := 0
+  /-- Reprograms: object, package source, migration entry ("" for none). -/
+  programs : List (String × (String × String)) := []
+  /-- Amendments: object, new law text. -/
+  laws : List (String × String) := []
+
+/-- Writes plus an empty write for each object only reprogrammed or amended. -/
+def Proposal.allWrites (p : Proposal) : List (String × List Step) :=
+  let extra := (p.programs.map (·.1) ++ p.laws.map (·.1)).foldl
+    (fun acc id => if p.writes.any (·.1 == id) || acc.any (·.1 == id) then acc else acc ++ [(id, [])]) []
+  p.writes ++ extra
 
 def rootsJson (roots : List (String × Nat)) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
@@ -125,19 +136,24 @@ def parseProposal (j : Json) : Except String Proposal := do
   let turn := match j.getObjVal? "turn" with
     | .ok t => (natOf t).toOption.getD 0
     | .error _ => 0
-  return ⟨principal, intent, ← parseRoots (← j.getObjVal? "roots"), ← parseWrites (← j.getObjVal? "writes"), turn⟩
+  return { principal, intent, roots := ← parseRoots (← j.getObjVal? "roots"), writes := ← parseWrites (← j.getObjVal? "writes"), turn }
 
 /-- Digest binding an identity to the request that first used it. -/
 def Proposal.digest (p : Proposal) : String :=
-  Journal.bodyHash (Json.mkObj [("roots", rootsJson p.roots), ("writes", writesJson p.writes),
-    ("turn", toJson p.turn)])
+  let programs := p.programs.map fun (id, (src, mig)) => Json.mkObj
+    [("object", toJson id), ("source", toJson (Journal.bodyHash src)), ("migration", toJson mig)]
+  let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
+  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots), ("writes", writesJson p.allWrites),
+    ("turn", toJson p.turn)] ++
+    (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
+    (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)])))
 
 /-! ## Judging -/
 
 /-- The closed set of refusal classes. -/
 def refusalClasses : List String :=
   ["staleRoot", "unreadWrite", "typeMismatch", "lawRefused", "unknownObject", "duplicateIdentity",
-   "evaluation", "budgetExhausted"]
+   "evaluation", "budgetExhausted", "programRefused"]
 
 structure Refusal where
   cls : String
@@ -186,27 +202,168 @@ def applyEdits : Data → List Step → Option Data
   | .record fields, steps => (steps.foldlM applyStep fields).map .record
   | _, _ => none
 
+/-! ## Law as state, and programs -/
+
+/-- The state type is the type of the package's entry definition: a zero-argument
+    `def initial() -> State` has type `State`, which must be a closed record of
+    first-order data. The entry's own value is not used; the seed is explicit. -/
+def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
+    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
+  ty.isDataUnder assumptions.bounds assumptions.rigid Minidregg.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
+    match ty with
+    | .field .. | .emptyRow => true
+    | _ => false
+
+def tyVariables : Minidregg.Theory.ObjectiveBendTypes.Ty → List Nat
+  | .variable i => [i]
+  | .field _ m t => tyVariables m ++ tyVariables t
+  | .variant r => tyVariables r
+  | _ => []
+
+/-- The bounds a type actually uses (transitively): what makes two state types
+    the same, ignoring the rest of a package's bounds table. -/
+def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : DataBounds :=
+  let used := (List.range 8).foldl (fun used _ =>
+    (used ++ used.flatMap fun i => ((bounds.lookup i).map tyVariables).getD []).eraseDups) (tyVariables ty).eraseDups
+  bounds.filter fun (i, _) => used.contains i
+
+def inputsKeyOf (inputs : Json) : String :=
+  Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
+
+def noAmendmentClause : String := "law has no amendment clause"
+
+def renderLaw (law : Law) : String :=
+  "\n".intercalate (law.map fun (name, clause) => s!"law {name}: {clause.render}")
+
+/-- Law text: one `law NAME: EXPR` per line, as at the top of a package. -/
+def parseLawText (text : String) : Except String Law := do
+  if text.utf8ByteSize > Limits.maxLawBytes then throw "law text exceeds its byte capacity"
+  let lines := (text.splitOn "\n").map String.trimAscii |>.filter (!·.isEmpty) |>.map (·.toString)
+  if lines.length > Limits.maxLawClauses then throw "law has too many clauses"
+  let law ← lines.mapM fun line => do
+    let some rest := line.dropPrefix? "law " | throw s!"expected `law NAME: EXPR`, found `{line}`"
+    match (rest.toString).splitOn ":" with
+    | name :: more@(_ :: _) =>
+      let name := name.trimAscii.toString
+      unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name `{name}`"
+      pure (name, ← Minidregg.Compiler.ObjectiveBendLaw.parse (":".intercalate more))
+    | _ => throw s!"expected `law NAME: EXPR`, found `{line}`"
+  Minidregg.Compiler.ObjectiveBendLaw.checkNames law
+  return law
+
+/-- The rule against a self-sealing law: a law is only accepted if it admits an
+    amendment (the state unchanged) by the principal who proposes it. -/
+def amendable (law : Law) (principal : String) (height turn : Nat) (pin : String) (state : Data) : Bool :=
+  (Law.refusedBy law ⟨principal, principal, height, turn, pin⟩ (some state) state).isNone
+
+def replaceSource (inputs : Json) (source : String) : Except String Json := do
+  match inputs.getObjVal? "modules" with
+  | .ok (.arr modules) =>
+    let some last := modules.back? | throw "package has no modules"
+    let name ← last.getObjValAs? String "name"
+    return inputs.setObjVal! "modules" (.arr (modules.pop.push (Json.mkObj [("name", toJson name), ("source", toJson source)])))
+  | _ => return inputs.setObjVal! "source" (toJson source)
+
+/-- Compile a replacement for an object's entry module (its imports stay as
+    sealed at creation). Failures are `(clause, message)`. -/
+def prepareProgram (o : Object) (source migration : String) : Except (String × String) Program := do
+  if source.utf8ByteSize > Limits.maxPackageBytes then
+    throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+  let inputs ← (replaceSource o.inputs source).mapError (("compile", ·))
+  let (artifact, ty, _) ← (Package.compileKeepingLaws (inputs.setObjVal! "entry" (toJson "initial"))).mapError (("compile", ·))
+  let decoded ← (do
+    Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
+  let assumptions := decoded.source.assumptions
+  unless stateTypeOk assumptions ty do
+    throw ("compile", "initial() must return a closed record of first-order data")
+  let pin ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
+  let same := ty == o.stateType && relevantBounds assumptions.bounds ty == relevantBounds o.bounds o.stateType
+  let migrated : Option Compiled ← if migration.isEmpty then
+      if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
+    else do
+      unless Minidregg.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
+      let (art, mty, _) ← (Package.compileKeepingLaws (inputs.setObjVal! "entry" (toJson migration))).mapError (("migration", ·))
+      let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
+      let md ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
+      match mty with
+      | .arrow _ _ dom cod =>
+        unless dom == o.stateType && cod == ty do
+          throw ("migration", "the migration must have type OldState -> NewState")
+      | _ => throw ("migration", "the migration must be a function OldState -> NewState")
+      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid⟩)
+  return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated }
+
+def programKey (o : Object) (source migration : String) : String :=
+  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration
+
+def programFor (w : World) (o : Object) (source migration : String) : Except (String × String) Program :=
+  match w.programs[programKey o source migration]? with
+  | some p => pure p
+  | none => prepareProgram o source migration
+
+def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) : World :=
+  if w.programs.size < Limits.maxPreparedPrograms then
+    { w with programs := w.programs.insert (programKey o source migration) p }
+  else w
+
+structure Judged where
+  updates : List (String × Object)
+  reprograms : List Json
+  amendments : List Json
+
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
-def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal (List (String × Object)) := do
-  for id in p.roots.map (·.1) ++ p.writes.map (·.1) do
+def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
+  let writes := p.allWrites
+  for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless w.objects.contains id do throw { cls := "unknownObject", object := id }
   for (id, seen) in p.roots do
     if let some o := w.objects[id]? then
       if o.version != seen then throw { cls := "staleRoot", object := id }
-  for (id, _) in p.writes do
+  for (id, _) in writes do
     unless p.roots.any (·.1 == id) do throw { cls := "unreadWrite", object := id }
-  let facts : Law.Facts := ⟨p.principal, p.principal, height, p.turn⟩
   let mut out : List (String × Object) := []
-  for (id, edits) in p.writes do
+  let mut reprograms : List Json := []
+  let mut amendments : List Json := []
+  for (id, edits) in writes do
     let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
-    let some new := applyEdits o.state edits | throw { cls := "typeMismatch", object := id }
-    unless new.conformsUnder o.bounds o.stateType && (dataJson new).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+    let some written := applyEdits o.state edits | throw { cls := "typeMismatch", object := id }
+    unless written.conformsUnder o.bounds o.stateType && (dataJson written).compress.utf8ByteSize ≤ Limits.maxStateBytes do
       throw { cls := "typeMismatch", object := id }
-    if let some clause := Law.refusedBy o.law facts (some o.state) new then
+    -- A reprogram replaces code and, through its migration, the state's type.
+    let mut next := o
+    let mut state := written
+    if let some (source, migration) := p.programs.lookup id then
+      let refuse := fun (clause message : String) => Refusal.mk "programRefused" (some clause) (some id) (some message)
+      let prog ← match programFor w o source migration with
+        | .ok prog => pure prog
+        | .error (clause, message) => throw (refuse clause message)
+      if let some m := prog.migration then
+        match Package.executeDataValues m.packet #[written] (Json.mkObj []) with
+        | .ok (.finished value _ _ _) => state := value
+        | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
+        | .error e => throw (refuse "migration" e)
+      unless state.conformsUnder prog.bounds prog.stateType && (dataJson state).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+        throw (refuse "migration" "the converted state does not conform to the new state type")
+      next := { o with pin := prog.pin, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
+                       stateType := prog.stateType, bounds := prog.bounds }
+      reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
+        ("newPin", toJson prog.pin), ("source", toJson source), ("migration", toJson migration),
+        ("result", dataJson state)]]
+    -- The current law judges the whole write, under the pin the object will run.
+    let facts : Law.Facts := ⟨p.principal, p.principal, height, p.turn, next.pin⟩
+    if let some clause := Law.refusedBy o.law facts (some o.state) state then
       throw { cls := "lawRefused", clause, object := id }
-    out := out ++ [(id, { o with version := o.version + 1, state := new })]
-  return out
+    if let some text := p.laws.lookup id then
+      let refuse := fun (clause : String) => Refusal.mk "lawRefused" (some clause) (some id) none
+      let law ← match parseLawText text with
+        | .ok law => pure law
+        | .error _ => throw (refuse "law syntax")
+      unless amendable law p.principal height p.turn next.pin state do throw (refuse noAmendmentClause)
+      next := { next with law, lawText := text }
+      amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
+    out := out ++ [(id, { next with version := o.version + 1, state })]
+  return { updates := out, reprograms, amendments }
 
 /-! ## Entries -/
 
@@ -273,7 +430,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     let key := identityKey p.principal p.intent
     let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++ extra
-    let verdict : Except Refusal (List (String × Object)) :=
+    let verdict : Except Refusal Judged :=
       match forced with | some r => .error r | none => judge w (w.height + 1) p
     match verdict with
     | .error r =>
@@ -283,12 +440,15 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.reason.map fun o => [("reason", toJson o)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)]) []
       (w', reply entry)
-    | .ok updates =>
+    | .ok judged =>
+      let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         [("object", toJson id), ("version", toJson o.version),
          ("edits", stepsJson ((p.writes.lookup id).getD []))])
-      let outcome := Json.mkObj [("tag", toJson "admitted"), ("writes", writes)]
+      let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
+        (if judged.reprograms.isEmpty then [] else [("reprograms", Json.arr judged.reprograms.toArray)]) ++
+        (if judged.amendments.isEmpty then [] else [("amendments", Json.arr judged.amendments.toArray)]))
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates) (updates.map (·.1))
       (w', reply entry)
 
@@ -304,16 +464,6 @@ def compileInputs (j : Json) : Except String Json := do
     let fields := ["modules", "source", "entry", "limits"].filterMap fun k =>
       (j.getObjVal? k).toOption.map (k, ·)
     return Json.mkObj fields
-
-/-- The state type is the type of the package's entry definition: a zero-argument
-    `def initial() -> State` has type `State`, which must be a closed record of
-    first-order data. The entry's own value is not used; the seed is explicit. -/
-def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
-    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
-  ty.isDataUnder assumptions.bounds assumptions.rigid Minidregg.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
-    match ty with
-    | .field .. | .emptyRow => true
-    | _ => false
 
 def parseRead (j : Option Json) : Except String ReadPolicy :=
   match j with
@@ -334,7 +484,8 @@ def parseChain (j : Option Json) : Except String Ledger :=
       throw "a chain ledger may be lowered at creation, never raised above the host limits"
     pure l
 
-def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none) : Except String (Object × String) := do
+def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
+    (creator : String := "") (height : Nat := 1) : Except String (Object × String) := do
   let (artifact, ty, laws) ← Package.compileKeepingLaws inputs
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
@@ -346,9 +497,9 @@ def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Optio
   if (dataJson state).compress.utf8ByteSize > Limits.maxStateBytes then throw "seed exceeds state byte capacity"
   let pin ← artifact.getObjValAs? String "packetSha256"
   let sources ← artifact.getObjValAs? String "sourcesSha256"
-  let inputsKey := Journal.bodyHash (Json.mkObj
-    (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
-  return ({ pin, law := laws, version := 0, state, stateType := ty, bounds := assumptions.bounds,
+  unless amendable laws creator height 0 pin state do throw noAmendmentClause
+  let inputsKey := inputsKeyOf inputs
+  return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := ty, bounds := assumptions.bounds,
             read := ← parseRead read, chain := ← parseChain chain, inputs, inputsKey }, sources)
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
@@ -367,7 +518,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← compileInputs j
   let seed ← j.getObjVal? "seed"
-  let (o, sources) ← buildObject inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption
+  let (o, sources) ← buildObject inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   let outcome := createOutcome id o sources inputs seed
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
@@ -425,7 +576,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
-    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption
+    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     return record { w with objects := w.objects.insert id o } entry key [id]
@@ -437,11 +588,20 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let rawWrites ← (← outcome.getObjVal? "writes").getArr?
     let writes ← parseWrites (Json.arr rawWrites)
     let turn ← natField entry "turn"
-    let p : Proposal := ⟨principal, intent, ← parseRoots (← entry.getObjVal? "roots"), writes, turn⟩
+    let recordedPrograms := (outcome.getObjVal? "reprograms").toOption.bind (·.getArr?.toOption) |>.getD #[]
+    let recordedLaws := (outcome.getObjVal? "amendments").toOption.bind (·.getArr?.toOption) |>.getD #[]
+    let programs ← recordedPrograms.toList.mapM fun r => do
+      return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration"))
+    let laws ← recordedLaws.toList.mapM fun r => do
+      return (← r.getObjValAs? String "object", ← r.getObjValAs? String "new")
+    let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws }
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     match judge w (w.height + 1) p with
     | .error r => throw s!"admitted entry would be refused ({r.cls})"
-    | .ok updates =>
+    | .ok judged =>
+      unless judged.reprograms == recordedPrograms.toList && judged.amendments == recordedLaws.toList do
+        throw "recorded reprograms or amendments do not replay"
+      let updates := judged.updates
       for raw in rawWrites do
         let id ← raw.getObjValAs? String "object"
         let some (_, o) := updates.find? (·.1 == id) | throw "write missing"

@@ -48,6 +48,13 @@ def deliveriesPerCall : Nat := 16
 def sendsPerTurn : Nat := 32
 /-- Undelivered sends held by the world. -/
 def maxPending : Nat := 4096
+/-- Source text of a package offered to `reprogram`. -/
+def maxPackageBytes : Nat := 32768
+/-- Law text of an `amend`, and the clauses in it. -/
+def maxLawBytes : Nat := 4096
+def maxLawClauses : Nat := 16
+/-- Prepared reprograms kept in memory. -/
+def maxPreparedPrograms : Nat := 16
 def genesis : String := "".pushn '0' 64
 end Limits
 
@@ -92,10 +99,21 @@ def ReadPolicy.json : ReadPolicy → Json
   | .«public» => toJson "public"
   | .principals allowed => Json.mkObj [("principals", toJson allowed)]
 
+/-- A compiled replacement package for an object, ready to judge. The state
+    migration, when there is one, is a compiled function OldState -> NewState. -/
+structure Program where
+  inputs : Json
+  pin : String
+  stateType : Ty
+  bounds : DataBounds
+  migration : Option Compiled
+
 structure Object where
   /-- `packetSha256` of the compiled artifact the object was created from. -/
   pin : String
   law : Law
+  /-- The law as text, the form it is amended in; `law` is its parse. -/
+  lawText : String := ""
   version : Nat
   state : Data
   /-- The entry definition's type: a closed record of first-order data. -/
@@ -124,6 +142,8 @@ structure World where
   compiled : Std.HashMap String Compiled := {}
   /-- Undelivered sends in journal order, derived from the journal. -/
   pending : Array Json := #[]
+  /-- Memory only: prepared reprograms by `programKey`. -/
+  programs : Std.HashMap String Program := {}
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress

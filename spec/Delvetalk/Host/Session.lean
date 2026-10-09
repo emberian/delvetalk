@@ -78,6 +78,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             | .error _ => Limits.deliveriesPerCall
           deliver w limit)
       | "world-pending" => return (session, .ok (pendingReply s.world))
+      | "world-reprogram" => durable s (fun w => reprogramOp w request)
+      | "world-amend" => durable s (fun w => amendOp w request)
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
       | "world-receipt" => return (session, receipt s.world request)
