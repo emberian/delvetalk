@@ -2,6 +2,8 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Spell.obend as Spell
+import ./List.obend as Lists
 import ./Bell.obend as Bell
 import ./Cistern.obend as Cistern
 record State:
@@ -38,6 +40,14 @@ def cistern(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Res
     case created(c): Made.made({object: c.object})
     case refused(r): Made.refused({clause: r.clause})
     case _: Made.refused({clause: "no creation"})
+# The form the garden offers for planting, as data the Spell module checks a reply
+# against. The card is named by the object the reply answers.
+def plantForm(context: Abi.Context) -> Spell.Form:
+  {card: context.object, action: "plant", fields: Spell.Fields.cons({head: {name: "colour", kind: Spell.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Spell.Names.nil(), "amber"), "violet"), "silver")})}, tail: Spell.Fields.cons({head: {name: "seed", kind: Spell.Kind.text({min: 1n, max: 80n})}, tail: Spell.Fields.nil()})})}
+# A card reply becomes a proposal without a host round trip; the host feeds an
+# admitted proposal to plant.
+def propose(text: String, context: Abi.Context) -> Spell.Fit:
+  Spell.fit(Spell.parse(text), plantForm(context))
 def render(state: State) -> Document.Document:
   Document.text(textConcat("The Night Garden: ", textConcat(natText(state.planted), " planted\n")))
 def card(state: State) -> String:

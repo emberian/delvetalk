@@ -54,7 +54,6 @@ class Chain(TurnWorld):
                 break
         return replies
 
-    @unittest.expectedFailure
     def test_ring_then_open_then_light(self):
         self.make("lantern", closure("Lantern"), record(lit=boolean(False), litBy=label("")))
         self.make("door", closure("Door"), record(

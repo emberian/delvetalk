@@ -1,0 +1,186 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+# The spell grammar of a card reply (docs/FOUNDATION.md section 4).
+#
+#   delvetalk <card> <action>
+#   <field>: <value>
+#   ...
+#
+# Blank lines and lines starting with # are ignored, and everything after a line
+# that is exactly --- is ignored. Card, action and field names are [a-z0-9-]+. A
+# value is the rest of its line, trimmed. A reply that does not begin (after
+# blank and # lines) with a delvetalk line is not a spell: prose needs
+# interpretation, not parsing.
+#
+# parse turns text into a Parsed; fit checks a Parsed against the Form the card
+# offered. A Fit is never authority: a proposal is what the host may feed to the
+# object's method, which still runs under the principal's law.
+#
+# A field line is any `name: value` with a non-empty name; a name outside
+# [a-z0-9-]+ cannot match a declared field, so fit refuses it by name instead of
+# parse paying a 37-letter alphabet scan per line.
+#
+# Cost. Text scans are charged by positions examined and by the prefix taken or
+# dropped, and a scan over a large alphabet costs per scalar twice the alphabet
+# size, so only short names are checked against the identifier alphabet; lines
+# are found with a one-scalar alphabet, and the only whole-text operations are
+# one break, one take and one drop per line.
+type Names = Lists.List<String>
+record Binding:
+  name: String
+  value: String
+type Bindings = Lists.List<Binding>
+sum Parsed:
+  spell: {card: String, action: String, fields: Bindings}
+  notASpell: {reason: String}
+sum Kind:
+  text: {min: Nat, max: Nat}
+  natural: {min: Nat, max: Nat}
+  choice: {options: Names}
+record Field:
+  name: String
+  kind: Kind
+type Fields = Lists.List<Field>
+record Form:
+  card: String
+  action: String
+  fields: Fields
+sum Value:
+  text: {value: String}
+  natural: {value: Nat}
+  choice: {value: String}
+record Entry:
+  name: String
+  value: Value
+type Entries = Lists.List<Entry>
+sum Fit:
+  proposal: {card: String, action: String, bindings: Entries}
+  unclear: {needs: Names}
+  refused: {reason: String}
+def identifier() -> String:
+  "abcdefghijklmnopqrstuvwxyz0123456789-"
+def blanks() -> String:
+  " \t\r"
+def trimStart(value: String) -> String:
+  textDrop(value, textSpan(value, blanks()))
+def trimEnd(value: String) -> String:
+  let size = textLength(value)
+  if size == 0n then value else if textSpan(textDrop(value, size - 1n), blanks()) == 1n then trimEnd(textTake(value, size - 1n)) else value
+def isIdentifier(value: String) -> Bool:
+  let size = textLength(value)
+  size > 0n && textSpan(value, identifier()) == size
+sum Fields2:
+  found: {bindings: Bindings}
+  bad: {reason: String}
+def parse(text: String) -> Parsed:
+  let stop = textBreak(text, "\n")
+  let line = trimStart(textTake(text, stop))
+  let rest = textDrop(text, stop + 1n)
+  if line == "" || textTake(line, 1n) == "#" then (if rest == "" then Parsed.notASpell({reason: "The reply has no delvetalk line."}) else parse(rest)) else if textTake(line, 9n) == "delvetalk" && textSpan(textDrop(line, 9n), blanks()) > 0n then header(trimEnd(textDrop(line, 9n)), rest) else Parsed.notASpell({reason: "The reply has no delvetalk line."})
+def header(line: String, rest: String) -> Parsed:
+  let afterBlanks = trimStart(line)
+  let cardEnd = textBreak(afterBlanks, " \t")
+  let card = textTake(afterBlanks, cardEnd)
+  let afterCard = trimStart(textDrop(afterBlanks, cardEnd))
+  let actionEnd = textBreak(afterCard, " \t")
+  let action = textTake(afterCard, actionEnd)
+  let tail = textDrop(afterCard, actionEnd)
+  if isIdentifier(card) == false || isIdentifier(action) == false then Parsed.notASpell({reason: "The delvetalk line must name a card and an action in [a-z0-9-]."}) else if tail != "" then Parsed.notASpell({reason: "The delvetalk line holds only a card and an action."}) else spelled(card, action, fieldLines(rest))
+def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
+  match parsed:
+    case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
+    case bad(b): Parsed.notASpell({reason: b.reason})
+def fieldLines(text: String) -> Fields2:
+  if text == "" then Fields2.found({bindings: Bindings.nil()}) else fieldLine(text, textBreak(text, "\n"))
+# A line is taken once and the rest is dropped once. The drop starts one scalar
+# early, so the line's last scalar is seen for free: only when it is blank is the
+# line trimmed at the end by the slow path.
+def fieldLine(text: String, stop: Nat) -> Fields2:
+  if stop == 0n then fieldLines(textDrop(text, 1n)) else lineParts(textTake(text, stop), textDrop(text, stop - 1n))
+def lineParts(line: String, tail: String) -> Fields2:
+  let rest = textDrop(tail, 2n)
+  let first = textTake(line, 1n)
+  if textSpan(first, blanks()) == 1n then lineParts(trimStart(trimEnd(line)), tail) else classify(if textSpan(textTake(tail, 1n), blanks()) == 1n then trimEnd(line) else line, first, rest)
+def classify(line: String, first: String, rest: String) -> Fields2:
+  if line == "" || first == "#" then fieldLines(rest) else if first == "-" && line == "---" then Fields2.found({bindings: Bindings.nil()}) else binding(line, rest)
+def binding(line: String, rest: String) -> Fields2:
+  let colon = textBreak(line, ":")
+  let name = textTake(line, colon)
+  if colon == 0n || name == line then Fields2.bad({reason: textConcat("Not a field line: ", textTake(line, 40n))}) else consed(name, trimStart(textDrop(line, colon + 1n)), fieldLines(rest))
+def consed(name: String, value: String, parsed: Fields2) -> Fields2:
+  match parsed:
+    case found(f): Fields2.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
+    case bad(b): parsed
+sum Verdict:
+  fine: {}
+  wrong: {reason: String}
+sum Looked:
+  none: {}
+  some: {field: Field}
+def lookup(fields: Fields, name: String) -> Looked:
+  match fields:
+    case nil(_): Looked.none({})
+    case cons(c): if c.head.name == name then Looked.some({field: c.head}) else lookup(c.tail, name)
+def digit(character: String) -> Nat:
+  textBreak("0123456789", character)
+sum Number:
+  no: {}
+  yes: {value: Nat}
+def number(value: String) -> Number:
+  let size = textLength(value)
+  if size == 0n || size > 18n || textSpan(value, "0123456789") != size then Number.no({}) else if size > 1n && textTake(value, 1n) == "0" then Number.no({}) else Number.yes({value: digits(value, 0n)})
+def digits(rest: String, total: Nat) -> Nat:
+  if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + digit(textTake(rest, 1n)))
+def joined(options: Names) -> String:
+  Lists.fold::<String, String>(options, "", fn(option: String) -> String -> String: fn(rest: String) -> String: if rest == "" then option else textConcat(option, textConcat(", ", rest)))
+def judge(field: Field, value: String) -> Verdict:
+  match field.kind:
+    case text(t): if textLength(value) < t.min || textLength(value) > t.max then Verdict.wrong({reason: textConcat(field.name, textConcat(" takes ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters.")))))}) else Verdict.fine({})
+    case natural(n): judgeNumber(field.name, n.min, n.max, number(value))
+    case choice(c): if Lists.any::<String>(c.options, fn(option: String) -> Bool: option == value) then Verdict.fine({}) else Verdict.wrong({reason: textConcat(field.name, textConcat(" is one of: ", joined(c.options)))})
+def judgeNumber(name: String, min: Nat, max: Nat, parsed: Number) -> Verdict:
+  match parsed:
+    case no(_): Verdict.wrong({reason: textConcat(name, " takes a natural number in plain digits.")})
+    case yes(y): if y.value < min || y.value > max then Verdict.wrong({reason: textConcat(name, textConcat(" takes ", textConcat(natText(min), textConcat(" to ", natText(max)))))}) else Verdict.fine({})
+def named(name: String) -> Binding -> Bool:
+  fn(binding: Binding) -> Bool: binding.name == name
+def audit(bindings: Bindings, fields: Fields) -> Verdict:
+  match bindings:
+    case nil(_): Verdict.fine({})
+    case cons(c):
+      match lookup(fields, c.head.name):
+        case none(_): Verdict.wrong({reason: textConcat("Unknown field ", c.head.name)})
+        case some(s): if Lists.any::<Binding>(c.tail, named(c.head.name)) then Verdict.wrong({reason: textConcat("Duplicate field ", c.head.name)}) else next(judge(s.field, c.head.value), c.tail, fields)
+def next(verdict: Verdict, rest: Bindings, fields: Fields) -> Verdict:
+  match verdict:
+    case fine(_): audit(rest, fields)
+    case wrong(_): verdict
+def valueOf(bindings: Bindings, name: String) -> String:
+  match bindings:
+    case nil(_): ""
+    case cons(c): if c.head.name == name then c.head.value else valueOf(c.tail, name)
+def typed(kind: Kind, value: String) -> Value:
+  match kind:
+    case text(_): Value.text({value: value})
+    case natural(_): natural(number(value))
+    case choice(_): Value.choice({value: value})
+def natural(parsed: Number) -> Value:
+  match parsed:
+    case no(_): Value.natural({value: 0n})
+    case yes(y): Value.natural({value: y.value})
+def entry(bindings: Bindings) -> Field -> Entry:
+  fn(field: Field) -> Entry: {name: field.name, value: typed(field.kind, valueOf(bindings, field.name))}
+def missing(bindings: Bindings, fields: Fields) -> Names:
+  Lists.map::<Field, String>(Lists.filter::<Field>(fields, fn(field: Field) -> Bool: Lists.any::<Binding>(bindings, named(field.name)) == false), fn(field: Field) -> String: field.name)
+def fit(parsed: Parsed, form: Form) -> Fit:
+  match parsed:
+    case notASpell(n): Fit.refused({reason: n.reason})
+    case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: textConcat("This card offers ", textConcat(form.card, textConcat(" ", form.action)))}) else decide(s.fields, form, audit(s.fields, form.fields))
+def decide(bindings: Bindings, form: Form, verdict: Verdict) -> Fit:
+  match verdict:
+    case wrong(w): Fit.refused({reason: w.reason})
+    case fine(_): complete(bindings, form, missing(bindings, form.fields))
+def complete(bindings: Bindings, form: Form, needs: Names) -> Fit:
+  match needs:
+    case nil(_): Fit.proposal({card: form.card, action: form.action, bindings: Lists.map::<Field, Entry>(form.fields, entry(bindings))})
+    case cons(_): Fit.unclear({needs: needs})
