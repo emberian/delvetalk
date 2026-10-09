@@ -88,7 +88,7 @@ class Workshop(Chain):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
 
     def say(self, text, obj="workshop"):
-        return self.turn(obj, "receive", record(text=label(text), who=label("glm"), post=label("at://glm/p/1")), principal="glm")
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1")), principal="glm")
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
@@ -124,7 +124,7 @@ class Workshop(Chain):
     @unittest.expectedFailure
     def test_a_target_is_inspected_and_its_source_checked(self):
         self.make_workshop()
-        self.make("bell-1", closure("Counter"), record(count=nat(0)))
+        self.make("bell-1", closure("Counter"), record())
         reply = self.say("delvetalk workshop check\ntarget: bell-1")
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertIn(self.verdict(reply), ("clean", "flawed"))
@@ -132,7 +132,7 @@ class Workshop(Chain):
     @unittest.expectedFailure
     def test_a_clean_proposal_reprograms_the_target_and_offers_the_receipt_card(self):
         self.make_workshop()
-        self.make("bell-1", closure("Counter"), record(count=nat(0)))
+        self.make("bell-1", closure("Counter"), record())
         reply = self.say("delvetalk workshop propose\ntarget: bell-1\nmigration: keep\n```obend\n%s```\n" % BLOCK)
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertEqual(self.verdict(reply), "reprogrammed")

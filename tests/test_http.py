@@ -258,7 +258,7 @@ class HttpFront(unittest.TestCase):
 
     def test_html_card_and_spell_form(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2), policy=record(world=label(""), object=label("")))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2), policy=record(world=label(""), object=label("")), pending={"tag": "variant", "label": "nil", "payload": record()})})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)

@@ -83,7 +83,6 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
         reply = host.send({'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
                            'argument': {'tag': 'record', 'fields': [
                                {'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},
-                               {'name': 'who', 'value': {'tag': 'label', 'value': did}},
                                {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]},
                            'identity': obs['uri']})
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run

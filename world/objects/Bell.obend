@@ -30,10 +30,8 @@ record Edits:
   rung: Plans.Edit<Bool, {}>
   door: Plans.Edit<Plans.Reference, {}>
   lastDelivery: Plans.Edit<String, {}>
-# The argument of a send: who is acting.
-record Who:
-  who: String
-type Plan = Plans.Plan<Edits, Who>
+# Bell sends and calls carry nothing: the acting principal is the context's.
+type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {planter: "", colour: Colour.amber({}), seed: "", planting: {principal: "", intent: ""}}
@@ -43,9 +41,10 @@ def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
   {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({}), door: Plans.Edit::<Plans.Reference, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({})}
-def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+# The author of a rain is the turn's principal, never an argument.
+def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Rain>(state.rains)
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries::<Rain, {}>.append({item: input})})})):
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries::<Rain, {}>.append({item: {author: context.principal, text: input.text}})})})):
     case written(_): count + 1n
     case _: count
 # The strike waits for the admission receipt of the planting post, named by the
@@ -68,12 +67,12 @@ def configure(state: State, input: {door: Plans.Reference}, context: Abi.Context
     case written(_): true
     case _: false
 # Rings: marks the bell rung, then sends Door.open to the configured door.
-def ring(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+def ring(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rung: Plans.Edit::<Bool, {}>.set({value: true})})})):
-    case written(_): notify(state, input, context)
+    case written(_): notify(state, context)
     case _: false
-def notify(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.send({object: state.door, method: "open", argument: input})):
+def notify(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.send({object: state.door, method: "open", argument: {}})):
     case delivery(d): remember(d.id, context)
     case _: false
 def remember(id: String, context: Abi.Context) -> Activity<Plan, Response, Bool>:

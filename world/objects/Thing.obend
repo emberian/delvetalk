@@ -12,18 +12,20 @@ record State:
 record Seed:
   name: String
   description: String
+  holder: Plans.Reference
   location: Plans.Reference
 record Edits:
   holder: Plans.Edit<Plans.Reference, {}>
   location: Plans.Edit<Plans.Reference, {}>
-# The arguments of its calls into a place: take and put.
-type Plan = Plans.Plan<Edits, Place.Handling>
+# Its calls into places and avatars carry nothing: the place reads the thing from its
+# caller and the person from the principal.
+type Plan = Plans.Plan<Edits, {}>
 # A view reads the place the thing lies in; a call answers with the place's Done.
 type Response = Plans.Response<Place.State, Place.Done>
 def defaultSeed() -> Seed:
-  {name: "", description: "", location: Plans.nobody()}
+  {name: "", description: "", holder: Plans.nobody(), location: Plans.nobody()}
 def seeded(seed: Seed) -> State:
-  {name: seed.name, description: seed.description, holder: Plans.nobody(), location: seed.location}
+  {name: seed.name, description: seed.description, holder: seed.holder, location: seed.location}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
@@ -34,8 +36,10 @@ def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Referenc
     case _: Place.Done.refused({reason: "The write was not answered."})
 # Pick the thing up from its place: view the place, have it release the thing,
 # then record the holder. Only an unheld thing can be acquired.
-def acquire(state: State, input: {by: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.isNobody(state.holder) == false then Place.Done.refused({reason: textConcat("Already held by ", state.holder.object)}) else look(state, input.by, context)
+def person(context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: context.principal}
+def acquire(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  if Plans.isNobody(state.holder) == false then Place.Done.refused({reason: textConcat("Already held by ", state.holder.object)}) else look(state, person(context), context)
 def look(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.view({object: state.location})):
     case viewed(v): lying(state, by, context, v.state)
@@ -46,7 +50,7 @@ def lying(state: State, by: Plans.Reference, context: Abi.Context, place: Place.
     case absent(_): Place.Done.refused({reason: "It is not lying in its place."})
     case at(_): lift(state, by, context)
 def lift(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.call({object: state.location, method: "take", argument: {thing: Plans.self(context), by: by}})):
+  match perform(Plan.call({object: state.location, method: "take", argument: {}})):
     case returned(r): taken(r.result, state, by, context)
     case _: Place.Done.refused({reason: "The place did not answer."})
 def taken(result: Place.Done, state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
@@ -55,13 +59,13 @@ def taken(result: Place.Done, state: State, by: Plans.Reference, context: Abi.Co
     case refused(_): result
 # The holder's avatar records what it now carries; hold never refuses.
 def carried(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.call({object: by, method: "hold", argument: {thing: Plans.self(context), by: by}})):
+  match perform(Plan.call({object: by, method: "hold", argument: {}})):
     case _: held(context, by, state.location)
 # Put the thing down where the holder stands (at): the place must accept it.
-def drop(state: State, input: {by: Plans.Reference, at: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.same(state.holder, input.by) == false then Place.Done.refused({reason: "You are not holding it."}) else setDown(state, input.by, input.at, context)
+def drop(state: State, input: {at: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  if Plans.same(state.holder, person(context)) == false then Place.Done.refused({reason: "You are not holding it."}) else setDown(state, person(context), input.at, context)
 def setDown(state: State, by: Plans.Reference, at: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.call({object: at, method: "put", argument: {thing: Plans.self(context), by: by}})):
+  match perform(Plan.call({object: at, method: "put", argument: {}})):
     case returned(r): placed(r.result, by, at, context)
     case _: Place.Done.refused({reason: "The place did not answer."})
 def placed(result: Place.Done, by: Plans.Reference, at: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
@@ -69,17 +73,17 @@ def placed(result: Place.Done, by: Plans.Reference, at: Plans.Reference, context
     case done(_): dropped(by, at, context)
     case refused(_): result
 def dropped(by: Plans.Reference, at: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.call({object: by, method: "release", argument: {thing: Plans.self(context), by: by}})):
+  match perform(Plan.call({object: by, method: "release", argument: {}})):
     case _: held(context, Plans.nobody(), at)
-# Hand the thing to someone else. The caller is the avatar named by the principal.
+# Hand the thing to someone else. The giver is the avatar of the principal.
 # The recipient's avatar holds it and, since it came from somebody else, notes who.
 def give(state: State, input: {to: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.same(state.holder, {world: context.world, object: context.principal}) == false then Place.Done.refused({reason: "You are not holding it."}) else letGo(state, input.to, {world: context.world, object: context.principal}, context)
+  if Plans.same(state.holder, person(context)) == false then Place.Done.refused({reason: "You are not holding it."}) else letGo(state, input.to, person(context), context)
 def letGo(state: State, to: Plans.Reference, from: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.call({object: from, method: "release", argument: {thing: Plans.self(context), by: from}})):
+  match perform(Plan.call({object: from, method: "release", argument: {}})):
     case _: handOver(state, to, from, context)
 def handOver(state: State, to: Plans.Reference, from: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.call({object: to, method: "hold", argument: {thing: Plans.self(context), by: from}})):
+  match perform(Plan.call({object: to, method: "hold", argument: {}})):
     case _: held(context, to, state.location)
 def holding(state: State) -> String:
   if Plans.isNobody(state.holder) then "Nobody holds it." else textConcat("Held by ", textConcat(state.holder.object, "."))

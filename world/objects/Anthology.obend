@@ -25,9 +25,9 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 # Submission only proposes; admission is the receiver's law, not the author's.
-def submit(state: State, input: {author: String, line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def submit(state: State, input: {line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Proposal>(state.proposals)
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.append({item: {author: input.author, line: input.line, status: Status.proposed({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.append({item: {author: context.principal, line: input.line, status: Status.proposed({})}})}})):
     case written(_): count + 1n
     case _: count
 sum Found:

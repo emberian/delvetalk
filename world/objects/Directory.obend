@@ -15,10 +15,10 @@ record Edits:
   doors: Plans.Entries<Door, {}>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
-# The same input as every card's receive: the text, who wrote it, the post it is in.
+# The same input as every card's receive: the text and the post it is in. Who wrote
+# it is the context's principal.
 record Heard:
   text: String
-  who: String
   post: String
 sum Answer:
   done: {}

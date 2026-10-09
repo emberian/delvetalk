@@ -352,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             stamp = f'web:{principal}:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
             field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
             result = self.server.host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
-                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('who', principal), field('post', stamp)]},
+                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('post', stamp)]},
                                             'identity': stamp})
         host = self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})

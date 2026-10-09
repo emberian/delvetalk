@@ -8,16 +8,23 @@ import ./List.obend as Lists
 import ./Bell.obend as Bell
 import ./Cistern.obend as Cistern
 import ./Policy.obend as Policy
+# A proposal the garden understood from a principal and is waiting to hear "yes" to.
+record Pending:
+  principal: String
+  spell: String
 record State:
   planted: Nat
   policy: Plans.Reference
+  pending: Lists.List<Pending>
 record Edits:
   planted: Plans.Edit<Nat, Nat>
-# A creator supplies a Seed; the child's seeded makes its State. The garden
-# creates two kinds of child, so its A is a sum with one constructor per package
-# (named like the package, lower case), each holding that package's Seed.
+  pending: Plans.Entries<Pending, Pending>
+# A creator supplies a Seed; the host lays it over initial(). The garden creates two
+# kinds of child, so its A is the sum Child, one constructor per package (named like
+# the package, lower case), each holding that package's Seed.
 record Seed:
   policy: Plans.Reference
+  pending: Lists.List<Pending>
 sum Child:
   bell: Bell.Seed
   cistern: Cistern.Seed
@@ -25,27 +32,34 @@ type Plan = Plans.Plan<Edits, Child>
 # A view reads the policy; an interpretation's proposal argument is a spell.
 type Response = Plans.Response<Policy.State, String>
 def defaultSeed() -> Seed:
-  {policy: Plans.nobody()}
+  {policy: Plans.nobody(), pending: Lists.List::<Pending>.nil()}
 def seeded(seed: Seed) -> State:
-  {planted: 0n, policy: seed.policy}
+  {planted: 0n, policy: seed.policy, pending: seed.pending}
 def initial() -> State:
   seeded(defaultSeed())
+def keep() -> Edits:
+  {planted: Plans.Edit::<Nat, Nat>.keep({}), pending: Plans.Entries::<Pending, Pending>.keep({})}
+# At most this many principals can have a proposal waiting.
+def waiting() -> Nat:
+  64n
 sum Made:
   made: {object: Plans.Reference}
   refused: {clause: String}
 def child(context: Abi.Context, kind: String, serial: Nat) -> Plans.Reference:
   {world: "", object: textConcat(context.object, textConcat("/", textConcat(kind, textConcat("/", natText(serial)))))}
 def planted(context: Abi.Context, reference: Plans.Reference) -> Activity<Plan, Response, Made>:
-  match perform(Plan.write({object: Plans.self(context), edits: {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n})})})):
     case written(_): Made.made({object: reference})
     case _: Made.refused({clause: "garden count"})
+# The turn that plants is the slot the bell's strike later awaits: the principal and
+# the intent the host gave this turn, never anything the caller wrote.
+def slot(context: Abi.Context) -> Plans.Slot:
+  {principal: context.principal, intent: context.intent}
 # The create names the reference the bell will occupy; the host refuses it if taken.
-# The bell's planting slot is the planter and the post that asked for it, which is
-# what the bell's strike later awaits.
-def plant(state: State, input: {colour: Bell.Colour, seed: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Made>:
-  sow(state, input.colour, input.seed, context.principal, input.post, context)
-def sow(state: State, colour: Bell.Colour, seed: String, planter: String, post: String, context: Abi.Context) -> Activity<Plan, Response, Made>:
-  match perform(Plan.create({package: "Bell", seed: Child.bell({planter: planter, colour: colour, seed: seed, planting: {principal: planter, intent: post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
+def plant(state: State, input: {colour: Bell.Colour, seed: String}, context: Abi.Context) -> Activity<Plan, Response, Made>:
+  sow(state, input.colour, input.seed, context)
+def sow(state: State, colour: Bell.Colour, seed: String, context: Abi.Context) -> Activity<Plan, Response, Made>:
+  match perform(Plan.create({package: "Bell", seed: Child.bell({planter: context.principal, colour: colour, seed: seed, planting: slot(context)}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
     case created(c): planted(context, c.object)
     case refused(r): Made.refused({clause: r.clause})
     case _: Made.refused({clause: "no creation"})
@@ -72,17 +86,18 @@ def present(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Res
   match perform(Plan.offer({to: "", document: render(state)})):
     case offered(_): state.planted
     case _: 0n
-# What the town says to the garden: the reply text, who wrote it, and the post it
-# is in (the post is the intent of the planting, which the bell's strike awaits).
+# What the town says to the garden: the reply text and the post it is in. Who wrote it
+# is the turn's principal. The post is carried for the cards that quote it; the
+# planting slot is the turn's own intent.
 record Heard:
   text: String
-  who: String
   post: String
 sum Reply:
   planted: {object: Plans.Reference, colour: String, seed: String}
   unclear: {needs: Form.Names}
   refused: {reason: String}
   confirming: {spell: String}
+  cleared: {}
 def cat(left: String, right: String) -> String:
   textConcat(left, right)
 def entryText(entries: Spell.Entries, name: String) -> String:
@@ -110,46 +125,111 @@ def filled(parsed: Spell.Parsed, name: String, hint: String) -> String:
     case notASpell(_): hint
 def refusedCard(reason: String) -> Document.Document:
   Document.text(cat("Not planted: ", cat(reason, "\n")))
-# Every observed spell arrives here. It parses, fits the plant form, plants on a
-# proposal and writes nothing otherwise; it always ends by offering a reply card.
+# The proposal a principal has waiting, if any: where it is and the spell it stored.
+sum Held:
+  none: {}
+  some: {index: Nat, spell: String}
+def heldBy(items: Lists.List<Pending>, principal: String, index: Nat) -> Held:
+  match items:
+    case nil(_): Held.none({})
+    case cons(c): if c.head.principal == principal then Held.some({index: index, spell: c.head.spell}) else heldBy(c.tail, principal, index + 1n)
+# What a reply to a waiting proposal says: yes, no or anything else.
+sum Word:
+  yes: {}
+  no: {}
+  other: {}
+def folds(core: String, lower: String, upper: String) -> Bool:
+  if lower == "" then core == "" else if textTake(core, 1n) == textTake(lower, 1n) || textTake(core, 1n) == textTake(upper, 1n) then folds(textDrop(core, 1n), textDrop(lower, 1n), textDrop(upper, 1n)) else false
+def spaces() -> String:
+  " \n\t\r"
+def wordOf(text: String) -> Word:
+  if textLength(text) > 64n then Word.other({}) else worded(textDrop(text, textSpan(text, spaces())))
+def worded(rest: String) -> Word:
+  let core = textTake(rest, textBreak(rest, spaces()))
+  let tail = textDrop(rest, textLength(core))
+  if textSpan(tail, spaces()) == textLength(tail) then classed(core) else Word.other({})
+def classed(core: String) -> Word:
+  if folds(core, "yes", "YES") then Word.yes({}) else if folds(core, "no", "NO") then Word.no({}) else Word.other({})
+# Every observed spell arrives here. A principal with a proposal waiting is first
+# heard as answering it; otherwise the text parses, fits the plant form, plants on a
+# proposal and writes nothing; it always ends by offering a reply card.
 def receive(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Reply>:
-  hear(state, input, context, Spell.parse(input.text))
-def hear(state: State, input: Heard, context: Abi.Context, parsed: Spell.Parsed) -> Activity<Plan, Response, Reply>:
+  heard(state, input, context, heldBy(state.pending, context.principal, 0n))
+def heard(state: State, input: Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
+  match found:
+    case none(_): hear(state, input, context, Spell.parse(input.text), found)
+    case some(s): replied(state, input, context, found, s.index, s.spell)
+# Yes plants what was stored; no drops it; anything else is heard afresh and
+# replaces the stored proposal (or drops it when it proposes nothing).
+def replied(state: State, input: Heard, context: Abi.Context, found: Held, index: Nat, stored: String) -> Activity<Plan, Response, Reply>:
+  match wordOf(input.text):
+    case yes(_): confirmed(state, input, context, found, stored)
+    case no(_): told(found, context, Reply.cleared({}), Document.text("✾ THE NIGHT GARDEN\n\nI dropped what I understood.\n"))
+    case other(_): hear(state, input, context, Spell.parse(input.text), found)
+def confirmed(state: State, input: Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
+  match Spell.fit(Spell.parse(stored), plantForm(context)):
+    case proposal(p): grow(state, context, found, entryText(p.bindings, "colour"), entryText(p.bindings, "seed"))
+    case _: told(found, context, Reply.refused({reason: "I could not read what I had understood."}), refusedCard("I could not read what I had understood."))
+def hear(state: State, input: Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
-    case notASpell(_): understand(state, input, context)
-    case spell(_): judged(state, input, context, parsed, false)
+    case notASpell(_): understand(state, input, context, found)
+    case spell(_): judged(state, context, parsed, false, found)
 # What is not a spell is given to the policy's model, which can only propose.
-def understand(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Reply>:
+def understand(state: State, input: Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.view({object: state.policy})):
-    case viewed(v): interpreted(state, input, context, v.state.confirm)
-    case _: tell(Reply.refused({reason: "The garden has no interpretation policy."}), refusedCard("The garden has no interpretation policy."))
-def interpreted(state: State, input: Heard, context: Abi.Context, confirm: Bool) -> Activity<Plan, Response, Reply>:
+    case viewed(v): interpreted(state, input, context, v.state.confirm, found)
+    case _: told(found, context, Reply.refused({reason: "The garden has no interpretation policy."}), refusedCard("The garden has no interpretation policy."))
+def interpreted(state: State, input: Heard, context: Abi.Context, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.interpret({utterance: input.text, offers: Lists.List::<Form.Form>.cons({head: plantForm(context), tail: Lists.List::<Form.Form>.nil()}), policy: state.policy})):
-    case proposal(p): judged(state, input, context, Spell.parse(p.argument), confirm)
-    case unclear(u): tell(Reply.unclear({needs: u.needs}), needsCard(u.needs))
-    case _: tell(Reply.refused({reason: "I could not make sense of that."}), refusedCard("I could not make sense of that."))
+    case proposal(p): judged(state, context, Spell.parse(p.argument), confirm, found)
+    case unclear(u): told(found, context, Reply.unclear({needs: u.needs}), needsCard(u.needs))
+    case _: told(found, context, Reply.refused({reason: "I could not make sense of that."}), refusedCard("I could not make sense of that."))
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text(cat("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: ", cat(Spell.joined(needs), ".\n")))
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
   Document.text(cat("✾ THE NIGHT GARDEN\n\nI understood this:\n\n", cat(spell(context.object, seed, colour), "\nReply yes or correct it.\n")))
 # Fit the spell (typed by the user, or proposed by the policy's model) to the plant
 # form. A proposed spell is only acted on when the policy does not ask first.
-def judged(state: State, input: Heard, context: Abi.Context, parsed: Spell.Parsed, confirm: Bool) -> Activity<Plan, Response, Reply>:
+def judged(state: State, context: Abi.Context, parsed: Spell.Parsed, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
   match Spell.fit(parsed, plantForm(context)):
-    case proposal(p): settled(state, input, context, confirm, entryText(p.bindings, "colour"), entryText(p.bindings, "seed"))
-    case unclear(u): tell(Reply.unclear({needs: u.needs}), unclearCard(context, u.needs, parsed))
-    case refused(r): tell(Reply.refused({reason: r.reason}), refusedCard(r.reason))
-def settled(state: State, input: Heard, context: Abi.Context, confirm: Bool, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  if confirm then tell(Reply.confirming({spell: spell(context.object, seed, colour)}), confirmCard(context, colour, seed)) else grow(state, input, context, colour, seed)
-def grow(state: State, input: Heard, context: Abi.Context, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  match perform(Plan.create({package: "Bell", seed: Child.bell({planter: input.who, colour: colourNamed(colour), seed: seed, planting: {principal: input.who, intent: input.post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
-    case created(c): counted(state, input, context, c.object, colour, seed)
-    case refused(r): tell(Reply.refused({reason: r.clause}), refusedCard(r.clause))
-    case _: tell(Reply.refused({reason: "The garden could not plant it."}), refusedCard("The garden could not plant it."))
-def counted(state: State, input: Heard, context: Abi.Context, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  match perform(Plan.write({object: Plans.self(context), edits: {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
-    case written(_): tell(Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, input.who, reference, colour, seed, state.planted + 1n))
+    case proposal(p): settled(state, context, found, confirm, entryText(p.bindings, "colour"), entryText(p.bindings, "seed"))
+    case unclear(u): told(found, context, Reply.unclear({needs: u.needs}), unclearCard(context, u.needs, parsed))
+    case refused(r): told(found, context, Reply.refused({reason: r.reason}), refusedCard(r.reason))
+def settled(state: State, context: Abi.Context, found: Held, confirm: Bool, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  if confirm then asked(state, context, found, colour, seed) else grow(state, context, found, colour, seed)
+# The proposal waits, one per principal: a new one replaces the old.
+def asked(state: State, context: Abi.Context, found: Held, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  let entry = {principal: context.principal, spell: spell(context.object, seed, colour)}
+  match found:
+    case some(s): remembered(context, Plans.Entries::<Pending, Pending>.amend({index: s.index, change: entry}), colour, seed)
+    case none(_): if Lists.length::<Pending>(state.pending) < waiting() then remembered(context, Plans.Entries::<Pending, Pending>.append({item: entry}), colour, seed) else tell(Reply.refused({reason: "Too many proposals are waiting."}), refusedCard("Too many proposals are waiting."))
+def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})})):
+    case written(_): tell(Reply.confirming({spell: spell(context.object, seed, colour)}), confirmCard(context, colour, seed))
+    case _: tell(Reply.refused({reason: "The garden could not remember it."}), refusedCard("The garden could not remember it."))
+def grow(state: State, context: Abi.Context, found: Held, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.create({package: "Bell", seed: Child.bell({planter: context.principal, colour: colourNamed(colour), seed: seed, planting: slot(context)}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
+    case created(c): counted(state, context, found, c.object, colour, seed)
+    case refused(r): told(found, context, Reply.refused({reason: r.clause}), refusedCard(r.clause))
+    case _: told(found, context, Reply.refused({reason: "The garden could not plant it."}), refusedCard("The garden could not plant it."))
+# Planting counts, and settles whatever this principal had waiting.
+def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n}), pending: forget(found)})})):
+    case written(_): tell(Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, context.principal, reference, colour, seed, state.planted + 1n))
     case _: tell(Reply.refused({reason: "The garden could not count it."}), refusedCard("The garden could not count it."))
+def forget(found: Held) -> Plans.Entries<Pending, Pending>:
+  match found:
+    case none(_): Plans.Entries::<Pending, Pending>.keep({})
+    case some(s): Plans.Entries::<Pending, Pending>.remove({index: s.index})
+# Answers with a card, first dropping the waiting proposal this reply superseded.
+def told(found: Held, context: Abi.Context, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  match found:
+    case none(_): tell(reply, card)
+    case some(s): forgotten(context, forget(found), reply, card)
+def forgotten(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})})):
+    case written(_): tell(reply, card)
+    case _: tell(reply, card)
 def tell(reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
   match perform(Plan.offer({to: "", document: card})):
     case _: reply

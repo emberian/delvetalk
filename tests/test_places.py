@@ -33,7 +33,7 @@ def thing_seed(name, holder="", location=""):
 
 
 def avatar_seed(handle, at="", holding=()):
-    return record(handle=label(handle), at=reference(at), holding=listing([reference(h) for h in holding]), inbox=nil())
+    return record(handle=label(handle), at=reference(at), holding=listing([reference(h) for h in holding]))
 
 
 def names(wire):
@@ -72,9 +72,6 @@ class Floor(Chain):
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
 
-    def by(self, name="glm", **fields):
-        return record(by=reference(name), **fields)
-
     def card(self, name, principal="glm"):
         reply = self.turn(name, "describe", principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
@@ -107,10 +104,10 @@ class Floor(Chain):
     def test_enter_appends_in_order_and_a_second_entry_is_refused(self):
         self.make("porch", closure("Place"), place_seed("Porch"))
         for who in ("glm", "kimik3"):
-            self.assertEqual(self.result_label(self.turn("porch", "enter", record(who=reference(who)), principal=who)), "done")
+            self.assertEqual(self.result_label(self.turn("porch", "enter", record(), principal=who)), "done")
         self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\n")
         before = self.version("porch")
-        again = self.turn("porch", "enter", record(who=reference("glm")), principal="glm")
+        again = self.turn("porch", "enter", record(), principal="glm")
         self.assertEqual(self.refusal_reason(again), "Already here.")
         self.assertEqual(self.version("porch"), before)
 
@@ -118,7 +115,7 @@ class Floor(Chain):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm"]))
         self.make("stone", closure("Thing"), thing_seed("stone", holder="glm", location="garden"))
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch", holding=["stone"]))
-        dropped = self.turn("stone", "drop", record(by=reference("glm"), at=reference("porch")), principal="glm")
+        dropped = self.turn("stone", "drop", record(at=reference("porch")), principal="glm")
         self.assertEqual(self.result_label(dropped), "done", dropped)
         self.assertIn("Lying here: stone\n", self.card("porch"))
         view = self.state("stone")
@@ -130,9 +127,9 @@ class Floor(Chain):
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm"]))
         self.make("stone", closure("Thing"), thing_seed("stone", holder="kimik3", location="garden"))
-        reply = self.turn("stone", "drop", record(by=reference("glm"), at=reference("porch")), principal="glm")
+        reply = self.turn("stone", "drop", record(at=reference("porch")), principal="glm")
         self.assertEqual(self.refusal_reason(reply), "You are not holding it.")
-        reply = self.turn("stone", "drop", record(by=reference("kimik3"), at=reference("porch")), principal="kimik3")
+        reply = self.turn("stone", "drop", record(at=reference("porch")), principal="kimik3")
         self.assertEqual(self.refusal_reason(reply), "Only someone here can put things down.")
         self.assertEqual((self.version("porch"), self.version("stone")), (0, 0))
 
@@ -168,7 +165,7 @@ class Floor(Chain):
     def test_acquire_of_a_held_thing_is_refused_by_name(self):
         self.world()
         self.make("held", closure("Thing"), thing_seed("held", holder="kimik3", location="garden"))
-        reply = self.turn("held", "acquire", self.by(), principal="glm")
+        reply = self.turn("held", "acquire", record(), principal="glm")
         self.assertEqual(self.refusal_reason(reply), "Already held by kimik3")
 
     def test_a_move_through_a_nonexistent_exit_is_refused_and_changes_nothing(self):
@@ -185,12 +182,7 @@ class Floor(Chain):
 
     def test_a_place_with_64_things_renders_under_the_default_budget(self):
         things = ["thing%02d" % i for i in range(64)]
-        # A 64-deep cons list is over the wire's nesting capacity ('response nesting
-        # capacity' on world-create), so the hall is stocked one put at a time.
-        self.make("hall", closure("Place"), place_seed("Hall", [("out", "porch")], present=["glm", "kimik3"]))
-        for thing in things:
-            put = self.turn("hall", "put", record(thing=reference(thing), by=reference("glm")), principal="glm")
-            self.assertEqual(self.result_label(put), "done", put)
+        self.make("hall", closure("Place"), place_seed("Hall", [("out", "porch")], present=["glm", "kimik3"], things=things))
         reply = self.turn("hall", "describe", principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
@@ -203,9 +195,9 @@ class Floor(Chain):
         depth 8192, so an inbox is bounded by state bytes, not by a count of 247."""
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         for i in range(247):
-            note = self.turn("glm", "note", record(**{"from": label("kimik3"), "text": label("note %03d" % i)}), principal="kimik3")
+            note = self.turn("glm", "note", record(text=label("note %03d" % i)), principal="kimik3")
             self.assertEqual(note["status"], "admitted", note)
-        over = self.turn("glm", "note", record(**{"from": label("kimik3"), "text": label("one too many")}), principal="kimik3")
+        over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
         self.assertEqual(over["status"], "admitted", over)  # the wire now decodes lists to depth 8192; the cap is bytes, not count
         reply = self.turn("glm", "describe", principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
@@ -218,15 +210,24 @@ class Floor(Chain):
 
     def test_leave_removes_from_present(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
-        reply = self.turn("porch", "leave", record(who=reference("glm")), principal="glm")
+        reply = self.turn("porch", "leave", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
         self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: kimik3\n")
 
-    def test_take_removes_from_things(self):
+    def test_take_removes_from_things_when_the_thing_asks_for_itself(self):
         self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone", "fern"]))
-        reply = self.turn("garden", "take", record(thing=reference("stone"), by=reference("glm")), principal="glm")
+        self.make("glm", closure("Avatar"), avatar_seed("glm", "garden"))
+        self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
+        reply = self.turn("stone", "acquire", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
         self.assertEqual(self.card("garden"), "Garden\nabout Garden\nHere: glm\nLying here: fern\n")
+
+    def test_a_place_hears_take_and_put_only_from_the_thing_itself(self):
+        self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone"]))
+        for method in ("take", "put"):
+            reply = self.turn("garden", method, record(), principal="glm")
+            self.assertEqual(self.refusal_reason(reply), "Only a thing can %s itself%s." % (("take", "") if method == "take" else ("put", " down")))
+        self.assertEqual(self.version("garden"), 0)
 
     def test_an_avatar_walks_porch_to_garden_and_back_carrying_a_thing(self):
         self.world()
@@ -234,13 +235,13 @@ class Floor(Chain):
         self.assertEqual(self.result_label(moved), "moved", moved["receipt"]["outcome"])
         self.assertIn("Here: glm\n", self.card("garden"))
         self.assertNotIn("Here: glm\n", self.card("porch"))
-        got = self.turn("stone", "acquire", self.by(), principal="glm")
+        got = self.turn("stone", "acquire", record(), principal="glm")
         self.assertEqual(self.result_label(got), "done", got["receipt"]["outcome"])
         self.assertNotIn("Lying here", self.card("garden"))
         self.assertEqual(self.holding("glm"), ["stone"])
         back = self.turn("glm", "move", record(exit=label("out")), principal="glm")
         self.assertEqual(self.result_label(back), "moved", back["receipt"]["outcome"])
-        dropped = self.turn("stone", "drop", record(by=reference("glm"), at=reference("porch")), principal="glm")
+        dropped = self.turn("stone", "drop", record(at=reference("porch")), principal="glm")
         self.assertEqual(self.result_label(dropped), "done", dropped)
         self.assertIn("Lying here: stone\n", self.card("porch"))
 

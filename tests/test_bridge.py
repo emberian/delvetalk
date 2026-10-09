@@ -158,7 +158,7 @@ class Bridging(BridgeCase):
 
     def test_real_garden_receive_end_to_end(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0), policy=record(world=label(""), object=label("")))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0), policy=record(world=label(""), object=label("")), pending={"tag": "variant", "label": "nil", "payload": record()})})
         self.assertEqual(r['status'], 'created', r)
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])

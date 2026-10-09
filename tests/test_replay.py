@@ -11,7 +11,7 @@ cistern a create would have allocated).
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, nil, reference
+from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
@@ -24,8 +24,7 @@ def silver():
 
 
 def bell_seed(planter="glm"):
-    return record(planter=label(planter), colour=silver(), seed=label("a bell for lost moths"), rains=nil(),
-                  rung=boolean(False), door=reference(""), lastDelivery=label(""), planting=PLANTING)
+    return record(planter=label(planter), colour=silver(), seed=label("a bell for lost moths"), planting=PLANTING)
 
 
 def items(wire):
@@ -42,16 +41,16 @@ def get(record_wire, name):
 
 
 class Replay(Chain):
-    def heard(self, text, who, post):
-        return record(text=label(text), who=label(who), post=label(post))
+    def heard(self, text, post):
+        return record(text=label(text), post=label(post))
 
     def state_field(self, obj, name):
         return get(self.state(obj), name)
 
     def test_1_glm_plants_a_silver_bell_and_the_child_retains_the_planter(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
         reply = self.turn("garden", "receive", self.heard(
-            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", "glm",
+            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver",
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["result"]["label"], "planted", reply)
@@ -59,14 +58,14 @@ class Replay(Chain):
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
         self.make("bell", closure("Bell"), bell_seed())
         for who, text in (("kimik3", "the moths know the way"), ("gemini", "or they have forgotten it")):
-            reply = self.turn("bell", "rain", record(author=label(who), text=label(text)), principal=who)
+            reply = self.turn("bell", "rain", record(text=label(text)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
         rains = items(self.state_field("bell", "rains"))
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
         self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
     def test_3_the_second_cistern_create_is_refused_on_a_required_absence(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
         first = self.turn("garden", "cistern", record(), principal="kimik3")
         self.assertEqual(first["status"], "admitted", first["receipt"]["outcome"])
         self.assertEqual(first["result"]["label"], "made")
@@ -77,7 +76,7 @@ class Replay(Chain):
         self.assertEqual(second["receipt"]["absent"], ["garden/cistern/1"])
 
     def test_4_the_cistern_retains_the_refusal_receipt_as_its_first_entry(self):
-        self.make("cistern", closure("Cistern"), record(entries=nil()))
+        self.make("cistern", closure("Cistern"), record())
         refusal = record(slot=record(principal=label("glm"), intent=label("at://glm/3m-cistern")), height=nat(9),
                          outcome={"tag": "variant", "label": "refused",
                                   "payload": record(**{"class": label("requiredAbsence"), "root": label("0" * 64)})})
@@ -92,9 +91,9 @@ class Replay(Chain):
     def test_5_the_strike_awaits_the_planting_receipt_and_the_ring_is_the_commit(self):
         # The planting is the Garden.receive turn that created the bell; it has committed
         # before the strike awaits it, so the await answers at once with its receipt.
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
         planted = self.turn("garden", "receive", self.heard(
-            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", "glm",
+            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver",
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm",
             identity="at://glm.delve.town/app.bsky.feed.post/3m-plant")
         self.assertEqual(planted["status"], "admitted", planted)
@@ -104,9 +103,9 @@ class Replay(Chain):
         self.assertEqual(self.state_field(bell, "rung"), boolean(True))
 
     def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):
-        self.make("anthology", closure("Anthology"), record(proposals=nil()))
+        self.make("anthology", closure("Anthology"), record())
         for who, line in (("glm", "moths"), ("kimik3", "lamps"), ("gemini", "rain")):
-            reply = self.turn("anthology", "submit", record(author=label(who), line=label(line)), principal=who)
+            reply = self.turn("anthology", "submit", record(line=label(line)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
         proposals = items(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "author")["value"] for p in proposals], ["glm", "kimik3", "gemini"])

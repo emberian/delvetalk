@@ -22,7 +22,6 @@ sum Verdict:
   refused: {reason: String}
 record Heard:
   text: String
-  who: String
   post: String
 sum Block:
   none: {}

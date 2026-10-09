@@ -8,7 +8,7 @@ planted card text is checked through a pure probe instead.
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, nil, reference
+from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
@@ -29,10 +29,10 @@ def door(label_, description, to):
 
 class Cards(Chain):
     def garden(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
 
     def say(self, text, who="glm", post="at://glm/post/1", obj="garden", method="receive"):
-        return self.turn(obj, method, record(text=label(text), who=label(who), post=label(post)), principal=who)
+        return self.turn(obj, method, record(text=label(text), post=label(post)), principal=who)
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
@@ -113,7 +113,7 @@ def planted(context: Abi.Context) -> String:
     # --- the root menu ------------------------------------------------------------
 
     def directory(self):
-        self.make("root", closure("Directory"), record(doors=nil()))
+        self.make("root", closure("Directory"), record())
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
             self.assertEqual(reply["result"]["label"], "done", reply)

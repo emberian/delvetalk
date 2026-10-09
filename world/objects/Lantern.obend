@@ -5,8 +5,6 @@ import ./Plan.obend as Plans
 record State:
   lit: Bool
   litBy: String
-record Who:
-  who: String
 # A creator supplies a Seed; seeded makes the child's State from it.
 type Seed = {}
 record Edits:
@@ -21,8 +19,8 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 # Light the lantern and remember who did.
-def light(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit::<Bool, {}>.set({value: true}), litBy: Plans.Edit::<String, {}>.set({value: input.who})}})):
+def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit::<Bool, {}>.set({value: true}), litBy: Plans.Edit::<String, {}>.set({value: context.principal})}})):
     case written(_): true
     case _: state.lit
 def render(state: State) -> Document.Document:

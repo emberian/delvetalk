@@ -102,6 +102,11 @@ def run_pure(name, entry, *arguments, probe=None, limits=None):
 
 BIG = {"ticks": "1000000"}
 
+PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Garden.obend as O\n"
+GARDEN_PROBE = PROBE_HEAD_G + """def shown(n: Nat) -> String:
+  O.card({planted: n, policy: Plans.nobody(), pending: Lists.List::<O.Pending>.nil()})
+"""
+
 DOC_PROBE = """edition ObjectiveBend 1
 import ./Document.obend as Document
 def leaves(n: Nat) -> Document.Documents:
@@ -217,7 +222,7 @@ class Objects(unittest.TestCase):
     def test_render_cards(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))
         self.assertEqual(counter["value"]["value"], "Count: 3")
-        garden = run_pure("Garden", "card", record(planted=nat(2), policy=record(world={"tag": "label", "value": ""}, object={"tag": "label", "value": ""})))
+        garden = run_pure("Garden", "shown", nat(2), probe=GARDEN_PROBE)
         self.assertEqual(garden["status"], "finished", garden)
         for name, probe, entry in (("Bell", BELL_PROBE, "two"), ("Cistern", CISTERN_PROBE, "one"), ("Anthology", ANTHOLOGY_PROBE, "one")):
             with self.subTest(object=name):

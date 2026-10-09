@@ -410,7 +410,7 @@ class BellList(TurnWorld):
                            modules=modules, entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
         for who, text in (("kimik3", "one"), ("gemini", "two")):
-            r = self.turn("bell", "rain", record(author=label(who), text=label(text)))
+            r = self.turn("bell", "rain", record(text=label(text)), principal=who)
             self.assertEqual(r["status"], "admitted", r)
         before = self.host.send(op="world-view", principal="e", object="bell")["state"]
 

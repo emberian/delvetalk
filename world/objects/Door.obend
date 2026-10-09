@@ -9,8 +9,6 @@ record State:
   knocks: Lists.List<String>
   lantern: Plans.Reference
   lastDelivery: String
-record Who:
-  who: String
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   lantern: Plans.Reference
@@ -20,7 +18,7 @@ record Edits:
   knocks: Plans.Entries<String, {}>
   lastDelivery: Plans.Edit<String, {}>
   lantern: Plans.Edit<Plans.Reference, {}>
-type Plan = Plans.Plan<Edits, Who>
+type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {lantern: Plans.nobody()}
@@ -38,21 +36,21 @@ def configure(state: State, input: {lantern: Plans.Reference}, context: Abi.Cont
     case written(_): true
     case _: false
 # The method a bell sends to: open the door and light the lantern behind it.
-def open(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: unlatched(input.who)})):
-    case written(_): announce(state, input, context)
+def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: unlatched(context.principal)})):
+    case written(_): announce(state, context)
     case _: state.open
 def latch(state: State, who: String) -> Edits:
   if state.open then keep() else unlatched(who)
 # A knock is retained; a knock on a closed door opens it.
-def knock(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, input.who), {knocks: Plans.Entries::<String, {}>.append({item: input.who})})})):
-    case written(_): answer(state, input, context)
+def knock(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context.principal), {knocks: Plans.Entries::<String, {}>.append({item: context.principal})})})):
+    case written(_): answer(state, context)
     case _: false
-def answer(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  if state.open then true else announce(state, input, context)
-def announce(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.send({object: state.lantern, method: "light", argument: input})):
+def answer(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  if state.open then true else announce(state, context)
+def announce(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.send({object: state.lantern, method: "light", argument: {}})):
     case delivery(d): remember(d.id, context)
     case _: false
 def remember(id: String, context: Abi.Context) -> Activity<Plan, Response, Bool>:
