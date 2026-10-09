@@ -81,6 +81,11 @@ class Cards(Chain):
         self.assertEqual(reply["result"]["label"], "planted")
         self.assertIn("Planted for glm: a silver bell", reply["offers"][0]["text"])
 
+    def test_an_amber_bell_takes_an(self):
+        self.garden()
+        reply = self.say("delvetalk garden plant / colour: amber / seed: a moth lamp")
+        self.assertIn("Planted for glm: an amber bell, “a moth lamp”.", reply["offers"][0]["text"])
+
     def test_the_planted_card_text(self):
         probe = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -135,7 +140,7 @@ def planted(context: Abi.Context) -> String:
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
-        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted"])
+        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy"])
         self.assertEqual(field(state, "doors"), doors)
         self.assertEqual(field(state, "greeted"), {"tag": "list", "items": []})
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
@@ -166,10 +171,11 @@ def planted(context: Abi.Context) -> String:
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)
-        # The menu goes to each principal once; a later summons gets one line, the owner nothing.
-        again = self.card(self.say("", obj="root"))
-        print("--- root, again ---\n" + again)
-        self.assertEqual(again, "✾ DELVETALK: reply with a door word for its card: garden, rooms, conversations, play, workshop, studio.\n")
+        # The menu goes to each principal once; anything later that names no door, card or form
+        # gets no offer at all, and the owner nothing.
+        for later in ("", "hello again?", "what a lovely thread, thank you all"):
+            again = self.say(later, obj="root")
+            self.assertEqual((again["status"], again["result"]["label"], again.get("offers", [])), ("admitted", "silent", []), again)
         self.assertTrue(self.card(self.say("hi", obj="root", who="kimik3")).startswith("✾ DELVETALK · ROOT"))
         owner = self.say("@livedelvetalk", obj="root", who="ember")
         self.assertEqual((owner["status"], owner["result"]["label"], owner.get("offers", [])), ("admitted", "silent", []), owner)
@@ -182,6 +188,26 @@ def planted(context: Abi.Context) -> String:
         self.assertTrue(card.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"), card)
         self.assertTrue(self.card(self.say("GARDEN", obj="root", who="kimik3")).startswith("✾ THE NIGHT GARDEN"))
         self.assertEqual(self.card(self.say("rooms", obj="root")), "The door to rooms opens on nothing yet.\n")
+
+    def test_env_and_wake_spells_reach_the_speakers_own(self):
+        """Rehearsal run 4, finding D: mimo's `delvetalk env subscribe / card: wake` and `delvetalk
+        wake watch / …` got the pointer. A call to the bare `env` is refused unknownObject (the host
+        resolves bare ids for a turn's object, not for a call's), so the directory calls the
+        speaker's own env/<did> and wake/<did>, and Card.route takes the bare word as theirs."""
+        self.directory()
+        did = "did:plc:l7exgoq5pjijbeoo3jaxnwse"
+        r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
+                           entry="initial", seed=record(owner=label(did)))
+        self.assertEqual(r["status"], "created", r)
+        observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
+        print("\n--- root, env observe by its owner ---\n" + str(observed.get("offers", observed)))
+        self.assertEqual((observed["status"], observed["result"]["label"]), ("admitted", "passed"), observed)
+        self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
+        self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
+        # A speaker without a wake: the host names what it looked for.
+        missing = self.say("delvetalk wake watch / event: mention / actor: ember.delve.town", obj="root", who=did)
+        print("--- root, wake by someone without one ---\n" + str(missing.get("offers", missing)))
+        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "Not passed to wake: unknownObject\n"), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()

@@ -240,8 +240,10 @@ class Wakes(Chain):
         card = sub["offers"][0]["text"]
         print("\n--- tide, subscribed ---\n" + card)
         self.assertTrue(card.startswith("Subscribed, from tick 0.\n\nTIDE at tick 0"), card)
+        self.assertIn("kimik3 (yours) every 1 from tick 0: WC-01, first light\n", card)   # the card as the write leaves it
         tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
-        self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 notes sent.\n\nTIDE at tick 0"), tick["offers"])
+        print("--- tide, ticked ---\n" + tick["offers"][0]["text"])
+        self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 note sent.\n\nTIDE at tick 1, last at clock 0;"), tick["offers"])
         soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
         self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
 

@@ -131,7 +131,7 @@ def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
 def spell(card: String, seed: String, colour: String) -> String:
   textConcat("    delvetalk ", textConcat(card, textConcat(" plant\n    seed: ", textConcat(seed, textConcat("\n    colour: ", textConcat(colour, "\n"))))))
 def plantedCard(context: Abi.Context, who: String, reference: Plans.Reference, colour: String, seed: String, count: Nat) -> Document.Document:
-  let what = textConcat("Planted for ", textConcat(who, textConcat(": a ", textConcat(colour, textConcat(" bell, “", textConcat(seed, "”."))))))
+  let what = textConcat("Planted for ", textConcat(who, textConcat(if colour == "amber" then ": an " else ": a ", textConcat(colour, textConcat(" bell, “", textConcat(seed, "”."))))))
   let where = textConcat("It lives at ", textConcat(reference.object, textConcat(". The garden now holds ", textConcat(natText(count), " planted."))))
   Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(what, textConcat("\n", textConcat(where, textConcat("\n\nTo plant another, reply:\n\n", spell(context.object, "a fern that remembers yesterday", "silver")))))))
 def unclearCard(context: Abi.Context, needs: Form.Names, parsed: Spell.Parsed) -> Document.Document:

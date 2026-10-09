@@ -60,22 +60,22 @@ sum Done:
   tooSoon: {next: Nat}
   refused: {reason: String}
 # One subscription per principal: subscribing again replaces it.
-# Every subscribe and tick ends by offering what happened and the Tide's card (the card
-# as it was read this turn), refusals included.
+# Every subscribe and tick ends by offering what happened and the Tide's card as the
+# write leaves it (a refusal shows the card as read), refusals included.
 def told<T>(done: Done, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   Card.tell::<Edits, State, {}, T>(then(done), Document.concat(Document.text(doneLine(done)), card))
 def doneLine(done: Done) -> String:
   match done:
     case subscribed(s): textConcat("Subscribed, from tick ", textConcat(natText(s.since), ".\n\n"))
-    case ticked(t): textConcat("Tick ", textConcat(natText(t.tick), textConcat(": ", textConcat(natText(t.sent), " notes sent.\n\n"))))
+    case ticked(t): textConcat("Tick ", textConcat(natText(t.tick), textConcat(": ", textConcat(natText(t.sent), if t.sent == 1n then " note sent.\n\n" else " notes sent.\n\n"))))
     case tooSoon(t): textConcat("Too soon: the next tick may come at clock ", textConcat(natText(t.next), ".\n\n"))
     case refused(r): textConcat("Not done: ", textConcat(r.reason, "\n\n"))
 def subscribed<T>(state: State, every: Nat, note: String, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   if every == 0n then told::<T>(Done.refused({reason: "every is at least 1."}), card, then) else subscribing::<T>(state, Lists.find::<Sub>(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks}, context, card, then)
 def subscribing<T>(state: State, found: Lists.Maybe<Sub>, sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match found:
-    case some(s): subWritten::<T>(Plans.Entries::<Sub, Sub>.amendItem({item: s.value, change: sub}), sub.since, context, card, then)
-    case none(_): if Lists.length::<Sub>(state.subs) < 64n then subWritten::<T>(Plans.Entries::<Sub, Sub>.append({item: sub}), sub.since, context, card, then) else told::<T>(Done.refused({reason: "The tide holds sixty-four subscribers."}), card, then)
+    case some(s): subWritten::<T>(Plans.Entries::<Sub, Sub>.amendItem({item: s.value, change: sub}), sub.since, context, render(extend(state, {subs: Lists.map::<Sub, Sub>(state.subs, fn(old: Sub) -> Sub: if old.who == sub.who then sub else old)}), context), then)
+    case none(_): if Lists.length::<Sub>(state.subs) < 64n then subWritten::<T>(Plans.Entries::<Sub, Sub>.append({item: sub}), sub.since, context, render(extend(state, {subs: Lists.append::<Sub>(state.subs, sub)}), context), then) else told::<T>(Done.refused({reason: "The tide holds sixty-four subscribers."}), card, then)
 def subWritten<T>(edit: Plans.Entries<Sub, Sub>, since: Nat, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {subs: edit})})):
     case _: told::<T>(Done.subscribed({since: since}), card, then)
@@ -92,7 +92,7 @@ def ticked<T>(state: State, context: Abi.Context, card: Document.Document, then:
   if state.ticks > 0n && context.clock < state.last + state.gap then told::<T>(Done.tooSoon({next: state.last + state.gap}), card, then) else tickWritten::<T>(state, context, card, then)
 def tickWritten<T>(state: State, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {ticks: Plans.Edit::<Nat, Nat>.add({delta: 1n}), last: Plans.Edit::<Nat, {}>.set({value: context.clock})})})):
-    case _: woken::<T>(state.subs, state.ticks + 1n, 0n, card, then)
+    case _: woken::<T>(state.subs, state.ticks + 1n, 0n, render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context), then)
 # Sends to each due subscriber in turn, by explicit recursion.
 def woken<T>(subs: Lists.List<Sub>, tick: Nat, sent: Nat, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match subs:
