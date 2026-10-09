@@ -7,6 +7,7 @@ import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendCheckpoint
+import Theory.ObjectiveBendCheckpointRoundTrip
 import Theory.ObjectiveBendDemandCollect
 import Delvetalk.Limits
 import Delvetalk.Canonical

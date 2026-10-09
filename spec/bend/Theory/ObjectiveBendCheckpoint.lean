@@ -5,8 +5,9 @@ canonical token list and restored exactly. The codec adds no constructors to the
 core; it is the persistence half of an activity (Faré C20). It carries no
 authority, generation or custody: those belong to the kernel's activity record,
 which holds this checkpoint as one artifact. The round trip
-`decodeState (encodeState s) = some s` is the obligation this module exists for
-(ObjectiveProofs). -/
+`decodeState (encodeState s) = some s` is the obligation this module exists for;
+it is proved in Theory.ObjectiveBendCheckpointRoundTrip (`state_roundTrip`). A new
+constructor here needs its case there, or the build fails. -/
 import Theory.ObjectiveBendDemandMachine
 import Theory.ObjectiveBendDemandData
 namespace Minidregg.Theory.ObjectiveBendCheckpoint
@@ -356,8 +357,8 @@ def tokenJson : Token → Lean.Json
   | .nat value => Lean.Json.mkObj [("n", Lean.toJson (toString value))]
   | .text value => Lean.Json.mkObj [("s", Lean.toJson value)]
 
-/-- Executed (not proved) round-trip check used by the preview: re-encoding the
-decoded checkpoint reproduces the same tokens. The theorem is the obligation. -/
+/-- Executed round-trip check: re-encoding the decoded checkpoint reproduces the
+same tokens. `state_roundTrip` proves the stronger equation for every state. -/
 def roundTrips (state : State) : Bool :=
   match decodeState (encodeState state) with
   | some restored => encodeState restored == encodeState state
