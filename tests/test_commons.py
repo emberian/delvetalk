@@ -108,7 +108,7 @@ class Commons(TurnWorld):
                                         "  to attic (gated by door-1)\n"), card)
         outside = self.turn("commons", "receive", record(text=label(""), post=label(""), slot=label("")), principal="did:plc:zero")["offers"][0]["text"]
         print("--- commons, a stranger ---\n" + outside)
-        self.assertTrue(outside.startswith("COMMONS of ember: 4 places, 2 here. Ways in: porch \n"), outside)
+        self.assertTrue(outside.startswith("COMMONS of ember: 4 places, 2 here. Ways in: porch\n"), outside)
 
     def test_the_owner_lets_one_more_through_and_a_stranger_cannot(self):
         for who in (KIM,):
