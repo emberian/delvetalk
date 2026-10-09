@@ -1,0 +1,142 @@
+# deploy/compose.yml: DelveTalk on the workhorse, in the shape of dregg-infra's
+# edge/compose/docker-compose.yml. Read docs/DEPLOY.md before the first `up`.
+#
+#   scp deploy/compose.yml root@workhorse:/opt/delvetalk/compose.yml
+#   ssh root@workhorse 'cd /opt/delvetalk && docker compose up -d --wait --remove-orphans'
+#
+# THE PROXY IS NOT HERE, as on the edge: native Caddy on the anchor terminates
+# TLS for delvetalk.fg-goose.online and its `reverse_proxy 10.10.1.10:8765`
+# (dregg-infra edge/delvetalk/route.caddy, merged into edge/anchor/Caddyfile)
+# reaches the port below over the private net. There are no proxy labels to set:
+# the edge uses no label-driven proxy. Port 8765 is the one that route already
+# names, so the Caddy route needs no change; the old systemd
+# delvetalk-proxy.socket listens on the same address and must be stopped first.
+#
+# ONE WRITER PER JOURNAL. Each transport program starts its own host process
+# with the world in memory; two of them appending to one journal break the chain
+# at the next height. Every service enters through `one-writer`, which holds
+# /data/journal.lock for the process's life and exits 75 if it is taken. So
+# `delvetalk-http` is the default and the writer; the bridge and the interpreter
+# are behind the `town` profile and cannot start while it runs. That is the
+# intended failure until the host owns its journal exclusively and serves the
+# other programs over one socket (docs/DEPLOY.md, "One writer").
+#
+# Every shell `$` in this file would be compose's; there are no shell bodies.
+
+name: delvetalk
+
+x-service: &service
+  image: ${DELVETALK_IMAGE:-delvetalk:current}
+  restart: unless-stopped
+  user: "10425:10425"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=16m,uid=10425,gid=10425
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  init: true
+  stop_grace_period: 30s
+  volumes:
+    # One directory: world.journal, journal.lock, state/ (identity.sqlite,
+    # heaps/, outbox/, observe.sqlite, interpretations/, pid files). A host
+    # path, not a named volume, as the edge keeps /var/lib/dregg/<service>:
+    # it is what deploy/backup.sh reads.
+    - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  # The HTTP front: /AGENTS.md for agents, / and /o/<object> for people.
+  # 0.0.0.0 inside the container; the port mapping binds the private address
+  # only. --trust-proxy keys the unauthenticated limits on the last
+  # X-Forwarded-For entry, which Caddy on the anchor sets; anything else on
+  # 10.10.1.0/24 that reaches :8765 directly can choose that entry.
+  delvetalk-http:
+    <<: *service
+    command:
+      - python3
+      - -m
+      - transport.http
+      - --journal
+      - /data/world.journal
+      - --state
+      - /data/state
+      - --bind
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --origin
+      - https://delvetalk.fg-goose.online
+      - --trust-proxy
+    ports:
+      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"
+    # Replay on start recompiles every created object (~0.2 to 1 s each), and up
+    # to 8 private heaps run as their own host processes. The old systemd unit's
+    # measured need was a 4 GiB address space and about 62 MiB RSS for a tiny world.
+    mem_limit: 2g
+    mem_reservation: 256m
+    cpus: 1.0
+    pids_limit: 128
+    healthcheck:
+      # The question a visitor asks first, then the one only a live host can
+      # answer: /AGENTS.md is served without the host, so a broken chain would
+      # still pass it; the home page shows the journal height from world-status,
+      # and the host has no height when world-open refused the journal.
+      test: ["CMD", "python3", "-c", "import re,urllib.request as u; u.urlopen('http://127.0.0.1:8765/AGENTS.md', timeout=5).read(); assert re.search(rb'journal height</dt><dd>[0-9]+<', u.urlopen('http://127.0.0.1:8765/', timeout=30).read())"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Observe the town, run a turn per new spell or reply, write drafts to
+  # /data/state/outbox. Reads the AppView and PDS only: transport/delve.py
+  # refuses every non-GET unless built for post.py, and no posting
+  # credential is mounted here.
+  delvetalk-bridge:
+    <<: *service
+    profiles: ["town"]
+    command: ["python3", "-m", "transport.bridge", "run", "--state", "/data/state", "--journal", "/data/world.journal", "--poll", "60"]
+    mem_limit: 1g
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      # daemon() touches its pid file after every finished step: older than
+      # three polls means the loop is stuck, even if the process is alive.
+      test: ["CMD", "python3", "-c", "import os,sys,time; p='/data/state/bridge.pid'; os.kill(int(open(p).read()), 0); sys.exit(time.time() - os.stat(p).st_mtime > 180)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+  # Pending interpretation requests -> one model call each -> settled.
+  delvetalk-interpret:
+    <<: *service
+    profiles: ["town"]
+    command: ["python3", "-m", "transport.interpret", "run", "--state", "/data/state", "--journal", "/data/world.journal", "--poll", "60"]
+    environment:
+      DELVETALK_ANTHROPIC_KEY_FILE: /run/secrets/anthropic_key
+    secrets: [anthropic_key]
+    mem_limit: 1g
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os,sys,time; p='/data/state/interpret.pid'; os.kill(int(open(p).read()), 0); sys.exit(time.time() - os.stat(p).st_mtime > 180)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+  # Operator commands, never started by `up`:
+  #   docker compose run --rm delvetalk-ops python3 -m deploy.seed ...
+  #   docker compose run --rm -e ONE_WRITER=skip delvetalk-ops python3 -m transport.bridge outbox --state /data/state
+  delvetalk-ops:
+    <<: *service
+    profiles: ["ops"]
+    restart: "no"
+    command: ["python3", "-c", "print('give a command')"]
+
+secrets:
+  anthropic_key:
+    # Outside the repository and outside /data, readable by uid 10425 only.
+    file: ${DELVETALK_ANTHROPIC_KEY_PATH:-/etc/delvetalk/anthropic.key}

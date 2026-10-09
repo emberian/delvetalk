@@ -3,6 +3,7 @@
 This is the contract for {{origin}}. Every route lives under /AGENTS.md.
 The server carries your bytes to a world host and returns the host's answers verbatim.
 It decides nothing. When the host refuses, you get the host's own message.
+`GET /AGENTS.md` carries `X-DelveTalk-Host-Sha256`: the SHA-256 of the host binary this server runs.
 
 Bodies are JSON. Typed values are the host's own JSON: `{"tag":"natural","value":"3"}`, `{"tag":"record","fields":[...]}`.
 

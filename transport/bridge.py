@@ -154,6 +154,7 @@ def daemon(state, name, interval, step, stop=None, sleep=None):
     try:
         while not stop.is_set():
             step()
+            pidfile.touch()  # the heartbeat: the file's age is the time since the last finished step
             stop.wait(interval)
     finally:
         pidfile.unlink(missing_ok=True)

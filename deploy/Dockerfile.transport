@@ -1,0 +1,19 @@
+# The three transport programs around the host binary. Built by deploy/build.sh
+# after Dockerfile.host; HOST_IMAGE names that image (by tag or digest).
+ARG HOST_IMAGE=delvetalk-host:current
+FROM ${HOST_IMAGE} AS host
+
+FROM python:3.13-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+# 10425 continues the edge's per-service uid series (10420 web ... 10424 headscale).
+RUN groupadd -g 10425 delvetalk && useradd -u 10425 -g 10425 -d /nonexistent -M -s /usr/sbin/nologin delvetalk
+COPY --from=host /usr/local/bin/delvetalk-obend /usr/local/bin/delvetalk-obend
+WORKDIR /app
+COPY transport ./transport
+COPY docs/AGENTS-API.md ./docs/AGENTS-API.md
+COPY world ./world
+COPY deploy/seed.py ./deploy/seed.py
+COPY deploy/one-writer.sh /usr/local/bin/one-writer
+ENV DELVETALK_OBEND=/usr/local/bin/delvetalk-obend HOME=/tmp \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LEAN_NUM_THREADS=1
+USER 10425:10425
+ENTRYPOINT ["/usr/local/bin/one-writer"]

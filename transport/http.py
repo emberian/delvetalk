@@ -7,6 +7,7 @@ well-formedness. Host replies pass through verbatim.
 """
 import argparse
 import collections
+import hashlib
 import json
 import os
 import secrets
@@ -124,6 +125,8 @@ class Front(HTTPServer):
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy = heaps, repl or Host(None), trust_proxy
         self.hits, self.cards, self.nonce = {}, {}, secrets.token_hex(4)
+        # The bytes this front runs as its host, so an operator can compare them with the build's pin.
+        self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest()
 
     def used(self, credential):
         now = self.clock()
@@ -207,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         parts = [urllib.parse.unquote(p) for p in path.split('/')[1:]]
         if method == 'GET' and path == PREFIX:
-            return self.reply(200, self.server.guide(), 'text/plain')
+            return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
         if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
             return self.reply(200, (STATIC / parts[1]).read_bytes(), 'text/css' if parts[1].endswith('css') else 'text/javascript')
         if parts[:1] == ['AGENTS.md']:

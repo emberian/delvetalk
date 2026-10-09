@@ -1,0 +1,5 @@
+*
+!lakefile.lean
+!lean-toolchain
+!lake-manifest.json
+!spec/
