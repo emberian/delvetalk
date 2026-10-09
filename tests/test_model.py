@@ -233,6 +233,22 @@ class OAuth(unittest.TestCase):
         for token in self.TOKENS.values():
             self.assertNotIn(token, json.dumps(outs))
 
+    def test_when_every_account_is_spent_prefer_one_with_extra_usage_and_surface_billing(self):
+        def probe(name, enabled, in_use=False):
+            return {'token_name': name, 'quota': {'weekly': {'utilization': 1.0, 'reset': 0},
+                                                  'overage_status': 'allowed' if enabled else 'rejected',
+                                                  'overage_disabled_reason': None if enabled else 'out_of_credits',
+                                                  'overage_in_use': in_use}}
+        r = model.ask(REQ, transport=self.transport(200), tokeman=lambda: [probe('main', False), probe('spare', True, True)])
+        self.assertEqual((r['account'], r['overageInUse']), ('spare', True))
+        r = model.ask(REQ, transport=self.transport(200), tokeman=lambda: [probe('main', True), probe('spare', False)])
+        self.assertEqual((r['account'], r['overageInUse']), ('main', False))
+
+    def test_headroom_still_beats_overage_while_any_account_has_some(self):
+        probes = [{'token_name': 'main', 'quota': {'weekly': {'utilization': 0.4}, 'overage_status': 'rejected'}},
+                  {'token_name': 'spare', 'quota': {'weekly': {'utilization': 1.0}, 'overage_status': 'allowed'}}]
+        self.assertEqual(model.ask(REQ, transport=self.transport(200), tokeman=lambda: probes)['account'], 'main')
+
     def test_key_mode_still_uses_x_api_key(self):
         os.environ.update({'DELVETALK_MODEL_AUTH': 'key', 'DELVETALK_ANTHROPIC_KEY': 'k'})
         model.ask(REQ, transport=self.transport(200))
