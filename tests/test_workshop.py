@@ -1,8 +1,8 @@
 """The workshop: a model takes the reins from a post.
 
-`check` and `inspect` are the host's; a block must be a package with `initial`
-(the host checks entry `initial`). Reprogramming another object is refused
-`notSelf`: cross-object change goes through a call under the callee's law.
+The host answers `check`, `inspect` and a `reprogram` of another object, judged by the
+target's own law with request.caller = the workshop. A block must be a package with
+`initial` (the host checks entry `initial`).
 """
 import unittest
 

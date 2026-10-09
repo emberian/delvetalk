@@ -13,8 +13,9 @@ The fragment, exactly (G1B-ENFORCED-LAW-DESIGN; anything else refuses
     ATOM  ::= REF == INT | REF <= INT | REF in [INT, …]
             | REF == REF | REF <= REF | REF <= REF + INT
             | monotone(FIELD) | writeOnce(FIELD)
-            | appendOnly(FIELD) | unchanged(FIELD)
+            | appendOnly(FIELD) | unchanged(FIELD) | REF in new.FIELD
     REF   ::= new.FIELD | request.subject | request.caller | request.height | request.turn
+            | request.pin | request.kind | request.method
     INT   ::= -?[0-9]+
 
 `implies` binds loosest and associates to the right; `or` then `and` associate to the left;
@@ -44,6 +45,8 @@ inductive LawRef where
   | pin
   /-- 0 for a write of state, 1 for a reprogram, 2 for an amendment (host extension). -/
   | kind
+  /-- The method whose run made the change, "" for an op (host extension). -/
+  | method
   deriving DecidableEq, Repr, Inhabited
 
 /-- The enforced fragment. `old.` appears only through `monotone` and `writeOnce`. -/
@@ -62,6 +65,8 @@ inductive LawExpr where
   | appendOnly (field : String)
   /-- The field is equal in old and new (host extension). -/
   | unchanged (field : String)
+  /-- `REF in new.FIELD`: the text fact is an item of the list-of-text field (host extension). -/
+  | member (ref : LawRef) (field : String)
   | not (body : LawExpr)
   | and (left right : LawExpr)
   | or (left right : LawExpr)
@@ -77,6 +82,7 @@ def LawExpr.fields : LawExpr → List String
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.fields
   | .eqR left right | .leR left right | .leROff left right _ => left.fields ++ right.fields
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => [field]
+  | .member ref field => ref.fields ++ [field]
   | .not body => body.fields
   | .and left right | .or left right | .implies left right => left.fields ++ right.fields
 
@@ -96,6 +102,7 @@ def LawExpr.fieldsPlain : LawExpr → Bool
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.plain
   | .eqR left right | .leR left right | .leROff left right _ => left.plain && right.plain
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => plainName field
+  | .member ref field => ref.plain && plainName field
   | .not body => body.fieldsPlain
   | .and left right | .or left right | .implies left right => left.fieldsPlain && right.fieldsPlain
 
@@ -110,6 +117,7 @@ def LawRef.slot : LawRef → Slot
   | .turn => "request/turn"
   | .pin => "request/pin"
   | .kind => "request/kind"
+  | .method => "request/method"
 
 /-- The predicate the kernel installs for a law (`Kernel.ObjectLaw.compile_sound`: it evaluates
 to the law's meaning on every view the kernel judges). -/
@@ -125,7 +133,7 @@ def compile : LawExpr → Pred
   | .monotone field => .monotone ("state/" ++ field)
   | .writeOnce field => .writeOnce ("state/" ++ field)
   -- Lists and equality of whole fields are beyond the kernel predicate: host laws judge them.
-  | .appendOnly _ | .unchanged _ => Pred.any []
+  | .appendOnly _ | .unchanged _ | .member _ _ => Pred.any []
   | .not body => .not (compile body)
   | .and left right => Pred.all [compile left, compile right]
   | .or left right => Pred.any [compile left, compile right]
@@ -147,6 +155,7 @@ def LawRef.render : LawRef → String
   | .turn => "request.turn"
   | .pin => "request.pin"
   | .kind => "request.kind"
+  | .method => "request.method"
 
 def LawExpr.render : LawExpr → String
   | .eqC ref value => s!"{ref.render} == {value}"
@@ -160,6 +169,7 @@ def LawExpr.render : LawExpr → String
   | .writeOnce field => s!"writeOnce({field})"
   | .appendOnly field => s!"appendOnly({field})"
   | .unchanged field => s!"unchanged({field})"
+  | .member ref field => s!"{ref.render} in new.{field}"
   | .not body => s!"not ({body.render})"
   | .and left right => s!"({left.render}) and ({right.render})"
   | .or left right => s!"({left.render}) or ({right.render})"
@@ -242,6 +252,7 @@ def requestFact : String → Option LawRef
   | "turn" => some .turn
   | "pin" => some .pin
   | "kind" => some .kind
+  | "method" => some .method
   | _ => none
 
 def parseRef : List Tok → Except String (LawRef × List Tok)
@@ -254,7 +265,7 @@ def parseRef : List Tok → Except String (LawRef × List Tok)
     match requestFact fact with
     | some ref => .ok (ref, rest)
     | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn, \
-        request.pin and request.kind)")
+        request.pin, request.kind and request.method)")
   | .ident "old" :: _ => refuse "old.FIELD outside monotone, writeOnce, appendOnly and unchanged"
   | t :: _ => refuse (t.render ++ " where a reference new.FIELD or request.FACT was expected")
   | [] => refuse "a comparison missing its reference"
@@ -274,8 +285,8 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
   match rest with
   | .sym "==" :: .str text :: after =>
     match left with
-    | .subject | .caller | .pin => return (.eqS left text, after)
-    | _ => refuse "a text constant compares with request.subject, request.caller or request.pin only"
+    | .subject | .caller | .pin | .method => return (.eqS left text, after)
+    | _ => refuse "a text constant compares with request.subject, request.caller, request.pin or request.method only"
   | .sym "==" :: more =>
     if startsInt more then
       let (value, after) ← parseInt more
@@ -294,6 +305,11 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
         let (k, after') ← parseInt offset
         return (.leROff left right k, after')
       | _ => return (.leR left right, after)
+  | .ident "in" :: .ident "new" :: .sym "." :: .ident field :: after =>
+    match left, after with
+    | _, .sym "." :: _ => refuse ("the nested field path new." ++ field ++ ".… (edition 1 reads top-level fields only)")
+    | .subject, _ | .caller, _ => return (.member left field, after)
+    | _, _ => refuse "membership in a list field reads request.subject or request.caller"
   | .ident "in" :: .sym "[" :: .sym "]" :: after => return (.inC left [], after)
   | .ident "in" :: .sym "[" :: more =>
     let (values, after) ← parseIntList fuel more

@@ -276,8 +276,8 @@ class Handler(BaseHTTPRequestHandler):
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, principal, name, view['version'])
-        self.html(200, pages.obj(name, handle, view, card, self.history(host, name), result))
+        card = self.card(host, principal, name, view['version']) if principal else None
+        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), result))
 
     def card(self, host, principal, name, version):
         """The object's card from the host's world-card (no journaled turn); until that op exists,
@@ -299,14 +299,14 @@ class Handler(BaseHTTPRequestHandler):
             self.server.cards[key] = '\n'.join(o['text'] for o in r['offers']) if r.get('offers') else None
         return self.server.cards[key]
 
-    def history(self, host, name):
-        """The newest 20 entries touching the object, newest first, read from the tail of the journal."""
+    def history(self, host, name, principal=''):
+        """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""
         height = host.send({'op': 'world-status'}).get('height') or 0
         window = 20
         while True:
             after, entries = max(0, height - window), []
             for _ in range(50):
-                req = {'op': 'world-history', 'object': name, 'limit': 100}
+                req = {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100}
                 if after:
                     req['after'] = after
                 page = host.send(req)
