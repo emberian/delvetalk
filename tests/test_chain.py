@@ -62,7 +62,8 @@ class Chain(TurnWorld):
         silver = {"tag": "variant", "label": "silver", "payload": empty()}
         self.make("bell", closure("Bell"), record(
             planter=label("glm"), colour=silver, seed=label("s"), rains=nil(), rung=boolean(False),
-            door=reference("none"), lastDelivery=label("")))
+            door=reference("none"), lastDelivery=label(""),
+            planting=record(principal=label(""), intent=label(""))))
         # The placeholders are overwritten through the objects' own configure methods.
         for obj, argument in (("door", record(lantern=reference("lantern"))), ("bell", record(door=reference("door")))):
             self.assertEqual(self.turn(obj, "configure", argument)["status"], "admitted")

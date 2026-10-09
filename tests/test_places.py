@@ -2,13 +2,8 @@
 
 Compile-level types for every method, then turns through the real host.
 
-The host does not implement the `remove` list edit yet. The turn that carries it
-is refused as
-
-    {'class': 'evaluation', 'reason': 'malformed write plan'}
-
-so every path through Place.leave and Place.take (and so Mover.move and
-Thing.acquire) is an expected failure; they flip when the host lands remove.
+The host implements the `remove` list edit, so leave, take, move and acquire run
+end to end.
 """
 import unittest
 
@@ -16,7 +11,6 @@ from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_turn_world import label, nat, record
 
-REMOVE_REFUSAL = "malformed write plan"
 NOBODY = reference("")
 
 
@@ -70,6 +64,8 @@ class Types(unittest.TestCase):
 
 
 class Floor(Chain):
+    test_ring_then_open_then_light = None  # inherited from Chain; not a floor test
+
     def world(self):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm"]))
         self.make("garden", closure("Place"), place_seed("Garden", [("out", "porch")], things=["stone"]))
@@ -181,7 +177,7 @@ class Floor(Chain):
         print("\n  place with 64 things: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
         self.assertLess(reply["ticksUsed"], 100000)
 
-    # --- paths that need remove: expected failures until the host lands it ------------
+    # --- paths through remove -----------------------------------------------------------
 
     def test_leave_removes_from_present(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))

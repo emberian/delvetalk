@@ -18,11 +18,13 @@ record State:
   rung: Bool
   door: Plans.Reference
   lastDelivery: String
+  planting: Plans.Slot
 # What the garden hands the host when it plants a bell.
 record Seed:
   planter: String
   colour: Colour
   seed: String
+  planting: Plans.Slot
 record Edits:
   rains: Plans.Entries<Rain, {}>
   rung: Plans.Edit<Bool, {}>
@@ -34,7 +36,7 @@ record Who:
 type Plan = Plans.Plan<Edits, Who>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
-  {planter: "", colour: Colour.amber({}), seed: "", rains: Lists.List::<Rain>.nil(), rung: false, door: {world: "", object: ""}, lastDelivery: ""}
+  {planter: "", colour: Colour.amber({}), seed: "", rains: Lists.List::<Rain>.nil(), rung: false, door: {world: "", object: ""}, lastDelivery: "", planting: {principal: "", intent: ""}}
 def keep() -> Edits:
   {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({}), door: Plans.Edit::<Plans.Reference, {}>.keep({}), lastDelivery: Plans.Edit::<String, {}>.keep({})}
 def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -42,9 +44,10 @@ def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Resp
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries::<Rain, {}>.append({item: input})})})):
     case written(_): count + 1n
     case _: count
-# The strike waits for the admission receipt of the planting, then rings.
-def strike(state: State, input: {slot: Plans.Slot}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.await({slot: input.slot, patience: 8n})):
+# The strike waits for the admission receipt of the planting post, named by the
+# slot Garden wrote into the seed: the planter and the post's uri.
+def strike(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.await({slot: state.planting, patience: 8n})):
     case reply(r): ringOn(state, r.receipt.outcome, context)
     case _: state.rung
 def ringOn(state: State, outcome: Plans.Outcome, context: Abi.Context) -> Activity<Plan, Response, Bool>:
