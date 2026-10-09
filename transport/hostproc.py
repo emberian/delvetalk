@@ -25,14 +25,15 @@ class Host:
     """One host subprocess, one request at a time; respawned and reopened if it dies.
     With journal=None it is a stateless compile/run process."""
 
-    def __init__(self, journal, binary=BINARY, clock=None):
-        self.journal, self.binary, self.proc, self.clock = journal, binary, None, clock
+    def __init__(self, journal, binary=BINARY, clock=None, opener=None):
+        self.journal, self.binary, self.proc, self.clock, self.opener = journal, binary, None, clock, opener
         self.lock = threading.Lock()
 
     def _spawn(self):
         self.proc = subprocess.Popen([self.binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         if self.journal:
-            reply = self._exchange({'op': 'world-open', 'path': self.journal, **({'clock': self.clock} if self.clock else {})})
+            reply = self._exchange({'op': 'world-open', 'path': self.journal, **({'clock': self.clock} if self.clock else {}),
+                                     **({'opener': self.opener} if self.opener else {})})
             if reply.get('status') != 'opened':
                 raise HostDied('world-open refused: ' + json.dumps(reply))
 

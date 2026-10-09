@@ -68,6 +68,11 @@ def draft_text(reply):
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
+        public = reply.get('public')
+        if public:  # the host's projection, verbatim and nothing else
+            lines = [f"reason: {public.get('class', 'unknown')}", f"root: {canonical(public.get('root'))}"]
+            lines += [f'{k}: {public[k]}' for k in ('object', 'hint') if public.get(k)]
+            return 'proposal observed, not committed\n' + '\n'.join(lines) + '\n'
         return (f"proposal observed, not committed\nreason: {outcome.get('class', 'unknown')}\n"
                 f"receipt: {receipt['hash']}\n")
     offers = [o['text'] for o in reply.get('offers') or []]
@@ -76,6 +81,19 @@ def draft_text(reply):
     if receipt.get('offers'):
         return f"reply card offered but not retained by the host; receipt: {receipt['hash']}\n"
     return ''  # no offer, no draft
+
+
+def register(state, host, did, handle):
+    """Tell the host who an author is at their first observed post (the clock principal alone may). The host
+    journals a handle once, so the call is idempotent; the local set only saves the round trips."""
+    path = Path(state) / 'principals.txt'
+    known = set(path.read_text().split()) if path.exists() else set()
+    if did in known:
+        return
+    got = host.send({'op': 'world-principal', 'principal': CLOCK, 'did': did, 'handle': handle})
+    if got.get('status') != 'error':
+        with open(path, 'a') as f:
+            f.write(did + '\n')
 
 
 def awaiting_path(state, uri):
@@ -225,6 +243,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
             continue
         obj, slot = target
         handle, did = obs['author']['handle'], obs['author']['did']
+        register(state, host, did, handle)
         # Every card's receive takes exactly {text, post, slot} (world/lib/Card.obend Heard); the
         # author is the turn's principal; slot is "" when the reply answers no awaiting post.
         fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},

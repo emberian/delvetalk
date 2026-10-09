@@ -124,7 +124,7 @@ class Interpret(unittest.TestCase):
         r = interpret.run(self.state, self.host, self.ask)
         self.assertEqual((r['settled'], r['failed']), (['i1', 'i2'], []))
         self.assertEqual(self.calls[0], {'model': 'claude-haiku-5-5', 'system': 'sys',
-                                         'user': '{"examples":[{"u":"a"}],"offers":[{"form":"plant"}],"utterance":"plant 1"}'})
+                                         'user': 'plant 1'})
         self.assertEqual([s['reply']['json']['n'] for s in self.settled()], [1, 2])
         self.assertEqual(self.settled()[0]['reply']['json'], {'form': 'plant', 'n': 1})
 

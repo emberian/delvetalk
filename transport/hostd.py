@@ -42,12 +42,12 @@ def take_lock(path):
 class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
 
-    def __init__(self, state, journal, binary=BINARY, lock=None):
+    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None):
         self.state = Path(state)
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock_fd = take_lock(lock or self.state / 'journal.lock')  # before anything else is touched
         self.binary, self.order = binary, threading.Lock()
-        self.shared, self.stateless = Host(str(journal), binary, clock=CLOCK), Host(None, binary)
+        self.shared, self.stateless = Host(str(journal), binary, clock=CLOCK, opener=opener), Host(None, binary)
         self.heaps = Heaps(self.state / 'heaps', binary=binary)
         self.pidfile = self.state / 'hostd.pid'
         self.pidfile.write_text(str(os.getpid()))
@@ -103,9 +103,10 @@ def main(argv=None):
     ap.add_argument('--state', required=True)
     ap.add_argument('--journal', required=True)
     ap.add_argument('--lock', help='lock file (default <state>/journal.lock)')
+    ap.add_argument('--opener', default=os.environ.get('DELVETALK_OPENER'), metavar='DID', help="the world's opener (ember's DID); only the opener may create objects with an owner")
     a = ap.parse_args(argv)
     try:
-        daemon = Hostd(a.state, a.journal, lock=a.lock)
+        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener)
     except Locked as err:
         print(f'hostd: {err}; refusing to start a second writer', file=sys.stderr)
         return EX_TEMPFAIL
