@@ -22,10 +22,11 @@ def initial : Array UInt32 :=
 
 @[inline] def rotr (x : UInt32) (n : UInt32) : UInt32 := (x >>> n) ||| (x <<< (32 - n))
 
-/-- The message padded to a whole number of 64-byte blocks. -/
-def pad (message : ByteArray) : ByteArray := Id.run do
-  let bits := message.size * 8
-  let mut out := message.push 0x80
+/-- The last bytes of a message of `total` bytes (fewer than 64), padded to one or two whole
+64-byte blocks: `0x80`, zeros, then the message length in bits, big-endian. -/
+def padTail (rest : ByteArray) (total : Nat) : ByteArray := Id.run do
+  let bits := total * 8
+  let mut out := rest.push 0x80
   while out.size % 64 != 56 do out := out.push 0
   for i in [0:8] do out := out.push (UInt8.ofNat ((bits >>> (8 * (7 - i))) % 256))
   return out
@@ -34,7 +35,8 @@ def word (bytes : ByteArray) (at_ : Nat) : UInt32 :=
   (bytes.get! at_).toUInt32 <<< 24 ||| (bytes.get! (at_ + 1)).toUInt32 <<< 16 |||
   (bytes.get! (at_ + 2)).toUInt32 <<< 8 ||| (bytes.get! (at_ + 3)).toUInt32
 
-def compress (state : Array UInt32) (bytes : ByteArray) (offset : Nat) : Array UInt32 := Id.run do
+/-- The message schedule `W[0..63]` of the block at `offset`. -/
+def schedule (bytes : ByteArray) (offset : Nat) : Array UInt32 := Id.run do
   let mut w : Array UInt32 := Array.mkEmpty 64
   for t in [0:16] do w := w.push (word bytes (offset + 4 * t))
   for t in [16:64] do
@@ -43,25 +45,32 @@ def compress (state : Array UInt32) (bytes : ByteArray) (offset : Nat) : Array U
     let s0 := rotr x 7 ^^^ rotr x 18 ^^^ (x >>> 3)
     let s1 := rotr y 17 ^^^ rotr y 19 ^^^ (y >>> 10)
     w := w.push (w[t - 16]! + s0 + w[t - 7]! + s1)
-  let mut a := state[0]!
-  let mut b := state[1]!
-  let mut c := state[2]!
-  let mut d := state[3]!
-  let mut e := state[4]!
-  let mut f := state[5]!
-  let mut g := state[6]!
-  let mut h := state[7]!
-  for t in [0:64] do
+  return w
+
+/-- Rounds `t..63` on the working variables (a recursive function, so the eight words stay
+unboxed), then the working variables. -/
+def rounds (w : Array UInt32) (t : Nat) (a b c d e f g h : UInt32) : UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 :=
+  if t < 64 then
     let t1 := h + (rotr e 6 ^^^ rotr e 11 ^^^ rotr e 25) + ((e &&& f) ^^^ (~~~e &&& g)) + k[t]! + w[t]!
     let t2 := (rotr a 2 ^^^ rotr a 13 ^^^ rotr a 22) + ((a &&& b) ^^^ (a &&& c) ^^^ (b &&& c))
-    h := g; g := f; f := e; e := d + t1; d := c; c := b; b := a; a := t1 + t2
-  return #[state[0]! + a, state[1]! + b, state[2]! + c, state[3]! + d,
+    rounds w (t + 1) (t1 + t2) a b c (d + t1) e f g
+  else (a, b, c, d, e, f, g, h)
+termination_by 64 - t
+
+def compress (state : Array UInt32) (bytes : ByteArray) (offset : Nat) : Array UInt32 :=
+  let (a, b, c, d, e, f, g, h) := rounds (schedule bytes offset) 0
+    state[0]! state[1]! state[2]! state[3]! state[4]! state[5]! state[6]! state[7]!
+  #[state[0]! + a, state[1]! + b, state[2]! + c, state[3]! + d,
     state[4]! + e, state[5]! + f, state[6]! + g, state[7]! + h]
 
+/-- The whole 64-byte blocks of the message are compressed where they lie; only the tail is
+copied to be padded. -/
 def digest (message : ByteArray) : Array UInt32 := Id.run do
-  let padded := pad message
+  let full := message.size / 64
   let mut state := initial
-  for block in [0:padded.size / 64] do state := compress state padded (64 * block)
+  for block in [0:full] do state := compress state message (64 * block)
+  let tail := padTail (message.extract (64 * full) message.size) message.size
+  for block in [0:tail.size / 64] do state := compress state tail (64 * block)
   return state
 
 def hexDigit (n : Nat) : Char := "0123456789abcdef".toList[n % 16]!

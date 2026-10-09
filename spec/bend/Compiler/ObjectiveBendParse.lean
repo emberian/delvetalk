@@ -100,26 +100,31 @@ def run : Nat → Re → List Char → Nat → Caps → (List Char → Nat → C
 
 /-- Fuel for one match: proportional to the subject (each consumed character costs
 a bounded number of matcher frames for the patterns below). -/
-def matchFuel (s : List Char) : Nat := 64 * (s.length + 64)
+def matchFuel (length : Nat) : Nat := 64 * (length + 64)
 
 /-- The longest subject a pattern is matched against (one source line). Longer lines refuse
 rather than recurse that deep. -/
 def maxLine : Nat := 16384
 
-/-- A match anchored at the start (`^...`): `some captures`, `none`, or a capacity refusal. -/
-def anchored (r : Re) (s : List Char) : Except String (Option (Nat × Caps)) :=
-  if s.length > maxLine then .error "Error: source line capacity" else
-  match run (matchFuel s) r s 0 (Array.replicate 10 none) (fun _ stop caps => .found stop caps) with
+/-- A match anchored at the start (`^...`) of `s`, whose length is `length`: `some captures`,
+`none`, or a capacity refusal. -/
+def anchoredAt (r : Re) (s : List Char) (length : Nat) : Except String (Option (Nat × Caps)) :=
+  if length > maxLine then .error "Error: source line capacity" else
+  match run (matchFuel length) r s 0 (Array.replicate 10 none) (fun _ stop caps => .found stop caps) with
   | .found stop caps => .ok (some (stop, caps))
   | .none => .ok none
   | .exhausted => .error "Error: source line capacity"
 
+def anchored (r : Re) (s : List Char) : Except String (Option (Nat × Caps)) := anchoredAt r s s.length
+
 /-- An unanchored test (`/.../.test`): a match starting anywhere. -/
 def searches (r : Re) (s : List Char) : Except String Bool := do
   let mut rest := s
+  let mut length := s.length
   for _ in [0:s.length + 1] do
-    if (← anchored r rest).isSome then return true
+    if (← anchoredAt r rest length).isSome then return true
     rest := rest.drop 1
+    length := length - 1
   return false
 
 def capture (s : List Char) (caps : Caps) (i : Nat) : Option (List Char) :=
@@ -293,6 +298,7 @@ def tokenRe : Re := alts [ident, seqs [many1 (.char asciiDigit), opt (chr 'n')],
 def tokenize (text : List Char) : Except String (Array Token) := do
   let mut tokens : Array Token := #[]
   let mut rest := text
+  let total := text.length
   let mut at_ := 0
   for _ in [0:text.length + 1] do
     match rest with
@@ -301,7 +307,7 @@ def tokenize (text : List Char) : Except String (Array Token) := do
       if jsSpace c then
         rest := tail; at_ := at_ + 1
       else
-        let some (stop, _) ← anchored tokenRe rest
+        let some (stop, _) ← anchoredAt tokenRe rest (total - at_)
           | throw ("Error: unsupported expression at column " ++ toString (utf16Length (text.take at_)))
         tokens := tokens.push ⟨rest.take stop, at_, at_ + stop⟩
         rest := rest.drop stop; at_ := at_ + stop
@@ -541,9 +547,15 @@ def liftAt {α : Type} (line : Line) (x : Except String α) : PS α :=
   | .error e => fail line e
 def matchAt (line : Line) (r : Re) (s : List Char) : PS (Option (Nat × Caps)) := liftAt line (anchored r s)
 
-/-- `String.prototype.lastIndexOf` (character index; equal prefixes, so equal bytes). -/
-def lastIndexOf (hay needle : List Char) : Nat :=
-  ((List.range (hay.length + 1)).reverse.find? (fun i => needle.isPrefixOf (hay.drop i))).getD 0
+/-- `String.prototype.lastIndexOf` (character index; equal prefixes, so equal bytes); `0` when
+absent. -/
+def lastIndexOf (hay needle : List Char) : Nat := Id.run do
+  let mut found := 0
+  let mut rest := hay
+  for i in [0:hay.length + 1] do
+    if needle.isPrefixOf rest then found := i
+    rest := rest.drop 1
+  return found
 
 /-- `expr(text, line)`: an expression found at its last occurrence in the line; its errors
 become line diagnostics. -/
