@@ -1,28 +1,10 @@
-"""Helpers shared by the suites: the legacy list shape and an independent DAG-CBOR / CID encoder.
+"""Helpers shared by the suites: an independent DAG-CBOR / CID encoder.
 
-`relist` turns the wire's `{"tag":"list","items":[...]}` back into the `nil` / `cons` chain that
-older tests walk. The host emits arrays now and still accepts the chain on input for one release;
-suites that read replies through a Host helper see the chain until they read arrays directly.
+Lists cross the wire as `{"tag":"list","items":[...]}` in both directions; the host refuses a
+`nil` / `cons` chain on input ("cons chains are no longer accepted on the wire; send a list").
 """
 import base64
 import hashlib
-import sys
-
-sys.setrecursionlimit(max(sys.getrecursionlimit(), 20000))  # a legacy chain is one level per element
-
-
-def relist(node):
-    if isinstance(node, list):
-        return [relist(x) for x in node]
-    if not isinstance(node, dict):
-        return node
-    if node.get("tag") == "list" and isinstance(node.get("items"), list):
-        out = {"tag": "variant", "label": "nil", "payload": {"tag": "record", "fields": []}}
-        for item in reversed(node["items"]):
-            out = {"tag": "variant", "label": "cons", "payload": {"tag": "record", "fields": [
-                {"name": "head", "value": relist(item)}, {"name": "tail", "value": out}]}}
-        return out
-    return {k: relist(v) for k, v in node.items()}
 
 
 def cbor_head(major, n):

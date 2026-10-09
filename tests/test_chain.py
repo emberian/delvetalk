@@ -24,7 +24,7 @@ def empty():
 
 
 def nil():
-    return {"tag": "variant", "label": "nil", "payload": empty()}
+    return {"tag": "list", "items": []}
 
 
 def reference(name):

@@ -12,7 +12,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import binary
-from tests.wire import cid_of, relist
+from tests.wire import cid_of
 BINARY = binary()
 
 COUNTER = """edition ObjectiveBend 1
@@ -63,7 +63,7 @@ class Host:
     def send(self, **request):
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
-        return relist(json.loads(self.proc.stdout.readline()))
+        return json.loads(self.proc.stdout.readline())
 
     def close(self):
         self.proc.stdin.close()

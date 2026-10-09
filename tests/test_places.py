@@ -15,10 +15,7 @@ NOBODY = reference("")
 
 
 def listing(items):
-    wire = nil()
-    for item in reversed(items):
-        wire = {"tag": "variant", "label": "cons", "payload": record(head=item, tail=wire)}
-    return wire
+    return {"tag": "list", "items": list(items)}
 
 
 def place_seed(name, exits=(), present=(), things=()):
@@ -37,12 +34,7 @@ def avatar_seed(handle, at="", holding=()):
 
 
 def names(wire):
-    out = []
-    while wire["label"] == "cons":
-        fields = {f["name"]: f["value"] for f in wire["payload"]["fields"]}
-        out.append([f["value"]["value"] for f in fields["head"]["fields"] if f["name"] == "object"][0])
-        wire = fields["tail"]
-    return out
+    return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in wire["items"]]
 
 
 class Types(unittest.TestCase):
@@ -122,7 +114,7 @@ class Floor(Chain):
         self.assertEqual(self.result_label(dropped), "done", dropped)
         self.assertIn("Lying here: stone\n", self.card("porch"))
         view = self.state("stone")
-        self.assertEqual(names({"label": "cons", "payload": record(head=[f for f in view["fields"] if f["name"] == "holder"][0]["value"], tail=nil())}), [""])
+        self.assertEqual(names(listing([[f for f in view["fields"] if f["name"] == "holder"][0]["value"]])), [""])
         self.assertEqual(self.version("porch"), 1)
         self.assertEqual(self.version("stone"), 1)
         self.assertEqual(self.holding("glm"), [])
@@ -158,11 +150,9 @@ class Floor(Chain):
     def inbox(self, name):
         wire = [f["value"] for f in self.state(name)["fields"] if f["name"] == "inbox"][0]
         out = []
-        while wire["label"] == "cons":
-            fields = {f["name"]: f["value"] for f in wire["payload"]["fields"]}
-            note = {f["name"]: f["value"]["value"] for f in fields["head"]["fields"]}
+        for item in wire["items"]:
+            note = {f["name"]: f["value"]["value"] for f in item["fields"]}
             out.append((note["from"], note["text"]))
-            wire = fields["tail"]
         return out
 
     def test_acquire_of_a_held_thing_is_refused_by_name(self):

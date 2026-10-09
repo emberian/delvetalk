@@ -52,6 +52,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Spell.obend as Spell
+import ./Form.obend as Form
 record Arg:
   n: Nat
 record State:
@@ -93,8 +94,8 @@ def ask(state: State, input: {utterance: String, policy: String}, context: Abi.C
     case timedOut(_): note(context, 0n, "timedOut")
     case denied(_): note(context, 0n, "denied")
     case _: note(context, 0n, "other")
-def offered() -> Lists.List<Spell.Form>:
-  Lists.List::<Spell.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Spell.Field>.nil()}, tail: Lists.List::<Spell.Form>.nil()})
+def offered() -> Lists.List<Form.Form>:
+  Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
 def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: {n: 0n}})):
     case delivery(_): note(context, 0n, "sent")
@@ -268,7 +269,7 @@ class Inspect(Reflection):
         mine = self.host.send(op="world-inspect", principal="ember", object="secret")
         self.assertEqual(mine["status"], "inspected", mine)
         self.assertEqual(mine["source"], PACKAGE)
-        self.assertEqual(len(mine["pin"]), 64)
+        self.assertTrue(mine["pin"].startswith("bafyrei") and len(mine["pin"]) == 59, mine["pin"])   # a CID
         self.assertIn("owner", mine["law"])
         stranger = self.host.send(op="world-inspect", principal="kim", object="secret")
         self.assertEqual(stranger["status"], "denied")

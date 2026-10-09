@@ -89,7 +89,15 @@ def decode : Nat → Json → Work Data
         return .record values.reverse
     | "variant" =>
         exact json ["tag", "label", "payload"]
-        return .variant (← json.getObjValAs? String "label") (← decode depth (← json.getObjVal? "payload"))
+        let value := Data.variant (← json.getObjValAs? String "label") (← decode depth (← json.getObjVal? "payload"))
+        if (listItems? value).isSome then throw consChainRefusal
+        return value
+    | "list" =>
+        exact json ["tag", "items"]
+        let mut items := #[]
+        for item in ← (← json.getObjVal? "items").getArr? do
+          items := items.push (← decode depth item)
+        return listData items
     | _ => throw "unknown typed data tag"
 
 structure Quoted where

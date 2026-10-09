@@ -9,7 +9,7 @@ import os
 import subprocess
 import unittest
 
-from tests.wire import cid_of, relist
+from tests.wire import cid_of
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import binary
@@ -152,28 +152,19 @@ def library_modules(*names):
 
 
 def nil():
-    return variant("nil")
+    return {"tag": "list", "items": []}
 
 
 def cons(head, tail):
-    return variant("cons", {"tag": "record", "fields": [
-        {"name": "head", "value": head}, {"name": "tail", "value": tail}]})
+    return {"tag": "list", "items": [head] + tail["items"]}
 
 
 def from_list(items):
-    out = nil()
-    for item in reversed(items):
-        out = cons(item, out)
-    return out
+    return {"tag": "list", "items": list(items)}
 
 
 def to_list(data):
-    out = []
-    while data["label"] == "cons":
-        fields = {f["name"]: f["value"] for f in data["payload"]["fields"]}
-        out.append(fields["head"])
-        data = fields["tail"]
-    return out
+    return data["items"]
 
 
 def plan_field(plan, name):
@@ -193,7 +184,7 @@ class Host:
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
         assert line, "host closed its output (crash)"
-        return relist(json.loads(line))
+        return json.loads(line)
 
     def compile(self, source, entry, library=()):
         reply = self.send({"op": "compile", "entry": entry,

@@ -108,10 +108,7 @@ def seed(count=0, last_by="ember", entries=None, planting=""):
 
 
 def items(*texts):
-    out = nil()
-    for text in reversed(texts):
-        out = {"tag": "variant", "label": "cons", "payload": record(head=label(text), tail=out)}
-    return out
+    return {"tag": "list", "items": [label(text) for text in texts]}
 
 
 def text_of(result):

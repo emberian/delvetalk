@@ -28,7 +28,7 @@ def listData (items : Array Data) : Data :=
   items.foldr (fun h t => .variant "cons" (.record [("head", h), ("tail", t)])) (.variant "nil" (.record []))
 
 /-- Typed data on the wire: typed-values-v1 plus `variant`, and `list`: a proper list is
-`{"tag":"list","items":[...]}`, not a nested chain. The decoder still accepts the chain. -/
+`{"tag":"list","items":[...]}`, not a nested chain. The decoder refuses the chain. -/
 partial def dataJson (data : Data) : Json :=
   match listItems? data with
   | some items => Json.mkObj [("tag",toJson "list"),("items",Json.arr (items.map dataJson))]
@@ -55,6 +55,11 @@ partial def dataJsonBytes (data : Data) : Nat :=
       + (fields.length - 1)
   | .variant label payload => 37 + (toJson label).compress.utf8ByteSize + dataJsonBytes payload
 
+/-- A list is `{"tag":"list","items":[...]}` on the wire. A `nil` / `cons` chain of
+variants that forms a proper list (the in-memory shape) is refused by name; a `cons`
+whose tail is not a list is an ordinary variant, which `dataJson` also prints as one. -/
+def consChainRefusal : String := "cons chains are no longer accepted on the wire; send a list"
+
 def decodeNatural (json : Json) : Except String Data := do
   let text ← json.getObjValAs? String "value"
   let some n := text.toNat? | throw "response natural must be canonical decimal"
@@ -76,7 +81,9 @@ def decodeData : Nat → Json → Except String Data
       let items ← (← json.getObjVal? "items").getArr?
       return listData (← items.mapM (decodeData fuel))
     else if tag == "variant" then
-      return .variant (← json.getObjValAs? String "label") (← decodeData fuel (← json.getObjVal? "payload"))
+      let value := Data.variant (← json.getObjValAs? String "label") (← decodeData fuel (← json.getObjVal? "payload"))
+      if (listItems? value).isSome then throw consChainRefusal
+      return value
     else throw "unknown response data tag"
 
 end Minidregg.Compiler.ObjectiveBendDataWire
