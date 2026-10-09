@@ -154,6 +154,8 @@ structure Proposal where
   turn : Nat := 0
   /-- Reprograms: object, package source, migration entry ("" for none). -/
   programs : List (String × (String × String)) := []
+  /-- Objects whose reprogram is an extension over their current code (`mode: extend`). -/
+  layered : List String := []
   /-- Amendments: object, new law text. -/
   laws : List (String × String) := []
   /-- Objects the turn required absent, and objects it creates (a subset). -/
@@ -261,6 +263,7 @@ def Proposal.digest (p : Proposal) : String :=
   let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
   Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots), ("writes", writesJson p.allWrites)] ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
+    (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
     (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)]) ++
     (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++
     (if p.creates.isEmpty then [] else [("creates", Json.arr (p.creates.toArray.map fun (id, c) => Json.mkObj
@@ -547,6 +550,53 @@ def replaceSource (inputs : Json) (source : String) : Except String Json := do
     return inputs.setObjVal! "modules" (.arr (modules.pop.push (Json.mkObj [("name", toJson name), ("source", toJson source)])))
   | _ => return inputs.setObjVal! "source" (toJson source)
 
+/-! ## Extension
+
+`reprogram {mode: extend}` (Plan `extend`) appends the offered source as a new module, a layer,
+over the object's current modules. The layer sees the current entry module as `Super` (the host
+adds `import ./<entry>.obend as Super` after its `edition` line when it lacks it, so its line
+numbers in diagnostics are one more than the author's), defines what it overrides, and every
+method it does not define is the code below it: `delegate` drops layers until the top one
+defines the entry. `inputs.layers` counts them. -/
+
+/-- The definitions a source declares at the top level (`def NAME`). -/
+def definedNames (source : String) : List String :=
+  (source.splitOn "\n").filterMap fun line =>
+    (line.dropPrefix? "def ").map fun rest => (rest.toString.takeWhile fun c => c.isAlphanum || c == '_').toString
+
+def layersOf (inputs : Json) : Nat := (inputs.getObjValAs? Nat "layers").toOption.getD 0
+
+/-- The compile inputs whose entry module defines `name`: the layers that do not are dropped. -/
+def delegate (inputs : Json) (name : String) : Json := Id.run do
+  let mut inputs := inputs
+  for _ in [0:layersOf inputs] do
+    let some (.arr ms) := (inputs.getObjVal? "modules").toOption | break
+    let some top := ms.back? | break
+    if (definedNames ((top.getObjValAs? String "source").toOption.getD "")).contains name then break
+    inputs := (inputs.setObjVal! "modules" (.arr ms.pop)).setObjVal! "layers" (toJson (layersOf inputs - 1))
+  return inputs
+
+/-- The inputs with `source` as one more layer over the current entry module. -/
+def extendInputs (inputs : Json) (source : String) : Except String Json := do
+  let modules ← match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => pure ms
+    | _ => pure #[Json.mkObj [("name", toJson "Main"), ("source", toJson (← inputs.getObjValAs? String "source"))]]
+  let some top := modules.back? | throw "package has no modules"
+  let below ← top.getObjValAs? String "name"
+  let n := layersOf inputs + 1
+  let name := s!"Layer{n}"
+  if modules.any fun m => (m.getObjValAs? String "name").toOption == some name then
+    throw s!"the package already has a module named {name}"
+  let importLine := s!"import ./{below}.obend as Super"
+  let lines := source.splitOn "\n"
+  let withSuper := if lines.any (·.trimAscii.toString == importLine) then source else
+    match lines with
+    | first :: rest => "\n".intercalate (first :: importLine :: rest)
+    | [] => importLine
+  let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "source" && k != "modules" && k != "layers"
+  return Json.mkObj ([("modules", .arr (modules.push (Json.mkObj [("name", toJson name), ("source", toJson withSuper)]))),
+    ("layers", toJson n)] ++ fields)
+
 /-- The method table and the Bend-law shape an artifact records. -/
 def artifactShape (artifact : Json) : Json × Bool × Bool :=
   let law := (artifact.getObjVal? "law").toOption.getD Json.null
@@ -555,23 +605,27 @@ def artifactShape (artifact : Json) : Json × Bool × Bool :=
 
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
-def prepareProgram (w : World) (o : Object) (source migration : String) : Except (String × String) Program := do
+def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
+    Except (String × String) Program := do
   if source.utf8ByteSize > Limits.maxPackageBytes then
     throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
-  let replaced ← (replaceSource o.inputs source).mapError (("compile", ·))
+  let replaced ← (if extend then extendInputs o.inputs source else replaceSource o.inputs source).mapError (("compile", ·))
   -- A reprogram is compiled against the library the world has now.
   let inputs ← (match w.library with
     | some lib => if (replaced.getObjVal? "library").toOption.isSome then
         pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
     | none => pure replaced)
-  let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
+  let resolved := fun (entry : String) => (resolveInputs w ((delegate inputs entry).setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
   let (artifact, ty, _) ← (Package.compileKeepingLaws (← resolved "initial")).mapError (("compile", ·))
   let decoded ← (do
     Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
   let assumptions := decoded.source.assumptions
   unless stateTypeOk assumptions ty do
     throw ("compile", "initial() must return a closed record of first-order data")
-  let pin ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
+  let compiledPin ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
+  -- An extension's code is its layer over the code it extends, whatever `initial` it reaches.
+  let pin := if extend then Journal.bodyHash (Json.arr #[toJson "extend", toJson o.pin, toJson (Journal.bodyHash (toJson source))])
+    else compiledPin
   let same := ty == o.stateType &&
     (← (relevantBounds assumptions.bounds ty).mapError (("stateType", ·))) ==
       (← (relevantBounds o.bounds o.stateType).mapError (("stateType", ·)))
@@ -588,21 +642,31 @@ def prepareProgram (w : World) (o : Object) (source migration : String) : Except
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
       pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid, none⟩)
-  let (methods, predicate, predicateReads) := artifactShape artifact
+  let (methods, predicate, predicateReads) ← if !extend then pure (artifactShape artifact) else do
+    -- The layer's own table (compiled with one of its definitions as the entry), then every
+    -- method below it that the layer does not override; the law shape is the layer's if it
+    -- declares a law, else the code's below.
+    let own := definedNames source
+    let some first := own.head? | throw ("compile", "an extension defines nothing")
+    let (layerArtifact, _, _) ← (Package.compileKeepingLaws (← (resolveInputs w (inputs.setObjVal! "entry" (toJson first))).mapError (("compile", ·)))).mapError (("compile", ·))
+    let (mine, lawHere, readsHere) := artifactShape layerArtifact
+    let rows := (mine.getArr?.toOption.getD #[]) ++ ((o.methods.getArr?.toOption.getD #[]).filter fun m =>
+      !own.contains ((m.getObjValAs? String "name").toOption.getD ""))
+    pure (Json.arr rows, lawHere || o.predicate, if lawHere then readsHere else o.predicateReads)
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
            methods, predicate, predicateReads }
 
-def programKey (o : Object) (source migration : String) : String :=
-  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration
+def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
+  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
 
-def programFor (w : World) (o : Object) (source migration : String) : Except (String × String) Program :=
-  match w.programs[programKey o source migration]? with
+def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false) : Except (String × String) Program :=
+  match w.programs[programKey o source migration extend]? with
   | some p => pure p
-  | none => prepareProgram w o source migration
+  | none => prepareProgram w o source migration extend
 
-def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) : World :=
+def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false) : World :=
   if w.programs.size < Limits.maxPreparedPrograms then
-    { w with programs := w.programs.insert (programKey o source migration) p }
+    { w with programs := w.programs.insert (programKey o source migration extend) p }
   else w
 
 /-! ## Sources by CID
@@ -777,7 +841,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     let mut state := written
     if let some (source, migration) := p.programs.lookup id then
       let refuse := fun (clause message : String) => Refusal.mk "programRefused" (some clause) (some id) (some message)
-      let prog ← match programFor w o source migration with
+      let extend := p.layered.contains id
+      let prog ← match programFor w o source migration extend with
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
       if let some m := prog.migration then
@@ -792,7 +857,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
                        predicate := prog.predicate, predicateReads := prog.predicateReads }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin), ("source", toJson source), ("migration", toJson migration),
-        ("result", dataJson state)]]
+        ("result", dataJson state)] |> fun j => if extend then j.setObjVal! "mode" (toJson "extend") else j]
     -- The current law judges the whole write, under the pin the object will run. Every
     -- kind of change the object undergoes in this turn is judged, once for each object
     -- that called the running one to make it: the subject is the principal, the caller
@@ -1356,6 +1421,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let recordedLaws := (outcome.getObjVal? "amendments").toOption.bind (·.getArr?.toOption) |>.getD #[]
     let programs ← recordedPrograms.toList.mapM fun r => do
       return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration"))
+    let layered := recordedPrograms.toList.filterMap fun r =>
+      if (r.getObjValAs? String "mode").toOption == some "extend" then (r.getObjValAs? String "object").toOption else none
     let laws ← recordedLaws.toList.mapM fun r => do
       return (← r.getObjValAs? String "object", ← r.getObjValAs? String "new")
     let recordedCreates := (outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption) |>.getD #[]
@@ -1368,7 +1435,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
     let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent }
+                          absent, creates, grants, revokes, spent, layered }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     match judge w (w.height + 1) p with

@@ -130,6 +130,7 @@ sum Plan<E>:
   offer: Offering
   publish: Publish
   reprogram: {object: Reference, package: String, migration: String}
+  extend: {object: Reference, package: String, migration: String}
   amend: {object: Reference, law: String}
   inspect: {object: Reference}
   check: {package: String}

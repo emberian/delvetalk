@@ -124,6 +124,23 @@ def boundsOf (j : Json) : Except String DataBounds := do
 def sortedBy {α : Type} (xs : List α) (key : α → String) : List α :=
   (xs.toArray.qsort fun a b => key a < key b).toList
 
+/-- Compile inputs with each source the journal carries named by its CID; a source no entry
+    carries (a reprogram's or an extension's module) stays whole. -/
+def knownByCid (w : World) (inputs : Json) : Json :=
+  let compact := compactInputs inputs
+  let restore := fun (m : Json) (src : String) =>
+    if w.modules.contains (sourceCid src) then m
+    else Json.mkObj [("name", (m.getObjVal? "name").toOption.getD Json.null), ("source", toJson src)]
+  match inputs.getObjVal? "modules", compact.getObjVal? "modules" with
+  | .ok (.arr full), .ok (.arr ms) =>
+    compact.setObjVal! "modules" (.arr ((ms.zip full).map fun (m, f) =>
+      match f.getObjValAs? String "source" with
+      | .ok src => restore m src
+      | .error _ => m))
+  | _, _ => match inputs.getObjValAs? String "source" with
+    | .ok src => if w.modules.contains (sourceCid src) then compact else inputs
+    | .error _ => compact
+
 /-- The suspended activities and pending deliveries `record` derives, as their identities. -/
 def derived (w : World) : List (String × Json) :=
   [("clock", toJson w.clock),
@@ -144,7 +161,7 @@ def body (w : World) (binary : String) : Except String Json := do
         ("predicateReads", toJson o.predicateReads)])]
     out := out.push (Json.mkObj [("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
       ("version", toJson o.version), ("state", dataJson o.state), ("read", o.read.json),
-      ("chain", o.chain.json), ("compile", compactInputs o.inputs)])
+      ("chain", o.chain.json), ("compile", knownByCid w o.inputs)])
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)

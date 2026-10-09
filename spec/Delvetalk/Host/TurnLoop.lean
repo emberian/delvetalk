@@ -98,6 +98,7 @@ structure TurnState where
   spent : List (String × Nat) := []
   sends : List Send := []
   programs : List (String × (String × String)) := []
+  layered : List String := []
   laws : List (String × String) := []
   ticks : Nat
   plans : Nat := 0
@@ -173,7 +174,8 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
   match s.world.compiled[key]? with
   | some c => return c
   | none =>
-    let inputs := obj.inputs.setObjVal! "entry" (toJson method)
+    -- An extended object's method is compiled from the highest layer that defines it.
+    let inputs := (delegate obj.inputs method).setObjVal! "entry" (toJson method)
     match resolveInputs s.world inputs >>= Package.compileKeepingLaws with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (artifact, ty, _) =>
@@ -603,10 +605,14 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           spendGrant via
           let result ← runMethod (depth + 1) id method argument self subject via
           respond bounds responseType "returned" [.record [("result", result)]]
-  | .variant "reprogram" (.record f) =>
+  | .variant "reprogram" (.record f) | .variant "extend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed reprogram plan"
     let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
     let some migration := (f.lookup "migration").bind labelOf | evaluation "malformed reprogram plan"
+    -- `extend {…}`, or `reprogram {…, mode: "extend"}`: a layer over the current code.
+    let extend := match plan with
+      | .variant "extend" _ => true
+      | _ => ((f.lookup "mode").bind labelOf) == some "extend"
     let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
     let s ← get
     let some o := s.world.objects[id]? | refusedWith bounds responseType "unknownObject"
@@ -614,14 +620,15 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     -- the target, and the target's own law judges it with request.caller = the proposer.
     let proposer := if id == self then caller else self
     if s.programs.any (·.1 == id) then refusedWith bounds responseType "duplicate"
-    else match programFor s.world o source migration with
+    else match programFor s.world o source migration extend with
       | .error (clause, _) => refusedWith bounds responseType clause
       | .ok prog =>
         recordRoot id o.version
         if !(← ensureWrite id proposer 1) then refusedWith bounds responseType "capacity"
         else
-          modify fun s => { s with world := cacheProgram s.world o source migration prog,
-                                   programs := s.programs ++ [(id, (source, migration))] }
+          modify fun s => { s with world := cacheProgram s.world o source migration prog extend,
+                                   programs := s.programs ++ [(id, (source, migration))],
+                                   layered := if extend then s.layered ++ [id] else s.layered }
           respond bounds responseType "reprogrammed" [.record [("pin", .label prog.pin)]]
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
@@ -899,6 +906,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       writes := st.writes
       turn := w.height + 1
       programs := st.programs
+      layered := st.layered
       laws := st.laws
       absent := st.absent
       creates := st.creates
@@ -929,6 +937,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("roots", rootsJson st.roots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
+      ("extends", toJson st.layered),
       ("programs", Json.arr (st.programs.toArray.map fun (id, (src, mig)) => Json.mkObj
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
       ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
@@ -1108,6 +1117,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       spent := ← parseSpent (act.getObjVal? "spent").toOption
       sends := sends
       programs := programs
+      layered := strings (act.getObjVal? "extends").toOption
       laws := laws
       ticks := ticks
       offers := (((act.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun o =>
@@ -1254,6 +1264,10 @@ def reprogramOp (w : World) (j : Json) : Except String (World × Json) := do
   let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
   let source ← j.getObjValAs? String "package"
   let migration := (← optText j "migration").getD ""
+  let extend ← match (← optText j "mode") with
+    | none | some "replace" => pure false
+    | some "extend" => pure true
+    | some other => throw s!"mode must be replace or extend, not {other}"
   let version ← natField j "version"
   if (j.getObjVal? "turn").toOption.isSome then throw "turn is assigned by the host and cannot be supplied"
   let p : Proposal :=
@@ -1261,13 +1275,14 @@ def reprogramOp (w : World) (j : Json) : Except String (World × Json) := do
       intent := intent
       roots := [(object, version)]
       writes := []
-      programs := [(object, (source, migration))] }
+      programs := [(object, (source, migration))]
+      layered := if extend then [object] else [] }
   if let some r := retained w principal intent p.digest then return (w, r)
   match w.objects[object]? with
   | none => return commit w p
-  | some o => match programFor w o source migration with
+  | some o => match programFor w o source migration extend with
     | .error (clause, message) => return withProgramRefusal w p clause message
-    | .ok prog => return commit (cacheProgram w o source migration prog) p
+    | .ok prog => return commit (cacheProgram w o source migration prog extend) p
 
 /-- `world-revoke {principal, identity, grant}`: the grantor's own write to the grant, outside any
     object: the grant stops standing with this entry. Anyone else is refused `notGrantor`. -/

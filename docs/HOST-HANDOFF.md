@@ -362,6 +362,23 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    one-artifact-per-package lands). Pure methods (`render`, a state-returning method) still go through
    `Package.executeDataValues`, which decodes per call.
 
+18. **Extend, not replace (host4, FOUNDATION 13 row 3).** `world-reprogram {…, mode: "extend"}` (`mode` is
+   `replace` by default; anything else is a request error) and Plan `extend {object, package, migration}`
+   (Plan.obend; `reprogram` with a `mode: "extend"` field is honoured too) add the source as a module `Layer<n>`
+   over the object's modules (`extendInputs`; `inputs.layers` counts them). Bend's `extension X(self, super)`
+   composes records under `fix`; an object's package is a module of top-level methods, so the host realizes the
+   extension at module level: the layer sees the code below as `Super` (the host adds
+   `import ./<module below>.obend as Super` after the `edition` line unless present, so the layer's diagnostics
+   are one line later than its author's), and `delegate` compiles each method from the highest layer that
+   defines it, everything else from below (no late binding: a method below that calls another sees its own
+   module's). A layer that declares `type State = Super.State` gets its methods in the method table (the
+   compiler lists only `state: State` methods); the object's table is the layer's rows plus the rows below it
+   does not override. The new pin is the CID of `["extend", old pin, source CID]`; the state type must be the
+   same or a migration named, as for replace; the target's law judges kind 1 as for any reprogram; the
+   recorded reprogram carries `mode: "extend"` and `Proposal.layered` replays it. Snapshots keep whole any
+   source no entry carries by CID (`knownByCid`; reprogrammed and extended objects' modules), which also fixed
+   snapshots of reprogrammed objects.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
