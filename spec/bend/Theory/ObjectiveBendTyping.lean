@@ -308,6 +308,18 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.perform plan) (.computation planType response response) uses
+  /-- Hosted extension: first-order data injected into the universal `Data`
+  type. The only rule that produces `Data`; there is no elimination. -/
+  | toData {context : Context} {value : Term} {type : Ty} {uses : Uses} :
+      PartialTyping assumptions context value type uses →
+      type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
+      PartialTyping assumptions context (.toData value) .data uses
+  /-- Hosted extension: join a `List<String>` with a String separator. -/
+  | textJoin {context : Context} {list separator : Term} {listType : Ty} {lu su : Uses} :
+      listType.isTextList assumptions.bounds = true →
+      PartialTyping assumptions context list listType lu →
+      PartialTyping assumptions context separator .label su →
+      PartialTyping assumptions context (.textJoin list separator) .label (addUses lu su)
   /-- A pure value where an activity is expected. -/
   | done {context : Context} {value : Term} {planType response result : Ty} {uses : Uses} :
       PartialTyping assumptions context value result uses → result.isComputation = false →
@@ -597,6 +609,19 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
               .perform (.conversion value.derivation (agree_sameType hs)) hp hr⟩
           else none
         else none
+      else none
+  | fuel + 1, .textJoin list separator => do
+      let l ← infer assumptions annotations context (position ++ [0]) fuel list
+      let s ← infer assumptions annotations context (position ++ [1]) fuel separator
+      if hl : l.type.isTextList assumptions.bounds = true then
+        if hs : s.type = .label then
+          some ⟨.label, addUses l.uses s.uses, .textJoin hl l.derivation (hs ▸ s.derivation)⟩
+        else none
+      else none
+  | fuel + 1, .toData inner => do
+      let value ← infer assumptions annotations context (position ++ [0]) fuel inner
+      if hd : value.type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
+        some ⟨.data, value.uses, .toData value.derivation hd⟩
       else none
   | fuel + 1, .done inner => do
       -- The annotation at `done` names the activity's Plan and response types.
@@ -1102,6 +1127,7 @@ def decodeTypeWith (table : Array (Ty × Nat)) : Nat → Json → Except String 
         pure (entry, depth)
     | "natural" => pure (.natural, 1) | "label" => pure (.label, 1)
     | "boolean" => pure (.boolean, 1) | "emptyRow" => pure (.emptyRow, 1)
+    | "data" => pure (.data, 1)
     | "variable" => return (.variable (← jsonNat (← value.getObjVal? "index")), 1)
     | "custody" => return (.custody (← jsonNat (← value.getObjVal? "identity")), 1)
     | "field" =>
@@ -1201,6 +1227,8 @@ def decodeTerm : Nat → Json → Except String Term
     | "ifBool" => return .ifBool (← sub "condition") (← sub "whenTrue") (← sub "whenFalse")
     | "perform" => return .perform (← sub "plan")
     | "done" => return .done (← sub "value")
+    | "toData" => return .toData (← sub "value")
+    | "textJoin" => return .textJoin (← sub "list") (← sub "separator")
     | _ => .error "unknown Objective runtime constructor"
 
 def decodeLambda (table : Array (Ty × Nat)) (value : Json) : Except String LambdaAnnotation := do
@@ -1266,6 +1294,7 @@ def typeJson : Ty → Json
   | .label => Json.mkObj [("tag",toJson "label")]
   | .boolean => Json.mkObj [("tag",toJson "boolean")]
   | .emptyRow => Json.mkObj [("tag",toJson "emptyRow")]
+  | .data => Json.mkObj [("tag",toJson "data")]
   | .variable index => Json.mkObj [("tag",toJson "variable"),("index",toJson (toString index))]
   | .custody identity => Json.mkObj [("tag",toJson "custody"),("identity",toJson (toString identity))]
   | .field name member tail => Json.mkObj [("tag",toJson "field"),("name",toJson name),
@@ -1470,6 +1499,21 @@ unrestricted binder either. -/
 theorem computation_not_shareable (plan response result : Ty) (variables : List Nat) :
     (Ty.computation plan response result).shareableUnder variables = false := rfl
 
+/-- Rule to-data: first-order data enters the universal type `Data`... -/
+theorem record_to_data_accepted :
+    (check ⟨.toData (.record [("a",.nat 1),("b",.label "x")]),fun _ => none,{}⟩ [] 32).map
+      (fun checked => checked.type) = some .data := by decide
+/-- ...a closure does not... -/
+theorem closure_to_data_refused :
+    (check ⟨.toData (.lam (.bound 0)),
+      fun position => if position = [0] then some ⟨.natural,.natural,.unrestricted,.reusable⟩ else none,{}⟩
+      [] 32).isNone = true := by decide
+/-- ...and `Data` has no elimination: it is not a number, a record or a sum. -/
+theorem data_not_eliminated :
+    (check ⟨.binary .add (.toData (.nat 1)) (.nat 1),fun _ => none,{}⟩ [] 32).isNone = true ∧
+    (check ⟨.get (.toData (.record [("a",.nat 1)])) "a",fun _ => none,{}⟩ [] 32).isNone = true := by decide
+
+#assert_axioms record_to_data_accepted closure_to_data_refused data_not_eliminated
 #assert_axioms exhaustive_case_accepted reordered_arms_accepted missing_arm_refused
   extra_arm_refused undeclared_injection_refused unannotated_injection_refused
   arm_results_must_agree equality_branch_accepted label_condition_refused label_equality_accepted

@@ -183,12 +183,14 @@ def natural(text: String) -> String:
 
 
 class Maximum(unittest.TestCase):
-    """Cost model, measured: a scalar of a field line costs about 21.6 ticks (one
-    break at 6, one take and one drop at 8 each, because take and drop are
-    charged 2 x min(size, 4 x scalars)), plus about 400 ticks of fixed work per
-    line. Bytes after a --- rule are never scanned. A 4,096-byte reply whose
-    every byte is in a field line therefore does not fit the default 100,000
-    ticks; one with 64 fields and a rule fits."""
+    """Cost model, measured: take and drop are charged 2 x the bytes of the prefix
+    they traverse (an exact bounded scan, no longer 2 x min(size, 4 x scalars)),
+    break 2 x (|alphabet| + 2) per visited scalar, plus about 400 ticks of fixed
+    work per line. Bytes after a --- rule are never scanned. A 4,096-byte reply
+    with 64 fields and a rule parses in about 57,000 ticks; one whose every byte
+    is in a field line (4,057 bytes) in about 65,000: both fit the default
+    100,000 ticks (the dense one needed 1,000,000 under the 4-bytes-per-scalar
+    charge)."""
 
     def reply(self, value_size, rule=True):
         lines = ["delvetalk garden-1 plant"] + ["f%02d: %s" % (i, "v" * value_size) for i in range(64)]
@@ -208,15 +210,17 @@ class Maximum(unittest.TestCase):
         self.assertEqual(out["value"]["value"], "64")
         self.assertLess(out["ticksUsed"], 100000)
 
-    def test_a_dense_4057_byte_reply_needs_a_larger_budget(self):
+    def test_a_dense_4057_byte_reply_fits_the_default_budget(self):
         reply = self.reply(57, rule=False)
         self.assertEqual(len(reply.encode()), 4057)
         default = run("fieldCount", text(reply))
-        raised = run("fieldCount", text(reply), limits={"ticks": "1000000"})
-        print("  dense 4057 bytes: default budget %s; at 1,000,000 ticks %s ticks" % (default["status"], raised.get("ticksUsed")))
-        self.assertEqual(default["status"], "refused", default)
-        self.assertTrue(default["failure"].endswith("tickExhausted"))
-        self.assertEqual(raised["value"]["value"], "64")
+        print("  dense 4057 bytes: default budget %s, %s ticks" % (default["status"], default.get("ticksUsed")))
+        self.assertEqual(default["status"], "finished", default)
+        self.assertEqual(default["value"]["value"], "64")
+        self.assertLess(default["ticksUsed"], 100000)
+        starved = run("fieldCount", text(reply), limits={"ticks": "20000"})
+        self.assertEqual(starved["status"], "refused", starved)
+        self.assertTrue(starved["failure"].endswith("tickExhausted"))
 
     def test_a_4096_byte_prose_reply_is_cheap(self):
         out = run("parse", text("word " * 819))

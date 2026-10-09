@@ -210,7 +210,7 @@ def typeOf : Nat → Nat → List (String × GType) → String → M GType
       let some declaration ← resolve origin name | throw ("unknown generic type " ++ name)
       if kind declaration.ast != "sum" then throw ("generic type is not a sum: " ++ name)
       return ← instantiate fuel declaration args
-    if ["Nat", "Bool", "String", "_", "", "Self", "Super", "SpecMeta", "SpecClaims"].contains text then
+    if ["Nat", "Bool", "String", "Data", "_", "", "Self", "Super", "SpecMeta", "SpecClaims"].contains text then
       return .atom text
     let some declaration ← resolve origin text | throw ("unknown source type in specialization: " ++ text)
     if !(parameters declaration.ast).isEmpty then throw ("generic type needs explicit arguments: " ++ text)
@@ -276,6 +276,14 @@ def rewrite : Nat → Nat → String → List (String × GType) → List String 
         if !(parameters declaration.ast).isEmpty then
           throw ("unspecialized generic export is unsupported: " ++ name ++ " in " ++ (← originModule origin).name ++
             " at " ++ (field j "span").compress ++ "; export an ordinary checked definition")
+    if kind j == "call" && kind (field j "callee") == "specialize" &&
+        path locals (field (field j "callee") "target") == some "Data.of" &&
+        (← resolve origin "Data").isNone then
+      let #[typeArgument] := array (field j "callee") "types" | throw "Data.of takes exactly one type argument"
+      let #[value] := array j "args" | throw "Data.of takes exactly one value"
+      let rendered ← rewriteType (← typeArgument.getStr?)
+      return Json.mkObj [("kind", "dataOf"), ("type", toJson rendered), ("value", ← recur value),
+        ("span", field j "span")]
     if kind j == "specialize" then
       let some name := path locals (field j "target") | throw "generic specialization requires an unshadowed declaration"
       let some declaration ← resolve origin name | throw ("unknown generic declaration: " ++ name)

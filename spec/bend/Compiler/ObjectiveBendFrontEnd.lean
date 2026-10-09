@@ -35,13 +35,17 @@ structure Diagnostic where
   message : String
   span : Option ObjectiveBendParse.Span := none
   sourceModule : Option String := none
+  /-- A one-line statement of the real form when the refused source shows a known
+  dialect habit (hosted front end, `Delvetalk.Hints`); never affects acceptance. -/
+  hint : Option String := none
   deriving Inhabited, Repr
 
 def Diagnostic.json (d : Diagnostic) : Json :=
   Json.mkObj ([("schema", toJson "dregg.bend.compiler-diagnostic.v1"), ("stage", toJson d.stage),
     ("message", toJson d.message)] ++
     (match d.span with | some s => [("span", s.json)] | none => []) ++
-    (match d.sourceModule with | some m => [("module", toJson m)] | none => []))
+    (match d.sourceModule with | some m => [("module", toJson m)] | none => []) ++
+    (match d.hint with | some h => [("hint", toJson h)] | none => []))
 
 def elaborationRefusal (message : String) : Diagnostic := { stage := "objective-core-elaboration", message }
 

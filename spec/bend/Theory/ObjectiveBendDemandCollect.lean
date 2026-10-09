@@ -46,6 +46,9 @@ def frameAddresses : Frame → List Nat
   | .update address => [address]
   | .field _ | .reflect | .metadata | .project | .nativeArgument _ | .unary _ => []
   | .binaryRight _ value => valueAddresses value
+  | .joinSeparator _ environment => environment
+  | .joinList .. | .joinCons .. => []
+  | .joinHead _ _ _ tail => [tail]
 
 def controlAddresses : Control → List Nat
   | .evaluate _ environment => environment
@@ -95,6 +98,10 @@ def renameFrame (f : Nat → Nat) : Frame → Frame
   | .ifBool whenTrue whenFalse environment => .ifBool whenTrue whenFalse (environment.map f)
   | .nativeArgument value => .nativeArgument value
   | .unary primitive => .unary primitive
+  | .joinSeparator list environment => .joinSeparator list (environment.map f)
+  | .joinList separator accumulated first => .joinList separator accumulated first
+  | .joinCons separator accumulated first => .joinCons separator accumulated first
+  | .joinHead separator accumulated first tail => .joinHead separator accumulated first (f tail)
 
 def renameControl (f : Nat → Nat) : Control → Control
   | .evaluate term environment => .evaluate term (environment.map f)
@@ -183,7 +190,8 @@ so a forced accumulator keeps alive every environment it was ever computed from 
 `settle` gives every cached cell the SELF origin `⟨.bound 0, [address]⟩` ("read this
 cell"): it retains nothing but the cell itself, it is lexically valid wherever the cell
 is, and it is typed at the cell's own assigned type, so a settled state is typed exactly
-when the state was (`typed_settle`). Suspended and evaluating cells are untouched (their
+when the state was (Mini's `typed_settle`; this edition has no state-typing judgment
+to port it to). Suspended and evaluating cells are untouched (their
 origin is what they will run). Settling changes no transition (`settle_resume_segment`
 in `Theory.ObjectiveBendDemandSettleProofs`: every bounded run, extraction and resume
 agrees exactly, capacity suspensions included, because heap sizes are unchanged). -/

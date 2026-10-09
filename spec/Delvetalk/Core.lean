@@ -29,6 +29,8 @@ def inspect (t : Term) : View t :=
   | .bound _ => .stuck
   | .perform p => .yield p [] (.perform p)
   | .done v => .step v (.done v)
+  | .toData v => .step v (.toData v)
+  | .textJoin l s => .step (textJoinExpansion l s) (.textJoin l s)
   | .mix a b => .step (mixBody a b) (.mix a b)
   | .fix s i => .step (.app (.app s (.fix s i)) i) (.fix s i)
   | .app f a => match f with
@@ -183,6 +185,8 @@ partial def decode (j : Json) : Except String Term := do
       | _ => throw "unknown unary primitive"
     return .unary op (← t 2)
   | "done" => arity 1; return .done (← t 1)
+  | "toData" => arity 1; return .toData (← t 1)
+  | "textJoin" => arity 2; return .textJoin (← t 1) (← t 2)
   | _ => throw s!"unknown term constructor {tag}"
 
 private def arr (tag : String) (args : List Json) : Json := .arr ((.str tag :: args).toArray)
@@ -213,6 +217,8 @@ partial def encode (t : Term) : Json :=
   | .ifBool c a b => arr "ifBool" [encode c,encode a,encode b]
   | .perform p => arr "perform" [encode p]
   | .done v => arr "done" [encode v]
+  | .toData v => arr "toData" [encode v]
+  | .textJoin l s => arr "textJoin" [encode l, encode s]
 
 partial def run (t : Term) (fuel : Nat) (responses : List Term) (plans : Array Json := #[]) : String × Term × Array Json :=
   match inspect t with

@@ -24,7 +24,7 @@ ARITIES = {"bound": 2, "lam": 2, "app": 3, "mix": 3, "fix": 3,
            "specification": 3, "prototype": 3, "reflect": 2, "metadata": 2,
            "project": 2, "nat": 2, "boolean": 2, "label": 2, "binary": 4,
            "extend": 3, "record": 2, "get": 3, "ifZero": 4, "inject": 3,
-           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "unary": 3}
+           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "toData": 2, "textJoin": 3, "unary": 3}
 
 
 def valid_string(value):
@@ -179,6 +179,23 @@ def unary(name, argument):
     return None
 
 
+def join_expansion(items, separator):
+    """textJoin's meaning: case on the list, then the fold `go accumulated rest`
+    (a fix of four lambdas) appending separator ++ head; the separator sits
+    under six binders inside go's cons arm."""
+    shifted = shift(separator, 6)
+    body = ["case", ["bound", 0], [
+        ["nil", ["bound", 2]],
+        ["cons", ["app", ["app", ["bound", 4],
+                          ["binary", "textConcat", ["bound", 2],
+                           ["binary", "textConcat", shifted, ["get", ["bound", 0], "head"]]]],
+                  ["get", ["bound", 0], "tail"]]]]]
+    go = ["fix", ["lam", ["lam", ["lam", ["lam", body]]]], ["record", []]]
+    return ["case", items, [["nil", ["label", ""]],
+                            ["cons", ["app", ["app", go, ["get", ["bound", 0], "head"]],
+                                      ["get", ["bound", 0], "tail"]]]]]
+
+
 def focus(term):
     """Return the unique evaluation-position redex and its outer context.
 
@@ -248,15 +265,17 @@ def contract(term):
         return None if body is None else instantiate(body, term[1][2])
     elif tag == "ifBool" and term[1][0] == "boolean":
         return term[2] if term[1][1] else term[3]
-    elif tag == "done":
+    elif tag in {"done", "toData"}:
         return term[1]
+    elif tag == "textJoin":
+        return join_expansion(term[1], term[2])
     return None
 
 
 def reducible(term):
     """Recognize a root step without executing it (especially at zero fuel)."""
     tag = term[0]
-    if tag in {"mix", "fix", "done"}:
+    if tag in {"mix", "fix", "done", "toData", "textJoin"}:
         return True
     if tag == "app":
         return term[1][0] in {"lam", "specification"}
