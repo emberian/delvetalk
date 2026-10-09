@@ -130,12 +130,25 @@ def skipped(state):
     return set(path.read_text().split()) if path.exists() else set()
 
 
-def route(host, obs):
+MAX_HOPS = 32
+
+
+def route(host, obs, known=None):
     """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
     card word applies only to posts with no journaled parent. TODO(Directory): drop the summon special
     case once Directory is reachable by replying to the journaled welcome post."""
-    for ancestor in dict.fromkeys(u for u in (obs['replyTo'], obs.get('root')) if u):  # the parent, then the thread root
+    known, seen, ancestor = known or {}, set(), obs['replyTo']
+    for _ in range(MAX_HOPS):  # the nearest recorded ancestor, walking replyTo through what the observer stored
+        if not ancestor or ancestor in seen:
+            break
+        seen.add(ancestor)
         got = host.send({'op': 'world-addressee', 'parent': ancestor})
+        if got.get('object'):
+            return got['object'], got.get('slot')
+        ancestor = (known.get(ancestor) or {}).get('replyTo')
+    root = obs.get('root')
+    if root and root not in seen:  # then the thread root
+        got = host.send({'op': 'world-addressee', 'parent': root})
         if got.get('object'):
             return got['object'], got.get('slot')
     if obs['kind'] == 'spell':
@@ -200,10 +213,12 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
         poll(Observer(state, poll.client))
     tick(host, now)
     done, failed, skip = [], [], skipped(state)
-    for obs in pending_observations(state):
+    observed = pending_observations(state)
+    known = {o['uri']: o for o in observed}
+    for obs in observed:
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
-        target = route(host, obs)
+        target = route(host, obs, known)
         if target is None:
             with open(state / 'skipped.txt', 'a') as f:
                 f.write(obs['uri'] + '\n')

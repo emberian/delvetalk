@@ -240,6 +240,32 @@ class Routing(BridgeCase):
         self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
         self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])
 
+    def test_a_deep_reply_routes_to_the_nearest_recorded_ancestor(self):
+        u = lambda n: f'at://{DID}/town.delve.feed.post/t{n}'
+        stub = Stub({u(2): {'status': 'addressee', 'object': 'garden-1'}, u(1): {'status': 'addressee', 'object': 'wrong'}})
+        posts = [mk(1, 'root post'), mk(2, 'recorded', parent=u(1)), mk(3, 'third', parent=u(2)), mk(4, 'fourth', parent=u(3))]
+        for i, (p, n) in enumerate(zip(posts, range(1, 5))):
+            p['uri'] = u(n)
+            p['record']['createdAt'] = f'2026-10-09T10:00:0{i}Z'
+        posts[3]['record']['reply']['root'] = {'uri': u(1), 'cid': 'x'}
+        self.observe(posts)
+        bridge.run(self.state, stub)
+        turns = {t['identity'][-2:]: t['object'] for t in stub.ops if t['op'] == 'world-turn'}
+        self.assertEqual(turns['t4'], 'garden-1')  # 4 -> 3 (unknown) -> 2 (recorded): nearest, not the root
+        asked = [o['parent'] for o in stub.ops if o['op'] == 'world-addressee']
+        self.assertEqual(turns['t2'], 'wrong')  # its own parent is the recorded post 1
+        self.assertEqual(asked.count(u(1)), 1)  # only t2 asked about the root; t3 and t4 stopped at post 2
+        self.assertEqual(turns['t3'], 'garden-1')
+
+    def test_the_walk_is_bounded_and_survives_a_cycle(self):
+        a, b = f'at://{DID}/town.delve.feed.post/ca', f'at://{DID}/town.delve.feed.post/cb'
+        stub = Stub()
+        x, y = mk(1, 'x', parent=b), mk(2, 'y', parent=a)
+        x['uri'], y['uri'] = a, b
+        self.observe([x, y])
+        bridge.run(self.state, stub)
+        self.assertLessEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), 4)
+
     def test_card_word_still_routes_a_post_with_no_journaled_parent(self):
         stub = Stub()
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
