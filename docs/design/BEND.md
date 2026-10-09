@@ -72,3 +72,51 @@ change this behavior as DelveTalk source, or must a developer edit the harness?
 Moving the Python workflow interpreter into Lean also fails this test. The native
 boundary should validate and enact explicit effects; the program that chooses and
 composes them must remain available to Bend authors.
+
+## Make source sufficient for inhabitants
+
+The replacement requires language ergonomics as well as correct ownership. These
+fronts extend the decision above; they are not claims of completed implementation.
+
+- **One explicit prelude.** Share Context, Origin, encounters, effect data and
+  collection definitions through the sealed module mechanism. A convenient
+  implicit import must still resolve to a retained dependency, never ambient
+  mutable source. Reuse existing collection modules before inventing another List.
+- **Text computation.** Add deliberate, tested text construction and inspection
+  semantics, including concatenation and numeric rendering. Decide Unicode
+  length/slicing and resource charging before installing primitives. Check the
+  upstream language boundary; distinguish a declared extension from the pinned
+  normative core. Objects must be able to describe their own changing contents.
+- **Collections with explicit bounds.** Replace hand-enumerated mail, consent and
+  appointment slots with collection algorithms where supported. Keep capacity,
+  per-turn work and causal growth as explicit budgets. Lists alone do not make
+  evaluation efficient: measure an inhabited room with 200 objects, including
+  view construction and action preparation, before choosing representation or
+  evaluator improvements.
+- **References with precise meaning.** Design a typed distinction between text,
+  resolved object identity and authenticated provenance. A host-minted identity
+  value can prevent accidental text substitution; it does not automatically
+  confer authority or prove that someone observed the object. Specify minting,
+  serialization, revalidation and law checks before adding a primitive. Prefer
+  an opaque host-profile type if it suffices; a core extension needs justification.
+- **One current language boundary.** Remove the tagged JSON expression evaluator
+  as its application consumers become Bend programs. Keep structural effect/data
+  encodings. Collapse unlaunched profile ladders at their consumers; supported
+  semantic distinctions should be expressed deliberately, not as archaeological
+  version choices presented to inhabitants.
+- **Examples live with behavior.** Put executable domain examples beside source
+  and expose them through the same governed inspection interface. Extend the
+  source example runner for multiobject behavior where necessary. Keep external
+  crash, process, authentication, transport and differential tests: a domain
+  example cannot establish those boundary properties by itself.
+- **A quick private workshop.** An explicitly installed scratch law can allow
+  immediate checked revision by its authorized builder. Shared review is another
+  authored policy, not a compulsory host ceremony. Both face current law, exact
+  preimages and invariants; promotion to shared governance is an explicit change.
+
+Room-local verb resolution belongs in a revisable Bend library using governed
+observations and offered actions. It should return alternatives or a partial
+intention when ambiguous, and must not gain unrestricted read access by being a
+parser. Model-assisted interpretation can use the same finite set of affordances.
+Physical clock drivers and bounded receive-to-send chains connect this library to
+the durable collaboration design in [composition](COMPOSITION.md).

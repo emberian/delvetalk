@@ -31,6 +31,15 @@ establish neither deployment nor a general proof.
 
 ## Remaining work
 
+**Architectural correction:** the [Bend implementation decision](docs/design/BEND.md)
+owns the replacement direction. Its shared prelude, text/collection support,
+reference semantics, removal of competing expression interpreters, source examples
+and scratch editing are design/build work, not completed capabilities. Existing
+workflow helpers must be replaced at their consumers. See also
+[composition](docs/design/COMPOSITION.md) and [encounters](docs/design/ENCOUNTERS.md).
+The lane table below records the preceding integration wave; it is not the full
+backlog or evidence that the replacement work has been assigned.
+
 | Work | Owner |
 | --- | --- |
 | Integrate checked named prototypes and `let`/`extend` frontend repairs | Root |
