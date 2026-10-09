@@ -296,3 +296,37 @@ Merged: `interpret` becomes an `await` on a slot the model's principal settles;
 `offer` and `publish` become one `post {to}`; Bell/Door wiring becomes an
 `observers` convention. Still true after this step: Plans are the only effect
 language, Python decides nothing, and every entry is a record.
+
+## 13. The traditions, applied (decided 2026-10-09 night)
+
+A theorist read the affordances against the literature. What applies, in the
+order it will be built, each with the tradition it comes from:
+
+| # | Integration | From | Smallest version | Owner |
+| --- | --- | --- | --- | --- |
+| 1 | Commutative edits commit against moved roots | op-based CRDTs; Mini's `add_writes_commute` | a root whose steps are all `add`/`append` is checked present, not exact: the host re-applies on the current state and re-judges there; `amend`/`remove` address items by canonical bytes, not index | host, objects |
+| 2 | The browser and derived affordances | Smalltalk; edit lenses | `inspected {…, methods: List<{name, form}>}` from the compiler's own method table; a `Lens {field, form, put}` per exposed field so `render` emits forms and `Spell` derives the putback; `delvetalk bell-1 ?` lists every action | kernel, host, objects |
+| 3 | Extend, not replace; render with a point of view | Faré's prototypes and points of view | `reprogram {mode: extend}` compiles an `extension X(self, super)` over the current pin; `render(state, context)` so one state renders a member's and a stranger's card | host, objects |
+| 4 | Handlers as cards; `judge` as a dry run | algebraic effects and handlers | `run {object, method, argument, handler}` offers the callee's yields to a handler card first; `judge {edits}` answers the verdict without committing; needs the universal `Data` | host |
+| 5 | Supervisors | Erlang/OTP | an object names a supervisor; the host delivers `ended {receipt}` on `timedOut`, `broken` or `budget` | host |
+
+Two judgments. **Law is two-tier.** The one-line fragment stays mandatory: it
+is printed on the card, it is cheap, and the metarule "a law must admit an
+amendment by its own proposer" is decided on it alone, so no budget or bug can
+seal out the proposer's hand. An optional Bend predicate
+`law(old: State, new: State, request: Request) -> Verdict`, pure, pinned with
+the package, run by the host under `Limits.lawTicks`, may refine it; its
+`Request` carries the context, method, argument, kind, pin and the states of
+objects the law declares as reads, which the host records as roots. This is
+what the town's laws need (`tooSoon`, `request.method`, `proxy.active`) without
+a third language. **Capabilities are not kernel values.** A capability matters
+across turns and across the wire, where the kernel's affinity does not reach;
+grants stay journaled objects the host checks at admission, completed with
+attenuation (a grant may bind part of the argument), a use count, and
+revocation by the grantor as a write to the grant. The confused deputy the
+town rediscovered is answered by `via`, never by impersonation.
+
+Not adopted: linear types at the affordance level (the slot's single
+generation already is the affine resource), relational laws (a solver is a
+second kernel), Datalog over the journal (the Bend predicate with declared
+reads says the same under the same budget).
