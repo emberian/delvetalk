@@ -260,13 +260,15 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         obj, slot = target
         handle, did = obs['author']['handle'], obs['author']['did']
         register(state, host, did, handle)
-        # Every card's receive takes exactly {text, post, slot} (world/lib/Card.obend Heard); the
-        # author is the turn's principal; slot is "" when the reply answers no awaiting post.
+        # A card's receive takes {text, post}; the author is the turn's principal. The slot is the host's
+        # to fill (receiveArgument), so it is never sent. replyTo makes the turn the recorded post's answer.
         fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},
-                  {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}},
-                  {'name': 'slot', 'value': {'tag': 'label', 'value': '' if slot is None else slot if isinstance(slot, str) else json.dumps(slot)}}]
-        reply = host.send({'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
-                           'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']})
+                  {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
+        request = {'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
+                   'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']}
+        if obs['replyTo']:
+            request['replyTo'] = obs['replyTo']
+        reply = host.send(request)
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
