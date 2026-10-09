@@ -621,16 +621,16 @@ def make_server(portal, port=0, *, agents=None):
             if agents is not None and (url.path == '/AGENTS.md' or url.path.startswith('/AGENTS.md/')):
                 return agents.handle(self, method, url.path, q)
             if portal.public:
-                allowed = {'GET': {'/', '/static/app.js', '/static/style.css', '/api/world',
+                allowed = {'GET': {'/', '/static/app.js', '/static/theme.js', '/static/style.css', '/api/world',
                                    '/api/object', '/api/card', '/api/child', '/api/detail', '/api/draft', '/api/preparation'},
-                           'HEAD': {'/', '/static/app.js', '/static/style.css', '/api/world'},
+                           'HEAD': {'/', '/static/app.js', '/static/theme.js', '/static/style.css', '/api/world'},
                            'POST': {'/api/prepare', '/api/interpret'}}
                 if url.path not in allowed.get(method, set()):
                     raise PermissionError('This relation is unavailable on a public preview')
             if method in ('GET', 'HEAD'):
-                if url.path in ('/', '/static/app.js', '/static/style.css'):
-                    name = {'/': 'index.html', '/static/app.js': 'app.js', '/static/style.css': 'style.css'}[url.path]
-                    mime = {'index.html': 'text/html', 'app.js': 'text/javascript', 'style.css': 'text/css'}[name]
+                if url.path in ('/', '/static/app.js', '/static/theme.js', '/static/style.css'):
+                    name = {'/': 'index.html', '/static/app.js': 'app.js', '/static/theme.js': 'theme.js', '/static/style.css': 'style.css'}[url.path]
+                    mime = {'index.html': 'text/html', 'app.js': 'text/javascript', 'theme.js': 'text/javascript', 'style.css': 'text/css'}[name]
                     return self.respond(200, (STATIC / name).read_bytes(), mime + '; charset=utf-8')
                 if url.path == '/api/world':
                     exact(q, ()); result = portal.world()

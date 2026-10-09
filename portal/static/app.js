@@ -2,9 +2,22 @@
 
 // World text is data: no HTML insertion, source evaluation, or generated URLs.
 const $ = id => document.getElementById(id);
+const themeRoot = document.querySelector(':root');
+const themePreference = $('theme-preference');
+themePreference.value = ['light', 'dark'].includes(themeRoot.dataset.theme) ? themeRoot.dataset.theme : 'system';
+themePreference.addEventListener('change', () => {
+  const preference = ['light', 'dark'].includes(themePreference.value) ? themePreference.value : 'system';
+  themePreference.value = preference;
+  themeRoot.dataset.theme = preference;
+  try {
+    if (preference === 'system') localStorage.removeItem('delvetalk.theme');
+    else localStorage.setItem('delvetalk.theme', preference);
+  } catch { /* The selected palette still applies for this page. */ }
+});
+
 const state = { world: null, card: null, draft: null, preparation: null, preparationGeneration: 0, detail: null, generation: 0, routeGeneration: 0, location: location.href, sending: false, uncertain: false };
 const authoring = { draft: null, pending: false, preparing: false, uncertain: false, source: null, sourceText: null, rawFiles: {}, status: null };
-const agentSession = { token: '', me: null, generation: 0, readGeneration: 0, prepareGeneration: 0, card: null, conversation: null, conversations: new Map(), proposal: null, sending: false, uncertain: false, challenge: null, proof: null };
+const agentSession = { token: '', me: null, surface: 'studio', generation: 0, readGeneration: 0, prepareGeneration: 0, card: null, conversation: null, conversations: new Map(), proposal: null, sending: false, uncertain: false, challenge: null, proof: null };
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
 function element(tag, className, content) {
   const node = document.createElement(tag);
@@ -82,9 +95,20 @@ function renderObjects() {
     $('objects').append(button);
   }
   if (!$('objects').childElementCount) $('objects').append(element('p', 'muted', 'No objects here yet.'));
+  if (state.world.next) {
+    const next = element('button', 'secondary', 'Next page');
+    next.type = 'button';
+    next.addEventListener('click', () => busy(next, 'Reading…', async () => {
+      try { await loadWorld(state.world.next); }
+      catch (error) { throw new Error(`${error.message} Refresh the object shelf to start a new listing.`); }
+    }));
+    $('objects').append(next);
+  }
 }
-async function loadWorld() {
-  const world = await api('/api/world');
+async function loadWorld(path = '/api/world') {
+  const generation = state.catalogueGeneration = (state.catalogueGeneration || 0) + 1;
+  const world = await api(path);
+  if (generation !== state.catalogueGeneration) return state.world;
   state.world = world;
   $('agent-session').hidden = world.agents?.available === false;
   $('world-title').textContent = world.title || 'The workbench';
@@ -107,6 +131,7 @@ async function loadWorld() {
     : 'Copied tokens become proposals here. You decide whether to send them.';
   renderObjects();
   configureAuthoring(world.authoring);
+  if (agentSession.me) updateAgentWorkspace();
   return world;
 }
 function clearRepositoryRecord() {
@@ -1076,12 +1101,45 @@ function renderAgentIdentity() {
   const me = agentSession.me;
   $('agent-connect').hidden = Boolean(me);
   $('agent-connected').hidden = !me;
+  updateAgentWorkspace();
   if (!me) return;
-  $('agent-identity-label').textContent = me.did || me.accountId;
+  $('agent-identity-label').textContent = me.handle || `Connected · ${me.did.slice(0, 12)}…${me.did.slice(-4)}`;
+  $('agent-identity-label').title = me.did;
   const enabled = Object.entries(me.capabilities || {}).filter(([, value]) => value === true).map(([key]) => key);
   $('agent-capabilities').textContent = `Available here: ${enabled.length ? enabled.join(', ') : 'inspection only'}. Each write still faces the current world rules.`;
   $('agent-prepare').disabled = !agentHas('turn');
   $('agent-repl-form').hidden = !agentHas('repl');
+}
+function updateAgentWorkspace() {
+  const signedIn = Boolean(agentSession.me);
+  const focused = signedIn && agentSession.surface !== 'public';
+  document.querySelector('.workbench').classList.toggle('agent-focused', focused);
+  $('agent-sidebar').hidden = !focused;
+  $('resume-studio').hidden = !signedIn || focused;
+  $('objects').hidden = focused;
+  $('refresh-world').hidden = focused;
+  if (focused) {
+    $('agent-session').hidden = false;
+    $('agent-session').open = true;
+    $('agent-sidebar-controls').append($('agent-realm-controls'), $('agent-objects'));
+    const realm = $('agent-realm').value;
+    const name = realm === 'shared' ? 'Shared world' : 'Private studio';
+    $('world-title').textContent = name;
+    $('mode').textContent = name;
+    $('principal').textContent = 'Your identity';
+    $('footer-mode').textContent = realm === 'shared' ? 'A shared place, governed by its objects.' : 'Your source, notes and conversations.';
+    $('agent-machine-label').textContent = realm === 'private' ? 'Write Bend / inspect source' : 'Exact request';
+    document.querySelector('.skip').setAttribute('href', '#agent-encounter');
+    document.title = `${agentSession.card?.title || name} · DelveTalk`;
+  } else {
+    $('agent-session').hidden = signedIn || state.world?.agents?.available === false;
+    $('world-title').textContent = state.world?.title || 'The workbench';
+    $('mode').textContent = state.world?.mode === 'public-preview' ? 'Public preview' : state.world?.mode === 'local-interactive' ? 'Local world' : 'Read-only world';
+    $('principal').textContent = state.world?.principal ? `As ${state.world.principal}` : '';
+    document.title = `${state.card?.title || 'A small world'} · DelveTalk`;
+    document.querySelector('.skip').setAttribute('href', '#object-card');
+    $('footer-mode').textContent = state.world?.mode === 'public-preview' ? 'Temporary previews · copy what you want to keep.' : 'Every action begins as a draft.';
+  }
 }
 async function connectAgent(token) {
   if (agentSession.sending) throw new Error('Wait for the current reply before changing identity.');
@@ -1101,6 +1159,7 @@ async function connectAgent(token) {
     if (generation !== agentSession.generation) return;
     if (!me.did || !Array.isArray(me.realms)) throw new Error('The identity reply is missing its realm contract.');
     agentSession.me = me;
+    agentSession.surface = 'studio';
     $('agent-realm').replaceChildren();
     for (const realm of me.realms.filter(realm => realm === 'private' || realm === 'shared')) {
       const option = element('option', '', realm === 'private' ? 'Private studio' : 'Shared world');
@@ -1110,7 +1169,7 @@ async function connectAgent(token) {
     $('agent-realm').value = me.defaultRealm === 'shared' ? 'shared' : 'private';
     renderAgentIdentity();
     $('agent-proposal').hidden = !agentSession.proposal || agentSession.proposal.did !== me.did;
-    agentMessage('Connected as your verified identity. The public preview below remains available.');
+    agentMessage('Connected as your verified identity.');
     await readAgentWorld();
     await restoreAgentConversation();
   } catch (error) {
@@ -1145,28 +1204,53 @@ function disconnectAgent() {
   renderAgentIdentity();
   agentMessage('Disconnected. No API token is stored in this browser. Reconnect as the same identity to recover any proposal still open in this page.');
 }
-async function readAgentWorld() {
+async function readAgentWorld(path = null) {
   const generation = agentSession.generation;
   const read = ++agentSession.readGeneration;
   const realm = $('agent-realm').value;
   if (!agentSession.me || !['private', 'shared'].includes(realm)) return;
   $('agent-repl-form').hidden = realm !== 'private' || !agentHas('repl');
-  $('agent-encounter').hidden = true;
-  const { data } = await agentApi(`/AGENTS.md/world?realm=${realm}`);
+  const keepSelection = agentSession.card?.realm === realm;
+  if (!keepSelection) $('agent-encounter').hidden = true;
+  const { data } = await agentApi(path || `/AGENTS.md/world?realm=${realm}`);
   if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
   $('agent-objects').replaceChildren();
-  $('agent-root').hidden = true;
+  if (!keepSelection) $('agent-root').hidden = true;
   for (const object of data.objects || []) {
     if (typeof object.object !== 'string') continue;
-    const button = element('button', 'secondary', object.object);
+    const button = element('button', 'secondary', object.name || object.object);
+    button.title = object.object;
+    button.dataset.object = object.object;
+    button.setAttribute('aria-current', String(agentSession.card?.object === object.object && agentSession.card?.realm === realm));
     button.type = 'button';
     button.addEventListener('click', () => busy(button, 'Reading…', () => openAgentObject(object.object, realm)));
     $('agent-objects').append(button);
   }
   if (!$('agent-objects').childElementCount) $('agent-objects').append(element('p', 'help', 'No objects in this realm yet.'));
+  if (data.links?.next) {
+    const next = element('button', 'secondary', 'Next page');
+    next.type = 'button';
+    next.addEventListener('click', async () => {
+      next.disabled = true;
+      try { await readAgentWorld(data.links.next); }
+      catch (error) { agentMessage(`${error.message} Refresh this realm to start a new listing.`); }
+      finally { next.disabled = false; }
+    });
+    $('agent-objects').append(next);
+  }
   agentMessage(realm === 'private' ? 'Your private studio. Keep source, make objects, and return to your work.' : 'A shared place. Open an object to see what it offers your identity.');
-  const first = (data.objects || []).find(object => realm === 'private' ? object.object === 'notebook' : /garden/i.test(object.object)) || data.objects?.[0];
-  if (first) await openAgentObject(first.object, realm);
+  const first = (data.objects || []).find(object => object.object === data.defaultObject) || data.objects?.[0];
+  if (!keepSelection && first) await openAgentObject(first.object, realm);
+  updateAgentWorkspace();
+}
+async function refreshAgentWorld() {
+  const card = agentSession.card;
+  const generation = agentSession.generation;
+  await readAgentWorld();
+  // Paging preserves the captured reading; an explicit refresh asks the source
+  // for a new one. Do not displace a selection made while the shelf was loading.
+  if (generation === agentSession.generation && card && agentSession.card === card && card.realm === $('agent-realm').value)
+    await openAgentObject(card.object, card.realm);
 }
 async function openAgentObject(object, realm, captured = null) {
   const generation = agentSession.generation;
@@ -1175,6 +1259,8 @@ async function openAgentObject(object, realm, captured = null) {
   if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
   const card = response.data;
   agentSession.card = { ...card, realm };
+  updateAgentWorkspace();
+  for (const button of $('agent-objects').children) if (button.dataset.object) button.setAttribute('aria-current', String(button.dataset.object === object));
   $('agent-encounter-title').textContent = card.title || object;
   $('agent-encounter-prose').textContent = text(card.prose);
   $('agent-encounter').hidden = false;
@@ -1262,12 +1348,16 @@ async function prepareAgentAction(card, action, fields) {
     if (agentSession.card?.object === card.object && agentSession.card?.realm === card.realm) showAgentConversation(card, result);
   } else {
     if (read !== agentSession.readGeneration) return;
-    if (typeof result.draft !== 'string' || typeof result.intent !== 'string') throw new Error('The prepared turn is missing its retained intent.');
-    agentSession.conversations.delete(`${agentSession.me.did}|${card.realm}|${card.object}`);
-    $('agent-conversation').hidden = true;
-    showAgentProposal({ format: 'delvetalk-browser-turn-v1', did: agentSession.me.did, kind: 'draft', realm: card.realm,
-      intent: result.intent, draft: result.draft, summary: result.summary || 'An offered action', fields: result.fields || fields, wireJson: result.wireJson || '' });
+    showPreparedAgentDraft(card, result, fields);
   }
+}
+function showPreparedAgentDraft(card, draft, fields = {}) {
+  if (agentSession.sending || agentSession.uncertain) throw new Error('Recover the pending turn before preparing another.');
+  if (typeof draft?.draft !== 'string' || typeof draft.intent !== 'string') throw new Error('The prepared turn is missing its retained intent.');
+  agentSession.conversations.delete(`${agentSession.me.did}|${card.realm}|${card.object}`);
+  $('agent-conversation').hidden = true;
+  showAgentProposal({ format: 'delvetalk-browser-turn-v1', did: agentSession.me.did, kind: 'draft', realm: card.realm,
+    intent: draft.intent, draft: draft.draft, summary: draft.summary || 'An offered action', fields: draft.fields || fields, wireJson: draft.wireJson || '' });
 }
 function showAgentConversation(card, result) {
   agentSession.conversation = { card, result };
@@ -1377,7 +1467,7 @@ function showAgentProposal(proposal, restored = false) {
   agentSession.proposal = proposal;
   agentSession.uncertain = restored;
   $('agent-proposal').hidden = false;
-  $('agent-proposal-summary').textContent = `${proposal.summary || (proposal.kind === 'turn' ? 'Native request' : 'Bend program')} · ${proposal.realm === 'private' ? 'private studio' : 'shared world'} · ${restored ? 'restored with the same intent' : 'prepared, not sent'}. Keep the recovery record before sending.`;
+  $('agent-proposal-summary').textContent = `${proposal.summary || (proposal.kind === 'turn' ? 'Native request' : 'Bend program')} · ${proposal.realm === 'private' ? 'private studio' : 'shared world'} · ${restored ? 'restored with the same intent' : 'prepared, not sent'}.`;
   $('agent-proposal-json').textContent = JSON.stringify(proposal, null, 2);
   $('agent-proposal-fields').replaceChildren();
   for (const [key, value] of Object.entries(proposal.fields || {})) $('agent-proposal-fields').append(element('dt', '', key), element('dd', '', text(value)));
@@ -1472,8 +1562,10 @@ $('copy-agent-conversation').addEventListener('click', () => {
   copy(url.href, $('copy-agent-conversation'));
 });
 $('agent-disconnect').addEventListener('click', disconnectAgent);
+$('browse-public').addEventListener('click', () => { agentSession.surface = 'public'; updateAgentWorkspace(); });
+$('resume-studio').addEventListener('click', () => { agentSession.surface = 'studio'; updateAgentWorkspace(); });
 $('agent-realm').addEventListener('change', () => readAgentWorld().catch(error => agentMessage(error.message)));
-$('agent-refresh').addEventListener('click', () => busy($('agent-refresh'), 'Reading…', readAgentWorld));
+$('agent-refresh').addEventListener('click', () => busy($('agent-refresh'), 'Reading…', refreshAgentWorld));
 $('copy-agent-root').addEventListener('click', () => copy($('agent-root-json').textContent, $('copy-agent-root')));
 $('copy-agent-proposal').addEventListener('click', () => copy($('agent-proposal-json').textContent, $('copy-agent-proposal')));
 $('agent-turn-form').addEventListener('submit', event => { event.preventDefault(); try { newAgentProposal('turn', $('agent-request').value); } catch (error) { agentMessage(error.message); } });
@@ -1483,13 +1575,14 @@ $('agent-contribute').addEventListener('submit', event => {
   if (!card) return;
   busy($('agent-interpret'), 'Considering…', async () => {
     if (agentSession.sending || agentSession.uncertain) throw new Error('Recover the pending turn before preparing another.');
-    const generation = agentSession.generation, read = agentSession.readGeneration;
+    const generation = agentSession.generation, read = agentSession.readGeneration, preparation = ++agentSession.prepareGeneration;
     const original = $('agent-intention').value;
     const { data: proposal } = await agentApi('/AGENTS.md/turn', { realm: card.realm, operation: 'interpret', card: card.card, text: original });
-    if (generation !== agentSession.generation || read !== agentSession.readGeneration) return;
+    if (generation !== agentSession.generation || read !== agentSession.readGeneration || preparation !== agentSession.prepareGeneration) return;
     const target = $('agent-interpretation');
-    target.replaceChildren(element('blockquote', 'document-quote', original), element('p', '', proposal.message || proposal.summary || proposal.status));
-    if (proposal.status === 'proposed' && proposal.action) await prepareAgentAction(card, proposal.action, proposal.fields || {});
+    target.replaceChildren(element('blockquote', 'document-quote', original), element('p', '', proposal.message || proposal.summary || proposal.outcome?.message || (proposal.status === 'ready' ? 'A possibility is ready for your review.' : proposal.status)));
+    if (proposal.status === 'ready' && proposal.draft) showPreparedAgentDraft(card, proposal.draft);
+    else if (proposal.status === 'proposed' && proposal.action) await prepareAgentAction(card, proposal.action, proposal.fields || {});
     else if (proposal.status === 'partial' && proposal.action) renderPartialInterpretation(target, proposal, () => prepareAgentAction(card, proposal.action, proposal.fields || {}));
   });
 });

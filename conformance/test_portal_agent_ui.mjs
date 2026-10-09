@@ -26,21 +26,47 @@ const document = {
   querySelector: selector => document.getElementById(selector),
   getElementById: id => { if (!ids.has(id)) ids.set(id, new Node('div')); return ids.get(id); },
 };
+document.documentElement = document.querySelector(':root');
+const themeStorage = new Map([['delvetalk.theme', 'dark']]);
 const requests = [], copied = [], navigation = [];
 const location = { href: 'https://delvetalk.invalid/' };
 let responder = () => new Promise(() => {}), uuid = 0;
 const context = vm.createContext({
   document, location, URL, TextEncoder, TextDecoder,
+  localStorage: { getItem: key => themeStorage.get(key), setItem: (key, value) => themeStorage.set(key, value), removeItem: key => themeStorage.delete(key) },
   history: { replaceState(_, __, url) { navigation.push(String(url)); }, pushState(_, __, url) { navigation.push(String(url)); } },
   window: { addEventListener() {} }, matchMedia: () => ({ matches: true }),
   navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
   setTimeout() {}, crypto: { randomUUID: () => `intent-${++uuid}` },
   fetch: async (url, options) => { requests.push({ url, options }); return responder(url, options); },
 });
+vm.runInContext(readFileSync(new URL('../portal/static/theme.js', import.meta.url), 'utf8'), context);
 vm.runInContext(readFileSync(new URL('../portal/static/app.js', import.meta.url), 'utf8'), context);
 const node = id => document.getElementById(id);
 const evaluate = source => vm.runInContext(source, context);
 const response = data => ({ ok: true, status: 200, text: async () => JSON.stringify(data), json: async () => data });
+// Saved display preference is applied by the CSP-compatible prepaint script;
+// the live control only persists this preference, never identity or source.
+assert.equal(document.documentElement.dataset.theme, 'dark');
+assert.equal(node('theme-preference').value, 'dark');
+node('theme-preference').value = 'system';
+node('theme-preference').listeners.change();
+assert.equal(themeStorage.has('delvetalk.theme'), false);
+assert.equal(document.documentElement.dataset.theme, 'system');
+node('theme-preference').value = 'light';
+node('theme-preference').listeners.change();
+assert.equal(themeStorage.get('delvetalk.theme'), 'light');
+const availableStorage = context.localStorage;
+context.localStorage = { setItem() { throw new Error('Storage disabled'); } };
+node('theme-preference').value = 'dark';
+node('theme-preference').listeners.change();
+assert.equal(document.documentElement.dataset.theme, 'dark', 'Unavailable storage does not disable the in-page choice');
+context.localStorage = availableStorage;
+const isolatedRoot = { dataset: {} };
+vm.runInNewContext(readFileSync(new URL('../portal/static/theme.js', import.meta.url), 'utf8'), {
+  document: { documentElement: isolatedRoot }, localStorage: { getItem: () => 'invalid-theme' },
+});
+assert.equal(isolatedRoot.dataset.theme, undefined, 'Unknown saved preferences use the system palette');
 const identity = { accountId: 'account-one', did: 'did:plc:alice', defaultRealm: 'private', realms: ['private', 'shared'], capabilities: { turn: true, repl: true } };
 const exactRoot = '{"state":{"count":9007199254740993123456789},"version":0}';
 let outcome = 'unknown';
@@ -59,6 +85,17 @@ assert.equal(node('agent-connected').hidden, false);
 assert.equal(node('agent-realm').value, 'private');
 assert.match(node('agent-capabilities').textContent, /turn, repl/);
 assert.equal(node('agent-token').value, '');
+assert.equal(node('objects').hidden, true, 'The connected realm owns the main shelf');
+assert.equal(node('world-title').textContent, 'Private studio');
+assert.equal(node('agent-realm-controls').parentNode, node('agent-sidebar-controls'));
+node('browse-public').listeners.click();
+assert.equal(node('agent-session').hidden, true, 'Anonymous preview is a separate focus');
+assert.equal(node('objects').hidden, false);
+assert.equal(evaluate('agentSession.token'), 'secret-token', 'Focus changes do not discard credentials');
+node('resume-studio').listeners.click();
+assert.equal(node('agent-session').hidden, false);
+assert.equal(node('world-title').textContent, 'Private studio');
+
 for (const request of requests.filter(request => request.url.startsWith('/AGENTS.md'))) {
   assert.equal(request.options.headers.Authorization, 'Bearer secret-token');
   assert.equal(request.options.credentials, 'omit');
@@ -272,6 +309,24 @@ assert.equal(partialContinue.textContent, 'Continue with these details');
 await partialContinue.listeners.click();
 assert.equal(evaluate('agentSession.proposal.intent'), 'partial-intent');
 assert.equal(executionCalls, 1, 'Interpreting or continuing never auto-executes');
+// A source-owned completion already contains the exact prepared draft. The
+// browser must not re-interpret it as an action or construct another intent.
+let joinedRequests = 0;
+responder = async (url, options) => {
+  joinedRequests++;
+  const body = JSON.parse(options.body);
+  assert.equal(body.operation, 'interpret');
+  return response({ status: 'ready', via: 'source', interpretation: 'kept-reading',
+    draft: { draft: 'source-joined-draft', intent: 'source-joined-intent', summary: 'A kept thought', wireJson: exactRoot } });
+};
+node('agent-intention').value = 'Keep this thought';
+node('agent-contribute').listeners.submit({ preventDefault() {} });
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(joinedRequests, 1, 'Showing a joined draft does not prepare or execute again');
+assert.equal(evaluate('agentSession.proposal.draft'), 'source-joined-draft');
+assert.equal(evaluate('agentSession.proposal.intent'), 'source-joined-intent');
+assert.equal(evaluate('agentSession.proposal.wireJson'), exactRoot);
+assert.equal(node('agent-send').disabled, false);
 context.showAgentMembership({ status: 'pending' });
 assert.match(node('agent-membership-message').textContent, /identity is verified.*pending/);
 assert.equal(node('agent-membership-retry').hidden, false);
@@ -280,3 +335,53 @@ assert.match(node('agent-membership-message').textContent, /no automatic shared 
 assert.equal(node('agent-membership-retry').hidden, true);
 console.log('Authenticated UI: token/header isolation, enrollment proof, exact roots, explicit turns, realm separation and same-intent receipt recovery passed.');
 console.log('Living document: source structure, bound contextual forms/references, exact partial values, inert metadata/continuations and text-only rendering passed.');
+
+// Catalogue navigation fetches only the requested page and keeps selected work.
+evaluate("agentSession.token = 'pager-token'; agentSession.me = {did:'did:plc:alice',capabilities:{}}; agentSession.card = {object:'held',realm:'shared'};");
+node('agent-realm').value = 'shared';
+const pageNext = '/AGENTS.md/world?realm=shared&cursor=retained-page';
+let catalogueReads = 0, catalogueDrift = false;
+node('agent-root').hidden = false;
+responder = async url => {
+  catalogueReads++;
+  if (url === pageNext && catalogueDrift) return {ok:false,status:400,text:async()=>JSON.stringify({message:'stale catalogue cursor'})};
+  return response(url === pageNext
+    ? {objects:[{object:'two',name:'Second'}],links:{next:null}}
+    : {objects:[{object:'one',name:'First'}],links:{next:pageNext}});
+};
+await context.readAgentWorld();
+assert.equal(catalogueReads, 1);
+assert.equal(evaluate('agentSession.card.object'), 'held');
+assert.equal(node('agent-objects').children.at(-1).textContent, 'Next page');
+await node('agent-objects').children.at(-1).listeners.click();
+assert.equal(catalogueReads, 2);
+assert.equal(node('agent-root').hidden, false, 'Paging keeps exact inspection available');
+assert.equal(node('agent-objects').children[0].textContent, 'Second');
+assert.equal(evaluate('agentSession.card.object'), 'held');
+await context.readAgentWorld();
+catalogueDrift = true;
+await node('agent-objects').children.at(-1).listeners.click();
+assert.match(node('agent-message').textContent, /stale catalogue cursor.*Refresh/);
+assert.equal(node('agent-objects').children[0].textContent, 'First');
+console.log('Catalogue: explicit bounded next-page fetch, selected-work preservation and stale-page refresh guidance passed.');
+
+// Explicit Read again recaptures the held object, even if it is absent from the
+// first shelf page. Its old uncertain proposal remains the exact same intent.
+const retainedProposal = evaluate('JSON.stringify(agentSession.proposal)');
+evaluate('agentSession.uncertain = true');
+const refreshRequests = [];
+responder = async url => {
+  refreshRequests.push(url);
+  if (url.includes('&detail=')) return response({ exact: { root: exactRoot } });
+  if (url.includes('&object=held')) return response({ card: 'held-current', object: 'held', title: 'Current held object', prose: 'A fresh source reading.', actions: [] });
+  return response({ objects: [{ object: 'other', name: 'Other object' }], links: {} });
+};
+await node('agent-refresh').listeners.click();
+assert.equal(refreshRequests.length, 3, 'Refresh reads shelf, selected encounter, and captured detail');
+assert.ok(refreshRequests.some(url => url.includes('&object=held&view=encounter')));
+assert.equal(evaluate('agentSession.card.card'), 'held-current');
+assert.equal(node('agent-encounter-title').textContent, 'Current held object');
+assert.equal(node('agent-root').hidden, false);
+assert.equal(evaluate('JSON.stringify(agentSession.proposal)'), retainedProposal);
+assert.equal(evaluate('agentSession.uncertain'), true);
+console.log('Explicit refresh recaptures selected source while preserving uncertain same-intent work.');
