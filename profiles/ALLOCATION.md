@@ -22,6 +22,24 @@ The source constructs every child program and law. The existing typed evaluator
 decodes at most 32 descriptors under the turn's shared budget; the same native
 quota, absence, protocol and child-law checks admit both forms. A declared
 `allocation.limit` is still required. Receiving a message cannot allocate children.
+
+`Allocation.configured<State>(name, protocol, law, initial)` constructs a descriptor
+with a logical typed initial model. The source supplies an ordinary record such
+as `Writing.initial(config)`; it never authors DataWire tags, compact envelopes,
+packet hashes, or a schema claim. The host retains the producer's checked type,
+assumptions, and native data, compares that type with the child's exact retained
+state schema, and frames the model through the shared SourceState encoder before
+checking the child's current creation law. A three-field descriptor copies the
+template's initial state unchanged.
+
+A list can contain a homogeneous configured descriptor type or a finite closed
+source sum of descriptor alternatives with different initial model types. Every
+alternative has the same name/protocol/law boundary and is checked, including
+inactive branches; the selected branch supplies its actual initial type.
+Configuration does not confer authority. Type mismatch, forged retained schema,
+missing absence, quota exhaustion, or any later failure rolls back the complete
+turn. A revised child source requires a construction value matching its revised
+checked schema; captured old state is never silently reinterpreted.
 [Factory](../protocols/editor/Factory.obend) and
 [Candidate](../protocols/editor/Candidate.obend) demonstrate source-owned creation,
 compiler reports and approval guards; no Python workflow generator owns them.

@@ -2,6 +2,8 @@ edition ObjectiveBend 1
 import ./Preparation.obend as P
 import ./Encounter.obend as E
 import ./Abi.obend as Abi
+import ./Reflection.obend as R
+import ./Document.obend as D
 
 record State:
   candidate: String
@@ -27,12 +29,67 @@ def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
   P.Fields.cons({head: {name: name, value: value}, tail: tail})
 def text(value: String) -> P.Value:
   P.Value.text({value: value})
+def need(name: String, message: String) -> P.Preparation:
+  P.Preparation.question({message: message, needs: P.Names.cons({head: name, tail: P.Names.nil()})})
+def prepared(state: State, source: String, scenarios: String, target: P.Observation, context: P.Context) -> P.Preparation:
+  if source == "" then need("source", "Supply source for this variation.") else if scenarios == "" then need("scenarios", "Supply examples for this variation.") else if textLength(source) > 32768n || textLength(scenarios) > 16384n then P.Preparation.refused({message: "The source or examples exceed this writing card's bounds."}) else P.Preparation.ready({summary: "Submit source while preserving the complete captured target state.", reads: P.Reads.cons({head: P.Read.existing({object: state.candidate}), tail: P.Reads.cons({head: P.Read.existing({object: state.target}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.candidate, command: "submit", input: P.Value.record({fields: pair("proposal", P.Value.record({fields: pair("syntax", text(state.syntax), pair("source", text(source), pair("scenarios", text(scenarios), P.Fields.nil())))}), pair("migration", target.state, pair("target", text(state.target), P.Fields.nil())))})}), tail: P.Effects.nil()})})
+def capturedSubmission(state: State, source: String, scenarios: String, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.lookupObservation(observations, state.target):
+    case missing(_): P.Preparation.refused({message: "Capture the target of this variation."})
+    case found(target):
+      match P.lookupObservation(observations, state.candidate):
+        case missing(_): P.Preparation.refused({message: "Capture the candidate for this variation."})
+        case found(_): prepared(state, source, scenarios, target.value, context)
+def suppliedSubmission(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  match P.textField(contribution, "source"):
+    case missing(_): need("source", "Supply source for this variation.")
+    case wrongKind(_): P.Preparation.refused({message: "The variation source must be text."})
+    case found(source):
+      match P.textField(contribution, "scenarios"):
+        case missing(_): need("scenarios", "Supply examples for this variation.")
+        case wrongKind(_): P.Preparation.refused({message: "The variation examples must be text."})
+        case found(scenarios): capturedSubmission(state, source.value, scenarios.value, observations, context)
 def prepareSubmit(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
-  let source: String = P.text(P.get(contribution, "source"))
-  let scenarios: String = P.text(P.get(contribution, "scenarios"))
-  let target: P.Observation = P.observation(observations, state.target)
-  let candidate: P.Observation = P.observation(observations, state.candidate)
-  if state.candidate == "" || state.target == "" || state.syntax == "" then P.Preparation.refused({message: "Configure a candidate, target and source syntax."}) else if target.object == "" || candidate.object == "" then P.Preparation.refused({message: "Capture both the target and candidate."}) else if source == "" || scenarios == "" then P.Preparation.question({message: "Supply source and examples for this variation.", needs: P.Names.cons({head: "source", tail: P.Names.cons({head: "scenarios", tail: P.Names.nil()})})}) else if textLength(source) > 32768n || textLength(scenarios) > 16384n then P.Preparation.refused({message: "The source or examples exceed this writing card's bounds."}) else P.Preparation.ready({summary: "Submit source while preserving the complete captured target state.", reads: P.Reads.cons({head: P.Read.existing({object: state.candidate}), tail: P.Reads.cons({head: P.Read.existing({object: state.target}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.candidate, command: "submit", input: P.Value.record({fields: pair("proposal", P.Value.record({fields: pair("syntax", text(state.syntax), pair("source", text(source), pair("scenarios", text(scenarios), P.Fields.nil())))}), pair("migration", target.state, pair("target", text(state.target), P.Fields.nil())))})}), tail: P.Effects.nil()})})
+  if state.candidate == "" || state.target == "" || state.syntax == "" then P.Preparation.refused({message: "Configure a candidate, target and source syntax."}) else suppliedSubmission(state, contribution, observations, context)
+# This is source-owned inspection of the target's actual captured definition.
+# Reflection supplies selected exact modules; it does not choose a workflow.
+def prepareInspect(state: State, contribution: P.Value, observations: P.Observations, context: P.Context, definitions: R.Definitions) -> R.Inspection:
+  match R.lookup(definitions, state.target, "resident"):
+    case missing(_): R.Inspection.inspection({message: "The captured source definition is unavailable.", value: P.Value.none(), document: D.text("Capture a readable installed source table.")})
+    case found(d): R.Inspection.inspection({message: "These are the target's installed source modules. Edit their method, offered fields, view or interpretation text; submit the revised source and examples here before adoption.", value: P.Value.record({fields: pair("object", text(d.value.object), pair("program", text(d.value.program), P.Fields.nil()))}), document: R.document(d.value)})
+# Revisions preserve the captured dependency table. The source chooses which
+# named module changes and constructs the complete proposal and migration.
+def submitModules(state: State, modules: R.Modules, scenarios: String, target: P.Observation) -> P.Preparation:
+  let proposal: P.Value = P.Value.record({fields: pair("format", text("delvetalk-inline-module-proposal-v1"), pair("syntax", text(state.syntax), pair("modules", P.Value.array({values: R.moduleValues(modules)}), pair("scenarios", text(scenarios), P.Fields.nil()))))})
+  P.Preparation.ready({summary: "Submit this revision with its exact captured dependencies and complete captured state.", reads: P.Reads.cons({head: P.Read.existing({object: state.candidate}), tail: P.Reads.cons({head: P.Read.existing({object: state.target}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.candidate, command: "submit", input: P.Value.record({fields: pair("proposal", proposal, pair("migration", target.state, pair("target", text(state.target), P.Fields.nil())))})}), tail: P.Effects.nil()})})
+def reviseDefinition(state: State, module: String, source: String, scenarios: String, target: P.Observation, definition: R.Definition) -> P.Preparation:
+  match R.revisedModules(definition.modules, module, source):
+    case missing(_): P.Preparation.refused({message: "Choose a module from the captured installed definition."})
+    case found(r): submitModules(state, r.modules, scenarios, target)
+def capturedRevision(state: State, module: String, source: String, scenarios: String, observations: P.Observations, definitions: R.Definitions) -> P.Preparation:
+  match P.lookupObservation(observations, state.target):
+    case missing(_): P.Preparation.refused({message: "Capture the target before revising it."})
+    case found(target):
+      match R.lookup(definitions, state.target, "resident"):
+        case missing(_): P.Preparation.refused({message: "Capture the installed source table before revising it."})
+        case found(d): reviseDefinition(state, module, source, scenarios, target.value, d.value)
+def boundedRevision(state: State, module: String, source: String, scenarios: String, observations: P.Observations, definitions: R.Definitions) -> P.Preparation:
+  if module == "" || source == "" || scenarios == "" || textLength(module) > 128n || textLength(source) > 32768n || textLength(scenarios) > 16384n then P.Preparation.refused({message: "Supply a named module, bounded revised source and examples."}) else capturedRevision(state, module, source, scenarios, observations, definitions)
+def suppliedRevision(state: State, contribution: P.Value, observations: P.Observations, definitions: R.Definitions) -> P.Preparation:
+  match P.textField(contribution, "module"):
+    case missing(_): need("module", "Which installed module shall this variation replace?")
+    case wrongKind(_): P.Preparation.refused({message: "The module name must be text."})
+    case found(module):
+      match P.textField(contribution, "source"):
+        case missing(_): need("source", "Supply the revised module source.")
+        case wrongKind(_): P.Preparation.refused({message: "The module source must be text."})
+        case found(source):
+          match P.textField(contribution, "scenarios"):
+            case missing(_): need("scenarios", "Supply examples for the revised behavior.")
+            case wrongKind(_): P.Preparation.refused({message: "The examples must be text."})
+            case found(scenarios): boundedRevision(state, module.value, source.value, scenarios.value, observations, definitions)
+def prepareRevise(state: State, contribution: P.Value, observations: P.Observations, context: P.Context, definitions: R.Definitions) -> P.Preparation:
+  if state.candidate == "" || state.target == "" || state.syntax != "objective-bend-object" then P.Preparation.refused({message: "Configure a candidate, target and Objective Bend source syntax."}) else suppliedRevision(state, contribution, observations, definitions)
 record Field:
   type: String
   minLength: Nat
@@ -43,34 +100,25 @@ record Invitation:
   prepare: String
   fields: {source: Field, scenarios: Field}
   observations: P.Requests
+record InspectInvitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {}
+  observations: P.Requests
+  definitions: R.Requests
+record ReviseInvitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {module: Field, source: Field, scenarios: Field}
+  observations: P.Requests
+  definitions: R.Requests
 record View:
   title: String
   prose: String
   actions: {}
   children: E.Children
-  invitations: {submit: Invitation}
+  invitations: {inspect: InspectInvitation, revise: ReviseInvitation, submit: Invitation}
 def view(state: State, panel: String) -> View:
-  {title: "Write a variation", prose: "Source and examples are checked before adoption. This writing card preserves its captured target's complete state.", actions: {}, children: E.Children.nil(), invitations: {submit: {visible: state.candidate != "" && state.target != "", text: "Submit source and examples", prepare: "prepareSubmit", fields: {source: {type: "string", minLength: 1n, maxLength: 32768n}, scenarios: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: P.Requests.cons({head: {object: state.candidate, inspectState: false, inspectLaw: false}, tail: P.Requests.cons({head: {object: state.target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})})}}}
-
-# Configure this checked program as data; receiving admission checks its schema.
-def replaced(fields: P.Fields, name: String, value: P.Value) -> P.Fields:
-  match fields:
-    case nil(_): P.Fields.cons({head: {name: name, value: value}, tail: P.Fields.nil()})
-    case cons(c): if c.head.name == name then P.Fields.cons({head: {name: name, value: value}, tail: c.tail}) else P.Fields.cons({head: c.head, tail: replaced(c.tail, name, value)})
-def replacedValue(value: P.Value, name: String, replacement: P.Value) -> P.Value:
-  match value:
-    case record(r): P.Value.record({fields: replaced(r.fields, name, replacement)})
-    case retained(_): P.Value.none()
-    case none(_): P.Value.none()
-    case boolean(_): P.Value.none()
-    case natural(_): P.Value.none()
-    case number(_): P.Value.none()
-    case text(_): P.Value.none()
-    case array(_): P.Value.none()
-def wireText(value: String) -> P.Value:
-  P.Value.record({fields: pair("tag", text("label"), pair("value", text(value), P.Fields.nil()))})
-def wireField(name: String, value: String) -> P.Value:
-  P.Value.record({fields: pair("name", text(name), pair("value", wireText(value), P.Fields.nil()))})
-def configuredProgram(program: P.Value, config: State) -> P.Value:
-  let model: P.Value = P.Value.record({fields: pair("tag", text("record"), pair("fields", P.Value.array({values: P.Values.cons({head: wireField("candidate", config.candidate), tail: P.Values.cons({head: wireField("target", config.target), tail: P.Values.cons({head: wireField("syntax", config.syntax), tail: P.Values.nil()})})})}), P.Fields.nil()))})
-  replacedValue(program, "initial", P.oneField("model", model))
+  {title: "Write a variation", prose: "Source and examples are checked before adoption. This writing card preserves its captured target's complete state.", actions: {}, children: E.Children.nil(), invitations: {inspect: {visible: state.target != "", text: "Inspect the installed definition", prepare: "prepareInspect", fields: {}, observations: P.Requests.cons({head: {object: state.target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()}), definitions: R.Requests.cons({head: {object: state.target, package: "resident"}, tail: R.Requests.nil()})}, revise: {visible: state.candidate != "" && state.target != "", text: "Revise an installed module and its examples", prepare: "prepareRevise", fields: {module: {type: "string", minLength: 1n, maxLength: 128n}, source: {type: "string", minLength: 1n, maxLength: 32768n}, scenarios: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: P.Requests.cons({head: {object: state.candidate, inspectState: false, inspectLaw: false}, tail: P.Requests.cons({head: {object: state.target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})}), definitions: R.Requests.cons({head: {object: state.target, package: "resident"}, tail: R.Requests.nil()})}, submit: {visible: state.candidate != "" && state.target != "", text: "Submit source and examples", prepare: "prepareSubmit", fields: {source: {type: "string", minLength: 1n, maxLength: 32768n}, scenarios: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: P.Requests.cons({head: {object: state.candidate, inspectState: false, inspectLaw: false}, tail: P.Requests.cons({head: {object: state.target, inspectState: false, inspectLaw: false}, tail: P.Requests.nil()})})}}}

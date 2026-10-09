@@ -37,7 +37,7 @@ def law(participants=None, managers=('steward',)):
     participants = default_participants() if participants is None else participants
     for principal in participants: bounded_name(principal)
     for manager in managers: bounded_name(manager)
-    return {'profile': 'delvetalk-scoped-law-v1',
+    return {'profile': 'delvetalk-scoped-law',
             'invoke': {name: list(participants) for name in ('enter', 'move', 'leave')},
             'reprogram': list(managers), 'law': list(managers)}
 
@@ -69,21 +69,19 @@ def build(participants=None, places=None, paths=None, entries=('porch',), gates=
         'entries': linked(source_object.data(name) for name in entries),
         'gates': linked(source_object.data({'source': gate['from'], 'target': gate['to'],
             **{key: value for key, value in gate.items() if key not in ('from', 'to')}}) for gate in gates)})
-    modules = source_object.read_modules([
-        ('Abi', ROOT / 'world/lib/prelude/Abi.obend'),
-        ('List', ROOT / 'world/lib/prelude/List.obend'), ('Preparation', ROOT / 'world/lib/prelude/Preparation.obend'),
-        ('Encounter', ROOT / 'world/lib/prelude/Encounter.obend'),
+    modules = source_object.read_closure([
         ('Commons', HERE / 'Commons.obend')])
-    protocol = source_object.load(modules, syntax='objective-bend-spell@3',
+    protocol = source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[config])
-    if not source_object.plain(protocol['initial']['model'])['valid']:
+    if not source_object.plain(source_object.state_data(
+            {'protocol': protocol, 'state': protocol['initial']}))['valid']:
         raise ValueError('Commons source refused the configured topology')
     return protocol
 
 
 def locations(root):
     """Project declared source state for display/tests; this confers no authority."""
-    model = source_object.plain(root['state']['model'])
+    model = source_object.plain(source_object.state_data(root))
     items = model['config']['participants']
     result = {}
     while items['variant'] == 'cons':

@@ -8,11 +8,19 @@ with the object in its retained source package table and sealed desk manifest.
 Physical callers can use [source closure packaging](../../../docs/design/SOURCE_PACKAGING.md)
 to select exact dependencies from an explicit allowlist using the native parser.
 
-`Abi.obend` exports `Origin`, `Context`, authenticated receive `Event`, and
-`StringField`/`NatField` form declarations. These describe the current receiving
+`Abi.obend` exports `Origin`, `Context` and `StringField`/`NatField` form
+declarations. `Emissions.obend` supplies the current authenticated receive
+`CausalEvent` and bounded addressed message collection. These describe the current receiving
 ABI; constructing one inside source does not create authenticated evidence or
-grant authority. `Context` is the existing three-field context, with the four
-fields of `Origin`; no new ambient object lookup is implied.
+grant authority. `Context` is the existing three-field context, with the five
+fields of `Origin`: `kind`, `object`, `command`, `program`, and
+`immediatelyPrevious`. `program` identifies the exact admitted producer of an
+`inputFrom` result, including an observation's current program and a reprogram
+operation's admitted replacement. It comes from the producing step, even if a
+later step revises that object. Explicit copied input has empty origin facts.
+This synchronous predecessor context is distinct from `Emissions.CausalEvent`:
+that separately retains asynchronous immediate source, causal root player and
+parent/depth facts. Neither is an ambient object lookup.
 
 `List.obend` exports bounded rank-1 generic lists and reusable source traversals.
 `Encounter.obend` exports `Child` and `Children = Lists.List<Child>`, with source

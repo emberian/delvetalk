@@ -8,3 +8,8 @@ record Allocation:
   protocol: P.Value
   law: P.Value
 type Allocations = Lists.List<Allocation>
+
+# Copy retains the template initial state. Configuration supplies a logical typed
+# model; receiving admission checks it against the child's retained schema.
+def configured<State>(name: String, protocol: P.Value, law: P.Value, initial: State) -> {name: String, protocol: P.Value, law: P.Value, initial: State}:
+  {name: name, protocol: protocol, law: law, initial: initial}
