@@ -170,6 +170,7 @@ class Worker:
         rows = sorted(index['posts'].items(), key=lambda pair: (pair[1].get('lastSeenAt', ''), pair[0]), reverse=True)
         report = {'format': 'delvetalk-worker-discovery-v1', 'examined': 0, 'queued': [],
                   'skipped': 0, 'errors': [], 'truncated': len(rows) > limit}
+        cardbook_enabled = 'townCards' in clerk.Clerk(self.clerk_state).config()['profile']
         for uri, metadata in rows[:limit]:
             report['examined'] += 1
             try:
@@ -180,12 +181,17 @@ class Worker:
                 if observation['uri'] != uri or observation['cid'] != metadata['cid']:
                     raise ValueError('observation/index source mismatch')
                 record = observation['record']
-                # Plain conversation never becomes a request by interpretation.
-                if not isinstance(record.get('text'), str) or not record['text'].startswith('delvetalk-request v1\n'):
+                # Discovery only recognizes explicit grammar. Receiving re-fetches
+                # and authenticates the author, parent publication and captured card.
+                text = record.get('text')
+                if isinstance(text, str) and text.startswith('delvetalk-request v1\n'):
+                    receipts.encode('request', clerk.feed_request(record))
+                elif cardbook_enabled and isinstance(text, str) and text.strip().startswith('delvetalk '):
+                    cards = clerk.module('worker_town_cards', 'scripts/town_cards.py')
+                    cards.parse_reply(text)
+                else:
                     report['skipped'] += 1
                     continue
-                # Shared publication validator checks only the exact wire shape.
-                receipts.encode('request', clerk.feed_request(record))
                 result = self.enqueue(uri, observation['cid'], observation)
                 if result['status'] == 'queued':
                     report['queued'].append(result)

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import sys
 import tempfile
@@ -29,7 +30,10 @@ COLLECTION = 'org.delvetalk.request'
 FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
-TRANSPORT_PIN_PATHS = ['scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py']
+TRANSPORT_PIN_PATHS = ['scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py',
+                       'scripts/town_cards.py', 'scripts/affordances.py', 'scripts/references.py',
+                       'scene/room.py', 'scene/lower.py', 'scene/projection.py']
+UNCHANGED = object()
 RUNTIME_CHOICES = tuple(world.PROFILES)
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
@@ -348,13 +352,60 @@ class Clerk:
         return root, {'source': {'uri': reference['uri'], 'cid': reference['cid'],
                                  'author': author, 'pds': PDS}, 'record': record}
 
+    def card_configuration(self, selection, runtime_profile):
+        """Explicit local display custody; no additional admission authority."""
+        exact(selection, ['path', 'issuers', 'metadata'], 'town cardbook selection')
+        path, issuers = selection['path'], selection['issuers']
+        if (not isinstance(path, str) or not Path(path).is_absolute()
+                or str(Path(path).resolve()) != path):
+            raise ValueError('town cardbook must retain its exact canonical path')
+        if (not isinstance(issuers, list) or not issuers
+                or any(not isinstance(did, str) or not DID.fullmatch(did) for did in issuers)
+                or issuers != sorted(set(issuers))):
+            raise ValueError('town card issuers require an explicit sorted DID allowlist')
+        cards = module('clerk_town_cards', 'scripts/town_cards.py')
+        metadata = cards.CardBook(path).metadata()
+        if canonical(metadata) != canonical(selection['metadata']) or metadata['issuerDid'] not in issuers:
+            raise ValueError('town cardbook identity or issuer mismatch')
+        expected_runtime = {'name': runtime_profile,
+                            'platform': {'system': platform.system(), 'machine': platform.machine()},
+                            'files': runtime_profiles.file_hashes(runtime_profile)}
+        if canonical(metadata['runtime']) != canonical(expected_runtime):
+            raise ValueError('town cardbook runtime does not match selected clerk runtime')
+        config = self.config()
+        if 'attachment' in config and metadata['worldId'] != config['attachment']['worldId']:
+            raise ValueError('town cardbook belongs to a different attached workspace')
+        return selection
+
+    def resolve_card(self, record, author, source, config):
+        selection = config.get('townCards')
+        if selection is None:
+            raise ValueError('short town replies require explicit cardbook configuration')
+        if config['profile'].get('townCards') != digest(selection):
+            raise ValueError('town cardbook configuration differs from its pinned profile')
+        self.card_configuration(selection, config.get('runtimeProfile', 'world'))
+        cards = module('clerk_town_cards', 'scripts/town_cards.py')
+        def fetch_publication(uri, cid):
+            issuer, _, _ = parse_uri(uri, (FEED,))
+            if issuer not in selection['issuers']:
+                raise ValueError('card publication issuer is not configured')
+            self.verify_repository(issuer)
+            return self.fetch_record(uri, cid, (FEED,))
+        return cards.CardBook(selection['path']).resolve(record, author, source,
+                                                       fetch_publication, selection['issuers'])
+
     def observe(self, uri, cid, config):
         author, collection, _ = parse_uri(uri)
         if author not in config['repositories']:
             raise ValueError('repository is not configured for this clerk')
         self.verify_repository(author)
         value = self.fetch_record(uri, cid, (COLLECTION, FEED))
-        if collection == FEED:
+        inline_card = None
+        if collection == FEED and isinstance(value, dict) and isinstance(value.get('text'), str) and value['text'].strip().startswith('delvetalk '):
+            payload, inline_card = self.resolve_card(value, author, {'uri': uri, 'cid': cid,
+                                                                   'author': author, 'pds': PDS}, config)
+            raw = world.wire_dumps(payload)
+        elif collection == FEED:
             raw = feed_request(value)
         else:
             exact(value, ['$type', 'profile', 'requestJson'], 'request record')
@@ -401,6 +452,8 @@ class Clerk:
         entry = {'source': {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS},
                  'record': value, 'request': request, 'profile': config['profile'],
                  'admissionProfile': self.execution_profile(request, config)}
+        if inline_card is not None:
+            entry['inlineCard'] = inline_card
         if resolved is not None:
             entry['resolvedRoot'] = resolved
         if resolved_transaction is not None:
@@ -460,7 +513,7 @@ class Clerk:
             profile = config['profile']
             return {'profile': profile, 'sha256': digest(profile), 'runtimeProfile': config.get('runtimeProfile', 'world')}
 
-    def upgrade(self, from_profile, runtime_profile=None):
+    def upgrade(self, from_profile, runtime_profile=None, *, town_cards=UNCHANGED):
         """Explicit local custody transition; never changes or reinterprets a world."""
         if not isinstance(from_profile, str) or not re.fullmatch('[0-9a-f]{64}', from_profile):
             raise ValueError('from-profile must be the exact prior profile SHA256')
@@ -472,6 +525,9 @@ class Clerk:
                 prior_runtime = config.get('runtimeProfile', 'world')
                 selected_runtime = prior_runtime if runtime_profile is None else runtime_profile
                 new = {'name': PROFILE, 'pins': pins(selected_runtime)}
+                cards = config.get('townCards') if town_cards is UNCHANGED else town_cards
+                if cards is not None:
+                    new['townCards'] = digest(self.card_configuration(cards, selected_runtime))
                 history = config.get('upgrades', [])
                 if not isinstance(history, list):
                     raise ValueError('malformed upgrade history')
@@ -496,6 +552,10 @@ class Clerk:
                               'fromRuntime': prior_runtime, 'toRuntime': selected_runtime}
                 transition['id'] = digest(transition)
                 config['profile'] = new
+                if cards is None:
+                    config.pop('townCards', None)
+                else:
+                    config['townCards'] = cards
                 if selected_runtime == 'world':
                     config.pop('runtimeProfile', None)
                 else:
@@ -548,6 +608,10 @@ def main():
     upgrade = commands.add_parser('upgrade')
     upgrade.add_argument('--from-profile', required=True)
     upgrade.add_argument('--runtime-profile', choices=RUNTIME_CHOICES)
+    cards = upgrade.add_mutually_exclusive_group()
+    cards.add_argument('--cardbook', type=Path, help='explicit existing captured-card database')
+    cards.add_argument('--disable-cards', action='store_true')
+    upgrade.add_argument('--card-issuer', action='append', help='allowed publication DID; repeat as needed')
     args = parser.parse_args()
     try:
         clerk = Clerk(args.state)
@@ -563,7 +627,19 @@ def main():
         elif args.op == 'profile':
             result = clerk.profile()
         elif args.op == 'upgrade':
-            result = clerk.upgrade(args.from_profile, args.runtime_profile)
+            selection = UNCHANGED
+            if args.cardbook:
+                if not args.card_issuer:
+                    raise ValueError('--cardbook requires explicit --card-issuer')
+                cards = module('clerk_town_cards', 'scripts/town_cards.py')
+                path = str(args.cardbook.expanduser().resolve())
+                selection = {'path': path, 'issuers': sorted(set(args.card_issuer)),
+                             'metadata': cards.CardBook(path).metadata()}
+            elif args.card_issuer:
+                raise ValueError('--card-issuer requires --cardbook')
+            elif args.disable_cards:
+                selection = None
+            result = clerk.upgrade(args.from_profile, args.runtime_profile, town_cards=selection)
         else:
             result = clerk.snapshot(args.object)
         print(world.wire_dumps(result))

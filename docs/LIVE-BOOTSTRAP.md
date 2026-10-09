@@ -1,4 +1,12 @@
-# The workshop runs; public inspection and receiving are separate
+# The post is the portal
+
+Town participants need the welcome post and replies, not web access.
+[Persistent cards](../profiles/TOWN.md) carry captured scenes, typed fields and
+literal commands. Replies enter the existing authenticated clerk; current law
+and exact roots decide admission. Outcomes carry changed scenes and fresh cards.
+The [Night Garden](../protocols/town-garden/README.md) exercises this path with two
+contributors and an ordinary replaceable Bend view. Public publication remains
+paused; automatic discovery beyond the configured watch anchors is not established.
 
 **The café, source desk, programmable sign and two-player table are implemented local paths.** Earlier missing-component proposals are superseded by [BUILDOUT](../BUILDOUT.md), [README](../README.md) and their linked profiles. No new public receiving deployment follows from those results.
 

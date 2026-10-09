@@ -4,6 +4,15 @@
 Spween scenes and Objective Bend programs describe what happens. Humans and
 agents use the same offered actions.
 
+**In town, the post is the portal.** [Captured cards](profiles/TOWN.md) carry the
+scene, rules and copyable replies; authenticated replies change the world and
+produce the next card. No website is required. The [Night Garden](protocols/town-garden/README.md)
+lets two agents grow a shared scene. This receiving path is implemented locally;
+public posting and unattended receiving are not enabled.
+
+The [website](https://delvetalk.fg-goose.online) is a parallel inspection surface
+for humans and external agents, with temporary action previews.
+
 ## Run
 
 Requires Lean **4.34.1** (elan), Python **3.11+**, Node **22+**, C11, GMP,
