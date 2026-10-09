@@ -1,0 +1,264 @@
+DelveTalk / 16K / 2026-10-08
+Objective Bend + governed objects + protocol cards
+
+SCOPE
+Core rules cover every constructor below. Typing is a constraint summary, not
+a replacement checker. Host paragraphs abstract Mini; cards propose local
+profiles, not deployed agentwiki or delve.town guarantees. Anchors in emberian/minidregg: Theory/ObjectiveBend{OpenRecursion,Types,Typing,DemandMachine},
+Compiler/ObjectiveBendContract and Kernel/{ObjectRecord,ObjectiveActivity,
+AnswerSlot,ObjectiveCall,ObjectiveSend}. Pin revisions/digests; names alone identify no version. Version profiles.
+
+I. CORE SYNTAX AND DYNAMICS
+Application associates left; \x.t binds x; t[u/x] avoids capture; expansion
+binders are fresh. Alpha-equivalent terms mean the same. Source uses de Bruijn
+indices (0=nearest binder). Lambda binds its body, natcase only its successor
+body, each case arm its payload; lift substitution under these binders.
+
+Terms comprise variables, applications and constructors below. Fields/arms are
+ordered string-keyed lists; FIRST match wins. Missing lookup is stuck. Duplicate
+labels have raw-core meaning even if a data profile rejects them.
+Values: \x.t | Nat(n) | Bool(b) | String(s) | {fs} | spec(m,e) | proto(s,t)
+        | inj(k,t).
+Children remain unevaluated: weak-head value is not materialized data. Naturals
+are unbounded nonnegative integers; Nat/Bool/String are disjoint. Scalar
+constructors are elided below when unambiguous.
+
+(\x.b) a -> b[a/x]
+mix(a,b) -> \s.\p.b s (a s p)
+fix(e,p) -> e (fix(e,p)) p
+spec(m,e) a -> e a
+reflect(proto(s,t)) -> s
+metadata(spec(m,e)) -> m
+target(proto(s,t)) -> t
+{fs}.k -> first(fs,k)
+extend({fs},gs) -> {gs ++ [f in fs | key(f) not in keys(gs)]}
+if(true,a,b) -> a; if(false,a,b) -> b
+natcase(0,z,x.b) -> z; natcase(n+1,z,x.b) -> b[n/x]
+case(inj(k,t),arms) -> b[t/x] when first(arms,k)=x.b
+done(t) -> t
+op(v,w) -> scalar(op,v,w), when defined.
+
+Scalar operands/results:
+Nat x Nat -> Nat: add,multiply,subtract,divide,modulo.
+Nat x Nat -> Bool: equal,less,lessEqual.
+Bool x Bool -> Bool: conjunction. String x String -> Bool: labelEqual.
+Subtraction saturates; division floors; n/0=0; n%0=n, preserving
+(n/d)*d+n%d=n at zero. Conjunction is strict. No coercion/truthiness/generic
+equality; overflow is a runtime limitation, not a semantic result.
+
+Close reductions ONLY under:
+E ::= [] | E t | E.k | extend(E,fs) | op(E,t) | op(v,E)
+    | if(E,a,b) | natcase(E,z,x.b) | case(E,arms)
+    | reflect(E) | metadata(E) | target(E).
+If a->b then E[a]->E[b]; no other steps. No reductions under lambdas, in
+arguments, constructor children or perform plans. The right primitive operand
+is demanded when the left is ANY value, even wrong-typed; type mismatch waits
+for both values. A wrong-shaped function does not demand its argument.
+
+E[perform(p)] yields raw p and continuation E; response r resumes E[r]. Yield
+is not reduction. A host may demand p as bounded first-order data; raw core
+does not. Nonvalue without step/yield is stuck; infinite reduction diverges.
+Bounded exhaustion proves neither. Substitution may duplicate raw effectful
+terms; typed/shared execution has extra constraints. Evaluation grants no effects.
+
+II. OPEN RECURSION
+An extension receives final self and the complete inherited computation. For
+F=fix(mix(a,b),seed), F ->* b F (a F seed): b wraps a; both see F. Super is the
+whole lower computation, not only a field projection. Record overlay is one
+target operation; targets need not be records. Spec metadata is lazy data, not
+an authority certificate. Prototype retains specification and target; selectors
+leave unselected components unforced.
+
+Example:
+a=\s.\p.extend(p,{x:1,read:\u.s.x}); b=\s.\p.extend(p,{x:2});
+fix(mix(a,b),{}).read {} ->* 2.
+Inherited read sees overridden self; p.x would have different meaning. Overlay
+retains new fields in order, removes ALL inherited entries with those keys,
+and keeps new duplicates: extend({x:0,y:9},{x:1,x:2}).x ->* 1.
+A recursive knot may diverge; fix and types do not promise termination.
+
+III. TYPING, USE AND SHARING
+Typing is annotated and checked; this is not a complete inference algorithm.
+Types include Nat, Bool, String, rows, variables, arrows annotated with reuse
+and parameter quantity, specifications, prototypes, custody identities,
+variants, and Activity<P,R,A>. Empty row closes records/sums; tails may retain
+future type variables. Canonical equality preserves first-field shadowing and
+compares member types exactly, without general width/depth subtyping. Explicit
+row support provides modularity.
+
+Quantities: erased permits 0 uses; affine/linear safety permits at most 1;
+unrestricted permits any count. Exact terminal linear discharge is a separate
+obligation, not eventual or exactly-once use. Reusable closure captures must be
+unrestricted AND shareable. Once closures may carry custody under usage checks.
+Scalars and empty rows are shareable; rows/variants/specs/prototypes require
+shareable components; reusable arrows require checked captures. Once arrows,
+custody and activities are nonshareable. Future variables require explicit
+shareability premises that survive instantiation. A wrapper or known immutable
+row prefix cannot hide custody or prove an unknown tail pure. Use accounting
+must include syntactically present entries hidden by duplicate-key shadowing.
+
+Open templates have rigid Self/Super with declared support bounds: lookup can
+use a bound, but the variable is not equal to its bound row. Check against those
+bounds, then instantiate at closed uses. For L1,...,Ln, target T and seed I0,
+layer k substitutes Self=T,Super=I(k-1), discharges bounds and produces Ik;
+In must equal T. Substitute Self in both argument/result of a binary method.
+Simple fix: (C->V->C)->V->C. Heterogeneous mix: (C->V->M),(C->M->W) give C->V->W.
+Contracts allow additions and same-type overrides, refusing type changes.
+Recursive nominal Node differs from arbitrary Self.
+
+Activity<P,R,A> yields P, resumes R, finishes A. P is a variant of first-order
+data; R is first-order data. This data fragment has scalars, closed records and
+closed variants, excluding closures, custody, activities, specs, prototypes and
+unresolved recursive variables. perform(plan) finishes with R; done lifts a
+pure result; activity case sequences into activity arms. Activity positions are
+direct computations, never suspended argument/field/spec/payload cells. Nullary
+shared lazy activities are refused. Calling a reusable method can create fresh
+activities; it does not reuse a continuation.
+
+The demand machine caches pure lazy cells; perform under a shared-cell update
+frame refuses sharedEffect. Typed programs exclude this situation. Effectful
+thunk sharing is not an exactly-once mechanism. A sharing implementation owes
+adequacy to call-by-name on its supported fragment, not all raw effectful terms.
+Resource counts can differ while meanings agree. Resume requires a correctly
+typed closed response; a checkpoint boundary does not make arbitrary bytes safe.
+
+IV. DURABLE IDENTITY, TRANSCLUSION AND AUTHORITY
+Abstract Object=(durable id,code pin,versioned state,law), not a physical record
+layout. Funding/deposits/tariffs belong to a host resource profile. Preserve the
+authenticated principal even when an implementation calls that field payer.
+Erasing bookkeeping must not erase authority.
+
+A ref is a duplicable name, not permission or ownership. Transcluding ref(W)
+adds an alias to THE SAME W: choice (a), never a copied affine activity. Pure
+immutable data may be copied; a continuation, custody or consumption right is
+not thereby duplicated. Ten views can name one answer slot. Distinguish snapshots from current state.
+
+One-shot behavior needs durable consumed state and admission: check exact prior
+roots and authority; install terminal state and associated effects atomically.
+Local affinity and distributed arbitration are complementary. Neither a URL
+nor an affine local variable alone implements distributed deduplication.
+
+Reads/writes require current authority. Old grants face current law; revision
+is not revocation. Deliberate management lockout has no owner recovery bypass.
+Pinned methods receive typed arguments and versioned views, and propose effects.
+Commit atomically only if exact read roots still match and current authority/
+laws admit effects. Include relevant code/law/object roots in the dependency
+set. Cached approval against old law is insufficient. Identity persists across
+admitted state versions; upgrades require applicable policy.
+
+Failed application turns commit no application writes; fees or protocol fault
+records may still change. Pure evaluation grants no network/write power. Type
+acceptance, evaluation, admission and confirmed commitment are distinct results.
+Sync call trees commit together. Delegation is explicit and scoped to callee,
+method and applicable code/argument bindings; refs never forward ambient rights.
+Profiles define re-entry, frame visibility and use accounting.
+
+Send commits an enqueue for a later turn and returns an answer slot; it does
+not assert delivery. Slot=(one decider,deadline,terminal decision). Checkpoints
+bind activity identity and generation; resume consumes one generation once.
+Copying checkpoint bytes creates no second admissible resume. Distinguish
+success, refusal, unknown, timeout and breakage. Deadline passage is no evidence
+that a remote action did not occur. Retired slot identities must not be reused.
+
+Absent reply means uncertainty. Keep authenticated request identity and exact
+payload; query receipt and retry that attempt. A fresh identity can repeat an
+action; changed payload under the old identity is not a retry. Receipt binding,
+lookup and retention are host obligations. Exhaustion is not success. Scheduling,
+funding, eventual replies and delivery require liveness assumptions beyond safety.
+Privacy requires read protection.
+
+V. TWO LOCAL CONFORMANCE CARDS
+These are proposed fixtures, not claims about live wiki/social enforcement.
+Assume an authoritative store with atomic compare-and-swap of every read root
+and write; clients may race, crash, lose responses and retry. Reading immediately
+before writing is insufficient: validation and commit must be atomic.
+
+CARD A / READ ROOT
+P at root r7 has sections A=a7,B=b7. Proposal e=(P,A,parent=r7,replacement=a8,
+request=q). Law authorizes editor; patch preserves unselected sections. A bare
+section identifier names the TARGET, not a version. Bind parent to exact state.
+For ABA-sensitive rules include a monotone version, not only a content hash.
+
+If r7 remains current, CAS(P:r7,P:{A=a8,B=b7}) commits with receipt(q,newRoot).
+If another writer commits B=b8 at r8, e MUST refuse stale, preserving
+{A=a7,B=b8}. Read r8, explicitly merge, submit a new proposal against r8 to
+obtain {A=a8,B=b8}. Do not just relabel the old proposal with a fresh root.
+Unresolved merge conflicts remain visible to the caller.
+
+Break attempts: omit root validation (stale replacement erases B); check root
+then separately write (race); revise law after preview (old approval cannot
+admit); lose success reply then retry (same receipt, no second accidental
+version). A card can state these rules; the receiving system must enforce them.
+
+CARD B / ONE-SHOT WELCOME
+Door D owns slot W=unused at root r0. Every ref(W) aliases that same W. Fixture
+input=(W,expectedRoot,q,payload). Atomic consume validates authority/root,
+records consumed(q), stores a payload-bound receipt and enqueues one outbox item.
+Same q/same payload returns receipt; same q/different payload refuses collision;
+fresh q after consumption refuses alreadyConsumed. Two authorized racers create
+at most one admitted welcome intent.
+
+Break by enqueuing before recording consumption, or keeping the flag only in
+each client. Correctly, a crash before commit leaves nothing; a crash after
+commit leaves one intent and recoverable receipt. Pending outbox delivery is
+not absence. Two aliases or copied checkpoint bytes create no extra right.
+
+This is NOT exactly-once social posting. A receiver can accept then lose its
+reply. Safe retry needs receiver deduplication under the same identity or a
+reliable reconciliation protocol; otherwise expose unknown and choose a retry
+policy that acknowledges duplication risk. Atomic outbox solves local enqueue,
+not atomicity with an uncooperative remote service. Local tests need no live send; intent does not prove a human saw a welcome.
+
+VI. HARNESS AND CONTRIBUTION CONTRACT
+Keep core, typing, host profiles and applications in separate suites. Canonical
+input is a tagged AST plus ordered scripted replies. Encode binders, strings
+and arbitrary Nat without floating-point loss; arrays retain duplicate keys.
+Malformed interchange differs from stuckness. Count schema bytes separately in
+reconstruction trials; avoid supplying missing semantics through the schema.
+
+Observe ground results, stuckness, yields and resumed traces. Probe closures/
+records/specs/prototypes with eliminators; comparing memory addresses or forcing
+all children changes the question. Data extraction is bounded and distinguishes
+non-data from budget failure. Raw yields may expose syntax; host materialization
+is a separate adapter. Evaluators need not take equal steps. Compare finite
+behaviors under independently sufficient limits; exhausted remains inconclusive.
+Tests do not prove divergence, termination, equivalence or native deployment.
+
+Required teeth:
+* unused divergence; unselected lazy record/variant children;
+* capture avoidance; nested binders; predecessor binding in natcase;
+* duplicate fields/arms; overlay removing old duplicates; missing fields;
+* AND(false,perform(p)) and add(true,perform(p)): both raw terms yield;
+* wrong-shaped function with effectful argument: stuck without a yield;
+* inherited methods seeing overridden self; actual super behavior;
+* division/modulo at zero; saturation; naturals beyond machine words;
+* nested yield contexts and ordered resume traces;
+* malformed raw programs distinguished from typed rejections.
+Typed teeth: custody under wrappers/shadowed fields; activity suspension refused;
+reusable captures; rigid Self/Super bounds; exact overrides; response typing.
+Host teeth: stale roots/current-law changes, revoked grants, duplicate generation
+use, request/payload collisions, uncertain commitment, exhaustion. Disable each
+guard deliberately and require its test to fail. Preserve minimal counterexamples
+and exact source digests; green output alone establishes no particular mechanism.
+
+A protocol contribution consists of pinned code, typed input/state/effect schema,
+explicit law, and scenarios giving prestate, authenticated request, expected
+outcome/effects and a break attempt. Name its host profile. Profiles define Plans and effect admission; pure evaluation supplies no
+persistence/authority model. A local Lean workbench can run scenarios before a native adapter exists. Render the same
+protocol as a human convention card with its pin and scenarios.
+
+Lean, Python, JavaScript and C evaluators can share fixtures without sharing
+implementation internals. Python is an interpreter/testing lane, not a second
+Mini authority platform. Generated C is not blind reconstruction. Test transfer with fresh agents given
+only a capsule plus counted schema, then held-out cases and missing-rule reports.
+Agreement of implementations is not a proof.
+
+Automatafl remains a separate TWO-PLAYER package. Game rules, board encoding,
+private inputs and a turn adapter consume no language/object budget. A game
+comparison discrepancy may be an engine bug, an underspecified rule or a model
+mistake; minimize the counterexample before deciding. A local fixture is not
+proof of a native receiver, and no automated social posting is implied.
+
+OMITTED: full grammar/checker, wire/crypto, consensus/storage, tariffs, scheduler,
+transport authorization, production adapters and deployment proofs. This contract
+does not guarantee termination, universal exactly-once effects or default privacy.

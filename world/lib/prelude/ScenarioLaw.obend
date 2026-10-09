@@ -1,0 +1,45 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+# Disposable example authority is authored here, outside native admission.
+# Grants enumerate the installed source commands; they do not grant future code.
+def grants(commands: P.Values, principals: P.Value) -> P.Fields:
+  match commands:
+    case nil(_): P.Fields.nil()
+    case cons(c):
+      match c.head:
+        case text(t): P.Fields.cons({head: {name: t.value, value: principals}, tail: grants(c.tail, principals)})
+        case none(_): P.Fields.nil()
+        case retained(_): P.Fields.nil()
+        case boolean(_): P.Fields.nil()
+        case natural(_): P.Fields.nil()
+        case number(_): P.Fields.nil()
+        case array(_): P.Fields.nil()
+        case record(_): P.Fields.nil()
+def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def authorityWithRead(commands: P.Value, principals: P.Value, reading: P.Value) -> P.Value:
+  match commands:
+    case array(a):
+      P.Value.record({fields: pair("profile", P.Value.text({value: "delvetalk-scoped-law"}), pair("read", reading, pair("invoke", P.Value.record({fields: grants(a.values, principals)}), pair("reprogram", principals, pair("law", principals, P.Fields.nil())))))})
+    case none(_): P.Value.none()
+    case retained(_): P.Value.none()
+    case boolean(_): P.Value.none()
+    case natural(_): P.Value.none()
+    case number(_): P.Value.none()
+    case text(_): P.Value.none()
+    case record(_): P.Value.none()
+
+def authority(commands: P.Value, principals: P.Value) -> P.Value:
+  let base: P.Value = authorityWithRead(commands, principals, P.Value.text({value: "public"}))
+  match base:
+    case record(r): P.Value.record({fields: pair("view", P.Value.record({fields: pair("main", P.Value.text({value: "public"}), P.Fields.nil())}), r.fields)})
+    case none(_): P.Value.none()
+    case retained(_): P.Value.none()
+    case boolean(_): P.Value.none()
+    case natural(_): P.Value.none()
+    case number(_): P.Value.none()
+    case text(_): P.Value.none()
+    case array(_): P.Value.none()
+def privateAuthority(commands: P.Value, principal: String) -> P.Value:
+  let people: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: principal}), tail: P.Values.nil()})})
+  authorityWithRead(commands, people, people)

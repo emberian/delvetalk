@@ -1,0 +1,51 @@
+Emergent Smalltalk / rewrite core + durable-object contract.
+Conventions: alpha-equivalence, capture-free t[u/x], fresh binders,
+left-associative application; \x.t binds x. Fields/arms are ordered lists
+keyed by strings; lookup takes first match. Values v: \x.t,Nat,Bool,String,
+{fs},spec(m,e),proto(s,t),inj(k,t); components remain unevaluated.
+(\x.b) a -> b[a/x]
+mix(l,u) -> \s.\p.u s (l s p)
+fix(e,p) -> e (fix(e,p)) p
+spec(m,e) a -> e a
+reflect(proto(s,t)) -> s
+metadata(spec(m,e)) -> m
+target(proto(s,t)) -> t
+{fs}.k -> lookup(fs,k)
+extend({fs},gs) -> {gs ++ filter(fs,key not in keys(gs))}
+if(true,a,b) -> a; if(false,a,b) -> b
+natcase(0,z,x.b) -> z; natcase(n+1,z,x.b) -> b[n/x]
+case(inj(k,t),as) -> b[t/x] if lookup(as,k)=x.b
+done(t) -> t
+op(v,w) -> scalar result iff operand types match.
+Nat: +,*,-,/,%,=,<,<=; unbounded; subtraction saturates; division floors;
+n/0=0;n%0=n. Bool: strict AND. String: equality. Types are disjoint.
+Close -> under E ::= []|E t|E.k|extend(E,fs)|op(E,t)|op(v,E)|
+if(E,a,b)|natcase(E,z,x.b)|case(E,as)|reflect(E)|metadata(E)|target(E).
+No other steps. E[perform(P)] yields P; reply r resumes E[r]. Nonvalue
+without step/yield is stuck; infinite reduction diverges. Every layer
+shares final self; super is the complete inherited computation.
+
+Typing profile (constraints, not full inference rules): row interfaces use
+exact member types; nominal recursive data keeps identity; future Self/Super
+bounds survive composition and are discharged by fix. Simple fix type: (C->V->C)->V->C.
+Activities are not shareable or suspended in fields/arguments/payloads.
+Reusable closures capture only unrestricted shareable values. Safety
+bounds affine/linear use by one; terminal linear discharge is separate.
+Plan/response/checkpoint reply data exclude closures, custody, activities.
+
+Object=(durable id,code-pin,versioned state,law). Ref != permission.
+Current law governs reads/writes and old grants; revision != revocation;
+no owner bypass. Typed pinned methods propose effects. Atomic commit
+requires matching exact read roots and current authority/laws admitting
+effects. Failed turns commit no application writes. Pure evaluation
+grants no effects. Scoped delegation binds callee,method,code,arguments.
+Sync call trees commit together; send durably enqueues for a later turn,
+returning an answer slot with one decider,deadline,terminal outcome.
+Resume consumes one checkpoint generation once. Distinguish success,
+refusal,unknown,timeout,breakage. Missing reply != failure: retain signed
+request identity, query receipt, retry same attempt; fresh id may repeat.
+Host profile supplies sponsorship,budgets,tariffs, separately from the
+authenticated principal. Resource admission uses that profile. Fees may
+survive failure; budget exhaustion != success. Private state needs read protection.
+Unspecified: complete typing/admission rules,wire format,scheduler,tariffs.
+Sharing implementations owe adequacy to this call-by-name core.

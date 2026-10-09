@@ -1,0 +1,63 @@
+edition ObjectiveBend 1
+import ./Document.obend as Document
+record Context:
+  participant: String
+  subject: String
+  count: Nat
+  detailed: Bool
+  utterance: String
+  capture: Document.Capture
+# Named sections are ordinary function-valued fields, so callers can pass,
+# replace, return and specialize them without a separate template environment.
+record Sections:
+  heading: Context -> Document.Document
+  examples: Context -> Document.Document
+  body: Context -> Document.Document
+record Item:
+  index: Nat
+  context: Context
+def item(value: Item) -> Document.Document:
+  doc"""• {{ value.context.subject }} {{ natText(value.index) }}
+"""
+def each(index: Nat, count: Nat, context: Context, partial: Item -> Document.Document) -> Document.Document:
+  if index > count then Document.empty() else Document.concat(partial({index: index, context: context}), each(index + 1, count, context, partial))
+def numbered(context: Context) -> Document.Document:
+  each(1, context.count, context, item)
+def invitation(context: Context) -> Document.Document:
+  Document.Document.offer({label: "Lend this moth", capture: context.capture})
+extension Base(self: Sections, super: {}) -> Sections:
+  {heading: fn(context: Context) -> Document.Document: doc"""Hello, {{ context.participant }}.
+""", examples: fn(context: Context) -> Document.Document: numbered(context), body: fn(context: Context) -> Document.Document: doc"""{% self.heading(context) %}{% if context.detailed then self.examples(context) else Document.text("Details folded.\n") %}{% invitation(context) %}"""}
+extension Workshop[Self has {heading: Context -> Document.Document, examples: Context -> Document.Document, body: Context -> Document.Document}, Super has {heading: Context -> Document.Document, examples: Context -> Document.Document, body: Context -> Document.Document}](self: Self, super: Super) -> Super with {heading: Context -> Document.Document, examples: Context -> Document.Document}:
+  extend(super, {heading: fn(context: Context) -> Document.Document: doc"""Workshop · {% super.heading(context) %}""", examples: fn(context: Context) -> Document.Document: doc"""{% super.examples(context) %}Bring your own impossible example.
+"""})
+def sections() -> Sections:
+  fix(compose(Base, Workshop), {})
+def render(context: Context) -> Document.Document:
+  sections().body(context)
+def plain(context: Context) -> String:
+  Document.plain(render(context))
+def quotation(context: Context) -> Document.Document:
+  Document.quote("Participant data", doc"""{{ context.utterance }}""")
+# A template can return another template, closing only over explicit arguments.
+def withHeading(heading: Document.Document) -> Context -> Document.Document:
+  fn(context: Context) -> Document.Document: doc"""{% heading %}{% render(context) %}"""
+def headed(context: Context) -> String:
+  Document.plain(withHeading(doc"""A shared preface.
+""")(context))
+def countSummary(count: Nat) -> Document.Document:
+  match count:
+    case 0: doc"""No examples supplied.
+"""
+    case 1+previous: doc"""{{ natText(previous + 1) }} examples supplied.
+"""
+def sourcePrompt(context: Context) -> Document.Document:
+  let policy = doc"""Interpret the participant's request using the captured offer below.
+Retain unresolved names. A proposal does not execute an action.
+"""
+  doc"""{% policy %}{% countSummary(context.count) %}{% quotation(context) %}
+Available operation: {% invitation(context) %}"""
+def literal() -> String:
+  Document.plain(doc"""  🌙 é "quoted" 'single'
+	keep this tab; \{{not a hole}}; \{%not a splice%}; \"""; \\.
+""")

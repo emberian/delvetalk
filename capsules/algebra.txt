@@ -1,0 +1,55 @@
+Emergent Smalltalk / demand-admission algebra.
+Scope: dynamics + typing/host sketch; not full checker/parser/wire/tariff.
+Object tuple abstracts kernel layout.
+Application left-associates; binders fresh; substitution capture-free.
+fs/arms: ordered string-key lists, first match wins. N,B,S: disjoint Nat,
+Bool,String. Values v=\x.t|N|B|S|{fs}|spec(m,e)|proto(s,t)|inj(k,t);
+Value components are unevaluated.
+(\x.t)u -> t[u/x]
+mix(a,b) -> \s.\p.b s (a s p)
+fix(e,p) -> e (fix(e,p)) p
+spec(m,e)u -> e u
+reflect(proto(s,t)) -> s
+metadata(spec(m,e)) -> m
+target(proto(s,t)) -> t
+{fs}.k -> fs[k]
+extend({fs},gs) -> {gs++filter(key notin keys(gs),fs)}
+if(true,a,b) -> a; if(false,a,b) -> b
+natcase(0,z,x.b) -> z; natcase(n+1,z,x.b) -> b[n/x]
+case(inj(k,t),arms) -> b[t/x] if arms[k]=x.b
+done(t) -> t
+op(v,w) -> scalar result iff correctly typed:
+Nat +,*,-,/,%,=,<,<=; unbounded; -=truncated subtraction;
+/=floor; n/0=0; n%0=n. Bool AND (strict). String equality.
+-> gives head contractions, NOT contextual equality.
+Demand D selects argument 1 of app,get,extend,if,natcase,case,reflect,metadata,
+target; op demands 1 if arg1 is not a value, else 2; absent otherwise.
+Only demanded child steps propagate; E nests demand positions.
+E[perform(p)] yields (p,E); response r resumes E[r].
+No step/yield/value=stuck; infinite ->=divergence. Pure -> has no effects.
+All layers share final self; super=whole lower result.
+
+Host: O=(id,code pin,versioned state,law). Ref != authority.
+Invoke pinned code on typed args/current view; effects propose a turn.
+admit(t,W)=rootsMatch(t)&funded(t)&domains(W)&all(w in W,
+ typed(w)&writerPin(w)&packageCreatorLawsNow(w)&authorityNow(w)).
+Commit iff admit: atomic app writes W, otherwise none; host fees may survive.
+Sponsorship is host context, separate from object identity and principal.
+Calls co-commit; sends queue durable later turns with answer slots.
+Grants face current law; revision != revocation. No owner bypass.
+Delegation is explicit and scoped to callee, method, code pin, arguments,
+uses/caps; callee law still applies. Nested frames inherit no principal
+merely by naming a reference.
+Slot=(one decider,deadline,one outcome: reply/refused/unknown/broken/expired). Resume consumes a generation.
+No reply != failure: query receipt; retry SAME signed attempt. New id may
+repeat effects. Private state requires protected reads.
+
+Typing sketch: exact canonical rows; supports=width bounds; recursive records
+nominal. Closed fix:(C->V->C)->V->C. Open L=(Self bound B,Super bound C,
+output F); bounds rigid at declaration. Chain L1..Ln: choose final T, seed I0;
+sigma[k]={Self=T,Super=I[k-1]}; require T supports Bk[sigma[k]], I[k-1]
+supports Ck[sigma[k]]; I[k]=Fk[sigma[k]]; I[n]=T. Instantiate, then check
+whole closed output. Affine/linear safety uses <=1; reusable closures capture only
+unrestricted shareable values. No activities in shared fields/args/payloads.
+Exhaustion != success. -> is weak-head call-by-name; sharing requires
+representation adequacy.

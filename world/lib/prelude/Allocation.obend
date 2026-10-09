@@ -1,0 +1,15 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Preparation.obend as P
+
+# Names are local child names. Descriptions carry data, never creation authority.
+record Allocation:
+  name: String
+  protocol: P.Value
+  law: P.Value
+type Allocations = Lists.List<Allocation>
+
+# Copy retains the template initial state. Configuration supplies a logical typed
+# model; receiving admission checks it against the child's retained schema.
+def configured<State>(name: String, protocol: P.Value, law: P.Value, initial: State) -> {name: String, protocol: P.Value, law: P.Value, initial: State}:
+  {name: name, protocol: protocol, law: law, initial: initial}

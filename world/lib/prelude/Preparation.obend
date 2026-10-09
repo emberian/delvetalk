@@ -1,0 +1,280 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+# JSON is data. Source functions choose effects; this codec has no substitutions.
+sum Value:
+  none: {}
+  retained: {object: String, key: String}
+  boolean: {value: Bool}
+  natural: {value: Nat}
+  number: {encoded: String}
+  text: {value: String}
+  array: {values: Values}
+  record: {fields: Fields}
+type Values = Lists.List<Value>
+record Field:
+  name: String
+  value: Value
+type Fields = Lists.List<Field>
+type Names = Lists.List<String>
+record ObservationRequest:
+  object: String
+  inspectState: Bool
+  inspectLaw: Bool
+type Requests = Lists.List<ObservationRequest>
+record Observation:
+  object: String
+  version: Nat
+  program: String
+  state: Value
+  law: Value
+type Observations = Lists.List<Observation>
+sum Read:
+  existing: {object: String}
+  exact: {object: String, key: String}
+  absent: {object: String}
+type Reads = Lists.List<Read>
+sum Effect:
+  invoke: {object: String, command: String, input: Value}
+  invokeResult: {object: String, command: String, result: Nat}
+  observe: {object: String}
+  reprogram: {object: String, protocol: Value, state: Value}
+  reprogramResult: {object: String, result: Nat}
+  law: {object: String, law: Value}
+type Effects = Lists.List<Effect>
+record Turn:
+  summary: String
+  reads: Reads
+  calls: Effects
+sum Preparation:
+  ready: Turn
+  question: {message: String, needs: Names}
+  refused: {message: String}
+record Context:
+  object: String
+  principal: String
+def field(fields: Fields, name: String) -> Value:
+  match fields:
+    case nil(_): Value.none()
+    case cons(c): if c.head.name == name then c.head.value else field(c.tail, name)
+def get(value: Value, name: String) -> Value:
+  match value:
+    case record(r): field(r.fields, name)
+    case retained(_): Value.none()
+    case none(_): Value.none()
+    case boolean(_): Value.none()
+    case natural(_): Value.none()
+    case number(_): Value.none()
+    case text(_): Value.none()
+    case array(_): Value.none()
+def textOrEmpty(value: Value) -> String:
+  match value:
+    case text(t): t.value
+    case retained(_): ""
+    case none(_): ""
+    case boolean(_): ""
+    case natural(_): ""
+    case number(_): ""
+    case array(_): ""
+    case record(_): ""
+def naturalOrZero(value: Value) -> Nat:
+  match value:
+    case natural(n): n.value
+    case retained(_): 0n
+    case none(_): 0n
+    case boolean(_): 0n
+    case number(_): 0n
+    case text(_): 0n
+    case array(_): 0n
+    case record(_): 0n
+def observationOrEmpty(xs: Observations, object: String) -> Observation:
+  match xs:
+    case nil(_): {object: "", version: 0n, program: "", state: Value.none(), law: Value.none()}
+    case cons(c): if c.head.object == object then c.head else observationOrEmpty(c.tail, object)
+def oneField(name: String, value: Value) -> Value:
+  Value.record({fields: Fields.cons({head: {name: name, value: value}, tail: Fields.nil()})})
+# Required access keeps missing, wrong-kind and legitimate zero/false distinct.
+# These are source values, not exceptions or host admission decisions.
+sum FieldLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Value}
+sum TextLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: String}
+sum NaturalLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Nat}
+sum BooleanLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Bool}
+sum ObservationLookup:
+  missing: {}
+  found: {value: Observation}
+def lookupFields(fields: Fields, name: String) -> FieldLookup:
+  match fields:
+    case nil(_): FieldLookup.missing()
+    case cons(c): if c.head.name == name then FieldLookup.found({value: c.head.value}) else lookupFields(c.tail, name)
+def lookupField(value: Value, name: String) -> FieldLookup:
+  match value:
+    case record(r): lookupFields(r.fields, name)
+    case none(_): FieldLookup.wrongKind()
+    case retained(_): FieldLookup.wrongKind()
+    case boolean(_): FieldLookup.wrongKind()
+    case natural(_): FieldLookup.wrongKind()
+    case number(_): FieldLookup.wrongKind()
+    case text(_): FieldLookup.wrongKind()
+    case array(_): FieldLookup.wrongKind()
+def asText(value: Value) -> TextLookup:
+  match value:
+    case text(t): TextLookup.found({value: t.value})
+    case none(_): TextLookup.wrongKind()
+    case retained(_): TextLookup.wrongKind()
+    case boolean(_): TextLookup.wrongKind()
+    case natural(_): TextLookup.wrongKind()
+    case number(_): TextLookup.wrongKind()
+    case record(_): TextLookup.wrongKind()
+    case array(_): TextLookup.wrongKind()
+def asNatural(value: Value) -> NaturalLookup:
+  match value:
+    case natural(n): NaturalLookup.found({value: n.value})
+    case none(_): NaturalLookup.wrongKind()
+    case retained(_): NaturalLookup.wrongKind()
+    case boolean(_): NaturalLookup.wrongKind()
+    case text(_): NaturalLookup.wrongKind()
+    case number(_): NaturalLookup.wrongKind()
+    case record(_): NaturalLookup.wrongKind()
+    case array(_): NaturalLookup.wrongKind()
+def asBoolean(value: Value) -> BooleanLookup:
+  match value:
+    case boolean(b): BooleanLookup.found({value: b.value})
+    case none(_): BooleanLookup.wrongKind()
+    case retained(_): BooleanLookup.wrongKind()
+    case natural(_): BooleanLookup.wrongKind()
+    case text(_): BooleanLookup.wrongKind()
+    case number(_): BooleanLookup.wrongKind()
+    case record(_): BooleanLookup.wrongKind()
+    case array(_): BooleanLookup.wrongKind()
+def textField(value: Value, name: String) -> TextLookup:
+  match lookupField(value, name):
+    case missing(_): TextLookup.missing()
+    case wrongKind(_): TextLookup.wrongKind()
+    case found(f): asText(f.value)
+def naturalField(value: Value, name: String) -> NaturalLookup:
+  match lookupField(value, name):
+    case missing(_): NaturalLookup.missing()
+    case wrongKind(_): NaturalLookup.wrongKind()
+    case found(f): asNatural(f.value)
+def booleanField(value: Value, name: String) -> BooleanLookup:
+  match lookupField(value, name):
+    case missing(_): BooleanLookup.missing()
+    case wrongKind(_): BooleanLookup.wrongKind()
+    case found(f): asBoolean(f.value)
+def lookupObservation(xs: Observations, object: String) -> ObservationLookup:
+  match xs:
+    case nil(_): ObservationLookup.missing()
+    case cons(c): if c.head.object == object then ObservationLookup.found({value: c.head}) else lookupObservation(c.tail, object)
+def isText(value: Value) -> Bool:
+  match asText(value):
+    case found(_): true
+    case missing(_): false
+    case wrongKind(_): false
+def isNatural(value: Value) -> Bool:
+  match asNatural(value):
+    case found(_): true
+    case missing(_): false
+    case wrongKind(_): false
+def isBoolean(value: Value) -> Bool:
+  match asBoolean(value):
+    case found(_): true
+    case missing(_): false
+    case wrongKind(_): false
+# Deliberately lossy optional projections. Do not use them to validate required
+# fields. Required consumers must use checked lookup results.
+def booleanOrFalse(value: Value) -> Bool:
+  match asBoolean(value):
+    case found(b): b.value
+    case missing(_): false
+    case wrongKind(_): false
+sum ArrayLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Values}
+sum RecordLookup:
+  missing: {}
+  wrongKind: {}
+  found: {value: Fields}
+def asArray(value: Value) -> ArrayLookup:
+  match value:
+    case array(a): ArrayLookup.found({value: a.values})
+    case none(_): ArrayLookup.wrongKind()
+    case retained(_): ArrayLookup.wrongKind()
+    case boolean(_): ArrayLookup.wrongKind()
+    case natural(_): ArrayLookup.wrongKind()
+    case number(_): ArrayLookup.wrongKind()
+    case text(_): ArrayLookup.wrongKind()
+    case record(_): ArrayLookup.wrongKind()
+def asRecord(value: Value) -> RecordLookup:
+  match value:
+    case record(r): RecordLookup.found({value: r.fields})
+    case none(_): RecordLookup.wrongKind()
+    case retained(_): RecordLookup.wrongKind()
+    case boolean(_): RecordLookup.wrongKind()
+    case natural(_): RecordLookup.wrongKind()
+    case number(_): RecordLookup.wrongKind()
+    case text(_): RecordLookup.wrongKind()
+    case array(_): RecordLookup.wrongKind()
+def arrayField(value: Value, name: String) -> ArrayLookup:
+  match lookupField(value, name):
+    case missing(_): ArrayLookup.missing()
+    case wrongKind(_): ArrayLookup.wrongKind()
+    case found(f): asArray(f.value)
+def recordField(value: Value, name: String) -> RecordLookup:
+  match lookupField(value, name):
+    case missing(_): RecordLookup.missing()
+    case wrongKind(_): RecordLookup.wrongKind()
+    case found(f): asRecord(f.value)
+def textEquals(value: Value, expected: String) -> Bool:
+  match asText(value):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(t): t.value == expected
+def naturalEquals(value: Value, expected: Nat) -> Bool:
+  match asNatural(value):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(n): n.value == expected
+def observed(xs: Observations, object: String) -> Bool:
+  match lookupObservation(xs, object):
+    case missing(_): false
+    case found(_): true
+
+# A resolved source reference comes from a non-inspecting native observation.
+# This data type grants no authority; retained bind revalidates its exact root.
+record ResolvedReference:
+  object: String
+  key: String
+  program: String
+sum ReferenceLookup:
+  missing: {}
+  unresolved: {}
+  found: {value: ResolvedReference}
+def resolveObservation(observation: Observation) -> ReferenceLookup:
+  match observation.state:
+    case retained(reference):
+      if reference.object == observation.object && observation.object != "" && textLength(reference.key) == 64n && textLength(observation.program) == 64n then ReferenceLookup.found({value: {object: reference.object, key: reference.key, program: observation.program}}) else ReferenceLookup.unresolved()
+    case none(_): ReferenceLookup.unresolved()
+    case boolean(_): ReferenceLookup.unresolved()
+    case natural(_): ReferenceLookup.unresolved()
+    case number(_): ReferenceLookup.unresolved()
+    case text(_): ReferenceLookup.unresolved()
+    case array(_): ReferenceLookup.unresolved()
+    case record(_): ReferenceLookup.unresolved()
+def lookupReference(observations: Observations, object: String) -> ReferenceLookup:
+  match lookupObservation(observations, object):
+    case missing(_): ReferenceLookup.missing()
+    case found(observation): resolveObservation(observation.value)
+def referenceRead(reference: ResolvedReference) -> Read:
+  Read.exact({object: reference.object, key: reference.key})

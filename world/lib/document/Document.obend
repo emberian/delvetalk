@@ -1,0 +1,47 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Preparation.obend as P
+import ./Encounter.obend as Encounter
+# Source-owned offer identity; revision/meaning are authored metadata, not native
+# root versions or authenticated program hashes. The host retains exact roots.
+record Capture:
+  object: String
+  revision: Nat
+  meaning: String
+  entry: String
+  token: String
+sum Document:
+  text: {value: String}
+  sequence: {items: Documents}
+  quote: {attribution: String, body: Document}
+  reference: Encounter.Child
+  offer: {label: String, capture: Capture}
+  fields: {capture: Capture, values: P.Fields, needs: P.Names}
+  source: {language: String, code: String, revision: String}
+  result: {status: String, body: Document}
+  continuation: {key: String, after: Nat, limit: Nat, label: String}
+type Documents = Lists.List<Document>
+def empty() -> Document:
+  Document.sequence({items: Documents.nil()})
+def text(value: String) -> Document:
+  Document.text({value: value})
+def concat(left: Document, right: Document) -> Document:
+  Document.sequence({items: Documents.cons({head: left, tail: Documents.cons({head: right, tail: Documents.nil()})})})
+def quote(attribution: String, body: Document) -> Document:
+  Document.quote({attribution: attribution, body: body})
+def sameCapture(left: Capture, right: Capture) -> Bool:
+  left.object == right.object && left.revision == right.revision && left.meaning == right.meaning && left.entry == right.entry && left.token == right.token
+# Read-only text projection; callers retain the original structured value.
+def plain(document: Document) -> String:
+  match document:
+    case text(t): t.value
+    case sequence(s): plainItems(s.items)
+    case quote(q): textConcat(q.attribution, textConcat(": ", plain(q.body)))
+    case reference(r): r.label
+    case offer(o): o.label
+    case fields(_): ""
+    case source(s): s.code
+    case result(r): plain(r.body)
+    case continuation(c): c.label
+def plainItems(items: Documents) -> String:
+  Lists.fold::<Document, String>(items, "", fn(document: Document) -> String -> String: fn(rest: String) -> String: textConcat(plain(document), rest))

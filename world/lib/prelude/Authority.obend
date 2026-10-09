@@ -1,0 +1,42 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./List.obend as Lists
+# Applications choose command roles in source; custody only frames configured IDs.
+record Grant:
+  command: String
+  principals: P.Names
+type Grants = Lists.List<Grant>
+record Configuration:
+  commands: P.Names
+  participants: P.Names
+  managers: P.Names
+  stewards: P.Names
+  publicPanels: P.Names
+record Policy:
+  reading: P.Value
+  invocation: Grants
+  reprogramming: P.Names
+  management: P.Names
+  publicPanels: P.Names
+def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def people(names: P.Names) -> P.Values:
+  match names:
+    case nil(_): P.Values.nil()
+    case cons(c): P.Values.cons({head: P.Value.text({value: c.head}), tail: people(c.tail)})
+def panels(names: P.Names) -> P.Fields:
+  match names:
+    case nil(_): P.Fields.nil()
+    case cons(c): pair(c.head, P.Value.text({value: "public"}), panels(c.tail))
+def commands(grants: Grants) -> P.Fields:
+  match grants:
+    case nil(_): P.Fields.nil()
+    case cons(c): pair(c.head.command, P.Value.array({values: people(c.head.principals)}), commands(c.tail))
+def uniform(names: P.Names, principals: P.Names) -> Grants:
+  match names:
+    case nil(_): Grants.nil()
+    case cons(c): Grants.cons({head: {command: c.head, principals: principals}, tail: uniform(c.tail, principals)})
+def assemble(policy: Policy) -> P.Value:
+  P.Value.record({fields: pair("profile", P.Value.text({value: "delvetalk-scoped-law"}), pair("read", policy.reading, pair("view", P.Value.record({fields: panels(policy.publicPanels)}), pair("invoke", P.Value.record({fields: commands(policy.invocation)}), pair("reprogram", P.Value.array({values: people(policy.reprogramming)}), pair("law", P.Value.array({values: people(policy.management)}), P.Fields.nil()))))))})
+def configured(config: Configuration) -> P.Value:
+  assemble({reading: P.Value.text({value: "public"}), invocation: uniform(config.commands, config.participants), reprogramming: config.managers, management: config.stewards, publicPanels: config.publicPanels})

@@ -1,0 +1,16 @@
+edition ObjectiveBend 1
+record Report:
+  candidate: String
+  editor: String
+  generation: Nat
+  target: String
+  baselineVersion: Nat
+  status: String
+  program: String
+record Approval:
+  candidate: String
+  editor: String
+  generation: Nat
+  target: String
+record Target:
+  target: String
