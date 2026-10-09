@@ -316,7 +316,7 @@ class ClerkTests(unittest.TestCase):
     def test_upgrade_accepts_exact_legacy_pin_map_without_normalizing_it(self):
         config = self.c.config()
         config['profile']['pins'].pop('lean-toolchain')
-        config['profile']['pins'].pop('spec/upstream/Theory/AxiomPin.lean')
+        config['profile']['pins'].pop('spec/bend/Theory/AxiomPin.lean')
         clerk.save(self.state / 'clerk.json', config)
         old = self.c.profile()
         result = self.c.upgrade(old['sha256'])

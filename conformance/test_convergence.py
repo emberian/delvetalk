@@ -31,7 +31,7 @@ class RuntimeClosure(unittest.TestCase):
                                 continue  # Explicit pinned-toolchain boundary.
                             relative = Path(*name.split('.')).with_suffix('.lean')
                             matches = [str(Path(directory) / relative)
-                                       for directory in ('profiles', 'spec', 'spec/upstream')
+                                       for directory in ('profiles', 'spec', 'spec/bend')
                                        if (ROOT / directory / relative).is_file()]
                             self.assertEqual(len(matches), 1,
                                 f'{path}: cannot resolve project import {name}: {matches}')

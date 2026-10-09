@@ -17,7 +17,6 @@ Every recursion is fuel-bounded with fuel proportional to the input; running
 out is a refusal ("capacity"), never a different parse. -/
 import Lean
 import Compiler.ObjectiveBendLaw
-import Delvetalk.DocumentTemplate
 namespace Minidregg.Compiler.ObjectiveBendParse
 open Lean
 set_option autoImplicit false
@@ -817,26 +816,12 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
 def moduleSchema : String := "dregg.objective-bend.module.v1"
 
 /-- Parse one module's source text. -/
-def parseObjectivePlain (source : String) : Except Diagnostic Json := do
+def parseObjective (source : String) : Except Diagnostic Json := do
   let lines ← sourceLines source
   let ((imports, decls), _) ← (declarations lines).run 0
   return Json.mkObj [("schema", toJson moduleSchema), ("edition", toJson "objective-bend-1"),
     ("imports", Json.arr imports), ("declarations", Json.arr decls),
     ("theoremScope", toJson "new source AST; elaboration and reference semantics are Objective Core4")]
-
-/-- Hosted document literals lower to ordinary source calls before the unchanged
-parser. Exact input source remains the package identity; spans refer to it. -/
-def parseObjective (source : String) : Except Diagnostic Json := do
-  let expanded ← (Delvetalk.DocumentTemplate.lower source).mapError (fun message => ⟨message, none⟩)
-  match parseObjectivePlain expanded.source with
-  | .ok ast => return expanded.remap ast
-  | .error diagnostic =>
-    if expanded.origins.isEmpty then throw diagnostic
-    let span := diagnostic.span.map fun span =>
-      let start := expanded.position span.start
-      let stop := expanded.position span.stop
-      { span with start := start.byte, stop := stop.byte, line := start.line }
-    throw { diagnostic with span }
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a
 leading byte-order mark is consumed. -/

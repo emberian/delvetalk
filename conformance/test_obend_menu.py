@@ -142,7 +142,7 @@ class SourceMenus(unittest.TestCase):
         view = self.project()
         projection.assert_runtime(view, self.runtime)
         wrong = copy.deepcopy(self.runtime)
-        wrong['files']['spec/upstream/Compiler/ObjectiveBendFrontEnd.lean'] = '0' * 64
+        wrong['files']['spec/bend/Compiler/ObjectiveBendFrontEnd.lean'] = '0' * 64
         with self.assertRaisesRegex(projection.ProjectionError, 'expected compiled runtime'):
             projection.assert_runtime(view, wrong)
         with self.assertRaisesRegex(projection.ProjectionError, 'expected compiled runtime'):

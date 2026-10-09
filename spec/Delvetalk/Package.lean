@@ -1,6 +1,7 @@
 /- Generic source-package boundary. Mini owns parsing, elaboration, typing and
    shared-demand execution. This adapter adds only JSON framing and data IO. -/
 import Delvetalk.Core
+import Delvetalk.FrontEnd
 import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
@@ -38,7 +39,7 @@ def modulesOf (j : Json) : Except String (List SourceModule × Json) := do
     unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw "invalid module name"
     if modules.any (fun m => m.name == name) then throw "duplicate module name"
     if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
-    let ast ← (parseSource name source).mapError (fun d => d.json.compress)
+    let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
     let mut imports : List LockedImport := []
     for edge in (← (← ast.getObjVal? "imports").getArr?) do
       let path ← edge.getObjValAs? String "path"
@@ -52,7 +53,7 @@ def modulesOf (j : Json) : Except String (List SourceModule × Json) := do
 def compile (j : Json) : Except String Json := do
   let (modules, sources) ← modulesOf j
   let entry ← j.getObjValAs? String "entry"
-  let lowered ← (lower modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition").mapError
+  let lowered ← (FrontEnd.lower modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition").mapError
     (fun diagnostic => diagnostic.json.compress)
   if !lowered.laws.isEmpty then throw "package laws require a host law adapter; this pure profile refuses them"
   let accepted ← (accept lowered).mapError (fun diagnostic => diagnostic.json.compress)
@@ -185,13 +186,40 @@ def run (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
   runVerified j
 
-/-- Explicit recursive-data route. Legacy executePacket/executeJsonPacket keep
-    their original fragment and wire. Conversion and machine work share ticks. -/
-def executeDataPacket (packet arguments limits : Json) : Except String Json := do
+/-- Native callers keep checked materialized Data in memory. Wire encoding is
+reserved for the transport boundary; it must not become a second evaluation or
+an unnecessary decode of our own output inside one receiving turn. -/
+structure DataUsage where
+  ticksUsed : Nat
+  conversionNodes : Nat
+  heapCells : Nat
+
+inductive DataExecution where
+  | refused (failure : String) (usage : DataUsage)
+  | finished (value : Data) (type : Ty) (nodesUsed : Nat) (usage : DataUsage)
+
+def DataExecution.usage : DataExecution → DataUsage
+  | .refused _ usage | .finished _ _ _ usage => usage
+
+def DataUsage.fields (usage : DataUsage) : List (String × Json) :=
+  [("ticksUsed", toJson usage.ticksUsed), ("conversionNodes", toJson usage.conversionNodes),
+   ("heapCells", toJson usage.heapCells)]
+
+def DataExecution.wire : DataExecution → Json
+  | .refused failure usage => Json.mkObj (
+      [("executionProfile", toJson "delvetalk-package-data-v1"),
+       ("status", toJson "refused"), ("failure", toJson failure)] ++ usage.fields)
+  | .finished value type nodes usage => Json.mkObj (
+      [("executionProfile", toJson "delvetalk-package-data-v1"),
+       ("status", toJson "finished"), ("value", dataJson value), ("type", typeJson type),
+       ("nodesUsed", toJson nodes)] ++ usage.fields)
+
+/-- Explicit recursive-data execution. Full eager materialization and output
+shape checking happen here, before any native consumer sees a Data value.
+Conversion and machine work share the existing whole-execution allowance. -/
+def executeDataValue (packet arguments limits : Json) : Except String DataExecution := do
   let bytes ← bounded limits "bytes" 1048576 16777216
   let inputBytes ← bounded limits "inputBytes" bytes 16777216
-  -- Bound complete typed input, including large scalars, before decoding or
-  -- decimal conversion. This is compact wire UTF-8, not extraction encoding.
   if arguments.compress.utf8ByteSize > inputBytes then throw "typed data input byte capacity"
   let ticks ← bounded limits "ticks" 100000 1000000
   let work ← bounded limits "work" ticks 1000000
@@ -204,22 +232,20 @@ def executeDataPacket (packet arguments limits : Json) : Except String Json := d
   let budget : Budget := ⟨nodes, ticks - before, bytes⟩
   match execute ⟨heap, stack⟩ budget source.term with
   | .error (failure, state, rest) =>
-      return Json.mkObj [("executionProfile", toJson "delvetalk-package-data-v1"),
-        ("status", toJson "refused"), ("failure", toJson (reprStr failure)),
-        ("ticksUsed", toJson (budget.ticks - rest.ticks)), ("conversionNodes", toJson before),
-        ("heapCells", toJson state.heap.size)]
+      return .refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩
   | .ok execution =>
       let result := execution.extraction.result
-      -- Recheck finite extracted data against the declared result; do not rely
-      -- on Data.conforms, which deliberately does not unfold recursive aliases.
+      -- Recursive aliases and the complete returned value are checked, including
+      -- payloads which a later source Decision may explicitly refuse.
       let outputAllowance := min remaining result.remaining.ticks
       let (_, after) ← (PackageData.quote source.assumptions 256 result.value type).run outputAllowance
-      return Json.mkObj [("executionProfile", toJson "delvetalk-package-data-v1"),
-        ("status", toJson "finished"), ("value", dataJson result.value), ("type", typeJson type),
-        ("ticksUsed", toJson (budget.ticks - result.remaining.ticks)),
-        ("conversionNodes", toJson (before + outputAllowance - after)),
-        ("heapCells", toJson result.state.heap.size),
-        ("nodesUsed", toJson (nodes - result.remaining.nodes))]
+      return .finished result.value type (nodes - result.remaining.nodes)
+        ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
+
+/-- The external recursive-data wire is unchanged. Native receiving uses the
+same execution function without serializing and decoding its checked result. -/
+def executeDataPacket (packet arguments limits : Json) : Except String Json := do
+  return (← executeDataValue packet arguments limits).wire
 
 def runData (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
@@ -267,8 +293,8 @@ def job (j : Json) : Except String Json := do
   | "template-expand" =>
     let source ← j.getObjValAs? String "source"
     if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
-    let expanded ← DocumentTemplate.lower source
-    return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.source),
+    let expanded ← (FrontEnd.parse "Template" source).mapError (fun d => d.json.compress)
+    return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.expandedSource),
       ("schema", toJson "delvetalk.document-template-expansion.v1")]
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j

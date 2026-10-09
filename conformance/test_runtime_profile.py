@@ -34,12 +34,10 @@ class RuntimeProfileTests(unittest.TestCase):
         self.assertEqual(set(after) - set(before), {'spec/Extra.lean'})
         self.assertNotEqual(before[runtime.MANIFEST], after[runtime.MANIFEST])
 
-    def test_transitive_compiled_sources_and_provenance_invalidate_pins(self):
+    def test_transitive_local_compiled_sources_invalidate_pins(self):
         baseline = runtime.file_hashes('compiled', root=self.root)
-        for name in ('spec/Delvetalk/Package.lean', 'spec/upstream/Compiler/ObjectiveBendFrontEnd.lean',
-                     'spec/upstream/Compiler/ObjectiveBendElaborate.lean',
-                     'spec/original/Compiler/ObjectiveBendTermWire.lean.txt',
-                     'spec/original/Theory/AssertAxioms.lean.txt', 'spec/upstream.json',
+        for name in ('spec/Delvetalk/Package.lean', 'spec/bend/Compiler/ObjectiveBendFrontEnd.lean',
+                     'spec/bend/Compiler/ObjectiveBendElaborate.lean',
                      'profiles/TransactionsCore.lean', '.lake/build/bin/delvetalk-compiled',
                      'scripts/world.py', 'lean-toolchain', 'lakefile.toml'):
             with self.subTest(dependency=name):
@@ -61,7 +59,7 @@ class RuntimeProfileTests(unittest.TestCase):
     def test_unknown_profile_missing_source_and_escaping_symlink_refused(self):
         with self.assertRaisesRegex(ValueError, 'unknown runtime'):
             runtime.file_hashes('../arbitrary', root=self.root)
-        path = self.root / 'spec/upstream/Theory/AxiomPin.lean'
+        path = self.root / 'spec/bend/Theory/AxiomPin.lean'
         path.unlink()
         with self.assertRaises(FileNotFoundError):
             runtime.file_hashes('world', root=self.root)
@@ -71,10 +69,9 @@ class RuntimeProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'escapes repository'):
             runtime.file_hashes('world', root=self.root)
 
-    def test_reviewed_closures_cover_actual_project_imports_and_compatibility_sources(self):
+    def test_reviewed_closures_cover_actual_local_project_imports(self):
         # Check the maintained lists against this pinned project's simple import
         # declarations. This is a regression check, not a runtime module loader.
-        manifest = json.loads((ROOT / 'spec/upstream.json').read_text())
         for profile in runtime.PROFILES:
             selected = set(runtime.paths(profile))
             for name in sorted(selected):
@@ -86,25 +83,12 @@ class RuntimeProfileTests(unittest.TestCase):
                         if module == 'Lean' or module.startswith(('Lean.', 'Std.', 'Init.')):
                             continue
                         if module.startswith(('Compiler.', 'Pred.', 'Theory.')):
-                            imported = 'spec/upstream/' + module.replace('.', '/') + '.lean'
+                            imported = 'spec/bend/' + module.replace('.', '/') + '.lean'
                         elif module.startswith('Delvetalk.'):
                             imported = 'spec/' + module.replace('.', '/') + '.lean'
                         else:
                             imported = 'profiles/' + module.replace('.', '/') + '.lean'
                         self.assertIn(imported, selected, f'{profile}: {name} imports missing {imported}')
-                if name.startswith('spec/upstream/'):
-                    provenance = manifest['files'][name.removeprefix('spec/upstream/')]
-                    if 'compatibility' in provenance:
-                        compatibility = provenance['compatibility']
-                        if 'sourceGit' in compatibility:
-                            self.assertIn('spec/upstream.json', selected)
-                            self.assertIn(name, selected)
-                            self.assertEqual(compatibility['sourceGit'], {
-                                'repository': manifest['repository'], 'commit': manifest['commit'],
-                                'path': name.removeprefix('spec/upstream/')})
-                            self.assertNotIn('source', compatibility)
-                        else:
-                            self.assertIn(compatibility['source'], selected)
 
 
 if __name__ == '__main__':

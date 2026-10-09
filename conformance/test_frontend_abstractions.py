@@ -74,10 +74,10 @@ class FrontendAbstractions(unittest.TestCase):
         source = 'edition ObjectiveBend 1\ndef prototype(x: Nat) -> Nat:\n  x + 1n\ndef answer():\n  prototype(4n)\n'
         self.assertEqual(self.execute('answer', source), {'tag': 'natural', 'value': '5'})
 
-    def test_reversible_git_pin_verification(self):
-        result = subprocess.run(['python3', 'scripts/check_source_pins.py'], cwd=ROOT,
+    def test_local_fork_source_closure_verification(self):
+        result = subprocess.run(['python3', 'scripts/check_semantics.py'], cwd=ROOT,
                                 text=True, capture_output=True, check=True)
-        self.assertIn('identities match', result.stdout)
+        self.assertIn('local source closures checked', result.stdout)
 
 
 if __name__ == '__main__':

@@ -75,4 +75,4 @@ Git history retains superseded plans and reports.
 | Receiving contracts | [Authority](profiles/AUTHORITY.md), [transactions](profiles/TRANSACTIONS.md), [history](profiles/HISTORY.md) |
 | Intended completed design | [Design previews](docs/previews/README.md), explicitly written from an imagined completed system |
 
-[Contribute](CONTRIBUTING.md) · [Mini provenance](spec/upstream.json) · [AGPLv3](LICENSE)
+[Contribute](CONTRIBUTING.md) · [Mini origin](spec/bend/origin.json) · [AGPLv3](LICENSE)

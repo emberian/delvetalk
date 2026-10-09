@@ -61,7 +61,7 @@ class SourceViewTests(unittest.TestCase):
         self.assertEqual(view['source']['package']['modules'][0]['source'], SOURCE)
         pins = view['runtimeProfile']
         self.assertEqual(pins['profile'], 'compiled')
-        self.assertIn('spec/upstream/Compiler/ObjectiveBendFrontEnd.lean', pins['files'])
+        self.assertIn('spec/bend/Compiler/ObjectiveBendFrontEnd.lean', pins['files'])
         request = projection.request(view, 'knock', 'visitor', 'knock-once')
         self.assertEqual(request['expected'], self.root)
         receipt = projection.world.exchange(self.db, request, profile='compiled')
@@ -121,7 +121,7 @@ def view(state: State, panel: String) -> Activity<Plan, Response, String>:
         view = projection.project(self.root, 'door', expected_runtime=expected)
         projection.assert_runtime(view, expected)
         changed = dict(pins)
-        changed['spec/upstream/Compiler/ObjectiveBendFrontEnd.lean'] = '0' * 64
+        changed['spec/bend/Compiler/ObjectiveBendFrontEnd.lean'] = '0' * 64
         # Model a source dependency changed BEFORE inspection and stable during
         # it, not merely the already-covered case of changing while it runs.
         with patch.object(projection.runtime_profile, 'file_hashes', return_value=changed):

@@ -205,9 +205,9 @@ class History(unittest.TestCase):
         trusted = h.export_history(database, bundle, profile='compiled')
         pins = h.loads((bundle / 'manifest.json').read_bytes())['genesis']['profile']['files']
         for path in ('spec/Delvetalk/Package.lean', 'profiles/Compiled.lean',
-                     'spec/upstream/Compiler/ObjectiveBendFrontEnd.lean',
-                     'spec/upstream/Theory/ObjectiveBendDemandMachineFast.lean',
-                     'spec/original/Compiler/ObjectiveBendTermWire.lean.txt'):
+                     'spec/bend/Compiler/ObjectiveBendFrontEnd.lean',
+                     'spec/bend/Theory/ObjectiveBendDemandMachineFast.lean',
+                     'spec/bend/Compiler/ObjectiveBendTermWire.lean'):
             self.assertIn(path, pins)
         h.verify_history(bundle, expected_genesis=trusted['genesis'], expected_head=trusted['head'])
 

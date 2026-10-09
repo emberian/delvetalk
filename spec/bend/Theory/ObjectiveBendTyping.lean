@@ -151,6 +151,16 @@ def callable : Ty → Ty
   | .specification _ extension => callable extension
   | other => other
 
+/-- Keep specification metadata while presenting its callable at an agreed type.
+This constructs only a conversion target; `agree` must still justify every use. -/
+def recastCallable : Ty → Ty → Ty
+  | .specification metadata extension, desired => .specification metadata (recastCallable extension desired)
+  | _, desired => desired
+
+theorem callable_recastCallable (source desired : Ty) :
+    callable (recastCallable source desired) = callable desired := by
+  induction source <;> simp_all [recastCallable, callable]
+
 def reusableAllowed (assumptions : Assumptions) (reuse : Reuse)
     (context : Context) (uses : Uses) : Bool :=
   reuse != .reusable || reusableCaptures assumptions.shareableVariables context uses
@@ -443,17 +453,18 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       match ht : callable first.type, hs : callable second.type with
       | .arrow .reusable .unrestricted self (.arrow .reusable .unrestricted inherited middle),
         .arrow .reusable .unrestricted self' (.arrow .reusable .unrestricted middle' provided) =>
-          if hc : self' = self then
-            if hm : middle' = middle then
-              if captures : reusableCaptures assumptions.shareableVariables context (addUses first.uses second.uses) = true then
-                if shareSelf : self.shareableUnder assumptions.shareableVariables = true then
-                  if shareInherited : inherited.shareableUnder assumptions.shareableVariables = true then
-                    if shareMiddle : middle.shareableUnder assumptions.shareableVariables = true then
-                      some ⟨.arrow .reusable .unrestricted self (.arrow .reusable .unrestricted inherited provided),
-                        addUses first.uses second.uses,
-                        .mix first.derivation second.derivation ht (by simpa [hc, hm] using hs)
-                          captures shareSelf shareInherited shareMiddle⟩
-                    else none
+          let expected := recastCallable second.type
+            (.arrow .reusable .unrestricted self (.arrow .reusable .unrestricted middle provided))
+          if agrees : agree assumptions second.type expected = true then
+            if captures : reusableCaptures assumptions.shareableVariables context (addUses first.uses second.uses) = true then
+              if shareSelf : self.shareableUnder assumptions.shareableVariables = true then
+                if shareInherited : inherited.shareableUnder assumptions.shareableVariables = true then
+                  if shareMiddle : middle.shareableUnder assumptions.shareableVariables = true then
+                    some ⟨.arrow .reusable .unrestricted self (.arrow .reusable .unrestricted inherited provided),
+                      addUses first.uses second.uses,
+                      .mix first.derivation (.conversion second.derivation (agree_sameType agrees)) ht
+                        (by simp [expected, callable_recastCallable, callable])
+                        captures shareSelf shareInherited shareMiddle⟩
                   else none
                 else none
               else none
@@ -465,13 +476,17 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       let base ← infer assumptions annotations context (position ++ [1]) fuel inheritedTerm
       match ht : callable code.type with
       | .arrow .reusable .unrestricted target (.arrow .reusable .unrestricted inherited output) =>
-          if ho : output = target then
+          let expected := recastCallable code.type
+            (.arrow .reusable .unrestricted target (.arrow .reusable .unrestricted inherited target))
+          if agrees : agree assumptions code.type expected = true then
             if hb : agree assumptions base.type inherited = true then
               if hs : target.shareableUnder assumptions.shareableVariables = true then
                 if ha : argumentAllowed assumptions .unrestricted context inherited base.uses = true then
                   if hc : reusableCaptures assumptions.shareableVariables context code.uses = true then
                     some ⟨target, addUses code.uses base.uses,
-                      .fix code.derivation (by simpa [ho] using ht) (.conversion base.derivation (agree_sameType hb)) hs ha hc⟩
+                      .fix (.conversion code.derivation (agree_sameType agrees))
+                        (by simp [expected, callable_recastCallable, callable])
+                        (.conversion base.derivation (agree_sameType hb)) hs ha hc⟩
                   else none
                 else none
               else none
@@ -497,10 +512,10 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       let z ← infer assumptions annotations context (position ++ [1]) fuel zero
       let s ← infer assumptions annotations (⟨.natural,.unrestricted⟩ :: context) (position ++ [2]) fuel successor
       if ht : condition.type = .natural then
-        if hb : s.type = z.type then
+        if hb : agree assumptions s.type z.type = true then
           if hu : safeUses (⟨.natural,.unrestricted⟩ :: context) s.uses = true then
             some ⟨z.type, addUses condition.uses (addUses z.uses s.uses.tail),
-              .ifZero (ht ▸ condition.derivation) z.derivation (hb ▸ s.derivation) hu⟩
+              .ifZero (ht ▸ condition.derivation) z.derivation (.conversion s.derivation (agree_sameType hb)) hu⟩
           else none
         else none
       else none
@@ -601,8 +616,9 @@ def inferFields (assumptions : Assumptions) (annotations : Annotations) (context
       else none
 
 /-- Every arm body is checked under its label's payload type in the scrutinee
-row; all arms must agree exactly on the result type. Empty arm lists have no
-result type to infer and are refused here (the relation itself permits them). -/
+row; the first arm chooses the result type and later arms use checked conversion
+at that same type. Empty arm lists have no result type to infer and are refused
+here (the relation itself permits them). -/
 def inferArms (assumptions : Assumptions) (annotations : Annotations) (context : Context)
     (position : List Nat) (index : Nat) (scrutineeRow : Ty) (expected : Option Ty) :
     Nat → (arms : List (String × Term)) → Option (InferredArms assumptions context arms)
@@ -614,11 +630,14 @@ def inferArms (assumptions : Assumptions) (annotations : Annotations) (context :
       let payload ← scrutineeRow.lookup assumptions.bounds (fuel + 1) name
       if hs : payload.shareableUnder assumptions.shareableVariables = true then
         let first ← infer assumptions annotations (⟨payload,.unrestricted⟩ :: context) (position ++ [index]) fuel body
-        if hu : safeUses (⟨payload,.unrestricted⟩ :: context) first.uses = true then
-          let later ← inferArms assumptions annotations context position (index + 1) scrutineeRow (some first.type) fuel rest
-          if hl : later.result = first.type then
-            some ⟨.field name payload later.row, first.type, addUses first.uses.tail later.uses,
-              .cons first.derivation hu hs (hl ▸ later.derivation)⟩
+        let result := expected.getD first.type
+        if hc : agree assumptions first.type result = true then
+          if hu : safeUses (⟨payload,.unrestricted⟩ :: context) first.uses = true then
+            let later ← inferArms assumptions annotations context position (index + 1) scrutineeRow (some result) fuel rest
+            if hl : later.result = result then
+              some ⟨.field name payload later.row, result, addUses first.uses.tail later.uses,
+                .cons (.conversion first.derivation (agree_sameType hc)) hu hs (hl ▸ later.derivation)⟩
+            else none
           else none
         else none
       else none

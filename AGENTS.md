@@ -18,14 +18,15 @@ can be reproduced.
   checklist. Propose improvements and own coordinated fixes. Frozen snapshots
   preserve test evidence; they do not freeze development or suppress findings.
 
-- Lean owns the pinned source relation and local host admission. Python, JS and
-  C are independent core evaluators. Python world code handles custody of a
-  local file and process transport, not admission decisions.
-- `spec/upstream/` pins Mini; normative semantics are byte-exact. Explicit
-  audit/proof compatibility projections retain originals and exact edits in
-  `spec/upstream.json`. Change its provenance and
-  hashes deliberately when updating it. Do not silently fork normative rules.
-- Reference dynamics, typed Mini execution, local host fixtures and deployment
+- Lean owns the DelveTalk source relation and local host admission. Python, JS
+  and C are independent evaluators of their supported core fragment. Python world
+  code handles physical custody and transport, not admission decisions.
+- `spec/bend/` is the editable DelveTalk edition of Objective Bend, forked from
+  Mini. `spec/bend/origin.json` attributes the upstream baseline; it does not
+  constrain local source to upstream bytes. Edit semantics directly with their
+  proofs, codecs and tests. Runtime pins bind the actual local source closure;
+  local changes need no compatibility-replacement script or origin-hash update.
+- Reference dynamics, typed edition execution, local host fixtures and deployment
   are different claims. Report the one actually checked.
 - Preserve unrelated work. Stage named files; no blanket reset/stash/cleanup.
 - Use `make check`. When debugging, use the narrow matching target first. Keep

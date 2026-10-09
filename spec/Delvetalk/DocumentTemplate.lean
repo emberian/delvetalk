@@ -18,6 +18,7 @@ structure Piece where
 structure Expansion where
   source : String
   origins : Array Position
+  binding : Option String := none
 
 def advance (p : Position) (c : Char) : Position :=
   ⟨p.byte + c.utf8Size, p.line + if c == '\n' then 1 else 0⟩
@@ -29,10 +30,11 @@ def quoted (s : List Char) : String := (toJson (String.ofList s)).compress
 structure Cursor where
   rest : List Char
   position : Position := {}
+  used : Bool := false
   deriving Inhabited
 
 def consume (s : Cursor) (n : Nat) : Cursor :=
-  ⟨s.rest.drop n, advanceText s.position (s.rest.take n)⟩
+  { s with rest := s.rest.drop n, position := advanceText s.position (s.rest.take n) }
 
 def begins (s : Cursor) (marker : String) : Bool := marker.toList.isPrefixOf s.rest
 
@@ -83,82 +85,96 @@ def hole (closing : String) : Nat → Nat → Scan (List Piece)
         else if c == '}' || c == ')' then depth - 1 else depth
       return ⟨c.toString, s.position, true⟩ :: (← hole closing fuel nextDepth)
 
-def textPiece (literal : List Char) (origin : Position) : List Piece :=
-  if literal.isEmpty then [] else [⟨"Document.text(" ++ quoted literal ++ ")", origin, false⟩]
+def textPiece (binding : String) (literal : List Char) (origin : Position) : List Piece :=
+  if literal.isEmpty then [] else [⟨binding ++ ".text(" ++ quoted literal ++ ")", origin, false⟩]
 
 -- Backslash escapes only a delimiter or another backslash; all other backslashes
 -- are literal. This preserves ordinary prose, tabs, newlines, Unicode and quotes.
-def literal : Nat → List Char → Position → Scan (List (List Piece))
+def literal (binding : String) : Nat → List Char → Position → Scan (List (List Piece))
   | 0, _, _ => refuse "literal capacity"
   | fuel + 1, reversed, origin => do
     let s ← get
     if begins s "\"\"\"" then
       discard <| takeChars 3
-      let p := textPiece reversed.reverse origin
+      let p := textPiece binding reversed.reverse origin
       return if p.isEmpty then [] else [p]
     if begins s "\\\"\"\"" || begins s "\\{{" || begins s "\\{%" || begins s "\\\\" then
       discard <| takeChars 1
       let escapedState ← get
       let n := if begins escapedState "\"\"\"" then 3 else if begins escapedState "\\" then 1 else 2
       let escaped ← takeChars n
-      return ← literal fuel (escaped.reverse ++ reversed) origin
+      return ← literal binding fuel (escaped.reverse ++ reversed) origin
     let textHole := begins s "{{"
     if textHole || begins s "{%" then
       discard <| takeChars 2
       let contents ← hole (if textHole then "}}" else "%}") fuel 0
       if (String.join (contents.map (·.text))).trimAscii.toString.isEmpty then refuse "empty interpolation"
-      let wrapper := if textHole then "Document.text(" else "("
+      let wrapper := if textHole then binding ++ ".text(" else "("
       let fragment := [⟨wrapper, s.position, false⟩] ++ contents ++ [⟨")", s.position, false⟩]
-      let remaining ← literal fuel [] (← get).position
-      let p := textPiece reversed.reverse origin
+      let remaining ← literal binding fuel [] (← get).position
+      let p := textPiece binding reversed.reverse origin
       return (if p.isEmpty then [] else [p]) ++ [fragment] ++ remaining
     match s.rest with
     | [] => refuse "unterminated doc triple quote"
     | c :: _ =>
       discard <| takeChars 1
-      literal fuel (c :: reversed) origin
+      literal binding fuel (c :: reversed) origin
 
-def joinFragments (origin : Position) : List (List Piece) → List Piece
-  | [] => [⟨"Document.empty()", origin, false⟩]
+def joinFragments (binding : String) (origin : Position) : List (List Piece) → List Piece
+  | [] => [⟨binding ++ ".empty()", origin, false⟩]
   | [fragment] => fragment
-  | fragment :: rest => [⟨"Document.concat(", origin, false⟩] ++ fragment ++
-      [⟨",", origin, false⟩] ++ joinFragments origin rest ++ [⟨")", origin, false⟩]
+  | fragment :: rest => [⟨binding ++ ".concat(", origin, false⟩] ++ fragment ++
+      [⟨",", origin, false⟩] ++ joinFragments binding origin rest ++ [⟨")", origin, false⟩]
 
-def scan : Nat → Bool → Scan (List Piece)
+def scan (binding : String) : Nat → Bool → Scan (List Piece)
   | 0, _ => refuse "source capacity"
   | fuel + 1, boundary => do
     let s ← get
     if boundary && begins s "doc\"\"\"" then
+      modify fun s => { s with used := true }
       discard <| takeChars 6
-      let fragments ← literal fuel [] (← get).position
-      return joinFragments s.position fragments ++ (← scan fuel true)
+      let fragments ← literal binding fuel [] (← get).position
+      return joinFragments binding s.position fragments ++ (← scan binding fuel true)
     match s.rest with
     | [] => return []
     | '"' :: _ =>
       discard <| takeChars 1
       let text := '"' :: (← stringToken fuel)
-      return ⟨String.ofList text, s.position, true⟩ :: (← scan fuel true)
+      return ⟨String.ofList text, s.position, true⟩ :: (← scan binding fuel true)
     | '#' :: _ =>
       let comment := s.rest.takeWhile (· != '\n')
       discard <| takeChars comment.length
-      return ⟨String.ofList comment, s.position, true⟩ :: (← scan fuel true)
+      return ⟨String.ofList comment, s.position, true⟩ :: (← scan binding fuel true)
     | c :: _ =>
       discard <| takeChars 1
       let word := c.isAlphanum || c == '_'
-      return ⟨c.toString, s.position, true⟩ :: (← scan fuel (!word))
+      return ⟨c.toString, s.position, true⟩ :: (← scan binding fuel (!word))
+
+/-- A generated namespace cannot capture or be captured by any source binder.
+The candidate is absent even from string/comment text; this conservative test
+also keeps the inspection expansion safe when compiled as ordinary source. -/
+def freshBinding (source : String) : String := Id.run do
+  let mut index := 0
+  for _ in [0:source.length + 1] do
+    let candidate := "__document_template_" ++ toString index
+    if (source.splitOn candidate).length == 1 then return candidate
+    index := index + 1
+  return "__document_template_" ++ toString index
 
 def lower (source : String) : Except String Expansion := do
   -- Old source is an identity projection, including its diagnostic behavior.
   if (source.splitOn "doc\"\"\"").length <= 1 then
-    return ⟨source, #[]⟩
-  let (pieces, ending) ← (scan (source.length + 1) true).run ⟨source.toList, {}⟩
+    return ⟨source, #[], none⟩
+  let binding := freshBinding source
+  let (pieces, ending) ← (scan binding (source.length + 1) true).run ⟨source.toList, {}, false⟩
+  if !ending.used then return ⟨source, #[], none⟩
   let mut origins := #[]
   for piece in pieces do
     let mut p := piece.origin
     for c in piece.text.toList do
       for _ in [0:c.utf8Size] do origins := origins.push p
       if piece.exact then p := advance p c
-  return ⟨String.join (pieces.map (·.text)), origins.push ending.position⟩
+  return ⟨String.join (pieces.map (·.text)), origins.push ending.position, some binding⟩
 
 def Expansion.position (e : Expansion) (byte : Nat) : Position :=
   (e.origins[byte]?).getD ((e.origins.back?).getD ⟨byte, 1⟩)

@@ -1,4 +1,4 @@
-.PHONY: all build check worker-resources core typed packages source-pins capsules world wiki syntax delve proposals scene-build scene portal
+.PHONY: all build check worker-resources core typed packages semantics-check capsules world wiki syntax delve proposals scene-build scene portal
 all: check
 build:
 	LEAN_NUM_THREADS=1 lake build delvetalk
@@ -14,8 +14,9 @@ scene-build:
 	CARGO_BUILD_JOBS=2 cargo build --locked --manifest-path scene/spween-bridge/Cargo.toml
 	CARGO_BUILD_JOBS=2 cargo test --locked --manifest-path scene/spween-bridge/Cargo.toml
 	CARGO_BUILD_JOBS=1 cargo build --release --locked --example handler_oracle --manifest-path scene/spween-bridge/Cargo.toml
-source-pins:
-	python3 scripts/check_source_pins.py
+semantics-check:
+	python3 scripts/check_semantics.py
+	python3 conformance/test_semantics_origin.py
 capsules:
 	python3 scripts/check_capsules.py
 core:
@@ -34,6 +35,9 @@ packages:
 	python3 conformance/test_frontend_abstractions.py
 	python3 conformance/test_text_primitives.py
 	python3 conformance/test_branch_rows.py
+	python3 conformance/test_open_row_composition.py
+	python3 conformance/test_match_rows.py
+	python3 conformance/test_document_templates.py
 	python3 conformance/test_source_prelude.py
 	python3 conformance/test_automatafl.py
 	python3 conformance/test_automatafl_audit.py
@@ -57,6 +61,7 @@ world:
 	python3 conformance/test_preparation.py
 	python3 conformance/test_source_transition.py
 	python3 conformance/test_source_data_transition.py
+	python3 conformance/test_native_data_receiving.py
 	python3 conformance/test_source_allocation.py
 	python3 conformance/test_resident_messages.py
 	python3 conformance/test_resident_library.py
@@ -65,7 +70,9 @@ world:
 	python3 conformance/test_file_custody.py
 	python3 conformance/test_resident_store.py
 	python3 conformance/test_resident_transport.py
+	python3 conformance/test_resident_resources.py
 	python3 conformance/test_retained_roots.py
+	python3 conformance/test_root_capture.py
 	python3 conformance/test_runtime_profile.py
 	python3 conformance/test_runtime_hashing.py
 	python3 conformance/test_convergence.py
@@ -86,10 +93,13 @@ world:
 	python3 conformance/test_source_history.py
 	python3 conformance/test_workspace.py
 	python3 conformance/test_workspace_resident.py
+	python3 conformance/test_source_workshop.py
 	python3 conformance/test_commons.py
 	python3 conformance/test_guarded_movement.py
 	python3 conformance/test_guarded_authoring.py
 	python3 conformance/test_place_index.py
+	python3 conformance/test_root_directory.py
+	python3 -m unittest conformance.test_root_sessions
 	python3 conformance/test_containment.py
 	python3 conformance/test_appointments.py
 	python3 conformance/test_work_ticket.py
@@ -123,6 +133,7 @@ delve:
 	python3 conformance/test_town_preparation.py
 	python3 conformance/test_town_journey.py
 	python3 conformance/test_town_operator.py
+	python3 conformance/test_town_summon.py
 	python3 conformance/test_town_authoring.py
 	python3 conformance/test_town_forge_journey.py
 	python3 conformance/test_town_forge_custody.py
@@ -135,10 +146,13 @@ delve:
 	python3 conformance/test_obend_data_object.py
 	python3 conformance/test_source_package_adapter.py
 	python3 conformance/test_source_binding_codecs.py
+	python3 conformance/test_preparation_requests_binding.py
 	python3 conformance/test_obend_messages.py
 	python3 conformance/test_stateful_authoring.py
 	python3 conformance/test_peer_layers.py
 	python3 conformance/test_editor_generations.py
+	python3 conformance/test_candidate_release.py
+	python3 conformance/test_contract_authoring.py
 	python3 conformance/test_module_desk.py
 	python3 conformance/test_spell_examples.py
 	python3 conformance/test_spween_migration.py
@@ -159,6 +173,7 @@ scene:
 	python3 conformance/test_spween_handler_oracle.py
 	python3 conformance/test_spween_handler_views.py
 	python3 conformance/test_spween_handler_authoring.py
+	python3 conformance/test_spween_scene_entry.py
 portal:
 	python3 conformance/test_portal_artifacts.py
 	python3 conformance/test_affordances.py
@@ -167,6 +182,10 @@ portal:
 	python3 conformance/test_references.py
 	python3 conformance/test_factory_affordances.py
 	python3 conformance/test_interpret.py
+	python3 protocols/interpretation/test_interpretation.py
+	python3 conformance/test_document_projection.py
+	python3 conformance/test_document_conversation.py
+	python3 conformance/test_document_notebook.py
 	python3 conformance/test_portal.py
 	python3 conformance/test_portal_adversarial.py
 	python3 conformance/test_portal_bridge.py
@@ -175,8 +194,18 @@ portal:
 	python3 conformance/test_portal_public.py
 	python3 conformance/test_portal_panels.py
 	python3 conformance/test_portal_preparation.py
+	python3 conformance/test_retained_consumers.py
+	python3 -m unittest conformance.test_editor_portal
+	python3 conformance/test_agent_identity.py
+	python3 conformance/test_agent_heaps.py
+	python3 -m unittest conformance.test_account_receipt_custody
+	python3 conformance/test_agent_api.py
+	python3 conformance/test_agent_isolation.py
+	python3 -m unittest conformance.test_catalogue_consumers
+	python3 conformance/test_membership.py
 	python3 -m unittest conformance.test_portal_children
 	python3 -m unittest conformance.test_portal_resident
 	node --check portal/static/app.js
 	node conformance/test_portal_forms.mjs
-check: build worker-resources scene-build source-pins capsules core typed packages world wiki syntax delve proposals scene portal
+	node conformance/test_portal_agent_ui.mjs
+check: build worker-resources scene-build semantics-check capsules core typed packages world wiki syntax delve proposals scene portal

@@ -4,7 +4,7 @@ defaultTargets = ["delvetalk"]
 
 [[lean_lib]]
 name = "Theory"
-srcDir = "spec/upstream"
+srcDir = "spec/bend"
 
 [[lean_lib]]
 name = "Delvetalk"
@@ -64,11 +64,11 @@ srcDir = "profiles"
 
 [[lean_lib]]
 name = "Compiler"
-srcDir = "spec/upstream"
+srcDir = "spec/bend"
 
 [[lean_lib]]
 name = "Pred"
-srcDir = "spec/upstream"
+srcDir = "spec/bend"
 
 [[lean_exe]]
 name = "delvetalk-obend"

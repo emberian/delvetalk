@@ -54,7 +54,7 @@ class CompiledClerk(unittest.TestCase):
         self.assertEqual(receipt['reply']['data']['root']['state']['answer'], 2**80 + 7)
         self.assertEqual(receipt['request']['principal'], delve.DID)
         self.assertIn('spec/Delvetalk/Package.lean', receipt['profile']['pins'])
-        self.assertIn('spec/upstream/Compiler/ObjectiveBendFrontEnd.lean', receipt['profile']['pins'])
+        self.assertIn('spec/bend/Compiler/ObjectiveBendFrontEnd.lean', receipt['profile']['pins'])
         self.assertIn('.lake/build/bin/delvetalk-compiled', receipt['profile']['pins'])
         entry = clerk.loads(next((self.clerk.state / 'requests').glob('*.json')).read_text())
         self.assertEqual(entry['admissionProfile'], 'compiled')

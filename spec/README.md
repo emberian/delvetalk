@@ -1,13 +1,22 @@
 # Source relation and executable reference
 
-`upstream/Theory/ObjectiveBendOpenRecursion.lean` and `AxiomPin.lean` are
-byte-for-byte copies from Mini. `upstream.json` pins their origin and SHA-256.
-They define the normative finite-tree source terms, substitution, weak-head
-call-by-name `Step`, values, evaluation contexts, `Yields`, and interaction.
-They do not define the complete typed surface or hosted object protocol.
+DelveTalk maintains its own Objective Bend edition in `bend/`. Mini supplies
+its attributed upstream baseline; local semantics, typing, compiler and demand
+machine are editable source. [origin.json](bend/origin.json) records the upstream
+repository, commit and original-file hashes. That inventory is attribution, not a
+constraint on current files, and need not change when local modules change.
+
+The edition includes hosted text semantics and local frontend changes. It is not
+a byte-exact Mini release. [Hosted text](../docs/design/TEXT.md) specifies its
+Unicode and resource behavior. Runtime source pins bind the actual local closure;
+there is no replacement-reconstruction requirement for editing the fork.
+
+The core relation defines finite-tree terms, substitution, weak-head call-by-name
+`Step`, values, evaluation contexts, `Yields` and interaction. It does not by itself
+define the complete typed surface or hosted object protocol.
 
 `Delvetalk/Core.lean` implements a computable inspection of those source terms. The
-`View` result carries an upstream `Step t next`, `Value t`, or
+`View` result carries an edition `Step t next`, `Value t`, or
 `Yields t plan frames` proof for every positive result. These evidence fields
 are kernel-checked and erased by code generation. A `stuck` result currently
 carries no negative proof: completeness of inspection is not established.
@@ -25,14 +34,9 @@ source context without consuming fuel. Terminal classification precedes the
 fuel check, so a zero-budget value/stuck/yield can still be reported accurately.
 Resource exhaustion means a next source step exists but has no remaining fuel.
 
-Build with Lean 4.34.1 as pinned in `lean-toolchain` (narrow dependency chain,
-no Mathlib). The normative core and demand semantics remain byte-identical to their source
-pin. The broader package compiler closure has two explicit compatibility
-projections: the axiom audit helper imports `Lean` instead of Mathlib, and two
-TermWire proof tactics accommodate Lean 4.34.1. Runtime definitions and theorem
-statements are unchanged. Original files are retained under `original/`;
-`upstream.json` records original hashes, built hashes and exact replacements.
-The identity checker reconstructs every projected file and rejects other edits.
+Build with Lean 4.34.1 as pinned in `lean-toolchain` (no Mathlib). Proofs and
+source inspection refer to this edition. Independent Python/C/JS evaluators cover
+their shared fragment; their agreement does not qualify extensions they lack.
 
 ```sh
 LEAN_NUM_THREADS=1 lake build
