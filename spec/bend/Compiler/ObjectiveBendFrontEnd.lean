@@ -15,6 +15,7 @@ refuses only a term nested deeper than the decoder's capacity. An `Accepted` val
 therefore carries a typing derivation for exactly the Core4 term the elaborator
 produced (`ObjectiveBendFrontEndAdequacy` states what that buys). -/
 import Compiler.ObjectiveBendParse
+import Compiler.ObjectiveBendSurface
 import Compiler.ObjectiveBendElaborate
 import Compiler.ObjectiveBendLaw
 import Compiler.ObjectiveBendTermWire
@@ -56,14 +57,14 @@ def elaborationRefusal (message : String) : Diagnostic := { stage := "objective-
 structure LockedImport where
   path : String
   importAlias : String
-  span : Json
+  span : ObjectiveBendSurface.Span
   target : Nat
   moduleName : String
   sha256 : String
   deriving Inhabited
 
 def LockedImport.json (i : LockedImport) : Json :=
-  Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span),
+  Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span.json),
     ("module", toJson (toString i.target)), ("moduleName", toJson i.moduleName), ("sha256", toJson i.sha256)]
 
 /-- One module of a captured package: its exact source text and fingerprint. -/
@@ -78,29 +79,27 @@ def SourceModule.binding (m : SourceModule) : Json :=
   Json.mkObj [("name", toJson m.name), ("sourceSha256", toJson m.sha256),
     ("imports", Json.arr (m.imports.map LockedImport.json).toArray)]
 
-def declarationName (d : Json) : String :=
-  match (d.getObjValAs? String "kind").toOption with
-  | some "function" => ((d.getObjVal? "signature").bind (·.getObjValAs? String "name")).toOption.getD ""
-  | _ => (d.getObjValAs? String "name").toOption.getD ""
+/-- The locked edge as the parser wrote it (path, alias, span). -/
+def LockedImport.parsed (i : LockedImport) : ObjectiveBendSurface.Import := ⟨i.path, i.importAlias, i.span⟩
 
 /-- A parsed module, checked: its locked import transcript is exactly the parsed one, and its
-AST decodes to the elaborator's module. -/
-def checkImports (m : SourceModule) (ast : Json) : Except Diagnostic Unit := do
-  let parsed := ((ast.getObjVal? "imports").bind Json.getArr?).toOption.getD #[]
-  let locked := m.imports.toArray.map fun i =>
-    Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span)]
-  if (Json.arr parsed).compress != (Json.arr locked).compress then
+AST reads as the elaborator's module. -/
+def checkImports (m : SourceModule) (ast : ObjectiveBendSurface.Module) : Except Diagnostic Unit := do
+  if ast.imports != m.imports.map LockedImport.parsed then
     throw (elaborationRefusal "import transcript differs from parsed imports")
 
-def checkParsed (m : SourceModule) (ast : Json) : Except Diagnostic ObjectiveBendElaborate.Module := do
+/-- The (alias, module name) pairs of a module's locked imports. -/
+def SourceModule.aliases (m : SourceModule) : List (String × String) :=
+  m.imports.map fun i => (i.importAlias, i.moduleName)
+
+def checkParsed (m : SourceModule) (ast : ObjectiveBendSurface.Module) :
+    Except Diagnostic ObjectiveBendElaborate.Module := do
   checkImports m ast
-  match ObjectiveBendElaborate.decodeModule (Json.mkObj [("name", toJson m.name),
-      ("imports", Json.arr (m.imports.map fun i =>
-        Json.mkObj [("alias", toJson i.importAlias), ("moduleName", toJson i.moduleName)]).toArray), ("ast", ast)]) with
+  match ObjectiveBendElaborate.ofSurface m.name m.aliases ast with
   | .ok d => pure d
   | .error e => throw (elaborationRefusal e)
 
-def parseSource (name source : String) : Except Diagnostic Json :=
+def parseSource (name source : String) : Except Diagnostic ObjectiveBendSurface.Module :=
   match ObjectiveBendParse.parseObjective source with
   | .ok ast => pure ast
   | .error d => throw { stage := "objective-source-parse", message := d.message, span := d.span, sourceModule := some name }
@@ -128,6 +127,135 @@ def packetJson (proposal : Json) (term : ATerm) (sourceEntry : String) (modules 
     ("sourceModules", Json.arr (modules.map SourceModule.binding).toArray),
     ("status", toJson "exact core annotation proposal; actual checker must return Checked; no law proof or effect authority")]
 
+/-! ## The closure check, on the proposal as Lean data
+
+Checking a whole closure needs the checker's verdict, not a packet: no artifact carries
+the whole closure. Its annotated source is built from the typing proposal directly, with
+the types hash-consed as the packet's type table would share them (an entry's packet, which
+does leave the process, is still rendered, decoded and checked by `accept`). What the
+packet decoder would add here is only its capacities on type nesting and row width. -/
+
+section direct
+open Minidregg.Theory.ObjectiveBendTypes (Ty LambdaAnnotation Quantity Reuse)
+open ObjectiveBendElaborate (PTy InternKey Slot Proposed propose)
+
+structure TyTable where
+  table : Array Ty := #[]
+  seen : Std.HashMap InternKey Nat := {}
+  /-- As `Interner.shared`: read and written only by the compiled `tyOf` (`tyOfShared`). -/
+  shared : Std.HashMap USize (Slot × Ty) := {}
+
+def quantityOf : String → Quantity
+  | "erased" => .erased | "affine" => .affine | "linear" => .linear | _ => .unrestricted
+def reuseOf : String → Reuse
+  | "once" => .once | _ => .reusable
+
+def tyNode (key : InternKey) (make : Unit → Ty) : StateM TyTable (Slot × Ty) := do
+  let s ← get
+  match s.seen[key]? with
+  | some i => return (.ref i, s.table[i]?.getD (make ()))
+  | none =>
+    let t := make ()
+    set ({ s with table := s.table.push t, seen := s.seen.insert key s.table.size } : TyTable)
+    return (.ref s.table.size, t)
+
+/-- `tyOf`, walking each shared subtree once (as `PTy.internSlotShared`). -/
+unsafe def tyOfShared (t : PTy) : StateM TyTable (Slot × Ty) := do
+  match t with
+  | .natural => return (.leaf .natural, .natural)
+  | .boolean => return (.leaf .boolean, .boolean)
+  | .label => return (.leaf .label, .label)
+  | .emptyRow => return (.leaf .emptyRow, .emptyRow)
+  | .variable i => return (.leaf (.variable i), .variable i)
+  | .data => return (.leaf .data, .data)
+  | _ =>
+    let address := ptrAddrUnsafe t
+    if let some found := (← get).shared[address]? then return found
+    let found ← match t with
+      | .arrow r q d c => do
+        let (ds, dt) ← tyOfShared d
+        let (cs, ct) ← tyOfShared c
+        tyNode (.arrow r q ds cs) fun _ => .arrow (reuseOf r) (quantityOf q) dt ct
+      | .field n m t => do
+        let (ms, mt) ← tyOfShared m
+        let (ts, tt) ← tyOfShared t
+        tyNode (.field n ms ts) fun _ => .field n mt tt
+      | .specification m e => do
+        let (ms, mt) ← tyOfShared m
+        let (es, et) ← tyOfShared e
+        tyNode (.specification ms es) fun _ => .specification mt et
+      | .prototype sp t => do
+        let (ss, st) ← tyOfShared sp
+        let (ts, tt) ← tyOfShared t
+        tyNode (.prototype ss ts) fun _ => .prototype st tt
+      | .variant r => do
+        let (rs, rt) ← tyOfShared r
+        tyNode (.variant rs) fun _ => .variant rt
+      | .computation p r a => do
+        let (ps, pt) ← tyOfShared p
+        let (rs, rt) ← tyOfShared r
+        let (as, at_) ← tyOfShared a
+        tyNode (.computation ps rs as) fun _ => .computation pt rt at_
+      | _ => return (.leaf .natural, .natural)
+    modify fun s => { s with shared := s.shared.insert address found }
+    return found
+
+/-- A proposal type as the checker's `Ty`, every composite node shared by its table key. -/
+@[implemented_by tyOfShared]
+def tyOf : PTy → StateM TyTable (Slot × Ty)
+  | .natural => return (.leaf .natural, .natural)
+  | .boolean => return (.leaf .boolean, .boolean)
+  | .label => return (.leaf .label, .label)
+  | .emptyRow => return (.leaf .emptyRow, .emptyRow)
+  | .variable i => return (.leaf (.variable i), .variable i)
+  | .data => return (.leaf .data, .data)
+  | .arrow r q d c => do
+    let (ds, dt) ← tyOf d
+    let (cs, ct) ← tyOf c
+    tyNode (.arrow r q ds cs) fun _ => .arrow (reuseOf r) (quantityOf q) dt ct
+  | .field n m t => do
+    let (ms, mt) ← tyOf m
+    let (ts, tt) ← tyOf t
+    tyNode (.field n ms ts) fun _ => .field n mt tt
+  | .specification m e => do
+    let (ms, mt) ← tyOf m
+    let (es, et) ← tyOf e
+    tyNode (.specification ms es) fun _ => .specification mt et
+  | .prototype sp t => do
+    let (ss, st) ← tyOf sp
+    let (ts, tt) ← tyOf t
+    tyNode (.prototype ss ts) fun _ => .prototype st tt
+  | .variant r => do
+    let (rs, rt) ← tyOf r
+    tyNode (.variant rs) fun _ => .variant rt
+  | .computation p r a => do
+    let (ps, pt) ← tyOf p
+    let (rs, rt) ← tyOf r
+    let (as, at_) ← tyOf a
+    tyNode (.computation ps rs as) fun _ => .computation pt rt at_
+
+/-- The annotated source a proposal and an erased term make: what `decodePacket` reads back
+from the packet `packetJson` would render. -/
+def directSource (proposed : Proposed) (erased : CoreTerm) :
+    Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm := Id.run do
+  let mut table : TyTable := {}
+  let mut annotations : Std.HashMap (List Nat) LambdaAnnotation := {}
+  for a in proposed.annotations do
+    let ((_, domain), t) := (tyOf a.domain).run table
+    let ((_, codomain), t) := (tyOf a.codomain).run t
+    table := t
+    annotations := annotations.insertIfNew a.path ⟨domain, codomain, quantityOf a.parameter, reuseOf a.reuse⟩
+  let ((_, row), t) := (tyOf proposed.row).run table
+  table := t
+  let mut bounds : List (Nat × Ty) := [(0, row)]
+  for (k, b) in proposed.bounds do
+    let ((_, ty), t) := (tyOf b).run table
+    table := t
+    bounds := bounds ++ [(k, ty)]
+  return ⟨erased, fun path => annotations[path]?, ⟨bounds, 0 :: proposed.bounds.map (·.1), []⟩⟩
+
+end direct
+
 /-! ## Templates: each open declaration checked once against its bounds alone (D2) -/
 
 /-- The context every knot field is checked in: `$seed : {}` then `$globals : the knot`. -/
@@ -141,40 +269,35 @@ of exactly its bound row is expected, which the alias checker of the whole progr
 accept and only a wider instance would refuse, is refused HERE, naming the declaration.
 `Theory.ObjectiveBendTemplates.Discharges.check_instantiate` is what a template accepted
 here buys: acceptance at every instance whose bounds are discharged. -/
-def checkTemplate (output : Output) (sourceEntry : String) (modules : List SourceModule) (typeFuel : Nat)
-    (key : String) (rigidVariables : List Nat) (field : ATerm) : Except Diagnostic Unit := do
+def checkTemplate (output : Output) (key : String) (rigidVariables : List Nat) (typeFuel : Nat)
+    (field : ATerm) : Except Diagnostic Unit := do
   let refuse := fun (why : String) =>
     (throw (elaborationRefusal why) : Except Diagnostic Unit)
-  let proposal ← match ObjectiveBendElaborate.proposalJson { output with term := field } with
-    | .ok proposal => pure proposal
-    | .error e => throw (elaborationRefusal ("refused (template-typing): open declaration " ++ key ++
-        " has no typed template: " ++ e))
-  let packet ← match decodePacket (packetJson proposal field sourceEntry modules typeFuel) with
-    | .ok packet => pure packet
-    | .error e => throw (elaborationRefusal ("refused (template-typing): open declaration " ++ key ++
-        " has no typed template: " ++ e))
-  let source := packet.source
+  let noTemplate := fun (e : String) => elaborationRefusal ("refused (template-typing): open declaration " ++ key ++
+    " has no typed template: " ++ e)
+  let proposed ← (ObjectiveBendElaborate.propose { output with term := field }).mapError noTemplate
+  let erased ← field.erase.mapError noTemplate
+  let source := directSource proposed erased
   let rigidAt := fun (vars : List Nat) => { source with assumptions := { source.assumptions with rigid := vars } }
-  match check (rigidAt rigidVariables) knotContext packet.fuel with
+  match check (rigidAt rigidVariables) knotContext typeFuel with
   | some _ => pure ()
   | none =>
     -- Which variable only an alias would accept: Self (the first) or Super (the second).
-    if (check (rigidAt (rigidVariables.take 1)) knotContext packet.fuel).isSome then
+    if (check (rigidAt (rigidVariables.take 1)) knotContext typeFuel).isSome then
       refuse ("refused (super-rigid): open declaration " ++ key ++ " uses super as a value of its " ++
         "Super bound row; Super ranges over every row beneath that HAS those members (a lower bound), so " ++
         "a value of type Super is not a value of the bound row. Read the members it needs (super.m), or " ++
         "extend super (Super with {...})")
     else
-    match check source knotContext packet.fuel with
+    match check source knotContext typeFuel with
     | some _ => refuse ("refused (self-rigid): open declaration " ++ key ++ " uses self as a value of its " ++
         "Self bound row; Self ranges over every type that HAS that row (a lower bound), so a value of type " ++
         "Self is not a value of the row. Read the members it needs (self.m) instead")
     | none => refuse ("refused (template-typing): open declaration " ++ key ++
         " does not type-check against its declared bounds")
 
-def checkTemplates (output : Output) (sourceEntry : String) (modules : List SourceModule) (typeFuel : Nat) :
-    Except Diagnostic Unit :=
-  output.templates.forM fun (key, rigidVariables, field) => checkTemplate output sourceEntry modules typeFuel key rigidVariables field
+def checkTemplates (output : Output) (typeFuel : Nat) : Except Diagnostic Unit :=
+  output.templates.forM fun (key, rigidVariables, field) => checkTemplate output key rigidVariables typeFuel field
 
 /-- The packet of a lowering: its typing proposal's packet, or why there is none. -/
 def packetOf (proposal : Except String Json) (term : ATerm) (sourceEntry : String) (modules : List SourceModule)
@@ -263,7 +386,7 @@ def lowerElaborated (modules : List SourceModule) (decoded : List ObjectiveBendE
     else match args with
       | .arr _ => "legacy-canonical-nat-bool-record"
       | _ => "dregg.objective-bend.argument-values.v1"
-  unless templatesChecked do checkTemplates output (entry.name ++ "." ++ entryDefinition) modules typeFuel
+  unless templatesChecked do checkTemplates output typeFuel
   for (m, index) in decoded.zipIdx do
     if index != entryModule && !m.laws.isEmpty then
       throw (elaborationRefusal ("a law belongs to the package's entry module; " ++ m.name ++
@@ -356,15 +479,32 @@ def accept (l : Lowering) : Except Diagnostic (Accepted l) := do
           else throw (elaborationRefusal "typed packet context must be closed")
       else throw (elaborationRefusal "core term nesting exceeds the checker's decoding capacity")
 
+/-- `accept`'s refusals, in its order, for a whole closure checked on its direct source. -/
+def checkDirect (out : Output) (typeFuel : Nat) (rigid : List Nat) :
+    Except Diagnostic (Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm) := do
+  let erased ← match out.term.erase with
+    | .error e => throw (elaborationRefusal ("core erasure: " ++ e))
+    | .ok erased => pure erased
+  let proposed ← match ObjectiveBendElaborate.propose out with
+    | .error message => throw { stage := "objective-source-type-proposal", message }
+    | .ok p => pure p
+  unless ObjectiveBendTermWire.depth out.term ≤ Minidregg.Theory.ObjectiveBendTyping.termNestingCapacity do
+    throw (elaborationRefusal "core term nesting exceeds the checker's decoding capacity")
+  let source := directSource proposed erased
+  let source := { source with assumptions := { source.assumptions with rigid } }
+  match check source [] typeFuel with
+  | some _ => pure source
+  | none => throw { stage := "objective-typed-check", message := "the checker refused the front end's typed packet" }
+
 /-- Check a whole elaborated closure once: every template, and the knot of every
 declaration as one closed term. An entry's packet then carries only what it reaches
 (`Elaborated.select`) without any declaration going unchecked. -/
-def checkClosure (modules : List SourceModule) (elaborated : ObjectiveBendElaborate.Elaborated)
+def checkClosure (_modules : List SourceModule) (elaborated : ObjectiveBendElaborate.Elaborated)
     (limits : Json) : Except Diagnostic Unit := do
   let (_, typeFuel) ← options (.arr #[]) limits "definition"
   let whole := elaborated.whole
-  checkTemplates whole "" modules typeFuel
-  discard <| accept (Lowering.make whole whole.term "" "unapplied-definition" "definition" modules limits typeFuel [])
+  checkTemplates whole typeFuel
+  discard <| checkDirect whole typeFuel []
 
 #assert_axioms Lowering.packet_term
 #assert_axioms Accepted.source_eq_packet
