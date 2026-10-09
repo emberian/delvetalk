@@ -269,9 +269,13 @@ class Clerk:
             fields = ['object', 'command', 'input', expected_key]
             if 'op' in payload:
                 fields.append('op')
+            if 'absent' in payload:
+                fields.append('absent')
             exact(payload, fields, 'requestJson')
             if not isinstance(payload['command'], str) or not isinstance(payload['input'], dict):
                 raise ValueError('command must be a string and input an object')
+            if 'absent' in payload:
+                transaction_intake.resolve_absent(payload['absent'], config)
         elif operation == 'reprogram':
             exact(payload, ['op', 'object', 'protocol', 'state', expected_key], 'requestJson')
             if not isinstance(payload['protocol'], dict) or not isinstance(payload['state'], dict):
@@ -307,6 +311,19 @@ class Clerk:
             reply = world.exchange(self.database, entry['request'], profile=selected)
             receipt = {'format': 'delvetalk-clerk-receipt-v1', 'source': entry['source'],
                        'request': entry['request'], 'reply': reply, 'profile': entry['profile']}
+            if reply['kind'] == 'committed':
+                request, data = entry['request'], reply['data']
+                if request['op'] == 'transaction':
+                    allocated = {object_id for object_id, expected in request['reads'].items()
+                                 if expected is None and data['roots'].get(object_id) is not None}
+                else:
+                    allocated = set(data.get('allocated', {}))
+                if allocated:
+                    config = self.config()
+                    config['objects'] = sorted(set(config['objects']) | allocated)
+                    # Before the terminal journal receipt: replay of the same Lean
+                    # receipt repairs a crash between admission and registration.
+                    save(self.state / 'clerk.json', config)
             receipt['id'] = digest(receipt)
             entry['receipt'] = receipt
             save(path, entry)

@@ -60,9 +60,16 @@ def encode(kind, text):
             fields = ['object', 'command', 'input', expected_key]
             if 'op' in value:
                 fields.append('op')
+            if 'absent' in value:
+                fields.append('absent')
             exact_object(value, fields)
             if not isinstance(value['command'], str) or not value['command'] or not isinstance(value['input'], dict):
                 raise Failure('Request needs a nonempty command string and input object')
+            if 'absent' in value:
+                try:
+                    transaction_intake.validate_absent(value['absent'])
+                except ValueError as error:
+                    raise Failure(str(error)) from error
         elif operation == 'reprogram':
             exact_object(value, ('op', 'object', 'protocol', 'state', expected_key))
             if not isinstance(value['protocol'], dict) or not isinstance(value['state'], dict):

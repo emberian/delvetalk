@@ -1,0 +1,47 @@
+[
+  {
+    "name": "first admitted name stays",
+    "law": [
+      "jun",
+      "tavi"
+    ],
+    "steps": [
+      {
+        "principal": "visitor",
+        "command": "name",
+        "input": {
+          "name": "Threadsong",
+          "ink": "silver"
+        },
+        "root": "current",
+        "kind": "refused",
+        "error": "unauthorized"
+      },
+      {
+        "principal": "tavi",
+        "command": "name",
+        "input": {
+          "name": "Threadsong",
+          "ink": "silver"
+        },
+        "root": "current",
+        "kind": "committed",
+        "state": {
+          "name": "Threadsong",
+          "ink": "silver",
+          "by": "tavi"
+        }
+      },
+      {
+        "principal": "jun",
+        "command": "name",
+        "input": {
+          "name": "Another name",
+          "ink": "blue"
+        },
+        "root": "current",
+        "kind": "refused"
+      }
+    ]
+  }
+]

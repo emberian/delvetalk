@@ -129,9 +129,19 @@ def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except Str
     | "array" => for v in (← a[1]!.getArr?) do validateExprWith runtime fuel v
     | _ => throw "unknown expression"
 
+-- An opt-in factory has a current direct-child quota, governed by reprogramming.
+def allocationLimit (protocol : Json) : Except String (Option Nat) := do
+  match (field protocol "allocation").toOption with
+  | none => return none
+  | some allocation =>
+    for (key, _) in (← pairs allocation) do
+      if key != "limit" then throw "unsupported allocation policy field"
+    return some (← (← field allocation "limit").getNat?)
+
 def validateProtocolWith (runtime : Runtime) (p : Json) : Except String Unit := do
   if (← str p "profile") != "delvetalk-local-v1" then throw "unknown profile"
   discard (pairs (← field p "initial"))
+  let limit ← allocationLimit p
   for (_,c) in (← pairs (← field p "commands")) do
     for requirement in (← (← field c "require").getArr?) do
       let r ← requirement.getArr?
@@ -141,6 +151,16 @@ def validateProtocolWith (runtime : Runtime) (p : Json) : Except String Unit := 
     for (_,e) in (← pairs (← field c "set")) do validateExprWith runtime 64 e
     validateExprWith runtime 64 (← field c "result")
     for e in (← (← field c "outbox").getArr?) do validateExprWith runtime 64 e
+    match (field c "allocate").toOption with
+    | none => pure ()
+    | some allocations =>
+      if limit.isNone then throw "allocation requires factory policy"
+      for allocation in (← allocations.getArr?) do
+        for (key, _) in (← pairs allocation) do
+          if !(["name", "protocol", "law"].contains key) then
+            throw "unsupported allocation descriptor field"
+        for key in ["name", "protocol", "law"] do
+          validateExprWith runtime 64 (← field allocation key)
 
 def validateExpr (fuel : Nat) (expr : Json) : Except String Unit :=
   validateExprWith {} fuel expr
@@ -242,6 +262,62 @@ def reprogramObjectWith (runtime : Runtime) (o protocol state : Json) : Except S
   let n ← (← field o "version").getNat?
   put (← put (← put o "protocol" protocol) "state" state) "version" (toJson (n+1))
 
+-- Bootstrap and governed allocation construct the same object shape. The
+-- latter obtains authority only from the current receiving factory invocation.
+def newObjectWith (runtime : Runtime) (protocol authority : Json) : Except String Json := do
+  validateProtocolWith runtime protocol
+  validateLaw authority
+  return obj [("protocol", protocol), ("law", authority), ("version", toJson (0 : Nat)),
+    ("state", ← field protocol "initial")]
+
+def absenceReads (objects request : Json) : Except String (Array String) := do
+  let absent ← match (field request "absent").toOption with
+    | none => pure #[]
+    | some value => law value
+  for id in absent do
+    if id.isEmpty then throw "empty absence object id"
+    if (field objects id).isOk then throw "stale absence root"
+  return absent
+
+def childName (name : String) : Bool :=
+  !name.isEmpty && name.length <= 64 && name.toList.all (fun c =>
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+    (c >= '0' && c <= '9') || c == '-' || c == '_')
+
+def directChild (parent child : String) : Bool :=
+  let namespacePrefix := parent ++ "/"
+  namespacePrefix.isPrefixOf child && !(child.drop namespacePrefix.length).toString.contains '/'
+
+-- Every descriptor uses the factory pre-state. Staging makes collisions and
+-- quota checks compose across a batch; failures discard parent and children.
+def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
+    (principal : String) (absent : Array String) : Evaluation (Json × Json) := do
+  let protocol ← field o "protocol"
+  let command ← field (← field protocol "commands") (← str request "command")
+  match (field command "allocate").toOption with
+  | none => return (objects, obj [])
+  | some allocations =>
+    let limit ← (← allocationLimit protocol).toExcept "allocation requires factory policy"
+    let parent ← str request "object"
+    let eval := evaluateWith runtime ⟨parent⟩ 64 (← field o "state") (← field request "input") principal
+    let mut staged := objects
+    let mut roots : List (String × Json) := []
+    for allocation in (← allocations.getArr?) do
+      tick
+      let name ← (← eval (← field allocation "name")).getStr?
+      if !childName name then throw "invalid child name"
+      let id := parent ++ "/" ++ name
+      if !absent.contains id then throw "allocation target missing absence root"
+      if (field staged id).isOk then throw "object exists"
+      let children := (← pairs staged).filter (fun entry => directChild parent entry.1)
+      if children.length >= limit then throw "factory child quota exhausted"
+      let childProtocol ← eval (← field allocation "protocol")
+      let childLaw ← eval (← field allocation "law")
+      let child ← newObjectWith runtime childProtocol childLaw
+      staged ← put staged id child
+      roots := roots ++ [(id, child)]
+    return (staged, obj roots)
+
 def transitionEvaluationWith (runtime : Runtime) (world request : Json) (principal : String) : Evaluation (Json × Json) := do
   let objects ← field world "objects"
   let id ← str request "object"
@@ -249,12 +325,7 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
   let op ← str request "op"
   if op == "create" then
     if (field objects id).isOk then throw "object exists"
-    let protocol ← field request "protocol"
-    validateProtocolWith runtime protocol
-    let authority ← field request "law"
-    validateLaw authority
-    let o := obj [("protocol", protocol), ("law", authority), ("version", toJson (0 : Nat)),
-      ("state", ← field protocol "initial")]
+    let o ← newObjectWith runtime (← field request "protocol") (← field request "law")
     let next ← put world "objects" (← put objects id o)
     return (next, receipt request "committed" (obj [("root",o), ("result",.null), ("outbox", .arr #[])]))
   let o ← field objects id
@@ -279,10 +350,14 @@ def transitionEvaluationWith (runtime : Runtime) (world request : Json) (princip
     let next ← put world "objects" (← put objects id nextObj)
     return (next, receipt request "committed" (obj [("root",nextObj), ("result",.null), ("outbox", .arr #[])]))
   if op != "invoke" then throw "unknown operation"
+  let absent ← absenceReads objects request
   let (nextState, result, outbox) ← executeCommandWith runtime o request principal
   let nextObj ← put (← put o "state" nextState) "version" (toJson (n+1))
-  let next ← put world "objects" (← put objects id nextObj)
-  return (next, receipt request "committed" (obj [("root",nextObj), ("result",result), ("outbox", .arr outbox)]))
+  let (staged, allocated) ← allocateChildrenWith runtime (← put objects id nextObj) o request principal absent
+  let next ← put world "objects" staged
+  let mut data := obj [("root",nextObj), ("result",result), ("outbox", .arr outbox)]
+  if allocated != obj [] then data ← put data "allocated" allocated
+  return (next, receipt request "committed" data)
 
 def transitionWith (runtime : Runtime) (world request : Json) (principal : String) : Except String (Json × Json) := do
   let (result, _) ← (transitionEvaluationWith runtime world request principal).run runtime.budget

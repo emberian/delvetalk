@@ -39,6 +39,7 @@ intent; they are request material, not authenticated Delve messages.
 | POST `/api/prepare` | `{card,action,fields?}` |
 | POST `/api/interpret` | `{card,text}` |
 | POST `/api/execute` | `{draft}` |
+| POST `/api/repository/prepare` | `{draft}`; exact offline repository record |
 
 POST requires JSON and `X-Delvetalk-CSRF`. Host/origin checks, no CORS, text-only
 rendering and a restrictive CSP protect this local interface. They do not
@@ -52,6 +53,8 @@ bounded to 20 seconds. Resource bounds are not an OS sandbox.
 **Delve supplies repository identity and publication context; Lean supplies
 admission; the portal supplies a local view.** [Continuation export](CONTINUATION.md) and a [compiler queue](COMPILER-QUEUE.md)
 are available separately. Public synchronization, unattended operation and
-governed allocation remain [work](../TRACKING.md).
+factory allocation cards remain [work](../TRACKING.md).
 
 [Implementation](../scripts/portal.py) · [composition tests](../conformance/test_portal.py)
+
+[Repository handoff](PORTAL-BRIDGE.md) exports saved drafts and reconciles trusted local clerk receipts; it publishes nothing.

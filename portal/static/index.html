@@ -45,7 +45,20 @@
         <p id="draft-target" class="help"></p>
         <div class="command-row"><code id="draft-command"></code><button id="copy-draft" class="text-button" type="button">Copy</button></div>
         <p id="draft-help" class="help"></p>
-        <details class="draft-exact"><summary>Inspect the exact proposal</summary><button id="copy-wire" class="text-button" type="button">Copy exact JSON</button><pre id="draft-wire" tabindex="0"></pre></details>
+        <details class="draft-exact">
+          <summary>Inspect the exact proposal</summary>
+          <button id="copy-wire" class="text-button" type="button">Copy exact JSON</button>
+          <pre id="draft-wire" tabindex="0"></pre>
+          <div class="repository-export">
+            <button id="prepare-repository" class="secondary" type="button">Prepare repository record</button>
+            <p class="help">Prepare a record for a repository workflow. This does not publish, authenticate or send the action.</p>
+            <div id="repository-record" hidden>
+              <p id="repository-status" class="help" role="status" aria-live="polite"></p>
+              <button id="copy-repository" class="text-button" type="button">Copy exact repository record</button>
+              <pre id="repository-json" tabindex="0"></pre>
+            </div>
+          </div>
+        </details>
         <div class="draft-footer"><button id="send-draft" type="button" class="primary">Send action</button><span id="draft-state" role="status" aria-live="polite"></span></div>
       </section>
       <details id="inspect" class="inspect" hidden>

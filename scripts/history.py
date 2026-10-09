@@ -167,9 +167,29 @@ def program_targets(request, reply):
     """
     if not isinstance(request, dict):
         raise ValueError('history request must be an object')
-    if request.get('op') != 'transaction':
-        return [(request.get('protocol'), request.get('op') == 'reprogram')]
     targets = []
+    if reply.get('kind') == 'committed':
+        data = reply.get('data', {})
+        allocated = data.get('allocated', {})
+        for root in allocated.values():
+            targets.append((root.get('protocol'), False))
+        if request.get('op') == 'transaction':
+            # An exact null preimage plus a non-null resulting root identifies a
+            # newly allocated child without interpreting factory expressions.
+            for object_id, expected in request.get('reads', {}).items():
+                root = data.get('roots', {}).get(object_id)
+                if expected is None and isinstance(root, dict):
+                    targets.append((root.get('protocol'), False))
+            for call in request.get('calls', []):
+                if (isinstance(call, dict) and call.get('op') == 'reprogram'
+                        and call.get('object') in request.get('reads', {})
+                        and request['reads'][call['object']] is None):
+                    if call['object'] not in allocated:
+                        # Older receipts expose only final roots; their original
+                        # intermediate source custody cannot be invented.
+                        raise ValueError('allocation followed by reprogram requires a retained allocation trace')
+    if request.get('op') != 'transaction':
+        return [(request.get('protocol'), request.get('op') == 'reprogram'), *targets]
     for call in request.get('calls', []):
         if not isinstance(call, dict) or call.get('op') != 'reprogram':
             continue

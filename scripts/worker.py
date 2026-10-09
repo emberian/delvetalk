@@ -29,6 +29,9 @@ cpu, memory = int(sys.argv[1]), int(sys.argv[2])
 resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
 if sys.platform.startswith('linux'):
     resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+    # Lean 4.34 reserves 1 GiB per thread by default, including its main thread.
+    # Leave address space for the executable and heap within the unchanged cap.
+    os.environ['LEAN_STACK_SIZE_KB'] = str(min(64 * 1024, memory // 4 // 1024))
 os.execv(sys.executable, [sys.executable, *sys.argv[3:]])
 """
 
@@ -85,9 +88,13 @@ def publication_artifacts(receipt):
     if receipt['reply']['kind'] != 'committed':
         return []
     data, request = receipt['reply']['data'], receipt['request']
-    roots = data['roots'] if request['op'] == 'transaction' else {request['object']: data['root']}
+    roots = (data['roots'] if request['op'] == 'transaction' else
+             {request['object']: data['root'], **data.get('allocated', {})})
     artifacts, references = [], {}
     for object_id, root in sorted(roots.items()):
+        if root is None:
+            references[object_id] = None
+            continue
         snapshot = {'format': 'delvetalk-clerk-root-v1', 'object': object_id,
                     'root': root, 'profile': receipt['profile']}
         snapshot['id'] = clerk.digest(snapshot)

@@ -31,14 +31,16 @@ python3 examples/shared-workshop/run.py
 The café journey repairs a moth, changes its room and replaces a Bend view
 through a source desk. The table command plays a complete **two-player
 Automatafl** match in that world. [Constellation Commons](protocols/constellation-commons/README.md)
-is an agent-authored, reviewed and played microprotocol.
+is an agent-authored, reviewed and played microprotocol. Try the
+[shared exhibition](protocols/shared-exhibition/README.md), [Rain Relay](examples/scene-exchange/README.md),
+or [private game participant](game/table/PARTICIPANT.md) for complete agent journeys.
 
 ## How it holds together
 
 | Need | Contract |
 |---|---|
 | Compose actions atomically | [Transactions](profiles/TRANSACTIONS.md) |
-| Govern invocation and edits | [Current law](profiles/AUTHORITY.md), [programming](profiles/PROGRAMMING.md) |
+| Govern actions, edits and creation | [Current law](profiles/AUTHORITY.md), [programming](profiles/PROGRAMMING.md), [allocation](profiles/ALLOCATION.md) |
 | Propose, compile, adopt | [Source desk](profiles/DESK.md), [compiler queue](profiles/COMPILER-QUEUE.md), [protocols](protocols/README.md) |
 | Invent syntax or presentation | [Adapters](syntaxes/README.md), [Spween](scene/README.md), [Bend views](profiles/VIEW.md) |
 | Recover and independently replay | [History](profiles/HISTORY.md), [continuation packages](profiles/CONTINUATION.md) |
@@ -66,7 +68,8 @@ Finite agreement is not an equivalence theorem; see [proof scope](spec/README.md
 
 The portal is loopback-only. Local principals are caller assertions. Delve
 identity comes through the separately configured clerk; the portal does not
-publish or synchronize PDS records. Public deployment and external messages
+publish or synchronize PDS records. Its [repository handoff](profiles/PORTAL-BRIDGE.md)
+prepares exact records and reconciles trusted clerk receipts. Public deployment and external messages
 remain paused. [Tracking](TRACKING.md) names remaining work; [buildout](BUILDOUT.md)
 records completed checks.
 

@@ -60,3 +60,5 @@ resignation, wager, seat reassignment or external delivery exists.
 [Tests](../../conformance/test_game_table.py) exercise complete rounds and hostile
 requests. The transition matches 353 stored Bend outputs; ten disagree with the
 historical Rust oracle. Qualification is scoped to this two-player profile.
+
+[Participant cards](PARTICIPANT.md) supply typed move selection and private opening/retry custody.

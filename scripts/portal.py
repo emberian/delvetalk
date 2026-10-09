@@ -164,7 +164,8 @@ class Portal:
         view = saved['view']
         snapshot = self.snapshot()
         def affects(request):
-            return request.get('object') == view['object'] or view['object'] in request.get('reads', {})
+            return (request.get('object') == view['object'] or view['object'] in request.get('reads', {})
+                    or view['object'] in request.get('absent', []))
         records = [entry for entry in snapshot['receipts'][:saved['historyLength']] if affects(entry['request'])]
         detail = {'object': view['object'], 'source': bootstrap.room.source_document(view),
                 'state': view['root']['state'], 'law': view['root']['law'], 'root': view['root'],
@@ -244,6 +245,14 @@ class Portal:
                     'summary': 'Action committed.' if kind == 'committed' else str(reply.get('data', 'Action refused.')),
                     'links': {'refresh': '/api/object?object=' + quote(saved['request']['object'], safe=''),
                               'retry': '/api/execute'}}
+
+    def repository_prepare(self, payload):
+        exact(payload, ('draft',))
+        from portal_bridge import Bridge
+        prepared = Bridge(self).prepare(payload['draft'])
+        return {'draft': payload['draft'], 'recordJson': canonical(prepared['record']).decode(),
+                'publicationIntent': prepared['publicationIntent'],
+                'scope': 'Prepared locally. No repository publication or admission has occurred.'}
 
     def interpretation(self, payload):
         exact(payload, ('card', 'text'))
@@ -327,7 +336,8 @@ def make_server(portal, port=0):
                     raise ValueError('Incomplete request body')
                 payload = loads(raw)
                 routes = {'/api/prepare': portal.prepare, '/api/execute': portal.execute,
-                          '/api/interpret': portal.interpretation}
+                          '/api/interpret': portal.interpretation,
+                          '/api/repository/prepare': portal.repository_prepare}
                 if url.path not in routes or q:
                     return self.respond(404, {'error': 'not-found', 'message': 'Unknown portal relation'})
                 result = routes[url.path](payload)

@@ -28,6 +28,8 @@ packages:
 world:
 	python3 conformance/test_world.py
 	python3 conformance/test_world_adversarial.py
+	python3 conformance/test_allocation.py
+	python3 conformance/test_allocation_history.py
 	python3 conformance/test_transactions.py
 	python3 conformance/test_reprogram.py
 	python3 conformance/test_workshop.py
@@ -37,6 +39,7 @@ world:
 	python3 conformance/test_convergence.py
 	python3 conformance/test_game_table.py
 	python3 conformance/test_table_journey.py
+	python3 conformance/test_table_participant.py
 	python3 conformance/test_desk.py
 	python3 conformance/test_desk_profiles.py
 	python3 conformance/test_projection.py
@@ -45,6 +48,7 @@ world:
 	python3 conformance/test_history.py
 	python3 conformance/test_continuation.py
 	python3 conformance/test_compiler_queue.py
+	python3 conformance/test_exhibition_journey.py
 wiki:
 	python3 conformance/test_wiki.py
 syntax:
@@ -52,7 +56,9 @@ syntax:
 delve:
 	python3 conformance/test_watch.py
 	python3 conformance/test_worker.py
+	python3 conformance/test_worker_resources.py
 	python3 conformance/test_transaction_intake.py
+	python3 conformance/test_allocation_receiving.py
 	python3 conformance/test_delve.py
 	python3 conformance/test_delve_adversarial.py
 	python3 conformance/test_intake.py
@@ -68,10 +74,12 @@ scene:
 	python3 conformance/test_room.py
 	python3 conformance/test_scene.py
 	python3 conformance/test_scene_adversarial.py
+	python3 conformance/test_scene_exchange.py
 portal:
 	python3 conformance/test_affordances.py
 	python3 conformance/test_interpret.py
 	python3 conformance/test_portal.py
 	python3 conformance/test_portal_adversarial.py
+	python3 conformance/test_portal_bridge.py
 	node --check portal/static/app.js
 check: build scene-build capsules core typed packages world wiki syntax delve proposals scene portal

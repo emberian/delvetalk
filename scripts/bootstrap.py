@@ -347,12 +347,17 @@ def export_bootstrap(directory, bundle):
             continue  # Retained byte-identical source links come from the anchored checkpoint.
         request, reply = retained['request'], retained['receipt']
         paths = []
-        for protocol, _ in history.program_targets(request, reply):
+        for protocol, is_reprogram in history.program_targets(request, reply):
             if protocol is None:
                 continue
             matches = [(path, value) for path, value, programs in artifacts if canonical(protocol) in programs]
             if not matches:
-                raise ValueError('missing original source artifact for request: ' + str(request.get('intent')))
+                if request.get('op') == 'create' or is_reprogram or 'roomArtifact' in protocol:
+                    raise ValueError('missing original source artifact for request: ' + str(request.get('intent')))
+                # A generated ordinary child is reproducible from the retained
+                # receiving factory program and exact input. Do not invent a
+                # separately authored source artifact for that derived program.
+                continue
             # One stable source envelope is enough; duplicate wrappers are not new evidence.
             for path, value in sorted(matches, key=lambda pair: str(pair[0]))[:1]:
                 paths.append(path)

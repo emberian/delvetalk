@@ -96,9 +96,15 @@ async function loadWorld() {
   renderObjects();
   return world;
 }
+function clearRepositoryRecord() {
+  $('repository-record').hidden = true;
+  $('repository-json').textContent = '';
+  $('repository-status').textContent = '';
+}
 function clearDraft() {
   state.draft = null;
   state.uncertain = false;
+  clearRepositoryRecord();
   $('draft-panel').hidden = true;
   $('draft-state').textContent = '';
   const url = new URL(location.href);
@@ -274,6 +280,7 @@ async function prepare(card, action, fields) {
 }
 function showDraft(draft, restored = false) {
   state.draft = draft;
+  clearRepositoryRecord();
   state.uncertain = restored && draft.outcome == null;
   $('draft-summary').textContent = text(draft.summary);
   $('draft-target').textContent = draft.object
@@ -393,6 +400,19 @@ $('refresh-object').addEventListener('click', () => {
 $('dismiss-draft').addEventListener('click', clearDraft);
 $('copy-draft').addEventListener('click', () => copy($('draft-command').textContent, $('copy-draft')));
 $('copy-wire').addEventListener('click', () => copy($('draft-wire').textContent, $('copy-wire')));
+$('copy-repository').addEventListener('click', () => copy($('repository-json').textContent, $('copy-repository')));
+$('prepare-repository').addEventListener('click', () => {
+  const draft = state.draft;
+  if (!draft) return;
+  busy($('prepare-repository'), 'Preparing record…', async () => {
+    const record = await api('/api/repository/prepare', { draft: draft.draft });
+    if (state.draft !== draft) return;
+    if (typeof record.recordJson !== 'string') throw new Error('The portal did not return an exact repository record.');
+    $('repository-json').textContent = record.recordJson;
+    $('repository-status').textContent = 'Record prepared. Nothing has been published, authenticated or sent.';
+    $('repository-record').hidden = false;
+  });
+});
 $('copy-detail').addEventListener('click', () => copy($('detail-content').textContent, $('copy-detail')));
 $('send-draft').addEventListener('click', executeDraft);
 $('interpret-form').addEventListener('submit', event => {

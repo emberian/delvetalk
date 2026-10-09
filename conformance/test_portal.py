@@ -66,6 +66,16 @@ class PortalTest(unittest.TestCase):
         self.assertTrue(detail['history'])
         self.assertEqual(before, (self.world / 'world.json').read_bytes())
 
+    def test_repository_preparation_preserves_exact_draft_without_submission(self):
+        draft = self.draft(self.app)
+        before = (self.world / 'world.json').read_bytes()
+        prepared = self.app.repository_prepare({'draft': draft['draft']})
+        record = p.loads(prepared['recordJson'])
+        self.assertEqual(p.loads(record['requestJson']), draft['wire'])
+        self.assertEqual(prepared, self.app.repository_prepare({'draft': draft['draft']}))
+        self.assertEqual(before, (self.world / 'world.json').read_bytes())
+        self.assertIsNone(self.app.draft(draft['draft'])['outcome'])
+
     def test_exact_inspection_and_wire_survive_browser_number_limits(self):
         app = self.interactive()
         card = self.lamp(app)

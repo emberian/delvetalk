@@ -43,6 +43,14 @@ surface source, but never missing `roomArtifact`. Every committed transaction
 programming step is checked, including overwritten candidates; `inputFrom`
 candidates come from Lean receipts. Binding checks do not rerun compilers.
 
+Generated children are reconstructed from the retained receiving factory and
+exact input; they need no fictional separately authored source. Room-bearing
+children still require complete matching room artifacts. Allocation receipts
+retain each original creation root separately from final transaction roots, so
+even an allocated-then-reprogrammed room retains its content obligation. Older
+receipts lacking that trace refuse export of this ambiguous case. Every child
+participates in full-world replay, whether or not an inhabited index names it.
+
 Extend with export flags `--prefix-bundle OLD --prefix-genesis GENESIS
 --prefix-head OLD_HEAD`; verification also takes `--base-head OLD_HEAD`.
 Export replays and preserves exact prefix entries/artifacts under the origin

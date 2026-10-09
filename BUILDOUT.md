@@ -55,10 +55,29 @@ The documentation pass reduced 38,021 words to under one third, including new
 portal contracts. Commands and trust boundaries remain; repetitive walkthroughs
 were replaced with links to executable contracts.
 
+## Parallel inhabitant pass
+
+- Factories create explicitly absent children under current law and direct quotas;
+  transactions can create and use a child atomically. Creation roots remain in
+  receipts even when a later call reprograms the child.
+- Receiving registers only admitted children, recovers interrupted registration,
+  and retains null absence evidence. Portal drafts hand off to repository records
+  without publishing; trusted clerk custody supplies reconciled outcomes.
+- Independent agents built The Room Between (two artists and curator, 16 receipts),
+  Rain Relay (two-person scene, 11 receipts), and a private Automatafl participant.
+  Their reusable journeys include refusal, retry and replay paths.
+- Linux CI at `7e5e50e` exposed Lean's 1 GiB default thread-stack reservation under
+  the worker's 1 GiB address-space ceiling. Explicit bounded stacks fix the
+  conflict without raising the ceiling. Linux pthread/resource probes pass;
+  the complete Linux receiving run remains the final convergence check.
+- Full local `make check` passes: 56 Python groups/459 methods, one Linux-only
+  skip, plus core/JS/Rust/package/source checks. Browser
+  acceptance confirms exact repository-record preparation leaves the draft unsent.
+
 ## Scope
 
 Local principals are assertions; Delve identity comes through the separate clerk.
 No external messages, PDS publication, model API calls or live-custody upgrade
 occurred during this construction. Git checkpoints are authorized.
 [Outstanding work](TRACKING.md) includes public continuation, compiler scheduling
-and governed allocation. Compact-language experiments remain concluded.
+and factory cards. Compact-language experiments remain concluded.

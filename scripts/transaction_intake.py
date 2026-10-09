@@ -5,6 +5,25 @@ MAX_READS = 16
 MAX_CALLS = 32
 
 
+def validate_absent(absent):
+    if (not isinstance(absent, list) or len(absent) > MAX_READS
+            or any(not isinstance(item, str) or not item for item in absent)):
+        raise ValueError('absent requires at most 16 nonempty object identities')
+
+
+def exposed_absence(object_id, objects):
+    """Expose a declared absence in one registered namespace, never its descendants."""
+    parent, separator, name = object_id.rpartition('/')
+    return bool(separator and parent in objects and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', name))
+
+
+def resolve_absent(absent, config):
+    validate_absent(absent)
+    objects = set(config['objects'])
+    if any(item not in objects and not exposed_absence(item, objects) for item in absent):
+        raise ValueError('absence object is not configured for remote requests')
+
+
 def exact(value, fields, label):
     if not isinstance(value, dict) or set(value) != set(fields):
         raise ValueError(label + ' has missing or unknown fields')
@@ -24,8 +43,8 @@ def validate(payload):
             raise ValueError('read object identity must be nonempty')
         field = 'expectedRootRef' if isinstance(descriptor, dict) and 'expectedRootRef' in descriptor else 'expected'
         exact(descriptor, [field], 'read descriptor')
-        if not isinstance(descriptor[field], dict):
-            raise ValueError('read root or reference must be an object')
+        if not isinstance(descriptor[field], dict) and not (field == 'expected' and descriptor[field] is None):
+            raise ValueError('read root must be an object or null; reference must be an object')
         if field == 'expectedRootRef':
             reference = descriptor[field]
             exact(reference, ['uri', 'cid'], 'root reference')
@@ -58,7 +77,13 @@ def validate(payload):
 def resolve(payload, clerk, config):
     validate(payload)
     targets = set(payload['reads']) | {call['object'] for call in payload['calls']}
-    if not targets <= set(config['objects']):
+    objects = set(config['objects'])
+    # A null preimage allows a potential child to participate in this transaction.
+    # It does not expose arbitrary existing objects or register custody in advance.
+    absent = {object_id for object_id, descriptor in payload['reads'].items()
+              if 'expected' in descriptor and descriptor['expected'] is None
+              and exposed_absence(object_id, objects)}
+    if not targets <= objects | absent:
         raise ValueError('transaction object is not configured for remote requests')
     reads, evidence = {}, {}
     for object_id, descriptor in payload['reads'].items():
