@@ -132,18 +132,19 @@ def publication_drafts(state, host):
     return drafted, None
 
 
-def tick(host):
-    """Time enters the journal here and nowhere else: unix minutes, as the clock principal."""
-    host.send({'op': 'world-advance', 'height': int(time.time() // 60)})
+def tick(host, now=None):
+    """Time enters the journal here and nowhere else: unix minutes, as the clock principal.
+    `now` (unix seconds) replaces the wall clock for an offline replay."""
+    return host.send({'op': 'world-advance', 'principal': CLOCK, 'height': int((time.time() if now is None else now) // 60)})
 
 
-def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
+def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
     state = Path(state)
     outbox = state / 'outbox'
     outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     if poll:
         poll(Observer(state, poll.client))
-    tick(host)
+    tick(host, now)
     done, failed, skip = [], [], skipped(state)
     for obs in pending_observations(state):
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']):
@@ -228,6 +229,7 @@ def main(argv=None, out=None):
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
     r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
     r.add_argument('--mock', metavar='DIR')
+    r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
     o.add_argument('--state', required=True)
     m = sub.add_parser('mark-posted')
@@ -255,7 +257,7 @@ def main(argv=None, out=None):
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
             if a.once:
-                out.write(canonical(run(a.state, host, poll)) + '\n')
+                out.write(canonical(run(a.state, host, poll, now=a.now)) + '\n')
             else:
                 daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll)) + '\n') and out.flush())
         finally:
