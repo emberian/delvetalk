@@ -41,8 +41,9 @@ class Wakes(Chain):
         return "env/" + OWNER
 
     def wake(self):
-        self.create("wake", "Wake", record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)), by=OWNER)
-        return "wake"
+        # A Wake lives at wake/<owner>; the bare id `wake` is reserved (each speaker's own).
+        self.create("wake/" + OWNER, "Wake", record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)), by=OWNER)
+        return "wake/" + OWNER
 
     def avatar(self, did):
         self.make(did, closure("Avatar"), avatar_seed(Card_handle(did), "porch"))
