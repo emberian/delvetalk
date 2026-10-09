@@ -2354,59 +2354,61 @@ before parent, in the fixed order of each constructor's fields), walking the
 annotations in order (domain, then codomain), then the global bound, then the sum
 bounds. The order is a contract (the checker decodes refs to earlier entries only). -/
 
+/-- A table slot: an inline leaf, or a reference to an earlier table entry. -/
+inductive Slot where
+  | leaf (t : PTy)
+  | ref (index : Nat)
+  deriving BEq, Hashable
+
+def Slot.json : Slot → Json
+  | .leaf t => t.json
+  | .ref index => Json.mkObj [("tag", "ref"), ("index", toString index)]
+
+/-- A composite type node with its children already interned: equal keys are equal entries,
+and a key hashes in constant time (no subtree is serialized or rehashed). -/
+inductive InternKey where
+  | arrow (reuse parameter : String) (domain codomain : Slot)
+  | field (name : String) (member tail : Slot)
+  | specification (metadata extension : Slot)
+  | prototype (spec target : Slot)
+  | variant (row : Slot)
+  | computation (plan response result : Slot)
+  deriving BEq, Hashable
+
+def InternKey.json : InternKey → Json
+  | .arrow r q d c => Json.mkObj [("tag", "arrow"), ("reuse", r), ("parameter", q), ("domain", d.json), ("codomain", c.json)]
+  | .field n m t => Json.mkObj [("tag", "field"), ("name", n), ("member", m.json), ("tail", t.json)]
+  | .specification m e => Json.mkObj [("tag", "specification"), ("metadata", m.json), ("extension", e.json)]
+  | .prototype s t => Json.mkObj [("tag", "prototype"), ("spec", s.json), ("target", t.json)]
+  | .variant r => Json.mkObj [("tag", "variant"), ("row", r.json)]
+  | .computation p r a => Json.mkObj [("tag", "computation"), ("plan", p.json), ("response", r.json), ("result", a.json)]
+
 structure Interner where
   table : Array Json := #[]
-  seen : Std.HashMap String Nat := {}
-  /-- Whole subtrees already interned: a shared type (a Plan, a knot row) is walked once. -/
-  trees : Std.HashMap PTy Json := {}
+  seen : Std.HashMap InternKey Nat := {}
 
 abbrev InternM := StateM Interner
 
-def internNode (node : Json) : InternM Json := do
-  let key := node.compress
+def internNode (key : InternKey) : InternM Slot := do
   let s ← get
-  let index ← match s.seen[key]? with
-    | some i => pure i
-    | none => do
-      set ({ table := s.table.push node, seen := s.seen.insert key s.table.size } : Interner)
-      pure s.table.size
-  return Json.mkObj [("tag", "ref"), ("index", toString index)]
+  match s.seen[key]? with
+  | some i => return .ref i
+  | none =>
+    set ({ table := s.table.push key.json, seen := s.seen.insert key s.table.size } : Interner)
+    return .ref s.table.size
+
+def PTy.internSlot (t : PTy) : InternM Slot := do
+  match t with
+  | .natural | .boolean | .label | .emptyRow | .variable _ | .data => return .leaf t
+  | .arrow r q d c => internNode (.arrow r q (← d.internSlot) (← c.internSlot))
+  | .field n m t => internNode (.field n (← m.internSlot) (← t.internSlot))
+  | .specification m e => internNode (.specification (← m.internSlot) (← e.internSlot))
+  | .prototype s t => internNode (.prototype (← s.internSlot) (← t.internSlot))
+  | .variant r => internNode (.variant (← r.internSlot))
+  | .computation p r a => internNode (.computation (← p.internSlot) (← r.internSlot) (← a.internSlot))
 
 def PTy.intern (t : PTy) : InternM Json := do
-  if let some j := (← get).trees[t]? then return j
-  let j ← match t with
-    | .natural => pure (Json.mkObj [("tag", "natural")])
-    | .boolean => pure (Json.mkObj [("tag", "boolean")])
-    | .label => pure (Json.mkObj [("tag", "label")])
-    | .emptyRow => pure (Json.mkObj [("tag", "emptyRow")])
-    | .variable i => pure (Json.mkObj [("tag", "variable"), ("index", toString i)])
-    | .data => pure (Json.mkObj [("tag", "data")])
-    | .arrow r q d c => do
-      let dj ← d.intern
-      let cj ← c.intern
-      internNode (Json.mkObj [("tag", "arrow"), ("reuse", r), ("parameter", q), ("domain", dj), ("codomain", cj)])
-    | .field n m t => do
-      let mj ← m.intern
-      let tj ← t.intern
-      internNode (Json.mkObj [("tag", "field"), ("name", n), ("member", mj), ("tail", tj)])
-    | .specification m e => do
-      let mj ← m.intern
-      let ej ← e.intern
-      internNode (Json.mkObj [("tag", "specification"), ("metadata", mj), ("extension", ej)])
-    | .prototype s t => do
-      let sj ← s.intern
-      let tj ← t.intern
-      internNode (Json.mkObj [("tag", "prototype"), ("spec", sj), ("target", tj)])
-    | .variant r => do
-      let rj ← r.intern
-      internNode (Json.mkObj [("tag", "variant"), ("row", rj)])
-    | .computation p r a => do
-      let pj ← p.intern
-      let rj ← r.intern
-      let aj ← a.intern
-      internNode (Json.mkObj [("tag", "computation"), ("plan", pj), ("response", rj), ("result", aj)])
-  modify fun s => { s with trees := s.trees.insert t j }
-  return j
+  return (← t.internSlot).json
 
 def Annotation.intern (a : Annotation) : InternM Json := do
   let d ← a.domain.intern
