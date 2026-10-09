@@ -1,0 +1,38 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+sum Status:
+  proposed: {}
+  admitted: {}
+record Proposal:
+  author: String
+  line: String
+  status: Status
+record State:
+  proposals: Lists.List<Proposal>
+record Edits:
+  proposals: Plans.Entries<Proposal, Status>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<{}, {}>
+# Submission only proposes; admission is the receiver's law, not the author's.
+def submit(state: State, input: {author: String, line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  let count = Lists.length::<Proposal>(state.proposals)
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Status>.append({item: {author: input.author, line: input.line, status: Status.proposed({})}})}})):
+    case written(_): count + 1n
+    case _: count
+def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Status>.amend({index: input.index, change: Status.admitted({})})}})):
+    case written(_): true
+    case _: false
+def statusName(status: Status) -> String:
+  match status:
+    case proposed(_): "proposed"
+    case admitted(_): "admitted"
+def entry(proposal: Proposal) -> Document.Document:
+  Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(proposal.author, textConcat(": ", textConcat(proposal.line, "\n")))))))
+def render(state: State) -> Document.Document:
+  Document.concat(Document.text("Anthology\n"), Document.Document.sequence({items: Lists.map::<Proposal, Document.Document>(state.proposals, entry)}))
+def card(state: State) -> String:
+  Document.plain(render(state))
