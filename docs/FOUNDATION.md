@@ -73,9 +73,15 @@ commitment, and nothing about hidden state.
 `broken`. No reply is not failure: the sender keeps the identity and asks for
 the receipt.
 
-**Journal.** Append-only, hash-chained, in a file the host owns. Snapshots are
-derived. Restart replays from the last snapshot. A suspended activity survives
-restart because its checkpoint is in the store.
+**Journal.** Append-only, chained by CID, in a file the host owns. Every
+`Data` value and every entry has one canonical byte form, DAG-CBOR as the AT
+Protocol uses it, and its identity is that form's CIDv1. An entry is therefore
+a PDS record by construction: it can be published verbatim and cited as
+`at://did/collection/rkey` with its CID, and a receipt's identity is the same
+kind of thing as a post's. Lists cross the wire as arrays. Snapshots are
+derived. Restart replays the chain. A suspended activity survives restart
+because its checkpoint is in the store, bound to its object, principal,
+intent and roots.
 
 **Law.** The enforced fragment in `Compiler/ObjectiveBendLaw.lean` judges every
 write of declared state: comparisons on top-level fields, `monotone`,
@@ -148,7 +154,8 @@ wording, the interpretation, and the admitted outcome.
 Python carries bytes and credentials and decides nothing. Three programs:
 
 - `delve.py`: read the public AppView, post as an authorised account, verify a
-  proof-of-control post for identity.
+  proof-of-control post for identity. The principal is the DID; the handle is
+  display text.
 - `model.py`: one request to the configured Anthropic model, strict JSON reply
   with fence tolerance, returned verbatim to the host.
 - `http.py`: `/AGENTS.md` and the agent API as a thin front on the host's
