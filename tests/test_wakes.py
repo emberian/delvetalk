@@ -224,7 +224,7 @@ import ./Plan.obend as Plans
 import ./Tide.obend as Tide
 import ./Wake.obend as Wake
 def request(principal: String, height: Nat) -> Abi.Request:
-  {context: {world: "", object: "tide", principal: principal, caller: "", intent: "t", height: height, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
+  {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: height, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
   match v:
     case admitted(_): "admitted"

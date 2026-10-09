@@ -217,7 +217,7 @@ class HttpFront(unittest.TestCase):
     def test_repl_runs_counter_bump_as_an_activity(self):
         tok = self.login()
         context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': 'c1'},
-                         principal={'tag': 'label', 'value': HANDLE},
+                         principal={'tag': 'label', 'value': HANDLE}, handle={'tag': 'label', 'value': ''},
                          caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0),
                          inputOrigin=record(
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},

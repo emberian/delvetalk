@@ -252,15 +252,6 @@ def ensureWrite (id caller : String) (kind : Nat) : M Bool := do
   set { s with writes := s.writes ++ [(id, [change])] }
   return true
 
-/-- What the host tells a running method about itself, built here and nowhere else.
-    `caller` is the calling object's id (empty for the turn's own method), `intent` the
-    turn's identity, `height` the journal height the turn read. None is chosen by the client. -/
-def contextData (id principal caller intent : String) (height : Nat) (kind command : String) : Data :=
-  .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
-    ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
-    ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
-      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
-
 /-- The receipt a settled slot answers an await with. -/
 def receiptData (entry : Json) : Data :=
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
@@ -393,8 +384,8 @@ def hasMethod (o : Object) (name : String) : Bool :=
 
 /-- The Context a card is rendered for: the reader (`principal`), the card's object, the asking
     object (`caller`, "" for `world-card`), and the turn's intent and height. -/
-def cardContext (id reader caller intent : String) (height : Nat) (method : String) : Data :=
-  contextData id reader caller intent height "card" method
+def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) : Data :=
+  contextData id reader (handleOf w reader) caller intent height "card" method
 
 /-- An object's card as `context`'s reader sees it, run on its committed state under this turn's
     ticks: `renderFor(state, context)` when the package has it, else `render`, which may take
@@ -444,7 +435,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   recordRoot handler obj.version
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
-  let context := contextData handler s.subject self s.intent s.world.height "handle" ""
+  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height "handle" ""
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ _ _)) => (d, [obj.state, plan, context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -479,7 +470,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
-  let context := contextData id s.subject caller s.intent s.world.height
+  let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height
     (if depth == 0 then "request" else "call") method
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
@@ -756,7 +747,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordRoot id o.version
-      let reader := cardContext id s.subject self s.intent s.world.height
+      let reader := cardContext s.world id s.subject self s.intent s.world.height
       match ← renderCard o reader with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
       | .error clause => refusedWith bounds responseType clause
@@ -1451,7 +1442,7 @@ def cardOp (w : World) (j : Json) : Except String Json := do
     if !o.read.permits principal then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match ((renderCard o (cardContext id principal "" "" w.height)).run.run init).1 with
+    match ((renderCard o (cardContext w id principal "" "" w.height)).run.run init).1 with
     | .ok (.ok document) =>
       return Json.mkObj [("status", toJson "card"), ("object", toJson id),
         ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)]

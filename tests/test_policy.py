@@ -37,7 +37,7 @@ def many(n: Nat, context: Abi.Context) -> Nat:
 
 def context(card="garden-1"):
     text = lambda v: {"tag": "label", "value": v}
-    return record(world=text(""), object=text(card), principal=text("glm"), caller=text(""), intent=text("probe"),
+    return record(world=text(""), object=text(card), principal=text("glm"), handle=text(""), caller=text(""), intent=text("probe"),
                   height={"tag": "natural", "value": "0"}, inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
         immediatelyPrevious=boolean(False)))

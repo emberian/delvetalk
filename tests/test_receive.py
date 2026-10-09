@@ -92,7 +92,7 @@ def planted(context: Abi.Context) -> String:
 """
         compiled = compile_job(closure("Garden") + [{"name": "Probe", "source": probe}], "planted")
         self.assertEqual(compiled["status"], "compiled", compiled)
-        context = record(world=label(""), object=label("garden"), principal=label("glm"),
+        context = record(world=label(""), object=label("garden"), principal=label("glm"), handle=label(""),
                          caller=label(""), intent=label("probe"), height=nat(0), inputOrigin=record(
             kind=label("request"), object=label(""), command=label(""), program=label(""),
             immediatelyPrevious=boolean(False)))

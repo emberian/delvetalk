@@ -60,6 +60,8 @@ def maxSeedBytes : Nat := 262144
 def createsPerTurn : Nat := 8
 /-- Suspended activities waiting on one object, and in the whole world. -/
 def pendingActivitiesPerObject : Nat := 8
+/-- A principal's display handle in the registry (a DNS name is at most 253). -/
+def maxHandleBytes : Nat := 256
 /-- Interpretations waiting on one object, counted apart from its awaits. -/
 def pendingInterpretationsPerObject : Nat := 64
 def maxSuspended : Nat := 4096
@@ -299,6 +301,8 @@ structure World where
   clockPrincipal : String := ""
   postQuota : Nat := 16
   settled : Bool := false
+  /-- The principal registry: display handle by principal, from `principal` entries. -/
+  handles : Std.HashMap String String := {}
   /-- Source modules by CID, from `module` entries: the journal carries each source once and
       compile inputs name it by `cid`. -/
   modules : Std.HashMap String String := {}

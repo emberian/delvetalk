@@ -10,6 +10,7 @@ record Context:
   world: String
   object: String
   principal: String
+  handle: String
   caller: String
   intent: String
   height: Nat

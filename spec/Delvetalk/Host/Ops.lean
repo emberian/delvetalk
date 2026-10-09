@@ -882,6 +882,21 @@ def withLawReads (w : World) (p : Proposal) : Proposal :=
       | .error _ => p
     | none => p) p
 
+/-- The display handle the principal registry holds for a principal, "" when unknown. -/
+def handleOf (w : World) (principal : String) : String :=
+  (w.handles[principal]?).getD ""
+
+/-- What the host tells a running method about itself, built here and nowhere else.
+    `handle` is the principal's display handle from the registry (`world-principal`), ""
+    when unknown; `caller` is the calling object's id (empty for the turn's own method),
+    `intent` the turn's identity, `height` the journal height the turn read. None is chosen
+    by the client. -/
+def contextData (id principal handle caller intent : String) (height : Nat) (kind command : String) : Data :=
+  .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
+    ("handle", .label handle), ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
+    ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
+      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
+
 /-- An object's Bend law on one ordinary write: none when it admits. -/
 def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (subject caller method : String)
     (argument : Data) (kind : Nat) (pin : String) : Option Refusal := Id.run do
@@ -896,10 +911,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
       unless p.roots.any (·.1 == r) do return refuse "lawReads"
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := Data.record [("world", .label ""), ("object", .label id), ("principal", .label subject),
-    ("caller", .label caller), ("intent", .label p.intent), ("height", .natural w.height),
-    ("inputOrigin", .record [("kind", .label "law"), ("object", .label caller), ("command", .label method),
-      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
+  let context := contextData id subject (handleOf w subject) caller p.intent w.height "law" method
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
@@ -1091,6 +1103,14 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
           ((e.getObj?.toOption.map (·.toList)).getD []))]).getD #[])
     height := w.height + 1, head := hash, entries := w.entries.push entry
+    handles := if tagOf entry == "principal" then
+        match (entry.getObjVal? "outcome").toOption with
+        | some o => match o.getObjValAs? String "did", o.getObjValAs? String "handle" with
+          | .ok did, .ok "" => w.handles.erase did
+          | .ok did, .ok handle => w.handles.insert did handle
+          | _, _ => w.handles
+        | none => w.handles
+      else w.handles
     clock := if tagOf entry == "advanced" then (entry.getObjVal? "outcome" |>.bind (·.getObjValAs? Nat "to")).toOption.getD w.clock else w.clock
     suspended := (match (entry.getObjValAs? String "resumes").toOption with
         | some h => w.suspended.filter fun s => (s.getObjValAs? String "hash").toOption != some h
@@ -1464,6 +1484,29 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
        ("request", toJson digest), ("outcome", Json.mkObj fields)] [object]
     return (w', answer entry)
 
+/-- `world-principal {principal, did, handle}`: the clock principal records the display handle
+    of `did` (the bridge, at the first observed post of each author). Journaled as a
+    `principal` entry and indexed by `record`, so replay and snapshots rebuild the registry; a
+    handle already recorded answers without an entry. Handles are what cards show where the
+    town reads names; they confer nothing. -/
+def principalOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let did ← boundedText "did" Limits.maxPrincipalBytes (← j.getObjValAs? String "did")
+  let handle ← j.getObjValAs? String "handle"
+  if handle.utf8ByteSize > Limits.maxHandleBytes then throw s!"handle must be at most {Limits.maxHandleBytes} bytes"
+  if handle.toList.any (fun (c : Char) => c.toNat < 32 || c.toNat == 127) then throw "handle must be one line of printable text"
+  if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
+    throw s!"principals are recorded only by {w.clockPrincipal}"
+  let answer := fun (entry : Option Json) => Json.mkObj ([("status", toJson "principal"), ("did", toJson did),
+    ("handle", toJson handle)] ++ (entry.map fun e => [("receipt", e)]).getD [])
+  if handleOf w did == handle && (w.handles.contains did || handle.isEmpty) then return (w, answer none)
+  let intent := s!"principal:{did}:{w.height + 1}"
+  let fields := [("tag", toJson "principal"), ("did", toJson did), ("handle", toJson handle)]
+  let (w', entry) := push w (identityKey principal intent)
+    [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (Json.mkObj fields))), ("outcome", Json.mkObj fields)] []
+  return (w', answer (some entry))
+
 /-- `world-addressee {parent}`: the object (and slot, or page and section) a post at `parent` was made for. -/
 def addressee (w : World) (j : Json) : Except String Json := do
   let uri ← j.getObjValAs? String "parent"
@@ -1580,6 +1623,11 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     if w.settled then throw "settings recorded twice"
     return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
                            postQuota := ← natField outcome "postQuota", settled := true } entry key []
+  | "principal" =>
+    discard <| outcome.getObjValAs? String "did"
+    discard <| outcome.getObjValAs? String "handle"
+    if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "principal recorded by another principal"
+    return record w entry key []
   | "posted" =>
     let uri ← outcome.getObjValAs? String "uri"
     let object ← outcome.getObjValAs? String "object"

@@ -462,6 +462,65 @@ class Projection(Reflection):
             self.assertIn("reserved", taken["message"])
 
 
+HANDLED = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./Document.obend as Document
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.handle})}})):
+    case _: context.handle
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(textConcat("seen by ", context.handle))
+"""
+GLM = "did:plc:nmjdxe6fex23zslnnbwgruj3"
+
+
+class Handles(Reflection):
+    """Rehearsal finding 8: cards showed DID fragments. The host keeps a principal registry the
+    clock principal fills (`world-principal`), and every Context carries the handle."""
+    def setUp(self):
+        super().setUp()
+        self.open_library(clock="transport")
+        self.make("mirror", HANDLED, record(note=label("")))
+
+    def record_handle(self, handle, principal="transport"):
+        return self.host.send(op="world-principal", principal=principal, did=GLM, handle=handle)
+
+    def who(self):
+        return self.turn("mirror", "who", principal=GLM)["result"]["value"]
+
+    def card(self):
+        return self.host.send(op="world-card", principal=GLM, object="mirror")["text"]
+
+    def test_the_registry_names_the_principal_in_turns_and_cards_and_survives_replay(self):
+        self.assertEqual((self.who(), self.card()), ("", "seen by "))
+        self.assertEqual(self.record_handle("glm.delve.town", principal="mallory")["status"], "error")
+        height = self.host.send(op="world-status")["height"]
+        first = self.record_handle("glm.delve.town")
+        self.assertEqual((first["status"], first["receipt"]["outcome"]),
+                         ("principal", {"tag": "principal", "did": GLM, "handle": "glm.delve.town"}), first)
+        self.assertEqual(first["receipt"]["identity"]["principal"], "transport")
+        again = self.record_handle("glm.delve.town")
+        self.assertNotIn("receipt", again)
+        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
+        self.assertEqual((self.who(), self.card()), ("glm.delve.town", "seen by glm.delve.town"))
+        self.reopen()
+        self.assertEqual((self.who(), self.card()), ("glm.delve.town", "seen by glm.delve.town"))
+        self.assertIn("receipt", self.record_handle("glm.town"))
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.reopen()
+        self.assertEqual(self.card(), "seen by glm.town")
+        self.assertEqual(self.host.send(op="world-principal", principal="transport", did=GLM, handle="two\nlines")["status"], "error")
+
+
 class Transient(Reflection):
     """staleRoot, budget and evaluation refusals are journaled but do not bind the identity."""
 
