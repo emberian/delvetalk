@@ -85,6 +85,9 @@ true = fsync); `tests/host.py` opens every test journal with `"none"`, deploy an
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.
+`world-open {opener}` records the world's opener in the same settings entry (only when named); the opener alone may
+`world-create {…, owner}`. `world-principal {principal, did, handle}` (clock principal only) journals a `principal`
+entry for the handle registry (5.22).
 `world-posted {principal, uri, cid, object, slot?, page?, section?}` journals a `posted` entry (identity `posted:<uri>`;
 `page`/`section` when the post carried the object's publication, section "" for the whole page) and indexes
 `world.posts` (`Post {object, slot, page, part, height}`; snapshots keep them); `world-addressee {parent}` answers
@@ -100,7 +103,8 @@ Request errors (`Except.error`) journal nothing; refusals are receipts.
 ## 2. Journal entries
 
 One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`,
-`roots [{object, version}]`, `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
+`roots [{object, version, cid?}]` (`cid` = `stateCid` of the state the turn read; replay checks it for a root at the
+version the world holds, see 5.22), `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
 compressed entry without `hash`. Genesis `previous` is 64 zeros. `identityKey` = compressed
 `[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except that a suspension or a
 transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`: staleRoot,
@@ -147,6 +151,9 @@ Outcomes:
   awaited, awaits, offers, violation?}}`. The entry also carries `request` = the turn digest, `ledger`,
   `ticksUsed`, `delivery?`, `resumes?` (if it re-suspends). Replay: `digest == tokensDigest tokens`
   (never trust the token), registers it in `world.suspended`.
+- **principal** (`world-principal`): identity `{clock, "principal:<did>:<height>"}`, `{tag, did, handle}`; `record`
+  indexes `World.handles` (so snapshots rebuild it); "" forgets a handle.
+- **settings** may carry `opener`; **created** may carry `owner` (replay requires the opener's principal).
 - **advanced**: identity `{clock, "advance:<to>"}`, `{tag, from, to}`. Replay: `from == w.clock && to > from`.
 
 Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes` in Ops):
@@ -199,7 +206,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   object's `chain`, never raise it.
 - Time/ticks: `maxTurnTicks` 1,000,000 (default and request ceiling), `maxPatience` 1,000,000 clock units.
 - Delivery/suspension: `deliveriesPerCall` 16, `maxPending` 4096, `pendingActivitiesPerObject` 8,
-  `maxSuspended` 4096, `maxResumesPerCall` 1024.
+  `pendingInterpretationsPerObject` 64 (counted apart from awaits), `maxSuspended` 4096, `maxResumesPerCall` 1024.
+  A full count refuses the turn class `capacity`, reason the limit's name; `capacity` is transient.
+- Principals: `maxHandleBytes` 256.
 - Programs/laws: `maxPackageBytes` 32 KiB (reprogram), `maxLawBytes` 4096, `maxLawClauses` 16,
   `maxPreparedPrograms` 16 (memory cache), `maxCompiledPackets` 256 (memory cache), `maxReaders` 256.
 
@@ -221,8 +230,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    Data) and `unchanged(F)` are in `Law.lean`; syntax in `spec/bend/Compiler/ObjectiveBendLaw.lean`.
    The default law `owner: request.kind == 0 or request.subject == "<creator>"` therefore means: anyone may invoke my
    methods, only my creator may reprogram or amend me (documented at `defaultLaw`).
-3. **Context.** `contextData` is the single constructor: `{world, object, principal, caller, intent, height, inputOrigin}`;
-   `height` is the height the turn read (a resumed turn keeps the one it started with).
+3. **Context.** `contextData` (Ops) is the single constructor, the Bend law's request included:
+   `{world, object, principal, handle, caller, intent, height, clock, inputOrigin}`; `handle` is the registry's handle of
+   the frame's subject ("" unknown), `height` the journal height the turn read, `clock` the world clock.
 4. **Clauses.** `typeMismatch`, `capacity`, `outOfRange`, and the in-turn `notSelf`, `unknownObject`, `capacity`.
 5. **Library.** `Library {pin, modules}` (Store.lean) sealed by `sealLibrary` (dependency order, then name; <= 256
    modules, 768 KiB). Objects' compile inputs carry `"library": pin` and only their own modules; `resolveInputs`
@@ -236,7 +246,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 7. **interpret.** The Plan suspends like `await` with outcome field `interpretation {id, object, policy, utterance, offers}`
    (id = hash of principal, intent, ordinal). `world-interpretations` lists the pending ones with the Policy object's state as
    `{model, system, examples}` and offers as plain JSON; `world-interpretation {id, reply}` journals an `interpreted` entry
-   (identity `interpretation`/id, verdict `proposal {method, argument}` or `unclear {needs}`) and the settle pass resumes the turn.
+   (identity `interpretation`/id, verdict `proposal {method, argument}`, `replied {text}` or `unclear {needs}`; 5.22) and the settle pass resumes the turn.
    A verdict is `proposal` only if the method exists, is one of the offered actions, its argument conforms to the method's input
    type and the object's Response can carry the proposal; a failed reply is `unclear`. Deadline is `interpretationPatience`
    (64 clock units) from the clock, resuming `timedOut`.
@@ -281,7 +291,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    the entry, so a retry returns them identically); receipts in `delivered`, `resumed` and `world-deliver`'s
    `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
    {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
-   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root}`, exactly)
+   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root}`, root
+   `{object, version?, cid?}`; 5.22)
    and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
    view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
    ("" = anonymous, public objects only), is `denied` for an object the reader cannot view, and projects each entry.
@@ -438,6 +449,27 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    not offered. Plan `judge {edits: E}` answers `judged {admitted, clause}`: `judge` (with the Bend laws warmed
    and law reads added) on the turn so far plus this write of the running object, committing nothing.
 
+22. **lane/host6: the rehearsal's host findings.**
+   - *Interpretation* (finding 2). `world-interpretations` sends as `policy.system` the Policy's pure
+     `prompt(state, offers, utterance)` (compiled by name, `policyPrompt`; the method table does not list it), else
+     its `system` field. A replied reply whose `json` is not `{method, argument}` and that carries `raw` resumes
+     `replied {text}` (Plan.obend Response); an object whose Response cannot carry it hears `unclear`. `failed`
+     resumes `unclear {needs: ["model: <reason>"]}`. Garden fits the text with its own Spell (objects lane).
+   - *Silence* (finding 3). A turn that offers nothing has no `offers` field (`test_outbound` pins it).
+   - *Refusals and own cards* (finding 7). `publicRefusal w reader entry`: `{status, class, root: {object, version?,
+     cid?}}` (cid only if the reader may view the object), plus `object` and `hint` for `unknownObject`; a refused
+     turn reply carries it as `public` (anonymous reader). `ownCards` `env`/`wake` resolve to `<name>/<principal>`
+     in `runTurn` and `world-card` (`resolveCard`); the bare ids are reserved.
+   - *Handles* (finding 8). `World.handles`, `handleOf`, `principalOp`.
+   - *Metarule* (finding 10). `amendable` answers "law does not admit an amendment by its proposer <p>: <name>:
+     <expr>"; `isAmendmentRefusal`. `World.opener` from settings; `create` with `owner` builds with the owner as the
+     metarule's and default law's principal.
+   - *Capacity* (rerun findings). `mayWait … (interpreting := true)` counts interpretations apart;
+     `transientClasses` includes `capacity`.
+   - *Root CIDs.* `recordRoot` captures `stateCid` at read (`TurnState.rootCids`, through suspensions);
+     `rootCidsAt` fills client proposals and law reads at the current version; `checkRootCids` in `replayEntry`.
+     A root that moved since (commuting writes) is not checkable on replay: no past states are kept.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -530,6 +562,13 @@ exactly `{text, post, slot}`, the bridge and the HTML front always send all thre
 tolerates two fields (a missing or forged field is refused `typeMismatch`, `tests/test_receive.py`).
 Still open from transport: `post.py --slot` passes text while `world-posted` takes a slot `{principal, intent}`,
 so `--record --slot` is refused by the host; no object reads `slot` or acts on `merge` yet (objects lane).
+
+lane/host6 (based on foundation 8d922a2, merged e240d41) did 5.22: the rehearsal's host findings 2, 3, 7, 8, 10,
+the interpretation capacity and transient `capacity`, root CIDs, and `Context.clock`. Still open from section 7's
+queue: items 1 to 5 above, unchanged. Asks for other lanes: transport should send the utterance only (the system text
+now holds lexicon, examples, forms and the utterance), call `world-principal` at each author's first post, and open
+with `opener`; `transport/model.py`'s comment ("the host fits raw") is now the object's fitting; Env.obend's comment
+quotes the old metarule message.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
 as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).
