@@ -25,13 +25,17 @@ the library).
   context)` with `Heard = {text, post, slot}`. The usual receive is `Card.route(text, context, forms())`, `act` dispatched
   by action, anything else `Card.answer::<Edits, S, R>(routed, context, forms(),
   render(state, context))`.
+* **Handles.** `Card.handle` never shows a raw DID: a long fragment is `…` and its last
+  eight, until the host puts the observed handle in the Context.
 * **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal,
   context)` (" (yours)"), `Card.stranger()`. A member sees more: an Env's events, a Wake's
   triggers and an Avatar's notes and follows are their owner's; a Deal shows a party
   its countersign spell; a Policy shows its owner how to teach; Garden reminds a reader
   of the proposal waiting for their yes; a Scene shows a present reader their passage; a
   Commons shows where the reader stands and which gates let them through.
-* **Lenses and `set`/`?`.** `Form.Lens<E>.lens {field, form: Form.Kind, put: Form.Value -> E}`;
+* **Lenses and `set`/`?`** (Policy, Avatar, Garden confirm, Place and Thing name and
+  description; Workshop has none and says so; `Card.answerLensedAs` for an object's own
+  result type). `Form.Lens<E>.lens {field, form: Form.Kind, put: Form.Value -> E}`;
   an object exports `lenses()` and answers with `Card.answerLensed::<E, S, R>(routed,
   context, forms(), lenses(), guard, card)`: `delvetalk <card> set` plus one `<field>:
   <value>` line is judged against the kind and written through put (guard "" admits; a
@@ -39,10 +43,22 @@ the library).
   answers the usage card (forms, then lenses). Without lenses, `?` shows the forms and
   `set` says "Nothing here can be set." Lenses today: Policy (model, escalate, system),
   Avatar (handle). `Card.valueText/valueNatural` read a Value.
-* **Spell names.** A card name is `[a-z0-9:/.-]+`, at most 160 bytes, so `env/did:plc:…` and
-  an Avatar's DID are nameable; actions and fields stay `[a-z0-9-]+`; `?` is an action.
-  The inline form is `delvetalk <card> <action> <field>: <value>, …` (no comma after the
-  action). An Env lives at `Events.envOf(did)` = `env/<did>`; one elsewhere refuses publish.
+* **Spell names and shapes.** A card name is `[a-z0-9:/.-]+`, at most 160 bytes, so
+  `env/did:plc:…` and an Avatar's DID are nameable; actions and fields stay `[a-z0-9-]+`;
+  `?` is an action. On the delvetalk line fields follow the action separated by ` / `
+  (the town's form) or commas. The spell is the post's LAST delvetalk line that is not
+  quotation (indented four or by a tab; taken only if nothing else), `>` and fence lines
+  are never spell lines and are skipped among the fields (rehearsal finding 1).
+* **Hub and silence.** Directory passes a spell naming another card to its receive by
+  call (its Response result is Data), greets each principal once, is silent to its
+  owner, and answers a door word with that door's card. Garden ends with no offer for
+  prose the model calls `not addressed`; it reads the model's text (`replied {text}`)
+  with Spell. Tide answers subscribe and tick with its card.
+* **Pages.** An object with a page keeps `owner` and `pageCheckpoint`; `Card.isMerge`
+  and `Card.merge` record the owner's `merge` reply (Garden does).
+* **Laws that guard fields** read `owner: request.subject == new.owner or (request.kind
+  == 0 and unchanged(…))`: without the kind, anyone's reprogram or amendment (which
+  change no field) passes (Garden, Thing, Directory). An Env lives at `Events.envOf(did)` = `env/<did>`; one elsewhere refuses publish.
 * **List edits by item.** No object writes an index: `amendItem {item, change}` and
   `removeItem {item}` address the first item with the same canonical bytes (`absentItem`
   when none). Find the stored item with `Lists.find`, then address it.
@@ -64,7 +80,7 @@ the library).
 
 * The closure cap is gone; Counter with Card runs 200 HTTP turns in 0.50 s on hbox
   (0.39 s bare). The REPL's `MAX_BODY` refuses Counter's closure with Card (413).
-* Ticks: Bell card of 1,025 rains 75,701; spell parse of 64 fields 57,044; an Avatar send
+* Ticks: Bell card of 1,025 rains 75,701; spell parse of 64 fields 68,150 (dense 4,057 bytes 76,086); an Avatar send
   to 32 observers 5,213.
 * An await only proves that some turn with that identity was admitted. A turn suspended
   on an object resumes refused `staleRoot` if anything wrote that object meanwhile,
@@ -84,9 +100,9 @@ enter, choose, leave), Commons (places, paths, ways in, gates: open, members, ob
 
 ## 4. Open
 
-* Lenses for objects without an owner (Place, Thing, Workshop, Garden's confirm) need an
-  owner or a law first; today anyone's kind-0 write is admitted there.
-* `receive "merge"` recording `pageCheckpoint`: Garden has no owner to judge it.
+* Place cannot declare a law while Thing and Avatar import it for its State and Done;
+  moving those types to a library module (as Seats did) would let it.
+* Delete test_interpret_text's foundation pin and its expectedFailures when host6 lands.
 * An addressee `slot` reaches receive but no object reads it yet.
 * Scene passages are only the creator's seed; there is no activity that adds one.
 * Main's other capabilities (appointments' factories, editor and desks, exhibitions,
