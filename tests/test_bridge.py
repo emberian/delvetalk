@@ -191,6 +191,8 @@ class Stub:
                     'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
+        if op == 'world-publications':
+            return {'status': 'publications', 'publications': [], 'more': False}
         return {'status': 'ok'}
 
 

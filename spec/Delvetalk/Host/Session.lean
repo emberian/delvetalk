@@ -237,6 +237,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
+      | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)
       | "world-offers" => return (session, offersOp s.world request)
       | "world-card" => return (session, cardOp s.world request)

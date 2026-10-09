@@ -381,7 +381,7 @@ class Posting(unittest.TestCase):
         seen = []
         h = type('H', (), {'send': lambda s, r: seen.append(r) or {'status': 'posted'}})()
         post.record_posted(h, {'uri': f'at://{DID}/town.delve.feed.post/x1', 'cid': 'bafyc'}, 'directory', 'welcome')
-        self.assertEqual(seen, [{'op': 'world-posted', 'principal': DID, 'uri': f'at://{DID}/town.delve.feed.post/x1',
+        self.assertEqual(seen, [{'op': 'world-posted', 'principal': 'transport', 'uri': f'at://{DID}/town.delve.feed.post/x1',
                                  'cid': 'bafyc', 'object': 'directory', 'slot': 'welcome'}])
 
     def test_record_without_a_journal_is_refused_before_anything_happens(self):

@@ -85,8 +85,10 @@ true = fsync); `tests/host.py` opens every test journal with `"none"`, deploy an
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.
-`world-posted {principal, uri, cid, object, slot?}` journals a `posted` entry (identity `posted:<uri>`) and indexes
-`world.posts`; `world-addressee {parent}` answers `{status: "addressee", object, slot?}` or `{status: "unknown"}`.
+`world-posted {principal, uri, cid, object, slot?, page?, section?}` journals a `posted` entry (identity `posted:<uri>`;
+`page`/`section` when the post carried the object's publication, section "" for the whole page) and indexes
+`world.posts` (`Post {object, slot, page, part, height}`; snapshots keep them); `world-addressee {parent}` answers
+`{status: "addressee", object, slot?, page?, section?}` or `{status: "unknown"}`.
 `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
 Every journaling op goes through `durable`: step, then `settleAll` (resume what the step released, then run
 pending deliveries oldest first, each followed by another resume pass, up to `deliveriesPerSettle` 64; the reply
@@ -288,8 +290,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `refused {clause: title}`). The page is the object's: `page` "" means the object id. The admitted entry
    retains `publishes [{id, object, page, section, text}]` with the agentwiki text (`wiki: Title\n\nbody`, or
    `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
-   adds `publications`. Transport posts the text, confirms with `world-posted {uri, cid, object}`, and routes a
-   reply (`merge` from the page's owner) by `world-addressee` to the object's `receive` (bridge work).
+   adds `publications`. `world-publications {principal, after?}` (the publisher only; anyone else `denied`) answers
+   `{status: "publications", publications [{height, ordinal, id, object, page, section, body, replyTo?}], more}`;
+   `replyTo` is, for a section edit, the newest recorded post of that object's whole page (`pagePosts`). The
+   bridge (`publication_drafts`, cursor `<state>/publications.after`) writes each as an outbox draft
+   `<height>-pub-<id>.json` `{publication {id, height, object}, page, section, replyTo, text, posted: false}`,
+   never posts it, and fills `replyTo` of an unposted section draft once the page post is recorded. `post.py
+   --record` confirms as the clock principal ("transport") and adds `page`/`section` parsed from the posted text's
+   `wiki:`/`edit:` header; a reply (`merge`) to that post routes by `world-addressee` to the object's
+   `receive {text, post, slot}`.
 
 12. **Kernel integration (host4).** An argument that does not conform to the method's input type
    (`argumentFits`: at `Data` well-formed, at a data type `conformsUnder` the packet's bounds; the kernel's

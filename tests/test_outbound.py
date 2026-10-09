@@ -346,6 +346,31 @@ class Publish(Reflection):
         self.assertEqual(posted["status"], "posted", posted)
         self.assertEqual(self.host.send(op="world-addressee", parent=URI)["object"], "teller")
 
+    def test_world_publications_lists_bodies_and_a_section_edit_replies_to_its_pages_newest_post(self):
+        edit = self.publish()
+        listing = lambda **kw: self.host.send(op="world-publications", principal="transport", **kw)
+        [p] = listing()["publications"]
+        self.assertEqual({k: p[k] for k in ("height", "id", "object", "page", "section", "body")},
+                         {"height": edit["receipt"]["height"], "id": edit["result"]["value"], "object": "teller",
+                          "page": "teller", "section": "Notes", "body": "the bell rang"})
+        self.assertNotIn("replyTo", p)                                    # no page post is recorded yet
+        self.assertEqual(self.host.send(op="world-publications", principal="ann")["status"], "denied")
+        self.publish(section="", body="all of it\n\nin two paragraphs", identity="pub-2")
+        whole = listing()["publications"][1]
+        self.assertEqual((whole["section"], whole["body"]), ("", "all of it\n\nin two paragraphs"))
+        self.assertNotIn("replyTo", whole)
+        self.assertEqual(listing(after=whole["height"])["publications"], [])
+        for i, uri in enumerate((URI, URI + "-checkpoint")):
+            r = self.host.send(op="world-posted", principal="transport", uri=uri, cid=f"c{i}", object="teller", page="teller", section="")
+            self.assertEqual(r["status"], "posted", r)
+            self.assertEqual(listing()["publications"][0]["replyTo"], uri)  # the newest post of the page
+        self.assertEqual(self.host.send(op="world-addressee", parent=URI),
+                         {"status": "addressee", "object": "teller", "page": "teller", "section": ""})
+        self.reopen()
+        self.assertEqual(listing()["publications"][0]["replyTo"], URI + "-checkpoint")
+        bad = self.host.send(op="world-posted", principal="transport", uri=URI + "-2", cid="c", object="teller", section="Notes")
+        self.assertEqual(bad["status"], "error", bad)
+
     def test_a_title_with_a_line_break_is_refused(self):
         r = self.publish(section="a\nb")
         self.assertEqual(r["result"], label("title"))
