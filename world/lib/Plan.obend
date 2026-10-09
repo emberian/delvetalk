@@ -142,6 +142,8 @@ sum Plan<E>:
   sendVia: {object: Reference, method: String, argument: Data, via: String}
   objects: {prefix: String, after: String}
   card: {object: Reference}
+  run: {object: Reference, method: String, argument: Data, handler: Reference}
+  judge: {edits: E}
 sum Response<S, R>:
   viewed: {version: Nat, state: S}
   denied: {}
@@ -166,6 +168,12 @@ sum Response<S, R>:
   revoked: {}
   listed: {ids: Document.Names, more: Bool}
   carded: {document: Document.Document}
+  judged: {admitted: Bool, clause: String}
+# What a handler's `handle(state, plan, context)` answers for a Plan the callee of a `run`
+# yields: pass it on to the host, or answer it with a response of the callee's type.
+sum Handled<R>:
+  pass: {}
+  answer: {response: R}
 # The reference of the running object, in the world the context carries (the
 # empty world is the world the turn runs in).
 # The empty payload, for a method that takes no input.

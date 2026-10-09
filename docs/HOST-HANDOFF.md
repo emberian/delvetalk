@@ -33,8 +33,6 @@ imports Session and `PackageMain.lean` drives it.
 - **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
-- **Run.lean**: `Prepared` (a method's packet decoded and checked once, with its CID) and `start`/`resumeWith`,
-  the kernel's `startActivity`/`resumeActivity` without re-decoding, re-checking or re-hashing per segment.
 - **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
@@ -351,17 +349,16 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    record of empty values; any other value is never empty), and a field missing from the old state fails
    closed; it used to admit any change of a text field.
 
-17. **The prepared packet (host4).** `compiledMethod` compiles a method once per package (`inputsKey/method`), decodes
-   and checks its packet once (`Run.prepare`) and keeps the result in `Compiled.prepared`; every activity segment
-   runs from it (`Run.start`, `Run.resumeWith`), naming checkpoints by the artifact's `packetSha256`. Per segment the
-   host still checks each argument's conformance to its arrow's domain (and refuses a non-data position) and reads
-   the activity shape off the checked type, instead of re-checking the applied term (Run.lean's header argues it).
-   A full `compiled` cache is emptied and refilled rather than bypassed. Measured on one box under the same load
-   (`scratchpad bench`): 200 Counter bumps 3.36 s -> 1.42 s; Garden `receive` after its first 285 ms -> 21 ms
-   (5,541 ticks either way; the first call still compiles the method, ~1.2 s, until the kernel's
-   one-artifact-per-package lands). Pure methods (`render`, a state-returning method) still go through
-   `Package.executeDataValues`, which decodes per call.
-
+17. **Held entries (host4).** `compiledMethod` (and `compileDef` for `law`/`lawReads`) compiles a definition with
+   `compileEntryIn`: the package's closure is prepared once (`Package.prepareRequest`, cached in `world.requests`
+   by the digest of the resolved inputs) and each definition compiled from it (`Package.compileEntryFrom`); the
+   `Compiled` keeps the decoded, checked `CheckedEntry` (`Compiled.entry`), cached per `inputsKey/method`. Turns
+   run `Turn.startEntry`/`Turn.resumeEntry`; pure definitions (the Bend law, `lawReads`, a handler's `handle`)
+   run `Package.executeDataEntry` through `runPure`. Nothing on the turn path decodes, re-checks or re-hashes a
+   packet. A full `compiled` cache is emptied and refilled rather than bypassed. Measured before the kernel's
+   entries landed, with the host's own interim cache (since replaced by these): 200 Counter bumps 3.36 s ->
+   1.42 s, a warm Garden `receive` 285 ms -> 21 ms (5,541 ticks either way); the first call of a method still
+   compiles it.
 18. **Extend, not replace (host4, FOUNDATION 13 row 3).** `world-reprogram {…, mode: "extend"}` (`mode` is
    `replace` by default; anything else is a request error) and Plan `extend {object, package, migration}`
    (Plan.obend; `reprogram` with a `mode: "extend"` field is honoured too) add the source as a module `Layer<n>`
@@ -407,6 +404,16 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    amendments are the text's alone (the metarule stays on the fragment, and a predicate cannot seal out the
    reprogramming hand either). `warmLaws` compiles `law`/`lawReads` into `world.compiled` before `judge`
    (commit and replay), since `judge` is pure. A package with `law.present` was never refused at creation.
+
+21. **Handlers and judge (host4, FOUNDATION 13 row 4).** Plan `run {object, method, argument, handler}` runs the
+   callee as `call` does (argument checked, depth counted; no grant), but every Plan the callee's own frame
+   yields is first offered to the handler's pure `handle(state, plan[, context]) -> Handled<R>` (Plan.obend
+   `sum Handled<R>: pass {} | answer {response: R}`): `answer` is the callee's response (it must conform to the
+   callee's response type), `pass`, or a plan that does not conform to `handle`'s input type, goes to the host.
+   The handler must be readable by the frame's subject (`refused {clause: handler}`) and is a root; its ticks
+   come from the turn's. `TurnState.handlers` maps the frame depth to the handler; nested calls of the callee are
+   not offered. Plan `judge {edits: E}` answers `judged {admitted, clause}`: `judge` (with the Bend laws warmed
+   and law reads added) on the turn so far plus this write of the running object, committing nothing.
 
 ## 6. Gotchas
 

@@ -132,7 +132,8 @@ class Integration(Reflection):
         names = {m["name"] for m in op["methods"]}
         self.assertTrue({"poke", "look", "paint", "tally"} <= names, names)
         forms = op["forms"]
-        self.assertEqual(forms["tag"], "variant")
+        self.assertEqual(forms["tag"], "list")
+        self.assertIn("paint", [f["fields"][1]["value"]["value"] for f in forms["items"]])
 
     def test_check_carries_the_kernels_hint_line(self):
         bad = "edition ObjectiveBend 1\ndef one(n: Nat) -> Nat:\n  [n]\n"

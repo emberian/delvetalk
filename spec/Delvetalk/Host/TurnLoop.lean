@@ -118,6 +118,8 @@ structure TurnState where
   awaits : Nat := 0
   /-- `check` Plans this turn ran; the journal keeps the count. -/
   checks : Nat := 0
+  /-- Frames run under a handler (`run`): the call depth of the frame and the handler object. -/
+  handlers : List (Nat × String) := []
   limits : Json
   /-- `profile: true` on the request: every activity segment's tick breakdown, by kind
       (`Delvetalk.Profile`), summed over the turn. Memory only; never journaled. -/
@@ -176,33 +178,22 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
   match s.world.compiled[key]? with
   | some c => return c
   | none =>
-    -- An extended object's method is compiled from the highest layer that defines it.
-    let inputs := (delegate obj.inputs method).setObjVal! "entry" (toJson method)
-    match resolveInputs s.world inputs >>= Package.compileKeepingLaws with
+    -- An extended object's method is compiled from the highest layer that defines it, from
+    -- its package's closure prepared once, and held decoded and checked.
+    match compileEntryIn s.world (delegate obj.inputs method) method >>= fun (ec, w) => do return (← compiledOf ec, w) with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
-    | .ok (artifact, ty, _) =>
-      let packet ← match artifact.getObjVal? "packet" with
-        | .ok p => pure p
-        | .error e => throw (.request e)
-      let digest ← match artifact.getObjValAs? String "packetSha256" with
-        | .ok d => pure d
-        | .error e => throw (.request e)
-      -- Decoded and checked once here; every segment of every turn runs from it (`Run`).
-      let prepared ← match Run.prepare packet digest with
-        | .ok p => pure p
-        | .error e => throw (.request e)
-      let c : Compiled := ⟨packet, ty, prepared.source.assumptions.bounds, prepared.source.assumptions.rigid, some prepared⟩
+    | .ok (c, w) =>
       -- A full cache is emptied and refilled, never left full (which would compile every turn).
-      let cache := if s.world.compiled.size < Limits.maxCompiledPackets then s.world.compiled else {}
-      set { s with world := { s.world with compiled := cache.insert key c } }
+      let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
+      set { s with world := { w with compiled := cache.insert key c } }
       return c
 
-/-- The prepared packet of a compiled method (one is made whenever a method compiles). -/
-def preparedOf (c : Compiled) : M Run.Prepared :=
-  match c.prepared with
-  | some p => pure p
-  | none => match Run.prepare c.packet (Delvetalk.Turn.packetDigest c.packet) with
-    | .ok p => pure p
+/-- The held entry of a compiled method (one is held whenever a method compiles). -/
+def entryOf (c : Compiled) : M Delvetalk.CheckedEntry :=
+  match c.entry with
+  | some e => pure e
+  | none => match Delvetalk.CheckedEntry.ofPacket c.packet with
+    | .ok e => pure e
     | .error e => throw (.request e)
 
 def budgetsNow : M Delvetalk.Turn.Budgets := do
@@ -430,6 +421,35 @@ def kernelRefusal {α : Type} (r : Except String α) : M α :=
   | .ok a => pure a
   | .error e => if e.startsWith argumentRefusal then throw (.refused "typeMismatch" e) else throw (.evaluation e)
 
+/-- Offer a Plan the frame `self` yielded to handler object `handler`: its pure
+    `handle(state, plan[, context]) -> pass {} | answer {response}`. `none` is pass (also when the
+    plan does not conform to the handler's input: a handler takes the plans its type names); an
+    answer must conform to the yielding frame's response type. The handler is a root. -/
+def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (responseType : Ty) : M (Option Data) := do
+  let s ← get
+  let some obj := s.world.objects[handler]? | evaluation s!"handler {handler} vanished"
+  recordRoot handler obj.version
+  let c ← compiledMethod obj "handle"
+  let entry ← entryOf c
+  let context := contextData handler s.subject self s.intent s.world.height "handle" ""
+  let (domain, arguments) := match c.type with
+    | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ _ _)) => (d, [obj.state, plan, context])
+    | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
+    | _ => (.emptyRow, [obj.state, plan])
+  -- A plan the handler's input does not name passes.
+  unless plan.conformsUnder c.bounds domain do return none
+  let (result, used) := runPure entry arguments (← get).ticks
+  spend used
+  match result with
+  | .ok (.variant "answer" (.record f)) =>
+    let some response := f.lookup "response" | evaluation "a handler answer carries no response"
+    unless response.conformsUnder bounds responseType do
+      evaluation "the handler's answer does not conform to the response type"
+    return some response
+  | .ok _ => return none
+  | .error "budget" => throw (.budget "ticks")
+  | .error e => evaluation s!"handle refused: {e}"
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -457,10 +477,10 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   | .computation .. =>
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
-    let prep ← preparedOf compiled
-    let started ← kernelRefusal (Run.start prep arguments binding b)
-    noteProfile fun _ => (Run.applied prep arguments |>.map fun (source, _) =>
-      Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial source.term))
+    let entry ← entryOf compiled
+    let started ← kernelRefusal (Delvetalk.Turn.startEntry entry arguments binding b)
+    noteProfile fun _ => (Delvetalk.Turn.prepareStartEntry entry arguments |>.map fun (applied, _) =>
+      Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial applied.source.term))
     drive depth id caller compiled binding started 0
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
@@ -490,11 +510,17 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     let response ← match plan with
       | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
-      | _ => answer depth self caller compiled.bounds plan responseType
+      | _ => do
+        -- A frame run under a handler offers each Plan to it first.
+        match (← get).handlers.lookup depth with
+        | some handler => match ← handleWith handler self plan compiled.bounds responseType with
+          | some response => pure response
+          | none => answer depth self caller compiled.bounds plan responseType
+        | none => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
-    let prep ← preparedOf compiled
-    let next ← liftEval (Run.resumeWith prep checkpoint binding response b)
-    noteProfile fun _ => (Run.resumed prep checkpoint binding response |>.map fun (_, _, _, st, resumed) =>
+    let entry ← entryOf compiled
+    let next ← liftEval (Delvetalk.Turn.resumeEntry entry checkpoint binding response b)
+    noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
       Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
     drive depth self caller compiled binding next 0
 
@@ -607,6 +633,45 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           spendGrant via
           let result ← runMethod (depth + 1) id method argument self subject via
           respond bounds responseType "returned" [.record [("result", result)]]
+  | .variant "run" (.record f) =>
+    let some target := f.lookup "object" | evaluation "malformed run plan"
+    let some method := (f.lookup "method").bind labelOf | evaluation "malformed run plan"
+    let some argument := f.lookup "argument" | evaluation "malformed run plan"
+    let some handler := (f.lookup "handler").bind referenceId | refusedWith bounds responseType "handler"
+    let s ← get
+    match referenceId target >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => refusedWith bounds responseType "unknownObject"
+    | some (id, calleeObj) =>
+      match s.world.objects[handler]? with
+      | none => refusedWith bounds responseType "handler"
+      | some h =>
+        if !h.read.permits s.subject then refusedWith bounds responseType "handler"
+        else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
+        else
+          let callee ← compiledMethod calleeObj method
+          if !argumentFits callee argument then refusedWith bounds responseType "typeMismatch" else
+          modify fun s => { s with handlers := (depth + 1, handler) :: s.handlers }
+          let result ← runMethod (depth + 1) id method argument self s.subject
+          modify fun s => { s with handlers := s.handlers.drop 1 }
+          respond bounds responseType "returned" [.record [("result", result)]]
+  | .variant "judge" (.record f) =>
+    -- The verdict the turn would get if it ended now with this write added, committing nothing.
+    let some step := (f.lookup "edits").bind parseStep | evaluation "malformed judge plan"
+    let s ← get
+    let staged := ({ caller, edits := step, method := s.method, via := s.via, argument := s.argument } : Written)
+    let writes := if s.writes.any (·.1 == self) then s.writes.map fun (k, ws) => if k == self then (k, ws ++ [staged]) else (k, ws)
+      else s.writes ++ [(self, [staged])]
+    let w := warmLaws s.world (writes.map (·.1))
+    modify fun s => { s with world := { s.world with compiled := w.compiled } }
+    let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
+                          programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
+                          creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
+                          turn := w.height + 1 }
+    let p := withLawReads w p
+    let (admitted, clause) := match judge w (w.height + 1) p with
+      | .ok _ => (true, "")
+      | .error r => (false, r.clause.getD r.cls)
+    respond bounds responseType "judged" [.record [("admitted", .boolean admitted), ("clause", .label clause)]]
   | .variant "reprogram" (.record f) | .variant "extend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed reprogram plan"
     let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
@@ -1164,7 +1229,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
-    let next ← liftEval (Run.resumeWith (← preparedOf compiled) checkpoint binding response b)
+    let next ← liftEval (Delvetalk.Turn.resumeEntry (← entryOf compiled) checkpoint binding response b)
     drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st

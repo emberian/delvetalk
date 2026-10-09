@@ -113,7 +113,7 @@ def decodeBytes (b : ByteArray) : Except String Json := do
 def tyJson (t : Ty) : Json := Minidregg.Theory.ObjectiveBendTyping.typeJson t
 
 def tyOf (j : Json) : Except String Ty :=
-  return (← Minidregg.Theory.ObjectiveBendTyping.decodeTypeWith #[] Limits.dataDepth j).1
+  return (← Minidregg.Theory.ObjectiveBendTyping.decodeTypeWith #[] Limits.dataDepth Limits.dataDepth j).1
 
 def boundsJson (bounds : DataBounds) : Json :=
   Json.arr (bounds.toArray.map fun (i, t) => Json.mkObj [("index", toJson i), ("type", tyJson t)])

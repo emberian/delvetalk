@@ -800,16 +800,42 @@ a root of the turn. Reprograms and amendments are judged by the law text alone: 
 metarule is decided on the fragment, and no predicate, budget or bug can seal out the hand that
 may amend or reprogram. -/
 
+/-- Compile definition `name` of a package (compile inputs without `entry`) from its prepared
+    closure, preparing the closure once per package; the world returned caches it. -/
+def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (Package.EntryCompiled × World) := do
+  let resolved ← resolveInputs w (Json.mkObj ((inputs.getObj?.toOption.map (·.toList)).getD [] |>.filter (·.1 != "entry")))
+  let key := Journal.bodyHash resolved
+  let (request, w) ← match w.requests[key]? with
+    | some r => pure (r, w)
+    | none =>
+      let r ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
+      let cache := if w.requests.size < Limits.maxBuilds then w.requests else {}
+      pure (r, { w with requests := cache.insert key r })
+  let compiled ← (Package.compileEntryFrom request name).mapError Package.Diagnostic.render
+  return (compiled, w)
+
+def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
+  return ⟨← c.artifact.getObjVal? "packet", c.entry.type, c.entry.source.assumptions.bounds,
+    c.entry.source.assumptions.rigid, some c.entry⟩
+
+/-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
+    machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
+def runPure (entry : Delvetalk.CheckedEntry) (arguments : List Data) (ticks : Nat) :
+    Except String Data × Nat :=
+  match Package.executeDataEntry entry arguments.toArray (Json.mkObj [("ticks", toJson (toString ticks))]) with
+  | .ok (.finished value _ _ usage) => (.ok value, usage.ticksUsed + usage.conversionNodes)
+  | .ok (.refused failure usage) =>
+    (.error (if (failure.splitOn "tick").length > 1 then "budget" else failure), usage.ticksUsed + usage.conversionNodes)
+  | .error e => (.error e, 0)
+
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 
 /-- An object's definition `name`, compiled and prepared (from the world's cache when warm). -/
-def compileDef (w : World) (o : Object) (name : String) : Except String Compiled := do
-  if let some c := w.compiled[defKey o name]? then return c
-  let (artifact, ty, _) ← Package.compileKeepingLaws (← resolveInputs w ((delegate o.inputs name).setObjVal! "entry" (toJson name)))
-  let packet ← artifact.getObjVal? "packet"
-  let prepared ← Run.prepare packet (← artifact.getObjValAs? String "packetSha256")
-  return ⟨packet, ty, prepared.source.assumptions.bounds, prepared.source.assumptions.rigid, some prepared⟩
+def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
+  if let some c := w.compiled[defKey o name]? then return (c, w)
+  let (c, w) ← compileEntryIn w (delegate o.inputs name) name
+  return (← compiledOf c, w)
 
 /-- Compile the Bend law (and its reads) of the objects a proposal writes, into the world's
     cache, so the pure `judge` finds them. -/
@@ -820,14 +846,11 @@ def warmLaws (w : World) (ids : List String) : World :=
       (["law"] ++ (if o.predicateReads then ["lawReads"] else [])).foldl (fun w name =>
         if w.compiled.contains (defKey o name) then w else
         match compileDef w o name with
-        | .ok c =>
+        | .ok (c, w) =>
           let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
           { w with compiled := cache.insert (defKey o name) c }
         | .error _ => w) w
     | none => w) w
-
-def lawBudgets : Except String Delvetalk.Turn.Budgets :=
-  Delvetalk.Turn.budgets (Json.mkObj [("ticks", toJson (toString Delvetalk.Bounds.lawTicks))])
 
 /-- The labels of a `List<String>` value. -/
 partial def labels (acc : List String) : Data → Option (List String)
@@ -840,13 +863,13 @@ partial def labels (acc : List String) : Data → Option (List String)
 /-- The objects an object's `lawReads()` names. -/
 def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
   if !o.predicateReads then return []
-  let c ← compileDef w o "lawReads"
-  let some p := c.prepared | throw "lawReads is not prepared"
-  match ← Run.evaluate p [] (← lawBudgets) with
-  | .finished value _ _ => match labels [] value with
+  let (c, _) ← compileDef w o "lawReads"
+  let some entry := c.entry | throw "lawReads is not held"
+  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  | .ok value => match labels [] value with
     | some ids => return ids.eraseDups.take Limits.maxRoots
     | none => throw "lawReads must return a List<String>"
-  | _ => throw "lawReads did not finish"
+  | .error _ => throw "lawReads did not finish"
 
 /-- The proposal with the objects the Bend laws of its written objects read added as roots. -/
 def withLawReads (w : World) (p : Proposal) : Proposal :=
@@ -863,8 +886,8 @@ def withLawReads (w : World) (p : Proposal) : Proposal :=
 def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (subject caller method : String)
     (argument : Data) (kind : Nat) (pin : String) : Option Refusal := Id.run do
   let refuse := fun (clause : String) => some ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
-  let .ok c := compileDef w o "law" | return refuse "law"
-  let some prepared := c.prepared | return refuse "law"
+  let .ok (c, _) := compileDef w o "law" | return refuse "law"
+  let some entry := c.entry | return refuse "law"
   let .ok ids := lawReadsOf w o | return refuse "lawReads"
   let mut reads : List Data := []
   for r in ids do
@@ -880,14 +903,13 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
-  let .ok budgets := lawBudgets | return refuse "law"
-  match Run.evaluate prepared [o.state, new, request] budgets with
-  | .ok (.finished (.variant "admitted" _) _ _) => return none
-  | .ok (.finished (.variant "refused" (.record f)) _ _) =>
+  match (runPure entry [o.state, new, request] Delvetalk.Bounds.lawTicks).1 with
+  | .ok (.variant "admitted" _) => return none
+  | .ok (.variant "refused" (.record f)) =>
     match f.lookup "clause" with
     | some (.label clause) => return refuse clause
     | _ => return refuse "law"
-  | .ok (.exhausted resource _) => return some { cls := "budget", reason := some s!"law {resource}", object := some id }
+  | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
 /-- Every change of `id` in the writes is an ordinary write made only of commuting edits. -/

@@ -52,19 +52,14 @@ def dropAt(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<
 
 
 def items(state):
-    out, node = [], field(state, "rains")
-    while node["label"] == "cons":
-        f = {x["name"]: x["value"] for x in node["payload"]["fields"]}
-        out.append(f["head"]["value"])
-        node = f["tail"]
-    return out
+    return [x["value"] for x in field(state, "rains")["items"]]
 
 
 class Moved(Reflection):
     def setUp(self):
         super().setUp()
         self.open_library()
-        self.make("bell", BELL, record(count=nat(0), rains={"tag": "variant", "label": "nil", "payload": record()}))
+        self.make("bell", BELL, record(count=nat(0), rains={"tag": "list", "items": []}))
 
     def bell(self):
         s = self.state("bell")

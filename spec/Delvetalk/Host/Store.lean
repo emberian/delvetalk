@@ -2,7 +2,7 @@
    The journal (Journal.lean) is the only source of a World; Ops.lean is the only
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
-import Delvetalk.Host.Run
+import Delvetalk.Entry
 import Std.Data.HashMap
 
 namespace Delvetalk.Host
@@ -123,8 +123,9 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
-  /-- The packet decoded and checked once (`Run.prepare`); an activity runs from it. -/
-  prepared : Option Run.Prepared := none
+  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
+      `Turn.resumeEntry`, `Package.executeDataEntry`), never from the packet JSON. -/
+  entry : Option Delvetalk.CheckedEntry := none
 
 /-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
 structure Ledger where
@@ -283,6 +284,9 @@ structure World where
   outbox : Std.HashMap String (Array (Nat × Nat)) := {}
   /-- Publications admitted turns retained, for transport to post: (entry index, ordinal). -/
   published : Array (Nat × Nat) := #[]
+  /-- Memory only: each package's closure prepared once (`Package.prepareRequest`), by the digest
+      of its resolved compile inputs; every method of it compiles from this. -/
+  requests : Std.HashMap String Package.PreparedRequest := {}
   /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
       repeated creation compile each distinct package once. -/
   builds : Std.HashMap String Built := {}
