@@ -1,0 +1,42 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Allocation.obend as A
+import ./Abi.obend as Abi
+import ./Encounter.obend as E
+record Config:
+  child: P.Value
+  law: P.Value
+  previous: Bool
+record State:
+  config: Config
+  last: String
+record Input:
+  name: String
+  second: String
+record Result:
+  name: String
+  by: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Result
+  allocations: A.Allocations
+def initial(config: Config) -> State:
+  {config: config, last: "none"}
+def allocation(config: Config, name: String, tail: A.Allocations) -> A.Allocations:
+  A.Allocations.cons({head: {name: name, protocol: config.child, law: config.law}, tail: tail})
+def make(state: State, input: Input, context: Abi.Context) -> Decision:
+  let name = if state.config.previous then state.last else input.name
+  let rest = if input.second == "" then A.Allocations.nil() else allocation(state.config, input.second, A.Allocations.nil())
+  {accepted: true, reason: "", state: extend(state, {last: input.name}), result: {name: name, by: context.principal}, allocations: allocation(state.config, name, rest)}
+record Description:
+  name: String
+  initial: State
+  methods: {make: {label: String, fields: {name: Abi.StringField, second: Abi.StringField}}}
+  panels: {}
+  allocation: {limit: Nat}
+def describe() -> Description:
+  {name: "Source allocation gates", initial: initial({child: P.Value.none(), law: P.Value.none(), previous: false}), methods: {make: {label: "Make", fields: {name: {type: "string", minLength: 0n, maxLength: 128n}, second: {type: "string", minLength: 0n, maxLength: 128n}}}}, panels: {}, allocation: {limit: 2n}}
+def view(state: State, panel: String) -> {title: String, prose: String, actions: {}, children: E.Children}:
+  {title: "Source factory", prose: state.last, actions: {}, children: E.Children.nil()}

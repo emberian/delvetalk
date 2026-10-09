@@ -245,6 +245,15 @@ class HeapManager:
             self._protocols = [('notebook', notebook), ('source-desk', candidate)]
         return self._protocols
 
+    def _seed_law(self, protocol, principal):
+        # Source authors private realm authority; custody supplies verified identity.
+        import source_object
+        modules = source_object.read_closure([
+            ('ScenarioLaw', ROOT / 'world/lib/prelude/ScenarioLaw.obend')])
+        commands = source_object.value(list(protocol['commands']))
+        law = source_object.evaluate(modules, 'privateAuthority', [commands, source_object.data(principal)])
+        return source_object.values('decode', [law])[0]
+
     def _seed_requests(self, identity, key, directory, resident):
         path = directory / 'seed.json'
         binding = {'format': 'delvetalk-account-seed-v1', 'identity': identity,
@@ -263,9 +272,9 @@ class HeapManager:
             for request, object_id in zip(requests[1:], ('notebook', 'source-desk')):
                 if (not isinstance(request, dict)
                         or set(request) != {'op', 'object', 'principal', 'intent', 'protocol', 'law'}
-                        or encoded({k: v for k, v in request.items() if k != 'protocol'}) != encoded({
+                        or encoded({k: v for k, v in request.items() if k not in ('protocol', 'law')}) != encoded({
                             'op': 'create', 'object': object_id, 'principal': identity['did'],
-                            'intent': RESERVED + object_id, 'law': [identity['did']]})):
+                            'intent': RESERVED + object_id})):
                     raise ValueError('private seed request binding differs')
             return requests
         if resident.sequence:
@@ -273,7 +282,8 @@ class HeapManager:
         requests = [{'op': 'messages-init', 'principal': identity['did'],
             'intent': RESERVED + 'messages', 'lineage': binding['world'], 'pendingLimit': 128}]
         requests.extend({'op': 'create', 'object': object_id, 'principal': identity['did'],
-            'intent': RESERVED + object_id, 'protocol': protocol, 'law': [identity['did']]}
+            'intent': RESERVED + object_id, 'protocol': protocol,
+            'law': self._seed_law(protocol, identity['did'])}
             for object_id, protocol in self._seed_protocols())
         # All descriptors are durable before even the first bootstrap admission.
         self._write(path, {**binding, 'requests': requests, 'sha256': digest(requests)})
@@ -365,6 +375,18 @@ class HeapManager:
 
     def inspect(self, identity, realm, object_id):
         return self._call(self._inspect, identity, realm, object_id)
+
+    def opaque_view(self, identity, realm, object_id, panel='main'):
+        return self._call(self._opaque_view, identity, realm, object_id, panel)
+
+    def _opaque_view(self, identity, realm, object_id, panel):
+        identity, _, _, resident = self._context(identity, realm)
+        request = {'op': 'opaque-view', 'object': object_id,
+                   'principal': identity['did'], 'panel': panel}
+        result = (resident.query(request) if resident else world.query(self.shared_database,
+            request, profile=self.shared_profile, timeout=self.timeout))
+        import source_object
+        return {**result, 'result': source_object.plain(result['result'])}
 
     def _inspect(self, identity, realm, object_id):
         identity, _, _, resident = self._context(identity, realm)
@@ -471,8 +493,11 @@ class HeapManager:
         prepared = compiler.check_attempt(inputs)
         if prepared is None:
             profile = desk.execution_profile('compiled')
-            build = desk.bounded_compile(expected, profile='compiled', artifact_store=compiler.artifact_store,
-                                         timeout=self.timeout)
+            work = desk.compiler_work(expected, object_id, identity['did'], None, receiver=resident)
+            if work is None or work['intent'] != intent:
+                raise ValueError('compiler work was not offered under this intent')
+            build = desk.bounded_compile(expected, work=work, profile='compiled',
+                                         artifact_store=compiler.artifact_store, timeout=self.timeout)
             self._reserve_artifact(compiler.artifact_store, build)
             prepared = compiler.prepare_check(inputs, build, profile)
         self._operation(directory, realm, intent, {**operation, 'request': prepared['request']})

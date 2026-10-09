@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import world
+import source_object
 
 spec = importlib.util.spec_from_file_location('source_factory', ROOT / 'protocols/editor/generate.py')
 factory = importlib.util.module_from_spec(spec)
@@ -29,15 +30,17 @@ class SourceAllocation(unittest.TestCase):
         self.seed(self.program)
 
     def seed(self, program):
-        self.factory = self.create('factory', program, ['maker'])
+        self.factory = self.create('factory', program, {'profile': 'delvetalk-scoped-law',
+            'invoke': {'make': ['maker']}, 'law': ['maker'], 'reprogram': ['maker'], 'read': ['maker', 'stranger']})
         # This boundary fixture emits data. The receiving Factory must distinguish
         # its authentic result from byte-identical directly submitted assertions.
         self.plan = {'factory': 'factory', 'name': 'first', 'editor': 'editor',
                      'generation': 1, 'target': 'target', 'baselineVersion': 0}
-        planner = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {
-            'plan': {'require': [], 'set': {}, 'result': ['record', {
-                key: ['input', key] for key in self.plan}], 'outbox': []}}}
-        self.editor = self.create('editor', planner, ['maker'])
+        modules = source_object.read_closure([('Factory', ROOT / 'protocols/editor/Factory.obend')])
+        modules.append({'name': 'Planner', 'source': (ROOT / 'conformance/fixtures/allocation/Planner.obend').read_text()})
+        planner = source_object.load(modules, syntax='objective-bend-object')
+        self.editor = self.create('editor', planner, {'profile': 'delvetalk-scoped-law',
+            'invoke': {'plan': ['maker']}, 'law': ['maker'], 'reprogram': ['maker'], 'read': ['maker', 'stranger']})
 
     def call(self, request):
         self.serial += 1
@@ -77,6 +80,15 @@ class SourceAllocation(unittest.TestCase):
         self.assertEqual(report['data']['result']['status'], 'empty')
         self.assertEqual(self.call(request), receipt)
         self.assertEqual(self.inspect('factory')['version'], 1)
+        current = self.inspect('factory')
+        locked = {'profile': 'delvetalk-scoped-law', 'invoke': {'make': []},
+                  'law': [], 'reprogram': [], 'read': ['maker']}
+        changed = self.call({'op': 'law', 'object': 'factory', 'expected': current, 'law': locked})
+        self.assertEqual(changed['kind'], 'committed', changed.get('data'))
+        self.assertEqual(self.call(request), receipt)
+        altered = copy.deepcopy(request)
+        altered['calls'][0]['input']['name'] = 'different'
+        self.assertEqual(self.call(altered)['data'], 'intent reused for different request')
 
     def test_configured_factory_reprograms_within_normal_budget_and_still_allocates(self):
         request = {'op': 'reprogram', 'object': 'factory', 'intent': 'revise-factory',
@@ -115,13 +127,7 @@ class SourceAllocation(unittest.TestCase):
         objects = world.wire_loads(self.db.read_text())['objects']
         self.assertNotIn('factory/first', objects)
 
-        malformed = copy.deepcopy(self.program)
-        # The source still owns law construction. Invalid configured reporter data
-        # must fail actual child-law admission rather than leave a broken child.
-        fields = malformed['initial']['model']['fields']
-        reporters = next(field for field in fields if field['name'] == 'reporters')
-        reporters['value'] = {'tag': 'variant', 'label': 'natural', 'payload': {
-            'tag': 'record', 'fields': [{'name': 'value', 'value': {'tag': 'natural', 'value': '1'}}]}}
+        malformed = factory.factory('compiler', [1])
         self.db = self.home / 'bad-law.json'
         self.seed(malformed)
         refused = self.call(self.request(intent='bad-law'))

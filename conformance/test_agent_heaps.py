@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import agent_heaps as heaps
 import desk
 import world
+import source_object
 
 ALICE = {'accountId': 'a' * 32, 'did': 'did:plc:' + 'a' * 24}
 BOB = {'accountId': 'b' * 32, 'did': 'did:plc:' + 'b' * 24}
@@ -23,10 +24,12 @@ class AccountHeaps(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.shared = self.root / 'shared.json'
-        self.shared_protocol = {'profile': 'delvetalk-local-v1', 'initial': {'n': 0}, 'commands': {
-            'set': {'require': [], 'set': {'n': ['input', 'n']}, 'outbox': [], 'result': ['state', 'n']}}}
+        self.shared_protocol = source_object.load([{'name': 'Counter', 'source':
+            (ROOT / 'examples/current-objects/Counter.obend').read_text()}], syntax='objective-bend-object')
+        self.shared_law = {'profile': 'delvetalk-scoped-law', 'invoke': {'add': [ALICE['did']]},
+                           'read': 'public', 'reprogram': [ALICE['did']], 'law': [ALICE['did']]}
         reply = world.exchange(self.shared, {'op': 'create', 'principal': 'operator', 'intent': 'seed',
-            'object': 'garden', 'protocol': self.shared_protocol, 'law': [ALICE['did']]}, profile='compiled')
+            'object': 'garden', 'protocol': self.shared_protocol, 'law': self.shared_law}, profile='compiled')
         self.assertEqual(reply['kind'], 'committed')
 
     def manager(self, **options):
@@ -168,9 +171,9 @@ class AccountHeaps(unittest.TestCase):
             with mock.patch.object(restarted, '_seed_protocols', side_effect=AssertionError('new template consulted')):
                 notebook = restarted.inspect(ALICE, 'private', 'notebook')
                 candidate = restarted.inspect(ALICE, 'private', 'source-desk')
-            self.assertEqual(notebook['state'], {'n': 0})
-            self.assertEqual(notebook['law'], [ALICE['did']])
-            self.assertEqual(candidate['law'], [ALICE['did']])
+            self.assertEqual(source_object.plain(source_object.state_data(notebook)), {'count': 0})
+            self.assertEqual(notebook['law']['invoke']['add'], [ALICE['did']])
+            self.assertEqual(candidate['law']['invoke']['add'], [ALICE['did']])
             self.assertEqual(world.wire_loads(path.read_bytes()), retained)
             self.assertEqual(restarted._call(lambda: next(iter(restarted.active.values())).sequence), 3)
 
@@ -178,13 +181,13 @@ class AccountHeaps(unittest.TestCase):
         with self.manager() as manager:
             shared = manager.inspect(ALICE, 'shared', 'garden')
             request = {'op': 'invoke', 'object': 'garden', 'intent': 'garden-touch',
-                       'expected': shared, 'command': 'set', 'input': {'n': 9}}
+                       'expected': shared, 'command': 'add', 'input': {'amount': 9}}
             self.assertEqual(manager.turn(BOB, 'shared', request)['kind'], 'refused')
             self.assertEqual(manager.turn(ALICE, 'shared', request)['kind'], 'committed')
             with self.assertRaisesRegex(ValueError, 'omit principal'):
                 manager.turn(BOB, 'shared', {**request, 'principal': ALICE['did']})
             create = {'op': 'create', 'intent': 'own-object', 'object': 'reserved',
-                      'protocol': self.shared_protocol, 'law': [ALICE['did']]}
+                      'protocol': self.shared_protocol, 'law': self.shared_law}
             with self.assertRaisesRegex(ValueError, 'assigned agent namespace'):
                 manager.turn(ALICE, 'shared', create)
             create['object'] = manager.catalogue(ALICE, 'shared')['sharedCreatePrefix'] + 'counter'
@@ -211,22 +214,39 @@ class AccountHeaps(unittest.TestCase):
             heaps.HeapManager(self.root / 'accounts', self.shared, shared_world='another-world')
 
     def test_private_source_desk_compiles_and_atomically_programs(self):
-        source = (ROOT / 'syntaxes/examples/lantern.obend').read_text()
-        scenarios = '[{"name":"light","law":["visitor"],"steps":[{"principal":"visitor","command":"light","input":{},"root":"initial","kind":"committed","state":{"lit":true},"result":"A small sun for lost moths.","outbox":[]}]}]'
+        source = (ROOT / 'conformance/fixtures/AccountLantern.obend').read_text()
+        migration = source_object.load([{'name': 'Main', 'source': source}],
+                                       syntax='objective-bend-object')['initial']
+        scenarios = """examples DelveTalk 1
+case light the lantern
+law visitor
+as visitor
+send light
+expect result (String): A small sun for lost moths.
+"""
         with self.manager(timeout=20) as manager:
             candidate = manager.inspect(ALICE, 'private', 'source-desk')
             manager.turn(ALICE, 'private', {'op': 'create', 'intent': 'target', 'object': 'lantern',
-                'protocol': self.shared_protocol, 'law': [ALICE['did']]})
+                'protocol': self.shared_protocol, 'law': {**self.shared_law,
+                    'invoke': {'light': [ALICE['did']], 'douse': [ALICE['did']]}}})
             pending = manager.turn(ALICE, 'private', {'op': 'invoke', 'intent': 'submit', 'object': 'source-desk',
                 'expected': candidate, 'command': 'submit', 'input': {'proposal': {
-                    'syntax': 'objective-bend-spell@2', 'source': source, 'scenarios': scenarios},
-                    'migration': {'lit': False}, 'target': 'lantern'}})['data']['root']
-            compiled = manager.check(ALICE, 'private', 'source-desk', 'check', pending)
+                    'syntax': 'objective-bend-object', 'source': source, 'scenarios': scenarios},
+                    'migration': migration, 'target': 'lantern'}})['data']['root']
+            requested = manager.turn(ALICE, 'private', {'op': 'invoke', 'intent': 'request-check',
+                'object': 'source-desk', 'expected': pending, 'command': 'requestCheck', 'input': {}})
+            self.assertEqual(requested['kind'], 'committed', requested)
+            pending = requested['data']['root']
+            work = manager._call(lambda: desk.compiler_work(pending, 'source-desk', ALICE['did'],
+                None, receiver=manager._context(ALICE, 'private')[3]))
+            self.assertIsNotNone(work)
+            check_intent = work['intent']
+            compiled = manager.check(ALICE, 'private', 'source-desk', check_intent, pending)
             self.assertEqual(compiled['kind'], 'committed', compiled)
             ready = compiled['data']['root']
             self.assertEqual(desk.candidate_state(ready)['status'], 'ready', desk.candidate_state(ready))
             with mock.patch.object(desk, 'bounded_compile', side_effect=AssertionError('recompiled')):
-                self.assertEqual(manager.check(ALICE, 'private', 'source-desk', 'check', pending), compiled)
+                self.assertEqual(manager.check(ALICE, 'private', 'source-desk', check_intent, pending), compiled)
             card = manager.encounter(ALICE, 'private', 'source-desk')
             release = next(action for action in card['actions'] if action['label'] == 'Release this checked variation')
             draft = manager.prepare(ALICE, 'private', {'card': card['card'], 'action': release['id'], 'fields': {}})
@@ -237,7 +257,7 @@ class AccountHeaps(unittest.TestCase):
             played = manager.turn(ALICE, 'private', {'op': 'invoke', 'object': 'lantern', 'intent': 'light',
                 'expected': lantern, 'command': 'light', 'input': {}})
             self.assertEqual(played['kind'], 'committed', played)
-            self.assertEqual(played['data']['root']['state'], {'lit': True})
+            self.assertEqual(source_object.plain(source_object.state_data(played['data']['root'])), {'lit': True})
 
 
 if __name__ == '__main__': unittest.main()

@@ -42,9 +42,12 @@ class AgentHTTPTest(unittest.TestCase):
         self.directory = self.root / 'public'
         self.directory.mkdir()
         self.database = self.directory / 'world.json'
-        self.protocol = portal.loads((ROOT / 'protocols/counter/protocol.json').read_bytes())
+        self.protocol = source_object.load([{'name': 'Counter', 'source':
+            (ROOT / 'examples/current-objects/Counter.obend').read_text()}], syntax='objective-bend-object')
+        self.counter_law = {'profile': 'delvetalk-scoped-law', 'invoke': {'add': [A]},
+                            'read': 'public', 'reprogram': [A], 'law': [A]}
         created = world.exchange(self.database, {'op': 'create', 'object': 'shared-counter',
-            'principal': 'fixture-creator', 'intent': 'open-shared', 'protocol': self.protocol, 'law': [A]},
+            'principal': 'fixture-creator', 'intent': 'open-shared', 'protocol': self.protocol, 'law': self.counter_law},
             profile='compiled')
         self.assertEqual(created['kind'], 'committed', created)
         portal.save(self.directory / 'manifest.json', {'cafe': 'shared-counter',
@@ -108,15 +111,17 @@ class AgentHTTPTest(unittest.TestCase):
         return result['root']
 
     def notebook_state(self, token):
-        return source_object.plain(self.inspect(token, 'notebook')['state']['model'])
+        return source_object.plain(source_object.state_data(self.inspect(token, 'notebook')))
 
     def create_private(self, token, name='counter', initial=None):
         protocol = copy.deepcopy(self.protocol)
         if initial is not None:
-            protocol['initial']['count'] = initial
+            protocol['initial']['model'] = source_object.compact_state(protocol,
+                source_object.data({'count': initial}), entry='describe', path=[{'field': 'initial'}])
         author = self.identities.authenticate(token)['did']
+        law = {**self.counter_law, 'invoke': {'add': [author]}, 'reprogram': [author], 'law': [author]}
         status, result, _ = self.turn(token, 'create-' + name, {'op': 'create', 'object': name,
-            'protocol': protocol, 'law': [author]})
+            'protocol': protocol, 'law': law})
         self.assertEqual(status, 200, result)
         self.assertEqual(result['reply']['kind'], 'committed', result)
         return result['reply']['data']['root']
@@ -197,7 +202,7 @@ class AgentHTTPTest(unittest.TestCase):
         own = self.create_private(alice, 'alice-only', huge)
         inspected = self.inspect(alice, 'alice-only')
         self.assertEqual(inspected, own)
-        self.assertEqual(inspected['state']['count'], huge)
+        self.assertEqual(source_object.plain(source_object.state_data(inspected))['count'], huge)
         status, other, _ = self.request('GET', '/AGENTS.md/world', token=bob)
         self.assertEqual(status, 200, other)
         self.assertNotIn('alice-only', [item['object'] for item in other['objects']])
@@ -216,14 +221,14 @@ class AgentHTTPTest(unittest.TestCase):
         self.assertEqual(committed['reply']['kind'], 'committed')
         fresh = self.inspect(alice, 'shared-counter', 'shared')
         status, revoked, _ = self.turn(alice, 'revoke-own-grant', {'op': 'law', 'object': 'shared-counter',
-            'expected': fresh, 'law': []}, 'shared')
+            'expected': fresh, 'law': {**self.counter_law, 'invoke': {}, 'reprogram': [], 'law': []}}, 'shared')
         self.assertEqual(status, 200, revoked)
         self.assertEqual(revoked['reply']['kind'], 'committed')
         status, denied, _ = self.turn(alice, 'old-view-after-revocation', {'op': 'invoke', 'object': 'shared-counter',
             'expected': fresh, 'command': 'add', 'input': {'amount': 1}}, 'shared')
         self.assertEqual(status, 200, denied)
         self.assertEqual(denied['reply']['data'], 'unauthorized')
-        self.assertEqual(self.inspect(alice, 'alice-only')['state']['count'], huge)
+        self.assertEqual(source_object.plain(source_object.state_data(self.inspect(alice, 'alice-only')))['count'], huge)
 
     def test_uncertain_reply_keeps_exact_intent_and_account_receipt(self):
         alice, bob = self.enroll(A), self.enroll(B)
@@ -256,7 +261,7 @@ class AgentHTTPTest(unittest.TestCase):
         self.assertEqual(result['evaluation']['value'], {'tag': 'natural', 'value': '42'}, result)
         self.assertEqual(result['receipt']['kind'], 'committed', result)
         root = self.inspect(alice, 'notebook')
-        contribution = source_object.plain(root['state']['model'])['contributions']['payload']['head']
+        contribution = source_object.plain(source_object.state_data(root))['contributions']['payload']['head']
         self.assertEqual(contribution['actor'], A)
         self.assertIn(source, portal.loads(contribution['proposal']['original'])['modules'][0]['source'])
         self.assertEqual(portal.loads(result['evaluationJson']), result['evaluation'])
@@ -294,24 +299,42 @@ class AgentHTTPTest(unittest.TestCase):
         self.assertEqual(self.request('GET', card['links']['self'], token=alice)[1], card)
         status, detail, _ = self.request('GET', card['links']['details'], token=alice)
         self.assertEqual(status, 200, detail)
-        self.assertEqual(source_object.plain(detail['state']['model'])['count'], 0)
+        self.assertEqual(source_object.plain(source_object.state_data(detail['root']))['count'], 0)
         self.assertEqual(self.notebook_state(bob)['count'], 0)
 
     def test_source_desk_checks_installs_and_plays_a_private_program(self):
         alice = self.enroll(A)
-        self.create_private(alice, 'lantern')
+        target = self.create_private(alice, 'lantern')
+        status, granted, _ = self.turn(alice, 'grant-lantern-methods', {'op': 'law',
+            'object': 'lantern', 'expected': target, 'law': {**self.counter_law,
+                'invoke': {'light': [A], 'douse': [A]}}})
+        self.assertEqual(status, 200, granted)
+        self.assertEqual(granted['reply']['kind'], 'committed', granted)
         candidate = self.inspect(alice, 'source-desk')
-        source = (ROOT / 'syntaxes/examples/lantern.obend').read_text()
-        examples = '[{"name":"light","law":["visitor"],"steps":[{"principal":"visitor","command":"light","input":{},"root":"initial","kind":"committed","state":{"lit":true},"result":"A small sun for lost moths.","outbox":[]}]}]'
+        source = (ROOT / 'conformance/fixtures/AccountLantern.obend').read_text()
+        migration = source_object.load([{'name': 'Main', 'source': source}],
+                                       syntax='objective-bend-object')['initial']
+        examples = """examples DelveTalk 1
+case light the lantern
+law visitor
+as visitor
+send light
+expect result (String): A small sun for lost moths.
+"""
         status, submitted, _ = self.turn(alice, 'submit-source', {'op': 'invoke', 'object': 'source-desk',
             'expected': candidate, 'command': 'submit', 'input': {'proposal': {
-                'syntax': 'objective-bend-spell@2', 'source': source, 'scenarios': examples},
-                'migration': {'lit': False}, 'target': 'lantern'}})
+                'syntax': 'objective-bend-object', 'source': source, 'scenarios': examples},
+                'migration': migration, 'target': 'lantern'}})
         self.assertEqual(status, 200, submitted)
         self.assertEqual(submitted['reply']['kind'], 'committed')
         pending = submitted['reply']['data']['root']
+        status, requested, _ = self.turn(alice, 'request-source-check', {'op': 'invoke',
+            'object': 'source-desk', 'expected': pending, 'command': 'requestCheck', 'input': {}})
+        self.assertEqual(status, 200, requested)
+        self.assertEqual(requested['reply']['kind'], 'committed', requested)
+        pending = requested['reply']['data']['root']
         status, checked, _ = self.request('POST', '/AGENTS.md/repl', {'operation': 'check',
-            'intent': 'check-source', 'object': 'source-desk', 'expectedJson': portal.canonical(pending).decode()}, alice)
+            'intent': 'source-compile:source-desk:1', 'object': 'source-desk', 'expectedJson': portal.canonical(pending).decode()}, alice)
         self.assertEqual(status, 200, checked)
         self.assertEqual(checked['receipt']['kind'], 'committed', checked)
         ready = checked['receipt']['data']['root']
@@ -333,7 +356,7 @@ class AgentHTTPTest(unittest.TestCase):
             'expected': lantern, 'command': 'light', 'input': {}})
         self.assertEqual(status, 200, played)
         self.assertEqual(played['reply']['kind'], 'committed')
-        self.assertEqual(played['reply']['data']['root']['state'], {'lit': True})
+        self.assertEqual(source_object.plain(source_object.state_data(played['reply']['data']['root'])), {'lit': True})
         self.assertEqual(self.request('GET', '/AGENTS.md/receipt?intent=light-source', token=alice)[1]['reply'], played['reply'])
 
     def test_source_interpretation_retains_exact_actor_context_and_provider_retry(self):
