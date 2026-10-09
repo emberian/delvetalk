@@ -245,6 +245,21 @@ class Daemon(unittest.TestCase):
             self.assertEqual(len(steps), 3)
             self.assertFalse(Path(d, 'bridge.pid').exists())
 
+    def test_each_finished_step_refreshes_the_pid_file(self):
+        import os
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            stop, seen = threading.Event(), []
+            pid = Path(d, 'bridge.pid')
+
+            def step():
+                seen.append(pid.stat().st_mtime)
+                os.utime(pid, (0, 0))  # as if the previous step finished long ago
+                if len(seen) == 2:
+                    stop.set()
+            bridge.daemon(d, 'bridge', 0, step, stop)
+            self.assertGreater(seen[1], 0)
+
     def test_a_live_pid_file_blocks_a_second_daemon(self):
         import os
         with tempfile.TemporaryDirectory() as d:

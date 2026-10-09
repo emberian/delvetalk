@@ -1,0 +1,71 @@
+# The DelveTalk host for Linux x86_64. Build with deploy/build.sh (it passes
+# --platform linux/amd64 and prints the binary's SHA-256); the context is the
+# repository root.
+#
+# Every input is pinned: both base images by index digest, elan and the Lean
+# 4.34.1 release tarball by SHA-256 (ADD --checksum refuses other bytes). The
+# toolchain is linked into elan and selected with ELAN_TOOLCHAIN, so elan never
+# downloads anything itself.
+#
+# Builder: Debian 13 (glibc 2.41, the workhorse's own) with gcc for the one C
+# extern, spec/native/sync.c. At most two Lean compiler processes run at once
+# (the repository's rule): lake has no jobs flag, so a wrapper `lean` in a fake
+# sysroot takes one of two lock slots, the technique of dregg-infra's
+# edge/delvetalk/build-native.sh with two slots instead of one.
+
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
+# Packages come from the Debian snapshot this base image names (its own
+# debian.sources comments), so gcc is the same bytes on every machine and day.
+RUN sed -i -e 's|^URIs: http://deb.debian.org/debian-security$|URIs: http://snapshot.debian.org/archive/debian-security/20261005T000000Z|' \
+           -e 's|^URIs: http://deb.debian.org/debian$|URIs: http://snapshot.debian.org/archive/debian/20261005T000000Z|' \
+           /etc/apt/sources.list.d/debian.sources \
+ && grep -c '^URIs: http://snapshot.debian.org/' /etc/apt/sources.list.d/debian.sources | grep -qx 2 \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
+ && apt-get install -y --no-install-recommends gcc libc6-dev util-linux zstd \
+ && rm -rf /var/lib/apt/lists/*
+
+ADD --checksum=sha256:4e717523217af592fa2d7b9c479410a31816c065d66ccbf0c2149337cfec0f5c \
+    https://github.com/leanprover/elan/releases/download/v4.2.1/elan-x86_64-unknown-linux-gnu.tar.gz /tmp/elan.tar.gz
+ADD --checksum=sha256:47bf4bbd78f70c2e9670598ab7124d92b6efb7330ff33e5fbb4030f6fd72e4e4 \
+    https://github.com/leanprover/lean4/releases/download/v4.34.1/lean-4.34.1-linux.tar.zst /tmp/lean.tar.zst
+
+ENV ELAN_HOME=/opt/elan PATH=/opt/elan/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN tar -xzf /tmp/elan.tar.gz -C /tmp \
+ && /tmp/elan-init -y --no-modify-path --default-toolchain none \
+ && mkdir -p /opt/lean \
+ && tar --zstd -xf /tmp/lean.tar.zst -C /opt/lean --strip-components=1 \
+ && elan toolchain link lean-4.34.1 /opt/lean \
+ && rm /tmp/elan.tar.gz /tmp/elan-init /tmp/lean.tar.zst
+ENV ELAN_TOOLCHAIN=lean-4.34.1 LEAN_NUM_THREADS=2
+
+# Two-slot Lean wrapper in a fake sysroot.
+RUN mkdir -p /opt/sysroot/bin \
+ && for d in include lib src share; do [ -e /opt/lean/$d ] && ln -s /opt/lean/$d /opt/sysroot/$d || true; done \
+ && for f in /opt/lean/bin/*; do n=${f##*/}; [ "$n" = lean ] || ln -s "$f" /opt/sysroot/bin/$n; done \
+ && printf '%s\n' '#!/bin/sh' \
+      '# Take one of two slots; hold it until the real compiler exits.' \
+      'while :; do' \
+      '  for s in 0 1; do' \
+      '    exec 8>/opt/sysroot/lean.$s.lock' \
+      '    if flock -n 8; then exec /opt/lean/bin/lean "$@"; fi' \
+      '  done' \
+      '  sleep 0.2' \
+      'done' > /opt/sysroot/bin/lean \
+ && chmod +x /opt/sysroot/bin/lean
+ENV LEAN_SYSROOT=/opt/sysroot LAKE_OVERRIDE_LEAN=true LEAN=/opt/sysroot/bin/lean
+
+WORKDIR /src
+COPY lakefile.lean lean-toolchain lake-manifest.json ./
+COPY spec ./spec
+RUN test "$(cat lean-toolchain)" = "leanprover/lean4:v4.34.1" \
+ && lean --version | grep -F 'version 4.34.1' \
+ && lake build delvetalk-obend \
+ && install -m 0755 .lake/build/bin/delvetalk-obend /delvetalk-obend \
+ && sha256sum /delvetalk-obend \
+ && ldd /delvetalk-obend
+
+# Final: the binary and glibc, no shell, uid 65532. The binary needs only
+# libc, libm, libdl, libpthread, librt (ldd in the build log).
+FROM gcr.io/distroless/base-nossl-debian13:nonroot@sha256:8c563c1fb5e120606f0d85733049775faed6192e2bd2223ef283a5393eec22b9 AS host
+COPY --from=build /delvetalk-obend /usr/local/bin/delvetalk-obend
+ENTRYPOINT ["/usr/local/bin/delvetalk-obend"]

@@ -1,0 +1,7 @@
+*
+!transport/
+!docs/AGENTS-API.md
+!world/
+!deploy/seed.py
+!deploy/one-writer.sh
+**/__pycache__

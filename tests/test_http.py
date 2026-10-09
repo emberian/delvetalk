@@ -95,6 +95,12 @@ class HttpFront(unittest.TestCase):
         self.assertIn('/AGENTS.md/challenge', text)
         self.assertNotIn('{{origin}}', text)
 
+    def test_guide_names_the_host_binary(self):
+        import hashlib
+        s, headers, _ = self.request('GET', '/AGENTS.md')
+        self.assertEqual(s, 200)
+        self.assertEqual(dict(headers)['X-DelveTalk-Host-Sha256'], hashlib.sha256(Path(BINARY).read_bytes()).hexdigest())
+
     def test_unknown_route_points_at_guide(self):
         s, body = self.call('GET', '/nope')
         self.assertEqual(s, 404)
