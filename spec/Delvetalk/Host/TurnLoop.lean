@@ -59,6 +59,7 @@ inductive Abort where
   | budget (resource : String)
   /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
+      (interpretation : Option Json := none)
   deriving Inhabited
 
 structure TurnState where
@@ -67,8 +68,8 @@ structure TurnState where
   writes : List (String × List Written) := []
   principal : String
   intent : String
-  /-- Sends in order: target object, method, argument. They leave with the commit. -/
-  sends : List (String × String × Data) := []
+  /-- Sends in order: target, method, argument and the sending object. They leave with the commit. -/
+  sends : List (String × String × Data × String) := []
   programs : List (String × (String × String)) := []
   laws : List (String × String) := []
   ticks : Nat
@@ -83,6 +84,8 @@ structure TurnState where
   /-- Slots this turn already awaited, as identity keys, and how many awaits it has made. -/
   awaited : List String := []
   awaits : Nat := 0
+  /-- `check` Plans this turn ran; the journal keeps the count. -/
+  checks : Nat := 0
   limits : Json
 
 abbrev M := ExceptT Abort (StateM TurnState)
@@ -115,6 +118,12 @@ def referenceId : Data → Option String
 
 def emptyRecord : Data := .record []
 
+/-- A `List<T>` value on the wire: `nil {} | cons {head, tail}`. -/
+def listData (items : List Data) : Data :=
+  items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)]))
+    (.variant "nil" (.record []))
+
+
 /-- The first payload that makes a response conform to the Response type. -/
 def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads : List Data) : M Data := do
   for p in payloads do
@@ -132,7 +141,7 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
   | some c => return c
   | none =>
     let inputs := obj.inputs.setObjVal! "entry" (toJson method)
-    match Package.compileKeepingLaws inputs with
+    match resolveInputs s.world inputs >>= Package.compileKeepingLaws with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (artifact, ty, _) =>
       let packet ← match artifact.getObjVal? "packet" with
@@ -220,7 +229,8 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
   let limits := (creator.inputs.getObjVal? "limits").toOption
   let finish := fun (fields : List (String × Json)) =>
-    Json.mkObj (fields ++ [("entry", toJson "initial")] ++ (limits.map fun l => [("limits", l)]).getD [])
+    Json.mkObj (fields ++ [("entry", toJson "initial")] ++ (limits.map fun l => [("limits", l)]).getD [] ++
+      ((creator.inputs.getObjVal? "library").toOption.map fun l => [("library", l)]).getD [])
   match creator.inputs.getObjVal? "modules" with
   | .ok (.arr modules) =>
     if package.startsWith "edition" then
@@ -247,10 +257,10 @@ def mergeSeed (initial seed : Data) (bounds : DataBounds) (ty : Ty) : Except Str
     return .record (base.map fun (k, v) => (k, (given.lookup k).getD v))
   | _, _ => throw "the seed is not a record"
 
-def buildCreated (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
+def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
     (height : Nat) : Except (String × String) CreateRec := do
   let inputs ← creationInputs creator package
-  let built ← (compileObject inputs).mapError (("compile", ·))
+  let built ← (compileObject w inputs).mapError (("compile", ·))
   let packet ← (built.artifact.getObjVal? "packet").mapError (("compile", ·))
   let initial ← match Package.executeDataValues packet #[] (Json.mkObj []) with
     | .ok (.finished v _ _ _) => pure v
@@ -308,6 +318,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     countPlan
     let response ← match plan with
       | .variant "await" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
+      | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
       | _ => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
@@ -333,17 +344,48 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
     | none =>
       if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
       else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
-      else if depth != 0 then evaluation "await inside a call is not supported"
-      else if (s.world.suspended.filter fun e =>
-          ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
-            |>.bind (·.getObjValAs? String "object" |>.toOption)) == some self).size
-          ≥ Limits.pendingActivitiesPerObject then
-        evaluation "pending activity capacity (pendingActivitiesPerObject) reached for the object"
-      else if s.world.suspended.size ≥ Limits.maxSuspended then
-        evaluation "pending activity capacity (maxSuspended) reached"
-      else if (Delvetalk.Turn.tokensJson checkpoint.tokens).compress.utf8ByteSize > Limits.maxCheckpointBytes then
-        evaluation "checkpoint exceeds its byte capacity"
-      else throw (.suspend sp si patience checkpoint)
+      else
+        mayWait depth self checkpoint
+        throw (.suspend sp si patience checkpoint)
+
+/-- The capacities every suspension is held to; only the top of a turn may wait. -/
+partial def mayWait (depth : Nat) (self : String) (checkpoint : Delvetalk.Turn.Checkpoint) : M Unit := do
+  let s ← get
+  if depth != 0 then evaluation "a wait inside a call is not supported"
+  else if (s.world.suspended.filter fun e =>
+      ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+        |>.bind (·.getObjValAs? String "object" |>.toOption)) == some self).size
+      ≥ Limits.pendingActivitiesPerObject then
+    evaluation "pending activity capacity (pendingActivitiesPerObject) reached for the object"
+  else if s.world.suspended.size ≥ Limits.maxSuspended then
+    evaluation "pending activity capacity (maxSuspended) reached"
+  else if (Delvetalk.Turn.tokensJson checkpoint.tokens).compress.utf8ByteSize > Limits.maxCheckpointBytes then
+    evaluation "checkpoint exceeds its byte capacity"
+
+/-- `interpret {utterance, offers, policy}`: the turn waits for a model's reply, which the
+    transport fetches (`world-interpretations`) and settles (`world-interpretation`). The
+    policy object must be readable by the turn's principal, else the Plan is answered `denied`. -/
+partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : List (String × Data))
+    (responseType : Ty) (checkpoint : Delvetalk.Turn.Checkpoint) : M Data := do
+  let some (.label utterance) := f.lookup "utterance" | evaluation "malformed interpret plan"
+  let some offers := f.lookup "offers" | evaluation "malformed interpret plan"
+  let some policy := (f.lookup "policy").bind referenceId | evaluation "malformed interpret plan"
+  let s ← get
+  match s.world.objects[policy]? with
+  | none => respond bounds responseType "denied" [emptyRecord]
+  | some o =>
+    if !o.read.permits s.principal then respond bounds responseType "denied" [emptyRecord]
+    else if utterance.utf8ByteSize > Limits.maxUtteranceBytes then evaluation "utterance exceeds its byte capacity"
+    else if (dataJson offers).compress.utf8ByteSize > Limits.maxOffersBytes then
+      evaluation "offers exceed their byte capacity"
+    else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
+    else
+      mayWait depth self checkpoint
+      let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
+      set { s with awaits := s.awaits + 1 }
+      throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint
+        (some (Json.mkObj [("id", toJson id), ("object", toJson self), ("policy", toJson policy),
+          ("utterance", toJson utterance), ("offers", dataJson offers)])))
 
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
@@ -411,6 +453,21 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         else
           modify fun s => { s with laws := s.laws ++ [(id, text)] }
           respond bounds responseType "amended" [emptyRecord]
+  | .variant "inspect" (.record f) =>
+    let s ← get
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some o =>
+      if !o.read.permits s.principal then respond bounds responseType "denied" [emptyRecord]
+      else respond bounds responseType "inspected" [.record [("pin", .label o.pin),
+        ("law", .label o.lawText), ("source", .label (entrySource o))]]
+  | .variant "check" (.record f) =>
+    let some (.label source) := f.lookup "package" | evaluation "malformed check plan"
+    let s ← get
+    if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
+    set { s with checks := s.checks + 1 }
+    respond bounds responseType "checked"
+      [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
   | .variant "create" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
     let some seed := f.lookup "seed" | evaluation "malformed create plan"
@@ -429,7 +486,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       refusedWith bounds responseType "capacity"
     else
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
-      match buildCreated creator package seed lawArg s.principal (s.world.height + 1) with
+      match buildCreated s.world creator package seed lawArg s.principal (s.world.height + 1) with
       | .error (clause, _) => refusedWith bounds responseType clause
       | .ok rec =>
         set { note s with creates := s.creates ++ [(id, rec)] }
@@ -446,7 +503,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if s.world.pending.size + s.sends.length ≥ Limits.maxPending then
         evaluation "world exceeds the pending delivery capacity"
       let delivery := deliveryId s.principal s.intent s.sends.length
-      set { s with sends := s.sends ++ [(id, method, argument)] }
+      set { s with sends := s.sends ++ [(id, method, argument, self)] }
       respond bounds responseType "delivery" [.record [("id", .label delivery)]]
   | .variant "offer" (.record f) =>
     let some document := f.lookup "document" | evaluation "malformed offer plan"
@@ -483,6 +540,8 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
 /-- What a turn knows about how it began: the ledger it runs under and, for a
     delivery, the id and the sender's identity. -/
 structure TurnMeta where
+  /-- The object whose send this turn delivers; the delivered method's `caller`. -/
+  caller : String := ""
   ledger : Option Ledger := none
   delivery : Option (String × Json) := none
 
@@ -491,15 +550,15 @@ def ledgerJson (l : Ledger) : Json := l.json
 /-- The sends of an admitted turn, each with the ledger it inherits: depth - 1,
     work - the ticks this turn used, storage - the bytes its writes added. -/
 def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)
-    (sends : List (String × String × Data)) (updates : List (String × Object)) : List (String × Json) :=
+    (sends : List (String × String × Data × String)) (updates : List (String × Object)) : List (String × Json) :=
   if sends.isEmpty then [] else
   let added := updates.foldl (fun n (id, o) =>
     let before := ((w.objects[id]?).map fun p => (dataJson p.state).compress.utf8ByteSize).getD 0
     n + ((dataJson o.state).compress.utf8ByteSize - before)) 0
   let child : Ledger := ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
-  [("sends", Json.arr (sends.zipIdx.toArray.map fun ((to, method, argument), i) => Json.mkObj
+  [("sends", Json.arr (sends.zipIdx.toArray.map fun ((to, method, argument, sender), i) => Json.mkObj
     [("id", toJson (deliveryId principal intent i)), ("to", toJson to), ("method", toJson method),
-     ("argument", dataJson argument), ("ledger", child.json)]))]
+     ("argument", dataJson argument), ("sender", toJson sender), ("ledger", child.json)]))]
 
 /-- What a turn segment carries into its end: who it is, how it began, what it has spent. -/
 structure Ctx where
@@ -516,9 +575,12 @@ structure Ctx where
   resumes : Option String := none
   usedBefore : Nat := 0
   ticksStart : Nat
+  /-- The calling object of the activity's top method (empty for a direct turn). -/
+  caller : String := ""
 
-def sendJson (s : String × String × Data) : Json :=
-  Json.mkObj [("to", toJson s.1), ("method", toJson s.2.1), ("argument", dataJson s.2.2)]
+
+def sendJson (s : String × String × Data × String) : Json :=
+  Json.mkObj [("to", toJson s.1), ("method", toJson s.2.1), ("argument", dataJson s.2.2.1), ("sender", toJson s.2.2.2)]
 
 def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
   [("turnRequest", toJson ctx.digest), ("ticksUsed", toJson used), ("ledger", ctx.ledger.json)] ++
@@ -553,7 +615,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls := "budget", reason := some resource })
     return (w', turnReply r)
-  | .error (.suspend sp si patience checkpoint) =>
+  | .error (.suspend sp si patience checkpoint interpretation) =>
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
       ("checkpoint", checkpoint.toJson),
@@ -564,11 +626,12 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
       ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
       ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
-      ("offers", toJson st.offers)] ++
+      ("offers", toJson st.offers), ("caller", toJson ctx.caller), ("checks", toJson st.checks)] ++
       (if st.violation.isSome then [("violation", toJson st.violation)] else []))
-    let outcome := Json.mkObj [("tag", toJson "suspended"),
+    let outcome := Json.mkObj <| [("tag", toJson "suspended"),
       ("slot", Json.mkObj [("principal", toJson sp), ("intent", toJson si)]),
-      ("deadline", toJson (w.clock + patience)), ("activity", activity)]
+      ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
+      (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
       ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)]) []
@@ -580,7 +643,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         (some { cls := "requiredAbsence", object := some id })
       return (w', turnReply r)
     | none =>
-    let offered := if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]
+    let offered := (if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]) ++
+      (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
       (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends)
     let reply := turnReply r
@@ -597,7 +661,7 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .ok b => pure b.ticks
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, ticks, limits := req.limits }
-  let (result, st) := (runMethod 0 req.object req.method req.argument "" |>.run).run init
+  let (result, st) := (runMethod 0 req.object req.method req.argument how.caller |>.run).run init
   let ctx : Ctx :=
     { principal := req.principal
       intent := req.intent
@@ -607,7 +671,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
       digest := req.digest
       ledger := ledger
       delivery := how.delivery
-      ticksStart := ticks }
+      ticksStart := ticks
+      caller := how.caller }
   finishTurn w ctx result st
 
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
@@ -626,6 +691,20 @@ def computationParts : Ty → Option (Ty × Ty × Ty)
 
 def strings (j : Option Json) : List String :=
   ((j.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun a => a.getStr?.toOption
+
+/-- The response an `interpreted` entry resumes its `interpret` Plan with. -/
+def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M Data := do
+  let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
+  let verdict ← liftEval (outcome.getObjVal? "verdict")
+  match ← liftEval (verdict.getObjValAs? String "tag") with
+  | "proposal" =>
+    let raw ← liftEval (verdict.getObjVal? "argument")
+    let argument ← liftEval (decodeData Limits.dataDepth raw)
+    let method ← liftEval (verdict.getObjValAs? String "method")
+    respond bounds responseType "proposal" [.record [("method", .label method), ("argument", argument)]]
+  | _ =>
+    let needs := strings (verdict.getObjVal? "needs").toOption
+    respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
 
 /-- Continue the activity a suspension entry journaled. The turn's roots are
     re-validated first: if anything it read or required absent has moved, the whole
@@ -658,7 +737,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       delivery := delivery
       resumes := some hash
       usedBefore := ← natField sus "ticksUsed"
-      ticksStart := ticks }
+      ticksStart := ticks
+      caller := (act.getObjValAs? String "caller").toOption.getD "" }
   let stale? := (roots.find? fun (id, v) => (w.objects[id]?).map (·.version) != some v).map (·.1)
     <|> absent.find? fun id => w.objects.contains id
   if let some id := stale? then
@@ -674,11 +754,11 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
   let writes ← parseRecordedWrites (← act.getObjVal? "writes")
   let sends ← ((← (← act.getObjVal? "sends").getArr?).toList.mapM fun s => do
     return (← s.getObjValAs? String "to", ← s.getObjValAs? String "method",
-      ← decodeData Limits.dataDepth (← s.getObjVal? "argument")))
+      ← decodeData Limits.dataDepth (← s.getObjVal? "argument"), ← s.getObjValAs? String "sender"))
   let creates ← ((← (← act.getObjVal? "creates").getArr?).toList.mapM fun r => do
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
-    let (o, sources) ← buildObject (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
+    let (o, sources) ← buildObject w (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     return (id, ({ object := o, sources, seed } : CreateRec)))
   let programs ← ((← (← act.getObjVal? "programs").getArr?).toList.mapM fun r => do
@@ -702,6 +782,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       violation := (act.getObjValAs? String "violation").toOption
       awaited := strings (act.getObjVal? "awaited").toOption
       awaits := ← natField act "awaits"
+      checks := (natField act "checks").toOption.getD 0
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do
     let s ← get
@@ -709,14 +790,16 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     let compiled ← compiledMethod obj method
     let some (_, responseType, _) := computationParts compiled.type | evaluation "the method is not an activity"
     let response ← match kind with
-      | .reply e => respond compiled.bounds responseType "reply" [.record [("receipt", receiptData e)]]
+      | .reply e =>
+        if tagOf e == "interpreted" then interpretedResponse compiled.bounds responseType e
+        else respond compiled.bounds responseType "reply" [.record [("receipt", receiptData e)]]
       | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
     -- The activity began with only its own object as a root, at the version still current.
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
-    drive 0 object "" compiled binding next 0
+    drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st
 
@@ -751,7 +834,10 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   let principal ← d.getObjValAs? String "principal"
   let sender ← d.getObjVal? "from"
   let ledger ← ledgerOf (← d.getObjVal? "ledger")
-  let how : TurnMeta := { ledger := some ledger, delivery := some (id, sender) }
+  let how : TurnMeta :=
+    { caller := (d.getObjValAs? String "sender").toOption.getD ""
+      ledger := some ledger
+      delivery := some (id, sender) }
   match ledger.exhausted with
   | some field =>
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
@@ -835,5 +921,154 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
   match parseLawText text with
   | .error message => return withProgramRefusal w p "law syntax" message
   | .ok _ => return commit w p
+
+
+/-! ## Reflection and interpretation as ops -/
+
+/-- `world-inspect {principal, object}`: the pin, law text and entry source an object
+    shows a reader its read policy permits. -/
+def inspectOp (w : World) (j : Json) : Except String Json := do
+  let id ← j.getObjValAs? String "object"
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  match w.objects[id]? with
+  | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  | some o =>
+    if !o.read.permits principal then
+      return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+    return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
+      ("law", toJson o.lawText), ("source", toJson (entrySource o))]
+
+/-- Plain JSON for a model to read: lists are arrays, a sum is an object with its `tag`. -/
+partial def listHeads (acc : List Data) : Data → Option (List Data)
+  | .variant "nil" _ => some acc.reverse
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    let tail ← f.lookup "tail"
+    listHeads (head :: acc) tail
+  | _ => none
+
+partial def plainJson : Data → Json
+  | .natural n => toJson n
+  | .boolean b => toJson b
+  | .label s => toJson s
+  | .record fs => Json.mkObj (fs.map fun (k, v) => (k, plainJson v))
+  | d@(.variant l p) =>
+    match listHeads [] d with
+    | some items => Json.arr (items.toArray.map plainJson)
+    | none => match p with
+      | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
+      | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
+
+/-- The state of a Policy object as `{model, system, examples}` (absent fields are null). -/
+def policyJson (w : World) (id : String) : Json :=
+  match (w.objects[id]?).map (fun o => o.state) with
+  | some (Data.record f) => Json.mkObj (["model", "system", "examples"].map fun k =>
+      (k, ((f.lookup k).map plainJson).getD Json.null))
+  | _ => Json.null
+
+def interpretationOf (s : Json) : Option Json :=
+  (s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption
+
+/-- `world-interpretations`: every `interpret` still waiting for a reply. -/
+def interpretationsReply (w : World) : Json :=
+  let pending := w.suspended.filterMap fun s => do
+    let i ← interpretationOf s
+    let id ← (i.getObjValAs? String "id").toOption
+    guard (settled w interpretationPrincipal id).isNone
+    let deadline ← ((s.getObjVal? "outcome").toOption.bind (·.getObjValAs? Nat "deadline" |>.toOption))
+    guard (w.clock ≤ deadline)
+    let object ← (i.getObjValAs? String "object").toOption
+    let policy ← (i.getObjValAs? String "policy").toOption
+    let offers ← (i.getObjVal? "offers").toOption.bind fun o => (decodeData Limits.dataDepth o).toOption
+    let utterance ← (i.getObjValAs? String "utterance").toOption
+    pure (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", policyJson w policy),
+      ("utterance", toJson utterance), ("offers", plainJson offers)])
+  Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)]
+
+def scratchState (w : World) : TurnState :=
+  { world := w, principal := "", intent := "", ticks := 0, limits := Json.mkObj [] }
+
+def abortText : Abort → String
+  | .request m | .evaluation m => m
+  | .budget r => s!"{r} budget exhausted"
+  | .suspend .. => "unexpected suspension"
+
+/-- The input type of a method: `none` when it takes none, an error when it is not a method. -/
+def inputTypeOf : Ty → Except String (Option Ty)
+  | .arrow _ _ _ (.arrow _ _ dom (.arrow _ _ _ _)) => pure (some dom)
+  | .arrow _ _ _ (.arrow _ _ _ _) => pure none
+  | _ => throw "not a method"
+
+def unclearVerdict (needs : List String) : Json :=
+  Json.mkObj [("tag", toJson "unclear"), ("needs", toJson needs)]
+
+/-- What a reply says to the suspended object: a proposal (a method of the object, one of
+    the offered actions, with an argument that conforms to the method's input type and
+    fits the object's response type), or `unclear` with the reason. -/
+def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
+  let some i := interpretationOf s | throw "not an interpretation"
+  let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
+  let object ← act.getObjValAs? String "object"
+  let suspendedMethod ← act.getObjValAs? String "method"
+  match (reply.getObjValAs? String "status").toOption with
+  | some "replied" => pure ()
+  | some "failed" =>
+    let reason := ((reply.getObjValAs? String "reason").toOption).getD "failed"
+    return (w, unclearVerdict [s!"the model did not reply: {reason}"])
+  | _ => throw "reply must have status replied or failed"
+  let some json := (reply.getObjVal? "json").toOption | throw "a replied interpretation carries json"
+  let some method := (json.getObjValAs? String "method").toOption
+    | return (w, unclearVerdict ["the reply names no method"])
+  let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
+  let actions := ((listHeads [] offers).getD []).filterMap fun form =>
+    match form with
+    | .record f => (f.lookup "action").bind labelOf
+    | _ => none
+  if !actions.isEmpty && !actions.contains method then
+    return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
+  let some obj := w.objects[object]? | throw s!"unknown object {object}"
+  let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
+  let (r2, st2) := ((compiledMethod obj suspendedMethod).run.run st)
+  let suspended ← match r2 with | .ok c => pure c | .error e => throw (abortText e)
+  let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
+  let w := { w with compiled := st2.world.compiled }
+  let compiledM ← match r with
+    | .ok c => pure c
+    | .error e => return (w, unclearVerdict [s!"{method} is not a method of the object: {abortText e}"])
+  let raw := (json.getObjVal? "argument").toOption.getD (Json.mkObj [])
+  let input ← (inputTypeOf compiledM.type).mapError fun _ => s!"{method} is not a method"
+  let wanted := match raw with
+    | .null => Json.mkObj []
+    | other => other
+  match Package.jsonData Limits.plainDepth wanted with
+  | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
+  | .ok (argument, _) =>
+    let fits := match input with
+      | some dom => argument.conformsUnder compiledM.bounds dom
+      | none => match argument with | .record [] => true | _ => false
+    if !fits then return (w, unclearVerdict [s!"the argument does not fit the input of {method}"])
+    let candidate := Data.variant "proposal" (.record [("method", .label method), ("argument", argument)])
+    if !candidate.conformsUnder suspended.bounds responseType then
+      return (w, unclearVerdict [s!"the object cannot carry a proposal of {method}"])
+    return (w, Json.mkObj [("tag", toJson "proposal"), ("method", toJson method),
+      ("argument", dataJson argument)])
+
+/-- `world-interpretation {id, reply}`: settle a pending interpretation with the model's
+    reply, verbatim. The verdict is journaled; the suspended turn resumes with it. -/
+def interpretationOp (w : World) (j : Json) : Except String (World × Json) := do
+  let id ← boundedText "interpretation id" Limits.maxIntentBytes (← j.getObjValAs? String "id")
+  let replied ← j.getObjVal? "reply"
+  if replied.compress.utf8ByteSize > Limits.maxReplyBytes then throw "reply exceeds its byte capacity"
+  let digest := Journal.bodyHash replied
+  if let some r := retained w interpretationPrincipal id digest then return (w, r)
+  let some s := w.suspended.find? fun s => (interpretationOf s).bind (·.getObjValAs? String "id" |>.toOption) == some id
+    | throw s!"no pending interpretation {id}"
+  let (w, verdict) ← interpretVerdict w s replied
+  let (w', entry) := push w (identityKey interpretationPrincipal id)
+    [("identity", identityJson interpretationPrincipal id), ("roots", rootsJson []),
+     ("turn", toJson (w.height + 1)), ("request", toJson digest),
+     ("outcome", Json.mkObj [("tag", toJson "interpreted"), ("id", toJson id), ("reply", replied),
+       ("verdict", verdict)])] []
+  return (w', reply entry)
 
 end Delvetalk.Host

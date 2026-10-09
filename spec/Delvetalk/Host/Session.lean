@@ -15,10 +15,28 @@ structure Open where
   world : World
   path : String
   handle : IO.FS.Handle
+  /-- The directory the library was loaded from, for `world-library`. -/
+  libraryPath : Option String := none
 
 abbrev Session := Option Open
 
 def isWorldOp (op : String) : Bool := op.startsWith "world-"
+
+/-- Seal every `*.obend` under `path` as a library (module name = file name without extension). -/
+def loadLibrary (path : String) : IO (Except String Library) := do
+  try
+    unless ← System.FilePath.isDir path do return .error s!"library path {path} is not a directory"
+    let files ← System.FilePath.walkDir path
+    let mut modules : List (String × String) := []
+    let mut names : List String := []
+    for f in files.qsort (fun a b => a.toString < b.toString) do
+      if f.extension == some "obend" then
+        let name := f.fileStem.getD ""
+        if names.contains name then return .error s!"library has two modules named {name}"
+        names := names ++ [name]
+        modules := modules ++ [(name, ← IO.FS.readFile f)]
+    return sealLibrary modules
+  catch e => return .error s!"library unreadable: {e}"
 
 def openWorld (path : String) : IO (Except String Open) := do
   try
@@ -33,7 +51,7 @@ def openWorld (path : String) : IO (Except String Open) := do
     | .error e => return .error e
     | .ok world =>
       let handle ← IO.FS.Handle.mk path IO.FS.Mode.append
-      return .ok ⟨world, path, handle⟩
+      return .ok { world, path, handle }
   catch e => return .error s!"journal unreadable: {e}"
 
 /-- Run a pure world step and make its entry durable before the reply exists. -/
@@ -70,9 +88,35 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
     | .ok path =>
       match ← openWorld path with
       | .error e => return (session, .error e)
-      | .ok o => return (some o, .ok (Json.mkObj [("status", toJson "opened"),
+      | .ok o =>
+        let opened := fun (o : Open) (extra : List (String × Json)) => Json.mkObj ([("status", toJson "opened"),
           ("height", toJson o.world.height), ("head", toJson o.world.head),
-          ("objects", toJson o.world.objects.size)]))
+          ("objects", toJson o.world.objects.size)] ++ extra ++
+          (o.world.library.map fun l => [("library", toJson l.pin)]).getD [])
+        match request.getObjValAs? String "library" with
+        | .error _ => return (some o, .ok (opened o []))
+        | .ok libPath =>
+          match ← loadLibrary libPath with
+          | .error e => return (session, .error e)
+          | .ok lib =>
+            let o := { o with libraryPath := some libPath }
+            match o.world.library with
+            | some recorded =>
+              if recorded.pin != lib.pin then
+                return (session, .error s!"library at {libPath} has pin {lib.pin} but the journal records {recorded.pin}; the bytes differ")
+              return (some o, .ok (opened o []))
+            | none =>
+              let some who := (request.getObjValAs? String "principal").toOption
+                | return (session, .error "world-open with a library needs the opening principal")
+              let law := (request.getObjValAs? String "libraryLaw").toOption
+              let (s', r) ← durable o (fun w => libraryOp w who s!"library:{lib.pin}" lib law)
+              match r with
+              | .error e => return (session, .error e)
+              | .ok reply =>
+                if (reply.getObjValAs? String "status").toOption == some "refused" then
+                  return (session, .ok reply)
+                return (s', .ok ((opened (s'.getD o) []).setObjVal! "receipt"
+                  ((reply.getObjVal? "receipt").toOption.getD Json.null)))
   else match session with
     | none => return (none, .error "no world is open; send world-open first")
     | some s =>
@@ -85,6 +129,21 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             | .error _ => Limits.deliveriesPerCall
           deliver w limit)
       | "world-pending" => return (session, .ok (pendingReply s.world))
+      | "world-library" => do
+        let path? := (request.getObjValAs? String "library").toOption <|> s.libraryPath
+        let some libPath := path? | return (session, .error "this world was opened without a library")
+        let principal ← match request.getObjValAs? String "principal" with
+          | .ok p => pure p
+          | .error e => return (session, .error e)
+        let intent ← match request.getObjValAs? String "identity" with
+          | .ok p => pure p
+          | .error e => return (session, .error e)
+        match ← loadLibrary libPath with
+        | .error e => return (session, .error e)
+        | .ok lib => durable s (fun w => libraryOp w principal intent lib none)
+      | "world-inspect" => return (session, inspectOp s.world request)
+      | "world-interpretations" => return (session, .ok (interpretationsReply s.world))
+      | "world-interpretation" => durable s (fun w => interpretationOp w request)
       | "world-reprogram" => durable s (fun w => reprogramOp w request)
       | "world-amend" => durable s (fun w => amendOp w request)
       | "world-advance" => durable s (fun w => advance w request)

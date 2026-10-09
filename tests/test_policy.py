@@ -8,7 +8,7 @@ so the fall-through steps are expected failures and flip when it lands.
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference
+from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
@@ -36,8 +36,7 @@ def many(n: Nat, context: Abi.Context) -> Nat:
 
 def context(card="garden-1"):
     text = lambda v: {"tag": "label", "value": v}
-    return record(world=text(""), object=text(card), principal=text("glm"), caller=text(""), intent=text("probe"),
-                  height={"tag": "natural", "value": "0"}, inputOrigin=record(
+    return record(world=text(""), object=text(card), principal=text("glm"), caller=text(""), intent=text("probe"), height=nat(0), inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
         immediatelyPrevious=boolean(False)))
 
@@ -77,8 +76,8 @@ class Types(unittest.TestCase):
 
 class PolicyObject(Chain):
     def policy(self, confirm=True, name="policy"):
-        self.make(name, closure("Policy"), record(model=label("claude-haiku"), system=label("S"),
-                                                  confirm=boolean(confirm), escalate=label("")))
+        self.make(name, closure("Policy"), record(model=label("claude-haiku"), system=label("S"), lexicon=nil(),
+                                                  examples=nil(), confirm=boolean(confirm), escalate=label("")))
 
     def test_teach_define_and_set_model_edit_the_policy_in_order(self):
         self.policy()
@@ -122,10 +121,10 @@ class PolicyObject(Chain):
     # --- Garden.receive falls through to the policy ---------------------------------
 
     def garden(self, policy):
-        self.make("garden", closure("Garden"), garden_seed(policy))
+        self.make("garden", closure("Garden"), record(planted=nat(0), policy=reference(policy)))
 
     def say(self, text):
-        return self.turn("garden", "receive", record(text=label(text), post=label("at://glm/p/1")), principal="glm")
+        return self.turn("garden", "receive", record(text=label(text), who=label("glm"), post=label("at://glm/p/1")), principal="glm")
 
     def test_without_a_policy_prose_is_a_one_line_refusal(self):
         self.garden("")

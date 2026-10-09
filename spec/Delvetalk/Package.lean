@@ -11,6 +11,7 @@ import Delvetalk.Turn
 import Delvetalk.Document
 import Delvetalk.EvaluateTerm
 import Delvetalk.Limits
+import Delvetalk.Canonical
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -86,9 +87,9 @@ def compileStructured (j : Json) : Except Diagnostic Compiled := do
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
     ("modules", sources),
-    ("sourcesSha256", toJson (Minidregg.Compiler.Sha256.hexString sources.compress)),
+    ("sourcesSha256", toJson (Delvetalk.Canonical.cidJson sources)),
     ("entry", toJson entry), ("genericInstances", genericInstances), ("limits", getLimits j), ("packet", packet),
-    ("packetSha256", toJson (Minidregg.Compiler.Sha256.hexString packet.compress)),
+    ("packetSha256", toJson (Delvetalk.Canonical.cidJson packet)),
     ("type", typeJson accepted.typed.type)]
   return (artifact, accepted.typed.type, lowered.laws)
 
@@ -533,6 +534,8 @@ def job (j : Json) : Except String Json := do
     | .error d => return Json.mkObj [("status", toJson "refused"), ("diagnostic", d.json)]
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
+  | "canonical-encode" => Delvetalk.Canonical.encodeOp j
+  | "canonical-decode" => Delvetalk.Canonical.decodeOp j
   | "evaluate-term" => Delvetalk.EvaluateTerm.op j
   | "render-document" => Delvetalk.Document.renderOp j
   | "turn-start" => turnStart j

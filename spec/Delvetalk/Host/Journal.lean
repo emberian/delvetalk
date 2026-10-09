@@ -1,13 +1,15 @@
-/- The append-only hash chain. An entry is a JSON object whose `hash` is the
-   SHA-256 of the compressed entry without that field. Lean's `Json.compress`
-   orders object keys, so the bytes are canonical. -/
+/- The append-only chain. An entry is a JSON object whose `hash` is the CID of its
+   canonical DAG-CBOR bytes without that field (Canonical.lean), and whose `previous`
+   is the previous entry's `hash`. The field names are unchanged; the values are CIDs,
+   so an entry can be published verbatim as a record and cited by that CID. -/
 import Delvetalk.Host.Store
-import Compiler.Sha256
+import Delvetalk.Canonical
 
 namespace Delvetalk.Host.Journal
 open Lean (Json toJson)
 
-def bodyHash (body : Json) : String := Minidregg.Compiler.Sha256.hexString body.compress
+/-- The CID of `body`'s canonical bytes. -/
+def bodyHash (body : Json) : String := Delvetalk.Canonical.cidJson body
 
 /-- `fields` must not include `height`, `previous` or `hash`. -/
 def sealEntry (height : Nat) (previous : String) (fields : List (String × Json)) : Json :=

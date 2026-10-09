@@ -9,6 +9,7 @@ import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendDemandCollect
 import Delvetalk.Limits
+import Delvetalk.Canonical
 
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTyping
@@ -139,15 +140,16 @@ def tokensOfJson (json : Json) : Except String Tokens := do
         return Token.nat value
     | .error _ => return Token.text (← item.getObjValAs? String "s")
 
-def packetDigest (packet : Json) : String := Minidregg.Compiler.Sha256.hexString packet.compress
+/-- Digests are CIDs of canonical bytes (Canonical.lean). -/
+def packetDigest (packet : Json) : String := Delvetalk.Canonical.cidJson packet
 
 def tokensDigest (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : String :=
-  Minidregg.Compiler.Sha256.hexString (tokensJson tokens).compress
+  Delvetalk.Canonical.cidJson (tokensJson tokens)
 
 /-- SHA-256 of the canonical roots list: `[{object, version}]` in recorded order. -/
 def rootsDigest (roots : List (String × Nat)) : String :=
-  Minidregg.Compiler.Sha256.hexString (Json.arr (roots.map fun (object, version) =>
-    Json.mkObj [("object", Lean.toJson object), ("version", Lean.toJson version)]).toArray).compress
+  Delvetalk.Canonical.cidJson (Json.arr (roots.map fun (object, version) =>
+    Json.mkObj [("object", Lean.toJson object), ("version", Lean.toJson version)]).toArray)
 
 /-- What a suspended activity belongs to: the object whose method it runs, the
 principal and intent of the turn, and the roots the turn had read when it
@@ -183,9 +185,9 @@ structure Checkpoint where
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
 def checkpointDigest (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : String :=
-  Minidregg.Compiler.Sha256.hexString (Json.mkObj [("packetSha256", Lean.toJson packetSha256),
+  Delvetalk.Canonical.cidJson (Json.mkObj [("packetSha256", Lean.toJson packetSha256),
     ("object", Lean.toJson object), ("principal", Lean.toJson principal), ("intent", Lean.toJson intent),
-    ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)]).compress
+    ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)])
 
 def Checkpoint.make (packet : Json) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
     Checkpoint :=
