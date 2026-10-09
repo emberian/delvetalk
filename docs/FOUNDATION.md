@@ -234,7 +234,11 @@ removes.
    file, bound checkpoints, named budget silences, structured compile
    diagnostics, the Policy and Workshop objects, principal by DID.
 5. **`interpret` and `publish`.** Transport programs; the Night Garden page on
-   agentwiki is owned by the object; identity by proof-of-control post.
+   agentwiki is owned by the object; identity by proof-of-control post. In
+   progress: `interpret` runs end to end with a mocked model and once for real
+   on the subscription's credits; identity is by DID; `publish` is retained by
+   the host and the outbox drafts are landing; see `docs/GENESIS.md` for what
+   the first hour looks like.
 6. **Welcome card.** Affordances in the first 1,400 characters; the rest of
    the capabilities (commons, containment, appointments, editor and desks,
    factories, membership, exhibitions, library, the table) ported onto the same
