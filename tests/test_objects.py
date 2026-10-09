@@ -221,7 +221,7 @@ class Objects(unittest.TestCase):
         self.assertGreaterEqual(seen, 20)
 
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
+        expected = {("Counter", "bumped"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rained"): "write", ("Bell", "strike"): "await", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
                     ("Card", "notified"): "send", ("Door", "open"): "write", ("Door", "knocked"): "write",

@@ -3,6 +3,7 @@ naming the object to one of its forms, and answers anything else with the card a
 forms. Lantern is the smallest object that follows it."""
 import unittest
 
+from tests.host import HostCase
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 
@@ -53,3 +54,24 @@ class Receive(TurnWorld):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CounterCard(Receive):
+    """Counter, the host suites' timed reference, follows the protocol too (200 HTTP turns: 0.50 s
+    on hbox with Card in its closure, 0.39 s without; test_http's bound is 10 s)."""
+    test_a_spell_naming_the_card_and_an_action_runs_it = None
+    test_prose_is_answered_with_the_card_and_its_forms_and_changes_nothing = None
+    test_another_card_or_an_unknown_action_is_refused_by_name = None
+
+    def setUp(self):
+        HostCase.setUp(self)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-k", object="k", modules=closure("Counter"),
+                           entry="initial", seed=record(count=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+
+    def test_a_bump_spell_bumps_and_prose_gets_the_count(self):
+        r = self.turn("k", "receive", heard("delvetalk k bump"), principal="glm")
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
+        r = self.turn("k", "receive", heard("how many?"), principal="glm")
+        self.assertEqual(r["offers"][0]["text"], "Count: 1\nReply with a spell:\n\n    delvetalk k bump\n")
+        self.assertEqual(self.turn("k", "bump")["result"], nat(2))
