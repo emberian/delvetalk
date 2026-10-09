@@ -7,7 +7,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_turn_world import BINARY, closure, counter_modules, nat, record
+from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
 from transport.http import Front, Heaps, Host
@@ -259,7 +259,7 @@ class HttpFront(unittest.TestCase):
 
     def test_html_card_and_spell_form(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2), policy=record(world=label(''), object=label('')))})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)
@@ -301,6 +301,29 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.front.hits.get('ip:9.9.9.9') and len(self.front.hits['ip:9.9.9.9']), 1)
         self.now[0] += 61
         self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
+
+    def test_page_uses_world_card_without_journaling_and_history_is_newest_first(self):
+        for i in range(25):
+            self.host.send({'op': 'world-turn', 'principal': DID, 'object': 'c1', 'method': 'bump', 'argument': record(), 'identity': f'h{i}'})
+        real, seen = self.host.send, []
+
+        def send(req):
+            seen.append(req['op'])
+            if req['op'] == 'world-card':
+                return {'status': 'card', 'text': 'CARD for ' + req['principal']}
+            return real(req)
+        self.host.send = send
+        tok = self.login()
+        cookie = 'dt_credential=' + tok
+        before = real({'op': 'world-status'})['height']
+        s, _, page = self.request('GET', '/o/c1', headers={'Cookie': cookie})
+        self.assertEqual(s, 200)
+        self.assertIn(('CARD for ' + DID).encode(), page)
+        self.assertEqual(real({'op': 'world-status'})['height'], before)  # no describe/present turn journaled
+        heights = [int(x) for x in __import__('re').findall(rb'<tr><td>(\d+)</td>', page)]
+        self.assertEqual(len(heights), 20)
+        self.assertEqual(heights, sorted(heights, reverse=True))
+        self.assertEqual(heights[0], before)
 
 
 if __name__ == '__main__':

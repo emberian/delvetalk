@@ -10,8 +10,11 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
@@ -20,6 +23,7 @@ from transport.observe import Observer
 
 DELIVER_ROUNDS = 8
 KINDS = ('spell', 'summon')
+CLOCK = 'transport'  # the clock principal named at world-open
 
 
 def uri_hash(uri):
@@ -65,7 +69,32 @@ def pending_observations(state):
     db = sqlite3.connect(Path(state) / 'observe.sqlite')
     rows = [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
     db.close()
-    return sorted((o for o in rows if o['kind'] in KINDS), key=lambda o: (o['createdAt'], o['uri']))
+    return sorted((o for o in rows if o['kind'] in KINDS or o['replyTo']), key=lambda o: (o['createdAt'], o['uri']))
+
+
+def skipped(state):
+    path = Path(state) / 'skipped.txt'
+    return set(path.read_text().split()) if path.exists() else set()
+
+
+def route(host, obs):
+    """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
+    card word applies only to posts with no journaled parent. TODO(Directory): drop the summon special
+    case once Directory is reachable by replying to the journaled welcome post."""
+    if obs['replyTo']:
+        got = host.send({'op': 'world-addressee', 'parent': obs['replyTo']})
+        if got.get('object'):
+            return got['object'], got.get('slot')
+    if obs['kind'] == 'spell':
+        return obs['spell']['card'], None
+    if obs['kind'] == 'summon':
+        return 'directory', None
+    return None
+
+
+def tick(host):
+    """Time enters the journal here and nowhere else: unix minutes, as the clock principal."""
+    host.send({'op': 'world-advance', 'height': int(time.time() // 60)})
 
 
 def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
@@ -74,18 +103,25 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
     outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     if poll:
         poll(Observer(state, poll.client))
-    done, failed = [], []
+    tick(host)
+    done, failed, skip = [], [], skipped(state)
     for obs in pending_observations(state):
-        if draft_exists(outbox, obs['uri']):
+        if obs['uri'] in skip or draft_exists(outbox, obs['uri']):
             continue
+        target = route(host, obs)
+        if target is None:
+            with open(state / 'skipped.txt', 'a') as f:
+                f.write(obs['uri'] + '\n')
+            continue
+        obj, slot = target
         handle, did = obs['author']['handle'], obs['author']['did']
-        obj = 'directory' if obs['kind'] == 'summon' else obs['spell']['card']
+        fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},
+                  {'name': 'who', 'value': {'tag': 'label', 'value': did}},
+                  {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
+        if slot is not None:
+            fields.append({'name': 'slot', 'value': {'tag': 'label', 'value': slot if isinstance(slot, str) else json.dumps(slot)}})
         reply = host.send({'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
-                           'argument': {'tag': 'record', 'fields': [
-                               {'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},
-                               {'name': 'who', 'value': {'tag': 'label', 'value': did}},
-                               {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]},
-                           'identity': obs['uri']})
+                           'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']})
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
@@ -98,6 +134,29 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
             break
         host.send({'op': 'world-deliver', 'limit': 16})
     return {'turns': done, 'failed': failed}
+
+
+def daemon(state, name, interval, step, stop=None, sleep=None):
+    """Loop step() every `interval` seconds with a pid file; SIGTERM/SIGINT finish the current step and exit."""
+    stop = stop or threading.Event()
+    pidfile = Path(state) / f'{name}.pid'
+    pidfile.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if pidfile.exists():
+        try:
+            os.kill(int(pidfile.read_text()), 0)
+            raise SystemExit(f'{name} already running (pid {pidfile.read_text().strip()})')
+        except (ProcessLookupError, ValueError):
+            pass
+    pidfile.write_text(str(os.getpid()))
+    if threading.current_thread() is threading.main_thread():
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(sig, lambda *_: stop.set())
+    try:
+        while not stop.is_set():
+            step()
+            stop.wait(interval)
+    finally:
+        pidfile.unlink(missing_ok=True)
 
 
 def unposted(state):
@@ -121,8 +180,9 @@ def main(argv=None, out=None):
     r = sub.add_parser('run')
     r.add_argument('--state', required=True)
     r.add_argument('--journal', required=True)
-    r.add_argument('--once', action='store_true', required=True)
-    r.add_argument('--poll', action='store_true', help='read-only: observe the town before bridging')
+    r.add_argument('--once', action='store_true')
+    r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
+    r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
     r.add_argument('--mock', metavar='DIR')
     o = sub.add_parser('outbox')
     o.add_argument('--state', required=True)
@@ -135,14 +195,18 @@ def main(argv=None, out=None):
     elif a.cmd == 'mark-posted':
         mark_posted(a.file)
     else:
-        host = Host(a.journal)
+        if bool(a.once) == bool(a.poll):
+            ap.error('give exactly one of --once and --poll SECONDS')
+        host = Host(a.journal, clock=CLOCK)
         try:
             poll = None
-            if a.poll or a.mock:
-                client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
+            if a.observe or a.poll or a.mock:
                 poll = lambda ob: ob.poll()
-                poll.client = client
-            out.write(canonical(run(a.state, host, poll)) + '\n')
+                poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
+            if a.once:
+                out.write(canonical(run(a.state, host, poll)) + '\n')
+            else:
+                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll)) + '\n') and out.flush())
         finally:
             host.close()
     return 0
