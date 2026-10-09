@@ -295,6 +295,38 @@ def tokenRe : Re := alts [ident, seqs [many1 (.char asciiDigit), opt (chr 'n')],
   str "::", str "->", str "==", str "!=", str "<=", str ">=", str "&&", str "||",
   .char (fun c => "{}:=().,+*/%<>-".toList.contains c)]
 
+/-- The length of the `tokenRe` match at the start of `s`, scanned directly: the alternatives
+in their order (JavaScript takes the first that matches, not the longest), each of which
+matches at most one way. A quoted token runs to its first unescaped `"`; a backslash before a
+line terminator or the end, or no closing quote, is no match (no shorter split of the
+string's units ends at a quote). -/
+def tokenLength (s : List Char) : Option Nat :=
+  match s with
+  | [] => none
+  | c :: rest =>
+    if identStart c then some (1 + (rest.takeWhile wordChar).length)
+    else if asciiDigit c then
+      let digits := 1 + (rest.takeWhile asciiDigit).length
+      some (if (s.drop digits).head? == some 'n' then digits + 1 else digits)
+    else if c == '"' then
+      let rec quoted : List Char → Nat → Option Nat
+        | [], _ => none
+        | '"' :: _, n => some (n + 1)
+        | '\\' :: d :: more, n => if lineTerminator d then none else quoted more (n + 2)
+        | '\\' :: [], _ => none
+        | _ :: more, n => quoted more (n + 1)
+      quoted rest 1
+    else
+      let pair := match rest with
+        | d :: _ => (c == ':' && d == ':') || (c == '-' && d == '>') || (c == '=' && d == '=') ||
+            (c == '!' && d == '=') || (c == '<' && d == '=') || (c == '>' && d == '=') ||
+            (c == '&' && d == '&') || (c == '|' && d == '|')
+        | [] => false
+      if pair then some 2
+      else if c == '{' || c == '}' || c == ':' || c == '=' || c == '(' || c == ')' || c == '.' || c == ',' ||
+          c == '+' || c == '*' || c == '/' || c == '%' || c == '<' || c == '>' || c == '-' then some 1
+      else none
+
 def tokenize (text : List Char) : Except String (Array Token) := do
   let mut tokens : Array Token := #[]
   let mut rest := text
@@ -307,7 +339,8 @@ def tokenize (text : List Char) : Except String (Array Token) := do
       if jsSpace c then
         rest := tail; at_ := at_ + 1
       else
-        let some (stop, _) ← anchoredAt tokenRe rest (total - at_)
+        if total - at_ > maxLine then throw "Error: source line capacity"
+        let some stop := tokenLength rest
           | throw ("Error: unsupported expression at column " ++ toString (utf16Length (text.take at_)))
         tokens := tokens.push ⟨rest.take stop, at_, at_ + stop⟩
         rest := rest.drop stop; at_ := at_ + stop
