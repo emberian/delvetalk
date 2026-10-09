@@ -182,7 +182,7 @@ class Bridging(BridgeCase):
 class Stub:
     """A host that speaks the new ops from canned data and records everything it is sent."""
     def __init__(self, addressee=None):
-        self.ops, self.addressee, self.suspending, self.offers = [], addressee or {}, set(), {}
+        self.ops, self.addressee, self.suspending, self.offers, self.silent = [], addressee or {}, set(), {}, set()
 
     def send(self, req):
         self.ops.append(req)
@@ -195,7 +195,7 @@ class Stub:
             return {'status': 'suspended', 'receipt': {'hash': 'h', 'height': 5, 'outcome': {'tag': 'suspended'}}}
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
-                    'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]}
+                    **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -272,6 +272,21 @@ class Suspended(BridgeCase):
         self.assertEqual((d['text'], d['replyTo'], d['principal'], d['posted']), ('Planted.', p['uri'], DID, False))
         self.assertNotIn('offered', bridge.run(self.state, stub))
         self.assertEqual(len(self.drafts()), 1)
+
+
+class Silence(BridgeCase):
+    def test_a_turn_that_offers_nothing_has_no_draft_in_the_outbox_unless_asked(self):
+        stub = Stub()
+        stub.silent = {'garden-1'}
+        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
+        self.assertEqual(len(bridge.run(self.state, stub)['turns']), 1)
+        self.assertEqual(bridge.run(self.state, stub)['turns'], [])  # journaled once, not re-run
+        out = io.StringIO()
+        bridge.main(['outbox', '--state', str(self.state)], out)
+        self.assertEqual(out.getvalue(), '')
+        out = io.StringIO()
+        bridge.main(['outbox', '--state', str(self.state), '--all'], out)
+        self.assertIn('=== reply to:', out.getvalue())
 
 
 class Daemon(unittest.TestCase):
