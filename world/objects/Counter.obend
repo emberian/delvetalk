@@ -7,7 +7,9 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
 type Plan = Plans.Plan<Edits, {}>
-type Response = Plans.Response<State, {}>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case written(_): state.count + 1n

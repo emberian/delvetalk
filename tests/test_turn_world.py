@@ -1,7 +1,6 @@
 """world-turn: activities run against the durable store and commit once.
 
-Counter is the real world/objects/Counter.obend (plus the `initial` entry that
-names its state type); the other objects are fixtures that each isolate one rule.
+Counter and Bell are the real world/objects files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """
 import json
 import os
@@ -13,6 +12,8 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BINARY = os.path.join(ROOT, ".lake", "build", "bin", "delvetalk-obend")
+if not os.path.exists(BINARY):  # lane worktrees do not build; use the read-only foundation checker
+    BINARY = os.environ.get("DELVETALK_OBEND", "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend")
 IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 
 
@@ -47,13 +48,8 @@ def closure(name, seen=None, out=None, override=None):
     return out
 
 
-COUNTER_INITIAL = "\ndef initial() -> State:\n  {count: 0n}\n"
-
-
 def counter_modules():
-    with open(ON_DISK["Counter"]) as handle:
-        source = handle.read() + COUNTER_INITIAL
-    return closure("Counter", override={"Counter": source})
+    return closure("Counter")
 
 
 FIXTURE_HEAD = """edition ObjectiveBend 1
@@ -407,6 +403,34 @@ class ListEdits(TurnWorld):
         r = self.turn("n", "fix", record(index=nat(5), text=label("x")))
         self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
         self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["version"], 1)
+
+
+class BellList(TurnWorld):
+    def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
+        modules = closure("Bell")
+        empty = {"tag": "record", "fields": []}
+        seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
+                      seed=label("s"), rains={"tag": "variant", "label": "nil", "payload": empty},
+                      rung={"tag": "boolean", "value": False})
+        r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
+                           modules=modules, entry="initial", seed=seed)
+        self.assertEqual(r["status"], "created", r)
+        for who, text in (("kimik3", "one"), ("gemini", "two")):
+            r = self.turn("bell", "rain", record(author=label(who), text=label(text)))
+            self.assertEqual(r["status"], "admitted", r)
+        before = self.host.send(op="world-view", principal="e", object="bell")["state"]
+
+        def authors(state):
+            rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
+            out = []
+            while rains["label"] == "cons":
+                f = {x["name"]: x["value"] for x in rains["payload"]["fields"]}
+                out.append({x["name"]: x["value"]["value"] for x in f["head"]["fields"]}["author"])
+                rains = f["tail"]
+            return out
+        self.assertEqual(authors(before), ["kimik3", "gemini"])
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)
 
 
 class ReadPolicy(TurnWorld):

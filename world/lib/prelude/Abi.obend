@@ -6,6 +6,7 @@ record Origin:
   program: String
   immediatelyPrevious: Bool
 record Context:
+  world: String
   object: String
   principal: String
   inputOrigin: Origin

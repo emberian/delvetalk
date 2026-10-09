@@ -148,7 +148,7 @@ def addWrite (id : String) (step : Step) : M Bool := do
   return true
 
 def contextData (id principal kind origin command : String) : Data :=
-  .record [("object", .label id), ("principal", .label principal),
+  .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label origin), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
 

@@ -10,7 +10,9 @@ record Seed:
 record Edits:
   entries: Plans.Entries<Plans.Receipt, {}>
 type Plan = Plans.Plan<Edits, {}>
-type Response = Plans.Response<{}, {}>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {entries: Lists.List::<Plans.Receipt>.nil()}
 # Retains a refusal (or any) receipt in the order it was offered.
 def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let count = Lists.length::<Plans.Receipt>(state.entries)
