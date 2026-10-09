@@ -100,8 +100,8 @@ class Bridging(BridgeCase):
         for d in drafts:
             self.assertFalse(d['posted'])
             self.assertFalse(d['principalVerified'])
-            self.assertEqual(d['principal'], 'talkie.delve.town')
-            self.assertEqual(d['text'], 'hello talkie.delve.town')
+            self.assertEqual((d['principal'], d['replyHandle']), (DID, 'talkie.delve.town'))
+            self.assertEqual(d['text'], 'hello ' + DID)
         self.assertEqual(self.run_bridge(), {'turns': [], 'failed': []})
         self.assertEqual(len(self.drafts()), 3)
 
@@ -113,7 +113,7 @@ class Bridging(BridgeCase):
                 self.run_bridge()
         self.assertEqual(self.drafts(), [])
         uri = f'at://{DID}/town.delve.feed.post/r000001'
-        before = self.host.send({'op': 'world-receipt', 'principal': 'talkie.delve.town', 'identity': uri})['receipt']
+        before = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': uri})['receipt']
         self.run_bridge()
         (d,) = self.drafts()
         self.assertEqual(d['receipt']['hash'], before['hash'])
@@ -150,7 +150,7 @@ class Bridging(BridgeCase):
         out = io.StringIO()
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertTrue(out.getvalue().startswith('=== reply to: at://'))
-        self.assertIn('hello talkie.delve.town', out.getvalue())
+        self.assertIn('hello ' + DID, out.getvalue())
         bridge.main(['mark-posted', str(next((self.state / 'outbox').glob('*.json')))])
         out = io.StringIO()
         bridge.main(['outbox', '--state', str(self.state)], out)

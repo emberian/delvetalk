@@ -62,6 +62,14 @@ class Host:
         self.proc.stdout.close()
 
 
+class Hosts(list):
+    """Private processes of one test; remove() of a process already gone is a no-op."""
+
+    def remove(self, host):
+        if host in self:
+            super().remove(host)
+
+
 class HostCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -75,7 +83,7 @@ class HostCase(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
         self.path = os.path.join(self.dir.name, "world.journal")
-        self.hosts = []
+        self.hosts = Hosts()
         self.addCleanup(self._close_private)
         self.host = self.shared
         self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
@@ -95,7 +103,7 @@ class HostCase(unittest.TestCase):
         if self.host in self.hosts:
             self.host.close()
             self.hosts.remove(self.host)
-        else:
+        elif self.host.alive():
             self.host.send(op="world-open", path=os.path.join(self.dir.name, "released.journal"))
 
     def reopen(self):

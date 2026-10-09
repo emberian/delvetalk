@@ -252,17 +252,17 @@ class Handler(BaseHTTPRequestHandler):
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked'}), headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
         if kind == 'repl':
-            return self.run_repl()
+            return self.run_repl(who['did'])
         if heap:
             host = self.server.heaps.get(who['did'])
         else:
             host = self.server.host
-        handle = who['handle']
+        principal = who['did']  # the principal the host sees; the handle is display only
         send = lambda req: self.answer(host.send(req))
         if kind == 'view':
-            return send({'op': 'world-view', 'principal': handle, 'object': rest[1]})
+            return send({'op': 'world-view', 'principal': principal, 'object': rest[1]})
         if kind == 'receipt':
-            return send({'op': 'world-receipt', 'principal': handle, 'identity': rest[1]})
+            return send({'op': 'world-receipt', 'principal': principal, 'identity': rest[1]})
         if kind == 'pending':
             return send({'op': 'world-pending'})
         data = self.body()
@@ -272,8 +272,8 @@ class Handler(BaseHTTPRequestHandler):
             return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT})
         if kind == 'create':
             made = {k: data[k] for k in CREATE_KEYS if k in data}
-            return send({'op': 'world-create', 'principal': handle, 'identity': data.get('intent'), **made})
-        send({'op': 'world-turn', 'principal': handle, 'object': rest[1], 'method': rest[2],
+            return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
+        send({'op': 'world-turn', 'principal': principal, 'object': rest[1], 'method': rest[2],
               'argument': data.get('argument', {'tag': 'record', 'fields': []}), 'identity': data.get('intent')})
 
     def identify(self, which):
@@ -293,11 +293,11 @@ class Handler(BaseHTTPRequestHandler):
     def me(self, credential, who):
         heap = self.server.heaps.get(who['did'], create=False)
         count = heap.send({'op': 'world-status'}).get('objects') if heap else 0
-        self.reply(200, canonical({'principal': who['handle'], 'did': who['did'], 'verified': who['verified'],
+        self.reply(200, canonical({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'],
                                    'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))},
                                    'heapObjects': count}))
 
-    def run_repl(self):
+    def run_repl(self, principal):
         data = self.body()
         if data is None:
             return
@@ -311,7 +311,9 @@ class Handler(BaseHTTPRequestHandler):
         compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)
-        extra = {'limits': data['limits']} if 'limits' in data else {}
+        extra = {k: data[k] for k in ('limits', 'object', 'intent', 'roots') if k in data}
+        if data.get('turn') or 'checkpoint' in data:
+            extra['principal'] = principal  # a checkpoint is bound to the credential's principal, never the body's
         if 'checkpoint' in data:
             req = {'op': 'turn-resume', 'checkpoint': data['checkpoint'], 'response': data.get('response'), **extra}
         else:
@@ -331,6 +333,7 @@ class Handler(BaseHTTPRequestHandler):
         credential = self.cookie()
         who = self.principal(credential)
         handle = who['handle'] if who else None
+        principal = who['did'] if who else None
         result = None
         if spell:
             data = self.body()
@@ -340,25 +343,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.html(401, pages.page('log in', None, '<h1>Log in first</h1><p><a href="/">home</a></p>'))
             if self.server.limited(credential):
                 return self.html(429, pages.page('slow down', handle, '<h1>Too many requests</h1>'))
-            stamp = f'web:{handle}:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
+            stamp = f'web:{principal}:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
             field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
-            result = self.server.host.send({'op': 'world-turn', 'principal': handle, 'object': name, 'method': 'receive',
-                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('who', handle), field('post', stamp)]},
+            result = self.server.host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
+                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('who', principal), field('post', stamp)]},
                                             'identity': stamp})
         host = self.server.host
-        view = host.send({'op': 'world-view', 'principal': handle or 'anonymous', 'object': name})
+        view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, handle, name, view['version']) if handle else None
+        card = self.card(host, principal, name, view['version']) if principal else None
         self.html(200, pages.obj(name, handle, view, card, self.history(host, name), result))
 
-    def card(self, host, handle, name, version):
+    def card(self, host, principal, name, version):
         """The object's own card: an offer from present/describe, cached because a retried identity returns no offers."""
-        key = (handle, name, version)
+        key = (principal, name, version)
         if key not in self.server.cards:
             text = None
             for method in ('present', 'describe'):
-                r = host.send({'op': 'world-turn', 'principal': handle, 'object': name, 'method': method,
+                r = host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': method,
                                'argument': {'tag': 'record', 'fields': []},
                                'identity': f'page:{name}:{method}:{version}:{self.server.nonce}'})
                 if r.get('offers'):
