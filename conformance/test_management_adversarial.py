@@ -153,14 +153,16 @@ class ManagementAdversarial(unittest.TestCase):
         def start(_arguments, **kwargs):
             process = popen([sys.executable, '-c', code], **kwargs)
             processes.append(process)
+            wait = process.wait
             def interrupt(*args, **kwargs):
+                process.wait = wait  # Cleanup must use the real reaping operation.
                 deadline = time.monotonic() + 3
                 while not marker.exists() and time.monotonic() < deadline:
                     time.sleep(.01)
                 if not marker.exists():
                     raise RuntimeError('test child did not start')
                 raise KeyboardInterrupt()
-            process.communicate = interrupt
+            process.wait = interrupt
             return process
         try:
             with patch.object(desk.subprocess, 'Popen', start):
@@ -172,11 +174,12 @@ class ManagementAdversarial(unittest.TestCase):
             self.assertTrue(not status or status.startswith('Z'), 'compiler descendant survived cancellation')
         finally:
             for process in processes:
-                try:
-                    os.killpg(process.pid, 9)
-                except ProcessLookupError:
-                    pass
-                process.wait()
+                if process.poll() is None:
+                    try:
+                        os.killpg(process.pid, 9)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
 
 
 if __name__ == '__main__':

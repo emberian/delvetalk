@@ -83,7 +83,7 @@ class ResidentConsumerRoutingTest(unittest.TestCase):
         book = Mock()
         book.card.return_value = {'view': {'object': 'index'}}
         book.metadata.return_value = {'runtime': self.runtime}
-        book.capture.side_effect = lambda view, alias: {'alias': alias, 'view': view}
+        book.capture.side_effect = lambda view, alias, *, roots: {'alias': alias, 'view': view, 'roots': roots}
         descriptor = {'key': 'lamp', 'object': 'lamp', 'panel': 'main', 'label': 'The lantern'}
         with patch.object(operator, '_configuration', return_value=({'objects': ['lamp']}, book)), patch.object(
                 town.town_cards.projection, 'child', return_value=descriptor), patch.object(
@@ -95,6 +95,7 @@ class ResidentConsumerRoutingTest(unittest.TestCase):
         self.assertEqual(captured['status'], 'prepared')
         self.assertEqual(captured['card']['view']['root'], self.root)
         self.assertEqual(captured['card']['alias'], 'child')
+        self.assertEqual(captured['card']['roots']['lamp'], self.root)
         self.assertFalse(self.database.exists())
 
 

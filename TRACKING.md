@@ -6,8 +6,9 @@ exact admission, durable receipts and uncertain-reply recovery remain contracts.
 
 ## Implemented locally
 
-These paths have focused receiving checks. **The full joined suite is not yet
-complete; regression against a stable source snapshot is running.** Local results
+These paths have focused receiving checks. A frozen earlier source snapshot
+completed 898 Python tests with one platform skip, plus native/proof/JavaScript
+checks. This is not qualification of the current replacement wave. Local results
 establish neither deployment nor a general proof.
 
 - [Resident storage](profiles/RESIDENT-STORE.md), daemon and consumers use native
@@ -37,18 +38,30 @@ reference semantics, removal of competing expression interpreters, source exampl
 and scratch editing are design/build work, not completed capabilities. Existing
 workflow helpers must be replaced at their consumers. See also
 [composition](docs/design/COMPOSITION.md) and [encounters](docs/design/ENCOUNTERS.md).
-The lane table below records the preceding integration wave; it is not the full
-backlog or evidence that the replacement work has been assigned.
+The previous integration wave is checkpointed at `f2fb492`. Current ownership:
 
 | Work | Owner |
 | --- | --- |
-| Integrate checked named prototypes and `let`/`extend` frontend repairs | Root |
-| Generic source-owned composite offers and Editor workflows through Town/portal | `backlog_archaeology`, `portal_authored_affordance`, `portal_bridge` |
-| Atomic law transactions and source-contract authoring | `card_affordance_pass`, `world_design_critique` |
-| Four-slot appointment integration and authored booking/inspection menus | `governed_allocation` |
-| Terminal decline, multiple inbound consents and semantic form limits in the library | `inhabit_builder` |
-| Measured source-heavy custody costs and proofs of the actual implementation | `authored_action_examples` |
-| Joined regression, integration commits, fresh preview and captured resident cards | Root |
+| Sealed shared source prelude; remove repeated ABI declarations at consumers | `bend_language` |
+| Hosted text primitives with explicit semantics, budget and source provenance | `bend_execution` |
+| Source preparation and Editor cutover; remove Python recipe interpretation | `backlog_archaeology` |
+| Reusable Bend scene runtime; remove Python control-flow generation | `spween_lowering` |
+| Recursive action-list view ABI with heterogeneous typed inputs | `portal_authored_affordance` |
+| Bend tickets/exhibitions and consumer cutover; remove behavioral generators | `world_design_critique` |
+| Collection-based consent/mailboxes with explicit capacities and epochs | `inhabit_builder` |
+| Measured 8–200 element source collection workloads; isolate actual limits | `authored_action_examples` |
+| Source pins, integration, repository cleanup and scoped checkpoints | Root |
+
+Two native compiler seats are allocated to text and preparation. Builds use
+independent writable package snapshots or explicit serial handoff; shared binary
+replacement waits for an announced freeze. Pure source lanes use stable binaries.
+
+Further concrete work remains: collection-based appointments and physical tick
+driver; bounded message descendants and governed terminal settlement; source
+allocation/contract workshop and commit/reveal ports; collapse remaining JSON
+expression/profile ladders; room-local intentions/reference clarification; scratch
+editing; physical repository moves. These are not silently assigned or completed
+by the current lanes. Shared source APIs should make these subsequent cuts smaller.
 
 Opening requires a coherent fresh seed, installed game, named seats and agreed
 private move handoff. Capture actual cards before preparing publication bindings.
