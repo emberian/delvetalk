@@ -60,7 +60,7 @@ class Laws(LawWorld):
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
 
     def test_only_the_directorys_owner_adds_or_removes_a_door(self):
-        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=nil()))
+        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=nil(), greeted=nil()))
         self.assertEqual(self.turn("dir", "add", record(door=door("garden")), principal=OWNER)["status"], "admitted")
         self.assertEqual(self.clause(self.turn("dir", "add", record(door=door("bazaar")), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.clause(self.turn("dir", "remove", record(label=label("garden")), principal=OTHER)), "lawRefused/owner")
@@ -70,7 +70,7 @@ class Laws(LawWorld):
 
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label(OWNER), doors=nil()))
+                           entry="initial", seed=record(owner=label(OWNER), doors=nil(), greeted=nil()))
         self.assertEqual(r, {"status": "error", "message": "law has no amendment clause"})
 
     def test_anyone_submits_and_only_the_owner_admits(self):
@@ -141,3 +141,23 @@ class Predicates(LawWorld):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoStrangerAmends(LawWorld):
+    """A law that admits anyone's write leaving the guarded fields unchanged must still admit
+    only the owner's reprogram and amendment (kind 1 and 2 change no field)."""
+
+    def test_garden_thing_and_directory_refuse_a_strangers_amendment(self):
+        from tests.test_chain import garden_state
+        self.create("garden", closure("Garden"), garden_state(owner=OWNER))
+        self.create("stone", closure("Thing"), record(owner=label(OWNER), name=label("stone"), description=label(""),
+                                                      holder=reference(""), location=reference("")))
+        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=nil(), greeted=nil()))
+        for obj in ("garden", "stone", "dir"):
+            version = self.version(obj)
+            r = self.host.send(op="world-amend", principal=OTHER, identity="am-" + obj, object=obj, version=version,
+                               law='law open: request.kind == 0 or request.subject == "%s"' % OTHER)
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), (obj, r))
+            mine = self.host.send(op="world-amend", principal=OWNER, identity="own-" + obj, object=obj, version=version,
+                                  law='law owner: request.subject == new.owner')
+            self.assertEqual(mine["status"], "admitted", (obj, mine))

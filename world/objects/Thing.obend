@@ -39,7 +39,7 @@ def initial() -> State:
 def keep() -> Edits:
   {name: Plans.Edit::<String, {}>.keep({}), description: Plans.Edit::<String, {}>.keep({}), holder: Plans.Edit::<Plans.Reference, {}>.keep({}), location: Plans.Edit::<Plans.Reference, {}>.keep({})}
 # Anyone moves a thing (its own code checks who holds it); only its owner renames it.
-law owner: request.subject == new.owner or (unchanged(owner) and unchanged(name) and unchanged(description))
+law owner: request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description))
 def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Reference) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holder: Plans.Edit::<Plans.Reference, {}>.set({value: holder}), location: Plans.Edit::<Plans.Reference, {}>.set({value: location})})})):
     case written(_): Place.Done.done({})
