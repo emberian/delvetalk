@@ -33,37 +33,14 @@ a source runtime. A Python filename is not evidence of a behavioral generator.
 A generator that authors commands, guards or transitions is a competing source
 owner and must be replaced with its consumers.
 
-## Component moves
+## Keep one owner
 
-The intended layout separates `language/`, `host/native/`, `host/platform/`,
-`world/lib/`, `world/objects/`, `world/scenes/`, `world/games/`, `surfaces/`,
-`tests/`, `docs/` and `tools/`. These directories are a destination, not the current
-filesystem. Move each component with its imports, build registrations, runtime
-closure paths, tests and links. Keep one source owner rather than an old-directory
-facade. Source pins continue to bind exact bytes.
+Keep behavior in Bend, admission in the native host, and physical custody in the
+adapters. Component moves must update imports, build registration, runtime closure
+paths, tests and links together. Exact source pins continue to bind actual bytes.
 
-Preserve current source dependencies, attribution, licenses and useful independent
-oracles. Retire superseded behavior only after its consumers move. Source and
-retained compiled artifacts have different custody roles; their coexistence is
-not automatically duplication. Preserve tests for desired behavior, and replace
-assertions whose only purpose is fidelity to an obsolete representation.
-
-## Remove finished experiments
-
-Frozen reconstruction studies, result bundles, superseded deployment reports and
-duplicated status pages belong in Git history. The editable Bend fork retains
-upstream attribution; runtime identities bind its actual local sources. The
-[compact descriptions](../../capsules/README.md) retain one version of each
-language/system sketch as reading material. Size ladders, hash manifests and the
-capsule gate have been removed.
-
-The [source constellation instrument](../../protocols/constellation-commons/README.md)
-is an ordinary collaborative Bend object: twelve attributed lights, own-author
-revision and a shared offered encounter. Its dedicated receiving test replaces
-the obsolete fixed two-slot preview and empty migration twin.
-
-Keep dated qualification bundles outside the public tree unless they are reusable
-fixtures or proof dependencies. [Posting drafts](../previews/README.md) serve a
-current authoring purpose; they do not establish running-world availability.
-Track cleanup in [BACKLOG](../../BACKLOG.md), alongside implementation, rather
-than maintaining a second queue here.
+Preserve licenses, upstream attribution and independent core evaluators. The
+[compact descriptions](../../capsules/README.md) are reading material. Keep dated
+qualification bundles outside the public tree unless they are reusable fixtures or
+proof dependencies. [Posting drafts](../previews/README.md) serve current authoring;
+they do not establish deployment. [BACKLOG](../../BACKLOG.md) owns remaining work.

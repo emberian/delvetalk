@@ -3,7 +3,8 @@
 DelveTalk has its own Lean object host. Its Bend edition forks Mini's frontend,
 checker and demand machine; it does not inherit Mini's object kernel or its
 activity, delegation and custody guarantees. Host convergence is not required.
-Python supplies translation, transport, presentation and durable storage. The
+Physical adapters supply transport, presentation and durable storage. Bend owns
+behavior and source composition; native parsing owns source interpretation. The
 independent C/Python/JS core evaluators cross-check language behavior; they do not
 admit world changes.
 
@@ -12,8 +13,8 @@ admit world changes.
 [Source](../profiles/TYPED-SOURCE-OBJECTS.md) defines state, methods and views.
 [Current law](../profiles/AUTHORITY.md) governs invocation, programming and law
 revision. Grants, receiving predicates, law-held invariants and checked source
-contracts have distinct jobs; their versioned profiles specify which candidates
-and operations they check. Form schemas and descriptive metadata cannot substitute
+contracts have distinct jobs within the source host. Their contracts specify
+which candidates and operations they check. Form schemas and descriptive metadata cannot substitute
 for receiving checks. Compilation alone grants no installation right.
 
 A new action supplies complete expected roots. Exact `(principal,intent)` retries
@@ -42,8 +43,7 @@ Views expose actions from retained observations. Buttons, literal spells and
 interpreted prose prepare requests through the same receiving boundary. Preserve
 source, selected syntax, interpretation and roots; natural language cannot choose
 an adapter, silently refresh a card or grant a role. [Work-ticket acceptance](../protocols/work-ticket/README.md)
-records review, not an external effect. Version semantics, syntax and presentation
-independently; unknown required meaning stops automation while permitting inspection.
+records review, not an external effect. Unknown required meaning refuses execution while permitting inspection.
 
 ## Persistence and scope
 
@@ -59,3 +59,13 @@ trusted runtime. Hashes identify bytes; they authenticate no author. Typecheckin
 finite conformance, source-relation proofs and whole-host correctness are separate
 claims. [Source scope](../spec/README.md) identifies the actual proof boundary;
 [TRACKING](../TRACKING.md) identifies unfinished integration and opening work.
+
+The host's [admission boundary proofs](../profiles/AdmissionProofs.lean) quantify
+over the actual selected callback. A failed staged admission returns the original
+world before the handler appends its retained refusal; successful admission commits
+exactly its returned pair. The standalone and batch handlers call that proved
+helper through the compiled source callback. The exact-preimage lemma concerns the
+full receiving `expected` field comparison. These do not prove authorization,
+source-policy behavior, or physical durability. [Receipt index proofs](../profiles/ResidentStoreProofs.lean)
+separately connect chronological first-match history to the native index and checked
+checkpoint reconstruction. Neither family assumes the default refusing source runtime.

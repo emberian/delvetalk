@@ -83,74 +83,23 @@ card offers a choice; an offer is not a promise that every caller can execute it
 
 ## Source is another offered field
 
-The initial forge's `submit` action takes `target`, `source`, and `scenarios`.
-Here is a complete literal reply using the checked
-[paper-door source](../syntaxes/examples/paper-door.obend). The illustrative desk
-name must be replaced with an actual published desk card, and the target with the
-maker's actual door identifier:
+Inspect a writing card's installed definition, then use its **Revise** form:
+`module` selects one captured module; `source` replaces its text; `scenarios`
+supplies its examples. The card carries the remaining dependencies and captured
+state into the proposal. Its Candidate offers **Check source and examples**, then
+**Release** after a successful report. These forms are Bend source and can
+themselves be revised under current law.
 
-```text
-delvetalk desk-1 submit
-target: paper-door
-source: <<BEND
-edition ObjectiveBend 1
-record Action:
-  text: String
-  command: String
-  input: {}
-record Actions:
-  knock: Action
-record View:
-  title: String
-  prose: String
-  actions: Actions
-record Door:
-  password: String
-  opening: String
-  allowed: String -> Bool
-  knock: String -> String
-  inscription: String
-extension Paper(self: Door, super: {}) -> Door:
-  {password: "please", opening: "The paper door swings open onto a tiny lantern-lit room.", allowed: fn(word: String) -> Bool: word == self.password, knock: fn(word: String) -> String: self.opening, inscription: "A paper door with a brass knocker. Whisper please."}
-def allowed(word: String) -> Bool:
-  fix(Paper, {}).allowed(word)
-def knock(word: String) -> String:
-  fix(Paper, {}).knock(word)
-def view(state: {}, panel: String) -> View:
-  {title: "The paper door", prose: fix(Paper, {}).inscription, actions: {knock: {text: "Whisper to the door", command: "knock", input: {}}}}
-BEND
-scenarios: <<CASES
-examples DelveTalk 1
-case visitors open the paper door
-law maker visitor
-as visitor
-send knock
-  word: please
-expect result: The paper door swings open onto a tiny lantern-lit room.
-CASES
-```
+For a new definition, use the offered **Submit source and examples** form.
+[Typed objects](../profiles/TYPED-SOURCE-OBJECTS.md) and
+[sealed modules](../profiles/MODULE-AUTHORING.md) describe the source interface.
 
-These are three distinct languages. The outer `delvetalk` reply routes fields.
-Objective Bend defines types, extensions, `self`/`super`, functions and executable
-behavior. `examples DelveTalk 1` describes test principals, sends and expected
-observations; its `law` line configures a fixture, not the installed world's law.
-Examples can also check visible prose/actions or expected refusal. They are tests,
-not proofs or permission grants.
-
-Submission retains exact source and examples. The configured desk selects its
-registered syntax; this initial door desk fixes `objective-bend-spell@1` and empty
-migration state. Stateful desks offer their own fields and explicit migration.
-Compilation and examples produce a retained report. Installation is a separate
-choice on the resulting adoption card:
-
-```text
-delvetalk revision-1 adopt
-```
-
-That card binds the reviewed candidate, target and complete migration. Adoption
-releases the candidate and replaces the target program/state atomically under both
-current laws and readings. A passing report cannot authorize installation.
-See [authoring](../profiles/AUTHORING.md) and [the forge journey](../conformance/test_town_forge_journey.py).
+Compilation and examples produce a retained report. They grant no installation
+right. Adoption binds the reviewed candidate, target, complete migration and exact
+reading, then releases and replaces the target under current law. Recover an
+uncertain submission or adoption using its original attempt before preparing a
+replacement. See [authoring](../profiles/AUTHORING.md) and
+[source desks](../profiles/DESK.md).
 
 ## Scenes and new dialects
 
@@ -166,19 +115,12 @@ spends a token and changes passage; it is source inside a proposal, not a town r
   -> gallery
 ```
 
-| Surface | Status and meaning |
-| --- | --- |
-| Literal card replies and manual interpretation | Current receiving routes described above |
-| Objective Bend spell bindings | Registered `@1` door, `@2` stateful object, and `@3` typed recursive-state interfaces; use the selected desk's contract |
-| Spween `spween-scene-i64@2` | Registered scene lowering; fixed membership and ordered inert call batches, not arbitrary external handler execution |
-| Typed Spween–Bend handlers | `spween-handler-workshop@1` accepts exact scene text and ordered Bend module blocks; [the workshop](../protocols/spween-handler-workshop/README.md) exercises authoring, adoption, mutable membership, revision and restoration |
-| An agent's new dialect | Requires a reviewed, versioned adapter and explicit registration before use |
-
-Agents can invent notation, share examples and propose its lowering. The
-[syntax registry](../syntaxes/README.md) supplies explicit meaning: retained source,
-reviewed adapter, validated output and a new version for changed semantics.
-Unknown syntax refuses; a post cannot select arbitrary host code. Translation
-neither installs a program nor dispatches its effects.
+Scene execution uses authored Bend handlers and the source runtime. Follow
+[the handler workshop](../protocols/spween-handler-workshop/README.md) for its
+actual package interface and [Spween](../scene/README.md) for scene behavior.
+An adapter must preserve exact source and explicit meaning; translation does not
+install a program or grant authority. Current source and consumer changes require
+qualification against the matching native host before deployment.
 
 [Exact card/parser contract](../profiles/TOWN.md) ·
 [Typed source objects](../profiles/TYPED-SOURCE-OBJECTS.md) ·

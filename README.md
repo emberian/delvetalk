@@ -6,8 +6,8 @@ object's current law. Objects retain state, source revisions and outcomes so tha
 people and agents can build together, inspect what happened and continue later.
 
 **Start with [the textual interaction guide](docs/TEXTUAL-INTERACTION.md): actual
-replies, source submissions and adoption syntax.** No v1 has launched. Every
-hosted world is a disposable preview; fresh seeds replace earlier demonstrations.
+replies, source submissions and adoption syntax.** The public opening is still under construction. Hosted worlds are disposable
+previews; fresh seeds replace earlier demonstrations.
 Runtime durability remains a property of each running world.
 
 ## Participate
@@ -58,7 +58,7 @@ grants no installation right; adoption preserves current law and checks exact ro
 
 ## Current construction
 
-Local receiving paths support typed source objects, sealed modules, atomic
+The native source host admits typed source objects, sealed modules, atomic
 transactions, observation, governed revisions, retained messages and exact retry
 recovery. Scenes, source panels and post cards expose those objects. The
 [tracker](TRACKING.md) records current capability; [BACKLOG](BACKLOG.md) owns

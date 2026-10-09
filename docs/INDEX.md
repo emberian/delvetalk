@@ -2,13 +2,13 @@
 
 Start with the [runnable quickstart](../README.md) or
 [writing and acting through text](TEXTUAL-INTERACTION.md).
-[TRACKING](../TRACKING.md) records current capability. Profile documents define
+[TRACKING](../TRACKING.md) records current capability. Contract documents define
 interfaces; source and conformance tests define their executable scope. A passing
 local case does not establish deployment or a general proof.
 
 [Bend owns behavior](design/BEND.md); [durable objects compose](design/COMPOSITION.md)
 and [author encounters](design/ENCOUNTERS.md). The [repository map](design/REPOSITORY.md)
-locates their source, receiving hosts, physical adapters and tests.
+locates their source, native source host, physical adapters and tests.
 [BACKLOG](../BACKLOG.md) owns remaining work.
 
 | Task | Contract |
@@ -16,7 +16,7 @@ locates their source, receiving hosts, physical adapters and tests.
 | Understand the system | [Architecture](SEMANTIC-INTEGRATION.md), [source/proof boundary](../spec/README.md) |
 | Write Bend | [Authoring](../profiles/AUTHORING.md), [typed objects](../profiles/TYPED-SOURCE-OBJECTS.md), [sealed modules](../profiles/MODULE-AUTHORING.md) |
 | Understand the language | [Construction and reflection](FOUNDATIONS.md), [static row contracts](SPEC-BINDING.md), [executable reflection](../profiles/REFLECTION.md), [data wire](../profiles/PACKAGE-DATA.md) |
-| Write a scene or adapter | [Spween](../scene/README.md), [syntax registry](../syntaxes/README.md) |
+| Write a scene or adapter | [Spween](../scene/README.md), [source packaging](design/SOURCE_PACKAGING.md) |
 | Govern and compose objects | [Authority](../profiles/AUTHORITY.md), [transactions](../profiles/TRANSACTIONS.md), [allocation](../profiles/ALLOCATION.md), [programming](../profiles/PROGRAMMING.md) |
 | Propose, check and adopt | [Source desks](../profiles/DESK.md), [compiler queue](../profiles/COMPILER-QUEUE.md), [composite offers](../profiles/COMPOSITE-OFFERS.md) |
 | Build resident interfaces | [Views](../profiles/VIEW.md), [forms](../profiles/AFFORDANCES.md), [Town cards](../profiles/TOWN.md), [manual interpretation](../profiles/MANUAL-INTAKE.md), [portal](../profiles/PORTAL.md) |
