@@ -3,7 +3,7 @@
 Wire (shared by impl/c, impl/js, impl/python and the `evaluate-term` op):
   ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["lam", b]
   ["app", f, a] ["mix", l, u] ["fix", s, i] ["specification", m, e]
-  ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done", x]
+  ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done"|"toData", x] ["textJoin", list, separator]
   ["unary", prim, x] ["binary", prim, l, r] ["get", x, "name"]
   ["inject", "label", x] ["ifZero", v, z, s] ["ifBool", c, t, f]
   ["record", [[name, term], ...]] ["extend", x, fields] ["case", x, arms]
@@ -20,7 +20,7 @@ import sys
 
 TAGS = ["bound", "lam", "app", "mix", "fix", "specification", "prototype", "reflect", "metadata",
         "project", "nat", "boolean", "label", "unary", "binary", "extend", "record", "get", "ifZero",
-        "inject", "case", "ifBool", "perform", "done"]
+        "inject", "case", "ifBool", "perform", "done", "toData", "textJoin"]
 BINARY = ["add", "multiply", "equal", "conjunction", "labelEqual", "subtract", "divide", "less",
           "lessEqual", "modulo", "textConcat", "textTake", "textDrop", "textSpan", "textBreak"]
 UNARY = ["natText", "textLength", "sha256Text"]
@@ -100,7 +100,8 @@ class Gen:
         if c == 7:
             return ["binary", r.choice(["textSpan", "textBreak"]), self.g_label(env, h // 2), ["label", r.choice(ALPHABETS)]]
         if c == 8:
-            return ["done", self.g_nat(env, h)]
+            # toData is the identity at runtime: it must step exactly like done.
+            return [r.choice(["done", "toData"]), self.g_nat(env, h)]
         if c == 9:
             return ["project", ["prototype", self.g_nat(env, h // 2), self.g_nat(env, h // 2)]]
         if c == 10:
@@ -157,7 +158,7 @@ class Gen:
                 return ["bound", r.choice(vs)]
             return ["label", r.choice(STRINGS)]
         h = max(1, (b - 1) // 2)
-        c = r.randrange(8)
+        c = r.randrange(9)
         if c == 0:
             return ["binary", "textConcat", self.g_label(env, h), self.g_label(env, h)]
         if c == 1:
@@ -172,7 +173,24 @@ class Gen:
             return ["ifBool", self.g_bool(env, h // 2), self.g_label(env, h // 2), self.g_label(env, h // 2)]
         if c == 6:
             return ["binary", "textTake", self.g_label(env, h), ["nat", str(r.randrange(0, 6))]]
+        if c == 7:
+            return ["textJoin", self.g_strings(env, h), self.g_label(env, max(1, h // 2))]
         return ["label", r.choice(STRINGS)]
+
+    def g_strings(self, env, b):
+        """A List<String> literal (nil/cons injections); now and then a cell is
+        malformed (a missing tail, a natural head) so the join is stuck."""
+        r = self.r
+        items = ["inject", "nil", ["record", []]]
+        for _ in range(r.randrange(0, 5)):
+            head = self.g_label(env, max(1, b // 3))
+            if r.random() < 0.05:
+                head = ["nat", "1"]
+            fields = [["head", head], ["tail", items]]
+            if r.random() < 0.05:
+                fields = fields[:1]
+            items = ["inject", "cons", ["record", fields]]
+        return items
 
     def g_rec(self, env, b):
         r = self.r

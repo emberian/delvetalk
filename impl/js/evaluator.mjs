@@ -9,7 +9,7 @@ const arities = new Map(Object.entries({
   bound: 2, lam: 2, app: 3, mix: 3, fix: 3, specification: 3, prototype: 3,
   reflect: 2, metadata: 2, project: 2, nat: 2, boolean: 2, label: 2,
   binary: 4, unary: 3, extend: 3, record: 2, get: 3, ifZero: 4, inject: 3,
-  case: 3, ifBool: 4, perform: 2, done: 2,
+  case: 3, ifBool: 4, perform: 2, done: 2, toData: 2, textJoin: 3,
 }));
 const primitives = new Set(['add', 'multiply', 'equal', 'conjunction',
   'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo',
@@ -84,6 +84,19 @@ function rename(t, mapping) {
     requireThat(naturalIndex(n), 'host capacity: bound index exceeds safe integer range');
     return ['bound', n];
   });
+}
+// textJoin's meaning: case on the list, then the fold `go accumulated rest` (a
+// fix of four lambdas) appending separator ++ head; the separator sits under six
+// binders inside go's cons arm.
+function joinExpansion(items, separator) {
+  const shifted = rename(separator, n => n + 6);
+  const head = ['get', ['bound', 0], 'head'], tail = ['get', ['bound', 0], 'tail'];
+  const body = ['case', ['bound', 0], [
+    ['nil', ['bound', 2]],
+    ['cons', ['app', ['app', ['bound', 4],
+      ['binary', 'textConcat', ['bound', 2], ['binary', 'textConcat', shifted, head]]], tail]]]];
+  const go = ['fix', ['lam', ['lam', ['lam', ['lam', body]]]], ['record', []]];
+  return ['case', items, [['nil', ['label', '']], ['cons', ['app', ['app', go, head], tail]]]];
 }
 const instantiate = (body, argument) => substitute(body, i => i === 0 ? argument : ['bound', i - 1]);
 const nat = n => ['nat', n.toString()];
@@ -199,7 +212,8 @@ function inspect(t) {
       if (a[0] !== 'boolean') return inside(t, 1);
       return step(() => a[1] ? b : c);
     case 'perform': return { kind: 'yield', plan: a, resume: response => response };
-    case 'done': return step(() => a);
+    case 'done': case 'toData': return step(() => a);
+    case 'textJoin': return step(() => joinExpansion(a, b));
     default: return stuck;
   }
 }

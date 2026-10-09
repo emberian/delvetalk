@@ -30,6 +30,10 @@ inductive Ty where
   (never suspended) position may hold it: it is not shareable, and every
   cell-allocating typing rule refuses it. Surface: `Activity<Plan, Response, Result>`. -/
   | computation (plan response result : Ty)
+  /-- Hosted extension: the universal first-order type, inhabited by any
+  well-formed finite data. Only `Term.toData` produces it; Bend has no
+  elimination (the host decodes it against a callee's declared type). -/
+  | data
   deriving Repr, DecidableEq
 
 /-- A reusable closure is shareable only after its captures have been checked.
@@ -43,6 +47,7 @@ def Ty.shareable : Ty → Bool
   | .prototype spec target => spec.shareable && target.shareable
   | .variant row => row.shareable
   | .computation _ _ _ => false
+  | .data => true
 
 /-- Rigid variables may be quantified over shareable future types explicitly.
 Every instantiation must discharge this finite premise; an unknown row is never
@@ -78,7 +83,8 @@ variable itself (and every variable already being unfolded, `seen`) is data: a
 closed recursive sum is a greatest fixed point. `fuel` only bounds the walk. -/
 def Ty.isDataUnder (bounds : DataBounds) (rigid : List Nat) : Nat → List Nat → Ty → Bool
   | 0, _, _ => false
-  | _ + 1, _, .natural | _ + 1, _, .boolean | _ + 1, _, .label | _ + 1, _, .emptyRow => true
+  | _ + 1, _, .natural | _ + 1, _, .boolean | _ + 1, _, .label | _ + 1, _, .emptyRow
+  | _ + 1, _, .data => true
   | fuel + 1, seen, .field _ member tail =>
       member.isDataUnder bounds rigid fuel seen && tail.isDataUnder bounds rigid fuel seen
   | fuel + 1, seen, .variant row => row.isDataUnder bounds rigid fuel seen
@@ -177,6 +183,29 @@ def Ty.lookup (bounds : Bounds) : Nat → Ty → String → Option Ty
       let bound ← bounds.lookup index
       bound.lookup bounds fuel name
   | _, _, _ => none
+
+def Ty.rowMember : Ty → String → Option Ty
+  | .field name member tail, query => if name = query then some member else tail.rowMember query
+  | _, _ => none
+
+/-- The field count of a closed row (`none` for an open one). -/
+def Ty.closedRowCount : Ty → Option Nat
+  | .emptyRow => some 0
+  | .field _ _ tail => tail.closedRowCount.map (· + 1)
+  | _ => none
+
+/-- `List<String>`: a variable whose declared bound is the closed sum
+`nil: {} | cons: {head: String, tail: <the variable>}` (in either order). -/
+def Ty.isTextList (bounds : Bounds) : Ty → Bool
+  | .variable index => match bounds.lookup index with
+    | some (.variant row) =>
+      row.closedRowCount == some 2 && row.rowMember "nil" == some .emptyRow &&
+      match row.rowMember "cons" with
+      | some cons => cons.closedRowCount == some 2 && cons.rowMember "head" == some .label &&
+          cons.rowMember "tail" == some (.variable index)
+      | none => false
+    | _ => false
+  | _ => false
 
 def Ty.isRow (bounds : Bounds) : Nat → Ty → Bool
   | 0, _ => false

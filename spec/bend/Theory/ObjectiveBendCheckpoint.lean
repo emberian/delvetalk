@@ -5,8 +5,9 @@ canonical token list and restored exactly. The codec adds no constructors to the
 core; it is the persistence half of an activity (Faré C20). It carries no
 authority, generation or custody: those belong to the kernel's activity record,
 which holds this checkpoint as one artifact. The round trip
-`decodeState (encodeState s) = some s` is the obligation this module exists for
-(ObjectiveProofs). -/
+`decodeState (encodeState s) = some s` is the obligation this module exists for;
+it is proved in Theory.ObjectiveBendCheckpointRoundTrip (`state_roundTrip`). A new
+constructor here needs its case there, or the build fails. -/
 import Theory.ObjectiveBendDemandMachine
 import Theory.ObjectiveBendDemandData
 namespace Minidregg.Theory.ObjectiveBendCheckpoint
@@ -65,6 +66,8 @@ def encodeTerm : Term → Tokens
   | .perform plan => .nat 21 :: encodeTerm plan
   | .done value => .nat 22 :: encodeTerm value
   | .unary primitive argument => .nat 23 :: .nat (unaryCode primitive) :: encodeTerm argument
+  | .toData value => .nat 24 :: encodeTerm value
+  | .textJoin list separator => .nat 25 :: (encodeTerm list ++ encodeTerm separator)
 def encodeFields : List (String × Term) → Tokens
   | [] => [.nat 0]
   | (name,body) :: rest => .nat 1 :: .text name :: (encodeTerm body ++ encodeFields rest)
@@ -117,6 +120,8 @@ def decodeTerm : Nat → Tokens → Option (Term × Tokens)
         let primitive ← unaryOf code
         let (argument, rest) ← decodeTerm fuel rest
         pure (.unary primitive argument, rest)
+    | 24, _ => one .toData
+    | 25, _ => two .textJoin
     | _, _ => none
   | _ + 1, _ => none
 def decodeFields : Nat → Tokens → Option (List (String × Term) × Tokens)
@@ -249,6 +254,11 @@ def encodeFrame : Frame → Tokens
       .nat 11 :: (encodeTerm whenTrue ++ encodeTerm whenFalse ++ encodeAddresses environment)
   | .nativeArgument value => .nat 12 :: encodeData value
   | .unary primitive => [.nat 13, .nat (unaryCode primitive)]
+  | .joinSeparator list environment => .nat 14 :: (encodeTerm list ++ encodeAddresses environment)
+  | .joinList separator accumulated first => [.nat 15, .text separator, .text accumulated, .nat (if first then 1 else 0)]
+  | .joinCons separator accumulated first => [.nat 16, .text separator, .text accumulated, .nat (if first then 1 else 0)]
+  | .joinHead separator accumulated first tail =>
+      [.nat 17, .text separator, .text accumulated, .nat (if first then 1 else 0), .nat tail]
 def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
   | .nat 0 :: rest => do
       let (term, rest) ← decodeTerm fuel rest; let (environment, rest) ← decodeAddresses rest
@@ -282,6 +292,17 @@ def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
       pure (.ifBool whenTrue whenFalse environment, rest)
   | .nat 12 :: rest => do let (value, rest) ← decodeData fuel rest; pure (.nativeArgument value, rest)
   | .nat 13 :: .nat code :: rest => do pure (.unary (← unaryOf code), rest)
+  | .nat 14 :: rest => do
+      let (list, rest) ← decodeTerm fuel rest; let (environment, rest) ← decodeAddresses rest
+      pure (.joinSeparator list environment, rest)
+  | .nat 15 :: .text separator :: .text accumulated :: .nat 0 :: rest => some (.joinList separator accumulated false, rest)
+  | .nat 15 :: .text separator :: .text accumulated :: .nat 1 :: rest => some (.joinList separator accumulated true, rest)
+  | .nat 16 :: .text separator :: .text accumulated :: .nat 0 :: rest => some (.joinCons separator accumulated false, rest)
+  | .nat 16 :: .text separator :: .text accumulated :: .nat 1 :: rest => some (.joinCons separator accumulated true, rest)
+  | .nat 17 :: .text separator :: .text accumulated :: .nat 0 :: .nat tail :: rest =>
+      some (.joinHead separator accumulated false tail, rest)
+  | .nat 17 :: .text separator :: .text accumulated :: .nat 1 :: .nat tail :: rest =>
+      some (.joinHead separator accumulated true tail, rest)
   | _ => none
 
 def refusalCode : Refusal → Nat
@@ -356,8 +377,8 @@ def tokenJson : Token → Lean.Json
   | .nat value => Lean.Json.mkObj [("n", Lean.toJson (toString value))]
   | .text value => Lean.Json.mkObj [("s", Lean.toJson value)]
 
-/-- Executed (not proved) round-trip check used by the preview: re-encoding the
-decoded checkpoint reproduces the same tokens. The theorem is the obligation. -/
+/-- Executed round-trip check: re-encoding the decoded checkpoint reproduces the
+same tokens. `state_roundTrip` proves the stronger equation for every state. -/
 def roundTrips (state : State) : Bool :=
   match decodeState (encodeState state) with
   | some restored => encodeState restored == encodeState state

@@ -12,6 +12,7 @@ import Delvetalk.Document
 import Delvetalk.EvaluateTerm
 import Delvetalk.Limits
 import Delvetalk.Canonical
+import Delvetalk.Hints
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -76,21 +77,118 @@ def modulesOf (j : Json) : Except String (List SourceModule × Json) :=
 /-- A compiled package: the artifact JSON, the entry's checked type and its laws. -/
 abbrev Compiled := Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
 
+/-- The request's modules as (name, source), for hints. -/
+def requestSources (j : Json) : List (String × String) :=
+  match j.getObjVal? "modules" >>= Json.getArr? with
+  | .ok raw => raw.toList.filterMap fun m =>
+      match m.getObjValAs? String "name", m.getObjValAs? String "source" with
+      | .ok name, .ok source => some (name, source)
+      | _, _ => none
+  | .error _ => match j.getObjValAs? String "source" with
+    | .ok source => [("Package", source)]
+    | .error _ => []
+
+/-- A source refusal carries the dialect hint its source suggests, if any. -/
+def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
+  if d.stage == "package-request" || d.hint.isSome then d
+  else { d with hint := Delvetalk.Hints.hintFor (requestSources j) d.sourceModule (d.span.map (·.line)) }
+
+/-- A module's function definitions with their parameters' declared type texts. -/
+def functionSignatures (name source : String) : Except Diagnostic (List (String × List String)) := do
+  let ast ← FrontEnd.parseSource name source
+  let declarations := ((ast.getObjVal? "declarations" >>= Json.getArr?).toOption.getD #[]).toList
+  return declarations.filterMap fun d => do
+    guard ((d.getObjValAs? String "kind").toOption == some "function")
+    let signature ← (d.getObjVal? "signature").toOption
+    let fname ← (signature.getObjValAs? String "name").toOption
+    let parameters := ((signature.getObjVal? "parameters" >>= Json.getArr?).toOption.getD #[]).toList
+    let types := parameters.filterMap fun p => (p.getObjValAs? String "type").toOption
+    return (fname, types.map Minidregg.Compiler.ObjectiveBendElaborate.trimStr)
+
+open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
+/-- The first `n` parameter types of an elaborated function type and its result. -/
+def peelPTy : Nat → PTy → List PTy × PTy
+  | n + 1, .arrow _ _ domain codomain => let (rest, result) := peelPTy n codomain; (domain :: rest, result)
+  | _, ty => ([], ty)
+
+open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
+/-- The entry module's method table: every definition whose first parameter is
+`State`, called as `(state, [input,] [context])`, with its input type (`{}` when
+it takes none), result type and whether it is an activity. Type JSON is the
+packet's (recursive sums are variables of the packet's bounds). Definitions with
+more than one input beyond state and context are not callable methods and are
+left out. -/
+def methodTable (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy) : Json :=
+  let rows : List Json := signatures.filterMap fun ((fname, types) : String × List String) => do
+    guard (types.head? == some "State")
+    let ty ← lookupRow globals (moduleName ++ "." ++ fname)
+    let (domains, result) := peelPTy types.length ty
+    let context := types.length > 1 && (types.getLast?.map (·.endsWith "Context")).getD false
+    let inputs := (types.drop 1).take (types.length - 1 - (if context then 1 else 0))
+    guard (inputs.length ≤ 1)
+    let input := if inputs.length == 1 then (domains[1]?.map PTy.json).getD (Json.mkObj [("tag", toJson "emptyRow")])
+      else Json.mkObj [("tag", toJson "emptyRow")]
+    let activity := match result with | .computation .. => true | _ => false
+    return Json.mkObj [("name", toJson fname), ("input", input), ("result", result.json),
+      ("activity", toJson activity), ("context", toJson context)]
+  Json.arr rows.toArray
+
+open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
+/-- A package's optional Bend law predicate, checked by shape: `law(old: State,
+new: State, request: Request) -> Verdict`, pure, with `Verdict` exactly the sum
+`admitted: {} | refused: {clause: String}`; and `lawReads()` beside it. Nothing
+runs it here. -/
+def lawShape (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy)
+    (sums : List (Nat × PTy)) : Except Diagnostic Json := do
+  let refusal := fun (message : String) =>
+    ({ stage := "objective-core-elaboration", message, sourceModule := some moduleName } : Diagnostic)
+  let reads := signatures.any (·.1 == "lawReads")
+  match signatures.find? (·.1 == "law") with
+  | none =>
+    if reads then throw <| refusal "lawReads needs a law: def law(old: State, new: State, request: Request) -> Verdict"
+    else return Json.mkObj [("present", toJson false)]
+  | some (_, types) =>
+    unless types.length == 3 && types.take 2 == ["State", "State"] do
+      throw <| refusal "law takes (old: State, new: State, request: Request)"
+    let some ty := lookupRow globals (moduleName ++ ".law") | throw (refusal "law has no elaborated type")
+    let (_, result) := peelPTy 3 ty
+    if let .computation .. := result then throw (refusal "law must not be an activity")
+    let row? := match result with
+      | .variant row => some row
+      | .variable index => match sums.lookup index with
+        | some (.variant row) => some row
+        | _ => none
+      | _ => none
+    let verdict := match row? with
+      | some row => (Minidregg.Compiler.ObjectiveBendElaborate.rowNames row).length == 2 &&
+          lookupRow (some row) "admitted" == some PTy.emptyRow &&
+          lookupRow (some row) "refused" == some (PTy.field "clause" .label .emptyRow)
+      | none => false
+    unless verdict do throw <| refusal "law must return Verdict: sum Verdict: admitted{} | refused{clause: String}"
+    return Json.mkObj [("present", toJson true), ("reads", toJson reads)]
+
 /-- Compilation proper, refusing with the structured diagnostic. -/
-def compileStructured (j : Json) : Except Diagnostic Compiled := do
+def compileStructured (j : Json) : Except Diagnostic Compiled :=
+  (compileStructuredBare j).mapError (withHint j)
+where compileStructuredBare (j : Json) : Except Diagnostic Compiled := do
   let (modules, sources) ← modulesOfStructured j
   let entry ← lift (j.getObjValAs? String "entry")
   let (lowered, genericInstances) ← FrontEnd.lowerWithInstances modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition"
   let accepted ← (accept lowered).mapError (fun diagnostic => { diagnostic with message := diagnostic.message ++
       (if genericInstances == Json.arr #[] then "" else "; selected generic instances: " ++ genericInstances.compress) })
   let packet := lowered.packet
+  let entryModule := modules.getLast!
+  let signatures ← functionSignatures entryModule.name entryModule.source
+  let globals := lowered.output.globalRow
+  let law ← lawShape entryModule.name signatures globals lowered.output.sumBounds
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
     ("modules", sources),
     ("sourcesSha256", toJson (Delvetalk.Canonical.cidJson sources)),
     ("entry", toJson entry), ("genericInstances", genericInstances), ("limits", getLimits j), ("packet", packet),
     ("packetSha256", toJson (Delvetalk.Canonical.cidJson packet)),
-    ("type", typeJson accepted.typed.type)]
+    ("type", typeJson accepted.typed.type),
+    ("methods", methodTable entryModule.name signatures globals), ("law", law)]
   return (artifact, accepted.typed.type, lowered.laws)
 
 /-- The functions of a module with the span of each body, in source order. -/
@@ -164,7 +262,7 @@ end
 open Delvetalk.Turn (applyArgument bounded)
 
 /-- One global demand/extraction budget. No game rule or host authority lives here. -/
-def executePacket (packet arguments limits : Json) : Except String Json := do
+def executePacket (packet arguments limits : Json) (profile : Bool := false) : Except String Json := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
@@ -179,10 +277,13 @@ def executePacket (packet arguments limits : Json) : Except String Json := do
   let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
   let budget : Budget := ⟨nodes,ticks,bytes⟩
   let capacities : Limits := ⟨heap,stack⟩
+  let profiled := fun (reply : Json) => if profile then
+      reply.setObjVal! "profile" (Delvetalk.Profile.profile capacities bytes ticks (initial source.term))
+    else reply
   match execute capacities budget source.term with
   | .ok execution =>
       let result := execution.extraction.result
-      return Json.mkObj [("status", toJson "finished"), ("value", dataJson result.value),
+      return profiled <| Json.mkObj [("status", toJson "finished"), ("value", dataJson result.value),
         ("type", typeJson checked.type), ("ticksUsed", toJson (ticks - result.remaining.ticks)),
         ("heapCells", toJson result.state.heap.size),
         ("nodesUsed", toJson (nodes - result.remaining.nodes))]
@@ -248,6 +349,7 @@ def verifyArtifact (artifact : Json) : Except String Unit := do
 def runVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   executePacket (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
+    ((j.getObjValAs? Bool "profile").toOption.getD false)
 
 def run (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")

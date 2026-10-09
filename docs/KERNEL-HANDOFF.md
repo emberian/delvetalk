@@ -68,24 +68,26 @@ Proof guards. `lake build` passes only if every theorem still checks; there is n
 - Native cells: `ObjectiveBendNativeDataSimulation.lean`, `FiniteDataTyping.lean`.
 - Schema/compact codec: `PackageDataSchemaProofs.lean` (7 theorems).
 
-What I did NOT prove or port (honest list):
-- From Mini's `ObjectiveBendDemandCollectProofs.lean` (1787 lines) and the Settle/RoundTrip/typing
-  transfer files I ported none: the collector's behaviour-preservation simulation, `typed_settle`,
-  `settle_resume_segment` ("a checkpoint resumes exactly as the live state would"), and the round
-  trip theorem `decodeState (encodeState s) = some s`. Their only evidence here is tests
-  (`tests/test_turn.py`: restart, tamper, resume in a fresh process) plus the digest binding.
-  I adapted the codec by hand for `native`, `nativeCached`, `nativeArgument`, `unary`,
-  `nativeApplication`, the five text primitives (codes 11-15) and `Term.unary` (tag 23); a new
-  machine constructor needs a new token tag in BOTH Checkpoint and Collect (addresses!) or it is
-  silently dropped from tracing: `collect` would then free live cells.
-- Admitting recursive sums changed `perform`'s side conditions to
-  `isPlanUnder assumptions.bounds assumptions.rigid` / `isDataUnder ...`. All 73 Typing theorems
-  still check unchanged, so nothing was weakened. Not proved: that `Data.conformsFuel` agrees with
-  `isDataUnder` (soundness of runtime conformance w.r.t. the type), and that fuel is never the
-  cause of a false negative (fuel = `(size+1)*(bounds+3)+2`; `Ty.dataFuel` 4096 caps type depth).
+What is proved now (kernel lane 2, see also section 8), and what is not:
+- `state_roundTrip : decodeState (encodeState s) = some s` for this edition's codec
+  (`Theory/ObjectiveBendCheckpointRoundTrip.lean`; native cells, native frames,
+  `nativeApplication`, unary, `toData`, `textJoin` and the join frames all have cases). A new
+  machine constructor without its codec case now fails the build.
+- `settle_resume_segment` and the agreement lemmas behind it on the hosted runner
+  (`agree_forceHostedFrom`, `agree_materializeWith`, `agree_yieldedPlanWith`, `agree_completeWith`;
+  `Theory/ObjectiveBendDemandSettleProofs.lean`). NOT ported: `typed_settle` (no state-typing
+  judgment in this edition) and Mini's collector simulation (`ObjectiveBendDemandCollectProofs`,
+  2,090 lines, renaming simulation). So `checkpoint = collect (settle s)` is proved for its settle
+  half only; the collect half is tested (restart/tamper/resume tests), and a new frame or cell with
+  addresses must be added to `frameAddresses`/`renameFrame` by hand or `collect` frees live cells.
+- `conformsUnder_iff : d.conformsUnder bounds ty = true ↔ HasType bounds d ty`
+  (`Theory/ObjectiveBendDataConformance.lean`): runtime conformance is sound and complete at the
+  fuel the code uses; fuel is never a false negative (`short_chain`, a pigeonhole over the bounds'
+  keys). No `isDataUnder` hypothesis is needed.
+- Not proved: that the elaborator's `noActivity` is the static guard matching
+  `perform_under_update_refused`; that `textJoinExpansion` and the machine's join frames agree
+  (tested by conformance on values only).
 - `Data.conforms` once accepted `{}` for any non-row type; fixed (requires `.field`/`.emptyRow`).
-- Shared-effect refusal is proved for the machine (`perform_under_update_refused`) but the
-  elaborator's `noActivity` is the only static guard; no theorem links them.
 
 ## 2. Ops (spec/Delvetalk/Package.lean `job`, PackageSession.lean `step`, Host/Session.lean)
 
@@ -193,53 +195,36 @@ own `Host.Limits` (Store.lean) still holds its copies (`dataDepth` 64, `maxTurnT
 `runBounded` ticks in `evaluate-term`, `go 64` yields cap in `EvaluateTerm`, `peelArrows`.
 A fuel exhaustion is a refusal, never a wrong answer, but it looks like a type error.
 
-## 5. The tariff (what costs what) — `textStepCost` / `forceHostedFrom`, DemandData l.84-135
+## 5. The tariff (what costs what) — `textStepCost` / `forceHostedFrom`, DemandData
 
 Every machine transition costs 1 tick. Before a text primitive runs, `forceHostedFrom` admits
 `(ticks, bytes)` from `textStepCost` and suspends (`ticks` or `capacity`) if either exceeds what is
-left; the state is retained exactly. Charges (B = byte size of the operand, n = count):
-- `textConcat a b`: `1 + 2(|a|+|b|)` ticks, reserves `|a|+|b|` bytes.
-- `textTake t n`: `1` if n=0 or n>=B; else `1 + 2*min(B, 4n)`; reserves `min(B,4n)`.
-- `textDrop t n`: same rule on the DROPPED prefix (changed by me from `1+B+min(B,4n)`); still
-  reserves B bytes. Real copying cost is B-n and is not charged: honest remaining under-charge.
+left; the state is retained exactly. Charges (B = byte size of the operand, n = count, p = exact
+bytes of the first n scalars, found by a scan bounded by what the allowance can pay, `prefixCost`):
+- `textConcat a b`: `1 + 2(|a|+|b|)`, reserves `|a|+|b|`.
+- `textTake t n`: `1` if n=0 or n>=B; else `1 + 2p`, reserves `p`.
+- `textDrop t n`: `1` if n=0 or n>=B; else `1 + 2p`, reserves `B - p` (the suffix is COPIED:
+  `String.Slice.toString` is `lean_string_utf8_extract`; that copy is bounded in bytes, not charged
+  in ticks, so a drop-by-one walk stays linear).
+- `textJoin list sep` (each element): `1 + 2*(bytes appended)`, reserves the new accumulator. The
+  accumulator lives in the `joinList`/`joinHead` frame and is appended in place when unique.
 - `textSpan/textBreak`: `1 + perScalar*visited`, perScalar = `2*(|alphabet|+2)`; refused up front
   if the cap cannot cover the scan (spends the allowance, returns 0 credit).
-- `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`, blocks = `(B+72)/64`; reserves
-  `64*blocks+4096`. `natText n`: `1 + bits^2` (quadratic in bit length), reserves `bits`.
-- Arithmetic, comparison, record/variant steps: 1 tick; no size charge on big Nats (a 2^64-bit
-  multiply costs 1). Materialization: forcing costs ticks like any step; each node costs 1 `nodes`
-  and its encoded size in `bytes`.
-Measured: an interpreted loop step costs ~50 ticks (match + add + call + args) of which the text
-primitives are ~20 (`tests/test_turn.py::TextTariffTests`: 4096 one-char take/drop steps = 213k
-ticks, linear). Plan/result extraction runs on a scratch copy.
+- `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`.
+- Everything else: 1 tick.
 
-Quadratic idioms and why:
-1. Left-fold `textConcat acc x`: each step re-charges the whole accumulator (`2*|acc|`). Document.plain
-   avoids it by flattening leaves then joining adjacent pairs in rounds (O(n log n) bytes).
-2. `Lists.append xs x` in a loop (Bell rains): O(n) per append, O(n^2) total; 1,025 rains cost ~850k
-   ticks for `plain`, 316k for just building. `Entries.append` edits at the host are the escape.
-3. `Lists.length` inside a loop; `Lists.concat` of long left operand.
-4. Character walks: `textDrop` by 1 is now cheap in ticks, but still allocates B bytes of reserve
-   each step against the per-step `bytes` cap.
-5. `natText` on big numbers; `sha256Text` per item on large lists.
-6. Rendering: the 1,025-rain card in Bend is 300k+ ticks; the host renders Documents natively
-   (`Delvetalk/Document.lean`, zero ticks, 11 ms) — the `offer` Plan is how to use it.
+Measured (`tests/test_tariff.py` pins them exactly; update with a reason when they move):
+bump turn 56 + 10; 64-field spell parse 97,355 -> 56,957 (19,971 transitions either way: take/drop
+were 4 bytes per scalar); `Document.plain` over 1,025 leaves 336,659 -> 129,272 (9,235 beyond a
+`Document.size` walk of the same document); 1,025-rain Bell card 848,680 -> 333,209.
+Profile any run with `"profile": true` on `run`, `turn-start`, `turn-resume` (`Delvetalk/Profile.lean`:
+ticks per `evaluate.<term>` / `enter.<cell>` / `returned.<frame>`, primitives named). The spell
+parse was 81% text primitives and 19% interpretation, so interpreter tricks (argument frames, field
+lookup caches, rename) cannot buy 30% there; check the profile before optimizing the interpreter.
 
-Two changes I judge most valuable next:
-- A text join primitive (or a rope/builder value): `textJoin : List String -> String` charging
-  `1 + 2*total bytes` once (and a `Strings` builder type), replacing the pairwise-round trick in
-  `Document.plain` and every left fold. It needs: a `Primitive` or new `Term` form (OpenRecursion,
-  Typing `PartialTyping`, Checkpoint code, `evaluate-term`, all three evaluators + conformance
-  generator), a tariff line, and a typing rule over `List<String>` (a sum, so it must unfold the
-  recursive bound: use `Ty.lookup` like `isDataUnder`). Cheaper alternative: a host-side `textJoin`
-  of a `Strings` Data in the same way Document is rendered, avoiding a new Term.
-- Interpretive overhead (~50 ticks/step): look first at (a) `Frame.argument`/`update` thunk traffic for
-  lambda-bound variables that are used once (strictness annotation or a "cheap value" fast path in
-  `stepRaw`), (b) `case` on a variant allocating a payload cell, (c) charging `app` of a known
-  closure as one tick. Any change to `stepRaw` must be mirrored in `stepRawFast` and re-prove
-  `stepRawFast_eq_stepRaw`/`sizesAfter_eq`, and must keep the evaluators' small-step semantics in
-  agreement on values (tariffs are not compared, so conformance will not catch cost regressions:
-  add ticks assertions like the text-walk test).
+Remaining quadratic idioms: `Lists.append xs x` in a loop; `Lists.length` in a loop; left folds of
+`textConcat` (use `textJoin`); character walks with `textDrop` copy the suffix each step (bytes,
+not ticks).
 
 ## 6. Evaluators and conformance (impl/, tests/conformance, tests/test_conformance.py)
 
@@ -263,6 +248,9 @@ agree counts per evaluator and the smallest disagreeing case per constructor.
 `python3 -m tests.test_conformance 1500 [IMPL_DIR]` prints the report for another copy of impl/.
 Before my fixes 202/400 agreed (every text/unary term was rejected); after, 390/400 with 10
 `KNOWN_DIVERGENCE["shared-effect"]` cases and 0 unexpected (1455/1500 on a larger run).
+Kernel lane 2 added `toData` (identity) and `textJoin` (stepped to `textJoinExpansion` by all
+three evaluators; the generator emits joins over list literals, some malformed): 377/400 agree,
+23 known shared-effect, 0 unexpected; 1436/1500 on the larger run.
 Known divergence: a `perform` reached while forcing a SHARED argument cell. The machine refuses it
 (`Refusal.sharedEffect`, `perform_under_update_refused`); call-by-name evaluators substitute and
 perform at each use. Typed programs cannot reach it (`noActivity`). Machine `divergent` (blackhole)
@@ -288,3 +276,24 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
 - `Outcome.exhausted` is a silence, not an error; the host currently maps it to a refused turn with
   message "turn refused: <resource> budget exhausted"; journaling class `budget` is host work.
 - Related docs: `docs/FOUNDATION.md` (design), `docs/HOST-HANDOFF.md`, `docs/OBJECTS-HANDOFF.md`.
+
+## 8. Kernel lane 2 additions (2026-10-09)
+
+- Universal type `Data` (`Ty.data`, `Term.toData`, surface `Data.of::<T>(value)`): any well-formed
+  first-order data (`Data.wellFormed`: distinct record names at every depth). The only producer is
+  `toData` (value typed at T, T data); there is no elimination in Bend (`data_not_eliminated`).
+  Runtime: `toData` is its value (one transition). Turn arguments at `Data` are injected at their
+  own shape (`shapeType`); every data-typed argument is checked with `conformsUnder` first:
+  "turn refused: argument does not conform to its type" (host: map to `typeMismatch`). Canonical
+  bytes: a Data value is encoded as itself; untyped decode cannot tell a variant from a one-field
+  record, so never `decodeAs` against `.data` expecting variants back. `PackageData` schema
+  certificates do not support `.data` (closed rows only): a State with a Data field will need it.
+  Plan.obend's `call`/`send`/`create` payloads are still `A` (objects lane).
+- `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing
+  `Ty.isTextList` (a variable bound to `nil: {} | cons: {head: String, tail: itself}`), reference
+  meaning `textJoinExpansion` (Step.textJoin), checkpoint term tag 25, frames 14-17.
+- Dialect hints: `Diagnostic.hint` (Delvetalk/Hints.lean), only on refusals, ten habits.
+- Artifact `methods` and `law` (Package.methodTable / lawShape); `Limits.lawTicks`.
+- Checkpoint edition is still `v1` although term tags 24-25 and frames 14-17 were added: old
+  checkpoints decode unchanged (only additions); a checkpoint using the new tags does not decode
+  on an older binary.

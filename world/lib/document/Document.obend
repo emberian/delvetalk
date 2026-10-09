@@ -32,12 +32,12 @@ def quote(attribution: String, body: Document) -> Document:
 def sameCapture(left: Capture, right: Capture) -> Bool:
   left.object == right.object && left.revision == right.revision && left.meaning == right.meaning && left.entry == right.entry && left.token == right.token
 # Read-only text projection; callers retain the original structured value.
-# Text concatenation re-reads both operands, so a left or right fold that grows
-# one accumulator is quadratic in the output. The leaves are flattened once
-# (linear) and joined by rounds of adjacent pairs, so every byte is copied
-# about log2(leaves) times.
+# The leaves are flattened once (linear) and joined by the textJoin primitive,
+# which appends onto one accumulator and is charged by the bytes it adds:
+# linear in the output. (A left or right fold of textConcat re-reads its
+# accumulator and is quadratic.)
 def plain(document: Document) -> String:
-  joinAll(leaves(document, Strings.nil()))
+  textJoin(leaves(document, Strings.nil()), "")
 type Strings = Lists.List<String>
 def leaves(document: Document, rest: Strings) -> Strings:
   match document:
@@ -54,20 +54,8 @@ def leavesItems(items: Documents, rest: Strings) -> Strings:
   match items:
     case nil(_): rest
     case cons(c): leaves(c.head, leavesItems(c.tail, rest))
-def pairs(items: Strings) -> Strings:
-  match items:
-    case nil(_): items
-    case cons(c):
-      match c.tail:
-        case nil(_): items
-        case cons(d): Strings.cons({head: textConcat(c.head, d.head), tail: pairs(d.tail)})
 def joinAll(items: Strings) -> String:
-  match items:
-    case nil(_): ""
-    case cons(c):
-      match c.tail:
-        case nil(_): c.head
-        case cons(_): joinAll(pairs(items))
+  textJoin(items, "")
 # Linear measure of the text a document carries; unlike plain, it never copies
 # the accumulated text, so it stays cheap on long sequences.
 def size(document: Document) -> Nat:

@@ -21,10 +21,10 @@ partial def annotationSites (term : Term) (path : List Nat := []) : List (List N
   match term with
   | .lam b | .perform b | .done b => path :: child 0 b
   | .inject _ b => path :: child 0 b
-  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b =>
+  | .textJoin a b | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b =>
       child 0 a ++ child 1 b
   | .binary _ a b => child 0 a ++ child 1 b
-  | .unary _ a | .reflect a | .metadata a | .project a | .get a _ => child 0 a
+  | .unary _ a | .toData a | .reflect a | .metadata a | .project a | .get a _ => child 0 a
   | .record fs => fields path fs
   | .extend a fs | .case a fs => child 0 a ++ fields (path ++ [1]) fs
   | .ifZero a b c | .ifBool a b c => child 0 a ++ child 1 b ++ child 2 c

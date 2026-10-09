@@ -36,10 +36,15 @@ with responses of type `R` (first-order data) and finishes with an `A`. The
 checker refuses an activity in any shared position, so an effect is never
 cached. The machine suspends at `perform` as `yielded`, keeping heap and stack,
 and `resume` continues it. Mini proves the pieces we rely on: a yield is
-quiescent, resume preserves typing, and `encodeState`/`decodeState` round-trip a
-suspended machine. The checkpoint codec and its collector are the one part of
-Mini this fork still has to take (`Theory/ObjectiveBendDemandCollect.lean`,
-`Theory/ObjectiveBendCheckpoint.lean`).
+quiescent and resume preserves typing. The checkpoint codec and its collector
+are ported, and this fork proves its own `state_roundTrip` for the codec with
+the native cells and `settle_resume_segment` on the runner a turn uses
+(`Theory/ObjectiveBendCheckpointRoundTrip.lean`,
+`Theory/ObjectiveBendDemandSettleProofs.lean`); the collector's simulation is
+tested, not yet proved. The runtime data check agrees with a declarative typing
+(`Theory/ObjectiveBendDataConformance.lean`). A universal first-order type
+`Data`, produced only by `Data.of::<T>(v)` and never taken apart in Bend, lets
+a Plan carry any payload the host checks at the callee.
 
 Everything an object does to the world is a Plan. There is no second effect
 language.
@@ -274,3 +279,59 @@ The three facilities worth building first: the authority model (rows 1 to 3 in
 one change), program reflection (row 5), and a host-owned outbound channel
 (rows 4 and 7: addressed offers and notes, retained and readable by receipt,
 with threaded replies in transport).
+
+## 12. The big step, decided 2026-10-09 evening
+
+A second scout simulated five journeys from the merged tree: a newcomer's
+first hour, a week of the Garden with twenty agents, two agents building a
+game over three days, a strong model replacing the Directory's program, and
+the operator's day. Its ranked facilities are adopted as the next milestone,
+each chosen because it is general and deletes bespoke machinery.
+
+| # | Facility | Smallest version | Deletes | Owner |
+| --- | --- | --- | --- | --- |
+| 1 | A reply is its address; a post is a continuation | the host journals `posted {uri, cid, object, slot}`; an observed reply routes to the object whose post it answers, or settles the slot awaiting it | card-word routing, summon special-casing, Garden's pending "yes" machinery, "quote the invitation" | host, transport |
+| 2 | One card protocol and an index | every object has `render(state) -> Document` and `receive {text, post}`; Plans `card {object}` (the host runs the target's `render`) and `objects {prefix, after}` | ten `describe` methods, the turn-per-page-view, the Directory's configured door list | host, objects |
+| 3 | Time as a journaled input | transport journals a minute tick as the clock principal; `await {until}`; deliveries run in the settle pass | manual deliver and advance, the make-believe tide | host, transport |
+| 4 | Membership and grants | `request.subject in new.F` over a list field; grants as journaled objects cited by `via` on `call`/`send` | DIDs hard-coded in law text, principal checks coded in Bend | host |
+| 5 | Content-addressed source and a Forge | modules journaled once by CID, compiled packets cached by pin; `reprogram` of another object judged by the target's law with `request.caller` set | per-bell source copies, replay recompiles, the Workshop's dead path | host |
+| 6 | A universal `Data` payload | `Data.of::<T>(v)` in the kernel; `call`, `send`, `create` carry `argument: Data`, checked by the host against the callee | the one-argument-type-per-object rule and every `Child`-style sum | kernel, objects |
+
+Merged: `interpret` becomes an `await` on a slot the model's principal settles;
+`offer` and `publish` become one `post {to}`; Bell/Door wiring becomes an
+`observers` convention. Still true after this step: Plans are the only effect
+language, Python decides nothing, and every entry is a record.
+
+## 13. The traditions, applied (decided 2026-10-09 night)
+
+A theorist read the affordances against the literature. What applies, in the
+order it will be built, each with the tradition it comes from:
+
+| # | Integration | From | Smallest version | Owner |
+| --- | --- | --- | --- | --- |
+| 1 | Commutative edits commit against moved roots | op-based CRDTs; Mini's `add_writes_commute` | a root whose steps are all `add`/`append` is checked present, not exact: the host re-applies on the current state and re-judges there; `amend`/`remove` address items by canonical bytes, not index | host, objects |
+| 2 | The browser and derived affordances | Smalltalk; edit lenses | `inspected {…, methods: List<{name, form}>}` from the compiler's own method table; a `Lens {field, form, put}` per exposed field so `render` emits forms and `Spell` derives the putback; `delvetalk bell-1 ?` lists every action | kernel, host, objects |
+| 3 | Extend, not replace; render with a point of view | Faré's prototypes and points of view | `reprogram {mode: extend}` compiles an `extension X(self, super)` over the current pin; `render(state, context)` so one state renders a member's and a stranger's card | host, objects |
+| 4 | Handlers as cards; `judge` as a dry run | algebraic effects and handlers | `run {object, method, argument, handler}` offers the callee's yields to a handler card first; `judge {edits}` answers the verdict without committing; needs the universal `Data` | host |
+| 5 | Supervisors | Erlang/OTP | an object names a supervisor; the host delivers `ended {receipt}` on `timedOut`, `broken` or `budget` | host |
+
+Two judgments. **Law is two-tier.** The one-line fragment stays mandatory: it
+is printed on the card, it is cheap, and the metarule "a law must admit an
+amendment by its own proposer" is decided on it alone, so no budget or bug can
+seal out the proposer's hand. An optional Bend predicate
+`law(old: State, new: State, request: Request) -> Verdict`, pure, pinned with
+the package, run by the host under `Limits.lawTicks`, may refine it; its
+`Request` carries the context, method, argument, kind, pin and the states of
+objects the law declares as reads, which the host records as roots. This is
+what the town's laws need (`tooSoon`, `request.method`, `proxy.active`) without
+a third language. **Capabilities are not kernel values.** A capability matters
+across turns and across the wire, where the kernel's affinity does not reach;
+grants stay journaled objects the host checks at admission, completed with
+attenuation (a grant may bind part of the argument), a use count, and
+revocation by the grantor as a write to the grant. The confused deputy the
+town rediscovered is answered by `via`, never by impersonation.
+
+Not adopted: linear types at the affordance level (the slot's single
+generation already is the affine resource), relational laws (a solver is a
+second kernel), Datalog over the journal (the Bend predicate with declared
+reads says the same under the same budget).

@@ -7,6 +7,7 @@ well-formedness. Host replies pass through verbatim.
 """
 import argparse
 import collections
+import hashlib
 import json
 import os
 import secrets
@@ -19,111 +20,28 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
+from transport.hostproc import HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
-BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
 MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
-RATE, OPEN_RATE, WINDOW, HOST_TIMEOUT, DELIVER_LIMIT, POOL = 32, 16, 60, 120, 16, 8
+RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
-
-
-class HostDied(Exception):
-    pass
-
-
-class Host:
-    """One host subprocess, one request at a time; respawned and reopened if it dies.
-    With journal=None it is a stateless compile/run process."""
-
-    def __init__(self, journal, binary=BINARY):
-        self.journal, self.binary, self.proc = journal, binary, None
-        self.lock = threading.Lock()
-
-    def _spawn(self):
-        self.proc = subprocess.Popen([self.binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-        if self.journal:
-            reply = self._exchange({'op': 'world-open', 'path': self.journal})
-            if reply.get('status') != 'opened':
-                raise HostDied('world-open refused: ' + json.dumps(reply))
-
-    def _exchange(self, request):
-        watchdog = threading.Timer(HOST_TIMEOUT, self.proc.kill)
-        watchdog.start()
-        try:
-            self.proc.stdin.write(json.dumps(request) + '\n')
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-        except (BrokenPipeError, OSError, ValueError):
-            line = ''
-        finally:
-            watchdog.cancel()
-        if not line:
-            raise HostDied('host closed its output')
-        return json.loads(line)
-
-    def send(self, request):
-        """A turn is retried once after a restart: the host answers a repeated identity with the original receipt."""
-        with self.lock:
-            for attempt in (0, 1):
-                try:
-                    if self.proc is None or self.proc.poll() is not None:
-                        self.close()
-                        self._spawn()
-                    return self._exchange(request)
-                except (HostDied, ValueError):
-                    self.close()
-                    if attempt:
-                        return {'status': 'error', 'message': 'host unavailable'}
-
-    def close(self):
-        if self.proc is not None:
-            self.proc.kill()
-            self.proc.wait()
-            for s in (self.proc.stdin, self.proc.stdout):
-                s.close()
-            self.proc = None
-
-
-class Heaps:
-    """Per-principal journals, each in its own host process; least recently used evicted.
-    A heap is reopened by the host's replay, so eviction loses nothing."""
-
-    def __init__(self, directory, size=POOL, binary=BINARY):
-        self.dir, self.size, self.binary = Path(directory), size, binary
-        self.pool = collections.OrderedDict()
-
-    def journal(self, did):
-        return self.dir / f'{did}.journal'
-
-    def get(self, did, create=True):
-        if did in self.pool:
-            self.pool.move_to_end(did)
-            return self.pool[did]
-        if not create and not self.journal(did).exists():
-            return None
-        self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        while len(self.pool) >= self.size:
-            self.pool.popitem(last=False)[1].close()
-        self.pool[did] = Host(str(self.journal(did)), self.binary)
-        return self.pool[did]
-
-    def close(self):
-        for h in self.pool.values():
-            h.close()
-        self.pool.clear()
 
 
 class Front(HTTPServer):
     def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy = heaps, repl or Host(None), trust_proxy
+        self.heaps, self.repl, self.trust_proxy = heaps, repl, trust_proxy
         self.hits, self.cards, self.nonce = {}, {}, secrets.token_hex(4)
+        # The bytes this front runs as its host, so an operator can compare them with the build's pin.
+        self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
+                            else host.send({'op': 'hostd-info'}).get('hostSha256', 'unknown'))
 
     def used(self, credential):
         now = self.clock()
@@ -207,7 +125,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         parts = [urllib.parse.unquote(p) for p in path.split('/')[1:]]
         if method == 'GET' and path == PREFIX:
-            return self.reply(200, self.server.guide(), 'text/plain')
+            return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
         if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
             return self.reply(200, (STATIC / parts[1]).read_bytes(), 'text/css' if parts[1].endswith('css') else 'text/javascript')
         if parts[:1] == ['AGENTS.md']:
@@ -358,12 +276,19 @@ class Handler(BaseHTTPRequestHandler):
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, principal, name, view['version']) if principal else None
+        card = self.card(host, principal, name, view['version'])
         self.html(200, pages.obj(name, handle, view, card, self.history(host, name), result))
 
     def card(self, host, principal, name, version):
-        """The object's own card: what its receive offers for an empty reply (every object takes
-        receive {text, post}), cached because a retried identity returns no offers."""
+        """The object's card from the host's world-card (no journaled turn); until that op exists,
+        what its receive offers for an empty reply (every object takes receive {text, post}),
+        cached because a retried identity returns no offers."""
+        r = host.send({'op': 'world-card', 'principal': principal or 'anonymous', 'object': name})
+        if r.get('status') != 'error':
+            return r.get('text')
+        # TODO(host world-card): delete this fallback once the op exists everywhere.
+        if 'unknown world operation' not in r.get('message', ''):
+            return None
         key = (principal, name, version)
         if key not in self.server.cards:
             field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
@@ -375,30 +300,38 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.cards[key]
 
     def history(self, host, name):
-        entries, after = [], None
-        for _ in range(50):
-            req = {'op': 'world-history', 'object': name, 'limit': 100}
-            if after is not None:
-                req['after'] = after
-            page = host.send(req)
-            entries += page.get('entries') or []
-            if not page.get('more') or not page.get('entries'):
-                break
-            after = page['entries'][-1]['height']
-        return entries[-20:][::-1]
+        """The newest 20 entries touching the object, newest first, read from the tail of the journal."""
+        height = host.send({'op': 'world-status'}).get('height') or 0
+        window = 20
+        while True:
+            after, entries = max(0, height - window), []
+            for _ in range(50):
+                req = {'op': 'world-history', 'object': name, 'limit': 100}
+                if after:
+                    req['after'] = after
+                page = host.send(req)
+                entries += page.get('entries') or []
+                if not page.get('more') or not page.get('entries'):
+                    break
+                after = page['entries'][-1]['height']
+            if len(entries) >= 20 or window >= height:
+                return entries[-20:][::-1]
+            window *= 4
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='http.py')
     ap.add_argument('--state', required=True)
-    ap.add_argument('--journal', required=True)
+    add_host_args(ap)
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
-    front = Front((a.bind, a.port), Host(a.journal), Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=Heaps(Path(a.state) / 'heaps'), trust_proxy=a.trust_proxy)
+    sock = a.host_socket or Path(a.state) / 'host.sock'
+    host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
+    front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
+                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy)
     try:
         front.serve_forever()
     finally:

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from transport import interpret, model
-from transport.http import Host
+from transport.hostproc import Host
 
 REQ = {'system': 'You interpret utterances.', 'user': 'plant a fern'}
 
@@ -159,6 +159,127 @@ class Interpret(unittest.TestCase):
         self.addCleanup(host.close)
         r = interpret.run(self.state, host, self.ask)
         self.assertEqual(r['failed'], [])
+
+
+
+class OAuth(unittest.TestCase):
+    TOKENS = {'main': 'sk-ant-oat01-AAAAAAAA', 'spare': 'sk-ant-oat01-BBBBBBBB'}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.toml = Path(self.tmp.name) / 'tokens.toml'
+        self.toml.write_text(''.join(f'[[tokens]]\nname = "{n}"\nkey = "{t}"\n' for n, t in self.TOKENS.items()))
+        self.toml.chmod(0o600)
+        env = {'DELVETALK_MODEL_AUTH': 'oauth', 'DELVETALK_TOKENS_TOML': str(self.toml)}
+        patcher = mock.patch.dict(os.environ, env, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.sent = []
+
+    def probes(self, main, spare, scoped=()):
+        mk = lambda n, u: {'token_name': n, 'quota': {'weekly': {'utilization': u, 'reset': 0}},
+                           'model_usage': {'scoped_weekly': list(scoped) if n == 'main' else []}}
+        return lambda: [mk('main', main), mk('spare', spare)]
+
+    def transport(self, *statuses):
+        queue = list(statuses)
+
+        def t(method, url, headers, wire):
+            self.sent.append(headers)
+            return queue.pop(0), body('{"ok": 1}')
+        return t
+
+    def test_headers_and_most_headroom_account(self):
+        r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.9, 0.2))
+        h = self.sent[0]
+        self.assertEqual((h['Authorization'], h['anthropic-beta']), ('Bearer ' + self.TOKENS['spare'], 'oauth-2025-04-20'))
+        self.assertNotIn('x-api-key', h)
+        self.assertEqual((r['status'], r['account'], r['rotated']), ('replied', 'spare', False))
+
+    def test_model_bucket_headroom_and_haiku_uses_the_general_window(self):
+        opus = [{'key': 'opus_5', 'label': 'Opus 5', 'window': {'utilization': 0.95, 'reset': 0}}]
+        r = model.ask({**REQ, 'model': 'claude-opus-5'}, transport=self.transport(200), tokeman=self.probes(0.1, 0.5, opus))
+        self.assertEqual(r['account'], 'spare')  # main's Opus bucket is nearly spent
+        r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.1, 0.5, opus))
+        self.assertEqual(r['account'], 'main')  # haiku ignores the Opus bucket
+
+    def test_named_account_wins(self):
+        os.environ['DELVETALK_MODEL_ACCOUNT'] = 'main'
+        r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.9, 0.0))
+        self.assertEqual(r['account'], 'main')
+
+    def test_429_rotates_once_then_stops(self):
+        r = model.ask(REQ, transport=self.transport(429, 200), tokeman=self.probes(0.1, 0.5))
+        self.assertEqual((r['status'], r['account'], r['rotated']), ('replied', 'spare', True))
+        self.assertEqual([h['Authorization'][-8:] for h in self.sent], ['AAAAAAAA', 'BBBBBBBB'])
+        self.sent.clear()
+        r = model.ask(REQ, transport=self.transport(529, 429), tokeman=self.probes(0.1, 0.5))
+        self.assertEqual((r['status'], r['reason'], r['rotated']), ('failed', 'rate', True))
+        self.assertEqual(len(self.sent), 2)
+
+    def test_world_readable_toml_is_refused_by_name_and_nothing_is_sent(self):
+        self.toml.chmod(0o644)
+        r = model.ask(REQ, transport=self.transport(), tokeman=self.probes(0, 0))
+        self.assertEqual((r['status'], r['reason']), ('failed', 'refused'))
+        self.assertIn('tokens.toml', r['detail'])
+        self.assertEqual(self.sent, [])
+
+    def test_no_token_string_appears_in_any_result(self):
+        outs = [model.ask(REQ, transport=self.transport(429, 200), tokeman=self.probes(0.1, 0.5)),
+                model.ask(REQ, transport=self.transport(401, 401), tokeman=self.probes(0.1, 0.5))]
+        self.toml.chmod(0o666)
+        outs.append(model.ask(REQ, transport=self.transport(), tokeman=self.probes(0, 0)))
+        for token in self.TOKENS.values():
+            self.assertNotIn(token, json.dumps(outs))
+
+    def test_when_every_account_is_spent_prefer_one_with_extra_usage_and_surface_billing(self):
+        def probe(name, enabled, in_use=False):
+            return {'token_name': name, 'quota': {'weekly': {'utilization': 1.0, 'reset': 0},
+                                                  'overage_status': 'allowed' if enabled else 'rejected',
+                                                  'overage_disabled_reason': None if enabled else 'out_of_credits',
+                                                  'overage_in_use': in_use}}
+        r = model.ask(REQ, transport=self.transport(200), tokeman=lambda: [probe('main', False), probe('spare', True, True)])
+        self.assertEqual((r['account'], r['overageInUse']), ('spare', True))
+        r = model.ask(REQ, transport=self.transport(200), tokeman=lambda: [probe('main', True), probe('spare', False)])
+        self.assertEqual((r['account'], r['overageInUse']), ('main', False))
+
+    def test_headroom_still_beats_overage_while_any_account_has_some(self):
+        probes = [{'token_name': 'main', 'quota': {'weekly': {'utilization': 0.4}, 'overage_status': 'rejected'}},
+                  {'token_name': 'spare', 'quota': {'weekly': {'utilization': 1.0}, 'overage_status': 'allowed'}}]
+        self.assertEqual(model.ask(REQ, transport=self.transport(200), tokeman=lambda: probes)['account'], 'main')
+
+    def test_key_mode_still_uses_x_api_key(self):
+        os.environ.update({'DELVETALK_MODEL_AUTH': 'key', 'DELVETALK_ANTHROPIC_KEY': 'k'})
+        model.ask(REQ, transport=self.transport(200))
+        self.assertEqual(self.sent[0]['x-api-key'], 'k')
+        self.assertNotIn('Authorization', self.sent[0])
+
+
+class Spend(unittest.TestCase):
+    def test_wire_never_carries_sampling_fields_and_thinking_is_opt_in(self):
+        seen = []
+        t = lambda *a: seen.append(json.loads(a[3])) or (200, body('{}'))
+        with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'k'}, clear=True):
+            model.ask({**REQ, 'temperature': 0.2, 'top_p': 0.9, 'top_k': 3}, transport=t)
+            self.assertNotIn('thinking', seen[0])
+            os.environ['DELVETALK_MODEL_THINKING'] = 'off'
+            model.ask(REQ, transport=t)
+        self.assertEqual(seen[1]['thinking'], {'type': 'disabled'})
+        for wire in seen:
+            self.assertEqual(set(wire) - {'thinking'}, {'model', 'max_tokens', 'system', 'messages'})
+
+    def test_spend_log_and_ratelimit_headers(self):
+        t = lambda *a: (200, body('{}'), {'Anthropic-RateLimit-Requests-Remaining': '7', 'x-other': '1'})
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'sekret', 'DELVETALK_KEY_NAME': 'max-grant'}, clear=True):
+            r = model.ask(REQ, transport=t, state=d)
+            model.ask(REQ, transport=lambda *a: (429, b'{}'), state=d)  # failures are not logged
+            lines = [json.loads(x) for x in (Path(d) / 'model-spend.jsonl').read_text().splitlines()]
+            self.assertNotIn('sekret', (Path(d) / 'model-spend.jsonl').read_text())
+        self.assertEqual(r['rateLimits'], {'anthropic-ratelimit-requests-remaining': '7'})
+        self.assertEqual(len(lines), 1)
+        self.assertEqual({k: lines[0][k] for k in ('model', 'inputTokens', 'outputTokens', 'account')},
+                         {'model': 'claude-haiku-5-5', 'inputTokens': 3, 'outputTokens': 4, 'account': 'max-grant'})
 
 
 if __name__ == '__main__':

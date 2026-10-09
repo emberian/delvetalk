@@ -11,7 +11,8 @@ from tests.test_chain import garden_state
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
-from transport.http import Front, Heaps, Host
+from tests.host import start_hostd, stop_hostd
+from transport.http import Front, HostClient, RemoteHeaps
 
 HANDLE = 'talkie.delve.town'
 DID = 'did:plc:' + 'a' * 24
@@ -41,10 +42,13 @@ class HttpFront(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.provider = Provider()
         self.now = [1000.0]
-        self.host = Host(str(Path(self.tmp.name) / 'world.journal'), BINARY)
+        self.hostd = start_hostd(self.tmp.name, BINARY)
+        self.hostd.heaps.size = 2
+        sock = Path(self.tmp.name) / 'host.sock'
+        self.host = HostClient(sock)
         ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
         self.front = Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                          heaps=Heaps(Path(self.tmp.name) / 'heaps', size=2, binary=BINARY))
+                          heaps=RemoteHeaps(sock, Path(self.tmp.name) / 'heaps'), repl=HostClient(sock, stateless=True))
         self.port = self.front.server_address[1]
         threading.Thread(target=self.front.serve_forever, daemon=True).start()
         r = self.host.send({'op': 'world-create', 'principal': HANDLE, 'identity': 'mk', 'object': 'c1',
@@ -54,9 +58,7 @@ class HttpFront(unittest.TestCase):
     def tearDown(self):
         self.front.shutdown()
         self.front.server_close()
-        self.front.heaps.close()
-        self.front.repl.close()
-        self.host.close()
+        stop_hostd(self.hostd)
         self.tmp.cleanup()
 
     def request(self, method, path, body=None, token=None, raw=None, headers=None):
@@ -95,6 +97,12 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(s, 200)
         self.assertIn('/AGENTS.md/challenge', text)
         self.assertNotIn('{{origin}}', text)
+
+    def test_guide_names_the_host_binary(self):
+        import hashlib
+        s, headers, _ = self.request('GET', '/AGENTS.md')
+        self.assertEqual(s, 200)
+        self.assertEqual(dict(headers)['X-DelveTalk-Host-Sha256'], hashlib.sha256(Path(BINARY).read_bytes()).hexdigest())
 
     def test_unknown_route_points_at_guide(self):
         s, body = self.call('GET', '/nope')
@@ -155,8 +163,8 @@ class HttpFront(unittest.TestCase):
         tok = self.login()
         for i in range(2):
             self.assertEqual(self.turn(tok, f'd{i}')[1]['status'], 'admitted')
-        self.host.proc.kill()
-        self.host.proc.wait()
+        self.hostd.shared.proc.kill()
+        self.hostd.shared.proc.wait()
         s, v = self.call('GET', '/AGENTS.md/world/c1', token=tok)
         self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 2), v)
         self.assertEqual(self.turn(tok, 'd1')[1]['status'], 'admitted')  # retried identity: original receipt
@@ -235,7 +243,7 @@ class HttpFront(unittest.TestCase):
         for i, t in enumerate(toks[:2]):
             self.heap_create(t, 'h')
             self.call('POST', '/AGENTS.md/heap/world/h/bump', {'argument': record(), 'intent': 'b'}, t)
-        pool = self.front.heaps.pool
+        pool = self.hostd.heaps.pool
         first = pool[PEOPLE[names[0]]]
         self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h', token=toks[2])[0], 404)  # third heap evicts the first
         self.assertNotIn(PEOPLE[names[0]], pool)
@@ -302,6 +310,29 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.front.hits.get('ip:9.9.9.9') and len(self.front.hits['ip:9.9.9.9']), 1)
         self.now[0] += 61
         self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
+
+    def test_page_uses_world_card_without_journaling_and_history_is_newest_first(self):
+        for i in range(25):
+            self.host.send({'op': 'world-turn', 'principal': DID, 'object': 'c1', 'method': 'bump', 'argument': record(), 'identity': f'h{i}'})
+        real, seen = self.host.send, []
+
+        def send(req):
+            seen.append(req['op'])
+            if req['op'] == 'world-card':
+                return {'status': 'card', 'text': 'CARD for ' + req['principal']}
+            return real(req)
+        self.host.send = send
+        tok = self.login()
+        cookie = 'dt_credential=' + tok
+        before = real({'op': 'world-status'})['height']
+        s, _, page = self.request('GET', '/o/c1', headers={'Cookie': cookie})
+        self.assertEqual(s, 200)
+        self.assertIn(('CARD for ' + DID).encode(), page)
+        self.assertEqual(real({'op': 'world-status'})['height'], before)  # no describe/present turn journaled
+        heights = [int(x) for x in __import__('re').findall(rb'<tr><td>(\d+)</td>', page)]
+        self.assertEqual(len(heights), 20)
+        self.assertEqual(heights, sorted(heights, reverse=True))
+        self.assertEqual(heights[0], before)
 
 
 if __name__ == '__main__':

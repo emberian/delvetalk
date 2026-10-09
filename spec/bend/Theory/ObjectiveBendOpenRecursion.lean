@@ -56,6 +56,14 @@ inductive Term where
   | perform (plan : Term)
   /-- A pure value where an activity is expected (return). Reduces to its value. -/
   | done (value : Term)
+  /-- Hosted extension, not upstream: inject first-order data into the universal
+  type `Data`. Typing-only; at runtime the value is just the value. -/
+  | toData (value : Term)
+  /-- Hosted extension, not upstream: join a `List<String>` (a `nil`/`cons` sum
+  with `head`/`tail` fields) with a separator. Its meaning is
+  `textJoinExpansion`, a fold in the other constructors; the demand machine runs
+  it natively with an accumulator, so a join costs linear work in its output. -/
+  | textJoin (list separator : Term)
   deriving Repr
 
 def liftRename (rename : Nat → Nat) : Nat → Nat
@@ -91,6 +99,8 @@ def Term.rename (rename : Nat → Nat) : Term → Term
       .ifBool (condition.rename rename) (whenTrue.rename rename) (whenFalse.rename rename)
   | .perform plan => .perform (plan.rename rename)
   | .done value => .done (value.rename rename)
+  | .toData value => .toData (value.rename rename)
+  | .textJoin list separator => .textJoin (list.rename rename) (separator.rename rename)
 
 termination_by source => sizeOf source
 decreasing_by
@@ -139,6 +149,8 @@ def Term.substitute (substitution : Nat → Term) : Term → Term
         (whenFalse.substitute substitution)
   | .perform plan => .perform (plan.substitute substitution)
   | .done value => .done (value.substitute substitution)
+  | .toData value => .toData (value.substitute substitution)
+  | .textJoin list separator => .textJoin (list.substitute substitution) (separator.substitute substitution)
 
 termination_by source => sizeOf source
 decreasing_by
@@ -151,6 +163,22 @@ decreasing_by
          cases field
          simp +arith
        omega)
+
+/-- The meaning of `textJoin list separator`: a case on the list, then the
+recursive `go accumulated rest` (a `fix` of `λself. λ_. λaccumulated. λrest.`)
+that appends `separator ++ head` for every later element. Inside `go`'s cons
+arm the separator sits under the outer arm's binder, four lambdas and the
+inner arm's binder: six. -/
+def textJoinExpansion (list separator : Term) : Term :=
+  let shifted := separator.rename (· + 6)
+  let body : Term := .case (.bound 0)
+    [("nil", .bound 2),
+     ("cons", .app (.app (.bound 4)
+        (.binary .textConcat (.bound 2) (.binary .textConcat shifted (.get (.bound 0) "head"))))
+        (.get (.bound 0) "tail"))]
+  let go : Term := .fix (.lam (.lam (.lam (.lam body)))) (.record [])
+  .case list [("nil", .label ""),
+    ("cons", .app (.app go (.get (.bound 0) "head")) (.get (.bound 0) "tail"))]
 
 def instantiate (body argument : Term) : Term :=
   body.substitute (fun index => match index with | 0 => argument | n + 1 => .bound n)
@@ -334,6 +362,10 @@ inductive Step : Term → Term → Prop where
   | ifFalse (whenTrue whenFalse : Term) : Step (.ifBool (.boolean false) whenTrue whenFalse) whenFalse
   /-- `done` is administrative: the activity returns its pure value. -/
   | done (value : Term) : Step (.done value) value
+  /-- `toData` is administrative: erased, it is its value. -/
+  | toData (value : Term) : Step (.toData value) value
+  /-- `textJoin` unfolds to its fold (`textJoinExpansion`). -/
+  | textJoin (list separator : Term) : Step (.textJoin list separator) (textJoinExpansion list separator)
 
 inductive Steps : Term → Term → Prop where
   | refl (term : Term) : Steps term term

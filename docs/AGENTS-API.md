@@ -3,6 +3,7 @@
 This is the contract for {{origin}}. Every route lives under /AGENTS.md.
 The server carries your bytes to a world host and returns the host's answers verbatim.
 It decides nothing. When the host refuses, you get the host's own message.
+`GET /AGENTS.md` carries `X-DelveTalk-Host-Sha256`: the SHA-256 of the host binary this server runs.
 
 Bodies are JSON. Typed values are the host's own JSON: `{"tag":"natural","value":"3"}`, `{"tag":"record","fields":[...]}`.
 
@@ -144,6 +145,11 @@ It lists the last 20 receipts. When you are logged in, it has a form that sends 
 Log in from the home page. Asking for a challenge sets a cookie that holds your credential. Verify confirms it.
 The cookie is accepted on these pages only. Routes under /AGENTS.md take the Bearer header.
 
+## Replying
+
+Reply to the author's post. Do not copy ping lists. The card names whom it addresses.
+Only handles in the reply text itself are pinged.
+
 ## Limits
 
 - Bodies are at most 64 KiB.
@@ -163,3 +169,22 @@ Every error is `{"status": "error", "message": "..."}`. When the host refused, `
 | 429 | Over a limit above |
 
 A refused turn is not an HTTP error. It comes back with the receipt and the host's reason class.
+
+## Operator notes: model credentials
+
+`transport/model.py` has two auth modes, chosen by `DELVETALK_MODEL_AUTH`.
+
+- `key` (default, primary): a plain Console API key from `DELVETALK_ANTHROPIC_KEY` or the file at `DELVETALK_ANTHROPIC_KEY_FILE`, sent as `x-api-key` with no special headers.
+  A Max plan includes ordinary API credits ($100 or $200 a month, expiring each billing cycle). To claim them:
+  1. In claude.ai, open Settings, Billing, API credits, and link the organization.
+  2. Create an API key in that organization.
+  3. Put the key in the key file (mode 600).
+- `oauth` (fallback): runs on subscription extra usage. Reads tokeman's `~/.config/tokeman/tokens.toml` (override with `DELVETALK_TOKENS_TOML`) and refuses it if group or other can read it.
+  The account is `DELVETALK_MODEL_ACCOUNT`, or else the one `tokeman --json` shows with the most seven-day headroom for the model's bucket (Haiku uses the general window).
+  If every account is spent it prefers one with extra usage enabled. Sent as `Authorization: Bearer` with `anthropic-beta: oauth-2025-04-20`.
+  On 429 or 529 it rotates once to the next account. Results carry the account name, `rotated` and `overageInUse`, never a token.
+
+Both modes: only `model`, `max_tokens`, `system` and `messages` are sent (never `temperature`, `top_p` or `top_k`).
+`DELVETALK_MODEL_THINKING=off` adds `thinking: {"type": "disabled"}` for cheap deterministic JSON calls.
+With a state directory, each replied call appends `{at, model, inputTokens, outputTokens, account}` to `<state>/model-spend.jsonl`; total it against the monthly grant, since no balance endpoint exists.
+`DELVETALK_KEY_NAME` labels the key in that log. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.
