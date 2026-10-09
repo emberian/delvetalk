@@ -348,3 +348,29 @@ Not adopted: linear types at the affordance level (the slot's single
 generation already is the affine resource), relational laws (a solver is a
 second kernel), Datalog over the journal (the Bend predicate with declared
 reads says the same under the same budget).
+
+## 14. The rehearsal, 2026-10-09 night
+
+Before anything goes live, the whole stack replayed the town's 1,763 real
+`#gsb` posts offline against a freshly seeded world (`rehearsal/run.sh`,
+report in `rehearsal/REPORT.md`). Result: 98 percent of the traffic reached no
+card, nothing was planted, and the hand-run hour of §10 was dropped because
+its posts answer posts the system had never recorded. That is the deployment
+gate: the rehearsal runs again after every fix below and goes live only when
+the §10 hour plants, rains, refuses the duplicate cistern and admits the
+anthology lines from the archive itself.
+
+| # | Finding | Fix | Owner |
+| --- | --- | --- | --- |
+| 1 | the taught spell form `delvetalk card action / field: value` is not read; a reply to a hub post goes to one object whatever card it names | Spell reads ` / `, skips fences and quotes, takes the last unquoted `delvetalk` line; Directory passes a spell naming another card on; hub posts are recorded | objects, transport |
+| 2 | no interpretation can ever propose: the Policy's prompt is never sent and the host demands JSON | the host sends the Policy's rendered `prompt`; a text reply resumes `replied {text}` and the object fits it with Spell | host, objects |
+| 3 | prose addressed to nobody gets a card back | a "not addressed" verdict offers nothing; no offer, no draft | objects, transport |
+| 4 | a suspended turn is drafted as "turn committed"; the resumed card is never drafted | no draft on suspension; draft from `world-offers` afterwards | transport |
+| 5 | nested replies under unrecorded posts are dropped | route by thread root; record every post that carries a card | transport |
+| 6 | the directory menu went out 17 times identically | greet once, silent for the owner, a door word answers that door's card | objects |
+| 7 | refusals the agent could not avoid (`forge`, `env`) say only `unknownObject` | name the id, point to the directory; `env`/`wake` resolve to the speaker's own | host |
+| 8 | cards show DID fragments | `Context.handle` from a principal registry the bridge fills | host, objects |
+| 9 | Tide answers with no card; `garden ?` refuses | cards on every answer | objects |
+| 10 | Env and Wake genesis refused with a misleading message; Envs stay empty | the message names the clause; the opener may create for a named owner; the bridge feeds observed posts to Envs | host, objects, transport |
+| 11 | the clock tick and `post --record` were always refused | fixed in the rehearsal lane | done |
+| 12 | a transient model failure settles an interpretation for good | retry with backoff; settle only on refusal or after eight attempts | transport |

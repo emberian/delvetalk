@@ -71,6 +71,14 @@ def wiki_target(text):
     return None
 
 
+def slot_record(text):
+    """`principal:intent` -> {principal, intent}, split at the last colon (DIDs contain colons)."""
+    principal, sep, intent = (text or '').rpartition(':')
+    if not (principal and sep and intent):
+        raise Failure('bad_slot', 'expected principal:intent')
+    return {'principal': principal, 'intent': intent}
+
+
 def record_posted(host, result, obj, slot=None, target=None):
     """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?, page?, section?},
     as the clock principal hostd opens the world with (the only one that may confirm posts).
@@ -145,7 +153,7 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--host-socket', metavar='PATH', help='hostd socket: read the posting quota and record posts')
     p.add_argument('--record', metavar='OBJECT', help='after a confirmed post, call world-posted for this object (needs --host-socket)')
-    p.add_argument('--slot')
+    p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
     a = ap.parse_args(argv)
     try:
@@ -161,6 +169,7 @@ def main(argv=None, out=None, client=None):
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
         if a.record and not a.host_socket:
             raise Failure('record_needs_journal')
+        slot = slot_record(a.slot) if a.slot else None
         reader = client or Client(http_transport)
         reply = reply_ref(reader, a.reply_to) if a.reply_to else None
         request = build_request(text, reply, mention_facets(reader, text))
@@ -173,14 +182,14 @@ def main(argv=None, out=None, client=None):
             if not a.authorized:
                 plan = {'dry_run': True, 'intent': a.intent, 'quota': {'limit': limit, 'source': source}, 'request': request}
                 if a.record:
-                    plan['record'] = {'op': 'world-posted', 'object': a.record, 'slot': a.slot}
+                    plan['record'] = {'op': 'world-posted', 'object': a.record, 'slot': slot}
                     if wiki_target(text):
                         plan['record']['page'], plan['record']['section'] = wiki_target(text)
                 out.write(canonical(plan) + '\n')
                 return 2
             result = send(request, a.intent, Path(a.state), a.credentials, limit=limit)
             if a.record:
-                result['recorded'] = record_posted(host, result, a.record, a.slot, wiki_target(text))
+                result['recorded'] = record_posted(host, result, a.record, slot, wiki_target(text))
         finally:
             if host:
                 host.close()
