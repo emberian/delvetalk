@@ -1,12 +1,10 @@
 """The workshop: a model takes the reins from a post.
 
-The host does not implement `check`, `inspect` or the reprogram path of these
-turns yet; a turn that performs them is refused as
-
-    {'class': 'evaluation', 'reason': 'plan not supported: check'}
-    {'class': 'evaluation', 'reason': 'plan not supported: inspect'}
-
-so the paths that reach the host are expected failures and flip when it lands.
+The host answers `check` and `inspect`. Reprogramming another object is not the
+workshop's to do: under the authority model a `reprogram` of any object but the
+running one is answered `refused {clause: notSelf}`, so the propose path stays an
+expected failure until the target adopts a package through its own method (or a
+grant names the workshop).
 """
 import unittest
 
@@ -113,7 +111,6 @@ class Workshop(Chain):
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
 
-    @unittest.expectedFailure
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check\n```obend\n%s```\n" % BLOCK)
@@ -121,7 +118,6 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "clean")
         self.assertIn("Checked: it compiles.", self.card(reply))
 
-    @unittest.expectedFailure
     def test_a_target_is_inspected_and_its_source_checked(self):
         self.make_workshop()
         self.make("bell-1", closure("Counter"), record(count=nat(0)))
@@ -138,7 +134,6 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "reprogrammed")
         self.assertIn("Reprogrammed bell-1.", self.card(reply))
 
-    @unittest.expectedFailure
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop propose\ntarget: ghost\nmigration: keep\n```obend\n%s```\n" % BLOCK)

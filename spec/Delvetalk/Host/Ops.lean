@@ -402,10 +402,20 @@ def checkSource (w : World) (source : String) : List String :=
   if source.utf8ByteSize > Limits.maxPackageBytes then
     [s!"Checked:0: package-request: package source exceeds {Limits.maxPackageBytes} bytes"]
   else
+    -- The front end elaborates every declaration of every module whatever entry is selected,
+    -- so the entry only has to exist: `initial` when declared, else the first `def`, else a
+    -- definition appended after the source (which moves no line of it).
+    let defs := (source.splitOn "\n").filterMap fun line =>
+      (line.dropPrefix? "def ").map fun rest => (rest.toString.takeWhile fun c => c.isAlphanum || c == '_').toString
+    let (checked, entry) :=
+      if defs.contains "initial" then (source, "initial")
+      else match defs.find? (!·.isEmpty) with
+        | some name => (source, name)
+        | none => (source ++ "\ndef checkedEntry() -> Nat:\n  0n\n", "checkedEntry")
     let modules := (match w.library with
-      | some lib => libraryClosure lib [source]
-      | none => []) ++ [("Checked", source)]
-    match Package.checkPackage modules "initial" with
+      | some lib => libraryClosure lib [checked]
+      | none => []) ++ [("Checked", checked)]
+    match Package.checkPackage modules entry with
     | .ok _ => []
     | .error d =>
       -- A package that declares laws compiles; only the pure profile has no adapter for them.

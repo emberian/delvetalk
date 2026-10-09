@@ -51,7 +51,7 @@ PROBE = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Spell.obend as Spell
+import ./Form.obend as Form
 record Arg:
   n: Nat
 record State:
@@ -93,8 +93,8 @@ def ask(state: State, input: {utterance: String, policy: String}, context: Abi.C
     case timedOut(_): note(context, 0n, "timedOut")
     case denied(_): note(context, 0n, "denied")
     case _: note(context, 0n, "other")
-def offered() -> Lists.List<Spell.Form>:
-  Lists.List::<Spell.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Spell.Field>.nil()}, tail: Lists.List::<Spell.Form>.nil()})
+def offered() -> Lists.List<Form.Form>:
+  Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
 def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: {n: 0n}})):
     case delivery(_): note(context, 0n, "sent")
@@ -268,7 +268,7 @@ class Inspect(Reflection):
         mine = self.host.send(op="world-inspect", principal="ember", object="secret")
         self.assertEqual(mine["status"], "inspected", mine)
         self.assertEqual(mine["source"], PACKAGE)
-        self.assertEqual(len(mine["pin"]), 64)
+        self.assertRegex(mine["pin"], r"^bafyrei[a-z2-7]{52}$")  # CIDv1, dag-cbor, sha2-256
         self.assertIn("owner", mine["law"])
         stranger = self.host.send(op="world-inspect", principal="kim", object="secret")
         self.assertEqual(stranger["status"], "denied")
@@ -304,6 +304,16 @@ class Check(Reflection):
         self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
         self.assertEqual(self.host.send(op="world-status")["objects"], objects)
         self.assertNotIn("def initial", self.lines()[-1])
+
+    def test_a_module_without_initial_is_checked_whole_not_refused_for_its_entry(self):
+        plain = "edition ObjectiveBend 1\ndef bump(count: Nat) -> Nat:\n  count + 1n\n"
+        self.assertEqual(self.turn("probe", "checkIt", record(package=label(plain)))["result"], label("clean"))
+        types = "edition ObjectiveBend 1\nrecord Pair:\n  left: Nat\n  right: Nat\n"
+        self.assertEqual(self.turn("probe", "checkIt", record(package=label(types)))["result"], label("clean"))
+        # A broken definition after the first is still found: the entry does not limit the check.
+        later = plain + "def later() -> Nat:\n  missing\n"
+        self.assertRegex(self.turn("probe", "checkIt", record(package=label(later)))["result"]["value"],
+                         r"^Checked:\d+: .*missing")
 
     def test_a_package_that_declares_a_law_checks_clean(self):
         law = PACKAGE.replace("def initial", "law ceiling: new.count <= 5\ndef initial")
