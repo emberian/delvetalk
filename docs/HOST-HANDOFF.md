@@ -379,6 +379,22 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    source no entry carries by CID (`knownByCid`; reprogrammed and extended objects' modules), which also fixed
    snapshots of reprogrammed objects.
 
+19. **Supervisors (host4, FOUNDATION 13 row 5).** `Object.supervisor` (an object id, "" for none) is fixed at
+   creation: `world-create {…, supervisor?}` (it must be an object; journaled as `supervisor` on the created
+   outcome) or Plan `createUnder {package, seed, law, requireAbsent, supervisor: Reference}` (Plan.obend;
+   `refused {clause: supervisor}` when it is not an object; recorded on the `creates[]` record). An activity of
+   a supervised object *ends* `broken` when its turn is refused `evaluation` (including a delivered or resumed
+   turn's request error), `budget` when a machine budget ran out, and `timedOut` when a segment resumed past its
+   await's deadline ends in any way. `commit`'s `onEnd` then puts an `ended {id, to, method: "ended", argument,
+   sender, ledger}` field in that entry (`endedField`; id = `endedId principal intent height`); `record` makes
+   it a pending delivery whatever the entry's outcome, run as the activity's principal with the object as
+   `caller`, argument `{receipt: Receipt, how}` (Plan.obend's `Receipt` of the entry itself), under the ledger
+   the activity ran with, depth one less and work less what it spent, so a ring of supervisors stops when the
+   depth runs out. A ledger refusal (`budgetExhausted`) tells nobody: it has no causal budget to tell with.
+   Replay checks the id and that `to` is the object's supervisor (`checkEnded`). The supervisor declares
+   `def ended(state, input: {receipt: Plans.Receipt, how: String}, context)`; another input is refused
+   `typeMismatch` at delivery. Snapshots keep `supervisor`; `world-inspect` shows it.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

@@ -734,7 +734,8 @@ def expandInputs (w : World) (inputs : Json) : Except String Json := do
 def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin), ("sourcesSha256", toJson c.sources),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
-    ("seed", c.seed), ("law", toJson c.object.lawText)]
+    ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
+    if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)
 
 structure Judged where
   updates : List (String × Object)
@@ -936,7 +937,11 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
     modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
-      | none => w.pending) ++ sent
+      | none => w.pending) ++ sent ++
+      -- An activity's end told to its object's supervisor, whatever the entry's outcome.
+      (((entry.getObjVal? "ended").toOption.map fun e =>
+        #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
+          ((e.getObj?.toOption.map (·.toList)).getD []))]).getD #[])
     height := w.height + 1, head := hash, entries := w.entries.push entry
     clock := if tagOf entry == "advanced" then (entry.getObjVal? "outcome" |>.bind (·.getObjValAs? Nat "to")).toOption.getD w.clock else w.clock
     suspended := (match (entry.getObjValAs? String "resumes").toOption with
@@ -983,11 +988,41 @@ def retained (w : World) (principal intent digest : String) : Option Json :=
     else if same then some (reply entry)
     else some (duplicate principal intent entry)
 
+/-! ## Supervision -/
+
+/-- The id of the `ended` delivery an entry at `height` sends. -/
+def endedId (principal intent : String) (height : Nat) : String :=
+  Journal.bodyHash (Json.arr #[toJson "ended", toJson principal, toJson intent, toJson height])
+
+/-- The receipt an entry is, as `Plan.obend`'s `Receipt` on the wire. -/
+def receiptOf (principal intent : String) (height : Nat) (outcome : Json) : Data :=
+  let text := fun (k : String) => (outcome.getObjValAs? String k).toOption.getD ""
+  .record [("slot", .record [("principal", .label principal), ("intent", .label intent)]),
+    ("height", .natural height),
+    ("outcome", if text "tag" == "refused" then .variant "refused" (.record [("class", .label (text "class")), ("root", .label (text "object"))])
+      else .variant "admitted" (.record []))]
+
+/-- The `ended` field of an entry: a delivery of `ended {receipt, how}` to the supervisor of
+    `object`, under the ledger the activity ran with, one level deeper and less the work it
+    spent. Nothing when the object has no supervisor (or it is gone). -/
+def endedField (w : World) (object principal intent how : String) (ledger : Ledger) (used : Nat)
+    (height : Nat) (outcome : Json) : List (String × Json) :=
+  match (w.objects[object]?).map (·.supervisor) with
+  | some sup =>
+    if sup.isEmpty || !w.objects.contains sup then [] else
+    let child : Ledger := ⟨ledger.depth - 1, ledger.work - used, ledger.storage⟩
+    let argument := Data.record [("receipt", receiptOf principal intent height outcome), ("how", .label how)]
+    [("ended", Json.mkObj [("id", toJson (endedId principal intent height)), ("to", toJson sup),
+      ("method", toJson "ended"), ("argument", dataJson argument), ("sender", toJson object),
+      ("ledger", child.json)])]
+  | none => []
+
 /-- The commit rule. Pure: the turn loop calls this with the roots it recorded and
     the writes it produced. Returns the next world and the reply (a receipt). -/
 def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     (forced : Option Refusal := none)
-    (onAdmit : List (String × Object) → List (String × Json) := fun _ => []) : World × Json :=
+    (onAdmit : List (String × Object) → List (String × Json) := fun _ => [])
+    (onEnd : Nat → Json → List (String × Json) := fun _ _ => []) : World × Json :=
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
   | none =>
@@ -1005,7 +1040,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
         (r.reason.map fun o => [("reason", toJson o)]).getD [])
-      let (w', entry) := push w key (base ++ [("outcome", outcome)]) []
+      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
       let updates := judged.updates
@@ -1024,7 +1059,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]))
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
-          newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs))
+          newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs) ++ onEnd (w.height + 1) outcome)
         (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
       (w', reply entry)
 
@@ -1139,8 +1174,12 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let inputs ← attachLibrary w (← compileInputs j)
   let seed ← j.getObjVal? "seed"
   let (o, sources, w) ← buildObjectIn w inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption principal (w.height + 1)
+  let supervisor := (← optText j "supervisor").getD ""
+  unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
+  let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   let outcome := createOutcome id o sources (compactInputs inputs) seed
+  let outcome := if supervisor.isEmpty then outcome else outcome.setObjVal! "supervisor" (toJson supervisor)
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
@@ -1309,6 +1348,16 @@ def checkSends (w : World) (entry : Json) (principal intent : String) : Except S
     discard <| ledgerOf (← s.getObjVal? "ledger")
     ordinal := ordinal + 1
 
+/-- An `ended` field names its entry's id and the supervisor of the object it speaks for. -/
+def checkEnded (w : World) (entry : Json) (principal intent : String) : Except String Unit := do
+  let some e := (entry.getObjVal? "ended").toOption | return ()
+  unless (← e.getObjValAs? String "id") == endedId principal intent (w.height + 1) do throw "an ended delivery is not its entry's"
+  let object ← e.getObjValAs? String "sender"
+  unless (w.objects[object]?).map (·.supervisor) == some (← e.getObjValAs? String "to") do
+    throw "an ended delivery is not to the object's supervisor"
+  discard <| decodeData Limits.dataDepth (← e.getObjVal? "argument")
+  discard <| ledgerOf (← e.getObjVal? "ledger")
+
 /-- An entry that resumes a suspension must name a waiting one of the same identity. -/
 def checkResumes (w : World) (entry : Json) (principal intent : String) : Except String Unit := do
   let some h := (entry.getObjValAs? String "resumes").toOption | return ()
@@ -1330,6 +1379,7 @@ def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
     let (o, sources, w') ← buildObjectIn w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     w := w'
+    let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     creates := creates ++ [(id, ({ object := o, sources, seed } : CreateRec))]
   return (w, creates)
 
@@ -1347,6 +1397,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
   checkResumes w entry principal intent
+  checkEnded w entry principal intent
   match ← outcome.getObjValAs? String "tag" with
   | "advanced" =>
     let before ← natField outcome "from"
@@ -1408,6 +1459,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption principal (w.height + 1)
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
+    let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record { w with objects := w.objects.insert id o } entry key [id]
   | "refused" =>
     let cls ← outcome.getObjValAs? String "class"

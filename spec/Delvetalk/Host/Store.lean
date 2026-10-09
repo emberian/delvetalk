@@ -192,6 +192,9 @@ structure Object where
       and `def lawReads()` beside it. -/
   predicate : Bool := false
   predicateReads : Bool := false
+  /-- The object told `ended {receipt, how}` when an activity of this one ends `timedOut`,
+      `broken` or `budget` ("" for none); fixed at creation. -/
+  supervisor : String := ""
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

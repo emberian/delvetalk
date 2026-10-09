@@ -124,6 +124,7 @@ sum Plan<E>:
   call: {object: Reference, method: String, argument: Data}
   send: {object: Reference, method: String, argument: Data}
   create: {package: String, seed: Data, law: String, requireAbsent: Reference}
+  createUnder: {package: String, seed: Data, law: String, requireAbsent: Reference, supervisor: Reference}
   await: Await
   awaitUntil: {slot: Slot, until: Nat}
   interpret: Interpret

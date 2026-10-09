@@ -680,8 +680,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     set { s with checks := s.checks + 1 }
     respond bounds responseType "checked"
       [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
-  | .variant "create" (.record f) =>
+  | .variant "create" (.record f) | .variant "createUnder" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
+    -- `createUnder` names the child's supervisor; it must be an object now.
+    let supervisor := ((f.lookup "supervisor").bind referenceId).getD ""
     let some seed := f.lookup "seed" | evaluation "malformed create plan"
     let lawArg := ((f.lookup "law").bind labelOf).getD ""
     let some target := f.lookup "requireAbsent" | evaluation "malformed create plan"
@@ -696,12 +698,15 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       refusedWith bounds responseType "requiredAbsence"
     else if s.creates.length ≥ Limits.createsPerTurn || s.absent.length ≥ Limits.maxRoots then
       refusedWith bounds responseType "capacity"
+    else if !supervisor.isEmpty && !s.world.objects.contains supervisor && supervisor != self then
+      refusedWith bounds responseType "supervisor"
     else
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
       match buildCreated s.world creator package seed lawArg s.principal (s.world.height + 1) with
       | .error (clause, _) => refusedWith bounds responseType clause
-      | .ok (rec, built) =>
-        set { note s with creates := s.creates ++ [(id, rec)], world := cacheBuild s.world rec.object.inputs built }
+      | .ok (made, built) =>
+        let made := { made with object := { made.object with supervisor } }
+        set { note s with creates := s.creates ++ [(id, made)], world := cacheBuild s.world made.object.inputs built }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) | .variant "sendVia" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed send plan"
@@ -874,6 +879,8 @@ structure Ctx where
   caller : String := ""
   /-- The grant a delivered send was made under ("" for none). -/
   via : String := ""
+  /-- This segment continues an activity whose await ran past its deadline. -/
+  timedOut : Bool := false
 
 
 def sendJson (s : Send) : Json :=
@@ -914,21 +921,27 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       revokes := st.revokes
       spent := st.spent }
   let base := entryBase ctx used
+  -- An activity of a supervised object that ends broken, out of budget, or after its await
+  -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
+  let ended := fun (how : String) (h : Nat) (out : Json) =>
+    endedField w ctx.object ctx.principal ctx.intent how ctx.ledger used h out
+  let endedIfLate := fun (h : Nat) (out : Json) => if ctx.timedOut then ended "timedOut" h out else []
   let refuse := fun (reason : String) =>
     let cls := if st.roots.isEmpty && !w.objects.contains ctx.object then "unknownObject" else "evaluation"
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls, reason := some reason, object := if cls == "unknownObject" then some ctx.object else none })
+      (onEnd := ended "broken")
     (w', turnReply r)
   match result with
   | .error (.request message) => if ctx.delivery.isSome || ctx.resumes.isSome then return refuse message else throw message
   | .error (.evaluation reason) => return refuse reason
   | .error (.budget resource) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
-      (some { cls := "budget", reason := some resource })
+      (some { cls := "budget", reason := some resource }) (onEnd := ended "budget")
     return (w', turnReply r)
   | .error (.refused cls reason) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
-      (some { cls, reason := some reason, object := some ctx.object })
+      (some { cls, reason := some reason, object := some ctx.object }) (onEnd := endedIfLate)
     return (w', turnReply r)
   | .error (.suspend sp si patience checkpoint interpretation) =>
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
@@ -959,21 +972,21 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     match st.violation with
     | some id =>
       let (w', r) := commit w { proposal with writes := [], creates := [] } base
-        (some { cls := "requiredAbsence", object := some id })
+        (some { cls := "requiredAbsence", object := some id }) (onEnd := endedIfLate)
       return (w', turnReply r)
     | none =>
     -- A send under a grant leaves only if the grant still stands (a suspension may have outlived it).
     match st.sends.find? fun x => !x.via.isEmpty && (grantStands w x.via x.to x.method).isNone with
     | some x =>
       let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [], spent := [] } base
-        (some { cls := "lawRefused", clause := some "noGrant", object := some x.to })
+        (some { cls := "lawRefused", clause := some "noGrant", object := some x.to }) (onEnd := endedIfLate)
       return (w', turnReply r)
     | none =>
     let offered := (if st.offers.isEmpty then [] else [("offers", offersJson st.offers)]) ++
       (if st.publishes.isEmpty then [] else [("publishes", Json.arr st.publishes.toArray)]) ++
       (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
-      (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends)
+      (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends) endedIfLate
     return (w', turnReply r)
 
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
@@ -1067,7 +1080,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       usedBefore := ← natField sus "ticksUsed"
       ticksStart := ticks
       caller := (act.getObjValAs? String "caller").toOption.getD ""
-      via }
+      via
+      timedOut := match kind with | .timedOut => true | _ => false }
   -- A moved root whose staged changes so far all commute may still commit (`judge` decides at the
   -- end); one already changed otherwise cannot, and the turn is refused now.
   let staged ← parseRecordedWrites (← act.getObjVal? "writes")
@@ -1096,6 +1110,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     let seed ← r.getObjVal? "seed"
     let (o, sources) ← buildObject w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+    let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     return (id, ({ object := o, sources, seed } : CreateRec)))
   let programs ← ((← (← act.getObjVal? "programs").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
@@ -1329,6 +1344,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
       ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
+      ("supervisor", toJson o.supervisor),
       ("forms", dataJson (listData (methodForms id o.methods)))]
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/

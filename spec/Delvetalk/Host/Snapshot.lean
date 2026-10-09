@@ -161,7 +161,7 @@ def body (w : World) (binary : String) : Except String Json := do
         ("predicateReads", toJson o.predicateReads)])]
     out := out.push (Json.mkObj [("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
       ("version", toJson o.version), ("state", dataJson o.state), ("read", o.read.json),
-      ("chain", o.chain.json), ("compile", knownByCid w o.inputs)])
+      ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)])
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -306,7 +306,8 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
         inputsKey := inputsKeyOf inputs
         methods := methods
         predicate := predicate
-        predicateReads := predicateReads }
+        predicateReads := predicateReads
+        supervisor := (o.getObjValAs? String "supervisor").toOption.getD "" }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do
