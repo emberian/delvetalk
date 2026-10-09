@@ -238,3 +238,28 @@ as proposals against a fresh world:
 
 Every post that admits cleanly is a passed test. Every refusal is a
 specification the town discovered in advance by being careful in public.
+
+## 11. Audit of 2026-10-09, by source inspection
+
+Findings ranked by consequence, each with its owner. A row leaves when its
+fix is merged with a refuting test.
+
+| # | Finding | Fix | Owner |
+| --- | --- | --- | --- |
+| 1 | Any object reached in a turn may write any object among the turn's roots; the default law admits ordinary writes from everyone. A callee can rewrite its caller; anyone can `directory/remove` over HTTP. | `write` is admitted only to the running object; cross-object change only through `call`, judged by the callee's law with `request.caller` = the calling object. | host |
+| 2 | The principal is chosen by the client: every `who`, `by`, `author`, `post` argument. `Context` lacks `caller`, `intent`, `height`. Tests pass `who == principal` and never refute. | `Context {world, object, principal, caller, intent, height, inputOrigin}` supplied by the host; objects drop `who` arguments; tests pass a mismatched `who` and expect refusal. | host, then objects |
+| 3 | The law reads only top-level naturals and booleans; lists, strings and references are unguardable; `caller` always equals `subject`; a bundled reprogram skips kind-0 judgment. | Text equality between a field and `request.subject`; `appendOnly(FIELD)`; `unchanged(FIELD)`; `caller` as the calling object; judge every kind present in a turn. | host |
+| 4 | Leaks: `world-receipt` returns full edits regardless of read authority; `world-history` has no principal; offers made in deliveries go to whoever triggered delivery; the public refusal projection lives in Python. | Receipts projected under the reader's authority in the host; history takes a principal; `offer {to}` addressed and retained keyed by (addressee, identity); the host owns the public projection. | turn, host |
+| 5 | Taking the reins: no in-world read of source, no dry-run compile, a replacement package can only replace the last module of its sealed closure, one `A` per object forbids a generic inspector or workshop. | `inspect` and `check` Plans; packages import the standard library by pin; `create` from source with a `seeded(Seed) -> State` constructor; per-perform typing or a Document projection for heterogeneous views. | host, objects |
+| 6 | Responses objects cannot tell apart: `written` means staged, so every `case refused` after a write is dead; `offered` is unconditional; `refused {clause}` conflates six causes; capacity and out-of-range both say `typeMismatch`. | Delete dead arms and document staging; distinct clauses. | objects, host |
+| 7 | Retry and replay differ from first execution: offer text is on the reply only; transient `staleRoot`/`evaluation` refusals bind the identity forever; sends' ledgers are shape-checked, not re-derived; `turn` is client-chosen for propose/amend/reprogram. | Retain addressed offers; re-derive ledgers on replay; the host assigns `turn`; transient refusals do not bind. | turn, host |
+| 8 | Python decides: the observer classifies spells with a grammar that diverges from Bend's, routes summons, drives delivery. | Observer forwards any post with a `delvetalk` line; Bend decides; delivery scheduling in the host. | transport, objects |
+| 9 | Limits in nine places with different values. | `spec/Delvetalk/Limits.lean`, one name per bound. | turn |
+| 10 | The checkpoint digest is a self-hash bound only to the packet; any client on the socket may resume any checkpoint. | Bind to object, principal, intent and roots; the store keeps the digest. | turn, host |
+| 11 | Silent defaults: malformed `turn`/`limit`/`after` fall back; `colourNamed` falls back to silver; a type comparison stops after eight rounds; bridge request errors retry forever. | Refuse by name. | host, objects, transport |
+| 12 | FOUNDATION contradictions: §1 says the checkpoint codec is still to port; §2 promises `activities`, snapshots, `timedOut`, `broken`; §3 omits `requireAbsent`; §6 promises `model.py`; identity is a handle, not a DID. | This document is corrected as each lands; identity moves to the DID. | root, transport |
+
+The three facilities worth building first: the authority model (rows 1 to 3 in
+one change), program reflection (row 5), and a host-owned outbound channel
+(rows 4 and 7: addressed offers and notes, retained and readable by receipt,
+with threaded replies in transport).
