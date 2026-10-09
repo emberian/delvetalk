@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import portal
 import propose
+import source_object
 
 bootstrap = portal.bootstrap
 history = bootstrap.history
@@ -28,18 +29,22 @@ def save(path, value):
     return path
 
 
-def run(directory, *, profile='transactions'):
+def run(directory, *, profile='compiled'):
     directory = Path(directory).resolve()
+    require(profile == 'compiled', 'scene exchange requires source admission')
     require(not directory.exists(), 'choose a new custody directory')
     pinned = history.runtime(profile)  # Refuse missing binaries; never build here.
     directory.mkdir(parents=True, mode=0o700)
     db = directory / 'world.json'
     attachments, reports = {}, {}
     objects = {'relay': 'scene:rain-relay', 'card': 'card:rain-name'}
-    for key, filename, syntax in [('relay', 'rain-relay.scene', 'spween-scene-i64@1'),
-                                  ('card', 'rain-card.md', 'protocol-markdown@1')]:
-        source = (HERE / filename).read_bytes()
-        scenarios = (HERE / (Path(filename).stem + '.scenarios.json')).read_bytes()
+    workshop = bootstrap.scene_workshop.frame_source((HERE / 'rain-relay.scene').read_bytes().decode('utf-8'), [
+        {'name': 'Handler', 'source': (ROOT / 'protocols/spween-handlers/Handler.obend').read_bytes().decode('utf-8')}]).encode()
+    for key, filename, syntax, source, scenarios in [
+            ('relay', 'rain-relay.workshop', 'spween-handler-workshop@1', workshop,
+             (HERE / 'rain-relay.examples').read_bytes()),
+            ('card', 'RainCard.obend', 'objective-bend-object', (HERE / 'RainCard.obend').read_bytes(),
+             (HERE / 'rain-card.examples').read_bytes())]:
         report = propose.propose(syntax, source, scenarios, profile=profile)
         require(report['passed'], 'proposal scenarios failed: ' + key)
         reports[key] = report['id']
@@ -49,15 +54,19 @@ def run(directory, *, profile='transactions'):
         source_path.write_bytes(source)
         artifact = report['candidate']['artifact']
         paths = [source_path, report_path]
+        protocol = artifact['lowered']
         if key == 'relay':
-            wrapped = room.wrap_bundle(artifact['lowered'])
+            wrapped = room.source_artifact(protocol)
             identity = room.store_artifact(directory / 'artifacts/rooms', wrapped)
             paths.append(directory / 'artifacts/rooms' / (identity + '.json'))
-            protocol = wrapped['protocol']
-        else:
-            protocol = artifact['lowered']
+            original = directory / 'sources/rain-relay.scene'
+            original.write_bytes((HERE / 'rain-relay.scene').read_bytes())
+            paths.append(original)
         request = {'op': 'create', 'object': objects[key], 'principal': 'operator',
-                   'intent': 'create-' + key, 'protocol': protocol, 'law': ['jun', 'tavi']}
+                   'intent': 'create-' + key, 'protocol': protocol,
+                   'law': {'profile': 'delvetalk-scoped-law', 'read': 'public',
+                           'invoke': {name: ['jun', 'tavi'] for name in protocol['commands']},
+                           'reprogram': ['jun', 'tavi'], 'law': ['operator']}}
         reply = world.exchange(db, request, profile=profile)
         require(reply['kind'] == 'committed', 'creation failed: ' + str(reply))
         attachments[history.digest(request)] = paths
@@ -86,10 +95,16 @@ def run(directory, *, profile='transactions'):
                        'interpretation': interpretation, 'draft': draft, 'response': response})
         return response
 
-    act('jun', capture('jun', 'relay'), 'Enter the room')
+    act('jun', capture('jun', 'relay'), 'Start')
     initial_jun = capture('jun', 'relay')
     initial_tavi = capture('tavi', 'relay')
-    act('jun', initial_jun, 'Release the rain note', kind='refused')
+    early_root = sessions['jun'].detail(initial_jun['card'])['root']
+    early = world.exchange(db, {'op': 'invoke', 'object': objects['relay'], 'principal': 'jun',
+        'intent': 'unoffered-release', 'expected': early_root, 'command': 'choose', 'input': {'choice': 2}},
+        profile=profile)
+    require(early['kind'] == 'refused' and 'choice unavailable' in str(early['data']),
+            'receiving source guard accepted an unoffered early release')
+    save(directory / 'guard-refusal.json', early)
     act('visitor', capture('visitor', 'relay'), 'Free the roof vane', kind='refused', error='unauthorized')
     freed = act('jun', initial_jun, 'Free the roof vane')
     retried = sessions['jun'].execute({'draft': freed['draft']})
@@ -97,8 +112,17 @@ def run(directory, *, profile='transactions'):
     act('tavi', initial_tavi, 'Open the listening shutter', kind='refused', error='stale read root')
     act('tavi', capture('tavi', 'relay'), 'Open the listening shutter')
     released = act('jun', capture('jun', 'relay'), 'Release the rain note')
-    outbox = released['reply']['data']['outbox']
-    require(any(item['kind'] == 'spween-call-batch' for item in outbox), 'scene call intent missing')
+    released_model = source_object.plain(source_object.state_data(released['reply']['data']['root']))
+    variables = released_model['handler']['variables']
+    announcements = []
+    while variables['variant'] == 'cons':
+        head = variables['payload']['head']
+        if head['name'] == 'announcement':
+            announcements.append(head['value'])
+        variables = variables['payload']['tail']
+    require(announcements == [{'variant': 'string', 'payload': {
+        'value': 'The rain draws one silver line across the listening room.'}}],
+        'the source handler did not retain the scene announcement')
     final_room = capture('tavi', 'relay')
     require('silver line trembles' in final_room['prose'], 'listening room was not reached')
 
@@ -110,7 +134,8 @@ def run(directory, *, profile='transactions'):
     act('jun', capture('jun', 'card'), 'Name the rain', {'name': 'New name', 'ink': 'blue'}, kind='refused')
     final_card = capture('jun', 'card')
     detail = sessions['jun'].detail(final_card['card'])
-    require(detail['state'] == {'name': 'Threadsong', 'ink': 'silver', 'by': 'tavi'}, 'rain card changed')
+    rain_name = source_object.plain(source_object.state_data(detail['root']))
+    require(rain_name == {'name': 'Threadsong', 'ink': 'silver', 'by': 'tavi'}, 'rain card changed')
     save(directory / 'events.json', events)
     save(directory / 'final-room.json', final_room)
     save(directory / 'final-card.json', final_card)
@@ -123,8 +148,8 @@ def run(directory, *, profile='transactions'):
     report = {'format': 'delvetalk-scene-exchange-report-v1', 'runtime': pinned,
               'proposals': reports, 'history': exported, 'verified': verified,
               'admissions': len(events), 'retryRecovered': True, 'fieldClarification': clarification['status'],
-              'rainName': detail['state'], 'room': final_room['title'],
-              'scope': 'Scripted local principals; retained call intents have no delivery claim.'}
+              'rainName': rain_name, 'earlyGuardRefusal': early, 'room': final_room['title'],
+              'scope': 'Scripted local principals; source-owned scene effects have no external delivery claim.'}
     save(directory / 'report.json', report)
     return report
 
@@ -132,7 +157,7 @@ def run(directory, *, profile='transactions'):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path, help='new private custody directory')
-    parser.add_argument('--profile', choices=('world', 'transactions', 'compiled'), default='transactions')
+    parser.add_argument('--profile', choices=('compiled',), default='compiled')
     args = parser.parse_args()
     try:
         report = run(args.directory, profile=args.profile)

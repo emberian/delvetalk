@@ -27,8 +27,8 @@ class SceneExchangeTests(unittest.TestCase):
             with self.subTest(source=filename):
                 original = ((ROOT / 'examples/scene-exchange' / filename).read_bytes()
                     if key == 'card' else journey.bootstrap.scene_workshop.frame_source(
-                        (ROOT / 'examples/scene-exchange/rain-relay.scene').read_text(), [
-                            {'name': 'Handler', 'source': (ROOT / 'protocols/spween-handlers/Handler.obend').read_text()}]).encode())
+                        (ROOT / 'examples/scene-exchange/rain-relay.scene').read_bytes().decode('utf-8'), [
+                            {'name': 'Handler', 'source': (ROOT / 'protocols/spween-handlers/Handler.obend').read_bytes().decode('utf-8')}]).encode())
                 self.assertEqual((self.directory / 'sources' / filename).read_bytes(), original)
                 report = journey.history.loads((self.directory / 'artifacts' / (key + '-proposal.json')).read_bytes())
                 self.assertTrue(report['passed'])
@@ -56,7 +56,7 @@ class SceneExchangeTests(unittest.TestCase):
         self.assertIn('choice unavailable', self.report['earlyGuardRefusal']['data'])
 
     def test_final_room_agrees_with_pinned_spween_reference(self):
-        source = (ROOT / 'examples/scene-exchange/rain-relay.scene').read_text()
+        source = (ROOT / 'examples/scene-exchange/rain-relay.scene').read_bytes().decode('utf-8')
         lower = journey.room.parser
         reference = lower.bridge({'op': 'replay', 'source': source,
                                   'actions': [{'choose': i} for i in [2, 0, 1, 2]]})
