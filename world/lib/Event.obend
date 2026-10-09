@@ -1,0 +1,12 @@
+edition ObjectiveBend 1
+# What happened in the network, as one principal's Env keeps it: the kind (mention,
+# reply, post, like, follow), who did it, the post's uri and CID, its text, the uri it
+# replies to ("" for none), and the journal height at which the Env took it in.
+record Event:
+  kind: String
+  actor: String
+  uri: String
+  cid: String
+  text: String
+  replyTo: String
+  at: Nat

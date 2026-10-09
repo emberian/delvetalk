@@ -270,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
             stamp = f'web:{principal}:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
             field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
             result = self.server.host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
-                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('who', principal), field('post', stamp)]},
+                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('post', stamp), field('slot', '')]},
                                             'identity': stamp})
         host = self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
@@ -280,7 +280,9 @@ class Handler(BaseHTTPRequestHandler):
         self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), result))
 
     def card(self, host, principal, name, version):
-        """The object's card from the host's world-card (no journaled turn)."""
+        """The object's card from the host's world-card (no journaled turn); until that op exists,
+        what its receive offers for an empty reply (every object takes receive {text, post, slot}),
+        cached because a retried identity returns no offers."""
         r = host.send({'op': 'world-card', 'principal': principal or 'anonymous', 'object': name})
         if r.get('status') != 'error':
             return r.get('text')
@@ -289,15 +291,12 @@ class Handler(BaseHTTPRequestHandler):
             return None
         key = (principal, name, version)
         if key not in self.server.cards:
-            text = None
-            for method in ('present', 'describe'):
-                r = host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': method,
-                               'argument': {'tag': 'record', 'fields': []},
-                               'identity': f'page:{name}:{method}:{version}:{self.server.nonce}'})
-                if r.get('offers'):
-                    text = '\n'.join(o['text'] for o in r['offers'])
-                    break
-            self.server.cards[key] = text
+            field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
+            stamp = f'page:{name}:{version}:{self.server.nonce}'
+            r = host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
+                           'argument': {'tag': 'record', 'fields': [field('text', ''), field('post', stamp), field('slot', '')]},
+                           'identity': stamp})
+            self.server.cards[key] = '\n'.join(o['text'] for o in r['offers']) if r.get('offers') else None
         return self.server.cards[key]
 
     def history(self, host, name, principal=''):

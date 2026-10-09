@@ -1,0 +1,62 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./Card.obend as Card
+import ./Appointment.obend as Appointment
+# A book of appointments. Booking creates one Appointment object (owned by the turn's
+# principal) and sends it `keep`, so each waits in its own turn: a later booking writes
+# the book, never the appointment, and cannot stale another's wait.
+record State:
+  booked: Nat
+  children: Lists.List<Plans.Reference>
+type Seed = {}
+record Edits:
+  booked: Plans.Edit<Nat, Nat>
+  children: Plans.Entries<Plans.Reference, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, {}>
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
+  {booked: 0n, children: Lists.List::<Plans.Reference>.nil()}
+def initial() -> State:
+  seeded(defaultSeed())
+sum Done:
+  booked: {object: Plans.Reference}
+  refused: {reason: String}
+def booking<T>(state: State, topic: String, to: String, after: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if after == 0n then then(Done.refused({reason: "after is at least 1."})) else creating::<T>(state, {owner: context.principal, topic: topic, to: {world: context.world, object: to}, after: after}, context, then)
+def creating<T>(state: State, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.create({package: "Appointment", seed: Data.of::<Appointment.Seed>(seed), law: "", requireAbsent: {world: "", object: textConcat(context.object, textConcat("/", natText(state.booked + 1n)))}})):
+    case created(c): counted::<T>(c.object, seed, context, then)
+    case refused(r): then(Done.refused({reason: r.clause}))
+    case _: then(Done.refused({reason: "The book could not make it."}))
+def counted<T>(object: Plans.Reference, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: {booked: Plans.Edit::<Nat, Nat>.add({delta: 1n}), children: Plans.Entries::<Plans.Reference, {}>.append({item: object})}})):
+    case _: kept::<T>(object, seed, then)
+def kept<T>(object: Plans.Reference, seed: Appointment.Seed, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.send({object: object, method: "keep", argument: Plans.nothing()})):
+    case _: then(Done.booked({object: object}))
+def book(state: State, input: {topic: String, to: String, after: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  booking::<Done>(state, input.topic, input.to, input.after, context, fn(done: Done) -> Done: done)
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "book", fields: Form.Fields.cons({head: {name: "topic", kind: Form.Kind.text({min: 1n, max: 140n})}, tail: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.cons({head: {name: "after", kind: Form.Kind.natural({min: 1n, max: 1000000n})}, tail: Form.Fields.nil()})})})}, tail: Card.Forms.nil()})
+def door() -> Card.Door:
+  {word: "appointments", blurb: "Book a note for later: it is sent when its time comes."}
+def bookedReply(done: Done) -> Card.Reply:
+  match done:
+    case booked(_): Card.Reply.done({action: "book"})
+    case refused(r): Card.Reply.refused({reason: r.reason})
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  heard(state, Card.route(input.text, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): booking::<Card.Reply>(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
+def childLine(reference: Plans.Reference) -> Document.Document:
+  Document.text(textConcat("- ", textConcat(reference.object, "\n")))
+def render(state: State) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("APPOINTMENTS: ", textConcat(natText(state.booked), " booked, newest first\n"))), tail: Card.clipped(Lists.map::<Plans.Reference, Document.Document>(Lists.reverse::<Plans.Reference>(state.children), childLine), 8n)})})

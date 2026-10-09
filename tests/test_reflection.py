@@ -24,7 +24,7 @@ record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
@@ -60,7 +60,7 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   seen: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Arg>
 def initial() -> State:
   {count: 0n, seen: ""}
@@ -96,7 +96,7 @@ def ask(state: State, input: {utterance: String, policy: String}, context: Abi.C
 def offered() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
 def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: {n: 0n}})):
+  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: Data.of::<Arg>({n: 0n})})):
     case delivery(_): note(context, 0n, "sent")
     case _: note(context, 0n, "other")
 """
@@ -460,7 +460,7 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {note: ""}

@@ -52,8 +52,15 @@ def check(request):
     return host.check(request)
 
 
+def pure(modules):
+    """The modules without their law lines: the stateless compile is the pure profile, which
+    refuses package laws ("package laws require a host law adapter"); the host keeps them."""
+    return [dict(m, source="".join(l for l in m["source"].splitlines(True) if not l.startswith("law ")))
+            for m in modules]
+
+
 def compile_job(modules, entry):
-    return check({"op": "compile", "modules": modules, "entry": entry})
+    return check({"op": "compile", "modules": pure(modules), "entry": entry})
 
 
 def definitions(name):
@@ -102,6 +109,16 @@ def run_pure(name, entry, *arguments, probe=None, limits=None):
 
 BIG = {"ticks": "1000000"}
 
+PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Garden.obend as O\n"
+GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
+def bells(n: Nat) -> Lists.List<Plans.Reference>:
+  match n:
+    case 0: Lists.List::<Plans.Reference>.nil()
+    case 1+p: Lists.append::<Plans.Reference>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n))})
+def shown(n: Nat) -> String:
+  Document.plain(O.render({planted: n, policy: Plans.nobody(), confirm: true, pending: Lists.List::<O.Pending>.nil(), children: bells(n)}))
+"""
+
 DOC_PROBE = """edition ObjectiveBend 1
 import ./Document.obend as Document
 def leaves(n: Nat) -> Document.Documents:
@@ -114,24 +131,26 @@ def flat(n: Nat) -> Nat:
 
 PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./%s.obend as O\n"
 
-BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
+BELL_PROBE = PROBE_HEAD % "Bell" + """import ./Card.obend as Card
+def rains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
     case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", text: "a line of rain"}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {planter: "glm", colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, door: {world: "", object: ""}, lastDelivery: "", planting: {principal: "", intent: ""}}
+  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, planting: {principal: "did:plc:glm", intent: "p"}, observers: Lists.List::<Card.Observer>.nil()}
 def many(n: Nat) -> String:
-  O.card(sample(rains(n)))
+  Document.plain(O.render(sample(rains(n))))
 def weight(n: Nat) -> Nat:
   Document.size(O.render(sample(rains(n))))
 def lineCount(n: Nat) -> Nat:
   Lists.length::<String>(Document.lines(O.render(sample(rains(n)))))
 def two(n: Nat) -> String:
-  O.card(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", text: "first"}), {author: "gemini", text: "second"})))
+  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", text: "first"}), {author: "gemini", text: "second"}))))
 """
 
-DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
-  O.card({open: false, openedBy: "", knocks: Lists.List::<String>.cons({head: "glm", tail: Lists.List::<String>.nil()}), lantern: {world: "", object: ""}, lastDelivery: ""})
+DOOR_PROBE = PROBE_HEAD % "Door" + """import ./Card.obend as Card
+def shut(n: Nat) -> String:
+  Document.plain(O.render({open: false, openedBy: "", knocks: Lists.List::<String>.cons({head: "did:plc:glm", tail: Lists.List::<String>.nil()}), observers: Lists.List::<Card.Observer>.nil()}))
 """
 
 LINES_PROBE = """edition ObjectiveBend 1
@@ -144,11 +163,11 @@ def joined(n: Nat) -> String:
 """
 
 CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
-  O.card({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})})
+  Document.plain(O.render({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})}))
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
-  O.card({proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})})
+  Document.plain(O.render({proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}))
 """
 
 
@@ -181,7 +200,7 @@ class Objects(unittest.TestCase):
         for name in sorted(MODULES):
             if MODULES[name].startswith(os.path.join(WORLD, "objects")):
                 for entry, generic, result in definitions(name):
-                    if result.startswith("Activity<"):
+                    if result.startswith("Activity<") and not generic:
                         yield name, entry
 
     def test_activities_are_computations(self):
@@ -202,23 +221,31 @@ class Objects(unittest.TestCase):
         self.assertGreaterEqual(seen, 20)
 
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "sow"): "create", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
-                    ("Bell", "rain"): "write", ("Bell", "strike"): "await", ("Bell", "rung"): "write",
-                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
-                    ("Bell", "ring"): "write", ("Bell", "notify"): "send", ("Door", "open"): "write",
-                    ("Door", "announce"): "send", ("Door", "knock"): "write", ("Lantern", "light"): "write",
-                    ("Loop", "tick"): "write", ("Loop", "again"): "send"}
+        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
+                    ("Bell", "rained"): "write", ("Bell", "strike"): "await", ("Bell", "rang"): "write",
+                    ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
+                    ("Card", "notified"): "send", ("Door", "open"): "write", ("Door", "knocked"): "write",
+                    ("Lantern", "lit"): "write", ("Loop", "ticked"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
             with open(MODULES[name]) as handle:
                 source = handle.read()
-            body = source[source.index("def %s(" % entry):].split("\ndef ")[0]
-            self.assertIn("perform(Plan.%s(" % plan, body, (name, entry))
+            found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
+            self.assertIsNotNone(found, (name, entry))
+            body = source[found.start() + 1:].split("\ndef ")[0]
+            self.assertTrue("perform(Plan.%s(" % plan in body or "perform(Plans.Plan::<E>.%s(" % plan in body, (name, entry))
 
     def test_render_cards(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))
         self.assertEqual(counter["value"]["value"], "Count: 3")
-        garden = run_pure("Garden", "card", record(planted=nat(2), policy=record(world={"tag": "label", "value": ""}, object={"tag": "label", "value": ""})))
+        garden = run_pure("Garden", "shown", nat(20), probe=GARDEN_PROBE)
         self.assertEqual(garden["status"], "finished", garden)
+        text = garden["value"]["value"]
+        print("--- garden with 20 bells (%d characters) ---\n%s" % (len(text), text))
+        self.assertTrue(text.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"))
+        self.assertLess(text.index("garden/bell/20\n"), text.index("garden/bell/13\n"))
+        self.assertNotIn("garden/bell/12\n", text)
+        self.assertTrue(text.endswith("… and 12 more\n"), text)
+        self.assertLess(len(text), 1400)
         for name, probe, entry in (("Bell", BELL_PROBE, "two"), ("Cistern", CISTERN_PROBE, "one"), ("Anthology", ANTHOLOGY_PROBE, "one")):
             with self.subTest(object=name):
                 reply = run_pure(name, entry, nat(0), probe=probe)
@@ -264,9 +291,9 @@ class Objects(unittest.TestCase):
         door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
         self.assertEqual(door["status"], "finished", door)
         self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
-        lantern = run_pure("Lantern", "card", record(lit={"tag": "boolean", "value": True}, litBy={"tag": "label", "value": "gemini"}))
+        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\"}))\n")
         self.assertEqual(lantern["value"]["value"], "The lantern is lit by gemini.\n")
-        loop = run_pure("Loop", "card", record(count=nat(3)))
+        loop = run_pure("Loop", "shown", nat(3), probe=PROBE_HEAD % "Loop" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({count: n}))\n")
         self.assertEqual(loop["value"]["value"], "Ticks: 3\n")
 
     def test_lines_split_the_rendered_document(self):
@@ -276,41 +303,18 @@ class Objects(unittest.TestCase):
         reply = run_pure("Document", "joined", nat(0), probe=LINES_PROBE)
         self.assertEqual(reply["value"]["value"], "alpha|beta gamma|delta|")
 
-    def test_lines_cost_on_the_maximum_bell(self):
-        """Document.lines over a 1,025-rain Bell card, generation included."""
-        base = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE, limits=BIG)
-        reply = run_pure("Bell", "lineCount", nat(1025), probe=BELL_PROBE, limits=BIG)
-        self.assertEqual(reply["status"], "finished", reply)
-        self.assertEqual(reply["value"]["value"], "1026")
-        print("1025 rains: Document.lines %s ticks (Document.size %s, plain %s)" %
-              (reply["ticksUsed"], base["ticksUsed"], 848680))
-
-    def test_maximum_bell(self):
-        """A Bell with 1,025 rains does not render under the default budget.
-
-        The card Document (built and measured with the linear Document.size)
-        costs about 310 ticks per rain: 256 rains fit, 1,025 cost 316,764 ticks
-        and exhaust the default 100,000. The flat text card (Document.plain) is
-        linear-ish now: 1,025 rains cost 848,680 ticks, 64 rains 43,000 (this
-        was refused before the plain rewrite). Both finish under 1,000,000."""
-        line = len("author: a line of rain\n")
-        header = len("A silver bell planted by glm: a bell for lost moths (silent)\n")
-        fits = run_pure("Bell", "weight", nat(256), probe=BELL_PROBE)
-        self.assertEqual(fits["status"], "finished", fits)
-        self.assertEqual(fits["value"]["value"], str(header + 256 * line))
-        default = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE)
-        self.assertEqual(default["status"], "refused", default)
-        self.assertTrue(default["failure"].endswith("tickExhausted"), default)
-        raised = run_pure("Bell", "weight", nat(1025), probe=BELL_PROBE, limits=BIG)
-        self.assertEqual(raised["status"], "finished", raised)
-        self.assertEqual(raised["value"]["value"], str(header + 1025 * line))
-        flat64 = run_pure("Bell", "many", nat(64), probe=BELL_PROBE)
-        self.assertEqual(flat64["status"], "finished", flat64)
-        flat = run_pure("Bell", "many", nat(1025), probe=BELL_PROBE, limits=BIG)
-        self.assertEqual(flat["status"], "finished", flat)
-        self.assertTrue(flat["value"]["value"].endswith("author: a line of rain\n"))
-        print("1025 rains: Document.size %s ticks, %s heap cells; plain card %s ticks; default budget refuses the first" %
-              (raised["ticksUsed"], raised["heapCells"], flat["ticksUsed"]))
+    def test_a_full_bell_card_shows_eight_rains_and_counts_the_rest(self):
+        """A list holds at most 247 items (the host's data depth), so the fullest bell has 247
+        rains; its card shows the first eight, elides the DIDs to their last segment and fits a
+        reader's 1,400 characters, under the default budget."""
+        full = run_pure("Bell", "many", nat(247), probe=BELL_PROBE)
+        self.assertEqual(full["status"], "finished", full)
+        text = full["value"]["value"]
+        print("247 rains: card %s ticks, %d characters" % (full["ticksUsed"], len(text)))
+        self.assertTrue(text.startswith("A silver bell planted by glm: a bell for lost moths (silent)\n"), text)
+        self.assertEqual(text.count("author: a line of rain\n"), 8)
+        self.assertTrue(text.endswith("… and 239 more\n"), text)
+        self.assertLess(len(text), 1400)
 
 
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1

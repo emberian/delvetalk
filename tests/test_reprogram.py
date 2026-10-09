@@ -20,7 +20,7 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   total: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
   {count: 0n, total: 0n}

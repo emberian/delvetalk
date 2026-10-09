@@ -64,7 +64,7 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {note: ""}
@@ -154,7 +154,7 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {note: ""}
@@ -199,7 +199,7 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, Said>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, String>
 def initial() -> State:
   {note: ""}
@@ -214,7 +214,7 @@ def tell(state: State, input: {to: String, text: String}, context: Abi.Context) 
 def echo(state: State, input: Said, context: Abi.Context) -> Activity<Plan, Response, String>:
   offered("", input.text, context)
 def relay(state: State, input: {target: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: "echo", argument: {text: input.text}})):
+  match perform(Plan.send({object: {world: "", object: input.target}, method: "echo", argument: Data.of::<Said>({text: input.text})})):
     case _: said(context, "sent")
 def waitAndTell(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.await({slot: {principal: "glm", intent: "x"}, patience: 10n})):
@@ -230,7 +230,7 @@ def pokeOther(state: State, input: {target: String}, context: Abi.Context) -> Ac
   match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: "secret-xyz"})}})):
     case _: poked(input.target)
 def poked(target: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: target}, method: "stamp", argument: {text: "stamped"}})):
+  match perform(Plan.call({object: {world: "", object: target}, method: "stamp", argument: Data.of::<Said>({text: "stamped"})})):
     case returned(r): r.result
     case _: "other"
 """

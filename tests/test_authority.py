@@ -29,7 +29,7 @@ record Edits:
   lastBy: Plans.Edit<String, {}>
   entries: Plans.Entries<String, String>
   planting: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Out>
 def initial() -> State:
   {count: 0n, lastBy: "", entries: Lists.List::<String>.nil(), planting: ""}
@@ -71,7 +71,7 @@ def tamper(state: State, context: Abi.Context) -> Activity<Plan, Response, Out>:
     case refused(r): out(r.clause, 0n)
     case _: out("rewrote its caller", 1n)
 def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: {n: 0n}})):
+  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: Data.of::<Arg>({n: 0n})})):
     case returned(r): commit(context, bumped(), r.result.text)
     case _: out("unanswered", 0n)
 def dive(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, Response, Out>:
@@ -80,7 +80,7 @@ def dive(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, 
 def deeper(n: Nat, context: Abi.Context) -> Activity<Plan, Response, Out>:
   if n == 0n then out("bottom", 0n) else down(n, context)
 def down(n: Nat, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.call({object: Plans.self(context), method: "dive", argument: {n: n - 1n}})):
+  match perform(Plan.call({object: Plans.self(context), method: "dive", argument: Data.of::<Arg>({n: n - 1n})})):
     case returned(r): out(r.result.text, 1n)
     case _: out("unanswered", 0n)
 def grow(state: State, input: {n: Nat, source: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:

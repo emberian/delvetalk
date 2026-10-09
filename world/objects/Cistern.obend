@@ -3,13 +3,14 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 record State:
   entries: Lists.List<Plans.Receipt>
-# A creator supplies a Seed; seeded makes the child's State from it.
+# What a creator may supply; the host lays it over initial().
 type Seed = {}
 record Edits:
   entries: Plans.Entries<Plans.Receipt, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
@@ -19,17 +20,20 @@ def initial() -> State:
   seeded(defaultSeed())
 # Retains a refusal (or any) receipt in the order it was offered.
 def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  let count = Lists.length::<Plans.Receipt>(state.entries)
   match perform(Plan.write({object: Plans.self(context), edits: {entries: Plans.Entries::<Plans.Receipt, {}>.append({item: input.receipt})}})):
-    case written(_): count + 1n
-    case _: count
+    case _: Lists.length::<Plans.Receipt>(state.entries) + 1n
+# A receipt is structured data, not a spell: the card offers no form.
+def forms() -> Card.Forms:
+  Card.Forms.nil()
+def door() -> Card.Door:
+  {word: "cistern", blurb: "Keeps receipts, refusals first."}
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
 def outcomeName(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"
     case refused(r): textConcat("refused ", r.class)
 def line(receipt: Plans.Receipt) -> Document.Document:
-  Document.text(textConcat("#", textConcat(natText(receipt.height), textConcat(" ", textConcat(receipt.slot.principal, textConcat(": ", textConcat(outcomeName(receipt.outcome), "\n")))))))
+  Document.text(textConcat("#", textConcat(natText(receipt.height), textConcat(" ", textConcat(Card.handle(receipt.slot.principal), textConcat(": ", textConcat(outcomeName(receipt.outcome), "\n")))))))
 def render(state: State) -> Document.Document:
-  Document.concat(Document.text("Cistern\n"), Document.Document.sequence({items: Lists.map::<Plans.Receipt, Document.Document>(state.entries, line)}))
-def card(state: State) -> String:
-  Document.plain(render(state))
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Cistern\n"), tail: Card.clipped(Lists.map::<Plans.Receipt, Document.Document>(state.entries, line), 8n)})})

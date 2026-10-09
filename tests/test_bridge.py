@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.test_chain import garden_state
 from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
 from tests.test_turn_world import closure, label, nat, record
@@ -21,15 +22,15 @@ record State:
   seen: Nat
 record Edits:
   seen: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 %s
 def initial() -> State:
   {seen: 5n}
-def receive(state: State, input: {text: String, who: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def receive(state: State, input: {text: String, post: String, slot: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
 """
-OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", input.who))})):
+OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", context.principal))})):
     case offered(_): 1n
     case _: 0n"""
 REFUSING = """  match perform(Plan.write({object: Plans.self(context), edits: {seen: Plans.Edit::<Nat, Nat>.set({value: 0n})}})):
@@ -160,7 +161,7 @@ class Bridging(BridgeCase):
 
     def test_real_garden_receive_end_to_end(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0), policy=record(world=label(""), object=label("")))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])
