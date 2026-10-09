@@ -4,10 +4,13 @@ the reader's authority, and the posts transport made for objects, so replies fin
 Each case is named by the defect that would make it fail.
 """
 import json
+import os
+import shutil
+import tempfile
 import unittest
 
 from tests.test_chain import field
-from tests.test_reflection import PACKAGE, Reflection, source_seed
+from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
 from tests.test_turn_world import label, nat, record
 from tests.wire import cid_of
 
@@ -715,6 +718,90 @@ class MintedIds(Reflection):
         self.reopen()
         self.assertEqual(self.mint()[1], "m/child/8")
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="m/child/8")["status"], "viewed")
+
+
+WHO = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.principal})}})):
+    case _: context.principal
+def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
+    case _: natText(context.clock)
+"""
+
+
+class SourcePins(Reflection):
+    """An object's pin is the CID of its sealed source closure; the compiled packet is an
+    observation beside it (`compiled {binary, packet}`), counted but never compared on replay."""
+    def created(self, name):
+        r = self.make(name, TELLER, record(note=label("")))
+        return r["receipt"]["outcome"]
+
+    def tamper_last(self, change):
+        self.release()
+        with open(self.path) as f:
+            lines = f.read().splitlines()
+        last = json.loads(lines[-1])
+        change(last)
+        del last["hash"]
+        last["hash"] = cid_of(last)
+        lines[-1] = json.dumps(last, separators=(",", ":"))
+        with open(self.path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        self.host = self.spawn()
+        return self.host.send(op="world-open", path=self.path)
+
+    def test_the_pin_is_the_sources_and_a_different_packet_is_only_counted(self):
+        self.open_library()
+        a, b = self.created("a"), self.created("b")
+        self.assertEqual(a["pin"], b["pin"])
+        self.assertEqual(set(a["compiled"]), {"binary", "packet"})
+        self.assertNotEqual(a["pin"], a["compiled"]["packet"])
+        self.assertTrue(a["compiled"]["binary"].startswith("b"), a)
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["pin"], a["pin"])
+        def other_packet(entry):
+            entry["outcome"]["compiled"]["packet"] = a["pin"]
+        self.assertEqual(self.tamper_last(other_packet)["status"], "opened")
+        self.assertEqual(self.host.send(op="world-status")["recompiledDifferently"], 1)
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="b")["status"], "viewed")
+        def other_pin(entry):
+            entry["outcome"]["pin"] = cid_of("another source closure")
+        refused = self.tamper_last(other_pin)
+        self.assertEqual(refused["status"], "error", refused)
+        self.assertIn("is not the source closure its pin names", refused["message"])
+
+    def test_an_object_from_before_a_context_field_keeps_running_after_the_library_gains_it(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            lib = os.path.join(scratch, "lib")
+            shutil.copytree(LIBRARY, lib)
+            abi = os.path.join(lib, "prelude", "Abi.obend")
+            with open(abi) as f:
+                current = f.read()
+            with open(abi, "w") as f:
+                f.write(current.replace("  clock: Nat\n", "", 1))
+            self.open_library(lib, clock="transport")
+            self.make("old", WHO.replace("def when", "def unused").split("def unused")[0], record(note=label("")))
+            with open(abi, "w") as f:
+                f.write(current)
+            self.assertEqual(self.host.send(op="world-library", principal="ember", identity="lib-2")["status"], "library")
+            self.make("new", WHO, record(note=label("")))
+            self.host.send(op="world-advance", principal="transport", height=7)
+            old = self.turn("old", "who", principal="ann")
+            self.assertEqual((old["status"], old["result"]), ("admitted", label("ann")), old)
+            new = self.turn("new", "when", principal="ann")
+            self.assertEqual((new["status"], new["result"]), ("admitted", label("7")), new)
+            self.reopen()
+            self.assertEqual(self.turn("old", "who", principal="bob")["result"], label("bob"))
 
 
 class Transient(Reflection):

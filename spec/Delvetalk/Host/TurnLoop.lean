@@ -417,7 +417,7 @@ def renderCard (o : Object) (context : String → Data) : M (Except String Data)
   let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
   let arguments := match c.type with
-    | .arrow _ _ _ (.arrow _ _ _ _) => #[o.state, context name]
+    | .arrow _ _ _ (.arrow _ _ ct _) => #[o.state, fitRecord c.bounds ct (context name)]
     | _ => #[o.state]
   let entry ← entryOf c
   let st ← get
@@ -458,7 +458,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   let entry ← entryOf c
   let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" ""
   let (domain, arguments) := match c.type with
-    | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ _ _)) => (d, [obj.state, plan, context])
+    | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
     | _ => (.emptyRow, [obj.state, plan])
   -- A plan the handler's input does not name passes.
@@ -494,8 +494,8 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
     (if depth == 0 then "request" else "call") method
   let (arguments, r) ← match compiled.type with
-    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
-    | .arrow _ _ _ (.arrow _ _ _ r) => pure ([obj.state, context], r)
+    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
+    | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
   unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal)
   match r with
@@ -1085,7 +1085,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("checkpoint", checkpoint.toJson),
       ("roots", rootsJson st.roots st.rootCids), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
-      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
+      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson w.binary id c)),
       ("extends", toJson st.layered),
       ("programs", Json.arr (st.programs.toArray.map fun (id, (src, mig)) => Json.mkObj
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),

@@ -43,6 +43,23 @@ imports Session and `PackageMain.lean` drives it.
   `"fsync"` by default, `"full"` for the old F_FULLFSYNC barrier (macOS; it stalls every other writer
   on the disk), `"none"` (flush only) for test journals.
 
+**Pins are sources (host6).** An object's pin is the CID of its sealed source closure: the artifact's
+`sourcesSha256`, the Canonical CID of its modules in order (library modules included), so it depends on bytes and
+never on the compiler. The compiled packet's digest is an observation beside it, `compiled {binary, packet}`
+(`binary` = the host binary's pin, `Snapshot.binaryPin`, set into `World.binary` at open), never compared on replay:
+replay recompiles from the journaled sources with the current compiler, requires the compile to succeed, the seed to
+conform and the recomputed source pin to equal the recorded `pin`, and counts each recorded `compiled.packet` that
+differs from its own in `world-status.recompiledDifferently` (memory, per process). Field names: `created {pin,
+compiled, compile, seed, …}` (no `sourcesSha256`), `creates[] {object, pin, compiled, …}`, `reprograms[] {object,
+oldPin, newPin, compiled, …}`, `library {pin, …}` (the seal's pin, unchanged); `Object.pin`, `Object.packet`;
+snapshot objects carry `pin` and `packet`; `inspected.pin`, `request.pin` in laws, receipts and projections are the
+source pin. An extension's pin is the CID of `["extend", old pin, source CID]`, sources too. The host builds each
+Context (and a law's Request) as the receiving code's own library declares it (`fitRecord`: the record type's
+fields, in its order, through the packet's bounds), so a field added to the library later never breaks an object
+compiled before it. `tests/fixtures/pins/artifacts.json` (kernel lane) still keys by module and entry and compares
+packet digests; the shape the rule asks for keys each entry by its source pin and keeps the packet digest
+informational.
+
 Signatures a newcomer calls (all pure unless noted):
 
 ```lean
