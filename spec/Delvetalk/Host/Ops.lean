@@ -587,7 +587,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) : Except
         unless dom == o.stateType && cod == ty do
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
-      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid⟩)
+      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid, none⟩)
   let (methods, predicate, predicateReads) := artifactShape artifact
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
            methods, predicate, predicateReads }

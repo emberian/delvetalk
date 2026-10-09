@@ -180,13 +180,26 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
       let packet ← match artifact.getObjVal? "packet" with
         | .ok p => pure p
         | .error e => throw (.request e)
-      let decoded ← match Minidregg.Theory.ObjectiveBendTyping.decodePacket packet with
+      let digest ← match artifact.getObjValAs? String "packetSha256" with
         | .ok d => pure d
         | .error e => throw (.request e)
-      let c : Compiled := ⟨packet, ty, decoded.source.assumptions.bounds, decoded.source.assumptions.rigid⟩
-      if s.world.compiled.size < Limits.maxCompiledPackets then
-        set { s with world := { s.world with compiled := s.world.compiled.insert key c } }
+      -- Decoded and checked once here; every segment of every turn runs from it (`Run`).
+      let prepared ← match Run.prepare packet digest with
+        | .ok p => pure p
+        | .error e => throw (.request e)
+      let c : Compiled := ⟨packet, ty, prepared.source.assumptions.bounds, prepared.source.assumptions.rigid, some prepared⟩
+      -- A full cache is emptied and refilled, never left full (which would compile every turn).
+      let cache := if s.world.compiled.size < Limits.maxCompiledPackets then s.world.compiled else {}
+      set { s with world := { s.world with compiled := cache.insert key c } }
       return c
+
+/-- The prepared packet of a compiled method (one is made whenever a method compiles). -/
+def preparedOf (c : Compiled) : M Run.Prepared :=
+  match c.prepared with
+  | some p => pure p
+  | none => match Run.prepare c.packet (Delvetalk.Turn.packetDigest c.packet) with
+    | .ok p => pure p
+    | .error e => throw (.request e)
 
 def budgetsNow : M Delvetalk.Turn.Budgets := do
   let s ← get
@@ -440,8 +453,9 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   | .computation .. =>
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
-    let started ← kernelRefusal (Delvetalk.Turn.startActivity compiled.packet arguments binding b)
-    noteProfile fun _ => (Delvetalk.Turn.prepareStart compiled.packet arguments |>.map fun (source, _) =>
+    let prep ← preparedOf compiled
+    let started ← kernelRefusal (Run.start prep arguments binding b)
+    noteProfile fun _ => (Run.applied prep arguments |>.map fun (source, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial source.term))
     drive depth id caller compiled binding started 0
   | _ =>
@@ -474,8 +488,9 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
       | _ => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
-    noteProfile fun _ => (Delvetalk.Turn.prepareResume compiled.packet checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
+    let prep ← preparedOf compiled
+    let next ← liftEval (Run.resumeWith prep checkpoint binding response b)
+    noteProfile fun _ => (Run.resumed prep checkpoint binding response |>.map fun (_, _, _, st, resumed) =>
       Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
     drive depth self caller compiled binding next 0
 
@@ -1121,7 +1136,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
+    let next ← liftEval (Run.resumeWith (← preparedOf compiled) checkpoint binding response b)
     drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st

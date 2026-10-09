@@ -33,6 +33,8 @@ imports Session and `PackageMain.lean` drives it.
 - **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
+- **Run.lean**: `Prepared` (a method's packet decoded and checked once, with its CID) and `start`/`resumeWith`,
+  the kernel's `startActivity`/`resumeActivity` without re-decoding, re-checking or re-hashing per segment.
 - **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
@@ -348,6 +350,17 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    change of F away from its empty value, for every type (`Law.emptyValue`: 0, false, "", the empty list, a
    record of empty values; any other value is never empty), and a field missing from the old state fails
    closed; it used to admit any change of a text field.
+
+17. **The prepared packet (host4).** `compiledMethod` compiles a method once per package (`inputsKey/method`), decodes
+   and checks its packet once (`Run.prepare`) and keeps the result in `Compiled.prepared`; every activity segment
+   runs from it (`Run.start`, `Run.resumeWith`), naming checkpoints by the artifact's `packetSha256`. Per segment the
+   host still checks each argument's conformance to its arrow's domain (and refuses a non-data position) and reads
+   the activity shape off the checked type, instead of re-checking the applied term (Run.lean's header argues it).
+   A full `compiled` cache is emptied and refilled rather than bypassed. Measured on one box under the same load
+   (`scratchpad bench`): 200 Counter bumps 3.36 s -> 1.42 s; Garden `receive` after its first 285 ms -> 21 ms
+   (5,541 ticks either way; the first call still compiles the method, ~1.2 s, until the kernel's
+   one-artifact-per-package lands). Pure methods (`render`, a state-returning method) still go through
+   `Package.executeDataValues`, which decodes per call.
 
 ## 6. Gotchas
 

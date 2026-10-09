@@ -2,6 +2,7 @@
    The journal (Journal.lean) is the only source of a World; Ops.lean is the only
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
+import Delvetalk.Host.Run
 import Std.Data.HashMap
 
 namespace Delvetalk.Host
@@ -122,6 +123,8 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
+  /-- The packet decoded and checked once (`Run.prepare`); an activity runs from it. -/
+  prepared : Option Run.Prepared := none
 
 /-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
 structure Ledger where
