@@ -136,7 +136,7 @@ record Edits:
   count: Plans.Edit<Nat, Nat>
   payload: Plans.Edit<Data, Data>
   copy: Plans.Edit<Data, Data>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 record Tagged:
   name: String
@@ -168,10 +168,7 @@ def touch(state: State, context: Abi.Context) -> State:
 
 
 def data_counter_modules():
-    modules = closure("Plan")
-    seen = {m["name"] for m in modules}
-    modules += closure("List", seen=seen)
-    return modules + [{"name": "DataCounter", "source": DATA_COUNTER}]
+    return closure("DataCounter", override={"DataCounter": DATA_COUNTER})
 
 
 def items(*values):

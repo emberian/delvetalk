@@ -12,6 +12,7 @@ import Lean
 import Compiler.ObjectiveBendParse
 import Compiler.ObjectiveBendLaw
 import Std.Data.HashMap
+import Std.Data.HashSet
 import Theory.ObjectiveBendOpenRecursion
 import Compiler.ObjectiveBendC4
 import Compiler.ObjectiveBendContract
@@ -2060,7 +2061,10 @@ def typedArgument : Nat → Json → Except String ATerm
 
 structure Output where
   term : ATerm
+  /-- Every declaration of the closure at its type: the method table and law shape read it. -/
   globalRow : Option PTy
+  /-- The packet's knot: only the fields the entry reaches (`reachableKnot`). -/
+  knotRow : Option PTy := globalRow
   sumBounds : List (Nat × PTy)
   typeErrors : Array String
   /-- The open declarations' templates (`St.templates`). -/
@@ -2114,6 +2118,39 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
   modify fun st => { st with hidden := #[] }
   return fields
 
+/-- The knot keys a term names: every global reference is `globalRef`, a `get` of the
+knot by key, so these are exactly the declarations the term can reach. -/
+partial def knotNames (json : Json) (acc : Array String) : Array String :=
+  match json with
+  | .obj kvs =>
+    let acc := match json.getObjValAs? String "tag", json.getObjValAs? String "name" with
+      | .ok "get", .ok name => acc.push name
+      | _, _ => acc
+    kvs.foldl (fun acc _ v => knotNames v acc) acc
+  | .arr items => items.foldl (fun acc v => knotNames v acc) acc
+  | _ => acc
+
+/-- The knot fields the entry reaches, transitively (recursion included), in declaration
+order. A spec's claims (`key#claim#name`) are kept with their spec: nothing references
+them, and they are typed only as knot fields. The packet carries no unreachable
+declaration, so its knot row's depth is the reached count, not the closure's size. -/
+def reachableKnot (fields : List (String × ATerm)) (entryKey : String) : List (String × ATerm) := Id.run do
+  let table : Std.HashMap String ATerm := fields.foldl (fun t (k, v) => t.insert k v) {}
+  let mut seen : Std.HashSet String := {}
+  let mut work : Array String := #[entryKey]
+  while h : work.size > 0 do
+    let key := work[work.size - 1]
+    work := work.pop
+    if seen.contains key then continue
+    seen := seen.insert key
+    if let some value := table[key]? then
+      for name in knotNames value.json #[] do
+        if !seen.contains name && table.contains name then work := work.push name
+  let claimed := fun (key : String) => match key.splitOn "#claim#" with
+    | [owner, _] => seen.contains owner
+    | _ => false
+  return fields.filter fun (key, _) => seen.contains key || claimed key
+
 def elaborateM (c : Ctx) (entryModule : Nat) (entryDefinition : String) (args : Json) (mode : String) : M Output := do
   let fuel := 100000
   let userModules := c.modules
@@ -2129,13 +2166,16 @@ def elaborateM (c : Ctx) (entryModule : Nat) (entryDefinition : String) (args : 
     | none => unresolved := unresolved ++ [name]
   let globalRow := if unresolved.isEmpty then some (PTy.row rowFields) else none
   let reason := if unresolved.isEmpty then none else some ("declaration types unresolved: " ++ String.intercalate ", " unresolved)
-  let rootExtension := ATerm.lam ⟨some (.variable 0), some (arrowTy .emptyRow (.variable 0)), "unrestricted", "reusable", reason⟩
-    (.lam ⟨some .emptyRow, some (.variable 0), "unrestricted", "reusable", reason⟩ (.extend (.bound 0) fields))
-  let packageLabel := (toJson (userModules.map (·.name))).compress
-  let root := ATerm.fix (.specification (.record [("package", .label packageLabel)]) rootExtension) (.record [])
   let some entry := userModules[entryModule]? | fail "missing selected entry"
   let entryKey := entry.name ++ "." ++ entryDefinition
   if (declOf c entryKey).isNone then fail "missing selected entry"
+  let knot := reachableKnot fields entryKey
+  let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
+  let knotRow := globalRow.map fun _ => PTy.row (rowFields.filter fun (k, _) => kept.contains k)
+  let rootExtension := ATerm.lam ⟨some (.variable 0), some (arrowTy .emptyRow (.variable 0)), "unrestricted", "reusable", reason⟩
+    (.lam ⟨some .emptyRow, some (.variable 0), "unrestricted", "reusable", reason⟩ (.extend (.bound 0) knot))
+  let packageLabel := (toJson (userModules.map (·.name))).compress
+  let root := ATerm.fix (.specification (.record [("package", .label packageLabel)]) rootExtension) (.record [])
   let mut selected := ATerm.get root entryKey
   if mode == "definition" then
     match args with
@@ -2156,7 +2196,8 @@ def elaborateM (c : Ctx) (entryModule : Nat) (entryDefinition : String) (args : 
         | .error _ => fail "arguments must select a supported complete value envelope"
       else fail "arguments must select a supported complete value envelope"
   let st ← get
-  return ⟨selected, globalRow, st.sumBounds, st.typeErrors, st.templates⟩
+  return { term := selected, globalRow, knotRow, sumBounds := st.sumBounds, typeErrors := st.typeErrors,
+           templates := st.templates.filter fun (key, _, _) => kept.contains key }
 
 /-- The built-in module: `builtinSource` through the parser and the AST decoder. -/
 def builtinModule : Except String Module := do
@@ -2344,7 +2385,7 @@ def proposalJson (out : Output) : Except String Json := do
     | .error e => throw (match out.typeErrors[0]? with
       | some cause => cause ++ " (" ++ e ++ ")"
       | none => e)
-  let some row := out.globalRow | throw (out.typeErrors[0]?.getD "global row unresolved")
+  let some row := out.knotRow | throw (out.typeErrors[0]?.getD "global row unresolved")
   let ((annotationJson, boundJson), interner) := (internProposal annotations row bounds).run {}
   return Json.mkObj [("types", Json.arr interner.table),
     ("annotations", Json.arr annotationJson.toArray),

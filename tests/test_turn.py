@@ -591,3 +591,41 @@ class TextTariffTests(TurnCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def wide_library(count):
+    """A module of `count` definitions; f0..f9 call each other in a chain, the rest are unused."""
+    lines = ["edition ObjectiveBend 1"]
+    for i in range(count):
+        body = f"f{i + 1}(n + 1n)" if i < 9 else "n + 1n"
+        lines.append(f"def f{i}(n: Nat) -> Nat:\n  {body}")
+    return "\n".join(lines) + "\n"
+
+
+class KnotTests(TurnCase):
+    """The packet's knot holds only what the entry reaches, so closure size is not capped."""
+
+    def test_a_600_definition_closure_compiles_when_the_entry_reaches_ten(self):
+        # Refuted if every closure definition still enters the knot (type nesting capacity at ~256).
+        h = self.host()
+        modules = [{"name": "Wide", "source": wide_library(590)},
+                   {"name": "Package", "source": "edition ObjectiveBend 1\nimport ./Wide.obend as Wide\n" +
+                    "".join(f"def g{i}(n: Nat) -> Nat:\n  n\n" for i in range(9)) +
+                    "def start(n: Nat) -> Nat:\n  Wide.f0(n)\n"}]
+        r = h.send({"op": "compile", "entry": "start", "modules": modules})
+        self.assertEqual(r["status"], "compiled", r)
+        knot = [k for k in json.dumps(r["artifact"]["packet"]).split('"') if k.startswith("Wide.")]
+        self.assertEqual(sorted(set(knot)), sorted(f"Wide.f{i}" for i in range(10)))
+        ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(5)]})
+        self.assertEqual((ran["status"], ran["value"]), ("finished", nat(15)), ran)
+
+    def test_an_unreached_definition_is_absent_and_a_reached_recursive_one_present(self):
+        h = self.host()
+        source = ("edition ObjectiveBend 1\ndef count(n: Nat) -> Nat:\n  match n:\n    case 0: 0n\n"
+                  "    case 1+p: 1n + count(p)\ndef unused(n: Nat) -> Nat:\n  n\ndef start(n: Nat) -> Nat:\n  count(n)\n")
+        r = h.send({"op": "compile", "entry": "start", "modules": [{"name": "Package", "source": source}]})
+        self.assertEqual(r["status"], "compiled", r)
+        packet = json.dumps(r["artifact"]["packet"])
+        self.assertIn('"Package.count"', packet)
+        self.assertNotIn('"Package.unused"', packet)
+        self.assertEqual(h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(4)]})["value"], nat(4))
