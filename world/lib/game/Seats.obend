@@ -1,0 +1,25 @@
+edition ObjectiveBend 1
+import ./Plan.obend as Plans
+# A seat at a commit-reveal table, as data: what the Table views. The table and each
+# seat are separate objects, so a reveal awaiting the opponent's commitment waits on a
+# turn that writes another object, and resumes on roots that are still current.
+record State:
+  table: Plans.Reference
+  seat: Nat
+  owner: String
+  opponent: String
+  rival: Plans.Reference
+  round: Nat
+  digest: String
+  opened: Bool
+  source: Nat
+  target: Nat
+# What a seat's methods answer; the table's calls of next return it.
+sum Done:
+  committed: {}
+  opened: {}
+  next: {round: Nat}
+  refused: {reason: String}
+# The intent a seat's commitment turn carries, so the opponent can name its slot.
+def commitIntent(table: String, round: Nat) -> String:
+  textConcat(table, textConcat("/", textConcat(natText(round), "/commit")))
