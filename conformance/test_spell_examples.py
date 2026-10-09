@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Readable authored cases still run through the existing Lean fixture runner."""
+"""Readable scenario syntax preserves exact participant-authored values."""
 import importlib.util
 from pathlib import Path
 import sys
@@ -67,19 +67,6 @@ def view(state: State, panel: String) -> View:
 
 
 class Examples(unittest.TestCase):
-    def test_actual_lean_admission(self):
-        self.assertTrue((ROOT / '.lake/build/bin/delvetalk-world').exists(), 'build the world host first')
-        protocol = {'profile': 'delvetalk-local-v1', 'name': 'examples-test', 'initial': {},
-                    'commands': {'knock': {'require': [[["input", "word"], ["literal", "please"]]],
-                                           'set': {}, 'result': ['literal', 'The paper door swings open onto a tiny lantern-lit room.'],
-                                           'outbox': []}}}
-        report = proposal.propose('protocol-json@1', proposal.translation.canonical(protocol),
-                                  EXAMPLES.encode(), profile='world')
-        self.assertTrue(report['passed'], report)
-        self.assertEqual(report['candidate']['scenarios']['source'], EXAMPLES)
-        self.assertEqual([step['receipt']['kind'] for step in report['outcomes'][0]['steps']],
-                         ['committed', 'refused', 'refused', 'refused'])
-
     def test_exact_unicode_and_multiline(self):
         text = '''examples DelveTalk 1
 case exact
@@ -167,91 +154,5 @@ expect result (Bool): true
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 parse(changed)
 
-    def source_protocol(self, source=SOURCE):
-        return {'profile': 'delvetalk-local-v1', 'initial': {'lit': False},
-                'commands': {'knock': {'require': [], 'set': {'lit': ['literal', True]},
-                                      'result': ['literal', 'Welcome'], 'outbox': []}},
-                'viewProgram': {'profile': 'delvetalk-obend-view-v1', 'package': {
-                    'modules': [{'name': 'Main', 'source': source}], 'entry': 'view'}}}
 
-    def observe(self, prose='The room is dark.', panel='main'):
-        return {'observe': panel, 'view': {'title': panel, 'prose': prose, 'actions': {
-            'knock': {'text': 'Knock', 'command': 'knock', 'input': {'amount': 1, 'quiet': True}}}}}
-
-    def run_views(self, steps, protocol=None, law=None):
-        return proposal.propose('protocol-json@1', proposal.translation.canonical(protocol or self.source_protocol()),
-            proposal.translation.canonical([{'name': 'interface', 'law': law or [], 'steps': steps}]), profile='compiled')
-
-    def test_actual_source_view_observes_current_state_without_grant_or_write(self):
-        steps = [self.observe(), {'principal': 'visitor', 'command': 'knock', 'input': {},
-                                 'root': 'initial', 'kind': 'committed', 'result': 'Welcome'},
-                 self.observe('A lantern glows.', 'details'),
-                 {'principal': 'outsider', 'command': 'knock', 'input': {},
-                  'root': 'current', 'kind': 'refused', 'error': 'unauthorized'},
-                 self.observe('A lantern glows.')]
-        report = self.run_views(steps, law=['visitor'])
-        self.assertTrue(report['passed'], report['outcomes'])
-        observed = report['outcomes'][0]['steps']
-        self.assertEqual([observed[i]['view']['root']['version'] for i in (0, 2, 4)], [0, 1, 1])
-        self.assertIn('scene/projection.py', report['execution']['files'])
-        self.assertEqual(observed[2]['view']['runtimeProfile']['profile'], 'compiled')
-        pure = self.run_views([self.observe()])
-        self.assertTrue(pure['passed'], pure['outcomes'])
-        self.assertEqual(pure['outcomes'][0]['steps'][0]['view']['root']['law'], [])
-
-    def test_exact_view_mismatch_including_bool_nat_and_extra_offer_fails(self):
-        originals = [self.observe() for _ in range(5)]
-        originals[0]['view']['title'] = 'Untrue title'
-        originals[1]['view']['actions']['knock']['text'] = 'Wrong label'
-        originals[2]['view']['actions']['knock']['input']['amount'] = True
-        originals[3]['view']['actions']['knock']['command'] = 'other'
-        originals[4]['view']['actions'] = {}
-        report = self.run_views(originals)
-        self.assertFalse(report['passed'])
-        self.assertEqual(len(report['outcomes'][0]['failures']), 5)
-        self.assertTrue(all(item['field'] == 'view' for item in report['outcomes'][0]['failures']))
-
-    def test_failed_projection_is_a_failed_scenario_not_an_absent_assertion(self):
-        absent = self.source_protocol()
-        absent.pop('viewProgram')
-        wrong_command = self.source_protocol(SOURCE.replace('command: "knock"', 'command: "missing"'))
-        exhausted = self.source_protocol(SOURCE.replace('def view(',
-            'def loop(n: Nat) -> String:\n  if n == 0n then "done" else loop(n - 1n)\ndef view(').replace(
-            'title: panel', 'title: loop(10000n)'))
-        for protocol in (absent, wrong_command, exhausted):
-            with self.subTest(protocol=protocol):
-                report = self.run_views([self.observe()], protocol=protocol)
-                outcome = report['outcomes'][0]
-                self.assertFalse(report['passed'])
-                self.assertEqual(outcome['installation']['kind'], 'committed')
-                self.assertIn('viewError', outcome['steps'][0])
-                self.assertEqual(outcome['failures'][0]['field'], 'view')
-        with self.assertRaisesRegex(ValueError, 'compiled profile'):
-            proposal.run_scenarios(self.source_protocol(), [{'name': 'wrong host', 'law': [],
-                                  'steps': [self.observe()]}], profile='world')
-
-    def test_desk_requires_behavior_and_interface_before_readiness(self):
-        desk = proposal.module('view_examples_desk', 'scripts/desk.py')
-        source = (ROOT / 'syntaxes/examples/paper-door.obend').read_bytes()
-        examples = EXAMPLES.replace('as visitor\nat initial\nsend knock',
-                                    OBSERVATION + '\nas visitor\nat initial\nsend knock', 1)
-        with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            worker = desk.Desk(folder / 'world.json', folder / 'artifacts', profile='compiled')
-            for name, fixture, status in (('good', examples, 'ready'),
-                                         ('bad', examples.replace('title: The paper door', 'title: Untrue'), 'failed')):
-                candidate = worker.create(name, 'maker', 'create-' + name, ['maker'])['data']['root']
-                pending = worker.submit(name, 'maker', 'submit-' + name, candidate,
-                    'objective-bend-spell@1', source, fixture.encode(), {}, 'door')['data']['root']
-                checked = worker.check(name, 'maker', 'check-' + name, pending)
-                self.assertEqual(checked['kind'], 'committed', checked)
-                state = checked['data']['root']['state']
-                self.assertEqual(state['status'], status, state)
-                artifact = desk.load_artifact(folder / 'artifacts', state['artifact'])
-                self.assertEqual(artifact['passed'], status == 'ready', artifact)
-                failures = artifact['report']['outcomes'][0]['failures']
-                self.assertEqual([item['field'] for item in failures], [] if status == 'ready' else ['view'])
-
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__ == '__main__': unittest.main()

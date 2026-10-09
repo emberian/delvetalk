@@ -25,6 +25,7 @@ translation = module('proposal_translation', 'scripts/translate.py')
 world = module('proposal_world', 'scripts/world.py')
 runtime_profile = module('proposal_runtime_profile', 'scripts/runtime_profile.py')
 projection = module('proposal_projection', 'scene/projection.py')
+source_object = module('proposal_source_object', 'scripts/source_object.py')
 
 
 def digest(raw):
@@ -48,13 +49,19 @@ def validate_scenarios(scenarios):
     names = set()
     total = 0
     for scenario in scenarios:
-        exact_keys(scenario, {'name', 'law', 'steps'}, set(), 'scenario')
+        exact_keys(scenario, {'name', 'law', 'steps'}, {'fixtures'}, 'scenario')
         nonempty_string(scenario['name'], 'scenario.name')
         if scenario['name'] in names:
             raise ValueError('duplicate scenario name')
         names.add(scenario['name'])
         if not isinstance(scenario['law'], list) or any(not isinstance(x, str) for x in scenario['law']):
             raise ValueError('scenario.law: expected string array')
+        fixtures = scenario.get('fixtures', [])
+        if (not isinstance(fixtures, list) or len(fixtures) > 7
+                or any(not isinstance(x, str) or not x or x == 'candidate' or '/' in x for x in fixtures)
+                or len(set(fixtures)) != len(fixtures)):
+            raise ValueError('fixtures require at most seven unique peer names')
+        objects = ['candidate'] + fixtures
         if not isinstance(scenario['steps'], list) or not scenario['steps']:
             raise ValueError('scenario.steps: expected nonempty array')
         total += len(scenario['steps'])
@@ -72,12 +79,33 @@ def validate_scenarios(scenarios):
                             if isinstance(action, dict)] if isinstance(actions, dict) else []
                 projection._validate(view, {'protocol': {'commands': commands}})
                 continue
-            exact_keys(step, {'principal', 'command', 'input', 'root', 'kind'},
-                       {'state', 'error', 'result', 'outbox'}, 'step')
+            transaction = 'calls' in step
+            exact_keys(step, {'principal', 'calls', 'root', 'kind'} if transaction else
+                       {'principal', 'command', 'input', 'root', 'kind'},
+                       {'state', 'error', 'result', 'outbox', 'object'}, 'step')
+            if transaction:
+                if not isinstance(step['calls'], list) or not 1 <= len(step['calls']) <= 16:
+                    raise ValueError('transaction requires 1..16 calls')
+                for call_index, call in enumerate(step['calls']):
+                    routed = isinstance(call, dict) and 'inputFrom' in call
+                    exact_keys(call, {'object', 'command', 'inputFrom' if routed else 'input'}, set(), 'call')
+                    if call['object'] not in objects:
+                        raise ValueError('call target requires a declared fixture')
+                    nonempty_string(call['command'], 'call.command')
+                    if routed:
+                        if type(call['inputFrom']) is not int or not 0 <= call['inputFrom'] < call_index:
+                            raise ValueError('inputFrom requires an earlier call')
+                    elif not isinstance(call['input'], dict):
+                        raise ValueError('call.input: expected object')
+                if 'state' in step or 'object' in step:
+                    raise ValueError('transaction state assertion requires a following observation')
+            elif step.get('object', 'candidate') not in objects:
+                raise ValueError('send target requires a declared fixture')
             nonempty_string(step['principal'], 'step.principal')
-            nonempty_string(step['command'], 'step.command')
-            if not isinstance(step['input'], dict):
-                raise ValueError('step.input: expected object')
+            if not transaction:
+                nonempty_string(step['command'], 'step.command')
+                if not isinstance(step['input'], dict):
+                    raise ValueError('step.input: expected object')
             if step['root'] not in ('initial', 'current'):
                 raise ValueError('step.root: expected initial or current')
             if step['kind'] not in ('committed', 'refused'):
@@ -107,7 +135,15 @@ def json_equal(left, right):
     return left == right
 
 
-def run_scenarios(protocol, scenarios, *, profile='world'):
+def scenario_law(protocol, principals):
+    """Transport the example's source-authored defaults to generic admission."""
+    modules = source_object.read_closure([('ScenarioLaw', ROOT / 'world/lib/prelude/ScenarioLaw.obend')])
+    arguments = source_object.values('encode', [list(protocol['commands']), principals])
+    result = source_object.evaluate(modules, 'authority', arguments)
+    return source_object.values('decode', [result])[0]
+
+
+def run_scenarios(protocol, scenarios, *, profile='compiled'):
     """Return deterministic receipts and assertion failures; use fresh worlds only."""
     validate_scenarios(scenarios)
     if profile not in world.PROFILES:
@@ -125,14 +161,29 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
             database = Path(temporary) / f'{index}.json'
             installation = world.exchange(database, {
                 'op': 'create', 'object': 'candidate', 'principal': 'proposal-fixture',
-                'intent': 'install', 'protocol': protocol, 'law': scenario['law']}, profile=profile)
+                'intent': 'install', 'protocol': protocol, 'law': scenario_law(protocol, scenario['law'])}, profile=profile)
             result = {'name': scenario['name'], 'installation': installation, 'steps': [], 'failures': []}
             results.append(result)
             if installation.get('kind') != 'committed':
                 result['failures'].append({'at': 'installation', 'expected': 'committed',
                                            'actual': installation.get('kind')})
                 continue
-            initial = installation['data']['root']
+            initials = {'candidate': installation['data']['root']}
+            if scenario.get('fixtures'):
+                result['fixtures'] = {}
+            for fixture in scenario.get('fixtures', []):
+                receipt = world.exchange(database, {
+                    'op': 'create', 'object': fixture, 'principal': 'proposal-fixture',
+                    'intent': 'install-' + fixture, 'protocol': protocol,
+                    'law': scenario_law(protocol, scenario['law'])}, profile=profile)
+                result['fixtures'][fixture] = receipt
+                if receipt.get('kind') != 'committed':
+                    result['failures'].append({'at': 'fixture:' + fixture,
+                                               'expected': 'committed', 'actual': receipt.get('kind')})
+                    break
+                initials[fixture] = receipt['data']['root']
+            if result['failures']:
+                continue
             for step_index, step in enumerate(scenario['steps']):
                 if 'observe' in step:
                     root = world.exchange(database, {
@@ -151,17 +202,27 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
                         result['failures'].append({'at': step_index, 'field': 'view',
                                                   'expected': step['view'], 'error': str(error)})
                     continue
-                root = initial if step['root'] == 'initial' else world.exchange(database, {
-                    'op': 'inspect', 'object': 'candidate', 'principal': 'proposal-fixture'}, profile=profile)
-                receipt = world.exchange(database, {
-                    'op': 'invoke', 'object': 'candidate', 'principal': step['principal'],
-                    'intent': f'step-{step_index}', 'expected': root,
-                    'command': step['command'], 'input': step['input']}, profile=profile)
+                def selected_root(identity):
+                    return initials[identity] if step['root'] == 'initial' else world.exchange(database, {
+                        'op': 'inspect', 'object': identity, 'principal': 'proposal-fixture'}, profile=profile)
+                if 'calls' in step:
+                    reads = {call['object']: selected_root(call['object']) for call in step['calls']}
+                    request = {'op': 'transaction', 'principal': step['principal'],
+                        'intent': f'step-{step_index}', 'reads': reads, 'calls': step['calls']}
+                else:
+                    target = step.get('object', 'candidate')
+                    request = {'op': 'invoke', 'object': target, 'principal': step['principal'],
+                        'intent': f'step-{step_index}', 'expected': selected_root(target),
+                        'command': step['command'], 'input': step['input']}
+                receipt = world.exchange(database, request, profile=profile)
                 result['steps'].append({'index': step_index, 'receipt': receipt})
                 observed = {'kind': receipt.get('kind'), 'error': receipt.get('data')}
                 if receipt.get('kind') == 'committed':
                     data = receipt['data']
-                    observed.update(state=data['root']['state'], result=data['result'], outbox=data['outbox'])
+                    if 'calls' in step:
+                        observed.update(result=data['results'], outbox=data['outbox'])
+                    else:
+                        observed.update(state=data['root']['state'], result=data['result'], outbox=data['outbox'])
                 for key in ('kind', 'state', 'error', 'result', 'outbox'):
                     if key in step and (key not in observed or not json_equal(step[key], observed[key])):
                         result['failures'].append({'at': step_index, 'field': key,
@@ -169,17 +230,19 @@ def run_scenarios(protocol, scenarios, *, profile='world'):
     return results
 
 
-def execution_paths(profile='world'):
+def execution_paths(profile='compiled'):
     """Return dependency names without repeatedly reading their bytes."""
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
     return tuple(sorted(set(runtime_profile.paths(profile)) | {
         'scene/projection.py', 'scripts/source_packages.py', 'scripts/source_offers.py',
         'scripts/composite_offers.py', 'scripts/affordances.py',
-        'syntaxes/spell_examples.py', 'scripts/propose.py'}))
+        'syntaxes/spell_examples.py', 'scripts/propose.py', 'scripts/source_object.py',
+        'scripts/source_closure.py', 'world/lib/prelude/ScenarioLaw.obend',
+        'world/lib/prelude/Preparation.obend', 'world/lib/prelude/List.obend'}))
 
 
-def execution_pin(profile='world'):
+def execution_pin(profile='compiled'):
     # Byte identity is provenance, not a proof that a binary was built from these sources.
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
@@ -189,7 +252,7 @@ def execution_pin(profile='world'):
     return {**identity, 'sha256': digest(translation.canonical(identity))}
 
 
-def propose(syntax, source, scenario_source, *, profile='world', modules=None):
+def propose(syntax, source, scenario_source, *, profile='compiled', modules=None):
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
     if (modules is None and len(source) > 512 * 1024) or len(scenario_source) > 1024 * 1024:
@@ -227,7 +290,7 @@ def propose(syntax, source, scenario_source, *, profile='world', modules=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--syntax', required=True, help='explicit reviewed syntax ID/version')
-    parser.add_argument('--profile', choices=world.PROFILES, default='world', help='operator-selected host for every scenario')
+    parser.add_argument('--profile', choices=world.PROFILES, default='compiled', help='operator-selected host for every scenario')
     parser.add_argument('source', type=Path)
     parser.add_argument('scenarios', type=Path)
     parser.add_argument('-o', '--output', type=Path, help='new report file; existing paths are refused')

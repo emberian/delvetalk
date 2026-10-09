@@ -31,7 +31,6 @@ history = module('desk_history', 'scripts/history.py')
 source_offers = module('desk_source_offers', 'scripts/source_offers.py')
 projection = module('desk_projection', 'scene/projection.py')
 canonical, loads = translate.canonical, translate.load_json
-_REVIEWED_CANDIDATE = {}
 SOURCE_CANDIDATE_FILES = ('protocols/editor/generate.py', 'protocols/editor/Candidate.obend',
                           'world/lib/prelude/List.obend', 'world/lib/prelude/Preparation.obend', 'world/lib/prelude/Abi.obend',
                           'protocols/contract-workshop/generate.py',
@@ -45,10 +44,7 @@ def digest(value):
 
 def candidate_state(root):
     """Project Candidate custody data without replacing its exact native root."""
-    state = root['state']
-    if set(state) != {'model'}:
-        return state  # Historical plain Candidate roots retain their original shape.
-    model = state['model']
+    model = source_object.state_data(root)
     if (not isinstance(model, dict) or set(model) != {'tag', 'fields'}
             or model['tag'] != 'record' or not isinstance(model['fields'], list)):
         raise ValueError('typed candidate state requires a DataWire record')
@@ -65,30 +61,59 @@ def candidate_state(root):
     return result
 
 
-def is_source_desk_protocol(protocol):
-    """Recognize only reviewed complete bodies; this selection grants no authority."""
-    if not isinstance(protocol, dict) or 'sourcePackages' not in protocol:
-        return False
-    def body(value):
-        return {key: item for key, item in value.items() if key not in ('initial', 'sourceConfiguration')}
-    expected = canonical(body(protocol))
-    loader_pin = source_object.pins('objective-bend-object')
-    variants = (
-        ('protocols/editor/generate.py', SOURCE_CANDIDATE_FILES[:3]),
-        ('protocols/contract-workshop/generate.py', SOURCE_CANDIDATE_FILES))
-    for path, files in variants:
-        pin = {'source': runtime_profile.hash_paths(files, root=ROOT), 'loader': loader_pin}
-        cached = _REVIEWED_CANDIDATE.get(path)
-        if cached is None or cached[0] != pin:
-            reviewed = module('desk_candidate_package', path).candidate()
-            if pin != {'source': runtime_profile.hash_paths(files, root=ROOT),
-                       'loader': source_object.pins('objective-bend-object')}:
-                raise ValueError('reviewed source candidate changed during loading')
-            cached = pin, canonical(body(reviewed))
-            _REVIEWED_CANDIDATE[path] = cached
-        if expected == cached[1]:
-            return True
-    return False
+def compiler_work(root, object_id, principal, database, *, receiver=None):
+    """Acquire explicit offered compiler consent under the service's current read.
+
+    This DTO describes bounded physical work and report transport, not an
+    approved source program. Native preparation checks the exact held root.
+    """
+    if database is not None and receiver is not None:
+        raise ValueError('compiler work selects exactly one native transport')
+    references = None
+    if receiver is not None:
+        captured = world.capture_roots(None, [object_id], principal=principal,
+                                       profile='compiled', receiver=receiver)
+        pair = captured['roots'][object_id]
+        if pair is None or canonical(pair['root']) != canonical(root):
+            raise ValueError('compiler work differs from captured current root')
+        references = {object_id: pair['reference']}
+    view = projection.project(root, object_id)
+    offers = source_offers.capture(view, {object_id: root}, database=database,
+                                  references=references)
+    offer = offers.get('compile')
+    if offer is None:
+        return None
+    outcome = source_offers.prepare(offer, principal, 'inspect-compiler-request', {},
+                                   database=database, receiver=receiver)
+    if outcome.get('kind') != 'inspection':
+        raise ValueError('source compiler offer did not produce an inspection')
+    work = outcome.get('value')
+    validate_compiler_work(work, root, object_id)
+    return work
+
+
+def validate_compiler_work(work, root, object_id):
+    """Check the physical compiler request framing; source owns its workflow."""
+    keys = {'format', 'object', 'intent', 'proposal', 'migration', 'target', 'reports'}
+    if (not isinstance(work, dict) or set(work) != keys
+            or work['format'] != 'delvetalk-compiler-request-v1' or work['object'] != object_id
+            or not isinstance(work['intent'], str) or not 0 < len(work['intent'].encode()) <= 512
+            or not isinstance(work['proposal'], dict) or not isinstance(work['migration'], dict)
+            or not isinstance(work['proposal'].get('syntax'), str)
+            or not 0 < len(work['proposal']['syntax'].encode()) <= 128
+            or not isinstance(work['target'], str) or not 0 < len(work['target'].encode()) <= 512
+            or not isinstance(work['reports'], dict) or set(work['reports']) != {'passed', 'failed'}
+            or len(canonical(work)) > 1024 * 1024):
+        raise ValueError('source compiler request contract differs')
+    commands = root['protocol'].get('commands', {})
+    for command in work['reports'].values():
+        if not isinstance(command, str) or not command or command not in commands:
+            raise ValueError('source compiler report method is not declared')
+        transition = commands[command].get('transition', {})
+        if (transition.get('profile') != 'delvetalk-source-transition'
+                or transition.get('inputCodec') != 'value'):
+            raise ValueError('source compiler report method requires the typed Value input contract')
+    return work
 
 
 def execution_paths(profile='compiled'):
@@ -201,7 +226,17 @@ def preserve_build_dependencies(directory, artifact):
 
 def proposal_material(proposal, artifact_store=None):
     """Resolve exact bytes only from the explicitly selected local source store."""
-    if isinstance(proposal, dict) and proposal.get('format') == source_store.MODULE_PROPOSAL:
+    if isinstance(proposal, dict) and proposal.get('format') == source_store.INLINE_MODULE_PROPOSAL:
+        if (set(proposal) != {'format', 'syntax', 'modules', 'scenarios'}
+                or not isinstance(proposal['syntax'], str) or not isinstance(proposal['scenarios'], str)):
+            raise ValueError('inline module proposal requires syntax/modules/scenarios')
+        source = source_store.inline_module_material(proposal['modules'], artifact_store)
+        scenarios = proposal['scenarios'].encode('utf-8')
+        bindings = {'syntax': proposal['syntax'], 'manifest': source['manifest'],
+                    'scenariosRef': (source_store.reference(scenarios, kind='scenarios') if artifact_store is None
+                                     else source_store.store_bytes(artifact_store, scenarios, kind='scenarios')),
+                    'adapterPin': source_store.adapter_pin(proposal['syntax'])}
+    elif isinstance(proposal, dict) and proposal.get('format') == source_store.MODULE_PROPOSAL:
         if artifact_store is None:
             raise ValueError('module proposal requires an explicit artifact store')
         source, scenarios = source_store.validate_module_proposal(artifact_store, proposal)
@@ -229,10 +264,10 @@ def compile_proposal(payload):
     """Trusted worker computation only; all world transitions happen elsewhere."""
     proposal = module('desk_proposal', 'scripts/propose.py')
     profile = payload.get('profile', 'compiled')
-    state = candidate_state(payload['root'])
+    state = payload['work']
     source = state['proposal']
     artifact = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(payload['root']),
-                'proposal': source, 'migration': state['migration'], 'target': state['target'], 'admissionProfile': profile,
+                'compilerWork': state, 'proposal': source, 'migration': state['migration'], 'target': state['target'], 'admissionProfile': profile,
                 'worker': {'scripts/desk.py': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}}
     try:
         raw_source, raw_scenarios, bindings = proposal_material(source, payload.get('artifactStore'))
@@ -253,14 +288,10 @@ def compile_proposal(payload):
             artifact.update(passed=False, diagnostics=[{'kind': 'scenario-failure', 'report': report['id']}])
             return artifact
         translated = report['candidate']['artifact']
-        if translated['target'] == 'local-protocol-v1':
-            protocol = translated['lowered']
-            artifact['roomArtifact'] = None
-        else:
-            room = module('desk_room', 'scene/room.py')
-            wrapped = room.wrap_bundle(translated['lowered'])
-            artifact['roomArtifact'] = wrapped
-            protocol = wrapped['protocol']
+        if translated['target'] != 'local-protocol-v1':
+            raise ValueError('source authoring requires an ordinary local object protocol')
+        protocol = translated['lowered']
+        artifact['roomArtifact'] = None
         artifact.update(passed=True, diagnostics=[], protocol=protocol)
         if set(payload['root']['state']) == {'model'}:
             artifact['program'] = source_object.values('digest', [protocol])[0]
@@ -269,10 +300,10 @@ def compile_proposal(payload):
     return artifact
 
 
-def bounded_compile(root, *, timeout=45, profile='compiled', artifact_store=None):
+def bounded_compile(root, *, work, timeout=45, profile='compiled', artifact_store=None):
     """Run the trusted compiler with wall/CPU/file bounds; never execute source text."""
-    failed = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root), 'passed': False}
-    state = candidate_state(root)
+    failed = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root), 'compilerWork': work, 'passed': False}
+    state = work
     if isinstance(state.get('proposal'), dict):
         proposed = state['proposal']
         failed['proposal'] = proposed
@@ -282,7 +313,7 @@ def bounded_compile(root, *, timeout=45, profile='compiled', artifact_store=None
             failed['sourceBindings'] = {key: proposed[key] for key in ('syntax', 'manifest', 'scenariosRef', 'adapterPin')}
     try:
         process = process_custody.run([sys.executable, str(Path(__file__).resolve()), '_worker'],
-            input=canonical({'root': root, 'profile': profile,
+            input=canonical({'root': root, 'work': work, 'profile': profile,
                              'artifactStore': str(Path(artifact_store).resolve()) if artifact_store is not None else None}),
             timeout=timeout, cpu_seconds=30, memory_bytes=process_custody.NATIVE_MEMORY_BYTES,
             stdout_limit=8 * 1024 * 1024,
@@ -352,9 +383,12 @@ class Desk:
         entry = loads(path.read_bytes())
         if canonical(entry['inputs']) != canonical(inputs):
             raise ValueError('compiler intent already bound to another candidate/root')
+        validate_compiler_work(entry['work'], inputs['expected'], inputs['object'])
+        if entry['work']['intent'] != inputs['intent']:
+            raise ValueError('compiler attempt intent differs from source request')
         request = entry['request']
         if (set(request) != {'op', 'object', 'principal', 'intent', 'expected', 'command', 'input'}
-                or request['op'] != 'invoke' or request['command'] not in ('compiled', 'failed')
+                or request['op'] != 'invoke' or request['command'] not in entry['work']['reports'].values()
                 or any(canonical(request[key]) != canonical(value) for key, value in inputs.items())):
             raise ValueError('compiler attempt is not the exact captured completion request')
         return entry
@@ -366,21 +400,24 @@ class Desk:
             return entry
         if build.get('candidateRootSha256') != digest(inputs['expected']):
             raise ValueError('compiler build does not match captured candidate')
+        validate_compiler_work(build['compilerWork'], inputs['expected'], inputs['object'])
+        if build['compilerWork']['intent'] != inputs['intent']:
+            raise ValueError('compiler build intent differs from source request')
         identity = store_artifact(self.artifact_store, build)
         if build['passed']:
             room_id = None
             if build.get('roomArtifact') is not None:
                 room = module('desk_room_store', 'scene/room.py')
                 room_id = room.store_artifact(self.artifact_store / 'rooms', build['roomArtifact'])
-            command, payload = 'compiled', {'artifact': identity, 'protocol': build['protocol'], 'roomArtifact': room_id}
+            command, payload = build['compilerWork']['reports']['passed'], {'artifact': identity, 'protocol': build['protocol'], 'roomArtifact': room_id}
             if set(inputs['expected']['state']) == {'model'}:
                 payload['program'] = build['program']
         else:
-            command, payload = 'failed', {'artifact': identity, 'diagnostics': build['diagnostics']}
+            command, payload = build['compilerWork']['reports']['failed'], {'artifact': identity, 'diagnostics': build['diagnostics']}
         if execution_profile(self.profile) != profile:
             raise ValueError('desk admission runtime changed during compilation')
         path = self.artifact_store / 'attempts' / (digest([inputs['principal'], inputs['intent']]) + '.json')
-        immutable(path, {'inputs': inputs, 'request': {'op': 'invoke', **inputs, 'command': command, 'input': payload},
+        immutable(path, {'inputs': inputs, 'work': build['compilerWork'], 'request': {'op': 'invoke', **inputs, 'command': command, 'input': payload},
                          'executionProfile': profile})
         return self.check_attempt(inputs)
 
@@ -391,10 +428,13 @@ class Desk:
             return retained
         if entry.get('executionProfile') != execution_profile(self.profile):
             raise ValueError('pending desk admission runtime pins changed or missing')
-        proposal = candidate_state(entry['inputs']['expected'])['proposal']
-        if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
+        proposal = entry['work']['proposal']
+        if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL, source_store.INLINE_MODULE_PROPOSAL):
             proposal_material(proposal, self.artifact_store)
         build = load_artifact(self.artifact_store, entry['request']['input']['artifact'])
+        if (build.get('candidateRootSha256') != digest(entry['inputs']['expected'])
+                or canonical(build.get('compilerWork')) != canonical(entry['work'])):
+            raise ValueError('compiler artifact differs from retained work/root')
         preserve_build_dependencies(self.artifact_store, build)
         if before_exchange is not None:
             before_exchange()
@@ -406,11 +446,14 @@ class Desk:
         if entry is None:
             profile = execution_profile(self.profile)
             options = {'profile': self.profile}
-            proposal = candidate_state(expected)['proposal']
-            if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL):
+            work = compiler_work(expected, object_id, principal, self.database)
+            if work is None or work['intent'] != intent:
+                raise ValueError('compiler work was not offered under this intent')
+            proposal = work['proposal']
+            if proposal.get('format') in (source_store.PROPOSAL, source_store.MODULE_PROPOSAL, source_store.INLINE_MODULE_PROPOSAL):
                 proposal_material(proposal, self.artifact_store)
                 options['artifact_store'] = self.artifact_store
-            entry = self.prepare_check(inputs, bounded_compile(expected, **options), profile)
+            entry = self.prepare_check(inputs, bounded_compile(expected, work=work, **options), profile)
         return self.admit_check(entry)
 
     def _prepare_release(self, inputs):

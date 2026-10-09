@@ -14,6 +14,7 @@ def parse(source):
         raise ValueError('expected ' + MAGIC)
     cases, case, step, principal, root = [], None, None, None, 'current'
     offer = None
+    call_input = None
     offset = 1
 
     def token(value):
@@ -74,6 +75,14 @@ def parse(source):
             root = 'current'
         elif case is None:
             raise ValueError('expected case')
+        elif line.startswith('fixture '):
+            if step is not None or principal is not None or case['steps']:
+                raise ValueError('fixtures belong before steps')
+            name = token(line[8:])
+            fixtures = case.setdefault('fixtures', [])
+            if name == 'candidate' or '/' in name or name in fixtures or len(fixtures) >= 7:
+                raise ValueError('fixtures require unique names and at most seven peers')
+            fixtures.append(name)
         elif line == 'law' or line.startswith('law '):
             if 'law' in case or step is not None or principal is not None or case['steps']:
                 raise ValueError('law must appear once before steps')
@@ -97,7 +106,33 @@ def parse(source):
         elif line.startswith('send '):
             if principal is None or step is not None:
                 raise ValueError('send requires as')
-            step = {'principal': principal, 'command': token(line[5:]), 'input': {}, 'root': root}
+            command = token(line[5:])
+            target, command = command.split('/', 1) if '/' in command else ('candidate', command)
+            if target != 'candidate' and target not in case.get('fixtures', []):
+                raise ValueError('send target requires a declared fixture')
+            step = {'principal': principal, 'command': token(command), 'input': {}, 'root': root}
+            if target != 'candidate':
+                step['object'] = target
+        elif line == 'transaction':
+            if principal is None or step is not None:
+                raise ValueError('transaction requires as')
+            step = {'principal': principal, 'calls': [], 'root': root}
+            call_input = None
+        elif line.startswith('call '):
+            if step is None or 'calls' not in step or len(step['calls']) >= 16:
+                raise ValueError('call requires a transaction with at most sixteen calls')
+            parts = token(line[5:]).split('/', 1)
+            if len(parts) != 2 or not parts[1] or parts[0] not in ['candidate'] + case.get('fixtures', []):
+                raise ValueError('call requires a declared OBJECT/COMMAND')
+            call_input = {}
+            step['calls'].append({'object': parts[0], 'command': parts[1], 'input': call_input})
+        elif line == 'from previous':
+            if step is None or 'calls' not in step or len(step['calls']) < 2 or call_input is None or call_input:
+                raise ValueError('from previous requires an empty call after an earlier call')
+            call = step['calls'][-1]
+            del call['input']
+            call['inputFrom'] = len(step['calls']) - 2
+            call_input = None
         elif line.startswith('  '):
             if step is None:
                 raise ValueError('input fields belong after send')
@@ -123,15 +158,20 @@ def parse(source):
                     offer = None
                 continue
             name, item = literal(line[2:])
-            if name in step['input']:
+            fields = call_input if 'calls' in step else step['input']
+            if fields is None:
+                raise ValueError('transaction fields require a preceding call')
+            if name in fields:
                 raise ValueError('duplicate input field')
-            step['input'][name] = item
+            fields[name] = item
         elif line.startswith('expect '):
             if step is None:
                 raise ValueError('expect requires send')
             if 'observe' in step:
                 if line != 'expect view' or set(step['view']) != {'title', 'prose', 'actions'}:
                     raise ValueError('observe requires title, prose and expect view')
+            elif 'calls' in step and not step['calls']:
+                raise ValueError('transaction requires at least one call')
             elif line == 'expect committed':
                 step['kind'] = 'committed'
             else:

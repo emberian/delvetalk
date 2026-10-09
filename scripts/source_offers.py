@@ -35,7 +35,7 @@ def _fields(value):
 def validate(invitation):
     required = {'format', 'object', 'root', 'entry', 'observations', 'title', 'label', 'fields'}
     if (not isinstance(invitation, dict) or not required <= set(invitation)
-            or set(invitation) - required - {'contributionCodec'}
+            or set(invitation) - required - {'contributionCodec', 'definitions'}
             or invitation['format'] != FORMAT):
         raise ValueError('captured preparation requires exact invitation fields')
     if invitation.get('contributionCodec', 'value') not in ('value', 'data'):
@@ -47,6 +47,20 @@ def validate(invitation):
             raise ValueError('captured observation requires object, exact root and explicit projection flags')
         if type(observation['inspectState']) is not bool or type(observation['inspectLaw']) is not bool:
             raise ValueError('captured observation projection flags require Bool')
+    if 'definitions' in invitation:
+        selections = invitation['definitions']
+        if not isinstance(selections, list) or len(selections) > 16:
+            raise ValueError('definition selection capacity')
+        seen = set()
+        for selection in selections:
+            if not isinstance(selection, dict) or set(selection) != {'object', 'package'}:
+                raise ValueError('definition selection requires object and package')
+            if not all(isinstance(selection[k], str) and selection[k] for k in ('object', 'package')):
+                raise ValueError('definition selection requires identities')
+            key = (selection['object'], selection['package'])
+            if key in seen or selection['object'] not in {o['object'] for o in invitation['observations']}:
+                raise ValueError('definition selection requires unique captured observations')
+            seen.add(key)
     result = copy.deepcopy(invitation)
     result['fields'] = affordances.validate_fields_schema(result['fields'])
     return result
@@ -84,6 +98,8 @@ def capture_available(view, roots, *, database=None, references=None):
             'fields': _fields(descriptor['fields'])}
         if 'contributionCodec' in descriptor:
             offer['contributionCodec'] = descriptor['contributionCodec']
+        if 'definitions' in descriptor:
+            offer['definitions'] = copy.deepcopy(descriptor['definitions'])
         offers[key] = validate(offer)
     return {'offers': offers, 'unavailable': unavailable}
 
@@ -125,6 +141,14 @@ def action(invitation):
     return result
 
 
+def _outcome(value):
+    if value.get('kind') == 'inspection' and 'document' in value:
+        from scene import projection
+        value = copy.deepcopy(value)
+        value['document'] = projection._document_data(value['document'])
+    return value
+
+
 def prepare_value(invitation, principal, intent, contribution, *, binary=None, database=None, receiver=None):
     """Run bounded source interpretation data through its native preparation export."""
     invitation = validate(invitation)
@@ -138,6 +162,8 @@ def prepare_value(invitation, principal, intent, contribution, *, binary=None, d
         'observations': invitation['observations'], 'principal': principal, 'intent': intent}
     if 'contributionCodec' in invitation:
         request['contributionCodec'] = invitation['contributionCodec']
+    if 'definitions' in invitation:
+        request['definitions'] = copy.deepcopy(invitation['definitions'])
     if database is not None or receiver is not None:
         if binary is not None:
             raise ValueError('retained preparation selects the database native receiver')
@@ -147,8 +173,8 @@ def prepare_value(invitation, principal, intent, contribution, *, binary=None, d
         if receiver is not None:
             if receiver.profile != 'compiled':
                 raise ValueError('retained preparation requires compiled native receiver')
-            return receiver.query(request)
-        return world.query(database, request)
+            return _outcome(receiver.query(request))
+        return _outcome(world.query(database, request))
     job = {'world': {'objects': objects, 'receipts': []}, 'request': request}
     result = process_custody.run_native([binary or BINARY], timeout=30, cpu_seconds=30,
         stdout_limit=2 * 1024 * 1024, stderr_limit=65536,
@@ -161,9 +187,9 @@ def prepare_value(invitation, principal, intent, contribution, *, binary=None, d
     if frame.get('world') != job['world']:
         raise ValueError('pure preparation attempted to change captured custody')
     outcome = frame['reply']
-    if outcome.get('kind') not in ('ready', 'question', 'refused'):
+    if outcome.get('kind') not in ('ready', 'question', 'refused', 'inspection'):
         raise ValueError('unknown native preparation result')
-    return outcome
+    return _outcome(outcome)
 
 
 def prepare_fields(invitation, principal, intent, contribution, *, binary=None, database=None, receiver=None):

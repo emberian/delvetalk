@@ -17,11 +17,11 @@ canonical, loads, digest = desk.canonical, desk.loads, desk.digest
 save = worker.clerk.save
 
 
-def compiler_pins(profile, expected):
-    """Reviewed runtime plus the selected registered compiler dependency closure."""
+def syntax_pins(profile, syntax):
+    """Physical runtime identity for one explicitly registered syntax."""
     proposal = desk.module('queue_proposal', 'scripts/propose.py')
     registry = loads((ROOT / 'syntaxes/registry.json').read_bytes())
-    adapter = registry['syntaxes'].get(desk.candidate_state(expected)['proposal']['syntax'], {})
+    adapter = registry['syntaxes'].get(syntax, {})
     validator = registry['targets'].get(adapter.get('target'), {})
     paths = {'scripts/compiler_queue.py', 'scripts/worker.py', 'scripts/clerk.py',
              'scripts/translate.py', 'syntaxes/registry.json',
@@ -33,6 +33,11 @@ def compiler_pins(profile, expected):
         paths.add('scene/room.py')
     files = desk.runtime_profile.hash_paths(paths, root=ROOT)
     return {'profile': profile, 'python': list(sys.version_info[:3]), 'files': files}
+
+
+def compiler_pins(profile, expected, work):
+    """Pins for already captured work; root identity is bound by its job."""
+    return syntax_pins(profile, work['proposal']['syntax'])
 
 
 def load_job(path):
@@ -58,11 +63,11 @@ def execute_job(path):
             raise ValueError('pending desk attempt lacks this queued compiler provenance')
 
     def check_pins():
-        if canonical(compiler_pins(job['profile'], inputs['expected'])) != canonical(job['runtime']):
+        if canonical(compiler_pins(job['profile'], inputs['expected'], job['work'])) != canonical(job['runtime']):
             raise ValueError('queued compiler runtime changed')
 
     check_pins()  # Requires the built host binary; never falls back to Lean builds.
-    material = desk.proposal_material(desk.candidate_state(inputs['expected'])['proposal'], client.artifact_store)[2]
+    material = desk.proposal_material(job['work']['proposal'], client.artifact_store)[2]
     if 'sourceBindings' in job and canonical(material) != canonical(job['sourceBindings']):
         raise ValueError('queued source bindings changed')
     if canonical(client.inspect(inputs['object'], principal=inputs['principal'])) != canonical(inputs['expected']):
@@ -72,13 +77,14 @@ def execute_job(path):
     if compiled.exists():
         artifact = desk.load_artifact(client.artifact_store, loads(compiled.read_bytes())['artifact'])
         if (artifact.get('format') != 'delvetalk-desk-build-v1'
-                or artifact.get('candidateRootSha256') != digest(inputs['expected'])):
+                or artifact.get('candidateRootSha256') != digest(inputs['expected'])
+                or canonical(artifact.get('compilerWork')) != canonical(job['work'])):
             raise ValueError('saved compiler artifact does not match queued candidate')
         if 'sourceBindings' in job and canonical(artifact.get('sourceBindings')) != canonical(job['sourceBindings']):
             raise ValueError('saved compiler artifact does not match queued source bindings')
     else:
         # Already inside worker.command's kill group; no nested compiler session.
-        artifact = desk.compile_proposal({'root': inputs['expected'], 'profile': job['profile'],
+        artifact = desk.compile_proposal({'root': inputs['expected'], 'work': job['work'], 'profile': job['profile'],
                                          'artifactStore': str(client.artifact_store)})
         check_pins()
         identity = desk.store_artifact(client.artifact_store, artifact)
@@ -121,7 +127,7 @@ class CompilerQueue:
         path = self.status_path(identity)
         return loads(path.read_bytes()) if path.exists() else {'phase': 'queued', 'attempts': 0, 'errors': []}
 
-    def enqueue(self, object_id, principal, intent, expected, *, deadline_seconds=10):
+    def enqueue(self, object_id, principal, intent, expected, *, work=None, deadline_seconds=10):
         if not math.isfinite(deadline_seconds) or not 0 < deadline_seconds <= 300:
             raise ValueError('deadline must be finite and in (0,300]')
         if any(not isinstance(x, str) or not x for x in (object_id, principal, intent)):
@@ -142,15 +148,17 @@ class CompilerQueue:
                 if (prior['principal'], prior['intent']) == (principal, intent):
                     if canonical(prior) != canonical(inputs):
                         raise ValueError('compiler intent already bound to another candidate/root')
+                    if work is not None and canonical(work) != canonical(job['work']):
+                        raise ValueError('compiler intent already bound to another source work request')
                     return {'job': path.stem, 'status': 'already-queued', **self.status(path.stem)}
             if len(paths) >= 10000:
                 raise ValueError('compiler queue retention bound reached (10000 jobs)')
-            if not desk.is_source_desk_protocol(expected['protocol']):
-                raise ValueError('compiler queue requires the reviewed source Candidate body')
-            if desk.candidate_state(expected)['status'] != 'pending':
-                raise ValueError('compiler queue requires an exact pending source-desk root')
-            material = desk.proposal_material(desk.candidate_state(expected)['proposal'], self.artifacts)[2]
-            runtime = compiler_pins(self.profile, expected)
+            offered = desk.compiler_work(expected, object_id, principal, self.database)
+            if offered is None or offered['intent'] != intent or (work is not None and canonical(work) != canonical(offered)):
+                raise ValueError('compiler work was not offered under this intent/root')
+            work = offered
+            material = desk.proposal_material(work['proposal'], self.artifacts)[2]
+            runtime = compiler_pins(self.profile, expected, work)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError('compiler enqueue deadline reached')
@@ -159,15 +167,38 @@ class CompilerQueue:
                                        'inspect', '--object', object_id, '--principal', principal], remaining, self.memory_mib)
             if canonical(observed) != canonical(expected):
                 raise ValueError('queued candidate changed')
-            if canonical(compiler_pins(self.profile, expected)) != canonical(runtime):
+            if canonical(compiler_pins(self.profile, expected, work)) != canonical(runtime):
                 raise ValueError('compiler runtime changed during enqueue')
             job = {'format': 'delvetalk-compiler-job-v1', 'database': str(self.database),
-                   'artifacts': str(self.artifacts), 'profile': self.profile, 'inputs': inputs, 'runtime': runtime,
+                   'artifacts': str(self.artifacts), 'profile': self.profile, 'inputs': inputs, 'work': work, 'runtime': runtime,
                    'sourceBindings': material}
             identity = digest(job)
             if canonical(desk.immutable(self.job_path(identity), job)) != canonical(job):
                 raise ValueError('compiler job store mismatch')
             return {'job': identity, 'status': 'queued'}
+
+    def enqueue_offered(self, object_id, principal, *, expected=None, deadline_seconds=10):
+        """Carry the Candidate's source-authored physical compiler request.
+
+        Source chooses readiness and intent. This custodian acquires the exact
+        root, preserves it and binds the existing bounded compiler queue to it.
+        """
+        client = desk.Desk(self.database, self.artifacts, profile=self.profile)
+        # A service-held catalogue root can advertise absence of work without
+        # acquiring private state under the compiler principal. Actual offered
+        # work still requires the current native read below and preparation.
+        if expected is not None:
+            view = desk.projection.project(expected, object_id)
+            if 'compile' not in desk.projection.invitations(view):
+                return None
+        root = client.inspect(object_id, principal=principal)
+        if expected is not None and canonical(root) != canonical(expected):
+            raise ValueError('source compiler request differs from captured candidate')
+        request = desk.compiler_work(root, object_id, principal, self.database)
+        if request is None:
+            return None
+        return self.enqueue(object_id, principal, request['intent'], root, work=request,
+                            deadline_seconds=deadline_seconds)
 
     def inspect(self, identity):
         job = load_job(self.job_path(identity))

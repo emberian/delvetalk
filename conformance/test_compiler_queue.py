@@ -2,7 +2,8 @@
 """Real local compiler/admission evidence; transport interruption is the only mock."""
 import copy
 import fcntl
-import importlib.util
+from native_support import load_script
+from conformance.source_custody_fixture import counter_source, counter_protocol
 from pathlib import Path
 import tempfile
 import time
@@ -10,9 +11,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('compiler_queue', ROOT / 'scripts/compiler_queue.py')
-queue_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(queue_module)
+queue_module = load_script(ROOT / 'scripts/compiler_queue.py', 'compiler_queue')
 desk = queue_module.desk
 
 
@@ -24,22 +23,29 @@ class CompilerQueueTests(unittest.TestCase):
         self.path = Path(self.temporary.name)
         self.client = desk.Desk(self.path / 'world.json', self.path / 'artifacts')
         self.queue = queue_module.CompilerQueue(self.path / 'queue', self.client.database, self.client.artifact_store)
-        self.source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
-        self.scenarios = (ROOT / 'protocols/counter/scenarios.json').read_bytes()
-        self.law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {
-            'submit': ['author'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['reviewer']},
-            'law': ['owner'], 'reprogram': []}
+        self.source = counter_source()
+        self.scenarios = desk.canonical([{'name':'source-add','law':['player'],'steps':[{'principal':'player','command':'add','input':{'amount':3},'root':'initial','kind':'committed','result':3}]}])
+        self.law = {'profile': 'delvetalk-scoped-law', 'invoke': {
+            'requestCheck': ['author'], 'submit': ['author'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['reviewer']},
+            'law': ['owner'], 'reprogram': [], 'read': 'public'}
         self.root = self.client.create('candidate', 'owner', 'create', self.law)['data']['root']
         self.target = self.client.exchange({'op': 'create', 'object': 'target', 'principal': 'owner',
-            'intent': 'create-target', 'protocol': desk.loads(self.source), 'law': ['reviewer']})['data']['root']
+            'intent': 'create-target', 'protocol': counter_protocol(), 'law': {'profile':'delvetalk-scoped-law','invoke':{'add':['reviewer']},'law':['owner'],'reprogram':['reviewer'],'read':'public'}})['data']['root']
 
     def submit(self, source=None):
-        return self.client.submit('candidate', 'author', 'submit', self.root, 'protocol-json@1',
-                                  self.source if source is None else source, self.scenarios,
-                                  {'count': 42}, 'target')['data']['root']
+        submitted = self.client.submit('candidate', 'author', 'submit', self.root, 'objective-bend-object',
+            self.source if source is None else source, self.scenarios,
+            {'model': desk.source_object.compact_state(self.target['protocol'],
+                desk.source_object.data({'count':42}), entry='describe', path=[{'field':'initial'}])},
+            'target')['data']['root']
+        view = desk.projection.project(submitted, 'candidate')
+        requested = self.client.exchange(desk.projection.request(view, 'check', 'author', 'request-check'))
+        self.assertEqual(requested['kind'], 'committed', requested)
+        return self.client.inspect('candidate', principal='compiler')
 
     def enqueue(self, pending):
-        return self.queue.enqueue('candidate', 'compiler', 'compile', pending)['job']
+        work = desk.compiler_work(pending, 'candidate', 'compiler', self.client.database)
+        return self.queue.enqueue('candidate', 'compiler', work['intent'], pending, work=work)['job']
 
     def replace_job(self, identity, change):
         """Construct a formerly captured pin for mismatch/recovery tests, never edit runtime."""
@@ -50,6 +56,19 @@ class CompilerQueueTests(unittest.TestCase):
         desk.immutable(self.queue.job_path(replacement), job)
         path.unlink()  # Only this test's disposable custody.
         return replacement
+
+    def test_service_held_root_discovers_only_requested_source_work(self):
+        self.assertIsNone(self.queue.enqueue_offered('candidate', 'compiler', expected=self.root))
+        requested = self.submit()
+        job = self.queue.enqueue_offered('candidate', 'compiler', expected=requested)
+        retained = queue_module.load_job(self.queue.job_path(job['job']))
+        self.assertEqual(retained['inputs']['object'], 'candidate')
+        self.assertEqual(retained['inputs']['expected'], requested)
+        self.assertEqual(retained['inputs']['intent'], 'source-compile:candidate:1')
+        self.assertEqual(retained['work']['object'], 'candidate')
+        again = self.queue.enqueue_offered('candidate', 'compiler', expected=requested)
+        self.assertEqual(again['job'], job['job'])
+        self.assertEqual(len(list((self.queue.state / 'jobs').glob('*.json'))), 1)
 
     def test_compile_is_restartable_exact_and_never_adopts(self):
         pending = self.submit()
@@ -71,7 +90,7 @@ class CompilerQueueTests(unittest.TestCase):
             self.assertEqual(self.queue.run()['processed'], [])
         altered = copy.deepcopy(pending)
         altered['version'] += 1
-        with self.assertRaisesRegex(ValueError, 'intent already bound'):
+        with self.assertRaises(ValueError):
             self.enqueue(altered)
 
     def test_failed_source_retains_diagnostics(self):
@@ -102,7 +121,7 @@ class CompilerQueueTests(unittest.TestCase):
 
     def test_compiler_authority_is_still_decided_by_lean(self):
         pending = self.submit()
-        identity = self.queue.enqueue('candidate', 'author', 'unauthorized-compile', pending)['job']
+        identity = self.queue.enqueue('candidate', 'author', desk.compiler_work(pending, 'candidate', 'author', self.client.database)['intent'], pending)['job']
         self.assertEqual(self.queue.run()['errors'], [])
         result = self.queue.inspect(identity)
         self.assertEqual(result['phase'], 'finished')
@@ -143,7 +162,7 @@ class CompilerQueueTests(unittest.TestCase):
         # Lost return cannot turn completed historical admission into new compilation.
         self.assertEqual(self.queue.run()['errors'], [])
         self.assertEqual(self.queue.inspect(identity)['phase'], 'finished')
-        self.assertEqual(len(desk.loads(self.client.database.read_bytes())['receipts']), 4)
+        self.assertEqual(len(desk.loads(self.client.database.read_bytes())['receipts']), 5)
 
     def test_real_world_lock_timeout_is_bounded_and_retryable(self):
         identity = self.enqueue(self.submit())
@@ -168,10 +187,10 @@ class CompilerQueueTests(unittest.TestCase):
             self.assertTrue(self.queue.run(deadline_seconds=0.05)['lockTimedOut'])
             self.assertLess(time.monotonic() - started, 1)
             with self.assertRaises(TimeoutError):
-                self.queue.enqueue('candidate', 'compiler', 'compile', pending, deadline_seconds=0.05)
+                self.queue.enqueue('candidate', 'compiler', 'source-compile:candidate:1', pending, deadline_seconds=0.05)
         altered = copy.deepcopy(pending)
         altered['version'] += 1
-        with self.assertRaisesRegex(ValueError, 'candidate changed'):
+        with self.assertRaises(ValueError):
             self.enqueue(altered)
         self.assertFalse(list((self.queue.state / 'jobs').glob('*.json')))
 

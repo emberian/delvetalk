@@ -11,12 +11,9 @@ import subprocess
 import unicodedata
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = 'delvetalk-bend-view-v1'
-SOURCE_PROFILE = 'delvetalk-obend-view-v1'
-MENU_PROFILE = 'delvetalk-obend-menu-v1'
 DATA_MENU_PROFILE = 'delvetalk-obend-data-menu-v1'
 DATA_PROFILES = (DATA_MENU_PROFILE,)
-SOURCE_PROFILES = (SOURCE_PROFILE, MENU_PROFILE, *DATA_PROFILES)
+SOURCE_PROFILES = DATA_PROFILES
 FORMAT = 'delvetalk-projection-view-v1'
 _spec = importlib.util.spec_from_file_location('projection_world', ROOT / 'scripts/world.py')
 world = importlib.util.module_from_spec(_spec)
@@ -64,7 +61,7 @@ def _validate(data, root):
     return data
 
 
-def _menu_data(raw, root):
+def _visible_actions(raw, root):
     """Check the complete eager source result, then expose its offered actions.
 
     Visibility is presentation over state/panel, never caller authentication or
@@ -198,7 +195,7 @@ def _typed_menu(raw, root):
     budget = [100000]
     values = {name: _plain_data(fields[name], budget) for name in ('title', 'prose')}
     values['actions'] = _typed_actions(fields['actions'], budget)
-    data = _menu_data(values, root)
+    data = _visible_actions(values, root)
     entries = [_plain_data(item, budget) for item in _typed_list(fields['children'], 32, 'children')]
     return data, _validate_children(entries)
 
@@ -446,9 +443,9 @@ def _typed_invitations(raw):
         _text_bound(key, 128, 'invitation key')
         fields = _wire_record(rows[key])
         required = {'visible', 'text', 'prepare', 'fields', 'observations'}
-        if not required <= set(fields) or set(fields) - required - {'contributionCodec'}:
+        if not required <= set(fields) or set(fields) - required - {'contributionCodec', 'definitions'}:
             raise ProjectionError('invitation requires visible, text, prepare, fields and observations with optional contributionCodec')
-        item = {name: _plain_data(value, budget) for name, value in fields.items() if name != 'observations'}
+        item = {name: _plain_data(value, budget) for name, value in fields.items() if name not in ('observations', 'definitions')}
         _contribution_codec(item)
         if type(item['visible']) is not bool:
             raise ProjectionError('invitation visible requires Bool')
@@ -473,6 +470,22 @@ def _typed_invitations(raw):
             names.append(_text_bound(observation['object'], 512, 'observed object', identity=True))
         if len(set(names)) != len(names):
             raise ProjectionError('duplicate observation identity')
+        if 'definitions' in fields:
+            definitions = [_plain_data(value, budget) for value in
+                           _typed_list(fields['definitions'], 16, 'definitions')]
+            selected = []
+            for definition in definitions:
+                if not isinstance(definition, dict) or set(definition) != {'object', 'package'}:
+                    raise ProjectionError('definition selection requires object and package')
+                _text_bound(definition['object'], 512, 'definition object', identity=True)
+                _text_bound(definition['package'], 128, 'definition package', identity=True)
+                if definition['object'] not in names:
+                    raise ProjectionError('definition selection requires its captured observation')
+                selection = (definition['object'], definition['package'])
+                if selection in selected:
+                    raise ProjectionError('duplicate definition selection')
+                selected.append(selection)
+            item['definitions'] = definitions
         item['observations'] = observations
         if item['visible']:
             result[key] = item
@@ -545,8 +558,7 @@ def assert_runtime(view, expected_runtime):
     """Bind a retained source-view observation to its custodian's retained pins.
 
     No current files are read: historical observations keep their original runtime.
-    Legacy core views retain their existing contract. This check authenticates no
-    caller and grants no authority; it prevents silently relabeling observations.
+    This check authenticates no caller and grants no authority; it prevents silently relabeling observations.
     """
     if inspection_only(view):
         return  # Retained source/state inspection makes no evaluation claim.
@@ -562,8 +574,8 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
 
     The isolated Lean job has no writes/outbox and never touches a world file.
     Lean performs reduction, materialization, purity rejection and one shared
-    tick budget (10,000 for core views; the compiled host's 100,000 for source
-    views). Python only checks framing/display schema and binds identity. This
+    100,000 tick budget through the compiled host's pure package evaluator.
+    Python only checks framing/display schema and binds identity. This
     isolated observation does not establish termination or constancy of a program.
     World-bound callers supply their retained runtime ({} if absent); None permits
     a standalone observation under the explicitly returned current runtime pins.
@@ -575,94 +587,58 @@ def project(root, object_id, panel='main', *, expected_runtime=None):
         program = snapshot['protocol']['viewProgram']
         if not isinstance(program, dict):
             raise ProjectionError('unsupported view program')
-        source_view = program.get('profile') in SOURCE_PROFILES
-        menu_view = program.get('profile') == MENU_PROFILE
-        data_menu = program.get('profile') in DATA_PROFILES
-        if source_view:
-            if set(program) != {'profile', 'package'}:
-                raise ProjectionError('unsupported source view program')
-            package = program['package']
-            if isinstance(package, dict) and package.get('format') == source_packages.REF:
-                source_packages.validate_selector(package)
-                source_packages.validate_tables(snapshot['protocol'])
-            elif (not isinstance(package, dict) or set(package) != {'modules', 'entry'}
-                    or not isinstance(package['entry'], str)
-                    or not isinstance(package['modules'], list)
-                    or not 1 <= len(package['modules']) <= 64
-                    or any(not isinstance(module, dict) or set(module) != {'name', 'source'}
-                           or not all(isinstance(module[key], str) for key in ('name', 'source'))
-                           for module in package['modules'])):
-                raise ProjectionError('source view requires source-only modules and entry or a local package reference')
-        elif set(program) != {'profile', 'term'} or program['profile'] != PROFILE:
-            raise ProjectionError('unsupported view program')
+        if set(program) != {'profile', 'package'} or program['profile'] != DATA_MENU_PROFILE:
+            raise ProjectionError('projection requires the current typed source view')
+        package = program['package']
+        if isinstance(package, dict) and package.get('format') == source_packages.REF:
+            source_packages.validate_selector(package)
+            source_packages.validate_tables(snapshot['protocol'])
+        elif (not isinstance(package, dict) or set(package) != {'modules', 'entry'}
+                or not isinstance(package['entry'], str) or not isinstance(package['modules'], list)
+                or not 1 <= len(package['modules']) <= 64):
+            raise ProjectionError('source view requires modules and entry or a local package reference')
         state = snapshot['state']
         if not isinstance(state, dict): raise ProjectionError('committed state must be a record')
-        # Reuse the actual Lean materializer, without making a request against
-        # the live object, acquiring authority, or persisting a synthetic world.
-        arguments = [state, panel]
-        expression = ['package', program['package']] if source_view else ['bend', program['term']]
-        if data_menu:
-            if set(state) != {'model'}:
-                raise ProjectionError('typed view state requires exactly model')
-            expression = ['package-data-v1', program['package']]
-            arguments = [state['model'], {'tag': 'label', 'value': panel}]
-        command = {'require': [], 'set': {}, 'outbox': [],
-                   'result': expression + [[['literal', argument] for argument in arguments]]}
-        protocol = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'project': command}}
-        if source_view and 'sourcePackages' in snapshot['protocol']:
-            # Preserve the owning source context. Only the native receiver resolves
-            # the selector; Python must not expand or choose executable modules.
-            protocol['sourcePackages'] = copy.deepcopy(snapshot['protocol']['sourcePackages'])
-        local = {'protocol': protocol, 'law': ['projection'], 'version': 0, 'state': {}}
-        job = {'world': {'objects': {'projection': local}, 'receipts': []},
-               'request': {'op': 'invoke', 'object': 'projection', 'principal': 'projection',
-                           'intent': 'projection', 'expected': local, 'command': 'project', 'input': {}}}
+        # Observation of the actual caller-held root. Governed custodians acquire
+        # and recheck it before this call; no protocol, law or world is invented.
+        job = {'root': snapshot, 'panel': panel}
         wire = world.wire_dumps(job)
-        if len(wire.encode('utf-8')) > world.MAX_EXPANDED_REQUEST_BYTES:
-            raise ProjectionError('expanded view input exceeds 1 MiB')
-        host = 'compiled' if source_view else 'world'
+        if len(wire.encode('utf-8')) > 64 * 1024 * 1024:
+            raise ProjectionError('expanded view input exceeds observation capacity')
+        host = 'compiled'
         binary = runtime_profile.PROFILES[host][0]
         binary_path = '.lake/build/bin/' + binary
         executable = ROOT / binary_path
         if not executable.is_file(): raise ProjectionError('build ' + binary + ' before projecting')
-        pins = runtime_profile.file_hashes(host, root=ROOT) if source_view else None
-        runtime = (pins if source_view else runtime_profile.hash_paths([binary_path], root=ROOT))[binary_path]
-        if source_view and expected_runtime is not None:
+        pins = runtime_profile.file_hashes(host, root=ROOT)
+        runtime = pins[binary_path]
+        if expected_runtime is not None:
             _assert_source_runtime({'profile': host, 'files': pins}, runtime, expected_runtime)
-        result = world.process_custody.run_native([str(executable)],
+        result = world.process_custody.run_native([str(executable), '--project-source'],
             input=(wire + '\n').encode('utf-8'), timeout=10, cpu_seconds=10, cwd=ROOT,
             stdout_limit=1048576, stderr_limit=1048576)
         if result.returncode: raise ProjectionError('Lean view evaluation failed')
         if len(result.stdout) > 1048576: raise ProjectionError('view output exceeds 1 MiB')
-        after = (runtime_profile.file_hashes(host, root=ROOT) if source_view else
-                 runtime_profile.hash_paths([binary_path], root=ROOT))
+        after = runtime_profile.file_hashes(host, root=ROOT)
         if after[binary_path] != runtime:
             raise ProjectionError('view runtime changed during evaluation')
-        if source_view and after != pins:
+        if after != pins:
             raise ProjectionError('view runtime dependencies changed during evaluation')
         response = world.wire_loads(result.stdout)
         if 'error' in response: raise ProjectionError(str(response['error']))
-        receipt = response['reply']
-        if receipt['kind'] != 'committed': raise ProjectionError('view refused: ' + str(receipt['data']))
-        raw = receipt['data']['result']
-        if data_menu:
-            data, descriptors = _typed_menu(raw, snapshot)
-        else:
-            data = _menu_data(raw, snapshot) if menu_view else _validate(raw, snapshot)
+        raw = response['result']
+        data, descriptors = _typed_menu(raw, snapshot)
         view = {'format': FORMAT, 'mode': 'projection', 'object': object_id, 'root': snapshot,
                 'panel': panel, 'source': copy.deepcopy(program), 'programSha256': _digest(program),
                 'runtimeSha256': runtime, 'data': data, 'actions': copy.deepcopy(data['actions'])}
-        if source_view:
-            view['runtimeProfile'] = {'profile': host, 'files': pins}
-        if menu_view or data_menu:
-            view['rawData'] = copy.deepcopy(raw)
-        if data_menu:
-            view['children'] = copy.deepcopy(descriptors)
-        if data_menu and 'invitations' in _wire_record(raw):
+        view['runtimeProfile'] = {'profile': host, 'files': pins}
+        view['rawData'] = copy.deepcopy(raw)
+        view['children'] = copy.deepcopy(descriptors)
+        if 'invitations' in _wire_record(raw):
             view['invitations'] = _typed_invitations(raw)
-        if data_menu and 'document' in _wire_record(raw):
+        if 'document' in _wire_record(raw):
             view['document'] = _document_data(_wire_record(raw)['document'])
-        if data_menu and 'interpretation' in _wire_record(raw):
+        if 'interpretation' in _wire_record(raw):
             view['interpretation'] = _typed_interpretation(raw)
         return view
     except ProjectionError:

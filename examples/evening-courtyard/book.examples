@@ -4,8 +4,8 @@ law moss iris
 as moss
 send note
   line: I arranged a chord for our return.
-expect result (String): "Contribution retained."
+expect result (String): Contribution retained.
 as iris
 send note
   line: The light remembers its door.
-expect result (String): "Contribution retained."
+expect result (String): Contribution retained.

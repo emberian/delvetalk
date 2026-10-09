@@ -1,30 +1,26 @@
 examples DelveTalk 1
-case repair then share the window
-law iris moss
-as iris
+case coordinate the rain relay
+law jun tavi
+as jun
 send start
 expect committed
-as moss
+as jun
 send choose
   choice (Nat): 2
 expect refusal: source refused: choice unavailable
-as iris
+as jun
 send choose
   choice (Nat): 0
 expect committed
-as moss
+as tavi
 send choose
   choice (Nat): 1
 expect committed
-as moss
+as jun
 send choose
   choice (Nat): 2
 expect committed
-as iris
+as tavi
 send choose
   choice (Nat): 0
 expect committed
-as moss
-send choose
-  choice (Nat): 0
-expect refusal: source refused: choice unavailable

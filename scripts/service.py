@@ -31,8 +31,7 @@ def epoch(profile, clerk_profile):
     files = dict(clerk_profile['pins'])
     registry = loads((ROOT / 'syntaxes/registry.json').read_bytes())
     for syntax in registry['syntaxes']:
-        files.update(compiler_queue.compiler_pins(profile,
-            {'state': {'proposal': {'syntax': syntax}}})['files'])
+        files.update(compiler_queue.syntax_pins(profile, syntax)['files'])
     for name in ('service', 'bootstrap', 'history', 'continuation', 'watch', 'desk', 'source_store', 'message_relay'):
         path = 'scripts/' + name + '.py'
         files[path] = history.file_hash(ROOT / path)
@@ -107,9 +106,9 @@ class Service:
         seed_manifest = loads((directory / 'seed-history/manifest.json').read_bytes())
         same(seed_manifest['head'], seed['head'], 'public seed head differs')
         config = receiver.config()
-        selected = config.get('runtimeProfile', 'world')
+        selected = config.get('runtimeProfile', 'compiled')
         same(config['profile']['pins'], clerk.pins(selected), 'clerk runtime pins changed')
-        profile = 'compiled' if selected == 'compiled' else 'transactions'
+        profile = selected
         same(metadata['runtime'], history.runtime(profile), 'workspace runtime differs from clerk/service profile')
         origin_path = self.state / 'origin.json'
         snapshot = clerk.world.snapshot(receiver.database, timeout=10)
@@ -148,7 +147,7 @@ class Service:
         same(str(receiver.database.resolve()), config['database'], 'selected clerk database custody changed')
         current = receiver.config()
         same(current['profile'], config['clerkProfile'], 'clerk epoch changed')
-        selected = current.get('runtimeProfile', 'world')
+        selected = current.get('runtimeProfile', 'compiled')
         same(current['profile']['pins'], clerk.pins(selected), 'clerk runtime pins changed')
         same(epoch(config['profile'], current['profile']), config['epoch'], 'service runtime epoch changed')
 
@@ -300,8 +299,7 @@ class Service:
                     snapshot = self._snapshot(config, deadline)
                     jobs, errors, examined = [], [], 0
                     candidates = [(name, root) for name, root in sorted(snapshot['objects'].items())
-                                  if desk.is_source_desk_protocol(root['protocol'])
-                                  and desk.candidate_state(root).get('status') == 'pending']
+                                  if isinstance(root.get('protocol', {}).get('sourcePackages'), dict)]
                     cursor = progress.get('compilerCursor', '')
                     candidates = [item for item in candidates if item[0] > cursor] + [item for item in candidates if item[0] <= cursor]
                     for name, root in candidates:
@@ -311,13 +309,14 @@ class Service:
                         examined += 1
                         progress['compilerCursor'] = name
                         save(progress_path, progress)
-                        intent = 'service-compile:' + digest([config['epochId'], name, root])
                         try:
-                            jobs.append(queue.enqueue(name, config['compilerPrincipal'], intent, root,
-                                                      deadline_seconds=remaining()))
+                            job = queue.enqueue_offered(name, config['compilerPrincipal'], expected=root,
+                                                        deadline_seconds=remaining())
+                            if job is not None:
+                                jobs.append(job)
                         except (ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                             errors.append({'object': name, 'root': digest(root), 'error': str(error)[:2000]})
-                    return {'jobs': jobs, 'errors': errors, 'examined': examined, 'pendingCandidates': len(candidates)}
+                    return {'jobs': jobs, 'errors': errors, 'examined': examined, 'candidateCount': len(candidates)}
                 phase('enqueueCompilers', enqueue_compilers)
                 phase('compile', lambda: queue.run(limit=limit, deadline_seconds=remaining(), max_attempts=max_attempts))
                 def reconcile():
@@ -330,7 +329,6 @@ class Service:
                         receipt = status.get('receipt', {})
                         data = receipt.get('data')
                         results.append({'job': identity, 'phase': status['phase'], 'kind': receipt.get('kind'),
-                            'candidateStatus': data.get('root', {}).get('state', {}).get('status') if isinstance(data, dict) else None,
                             'detail': data if isinstance(data, str) else None})
                     return {'compiler': results,
                             'refused': [item['job'] for item in results if item['kind'] == 'refused']}
