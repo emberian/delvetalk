@@ -285,6 +285,18 @@ def rowNames : Ty → List String
   | .field name _ tail => name :: rowNames tail
   | _ => []
 
+mutual
+/-- Well-formed finite data: every record's field names are distinct, at every
+depth. Exactly the values the universal type `Data` admits. -/
+def Data.wellFormed : Data → Bool
+  | .natural _ | .boolean _ | .label _ => true
+  | .record fields => (fields.map Prod.fst).eraseDups.length == fields.length && Data.fieldsWellFormed fields
+  | .variant _ payload => payload.wellFormed
+def Data.fieldsWellFormed : List (String × Data) → Bool
+  | [] => true
+  | (_, value) :: rest => value.wellFormed && Data.fieldsWellFormed rest
+end
+
 open Minidregg.Theory.ObjectiveBendTypes in
 mutual
 /-- Exact first-order conformance of data to a data type: every record field
@@ -300,6 +312,7 @@ def Data.conformsFuel (bounds : DataBounds) : Nat → Data → Ty → Bool
   | fuel + 1, data, .variable index => match bounds.lookup index with
       | some bound => Data.conformsFuel bounds fuel data bound
       | none => false
+  | _ + 1, data, .data => data.wellFormed
   | fuel + 1, .record fields, row =>
       (match row with | .field .. | .emptyRow => true | _ => false) &&
       fields.length == (rowNames row).length &&

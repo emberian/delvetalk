@@ -56,6 +56,9 @@ inductive Expr where
   | ite (condition whenTrue whenFalse : Expr)
   /-- `let name: type = value in body` (type `_` when unannotated). -/
   | letE (name type : String) (value body : Expr)
+  /-- `Data.of::<T>(value)` (rewritten by the hosted front end): inject first-order
+  data of type `T` into the universal type `Data`. -/
+  | toData (type : String) (value : Expr)
   deriving Inhabited, Repr
 
 inductive Pattern where
@@ -157,6 +160,7 @@ def decodeExpr : Nat → Json → Except String Expr
     | "binary" => return .binary (← str j "op") (← sub "left") (← sub "right")
     | "if" => return .ite (← sub "condition") (← sub "whenTrue") (← sub "whenFalse")
     | "let" => return .letE (← str j "name") (← str j "type") (← sub "value") (← sub "body")
+    | "dataOf" => return .toData (← str j "type") (← sub "value")
     | other => .error ("unknown AST expression " ++ other)
 
 def decodeBody : Nat → Json → Except String Body
@@ -261,6 +265,8 @@ inductive PTy where
   | prototype (spec target : PTy)
   | variant (row : PTy)
   | computation (plan response result : PTy)
+  /-- The universal first-order type (hosted extension). -/
+  | data
   deriving Inhabited, Repr, BEq
 
 def PTy.row : List (String × PTy) → PTy
@@ -320,6 +326,7 @@ def PTy.json : PTy → Json
   | .prototype s t => Json.mkObj [("tag", "prototype"), ("spec", s.json), ("target", t.json)]
   | .variant r => Json.mkObj [("tag", "variant"), ("row", r.json)]
   | .computation p r a => Json.mkObj [("tag", "computation"), ("plan", p.json), ("response", r.json), ("result", a.json)]
+  | .data => Json.mkObj [("tag", "data")]
 
 def isComputation : Option PTy → Bool
   | some (.computation ..) => true
@@ -358,6 +365,8 @@ inductive ATerm where
   | perform (plan response : PTy) (value : ATerm)
   /-- A pure tail of an activity body (inserted, never authored). -/
   | done (plan response : PTy) (value : ATerm)
+  /-- `Data.of::<T>(value)`; `type` is the authored `T`. -/
+  | toData (type : PTy) (value : ATerm)
   deriving Inhabited
 
 mutual
@@ -386,6 +395,7 @@ def ATerm.json : ATerm → Json
   | .ifBool c t f => Json.mkObj [("tag", "ifBool"), ("condition", c.json), ("whenTrue", t.json), ("whenFalse", f.json)]
   | .perform _ _ v => Json.mkObj [("tag", "perform"), ("plan", v.json)]
   | .done _ _ v => Json.mkObj [("tag", "done"), ("value", v.json)]
+  | .toData _ v => Json.mkObj [("tag", "toData"), ("value", v.json)]
 def fieldsJson : List (String × ATerm) → Json
   | fs => Json.arr (fieldsArray fs).toArray
 def fieldsArray : List (String × ATerm) → List Json
@@ -441,6 +451,7 @@ def ATerm.erase : ATerm → Except String CoreTerm
   | .ifBool c t f => return .ifBool (← c.erase) (← t.erase) (← f.erase)
   | .perform _ _ v => return .perform (← v.erase)
   | .done _ _ v => return .done (← v.erase)
+  | .toData _ v => return .toData (← v.erase)
 def eraseFields : List (String × ATerm) → Except String (List (String × CoreTerm))
   | [] => .ok []
   | (n, v) :: rest => return (n, ← v.erase) :: (← eraseFields rest)
@@ -753,6 +764,7 @@ def sourceType (c : Ctx) : Nat → String → String → List String → M (Opti
     if name == "Nat" then return some .natural
     if name == "Bool" then return some .boolean
     if name == "String" then return some .label
+    if name == "Data" then return some .data
     if name.startsWith "Activity<" && name.endsWith ">" then
       let parts := splitTop (dropEndStr (dropStr name "Activity<".length) 1) ","
       match parts with
@@ -1032,6 +1044,9 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
         | some (.arrow _ _ d _) => some d
         | _ => none
     | .closure params resultType _ => signatureTy c fuel params (.source resultType) m.name []
+    | .toData type value =>
+      let declared ← sourceType c fuel type m.name []
+      return if sameTy (← synth c fuel value env m) declared then some .data else none
     | .call callee args =>
       if isPerform c e env m then
         return (← get).effect.map fun (p, r) => .computation p r r
@@ -1200,6 +1215,7 @@ def ATerm.mapTypes (f : PTy → PTy) : ATerm → ATerm
   | .ifBool x y z => .ifBool (x.mapTypes f) (y.mapTypes f) (z.mapTypes f)
   | .perform p r x => .perform (f p) (f r) (x.mapTypes f)
   | .done p r x => .done (f p) (f r) (x.mapTypes f)
+  | .toData t x => .toData (f t) (x.mapTypes f)
 def ATerm.mapFieldTypes (f : PTy → PTy) : List (String × ATerm) → List (String × ATerm)
   | [] => []
   | (n, x) :: rest => (n, x.mapTypes f) :: ATerm.mapFieldTypes f rest
@@ -1531,6 +1547,14 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       let st ← expression c fuel spec env m
       let it ← expression c fuel inherited env m
       return .fix st it
+    | .toData type value =>
+      noActivity c fuel value env m "effect-in-data" "Data.of takes first-order data"
+      let some declared ← sourceType c fuel type m.name []
+        | fail ("Data.of::<" ++ type ++ ">: unknown type " ++ type)
+      let actual ← synth c fuel value env m
+      unless sameTy actual (some declared) do
+        fail ("Data.of::<" ++ type ++ ">: the value is not a " ++ type)
+      return .toData declared (← expression c fuel value env m)
     | .call callee args =>
       if isPerform c e env m then
         let some (p, r) := (← get).effect
@@ -2207,6 +2231,7 @@ def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String
     return ⟨path, d, t, "unrestricted", "reusable"⟩ :: (← annotate bounds payload (path ++ [0]))
   | .perform p r v, path | .done p r v, path => do
     return ⟨path, p, r, "unrestricted", "reusable"⟩ :: (← annotate bounds v (path ++ [0]))
+  | .toData _ v, path => annotate bounds v (path ++ [0])
   | .app f a, path => return (← annotate bounds f (path ++ [0])) ++ (← annotate bounds a (path ++ [1]))
   | .fix s i, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds i (path ++ [1]))
   | .mix l u, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds u (path ++ [1]))
@@ -2258,6 +2283,7 @@ def PTy.intern : PTy → InternM Json
   | .label => pure (Json.mkObj [("tag", "label")])
   | .emptyRow => pure (Json.mkObj [("tag", "emptyRow")])
   | .variable i => pure (Json.mkObj [("tag", "variable"), ("index", toString i)])
+  | .data => pure (Json.mkObj [("tag", "data")])
   | .arrow r q d c => do
     let dj ← d.intern
     let cj ← c.intern

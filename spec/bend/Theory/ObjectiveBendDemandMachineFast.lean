@@ -138,7 +138,7 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
     | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _
     | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ => (size,depth+1)
     | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)
-    | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ => (size,depth)
+    | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ | .toData _ => (size,depth)
   | .returned value => match state.stack with
     | [] => (size,depth)
     | frame::_ => match frame,value with

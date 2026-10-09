@@ -92,6 +92,9 @@ theorem term_roundTrip : ∀ (term : Term) (fuel : Nat) (rest : Tokens),
   | .unary p t, fuel+1, rest, h => by
       simp only [encodeTerm,List.length_cons] at h
       simp [encodeTerm,decodeTerm,unary_roundTrip,term_roundTrip t fuel rest (by omega)]
+  | .toData v, fuel+1, rest, h => by
+      simp only [encodeTerm,List.length_cons] at h
+      simp [encodeTerm,decodeTerm,term_roundTrip v fuel rest (by omega)]
   | term, 0, rest, h => by cases term <;> simp [encodeTerm] at h
 theorem fields_roundTrip : ∀ (fields : List (String × Term)) (fuel : Nat) (rest : Tokens),
     (encodeFields fields).length ≤ fuel → decodeFields fuel (encodeFields fields ++ rest) = some (fields,rest)

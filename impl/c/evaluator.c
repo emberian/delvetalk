@@ -44,7 +44,7 @@ static void fields(J *fs) {
 }
 static void validate(J *t) {
  if(!json_object_is_type(t,json_type_array)||LEN(t)<2||!isstr(AT(t,0))) fail("invalid term array");
- if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label binary unary extend record get ifZero inject case ifBool perform done")) fail("unknown term constructor");
+ if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label binary unary extend record get ifZero inject case ifBool perform done toData")) fail("unknown term constructor");
  J *a=AT(t,1); size_t n=LEN(t);
  if(tag(t,"bound")) { if(n!=2||!isint(a)) fail("invalid bound index"); }
  else if(tag(t,"nat")) {
@@ -54,7 +54,7 @@ static void validate(J *t) {
   for(size_t i=0;i<k;i++) if(s[i]<'0'||s[i]>'9') fail("invalid natural");
  } else if(tag(t,"boolean")) { if(n!=2||!json_object_is_type(a,json_type_boolean)) fail("invalid boolean"); }
  else if(tag(t,"label")) { if(n!=2||!isstr(a)) fail("invalid label"); }
- else if(named(AT(t,0),"lam reflect metadata project perform done")) { if(n!=2) fail("wrong unary arity"); validate(a); }
+ else if(named(AT(t,0),"lam reflect metadata project perform done toData")) { if(n!=2) fail("wrong unary arity"); validate(a); }
  else if(named(AT(t,0),"app mix fix specification prototype")) { if(n!=3) fail("wrong binary arity"); validate(a); validate(AT(t,2)); }
  else if(tag(t,"record")) { if(n!=2) fail("wrong record arity"); fields(a); }
  else if(tag(t,"extend")||tag(t,"case")) { if(n!=3) fail("wrong field operation arity"); validate(a); fields(AT(t,2)); }
@@ -167,7 +167,7 @@ static Transition result(J *t) { return (Transition){t?STEP:STUCK,t,NULL}; }
  * it could exceed the wire representation or allocate an enormous term. */
 static int reducible(J *t) {
  J *a=AT(t,1),*b=AT(t,2);
- if(tag(t,"done")||tag(t,"fix")||tag(t,"mix")) return 1;
+ if(tag(t,"done")||tag(t,"toData")||tag(t,"fix")||tag(t,"mix")) return 1;
  if(tag(t,"app")) return tag(a,"lam")||tag(a,"specification")||reducible(a);
  if(tag(t,"reflect")||tag(t,"project")) return tag(a,"prototype")||reducible(a);
  if(tag(t,"metadata")) return tag(a,"specification")||reducible(a);
@@ -199,7 +199,7 @@ static Transition context(J *t,size_t pos,J *response) {
 static Transition advance(J *t,J *response) {
  J *a=AT(t,1),*b=AT(t,2);
  if(tag(t,"perform")) return (Transition){YIELD,response?keep(response):NULL,keep(a)};
- if(tag(t,"done")) return result(keep(a));
+ if(tag(t,"done")||tag(t,"toData")) return result(keep(a));
  if(tag(t,"app")) {
   if(tag(a,"lam")) return result(inst(AT(a,1),b));
   if(tag(a,"specification")) return result(two("app",keep(AT(a,2)),keep(b)));

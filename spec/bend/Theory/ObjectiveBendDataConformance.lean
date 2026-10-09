@@ -51,6 +51,7 @@ inductive HasType (bounds : DataBounds) : Data → Ty → Prop
   | variant (tag : String) (payload : Data) (row member : Ty)
       (found : rowMember row tag = some member) (typed : HasType bounds payload member) :
       HasType bounds (.variant tag payload) (.variant row)
+  | universal (data : Data) (wellFormed : data.wellFormed = true) : HasType bounds data .data
   | unfold (data : Data) (index : Nat) (bound : Ty)
       (found : bounds.lookup index = some bound) (typed : HasType bounds data bound) :
       HasType bounds data (.variable index)
@@ -134,6 +135,7 @@ theorem HasType.chain {bounds : DataBounds} {data : Data} {type : Ty} (typed : H
   | unfold data index bound found typed ih =>
     obtain ⟨k, structural, typedAt⟩ := ih
     exact ⟨k + 1, by simpa [follow, found] using structural, by simpa [follow, found] using typedAt⟩
+  | universal data wellFormed => exact ⟨0, rfl, .universal data wellFormed⟩
   | natural n => exact ⟨0, rfl, .natural n⟩
   | boolean b => exact ⟨0, rfl, .boolean b⟩
   | label s => exact ⟨0, rfl, .label s⟩
@@ -302,6 +304,12 @@ theorem conformsFuel_complete (bounds : DataBounds) :
   generalize follow bounds k type = head at structural0 typed0
   cases typed0 with
   | unfold => simp [isVariable] at structural0
+  | universal _ wellFormed =>
+    obtain ⟨r, rfl⟩ : ∃ r, rest = r + 1 := ⟨rest - 1, by
+      have : 1 ≤ data.size := by cases data <;> simp [Data.size]; all_goals omega
+      have := Nat.le_mul_of_pos_right (bounds.length + 3) this
+      omega⟩
+    cases data <;> simp_all [Data.conformsFuel]
   | natural m =>
     obtain ⟨r, rfl⟩ : ∃ r, rest = r + 1 := ⟨rest - 1, by simp [Data.size] at enough; omega⟩
     simp [Data.conformsFuel]
@@ -398,6 +406,7 @@ theorem conformsFuel_sound (bounds : DataBounds) :
         have : Data.conformsFuel bounds fuel data bound = true := by
           cases data <;> simp_all [Data.conformsFuel]
         exact .unfold data index bound found (ih fuel (by omega) data bound this)
+    case data => exact .universal data (by cases data <;> simpa [Data.conformsFuel] using accepted)
     all_goals cases data
     all_goals first
       | exact .natural _ | exact .boolean _ | exact .label _

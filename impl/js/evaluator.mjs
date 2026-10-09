@@ -9,7 +9,7 @@ const arities = new Map(Object.entries({
   bound: 2, lam: 2, app: 3, mix: 3, fix: 3, specification: 3, prototype: 3,
   reflect: 2, metadata: 2, project: 2, nat: 2, boolean: 2, label: 2,
   binary: 4, unary: 3, extend: 3, record: 2, get: 3, ifZero: 4, inject: 3,
-  case: 3, ifBool: 4, perform: 2, done: 2,
+  case: 3, ifBool: 4, perform: 2, done: 2, toData: 2,
 }));
 const primitives = new Set(['add', 'multiply', 'equal', 'conjunction',
   'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo',
@@ -199,7 +199,7 @@ function inspect(t) {
       if (a[0] !== 'boolean') return inside(t, 1);
       return step(() => a[1] ? b : c);
     case 'perform': return { kind: 'yield', plan: a, resume: response => response };
-    case 'done': return step(() => a);
+    case 'done': case 'toData': return step(() => a);
     default: return stuck;
   }
 }

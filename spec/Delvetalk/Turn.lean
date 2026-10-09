@@ -85,6 +85,27 @@ partial def annotateData (bounds : DataBounds) (expected : Ty) (data : Data) (pa
       | none => []).flatten
   | _ => []
 
+/-- The singleton type of closed data: the type an argument of the universal type
+`Data` is checked at inside its `toData` injection. Every injection is annotated
+at a one-label sum naming exactly its own label. -/
+instance : Inhabited Ty := ⟨.natural⟩
+partial def shapeType : Data → Ty
+  | .natural _ => .natural
+  | .boolean _ => .boolean
+  | .label _ => .label
+  | .record fields => fields.foldr (fun (name, value) tail => .field name (shapeType value) tail) .emptyRow
+  | .variant tag payload => .variant (.field tag (shapeType payload) .emptyRow)
+
+/-- An argument as a term with its injection annotations. At the universal type the
+host has already decided conformance (well-formed data), so the value is injected
+at its own shape. -/
+def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
+    Except String (Term × List (List Nat × LambdaAnnotation)) :=
+  if domain == .data then
+    if !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
+    else .ok (.toData (dataTerm v), annotateData bounds (shapeType v) v [0])
+  else .ok (dataTerm v, annotateData bounds domain v [])
+
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
   | .budget => "node or byte budget exhausted"
@@ -282,7 +303,11 @@ def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b
     let (domain, rest) := match entryType with
       | .arrow _ _ d c => (d, c)
       | other => (other, other)
-    source := applyArgument source (dataTerm v) (annotateData decoded.source.assumptions.bounds domain v [])
+    let bounds := decoded.source.assumptions.bounds
+    if domain.isDataUnder bounds [] Ty.dataFuel [] && !v.conformsUnder bounds domain then
+      throw "turn refused: argument does not conform to its type"
+    let (term, extras) ← argumentAt bounds domain v
+    source := applyArgument source term extras
     entryType := rest
   let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
   let (plan, response, result) ← activityShape source.assumptions checked.type

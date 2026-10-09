@@ -24,7 +24,7 @@ ARITIES = {"bound": 2, "lam": 2, "app": 3, "mix": 3, "fix": 3,
            "specification": 3, "prototype": 3, "reflect": 2, "metadata": 2,
            "project": 2, "nat": 2, "boolean": 2, "label": 2, "binary": 4,
            "extend": 3, "record": 2, "get": 3, "ifZero": 4, "inject": 3,
-           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "unary": 3}
+           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "toData": 2, "unary": 3}
 
 
 def valid_string(value):
@@ -248,7 +248,7 @@ def contract(term):
         return None if body is None else instantiate(body, term[1][2])
     elif tag == "ifBool" and term[1][0] == "boolean":
         return term[2] if term[1][1] else term[3]
-    elif tag == "done":
+    elif tag in {"done", "toData"}:
         return term[1]
     return None
 
@@ -256,7 +256,7 @@ def contract(term):
 def reducible(term):
     """Recognize a root step without executing it (especially at zero fuel)."""
     tag = term[0]
-    if tag in {"mix", "fix", "done"}:
+    if tag in {"mix", "fix", "done", "toData"}:
         return True
     if tag == "app":
         return term[1][0] in {"lam", "specification"}

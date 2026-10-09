@@ -3,7 +3,7 @@
 Wire (shared by impl/c, impl/js, impl/python and the `evaluate-term` op):
   ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["lam", b]
   ["app", f, a] ["mix", l, u] ["fix", s, i] ["specification", m, e]
-  ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done", x]
+  ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done"|"toData", x]
   ["unary", prim, x] ["binary", prim, l, r] ["get", x, "name"]
   ["inject", "label", x] ["ifZero", v, z, s] ["ifBool", c, t, f]
   ["record", [[name, term], ...]] ["extend", x, fields] ["case", x, arms]
@@ -20,7 +20,7 @@ import sys
 
 TAGS = ["bound", "lam", "app", "mix", "fix", "specification", "prototype", "reflect", "metadata",
         "project", "nat", "boolean", "label", "unary", "binary", "extend", "record", "get", "ifZero",
-        "inject", "case", "ifBool", "perform", "done"]
+        "inject", "case", "ifBool", "perform", "done", "toData"]
 BINARY = ["add", "multiply", "equal", "conjunction", "labelEqual", "subtract", "divide", "less",
           "lessEqual", "modulo", "textConcat", "textTake", "textDrop", "textSpan", "textBreak"]
 UNARY = ["natText", "textLength", "sha256Text"]
@@ -100,7 +100,8 @@ class Gen:
         if c == 7:
             return ["binary", r.choice(["textSpan", "textBreak"]), self.g_label(env, h // 2), ["label", r.choice(ALPHABETS)]]
         if c == 8:
-            return ["done", self.g_nat(env, h)]
+            # toData is the identity at runtime: it must step exactly like done.
+            return [r.choice(["done", "toData"]), self.g_nat(env, h)]
         if c == 9:
             return ["project", ["prototype", self.g_nat(env, h // 2), self.g_nat(env, h // 2)]]
         if c == 10:

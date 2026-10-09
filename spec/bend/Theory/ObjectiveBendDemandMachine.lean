@@ -184,7 +184,7 @@ def stepRaw (state : State) : State :=
       {state with heap:=state.heap.push (.suspended ⟨payload,environment⟩),control:=.returned (.variant tag address)}
     | .case scrutinee arms => {state with control:=.evaluate scrutinee environment, stack:=.case arms environment::state.stack}
     | .ifBool condition whenTrue whenFalse => {state with control:=.evaluate condition environment, stack:=.ifBool whenTrue whenFalse environment::state.stack}
-    | .done value => {state with control:=.evaluate value environment}
+    | .done value | .toData value => {state with control:=.evaluate value environment}
     | .perform plan =>
       if forcingShared state.stack then {state with control:=.refused .sharedEffect} else
       let address := state.heap.size

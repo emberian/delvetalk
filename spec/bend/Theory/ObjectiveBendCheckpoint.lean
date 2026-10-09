@@ -66,6 +66,7 @@ def encodeTerm : Term → Tokens
   | .perform plan => .nat 21 :: encodeTerm plan
   | .done value => .nat 22 :: encodeTerm value
   | .unary primitive argument => .nat 23 :: .nat (unaryCode primitive) :: encodeTerm argument
+  | .toData value => .nat 24 :: encodeTerm value
 def encodeFields : List (String × Term) → Tokens
   | [] => [.nat 0]
   | (name,body) :: rest => .nat 1 :: .text name :: (encodeTerm body ++ encodeFields rest)
@@ -118,6 +119,7 @@ def decodeTerm : Nat → Tokens → Option (Term × Tokens)
         let primitive ← unaryOf code
         let (argument, rest) ← decodeTerm fuel rest
         pure (.unary primitive argument, rest)
+    | 24, _ => one .toData
     | _, _ => none
   | _ + 1, _ => none
 def decodeFields : Nat → Tokens → Option (List (String × Term) × Tokens)

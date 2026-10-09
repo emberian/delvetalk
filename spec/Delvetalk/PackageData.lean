@@ -189,7 +189,7 @@ structure SchemaGraph where
 
 /-- Metadata work includes complete compared type trees, not just graph nodes. -/
 def typeMetadataWork : Ty → Nat
-  | .natural | .boolean | .label | .emptyRow => 1
+  | .natural | .boolean | .label | .emptyRow | .data => 1
   | .variable index | .custody index => 1 + (toString index).utf8ByteSize
   | .arrow _ _ domain result => 1 + typeMetadataWork domain + typeMetadataWork result
   | .field name member tail => 1 + name.utf8ByteSize + typeMetadataWork member + typeMetadataWork tail
