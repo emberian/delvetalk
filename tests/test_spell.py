@@ -182,6 +182,12 @@ class Parse(unittest.TestCase):
         post = "```\ndelvetalk garden-1 plant\n```\n```\nseed: fern\n> colour: violet\ncolour: silver\n```"
         self.assertEqual(propose(post), "proposal garden-1 plant colour=silver;seed=fern;")
 
+    def test_a_field_named_as_the_action_fills_the_open_text_field(self):
+        """The town writes `plant: a fern` for the seed (the §10 hour)."""
+        self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\ncolour: silver"), "proposal garden-1 plant colour=silver;seed=a fern;")
+        self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern"), "unclear colour|")
+        self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver"), "refused Unknown field plant")
+
     def test_a_fence_with_an_info_string_is_code_never_a_spell(self):
         """Rehearsal run 4, finding C: gemini's 3mxhfzx7rlk2f proposes code in a ```bend block that
         opens with `delvetalk forge make` and a --- rule, and plants after it."""

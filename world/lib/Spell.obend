@@ -265,7 +265,21 @@ def missing(bindings: Bindings, fields: Form.Fields) -> Form.Names:
 def fit(parsed: Parsed, form: Form.Form) -> Fit:
   match parsed:
     case notASpell(n): Fit.refused({reason: n.reason})
-    case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: textConcat("This card offers ", textConcat(form.card, textConcat(" ", form.action)))}) else decide(s.fields, form, audit(s.fields, form.fields))
+    case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: textConcat("This card offers ", textConcat(form.card, textConcat(" ", form.action)))}) else fitBound(rebound(s.fields, form), form)
+def fitBound(bindings: Bindings, form: Form.Form) -> Fit:
+  decide(bindings, form, audit(bindings, form.fields))
+# A field named as the action (`plant: a fern`, as the town writes) fills the form's first
+# text field the other lines leave open.
+def rebound(bindings: Bindings, form: Form.Form) -> Bindings:
+  if Lists.any::<Binding>(bindings, named(form.action)) then renamed(bindings, form.action, Lists.find::<Form.Field>(form.fields, fn(f: Form.Field) -> Bool: isText(f.kind) && Lists.any::<Binding>(bindings, named(f.name)) == false)) else bindings
+def isText(kind: Form.Kind) -> Bool:
+  match kind:
+    case text(_): true
+    case _: false
+def renamed(bindings: Bindings, action: String, open: Lists.Maybe<Form.Field>) -> Bindings:
+  match open:
+    case none(_): bindings
+    case some(f): Lists.map::<Binding, Binding>(bindings, fn(b: Binding) -> Binding: if b.name == action then {name: f.value.name, value: b.value} else b)
 def decide(bindings: Bindings, form: Form.Form, verdict: Verdict) -> Fit:
   match verdict:
     case wrong(w): Fit.refused({reason: w.reason})
