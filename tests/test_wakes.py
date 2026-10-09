@@ -182,6 +182,23 @@ class Wakes(Chain):
     def tide(self, gap=3):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=nil()))
 
+    def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
+        """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
+        and subscribe, tick and a tick too soon each answer with what happened and the card."""
+        self.tide()
+        self.avatar(OTHER)
+        post = ("delvetalk garden plant / colour: amber / seed: an example\nmine:\n"
+                "delvetalk tide subscribe / every: 1 / note: WC-01, first light")
+        sub = self.turn("tide", "receive", heard(post), principal=OTHER)
+        self.assertEqual(self.label_of(sub), "done")
+        card = sub["offers"][0]["text"]
+        print("\n--- tide, subscribed ---\n" + card)
+        self.assertTrue(card.startswith("Subscribed, from tick 0.\n\nTIDE at tick 0"), card)
+        tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
+        self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 notes sent.\n\nTIDE at tick 0"), tick["offers"])
+        soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
+        self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at height "), soon["offers"])
+
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
         self.avatar(OTHER)
