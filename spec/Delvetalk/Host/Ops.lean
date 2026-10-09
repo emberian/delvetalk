@@ -27,45 +27,77 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
 
+/-- One field's edit, in the wire shape of `world/lib/Plan.obend`:
+    `keep {}`, `set {value}`, `add {delta}`, `append {item}`, `amend {index, change}`. -/
 inductive EditKind where
   | keep
   | set (value : Data)
-  | add (amount : Nat)
+  | add (delta : Nat)
+  | append (item : Data)
+  | amend (index : Nat) (change : Data)
 
 structure Edit where
   field : String
   kind : EditKind
 
-def EditKind.json : EditKind → Json
-  | .keep => Json.mkObj [("tag", toJson "keep")]
-  | .set v => Json.mkObj [("tag", toJson "set"), ("value", dataJson v)]
-  | .add n => Json.mkObj [("tag", toJson "add"), ("value", toJson (toString n))]
+/-- A step is one `write` Plan: the edits record of one Edits value. An object's
+    edits in a proposal are the steps in order. -/
+abbrev Step := List Edit
 
-def Edit.json (e : Edit) : Json := Json.mkObj [("field", toJson e.field), ("edit", e.kind.json)]
+def EditKind.data : EditKind → Data
+  | .keep => .variant "keep" (.record [])
+  | .set v => .variant "set" (.record [("value", v)])
+  | .add n => .variant "add" (.record [("delta", .natural n)])
+  | .append v => .variant "append" (.record [("item", v)])
+  | .amend i v => .variant "amend" (.record [("index", .natural i), ("change", v)])
 
-def parseEdit (j : Json) : Except String Edit := do
-  let field ← j.getObjValAs? String "field"
-  let edit ← j.getObjVal? "edit"
-  let kind ← match ← edit.getObjValAs? String "tag" with
-    | "keep" => pure EditKind.keep
-    | "set" => pure (EditKind.set (← decodeData Limits.dataDepth (← edit.getObjVal? "value")))
-    | "add" => pure (EditKind.add (← natField edit "value"))
-    | other => throw s!"unknown edit tag {other}"
-  return ⟨field, kind⟩
+def Step.data (s : Step) : Data := .record (s.map fun e => (e.field, e.kind.data))
+
+def parseKind : Data → Option EditKind
+  | .variant "keep" _ => some .keep
+  | .variant "set" (.record f) => (f.lookup "value").map .set
+  | .variant "add" (.record f) => match f.lookup "delta" with
+      | some (.natural n) => some (.add n)
+      | _ => none
+  | .variant "append" (.record f) => (f.lookup "item").map .append
+  | .variant "amend" (.record f) => match f.lookup "index", f.lookup "change" with
+      | some (.natural i), some c => some (.amend i c)
+      | _, _ => none
+  | _ => none
+
+/-- An Edits record: one variant per field. -/
+def parseStep : Data → Option Step
+  | .record fields =>
+    if (fields.map (·.1)).eraseDups.length != fields.length then none
+    else fields.mapM fun (k, v) => (parseKind v).map (⟨k, ·⟩)
+  | _ => none
+
+def stepsJson (steps : List Step) : Json := Json.arr (steps.toArray.map fun s => dataJson s.data)
+
+/-- `edits` on the wire: one Edits record, or an array of them applied in order. -/
+def parseSteps (j : Json) : Except String (List Step) := do
+  let raw := match j with
+    | .arr items => items.toList
+    | other => [other]
+  if raw.length > Limits.maxEditsPerWrite then throw "too many edits"
+  raw.mapM fun item => do
+    let some step := parseStep (← decodeData Limits.dataDepth item) | throw "malformed edits record"
+    if step.length > Limits.maxEditsPerWrite then throw "too many edits"
+    return step
 
 structure Proposal where
   principal : String
   intent : String
   roots : List (String × Nat)
-  writes : List (String × List Edit)
+  writes : List (String × List Step)
   turn : Nat := 0
 
 def rootsJson (roots : List (String × Nat)) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
 
-def writesJson (writes : List (String × List Edit)) : Json :=
+def writesJson (writes : List (String × List Step)) : Json :=
   Json.arr (writes.toArray.map fun (o, es) => Json.mkObj
-    [("object", toJson o), ("edits", Json.arr (es.toArray.map Edit.json))])
+    [("object", toJson o), ("edits", stepsJson es)])
 
 def parseRoots (j : Json) : Except String (List (String × Nat)) := do
   let raw ← j.getArr?
@@ -77,21 +109,14 @@ def parseRoots (j : Json) : Except String (List (String × Nat)) := do
     out := out ++ [(object, ← natField r "version")]
   return out
 
-def parseWrites (j : Json) : Except String (List (String × List Edit)) := do
+def parseWrites (j : Json) : Except String (List (String × List Step)) := do
   let raw ← j.getArr?
   if raw.size > Limits.maxWrites then throw "too many writes"
-  let mut out : List (String × List Edit) := []
+  let mut out : List (String × List Step) := []
   for w in raw do
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← w.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate write"
-    let rawEdits ← (← w.getObjVal? "edits").getArr?
-    if rawEdits.size > Limits.maxEditsPerWrite then throw "too many edits"
-    let mut edits : List Edit := []
-    for e in rawEdits do
-      let edit ← parseEdit e
-      if edits.any (·.field == edit.field) then throw "duplicate edit field"
-      edits := edits ++ [edit]
-    out := out ++ [(object, edits)]
+    out := out ++ [(object, ← parseSteps (← w.getObjVal? "edits"))]
   return out
 
 def parseProposal (j : Json) : Except String Proposal := do
@@ -124,18 +149,41 @@ structure Refusal where
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
 
-def applyEdit (fields : List (String × Data)) (e : Edit) : Option (List (String × Data)) :=
-  match fields.find? (·.1 == e.field) with
-  | none => none
-  | some (_, old) => match e.kind with
-      | .keep => some fields
-      | .set v => some (replaceField fields e.field v)
-      | .add n => match old with
-          | .natural m => some (replaceField fields e.field (.natural (m + n)))
-          | _ => none
+/-- A `List<T>` on the wire is `nil {} | cons {head, tail}`. -/
+partial def appendItem (item : Data) : Data → Option Data
+  | .variant "nil" _ => some (.variant "cons" (.record [("head", item), ("tail", .variant "nil" (.record []))]))
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    let tail ← f.lookup "tail"
+    some (.variant "cons" (.record [("head", head), ("tail", ← appendItem item tail)]))
+  | _ => none
 
-def applyEdits : Data → List Edit → Option Data
-  | .record fields, edits => (edits.foldlM applyEdit fields).map .record
+partial def amendItem (index : Nat) (change : Data) : Data → Option Data
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    let tail ← f.lookup "tail"
+    if index == 0 then some (.variant "cons" (.record [("head", change), ("tail", tail)]))
+    else some (.variant "cons" (.record [("head", head), ("tail", ← amendItem (index - 1) change tail)]))
+  | _ => none
+
+/-- All edits of a step read the state before the step. -/
+def applyStep (fields : List (String × Data)) (step : Step) : Option (List (String × Data)) :=
+  step.foldlM (init := fields) fun acc e =>
+    match fields.lookup e.field with
+    | none => none
+    | some old =>
+      let put := fun (v : Data) => some (replaceField acc e.field v)
+      match e.kind with
+      | .keep => some acc
+      | .set v => put v
+      | .add n => match old with
+          | .natural m => put (.natural (m + n))
+          | _ => none
+      | .append item => (appendItem item old).bind put
+      | .amend i c => (amendItem i c old).bind put
+
+def applyEdits : Data → List Step → Option Data
+  | .record fields, steps => (steps.foldlM applyStep fields).map .record
   | _, _ => none
 
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
@@ -227,7 +275,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         [("object", toJson id), ("version", toJson o.version),
-         ("edits", Json.arr ((p.writes.lookup id |>.getD []).toArray.map Edit.json))])
+         ("edits", stepsJson ((p.writes.lookup id).getD []))])
       let outcome := Json.mkObj [("tag", toJson "admitted"), ("writes", writes)]
       let (w', entry) := push w key (base ++ [("outcome", outcome)]) (updates.map (·.1))
       (w', reply entry)

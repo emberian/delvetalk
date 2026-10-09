@@ -1,0 +1,386 @@
+"""world-turn: activities run against the durable store and commit once.
+
+Counter is the real world/objects/Counter.obend (plus the `initial` entry that
+names its state type); the other objects are fixtures that each isolate one rule.
+"""
+import json
+import os
+import re
+import subprocess
+import tempfile
+import time
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BINARY = os.path.join(ROOT, ".lake", "build", "bin", "delvetalk-obend")
+IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
+
+
+def modules_on_disk():
+    found = {}
+    for sub in ("lib", "objects"):
+        for directory, _, files in os.walk(os.path.join(ROOT, "world", sub)):
+            for name in files:
+                if name.endswith(".obend"):
+                    found[name[:-6]] = os.path.join(directory, name)
+    return found
+
+
+ON_DISK = modules_on_disk()
+
+
+def closure(name, seen=None, out=None, override=None):
+    """Module `name` and its imports, imports first; `override` replaces a source."""
+    seen = set() if seen is None else seen
+    out = [] if out is None else out
+    if name in seen:
+        return out
+    seen.add(name)
+    if override and name in override:
+        source = override[name]
+    else:
+        with open(ON_DISK[name]) as handle:
+            source = handle.read()
+    for dep in IMPORT.findall(source):
+        closure(dep, seen, out, override)
+    out.append({"name": name, "source": source})
+    return out
+
+
+COUNTER_INITIAL = "\ndef initial() -> State:\n  {count: 0n}\n"
+
+
+def counter_modules():
+    with open(ON_DISK["Counter"]) as handle:
+        source = handle.read() + COUNTER_INITIAL
+    return closure("Counter", override={"Counter": source})
+
+
+FIXTURE_HEAD = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {count: 5n}
+def addSelf(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: n})}})):
+    case written(_): 1n
+    case _: 0n
+"""
+
+
+def fixture(body, law=""):
+    head = FIXTURE_HEAD.replace("def initial", law + "def initial", 1) if law else FIXTURE_HEAD
+    return closure("Plan") + [{"name": "Fixture", "source": head + body}]
+
+
+MONOTONE = fixture("""def dec(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.set({value: 0n})}})):
+    case written(_): 0n
+    case _: state.count
+def inc(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  addSelf(context, 1n)
+""", law="law counter: monotone(count)\n")
+
+PROBES = fixture("""def sneak(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: {world: "", object: input.target}, edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case refused(_): addSelf(context, 1n)
+    case _: 99n
+def peek(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.view({object: {world: "", object: input.target}})):
+    case viewed(v): v.state.count
+    case _: 999n
+def peekThenWrite(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.view({object: {world: "", object: input.target}})):
+    case viewed(v): other(input.target, v.state.count)
+    case _: 999n
+def other(target: String, seen: Nat) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: {world: "", object: target}, edits: {count: Plans.Edit::<Nat, Nat>.add({delta: seen})}})):
+    case written(_): seen
+    case _: 998n
+def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: {}})):
+    case returned(r): finish(context, r.result)
+    case _: 997n
+def finish(context: Abi.Context, result: Nat) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 10n})}})):
+    case written(_): result
+    case _: 996n
+def shout(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: {}})):
+    case _: 0n
+def grow(state: State, input: {by: Nat}, context: Abi.Context) -> State:
+  {count: state.count + input.by}
+""")
+
+
+def nat(n):
+    return {"tag": "natural", "value": str(n)}
+
+
+def record(**fields):
+    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
+
+
+def label(s):
+    return {"tag": "label", "value": s}
+
+
+class Host:
+    def __init__(self):
+        self.proc = subprocess.Popen([BINARY], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     text=True, bufsize=1)
+
+    def send(self, **request):
+        self.proc.stdin.write(json.dumps(request) + "\n")
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        assert line, "host closed its output"
+        return json.loads(line)
+
+    def close(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=60)
+        self.proc.stdout.close()
+
+
+class TurnWorld(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.dir.name, "world.journal")
+        self.hosts = []
+        self.host = self.spawn()
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+
+    def tearDown(self):
+        for h in self.hosts:
+            h.close()
+        self.dir.cleanup()
+
+    def spawn(self):
+        h = Host()
+        self.hosts.append(h)
+        return h
+
+    def reopen(self):
+        self.host.close()
+        self.hosts.remove(self.host)
+        self.host = self.spawn()
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+
+    def create(self, obj, modules, count):
+        r = self.host.send(op="world-create", principal="ember", identity="create-" + obj,
+                           object=obj, modules=modules, entry="initial", seed=record(count=nat(count)))
+        self.assertEqual(r["status"], "created", r)
+        return r
+
+    def turn(self, obj, method, argument=None, identity=None, principal="ember", **limits):
+        self.n = getattr(self, "n", 0) + 1
+        request = dict(op="world-turn", principal=principal, object=obj, method=method,
+                       argument=argument or record(), identity=identity or f"t{self.n}")
+        if limits:
+            request["limits"] = limits
+        return self.host.send(**request)
+
+    def count(self, obj):
+        v = self.host.send(op="world-view", principal="ember", object=obj)
+        self.assertEqual(v["status"], "viewed", v)
+        return v["version"], v["state"]["fields"][0]["value"]["value"]
+
+    def height(self):
+        return self.host.send(op="world-status")["height"]
+
+
+class CounterTurns(TurnWorld):
+    def test_bump_three_times_leaves_count_three_at_version_three(self):
+        self.create("c1", counter_modules(), 0)
+        for _ in range(3):
+            r = self.turn("c1", "bump")
+            self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(self.count("c1"), (3, "3"))
+
+    def test_the_receipt_lists_the_object_as_first_root_and_reports_ticks(self):
+        self.create("c1", counter_modules(), 4)
+        r = self.turn("c1", "bump")
+        self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0}])
+        self.assertEqual(r["result"], nat(5))
+        self.assertGreater(r["ticksUsed"], 0)
+        self.assertEqual(r["receipt"]["outcome"]["writes"][0]["version"], 1)
+
+    def test_retry_of_the_same_identity_returns_the_same_receipt_and_no_second_bump(self):
+        self.create("c1", counter_modules(), 0)
+        first = self.turn("c1", "bump", identity="once")
+        h = self.height()
+        again = self.turn("c1", "bump", identity="once")
+        self.assertEqual(again, first)
+        self.assertEqual(self.height(), h)
+        self.assertEqual(self.count("c1"), (1, "1"))
+
+    def test_same_identity_for_another_turn_is_duplicate_identity_and_writes_nothing(self):
+        self.create("c1", counter_modules(), 0)
+        self.turn("c1", "bump", identity="once")
+        h = self.height()
+        r = self.host.send(op="world-turn", principal="ember", object="c1", method="bump",
+                           argument=record(x=nat(1)), identity="once")
+        self.assertEqual((r["status"], r["class"]), ("refused", "duplicateIdentity"))
+        self.assertEqual(self.height(), h)
+
+    def test_unknown_object_is_refused_by_class_and_unknown_method_is_a_request_error(self):
+        self.create("c1", counter_modules(), 0)
+        r = self.turn("ghost", "bump")
+        self.assertEqual(r["receipt"]["outcome"]["class"], "unknownObject")
+        h = self.height()
+        r = self.turn("c1", "nosuchmethod")
+        self.assertEqual(r["status"], "error")
+        self.assertEqual(self.height(), h)
+
+    def test_restart_replays_to_the_same_view_and_receipts(self):
+        self.create("c1", counter_modules(), 0)
+        receipts = [self.turn("c1", "bump", identity=f"r{i}") for i in range(3)]
+        before = self.count("c1")
+        self.reopen()
+        self.assertEqual(self.count("c1"), before)
+        again = self.host.send(op="world-turn", principal="ember", object="c1", method="bump",
+                               argument=record(), identity="r1")
+        self.assertEqual(again, receipts[1])
+        nxt = self.turn("c1", "bump")
+        self.assertEqual(nxt["status"], "admitted")
+        self.assertEqual(self.count("c1"), (4, "4"))
+
+    def test_a_ten_tick_budget_is_refused_as_evaluation_with_a_named_reason(self):
+        self.create("c1", counter_modules(), 0)
+        r = self.turn("c1", "bump", ticks="10")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"]), ("refused", "evaluation"))
+        self.assertIn("tick", out["reason"])
+        self.assertEqual(self.count("c1"), (0, "0"))
+
+
+class Laws(TurnWorld):
+    def test_monotone_law_refuses_the_decrement_and_leaves_state_unchanged(self):
+        self.create("m", MONOTONE, 5)
+        r = self.turn("m", "dec")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "lawRefused", "counter"))
+        self.assertEqual(self.count("m"), (0, "5"))
+        ok = self.turn("m", "inc")
+        self.assertEqual(ok["status"], "admitted")
+        self.assertEqual(self.count("m"), (1, "6"))
+
+
+class Plans(TurnWorld):
+    def setUp(self):
+        super().setUp()
+        self.create("a", PROBES, 1)
+        self.create("b", counter_modules(), 7)
+
+    def target(self, name):
+        return record(target=label(name))
+
+    def test_view_of_another_object_records_it_as_a_root_and_returns_its_state(self):
+        r = self.turn("a", "peek", self.target("b"))
+        self.assertEqual(r["result"], nat(7))
+        self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["a", "b"])
+
+    def test_view_of_an_unknown_object_is_answered_denied(self):
+        r = self.turn("a", "peek", self.target("ghost"))
+        self.assertEqual(r["result"], nat(999))
+
+    def test_a_write_without_a_view_is_answered_refused_in_turn_and_the_turn_still_commits(self):
+        r = self.turn("a", "sneak", self.target("b"))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)))
+        self.assertEqual(self.count("b"), (0, "7"))
+        self.assertEqual(self.count("a"), (1, "2"))
+
+    def test_a_viewed_object_can_be_written(self):
+        r = self.turn("a", "peekThenWrite", self.target("b"))
+        self.assertEqual(r["status"], "admitted")
+        self.assertEqual(self.count("b"), (1, "14"))
+
+    def test_call_commits_the_callee_and_the_caller_atomically_in_one_entry(self):
+        h = self.height()
+        r = self.turn("a", "relay", record(target=label("b"), method=label("bump")))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(8)))
+        self.assertEqual(self.height(), h + 1)
+        self.assertEqual([w["object"] for w in r["receipt"]["outcome"]["writes"]], ["b", "a"])
+        self.assertEqual((self.count("a"), self.count("b")), ((1, "11"), (1, "8")))
+
+    def test_a_failing_callee_write_refuses_the_whole_turn(self):
+        self.create("m", MONOTONE, 5)
+        # The callee's law refuses its decrement; nothing of the caller may land either.
+        r = self.turn("a", "relay", record(target=label("m"), method=label("dec")))
+        self.assertEqual(r["receipt"]["outcome"]["clause"], "counter")
+        self.assertEqual((self.count("a"), self.count("m")), ((0, "1"), (0, "5")))
+
+    def test_send_refuses_the_turn_by_name_and_admits_nothing(self):
+        r = self.turn("a", "shout", self.target("b"))
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"], out["reason"]),
+                         ("refused", "evaluation", "plan not supported: send"))
+        self.assertEqual((self.count("a"), self.count("b")), ((0, "1"), (0, "7")))
+
+    def test_a_pure_method_commits_its_result_as_a_set_of_every_field(self):
+        r = self.turn("a", "grow", record(by=nat(4)))
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(self.count("a"), (1, "5"))
+
+
+class ListEdits(TurnWorld):
+    @unittest.skip("recursive state types (List<T>) are not first-order data to the checker yet; unskip when the turn lane lands them")
+    def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
+        with open(ON_DISK["Bell"]) as handle:
+            source = handle.read() + (
+                '\ndef initial() -> State:\n  {planter: "glm", colour: Colour.silver({}), seed: "s", '
+                'rains: Lists.List::<Rain>.nil(), rung: false}\n')
+        modules = closure("Bell", override={"Bell": source})
+        empty = {"tag": "record", "fields": []}
+        seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
+                      seed=label("s"), rains={"tag": "variant", "label": "nil", "payload": empty},
+                      rung={"tag": "boolean", "value": False})
+        r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
+                           modules=modules, entry="initial", seed=seed)
+        self.assertEqual(r["status"], "created", r)
+        for who, text in (("kimik3", "one"), ("gemini", "two")):
+            r = self.turn("bell", "rain", record(author=label(who), text=label(text)))
+            self.assertEqual(r["status"], "admitted", r)
+        before = self.host.send(op="world-view", principal="e", object="bell")["state"]
+
+        def authors(state):
+            rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
+            out = []
+            while rains["label"] == "cons":
+                f = {x["name"]: x["value"] for x in rains["payload"]["fields"]}
+                out.append({x["name"]: x["value"]["value"] for x in f["head"]["fields"]}["author"])
+                rains = f["tail"]
+            return out
+        self.assertEqual(authors(before), ["kimik3", "gemini"])
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)
+
+
+class Maximum(TurnWorld):
+    def test_two_hundred_bumps_in_one_process_then_replay(self):
+        self.create("c1", counter_modules(), 0)
+        t0 = time.time()
+        for i in range(200):
+            r = self.turn("c1", "bump", identity=f"b{i}")
+            self.assertEqual(r["status"], "admitted", r)
+        took = time.time() - t0
+        self.assertEqual(self.count("c1"), (200, "200"))
+        head = self.host.send(op="world-status")["head"]
+        t1 = time.time()
+        self.reopen()
+        replay = time.time() - t1
+        print(f"\n  200 bumps {took:.2f}s, reopen {replay:.2f}s")
+        self.assertLess(took, 5.0)
+        self.assertEqual(self.host.send(op="world-status")["head"], head)
+        self.assertEqual(self.count("c1"), (200, "200"))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,15 +1,17 @@
 /- Driving an activity against the store. A turn reads committed state, collects
    the roots it viewed and the writes it performed, and ends in exactly one
-   `commit`. The wire shapes of Plans and responses are fixed in `answer`.
+   `commit`. The wire shapes are those of `world/lib/Plan.obend`:
 
-   Plans (variant label, payload record):
-     view  {object}                    -> viewed {version, state} | denied {}
-     write {object, edits}             -> written {} | refused {clause} (or {})
-     call  {object, method, argument}  -> reply <result> | refused {clause} (or {})
-   `object` is a label; `self` names the object whose method is running.
-   `edits` is a `List`: nil {} | cons {head, tail}; `head` is
-   {field: label, edit: keep {} | add <natural> | set <any data>}.
-   Every other Plan label refuses the turn: `plan not supported: <label>`. -/
+   A method is `(state, [input,] context) -> Activity<Plan, Response, A>` or the
+   same with a pure data result (the new state). `context` is
+   `Abi.Context {object, principal, inputOrigin}`.
+   Plans answered:
+     view  {object: Reference}                     -> viewed {version, state} | denied {}
+     write {object: Reference, edits: Edits}       -> written {} | refused {clause}
+     call  {object: Reference, method, argument}   -> returned {result} | refused {clause}
+   A Reference `{world, object}` names an object of this world when `world` is "".
+   `viewed` carries the object's whole state. Every other Plan label refuses the
+   turn: `plan not supported: <label>`. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Turn
 
@@ -51,7 +53,8 @@ inductive Abort where
 structure TurnState where
   world : World
   roots : List (String × Nat) := []
-  writes : List (String × List Edit) := []
+  writes : List (String × List Step) := []
+  principal : String
   ticks : Nat
   plans : Nat := 0
   limits : Json
@@ -71,42 +74,17 @@ def recordRoot (id : String) (version : Nat) : M Unit := do
     if s.roots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
     set { s with roots := s.roots ++ [(id, version)] }
 
-/-- Fold a later edit of one field into an earlier one; `none` if they cannot meet. -/
-def mergeEdit (old new : EditKind) : Option EditKind :=
-  match old, new with
-  | _, .keep => some old
-  | .keep, n => some n
-  | _, .set v => some (.set v)
-  | .add a, .add b => some (.add (a + b))
-  | .set (.natural m), .add b => some (.set (.natural (m + b)))
-  | _, _ => none
-
-def mergeEdits (old : List Edit) (new : List Edit) : Option (List Edit) :=
-  new.foldlM (init := old) fun acc e =>
-    match acc.find? (·.field == e.field) with
-    | none => some (acc ++ [e])
-    | some prior => (mergeEdit prior.kind e.kind).map fun k =>
-        acc.map fun x => if x.field == e.field then { x with kind := k } else x
-
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
 def labelOf : Data → Option String
   | .label s => some s
   | _ => none
 
-partial def parseEditList : Data → Option (List Edit)
-  | .variant "nil" _ => some []
-  | .variant "cons" (.record f) => do
-    let .record head ← field? f "head" | none
-    let field ← (field? head "field").bind labelOf
-    let .variant tag payload ← field? head "edit" | none
-    let kind ← match tag, payload with
-      | "keep", _ => some EditKind.keep
-      | "add", .natural n => some (EditKind.add n)
-      | "set", v => some (EditKind.set v)
+/-- A Reference naming this world's object. -/
+def referenceId : Data → Option String
+  | .record f => match (f.lookup "world").bind labelOf, (f.lookup "object").bind labelOf with
+      | some "", some id => some id
       | _, _ => none
-    let rest ← parseEditList (← field? f "tail")
-    some (⟨field, kind⟩ :: rest)
   | _ => none
 
 def emptyRecord : Data := .record []
@@ -151,41 +129,48 @@ def countPlan : M Unit := do
   if s.plans ≥ Limits.maxPlansPerTurn then evaluation "turn exceeds the plan capacity"
   set { s with plans := s.plans + 1 }
 
-def addWrite (id : String) (edits : List Edit) : M Bool := do
+def addWrite (id : String) (step : Step) : M Bool := do
   let s ← get
   unless s.roots.any (·.1 == id) do return false
+  if step.length > Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
   let prior := (s.writes.lookup id).getD []
-  let some merged := mergeEdits prior edits | return false
-  if merged.length > Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
+  if prior.length ≥ Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
+  let steps := prior ++ [step]
+  if !s.writes.any (·.1 == id) && s.writes.length ≥ Limits.maxWrites then
+    evaluation "turn exceeds the write capacity"
   let writes := if s.writes.any (·.1 == id) then
-      s.writes.map fun (k, es) => if k == id then (k, merged) else (k, es)
-    else
-      if s.writes.length ≥ Limits.maxWrites then s.writes else s.writes ++ [(id, merged)]
-  if !writes.any (·.1 == id) then evaluation "turn exceeds the write capacity"
+      s.writes.map fun (k, es) => if k == id then (k, steps) else (k, es)
+    else s.writes ++ [(id, steps)]
   set { s with writes }
   return true
 
+def contextData (id principal kind origin command : String) : Data :=
+  .record [("object", .label id), ("principal", .label principal),
+    ("inputOrigin", .record [("kind", .label kind), ("object", .label origin), ("command", .label command),
+      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
-partial def runMethod (depth : Nat) (id method : String) (argument : Data) : M Data := do
+partial def runMethod (depth : Nat) (id method : String) (argument : Data) (origin : String) : M Data := do
   let s ← get
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
-  let result := match compiled.type with
-    | .arrow _ _ _ (.arrow _ _ _ r) => some r
-    | _ => none
-  let some r := result | throw (.request s!"method {method} must take (state, argument)")
+  let context := contextData id s.principal (if depth == 0 then "request" else "call") origin method
+  let (arguments, r) ← match compiled.type with
+    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
+    | .arrow _ _ _ (.arrow _ _ _ r) => pure ([obj.state, context], r)
+    | _ => throw (.request s!"method {method} must take (state, [input,] context)")
   match r with
   | .computation .. =>
     let b ← budgetsNow
-    let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet [obj.state, argument] b)
+    let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet arguments b)
     drive depth id compiled started 0
   | _ =>
     unless r.isData do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
     let lim := st.limits.setObjVal! "ticks" (toJson (toString st.ticks))
-    match Package.executeDataValues compiled.packet #[obj.state, argument] lim with
+    match Package.executeDataValues compiled.packet arguments.toArray lim with
     | .error e => evaluation e
     | .ok (.refused failure usage) =>
       spend (usage.ticksUsed + usage.conversionNodes)
@@ -193,7 +178,7 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) : M D
     | .ok (.finished value _ _ usage) =>
       spend (usage.ticksUsed + usage.conversionNodes)
       let .record fields := value | evaluation "a pure method must return the state record"
-      let _ ← addWrite id (fields.map fun (k, v) => ⟨k, .set v⟩)
+      let _ ← addWrite id (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 
 partial def drive (depth : Nat) (self : String) (compiled : Compiled)
@@ -209,48 +194,39 @@ partial def drive (depth : Nat) (self : String) (compiled : Compiled)
     drive depth self compiled next 0
 
 partial def answer (depth : Nat) (self : String) (plan : Data) (responseType : Ty) : M Data := do
-  let resolve := fun (name : String) => if name == "self" then self else name
   match plan with
   | .variant "view" (.record f) =>
-    let some name := (field? f "object").bind labelOf | evaluation "malformed view plan"
-    let id := resolve name
-    match (← get).world.objects[id]? with
+    match (f.lookup "object").bind referenceId with
     | none => respond responseType "denied" [emptyRecord]
-    | some o =>
-      recordRoot id o.version
-      respond responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
+    | some id =>
+      match (← get).world.objects[id]? with
+      | none => respond responseType "denied" [emptyRecord]
+      | some o =>
+        recordRoot id o.version
+        respond responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
   | .variant "write" (.record f) =>
-    let some name := (field? f "object").bind labelOf | evaluation "malformed write plan"
-    let some edits := (field? f "edits").bind parseEditList | evaluation "malformed write plan"
-    if edits.length > Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
-    let id := resolve name
-    if (← addWrite id edits) then respond responseType "written" [emptyRecord]
-    else if (← get).roots.any (·.1 == id) then refusedWith responseType "typeMismatch"
-    else refusedWith responseType "unreadWrite"
+    let some target := f.lookup "object" | evaluation "malformed write plan"
+    let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
+    match referenceId target with
+    | none => refusedWith responseType "unreadWrite"
+    | some id =>
+      if (← addWrite id step) then respond responseType "written" [emptyRecord]
+      else refusedWith responseType "unreadWrite"
   | .variant "call" (.record f) =>
-    let some name := (field? f "object").bind labelOf | evaluation "malformed call plan"
-    let some method := (field? f "method").bind labelOf | evaluation "malformed call plan"
-    let some argument := field? f "argument" | evaluation "malformed call plan"
-    let id := resolve name
-    if !(← get).world.objects.contains id then refusedWith responseType "unknownObject"
-    else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
-    else
-      let result ← runMethod (depth + 1) id method argument
-      respond responseType "reply" [result]
+    let some target := f.lookup "object" | evaluation "malformed call plan"
+    let some method := (f.lookup "method").bind labelOf | evaluation "malformed call plan"
+    let some argument := f.lookup "argument" | evaluation "malformed call plan"
+    match referenceId target with
+    | none => refusedWith responseType "unknownObject"
+    | some id =>
+      if !(← get).world.objects.contains id then refusedWith responseType "unknownObject"
+      else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
+      else
+        let result ← runMethod (depth + 1) id method argument self
+        respond responseType "returned" [.record [("result", result)]]
   | .variant label _ => evaluation s!"plan not supported: {label}"
   | _ => evaluation "plan is not a variant"
 end
-
-def editsFromRoots (roots : List (String × Nat)) : List (String × Nat) := roots
-
-/-- Retry rule for turns: the identity is bound to the whole turn request. -/
-def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
-  match w.receipts[identityKey r.principal r.intent]? with
-  | none => none
-  | some index =>
-    let entry := w.entries[index]!
-    if (entry.getObjValAs? String "turnRequest").toOption == some r.digest then some (reply entry)
-    else some (duplicate r.principal r.intent entry)
 
 /-- Lift `result` and `ticksUsed` of the receipt to the reply. -/
 def turnReply (r : Json) : Json :=
@@ -260,15 +236,24 @@ def turnReply (r : Json) : Json :=
     let extra := ["result", "ticksUsed"].filterMap fun k => (entry.getObjVal? k).toOption.map (k, ·)
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra)
 
+/-- Retry rule for turns: the identity is bound to the whole turn request. -/
+def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
+  match w.receipts[identityKey r.principal r.intent]? with
+  | none => none
+  | some index =>
+    let entry := w.entries[index]!
+    if (entry.getObjValAs? String "turnRequest").toOption == some r.digest then some (turnReply (reply entry))
+    else some (duplicate r.principal r.intent entry)
+
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing; every other end is a receipt. -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) := do
   if let some r := retainedTurn w req then return (w, r)
-  let init : TurnState := { world := w, ticks := 1000000, limits := req.limits }
+  let init : TurnState := { world := w, principal := req.principal, ticks := 1000000, limits := req.limits }
   let ticks ← match Delvetalk.Turn.budgets req.limits with
     | .ok b => pure b.ticks
     | .error e => throw e
-  let (result, st) := (runMethod 0 req.object req.method req.argument |>.run).run { init with ticks }
+  let (result, st) := (runMethod 0 req.object req.method req.argument "" |>.run).run { init with ticks }
   let w := { w with compiled := st.world.compiled }
   let used := ticks - st.ticks
   let proposal : Proposal := ⟨req.principal, req.intent, st.roots, st.writes, w.height + 1⟩
