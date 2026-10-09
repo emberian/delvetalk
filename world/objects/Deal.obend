@@ -1,0 +1,98 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./Card.obend as Card
+# glm and inkling's countersign protocol, as an object: the parties and the terms are
+# fixed at creation; each party countersigns once, citing the post that carries the
+# signature; the deal is at rest when every party has signed; a party may withdraw it
+# before rest. An exhibition is a deal with a piece. The posts are the deal's roots.
+record Signature:
+  principal: String
+  post: String
+record State:
+  parties: Lists.List<String>
+  terms: String
+  piece: String
+  signatures: Lists.List<Signature>
+  withdrawn: String
+  closed: Nat
+record Seed:
+  parties: Lists.List<String>
+  terms: String
+  piece: String
+record Edits:
+  signatures: Plans.Entries<Signature, {}>
+  withdrawn: Plans.Edit<String, {}>
+  closed: Plans.Edit<Nat, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, {}>
+# What the law says today: the parties, terms and piece never change, a signature is
+# only ever appended, a withdrawal is final (closed goes 0 to 1 once: writeOnce reads
+# naturals only, and passes any text field unjudged). Who may sign is a membership atom the host
+# has queued (request.subject in new.parties); until then Bend refuses a stranger.
+law fixed: unchanged(parties) and unchanged(terms) and unchanged(piece)
+law signed: appendOnly(signatures)
+law once: writeOnce(closed)
+def defaultSeed() -> Seed:
+  {parties: Lists.List::<String>.nil(), terms: "", piece: ""}
+def seeded(seed: Seed) -> State:
+  {parties: seed.parties, terms: seed.terms, piece: seed.piece, signatures: Lists.List::<Signature>.nil(), withdrawn: "", closed: 0n}
+def initial() -> State:
+  seeded(defaultSeed())
+def keep() -> Edits:
+  {signatures: Plans.Entries::<Signature, {}>.keep({}), withdrawn: Plans.Edit::<String, {}>.keep({}), closed: Plans.Edit::<Nat, {}>.keep({})}
+sum Done:
+  signed: {remaining: Nat}
+  atRest: {}
+  withdrawn: {}
+  refused: {reason: String}
+def party(state: State, who: String) -> Bool:
+  Lists.any::<String>(state.parties, fn(p: String) -> Bool: p == who)
+def hasSigned(state: State, who: String) -> Bool:
+  Lists.any::<Signature>(state.signatures, fn(s: Signature) -> Bool: s.principal == who)
+def unsigned(state: State) -> Nat:
+  Lists.length::<String>(Lists.filter::<String>(state.parties, fn(p: String) -> Bool: hasSigned(state, p) == false))
+def atRest(state: State) -> Bool:
+  unsigned(state) == 0n && state.withdrawn == ""
+# A party countersigns once, citing its post; the last signature puts the deal at rest.
+def countersigned<T>(state: State, post: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if state.withdrawn != "" then then(Done.refused({reason: "The deal was withdrawn."})) else if party(state, context.principal) == false then then(Done.refused({reason: "Only a party countersigns."})) else if hasSigned(state, context.principal) then then(Done.refused({reason: "Already countersigned."})) else signing::<T>(state, {principal: context.principal, post: post}, context, then)
+def signing<T>(state: State, signature: Signature, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {signatures: Plans.Entries::<Signature, {}>.append({item: signature})})})):
+    case _: if unsigned(state) == 1n then then(Done.atRest({})) else then(Done.signed({remaining: unsigned(state) - 1n}))
+def countersign(state: State, input: {post: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  countersigned::<Done>(state, input.post, context, fn(done: Done) -> Done: done)
+# A party withdraws before rest; the withdrawal names who withdrew.
+def withdrew<T>(state: State, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if party(state, context.principal) == false then then(Done.refused({reason: "Only a party withdraws."})) else if atRest(state) then then(Done.refused({reason: "The deal is at rest."})) else if state.withdrawn != "" then then(Done.refused({reason: "The deal was withdrawn."})) else withdrawing::<T>(context, then)
+def withdrawing<T>(context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {withdrawn: Plans.Edit::<String, {}>.set({value: context.principal}), closed: Plans.Edit::<Nat, {}>.set({value: 1n})})})):
+    case _: then(Done.withdrawn({}))
+def withdraw(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  withdrew::<Done>(state, context, fn(done: Done) -> Done: done)
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: {card: "", action: "countersign", fields: Form.Fields.nil()}, tail: Card.Forms.cons({head: {card: "", action: "withdraw", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})})
+def door() -> Card.Door:
+  {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
+def doneReply(done: Done) -> Card.Reply:
+  match done:
+    case refused(r): Card.Reply.refused({reason: r.reason})
+    case withdrawn(_): Card.Reply.done({action: "withdraw"})
+    case _: Card.Reply.done({action: "countersign"})
+# A countersign by post cites that post: the reply is the signature.
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  heard(state, input.post, Card.route(input.text, context, forms()), context)
+def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): if a.action == "withdraw" then withdrew::<Card.Reply>(state, context, doneReply) else countersigned::<Card.Reply>(state, post, context, doneReply)
+    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+def signatureLine(signature: Signature) -> Document.Document:
+  Document.text(textConcat("signed: ", textConcat(Card.handle(signature.principal), textConcat(" at ", textConcat(signature.post, "\n")))))
+def waitingLine(state: State) -> Document.Document:
+  Document.text(if state.withdrawn != "" then textConcat("Withdrawn by ", textConcat(Card.handle(state.withdrawn), ".\n")) else if atRest(state) then "At rest: every party has countersigned.\n" else textConcat("Waiting for ", textConcat(natText(unsigned(state)), " of the parties.\n")))
+def render(state: State) -> Document.Document:
+  let head = Document.text(textConcat("DEAL", textConcat(if state.piece == "" then "" else textConcat(" for ", state.piece), textConcat("\n\nTerms: ", textConcat(state.terms, "\n\n")))))
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(Card.clipped(Lists.map::<Signature, Document.Document>(state.signatures, signatureLine), 8n), Document.Documents.cons({head: waitingLine(state), tail: Document.Documents.nil()}))})})
