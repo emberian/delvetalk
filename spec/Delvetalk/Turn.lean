@@ -21,11 +21,13 @@ namespace Delvetalk.Turn
 
 /-- Re-address the original annotation table when application wraps its term.
 The argument subtree is annotation-free first-order data, never raw code. -/
-def applyArgument (source : AnnotatedTerm) (argument : Term) : AnnotatedTerm :=
+def applyArgument (source : AnnotatedTerm) (argument : Term)
+    (extras : List (List Nat × LambdaAnnotation) := []) : AnnotatedTerm :=
   { source with
     term := .app source.term argument
     annotations := fun position => match position with
       | 0 :: rest => source.annotations rest
+      | 1 :: rest => (extras.find? (·.1 == rest)).map (·.2)
       | _ => none }
 
 def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat := do
@@ -48,6 +50,35 @@ def dataFields : List (String × Data) → List (String × Term)
   | [] => []
   | (k,v) :: rest => (k, dataTerm v) :: dataFields rest
 end
+
+/-- A variant argument is injected at its declared sum, never guessed from one
+label: give each injection of closed data the annotation its declared type
+fixes (payload type, sum or recursive variable). Positions follow the checker:
+an injection's payload is child 0, a record's field `i` is child `i`. -/
+partial def annotateData (bounds : DataBounds) (expected : Ty) (data : Data) (path : List Nat) :
+    List (List Nat × LambdaAnnotation) :=
+  match data with
+  | .variant tag payload =>
+    let row? := match expected with
+      | .variant row => some row
+      | .variable index => match bounds.lookup index with
+          | some (.variant row) => some row
+          | _ => none
+      | _ => none
+    match row? with
+    | none => []
+    | some row => match row.lookup bounds Ty.dataFuel tag with
+      | none => []
+      | some member =>
+        (path, ⟨member, expected, .unrestricted, .reusable⟩) :: annotateData bounds member payload (path ++ [0])
+  | .record fields =>
+    let rec memberOf : Ty → String → Option Ty
+      | .field n m tail, name => if n == name then some m else memberOf tail name
+      | _, _ => none
+    (fields.zipIdx.map fun ((name, value), i) => match memberOf expected name with
+      | some member => annotateData bounds member value (path ++ [i])
+      | none => []).flatten
+  | _ => []
 
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
@@ -162,7 +193,15 @@ def conclude (packet : Json) (bounds : DataBounds) (plan response result : Ty) (
 def startActivity (packet : Json) (arguments : List Data) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
-  let source := arguments.foldl (fun s v => applyArgument s (dataTerm v)) decoded.source
+  let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
+  let mut source := decoded.source
+  let mut entryType := entry.type
+  for v in arguments do
+    let (domain, rest) := match entryType with
+      | .arrow _ _ d c => (d, c)
+      | other => (other, other)
+    source := applyArgument source (dataTerm v) (annotateData decoded.source.assumptions.bounds domain v [])
+    entryType := rest
   let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
   let (plan, response, result) ← activityShape source.assumptions checked.type
   let capacities : Limits := ⟨b.heap, b.stack⟩

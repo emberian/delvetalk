@@ -5,6 +5,10 @@ import Delvetalk.Host.TurnLoop
 namespace Delvetalk.Host
 open Lean (Json toJson)
 
+/-- Flush and fsync (F_FULLFSYNC on macOS); see `spec/native/sync.c`. -/
+@[extern "delvetalk_handle_sync"]
+opaque syncHandle (handle : @& IO.FS.Handle) : IO Unit
+
 /-! ## Session and journal file -/
 
 structure Open where
@@ -45,7 +49,7 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
       return (some s, .error "journal is full")
     try
       s.handle.putStr (line ++ "\n")
-      s.handle.flush
+      syncHandle s.handle
       return (some { s with world := w' }, .ok r)
     catch e => return (some s, .error s!"journal write failed: {e}")
 

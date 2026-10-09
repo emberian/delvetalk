@@ -119,6 +119,13 @@ def grow(state: State, input: {by: Nat}, context: Abi.Context) -> State:
 """)
 
 
+PRIVATE_PROBES = fixture("""def probe(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.view({object: {world: "", object: input.target}})):
+    case viewed(v): addSelf(context, v.state.count)
+    case _: addSelf(context, 100n)
+""")
+
+
 def nat(n):
     return {"tag": "natural", "value": str(n)}
 
@@ -330,37 +337,118 @@ class Plans(TurnWorld):
         self.assertEqual(self.count("a"), (1, "5"))
 
 
-class ListEdits(TurnWorld):
-    @unittest.skip("recursive state types (List<T>) are not first-order data to the checker yet; unskip when the turn lane lands them")
-    def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
-        with open(ON_DISK["Bell"]) as handle:
-            source = handle.read() + (
-                '\ndef initial() -> State:\n  {planter: "glm", colour: Colour.silver({}), seed: "s", '
-                'rains: Lists.List::<Rain>.nil(), rung: false}\n')
-        modules = closure("Bell", override={"Bell": source})
-        empty = {"tag": "record", "fields": []}
-        seed = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty},
-                      seed=label("s"), rains={"tag": "variant", "label": "nil", "payload": empty},
-                      rung={"tag": "boolean", "value": False})
-        r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
-                           modules=modules, entry="initial", seed=seed)
-        self.assertEqual(r["status"], "created", r)
-        for who, text in (("kimik3", "one"), ("gemini", "two")):
-            r = self.turn("bell", "rain", record(author=label(who), text=label(text)))
-            self.assertEqual(r["status"], "admitted", r)
-        before = self.host.send(op="world-view", principal="e", object="bell")["state"]
+NAMES_SOURCE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+record State:
+  names: Lists.List<String>
+record Edits:
+  names: Plans.Entries<String, String>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {names: Lists.List::<String>.nil()}
+def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.append({item: input.text})}})):
+    case written(_): 1n
+    case _: 0n
+def fix(state: State, input: {index: Nat, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.amend({index: input.index, change: input.text})}})):
+    case written(_): 1n
+    case _: 0n
+"""
 
-        def authors(state):
-            rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
-            out = []
-            while rains["label"] == "cons":
-                f = {x["name"]: x["value"] for x in rains["payload"]["fields"]}
-                out.append({x["name"]: x["value"]["value"] for x in f["head"]["fields"]}["author"])
-                rains = f["tail"]
-            return out
-        self.assertEqual(authors(before), ["kimik3", "gemini"])
+
+def names_modules():
+    modules = closure("List") + [m for m in closure("Plan") if m["name"] != "List"]
+    seen, out = set(), []
+    for m in modules:
+        if m["name"] not in seen:
+            seen.add(m["name"])
+            out.append(m)
+    return out + [{"name": "Names", "source": NAMES_SOURCE}]
+
+
+def list_items(state):
+    names = [f["value"] for f in state["fields"] if f["name"] == "names"][0]
+    out = []
+    while names["label"] == "cons":
+        f = {x["name"]: x["value"] for x in names["payload"]["fields"]}
+        out.append(f["head"]["value"])
+        names = f["tail"]
+    return out
+
+
+class ListEdits(TurnWorld):
+    def test_append_then_amend_on_a_list_field_read_back_in_order_and_replayed(self):
+        empty = {"tag": "record", "fields": []}
+        seed = record(names={"tag": "variant", "label": "nil", "payload": empty})
+        r = self.host.send(op="world-create", principal="ember", identity="mk", object="n",
+                           modules=names_modules(), entry="initial", seed=seed)
+        self.assertEqual(r["status"], "created", r)
+        for text in ("one", "two", "three"):
+            r = self.turn("n", "add", record(text=label(text)))
+            self.assertEqual(r["status"], "admitted", r)
+        r = self.turn("n", "fix", record(index=nat(1), text=label("TWO")))
+        self.assertEqual(r["status"], "admitted", r)
+        view = lambda: self.host.send(op="world-view", principal="e", object="n")["state"]
+        self.assertEqual(list_items(view()), ["one", "TWO", "three"])
+        before = view()
         self.reopen()
-        self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)
+        self.assertEqual(view(), before)
+
+    def test_amend_past_the_end_is_refused_and_changes_nothing(self):
+        empty = {"tag": "record", "fields": []}
+        self.host.send(op="world-create", principal="ember", identity="mk", object="n",
+                       modules=names_modules(), entry="initial",
+                       seed=record(names={"tag": "variant", "label": "nil", "payload": empty}))
+        self.turn("n", "add", record(text=label("only")))
+        r = self.turn("n", "fix", record(index=nat(5), text=label("x")))
+        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
+        self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["version"], 1)
+
+
+class ReadPolicy(TurnWorld):
+    def setUp(self):
+        super().setUp()
+        self.create("a", PRIVATE_PROBES, 1)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-priv", object="priv",
+                           modules=counter_modules(), entry="initial", seed=record(count=nat(7)),
+                           read={"principals": ["ember"]})
+        self.assertEqual(r["status"], "created", r)
+
+    def view(self, who, obj="priv"):
+        return self.host.send(op="world-view", principal=who, object=obj)
+
+    def test_a_private_object_is_viewed_by_its_creator_and_denied_to_a_stranger(self):
+        self.assertEqual(self.view("ember")["status"], "viewed")
+        d = self.view("stranger")
+        self.assertEqual(d, {"status": "denied", "object": "priv"})
+        self.assertEqual(self.view("stranger", "a")["status"], "viewed")  # default is public
+
+    def test_a_denied_in_turn_view_records_no_root_and_the_turn_still_commits(self):
+        r = self.turn("a", "probe", record(target=label("priv")), principal="stranger")
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+        self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["a"])
+        self.assertEqual(self.count("a"), (1, "101"))
+        self.assertEqual(self.count("priv"), (0, "7"))
+
+    def test_a_permitted_principal_view_in_turn_records_the_root_and_sees_the_state(self):
+        r = self.turn("a", "probe", record(target=label("priv")), principal="ember")
+        self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["a", "priv"])
+        self.assertEqual(self.count("a"), (1, "8"))
+
+    def test_the_policy_survives_a_restart(self):
+        self.reopen()
+        self.assertEqual(self.view("stranger")["status"], "denied")
+        self.assertEqual(self.view("ember")["status"], "viewed")
+
+    def test_a_malformed_policy_refuses_creation(self):
+        r = self.host.send(op="world-create", principal="ember", identity="bad", object="p2",
+                           modules=counter_modules(), entry="initial", seed=record(count=nat(0)),
+                           read={"principals": "ember"})
+        self.assertEqual(r["status"], "error")
 
 
 class Maximum(TurnWorld):

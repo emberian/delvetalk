@@ -201,7 +201,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal (List (Stri
   for (id, edits) in p.writes do
     let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
     let some new := applyEdits o.state edits | throw { cls := "typeMismatch", object := id }
-    unless new.conforms o.stateType && (dataJson new).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+    unless new.conformsUnder o.bounds o.stateType && (dataJson new).compress.utf8ByteSize ≤ Limits.maxStateBytes do
       throw { cls := "typeMismatch", object := id }
     if let some clause := Law.refusedBy o.law facts (some o.state) new then
       throw { cls := "lawRefused", clause, object := id }
@@ -296,26 +296,42 @@ def compileInputs (j : Json) : Except String Json := do
 /-- The state type is the type of the package's entry definition: a zero-argument
     `def initial() -> State` has type `State`, which must be a closed record of
     first-order data. The entry's own value is not used; the seed is explicit. -/
-def stateTypeOk (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
-  ty.isData && match ty with
+def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
+    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
+  ty.isDataUnder assumptions.bounds assumptions.rigid Minidregg.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
+    match ty with
     | .field .. | .emptyRow => true
     | _ => false
 
-def buildObject (inputs seed : Json) : Except String (Object × String) := do
+def parseRead (j : Option Json) : Except String ReadPolicy :=
+  match j with
+  | none => pure .«public»
+  | some (.str "public") => pure .«public»
+  | some obj => do
+    let raw ← (← obj.getObjVal? "principals").getArr?
+    if raw.size > Limits.maxReaders then throw "too many readers"
+    let names ← raw.toList.mapM fun r => do boundedText "reader" Limits.maxPrincipalBytes (← r.getStr?)
+    pure (.principals names)
+
+def buildObject (inputs seed : Json) (read : Option Json := none) : Except String (Object × String) := do
   let (artifact, ty, laws) ← Package.compileKeepingLaws inputs
-  unless stateTypeOk ty do
+  let packet ← artifact.getObjVal? "packet"
+  let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
+  let assumptions := decoded.source.assumptions
+  unless stateTypeOk assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
   let state ← decodeData Limits.dataDepth seed
-  unless state.conforms ty do throw "seed does not conform to the package state type"
+  unless state.conformsUnder assumptions.bounds ty do throw "seed does not conform to the package state type"
   if (dataJson state).compress.utf8ByteSize > Limits.maxStateBytes then throw "seed exceeds state byte capacity"
   let pin ← artifact.getObjValAs? String "packetSha256"
   let sources ← artifact.getObjValAs? String "sourcesSha256"
   let inputsKey := Journal.bodyHash (Json.mkObj
     (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
-  return ({ pin, law := laws, version := 0, state, stateType := ty, inputs, inputsKey }, sources)
+  return ({ pin, law := laws, version := 0, state, stateType := ty, bounds := assumptions.bounds,
+            read := ← parseRead read, inputs, inputsKey }, sources)
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
-  Json.mkObj [("tag", toJson "created"), ("object", toJson id), ("pin", toJson o.pin),
+  Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("object", toJson id), ("pin", toJson o.pin),
     ("sourcesSha256", toJson sources), ("compile", artifact), ("seed", seed)]
 
 def create (w : World) (j : Json) : Except String (World × Json) := do
@@ -330,7 +346,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← compileInputs j
   let seed ← j.getObjVal? "seed"
-  let (o, sources) ← buildObject inputs seed
+  let (o, sources) ← buildObject inputs seed (j.getObjVal? "read").toOption
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   let outcome := createOutcome id o sources inputs seed
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
@@ -350,7 +366,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
-    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed")
+    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     return record { w with objects := w.objects.insert id o } entry key [id]
@@ -396,10 +412,13 @@ def replay (content : String) : Except String World := do
 
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
-  discard <| boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
-  | some o => return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
+  | some o =>
+    if !o.read.permits principal then
+      return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+    return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
 def receipt (w : World) (j : Json) : Except String Json := do

@@ -18,7 +18,7 @@ import Delvetalk.Turn
 namespace Delvetalk.Host
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (Ty)
+open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 structure TurnRequest where
@@ -90,14 +90,14 @@ def referenceId : Data → Option String
 def emptyRecord : Data := .record []
 
 /-- The first payload that makes a response conform to the Response type. -/
-def respond (responseType : Ty) (label : String) (payloads : List Data) : M Data := do
+def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads : List Data) : M Data := do
   for p in payloads do
     let d := Data.variant label p
-    if d.conforms responseType then return d
+    if d.conformsUnder bounds responseType then return d
   evaluation s!"response type cannot carry {label}"
 
-def refusedWith (responseType : Ty) (clause : String) : M Data :=
-  respond responseType "refused" [.record [("clause", .label clause)], emptyRecord]
+def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M Data :=
+  respond bounds responseType "refused" [.record [("clause", .label clause)], emptyRecord]
 
 def compiledMethod (obj : Object) (method : String) : M Compiled := do
   let key := obj.inputsKey ++ "/" ++ method
@@ -112,7 +112,10 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
       let packet ← match artifact.getObjVal? "packet" with
         | .ok p => pure p
         | .error e => throw (.request e)
-      let c : Compiled := ⟨packet, ty⟩
+      let decoded ← match Minidregg.Theory.ObjectiveBendTyping.decodePacket packet with
+        | .ok d => pure d
+        | .error e => throw (.request e)
+      let c : Compiled := ⟨packet, ty, decoded.source.assumptions.bounds, decoded.source.assumptions.rigid⟩
       if s.world.compiled.size < Limits.maxCompiledPackets then
         set { s with world := { s.world with compiled := s.world.compiled.insert key c } }
       return c
@@ -167,7 +170,7 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (orig
     let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet arguments b)
     drive depth id compiled started 0
   | _ =>
-    unless r.isData do throw (.request s!"method {method} must be pure data or an activity")
+    unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
     let lim := st.limits.setObjVal! "ticks" (toJson (toString st.ticks))
     match Package.executeDataValues compiled.packet arguments.toArray lim with
@@ -188,42 +191,43 @@ partial def drive (depth : Nat) (self : String) (compiled : Compiled)
   | .yielded plan _ responseType checkpoint used =>
     spend used
     countPlan
-    let response ← answer depth self plan responseType
+    let response ← answer depth self compiled.bounds plan responseType
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint response b)
     drive depth self compiled next 0
 
-partial def answer (depth : Nat) (self : String) (plan : Data) (responseType : Ty) : M Data := do
+partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
   | .variant "view" (.record f) =>
     match (f.lookup "object").bind referenceId with
-    | none => respond responseType "denied" [emptyRecord]
+    | none => respond bounds responseType "denied" [emptyRecord]
     | some id =>
       match (← get).world.objects[id]? with
-      | none => respond responseType "denied" [emptyRecord]
+      | none => respond bounds responseType "denied" [emptyRecord]
       | some o =>
+        if !o.read.permits (← get).principal then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
-        respond responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
+        respond bounds responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
   | .variant "write" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed write plan"
     let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
     match referenceId target with
-    | none => refusedWith responseType "unreadWrite"
+    | none => refusedWith bounds responseType "unreadWrite"
     | some id =>
-      if (← addWrite id step) then respond responseType "written" [emptyRecord]
-      else refusedWith responseType "unreadWrite"
+      if (← addWrite id step) then respond bounds responseType "written" [emptyRecord]
+      else refusedWith bounds responseType "unreadWrite"
   | .variant "call" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed call plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed call plan"
     let some argument := f.lookup "argument" | evaluation "malformed call plan"
     match referenceId target with
-    | none => refusedWith responseType "unknownObject"
+    | none => refusedWith bounds responseType "unknownObject"
     | some id =>
-      if !(← get).world.objects.contains id then refusedWith responseType "unknownObject"
+      if !(← get).world.objects.contains id then refusedWith bounds responseType "unknownObject"
       else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
       else
         let result ← runMethod (depth + 1) id method argument self
-        respond responseType "returned" [.record [("result", result)]]
+        respond bounds responseType "returned" [.record [("result", result)]]
   | .variant label _ => evaluation s!"plan not supported: {label}"
   | _ => evaluation "plan is not a variant"
 end

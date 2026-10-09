@@ -7,7 +7,7 @@ import Std.Data.HashMap
 namespace Delvetalk.Host
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (Ty)
+open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Minidregg.Compiler.ObjectiveBendLaw (LawExpr)
 
 /- Every capacity of the host's world kernel, in one place. A request beyond
@@ -35,6 +35,8 @@ def maxPlansPerTurn : Nat := 1024
 /-- Compiled method packets kept in memory. -/
 def maxCompiledPackets : Nat := 256
 def maxMethodBytes : Nat := 128
+/-- Principals named in one object's read policy. -/
+def maxReaders : Nat := 256
 def genesis : String := "".pushn '0' 64
 end Limits
 
@@ -45,6 +47,23 @@ abbrev Law := List (String × LawExpr)
 structure Compiled where
   packet : Json
   type : Ty
+  /-- The packet's declared type bounds and rigid variables: recursive types
+      (a `List<T>` field) are data only under them. -/
+  bounds : DataBounds
+  rigid : List Nat
+
+/-- Who may `view` an object; fixed at creation and journaled with it. -/
+inductive ReadPolicy where
+  | «public»
+  | principals (allowed : List String)
+
+def ReadPolicy.permits : ReadPolicy → String → Bool
+  | .«public», _ => true
+  | .principals allowed, who => allowed.contains who
+
+def ReadPolicy.json : ReadPolicy → Json
+  | .«public» => toJson "public"
+  | .principals allowed => Json.mkObj [("principals", toJson allowed)]
 
 structure Object where
   /-- `packetSha256` of the compiled artifact the object was created from. -/
@@ -54,6 +73,8 @@ structure Object where
   state : Data
   /-- The entry definition's type: a closed record of first-order data. -/
   stateType : Ty
+  bounds : DataBounds := []
+  read : ReadPolicy := .«public»
   /-- The journaled compile inputs (modules, limits); a method is one more `entry`. -/
   inputs : Json := Json.null
   /-- Digest of `inputs`, the key of this object's compiled methods. -/
