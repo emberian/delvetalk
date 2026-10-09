@@ -21,13 +21,13 @@ programmable environment. Convergence with Mini is not a project requirement.
 
 ## Priorities exposed by the review
 
-1. **Whole Bend transitions.** [WorldCore](../profiles/WorldCore.lean) separately
-   interprets requirements, assignments and results; compiled packages are currently
-   expression leaves. A single-evaluation binding could make an authored method
-   compute its complete transition. Mini's `{result, write}` convention is a useful
-   comparison, not a prescribed interface.
-   Stateful source bindings can already use package expressions; single evaluation
-   would remove repeated compilation and manually synchronized calculations.
+1. **Whole Bend transitions — implemented locally.** The opt-in
+   [source-transition profile](../profiles/COMPILED.md) executes one typed source
+   call over state, input and host identity; its decision replaces complete state
+   or refuses atomically. The [garden](../protocols/town-garden/Garden.obend) uses it.
+   Compilation at installation and typed invocation do not establish permanent
+   state invariants; this first profile has no outbox or allocation. Legacy
+   commands remain intact. This is DelveTalk's chosen interface, not Mini's kernel.
 2. **Admission contracts, not form promises.** Field types/lengths in affordances
    constrain offered requests. They do not automatically constrain raw requests:
    the text factory's unrestricted `write` can store nontext. Source types provide
@@ -39,10 +39,11 @@ programmable environment. Convergence with Mini is not a project requirement.
    ordering for migrated text outside its closed source domain. V1 remains explicit
    historical behavior. Source projections now check the receiving workspace's pins;
    standalone observations retain their actual runtime identity.
-4. **Mechanical places.** The example door returns prose; it does not move a resident.
-   Commons movement updates a real registry but does not consult independently owned
-   door state. A Bend-owned place/door registry is a small next step. Authenticated
-   cross-object activity is a [separate future profile](RESIDENT-ACTIVITY.md).
+4. **Mechanical places.** Transaction [input origin](../profiles/TRANSACTIONS.md)
+   now identifies the actual earlier result producer. Gated commons movement
+   can require an immediately preceding door invocation; copied input carries no
+   origin, and provenance grants no authority. Retained-event delivery and
+   autonomous reactions remain a [separate future profile](RESIDENT-ACTIVITY.md).
 
 Source `law` declarations and host grant predicates have different meanings. The
 current compiler refuses source laws; integrating new-state invariants requires
@@ -59,6 +60,9 @@ and compiled game execution are real receiving paths. Ticket acceptance acknowle
 review; it deliberately does not install a target. Scoped grants are not linear
 custody. Finite tests, typed-core evidence and whole-host correctness remain
 different claims.
+
+The deployed checkpoint remains `2926fcb`; the new source-transition and
+input-origin changes described here are not deployed there.
 
 ## Exchange with Mini
 

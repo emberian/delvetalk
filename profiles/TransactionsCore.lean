@@ -26,6 +26,25 @@ def callInput (call : Json) (results : Array Json) : Except String Json := do
   discard (pairs input)
   return input
 
+-- This descriptor is made only from previously admitted calls in this batch.
+-- Equal explicit input never receives provenance. It transfers no authority.
+def callInputOrigin (call : Json) (calls : Array Json) (completed : Nat) : Except String Json := do
+  match (field call "inputFrom").toOption with
+  | none => return World.noInputOrigin
+  | some value =>
+    let index ← value.getNat?
+    if index >= completed then throw "inputFrom must name an earlier call"
+    let prior ← match calls[index]? with
+      | some prior => pure prior
+      | none => throw "inputFrom must name an earlier call"
+    let op ← match (field prior "op").toOption with
+      | none => pure "invoke"
+      | some value => value.getStr?
+    if op != "invoke" then return World.noInputOrigin
+    return obj [("present", .bool true), ("object", .str (← str prior "object")),
+      ("command", .str (← str prior "command")),
+      ("immediatelyPrevious", .bool (index + 1 == completed))]
+
 def reprogramCandidate (call : Json) (results : Array Json) : Except String Json := do
   let candidate ← match (field call "inputFrom").toOption with
     | some index => do
@@ -78,22 +97,23 @@ def transitionWith (runtime : World.Runtime) (world request : Json) (principal :
         throw "unsupported transaction operation"
       -- The operation is explicit; the principal remains the global caller.
       -- Both profiles use one authority engine.
-      let (nextObj, result, emitted, invocation) ← if op == "reprogram" then do
+      let (nextObj, result, emitted, invocation, inputOrigin) ← if op == "reprogram" then do
         authorizeRequest o (← put call "op" (.str op)) principal
         let candidate ← reprogramCandidate call results
         let nextObj ← reprogramObjectWith runtime o (← field candidate "protocol") (← field candidate "state")
-        pure (nextObj, Json.null, (#[] : Array Json), Json.null)
+        pure (nextObj, Json.null, (#[] : Array Json), Json.null, World.noInputOrigin)
       else do
         let input ← callInput call results
+        let inputOrigin ← callInputOrigin call calls results.size
         let invocation ← put (← put call "input" input) "op" (.str op)
         authorizeRequest o invocation principal
-        let (nextState, result, emitted) ← executeCommandWith runtime o invocation principal
+        let (nextState, result, emitted) ← executeCommandWith runtime o invocation principal inputOrigin
         let n ← (← field o "version").getNat?
         let nextObj ← put (← put o "state" nextState) "version" (toJson (n + 1))
-        pure (nextObj, result, emitted, invocation)
+        pure (nextObj, result, emitted, invocation, inputOrigin)
       staged ← put staged id nextObj
       if op == "invoke" then
-        let (nextObjects, created) ← allocateChildrenWith runtime staged o invocation principal absent
+        let (nextObjects, created) ← allocateChildrenWith runtime staged o invocation principal absent inputOrigin
         staged := nextObjects
         -- Preserve creation evidence even when later calls replace a child.
         for (child, initialRoot) in (← pairs created) do
@@ -120,4 +140,3 @@ def handle (world request : Json) : Except String (Json × Json) :=
 def job (j : Json) : Json := World.jobWith handle j
 
 end Transactions
-

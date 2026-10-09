@@ -79,6 +79,24 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(self.desk.adopt('candidate', 'target', 'reviewer', 'no-adopt', failed, self.target)['kind'], 'refused')
         self.assertEqual(self.desk.inspect('target'), self.target)
 
+    def test_explicit_prepare_is_not_admission_and_recovers_its_original_request(self):
+        pending = self.submit()['data']['root']
+        inputs = {'object': 'candidate', 'principal': 'compiler', 'intent': 'prepared', 'expected': pending}
+        profile = desk_module.execution_profile()
+        build = desk_module.bounded_compile(pending)
+        wrong = {**build, 'candidateRootSha256': '0' * 64}
+        with self.assertRaisesRegex(ValueError, 'captured candidate'):
+            self.desk.prepare_check(inputs, wrong, profile)
+        prepared = self.desk.prepare_check(inputs, build, profile)
+        self.assertEqual(self.desk.inspect('candidate'), pending)
+        self.assertEqual(set(prepared), {'inputs', 'request', 'executionProfile'})
+        self.assertEqual(self.desk.prepare_check(inputs, wrong, {}), prepared)
+        receipt = self.desk.admit_check(prepared)
+        self.assertEqual(receipt['kind'], 'committed')
+        with mock.patch.object(desk_module, 'execution_profile', side_effect=AssertionError('recover first')):
+            self.assertEqual(self.desk.admit_check(prepared), receipt)
+        self.assertEqual(self.desk.inspect('target'), self.target)
+
     def test_roles_and_late_authority_failure_rollback(self):
         ready = self.ready()
         denied = self.desk.adopt('candidate', 'target', 'compiler', 'compiler-cannot-adopt', ready, self.target)

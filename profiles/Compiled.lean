@@ -115,8 +115,42 @@ def evaluateExtra (context : World.CallContext) (expr : Json) (evaluate : Json �
         (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
   | _ => throw "unknown expression"
 
+-- A command owns one pure source execution. The envelope is deliberately small:
+-- whole-state replacement plus a result, or explicit refusal; no effects or
+-- allocation. Source types describe this call, not a host-wide state invariant.
+def transitionPackage (transition : Json) : Except String Json := do
+  if (← pairs transition).map Prod.fst != ["package", "profile"] then
+    throw "source transition requires exactly profile and package"
+  if (← str transition "profile") != "delvetalk-source-transition-v1" then
+    throw "unknown source transition profile"
+  sourceSpec (← field transition "package")
+
+def validateTransition (transition : Json) : Except String Unit := do
+  discard (Delvetalk.Package.compile (← transitionPackage transition))
+
+def executeTransition (context : World.CallContext) (state input : Json)
+    (principal : String) (transition : Json) : Evaluation (Json × Json × Array Json) := do
+  let spec ← transitionPackage transition
+  let identity := obj [("object", .str context.object), ("principal", .str principal)]
+  -- This is the same package evaluator and shared budget as ordinary compiled
+  -- expressions. It compiles the retained source and invokes the entry once.
+  let decision ← evaluateExtra context
+    (.arr #[.str "package", spec, .arr #[state, input, identity]]) pure
+  if (← pairs decision).map Prod.fst != ["accepted", "reason", "result", "state"] then
+    throw "source transition result requires exactly accepted, reason, state and result"
+  let accepted ← (← field decision "accepted").getBool?
+  let reason ← str decision "reason"
+  if !accepted then
+    if reason.isEmpty then throw "source refusal requires a reason"
+    throw ("source refused: " ++ reason)
+  if !reason.isEmpty then throw "accepted source transition must have empty reason"
+  let nextState ← field decision "state"
+  discard (pairs nextState)
+  return (nextState, ← field decision "result", #[])
+
 def runtime : World.Runtime := {
-  budget := 100000, validateExtra := validateExtra, evaluateExtra := evaluateExtra }
+  budget := 100000, validateExtra := validateExtra, evaluateExtra := evaluateExtra,
+  validateTransition := validateTransition, executeTransition := executeTransition }
 
 def handle (world request : Json) : Except String (Json × Json) :=
   World.handleWith (Transactions.transitionWith runtime) world request

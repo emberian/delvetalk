@@ -12,9 +12,7 @@ import os
 from pathlib import Path
 import re
 import secrets
-import subprocess
 import sys
-import tempfile
 import time
 from urllib.parse import parse_qs, quote, urlsplit
 
@@ -22,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bootstrap
 import affordances
 import interpret
+import submission
 from delve import save
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -370,6 +369,10 @@ class Portal:
                 return entry['receipt']
         return None
 
+    def _pins(self, saved):
+        if canonical(self.current_runtime()) != canonical(saved['runtime']):
+            raise ValueError('Runtime pins changed; pending drafts cannot run under a replacement engine')
+
     def execute(self, payload):
         exact(payload, ('draft',))
         if not self.interactive:
@@ -379,26 +382,11 @@ class Portal:
             saved = self._read('drafts', identity)
             if saved['localPrincipal'] != self.principal or saved['request']['principal'] != self.principal:
                 raise PermissionError('Draft belongs to another configured local principal')
-            reply = saved.get('reply') or self._retained(saved['request'])
-            if reply is None:
-                if canonical(bootstrap.history.runtime(self.profile)) != canonical(saved['runtime']):
-                    raise ValueError('Runtime pins changed; pending drafts cannot run under a replacement engine')
-                try:
-                    # Separate process group permits bounded cancellation; admission/custody
-                    # still exclusively belong to world.py and the selected Lean engine.
-                    import worker
-                    with tempfile.NamedTemporaryFile('wb', dir=self.state, delete=False) as request_file:
-                        path = Path(request_file.name)
-                        request_file.write(canonical(saved['request']))
-                    try:
-                        reply = worker.command([str(ROOT / 'scripts/world.py'),
-                            '--profile', self.profile, str(self.database), str(path)], 20)
-                    finally:
-                        path.unlink(missing_ok=True)
-                except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as error:
-                    return {'kind': 'uncertain', 'draft': identity,
-                            'summary': 'No confirmed outcome. Retry this same draft to recover its receipt.',
-                            'detail': type(error).__name__}
+            reply, error = submission.execute(self, saved, saved.get('reply'), self.state, self._pins)
+            if error:
+                return {'kind': 'uncertain', 'draft': identity,
+                        'summary': 'No confirmed outcome. Retry this same draft to recover its receipt.',
+                        'detail': error}
             saved['reply'] = reply
             save(self.state / 'drafts' / (identity + '.json'), saved)
             kind = reply['kind']

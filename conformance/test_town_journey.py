@@ -16,7 +16,8 @@ import clerk
 import town_cards
 
 fixture = clerk.module('town_journey_pds', 'conformance/test_clerk.py')
-garden = clerk.module('town_journey_garden', 'protocols/town-garden/generate.py')
+source_bundle = clerk.module('town_journey_bundle', 'syntaxes/source_bundle.py')
+GARDEN = ROOT / 'protocols/town-garden'
 room = clerk.module('town_journey_room', 'scene/room.py')
 history = clerk.module('town_journey_history', 'scripts/history.py')
 A, B = fixture.A, fixture.B
@@ -34,8 +35,10 @@ class TownJourneyTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.pds = fixture.FakePDS()
         self.clerk = clerk.Clerk(self.base / 'clerk', self.pds)
-        protocol = clerk.loads((ROOT / 'protocols/town-garden/protocol.json').read_bytes())
-        self.law = garden.law([A, B], [A])
+        protocol = (source_bundle.load(GARDEN / 'binding.json', [('Garden', GARDEN / 'Garden.obend')])
+                    if self.runtime_profile == 'compiled' else clerk.loads((GARDEN / 'legacy-v1.json').read_bytes()))
+        self.law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'plant': [A, B], 'rain': [A, B]},
+                    'reprogram': [A], 'law': []}
         seeded = self.clerk.bootstrap('garden', protocol, self.law, [A, B],
                                       runtime_profile=self.runtime_profile)
         self.assertEqual(seeded['kind'], 'committed', seeded)
@@ -45,6 +48,9 @@ class TownJourneyTests(unittest.TestCase):
             display_names={A: '@moss', B: '@iris'})
         self.clerk.upgrade(self.clerk.profile()['sha256'], town_cards={
             'path': str(self.book.path), 'issuers': [ISSUER], 'metadata': self.book.metadata()})
+
+    def garden_state(self, root):
+        return root['state']['value'] if self.runtime_profile == 'compiled' else root['state']
 
     def feed(self, author, key, text, parent=None):
         reference = {'uri': f'at://{author}/{clerk.FEED}/{key}', 'cid': 'cid-' + key}
@@ -83,7 +89,7 @@ class TownJourneyTests(unittest.TestCase):
     def outcome(self, receipt, key, parent, root):
         """Freshness is an explicit caller observation, never a resolver substitution."""
         view = room.inspect_object(root, 'garden')
-        self.assertEqual(view['mode'], 'projection')
+        self.assertEqual(view['mode'], 'projection', view.get('reason'))
         draft = self.book.prepare_outcome(receipt['reply'], [view])
         self.assertEqual(len(draft['cards']), 1)
         card = draft['cards'][0]
@@ -116,7 +122,7 @@ class TownJourneyTests(unittest.TestCase):
                                           {'seed': SEED, 'colour': 'amber'})
         self.assertEqual(planted['reply']['kind'], 'committed', planted)
         planted_root = planted['reply']['data']['root']
-        self.assertEqual(planted_root['state']['planter'], A)
+        self.assertEqual(self.garden_state(planted_root)['planter'], A)
         plant_draft, rain_card, rain_post = self.outcome(planted, 'plant-outcome', planted_source, planted_root)
         self.assertIn('committed', plant_draft['body'])
         self.assertIn(SEED, rain_card['body'])
@@ -138,7 +144,7 @@ class TownJourneyTests(unittest.TestCase):
         rained_source, rained = self.act(B, 'iris-rains', rain_card, rain_post, 'rain', {'line': RAIN})
         self.assertEqual(rained['reply']['kind'], 'committed', rained)
         blooming_root = rained['reply']['data']['root']
-        self.assertEqual(blooming_root['state']['lastCompleted'], {
+        self.assertEqual(self.garden_state(blooming_root)['lastCompleted'], {
             'seed': SEED, 'colour': 'amber', 'planter': A, 'rain': RAIN, 'rainmaker': B})
         _, bloom_card, bloom_post = self.outcome(rained, 'rain-outcome', rained_source, blooming_root)
         panels = {panel['id']: panel['view']['data']['prose'] for panel in bloom_card['panels']}
@@ -163,11 +169,19 @@ class TownJourneyTests(unittest.TestCase):
         self.assertEqual(self.clerk.snapshot('garden')['root'], blooming_root)
 
         successor = copy.deepcopy(blooming_root['protocol'])
-        # Ordinary installed source changes only the main projection's title;
-        # panel branches, action descriptors and all admitted contributions stay.
-        result_fields = successor['viewProgram']['term'][1][1][1]
-        self.assertEqual(result_fields[0][0], 'title')
-        result_fields[0][1] = ['label', 'The Night Garden · a sign made together']
+        # Revise only the authored view; preserve panels, actions, and contributions.
+        title = 'The Night Garden · a sign made together'
+        if self.runtime_profile == 'compiled':
+            package = successor['viewProgram']['package']
+            package['modules'][0]['source'] += (
+                '\ndef revisedView(host: Host, panel: String) -> View:\n'
+                '  let original: View = view(host, panel) in {title: "' + title
+                + '", prose: original.prose, actions: original.actions}\n')
+            package['entry'] = 'revisedView'
+        else:
+            result_fields = successor['viewProgram']['term'][1][1][1]
+            self.assertEqual(result_fields[0][0], 'title')
+            result_fields[0][1] = ['label', title]
         _, forbidden = self.program(B, 'iris-program-proposal', successor, blooming_root, bloom_post)
         self.assertEqual(forbidden['reply']['data'], 'unauthorized')
         programmed_source, programmed = self.program(A, 'moss-installs-sign', successor, blooming_root, bloom_post)
@@ -188,8 +202,8 @@ class TownJourneyTests(unittest.TestCase):
         _, next_season = self.act(B, 'iris-next-season', revised_card, revised_post, 'plant',
                                  {'seed': 'A quiet violet staircase', 'colour': 'violet'})
         self.assertEqual(next_season['reply']['kind'], 'committed')
-        self.assertEqual(next_season['reply']['data']['root']['state']['lastCompleted'],
-                         blooming_root['state']['lastCompleted'])
+        self.assertEqual(self.garden_state(next_season['reply']['data']['root'])['lastCompleted'],
+                         self.garden_state(blooming_root)['lastCompleted'])
         self.assertEqual(self.clerk.receive(programmed_source['uri'], programmed_source['cid']), programmed)
         self.assertTrue(all(method == 'GET' and base == clerk.PDS for method, base, _, _ in self.pds.calls))
         self.assertTrue(all(nsid in ('com.atproto.repo.describeRepo', 'com.atproto.repo.getRecord')

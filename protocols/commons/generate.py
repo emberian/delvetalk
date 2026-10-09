@@ -69,7 +69,7 @@ def law(participants=None, managers=('steward',)):
             'reprogram': list(managers), 'law': list(managers)}
 
 
-def build(participants=None, places=None, paths=None, entries=('porch',)):
+def build(participants=None, places=None, paths=None, entries=('porch',), gates=None):
     participants = copy.deepcopy(default_participants() if participants is None else participants)
     places = copy.deepcopy(default_places() if places is None else places)
     paths = [('porch', 'garden'), ('garden', 'porch')] if paths is None else list(paths)
@@ -103,6 +103,21 @@ def build(participants=None, places=None, paths=None, entries=('porch',)):
             raise ValueError('path endpoints must be authored places')
         edges.append(tuple(path))
     if len(set(edges)) != len(edges): raise ValueError('duplicate path')
+    gates = [] if gates is None else copy.deepcopy(gates)
+    if not isinstance(gates, list) or len(gates) > 16:
+        raise ValueError('declare at most 16 guarded paths')
+    guarded_edges = set()
+    for gate in gates:
+        if not isinstance(gate, dict) or set(gate) != {'from', 'to', 'object', 'command'}:
+            raise ValueError('gate requires from, to, object and command')
+        if any(not isinstance(gate[key], str) for key in gate):
+            raise ValueError('gate fields must be strings')
+        edge = (gate['from'], gate['to'])
+        if edge not in edges or edge in guarded_edges:
+            raise ValueError('gate must name one distinct existing path')
+        guarded_edges.add(edge)
+        references.component(gate['object'])
+        bounded_name(gate['command'])
     # Three ordinary Bend arguments: principal, old locations, destination.
     principal, locations, destination = ['bound', 2], ['bound', 1], ['bound', 0]
     current = select(principal, {p: ['get', locations, p] for p in participants}, label(''))
@@ -128,13 +143,33 @@ def build(participants=None, places=None, paths=None, entries=('porch',)):
                 'entity': select(principal, {p: term(ref) for p, ref in participants.items()}, record({})),
                 'from': current, 'to': destination, 'locations': updated,
                 'place': select(destination, infos, record({}))}), arguments)}
+        if command == 'move' and gates:
+            # Three arguments: old caller location, requested destination, and
+            # receiver-authenticated provenance of the entire input record.
+            source, target, origin = ['bound', 2], ['bound', 1], ['bound', 0]
+            gate_allowed = ['boolean', True]
+            for gate in reversed(gates):
+                check = ['boolean', True]
+                for condition in reversed([
+                        ['get', origin, 'present'], ['get', origin, 'immediatelyPrevious'],
+                        eq(['get', origin, 'object'], label(gate['object'])),
+                        eq(['get', origin, 'command'], label(gate['command']))]):
+                    check = choose(condition, check, ['boolean', False])
+                matches = choose(eq(source, label(gate['from'])), eq(target, label(gate['to'])),
+                                 ['boolean', False])
+                gate_allowed = choose(matches, check, gate_allowed)
+            commands[command]['require'].append([bend(gate_allowed,
+                [bend(current, arguments), I('place'), ['input-origin']]), L(True)])
         forms[command] = {'label': {'enter': 'Enter the commons', 'move': 'Move to a place', 'leave': 'Leave the commons'}[command],
             'fields': {} if command == 'leave' else {'place': {'type': 'enum', 'options': list(entries) if command == 'enter' else list(places)}}}
-    return {'profile': 'delvetalk-local-v1', 'name': 'bounded-commons-v1',
+    protocol = {'profile': 'delvetalk-local-v1', 'name': 'bounded-commons-v1',
         'description': 'Declared presence in an authored place graph. Presence grants no authority and does not report a live connection.',
         'participants': participants, 'places': places, 'paths': [list(edge) for edge in edges],
         'entries': list(entries), 'initial': {'locations': {p: '' for p in participants}},
         'commands': commands, 'affordances': forms}
+    if gates:
+        protocol['gates'] = gates
+    return protocol
 
 
 if __name__ == '__main__':

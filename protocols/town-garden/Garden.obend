@@ -1,0 +1,87 @@
+edition ObjectiveBend 1
+record Completion:
+  seed: String
+  colour: String
+  planter: String
+  rain: String
+  rainmaker: String
+record Garden:
+  phase: String
+  seed: String
+  colour: String
+  planter: String
+  rain: String
+  rainmaker: String
+  hasCompleted: Bool
+  lastCompleted: Completion
+record Host:
+  value: Garden
+record Context:
+  object: String
+  principal: String
+record PlantInput:
+  seed: String
+  colour: String
+record RainInput:
+  line: String
+record PlantResult:
+  by: String
+  seed: String
+  colour: String
+record RainResult:
+  by: String
+  line: String
+record PlantDecision:
+  accepted: Bool
+  reason: String
+  state: Host
+  result: PlantResult
+record RainDecision:
+  accepted: Bool
+  reason: String
+  state: Host
+  result: RainResult
+record Action:
+  text: String
+  command: String
+  input: {}
+record Actions:
+  next: Action
+record View:
+  title: String
+  prose: String
+  actions: Actions
+record OldEmpty:
+  phase: String
+  seed: String
+  colour: String
+  planter: String
+  rain: String
+  rainmaker: String
+  lastCompleted: {}
+record OldComplete:
+  phase: String
+  seed: String
+  colour: String
+  planter: String
+  rain: String
+  rainmaker: String
+  lastCompleted: Completion
+def blankCompletion() -> Completion:
+  {seed: "", colour: "", planter: "", rain: "", rainmaker: ""}
+def migrateEmpty(old: OldEmpty) -> Host:
+  {value: {phase: old.phase, seed: old.seed, colour: old.colour, planter: old.planter, rain: old.rain, rainmaker: old.rainmaker, hasCompleted: false, lastCompleted: blankCompletion()}}
+def migrateComplete(old: OldComplete) -> Host:
+  {value: {phase: old.phase, seed: old.seed, colour: old.colour, planter: old.planter, rain: old.rain, rainmaker: old.rainmaker, hasCompleted: true, lastCompleted: old.lastCompleted}}
+def planted(s: Garden, input: PlantInput, context: Context) -> Garden:
+  extend(s, {phase: "planted", seed: input.seed, colour: input.colour, planter: context.principal, rain: "", rainmaker: ""})
+def rained(s: Garden, input: RainInput, context: Context) -> Garden:
+  extend(s, {phase: "blooming", rain: input.line, rainmaker: context.principal, hasCompleted: true, lastCompleted: {seed: s.seed, colour: s.colour, planter: s.planter, rain: input.line, rainmaker: context.principal}})
+def plantTurn(host: Host, input: PlantInput, context: Context) -> PlantDecision:
+  let s: Garden = host.value in let accepted: Bool = (s.phase == "waiting" || s.phase == "blooming") && input.seed != "" && (input.colour == "amber" || input.colour == "violet" || input.colour == "silver") in {accepted: accepted, reason: if accepted then "" else "Plant needs an empty or completed garden, a seed, and amber/violet/silver light.", state: {value: planted(s, input, context)}, result: {by: context.principal, seed: input.seed, colour: input.colour}}
+def rainTurn(host: Host, input: RainInput, context: Context) -> RainDecision:
+  let s: Garden = host.value in let accepted: Bool = s.phase == "planted" && input.line != "" && s.planter != context.principal in {accepted: accepted, reason: if accepted then "" else "Rain needs a planted seed, a nonempty line, and a different participant.", state: {value: rained(s, input, context)}, result: {by: context.principal, line: input.line}}
+def image(s: Garden) -> String:
+  if s.phase == "waiting" then "  .        *\n       .\n  __________\n /          \\\n |   soil   |\n \\__________/" else if s.phase != "blooming" then "  .        *\n      .\n      v\n  ____|_____\n /   seed   \\\n \\__________/" else if s.colour == "amber" then "   *     .\n    \\ | /\n  -- AMBER --\n    / | \\\n      |\n  ____|____" else if s.colour == "violet" then "     .   *\n    (\\ /)\n   (VIOLET)\n    (/ \\)\n      |\n  ____|____" else "   .       *\n      /\\\n  ___/  \\___\n /  SILVER  \\\n |  BLOOM   |\n  \\__  __/\n     ||\n  ___||___"
+def view(host: Host, panel: String) -> View:
+  let s: Garden = host.value in let waiting: Bool = s.phase == "waiting" in let blooming: Bool = s.phase == "blooming" in let prose: String = if waiting then "Behind the last lit window is a patch of dark soil. Plant something that could only grow here." else if blooming then s.rain else "A seed is resting here. Someone other than its planter: give it one line of rain." in {title: if waiting then "The Night Garden · an empty patch" else s.seed, prose: if panel == "image" then image(s) else if panel == "seed" then s.seed else if panel == "planter" then s.planter else if panel == "rain" then s.rain else if panel == "rainmaker" then s.rainmaker else if panel == "colour" then s.colour else prose, actions: {next: {text: if waiting || blooming then "Plant an imaginary seed" else "Give the seed its first rain", command: if waiting || blooming then "plant" else "rain", input: {}}}}

@@ -248,7 +248,7 @@ class TownCardsTests(unittest.TestCase):
         self.assertNotIn('refused', uncertain['body'])
 
     def test_panels_are_installed_pure_views_of_one_root_and_names_are_display_only(self):
-        protocol = town.loads((ROOT / 'protocols/town-garden/protocol.json').read_bytes())
+        protocol = town.loads((ROOT / 'protocols/town-garden/legacy-v1.json').read_bytes())
         root = self.exchange({'op': 'create', 'object': 'garden', 'principal': 'operator',
             'intent': 'seed-garden', 'protocol': protocol, 'law': [ACTOR]})['data']['root']
         spec = town.importlib.util.spec_from_file_location('garden_room', ROOT / 'scene/room.py')

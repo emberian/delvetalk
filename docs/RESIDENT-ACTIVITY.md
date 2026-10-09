@@ -20,7 +20,8 @@ bounded receiving/compiler/checkpoint work: its tick is not world time. The
 [worker](../scripts/worker.py) prepares receipts, not protocol-event delivery.
 
 The missing primitive is **Lean-authenticated consumption of a retained outbox
-event**. `inputFrom` transfers data, not provenance. A privileged Python dispatcher
+event**. `inputFrom` can carry host-authenticated origin within one transaction;
+it does not establish provenance or consumption of retained events. A privileged Python dispatcher
 would otherwise decide which claimed events are real. A single-object installation
 needs no extension; independently authored objects do.
 

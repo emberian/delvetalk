@@ -30,9 +30,21 @@ or `op:"reprogram",object,inputFrom`; the latter requires exactly
 `{protocol,state}`, without overrides. [Programming](PROGRAMMING.md) preserves
 law/identity, returns null and emits nothing.
 
+`["input-origin"]` returns host-derived
+`{present,object,command,immediatelyPrevious}`. For `inputFrom`, it names the
+successful earlier invocation supplying the whole result; the Boolean says
+whether that invocation immediately precedes this call. Intervening calls,
+including reprogramming, break adjacency; read-set guards do not. Direct input and
+standalone calls return `{present:false,object:"",command:"",immediatelyPrevious:false}`.
+Callers cannot supply this context. It conveys provenance, never authority;
+each callee still checks the global principal. A [gated commons move](../conformance/test_guarded_movement.py) can require
+its input from the immediately preceding named door command. This expression
+is separate from the source-transition context `{object,principal}`.
+
 Later calls see staged state/programs. Each success increments version once.
-Within a call, require/set/result/outbox expressions all read its original
-state; writes are simultaneous.
+Within a legacy call, require/set/result/outbox expressions all read its original
+state; writes are simultaneous. Compiled [source transitions](COMPILED.md) instead
+replace the whole state from one evaluated decision, retaining the same atomicity.
 
 Receipt data is `{roots,results,outbox}` with optional `allocated` creation roots:
 final roots cover the entire read set, preserving unused absence as `null`;

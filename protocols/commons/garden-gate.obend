@@ -1,0 +1,25 @@
+edition ObjectiveBend 1
+record State:
+  approvals: Nat
+record Input:
+  word: String
+record Context:
+  object: String
+  principal: String
+record Crossing:
+  place: String
+  description: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: Crossing
+record Gate:
+  password: String
+  inscription: String
+  allowed: String -> Bool
+extension Paper(self: Gate, super: {}) -> Gate:
+  {password: "please", inscription: "The paper door opens onto the shared garden.", allowed: fn(word: String) -> Bool: word == self.password}
+def cross(state: State, input: Input, context: Context) -> Decision:
+  let gate = fix(Paper, {})
+  if gate.allowed(input.word) then {accepted: true, reason: "", state: {approvals: state.approvals + 1n}, result: {place: "garden", description: gate.inscription}} else {accepted: false, reason: "The door is waiting for its word.", state: state, result: {place: "garden", description: gate.inscription}}

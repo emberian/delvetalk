@@ -84,6 +84,22 @@ class CompilerQueueTests(unittest.TestCase):
         self.assertTrue(artifact['diagnostics'])
         self.assertEqual(self.client.inspect('target'), self.target)
 
+    def test_interrupted_preparation_reuses_build_without_mutating_compiler_api(self):
+        pending = self.submit()
+        identity = self.enqueue(pending)
+        original = desk.bounded_compile
+        with mock.patch.object(desk.Desk, 'prepare_check', side_effect=KeyboardInterrupt('lost preparation')):
+            with self.assertRaises(KeyboardInterrupt):
+                queue_module.execute_job(self.queue.job_path(identity))
+        self.assertIs(desk.bounded_compile, original)
+        self.assertEqual(self.client.inspect('candidate'), pending)
+        compiled = self.queue.state / 'compiled' / (identity + '.json')
+        saved = compiled.read_bytes()
+        self.assertEqual(self.queue.run()['errors'], [])
+        self.assertEqual(compiled.read_bytes(), saved)
+        self.assertEqual(self.queue.inspect(identity)['phase'], 'finished')
+        self.assertEqual(len(list((self.client.artifact_store / 'builds').glob('*.json'))), 1)
+
     def test_compiler_authority_is_still_decided_by_lean(self):
         pending = self.submit()
         identity = self.queue.enqueue('candidate', 'author', 'unauthorized-compile', pending)['job']

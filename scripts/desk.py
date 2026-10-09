@@ -301,47 +301,71 @@ class Desk:
         source_store.preserve_dependencies(self.artifact_store, proposal)
         return self.exchange(request)
 
-    def check(self, object_id, principal, intent, expected):
-        # This memo preserves only the compiler-produced request across uncertainty.
-        # Lean's world retains the actual lifecycle and all success/refusal receipts.
-        inputs = {'object': object_id, 'principal': principal, 'intent': intent, 'expected': expected}
-        path = self.artifact_store / 'attempts' / (digest([principal, intent]) + '.json')
-        if path.exists():
-            entry = loads(path.read_bytes())
-        else:
-            profile = execution_profile(self.profile)
-            if expected['state']['proposal'].get('format') == source_store.PROPOSAL:
-                # Custody/runtime errors remain retryable; do not admit source loss as a failed program.
-                proposal_material(expected['state']['proposal'], self.artifact_store)
-                build = bounded_compile(expected, profile=self.profile, artifact_store=self.artifact_store)
-            else:
-                build = bounded_compile(expected, profile=self.profile)
-            identity = store_artifact(self.artifact_store, build)
-            if build['passed']:
-                room_id = None
-                if build.get('roomArtifact') is not None:
-                    room = module('desk_room_store', 'scene/room.py')
-                    room_id = room.store_artifact(self.artifact_store / 'rooms', build['roomArtifact'])
-                command, payload = 'compiled', {'artifact': identity, 'protocol': build['protocol'], 'roomArtifact': room_id}
-            else:
-                command, payload = 'failed', {'artifact': identity, 'diagnostics': build['diagnostics']}
-            request = {'op': 'invoke', **inputs, 'command': command, 'input': payload}
-            if execution_profile(self.profile) != profile:
-                raise ValueError('desk admission runtime changed during compilation')
-            entry = immutable(path, {'inputs': inputs, 'request': request, 'executionProfile': profile})
+    def check_attempt(self, inputs):
+        """Read the existing exact completion request without consulting current pins."""
+        path = self.artifact_store / 'attempts' / (digest([inputs['principal'], inputs['intent']]) + '.json')
+        if not path.exists():
+            return None
+        entry = loads(path.read_bytes())
         if canonical(entry['inputs']) != canonical(inputs):
             raise ValueError('compiler intent already bound to another candidate/root')
+        request = entry['request']
+        if (set(request) != {'op', 'object', 'principal', 'intent', 'expected', 'command', 'input'}
+                or request['op'] != 'invoke' or request['command'] not in ('compiled', 'failed')
+                or any(canonical(request[key]) != canonical(value) for key, value in inputs.items())):
+            raise ValueError('compiler attempt is not the exact captured completion request')
+        return entry
+
+    def prepare_check(self, inputs, build, profile):
+        """Retain a compiler-produced request; preparing never admits or adopts."""
+        entry = self.check_attempt(inputs)
+        if entry is not None:
+            return entry
+        if build.get('candidateRootSha256') != digest(inputs['expected']):
+            raise ValueError('compiler build does not match captured candidate')
+        identity = store_artifact(self.artifact_store, build)
+        if build['passed']:
+            room_id = None
+            if build.get('roomArtifact') is not None:
+                room = module('desk_room_store', 'scene/room.py')
+                room_id = room.store_artifact(self.artifact_store / 'rooms', build['roomArtifact'])
+            command, payload = 'compiled', {'artifact': identity, 'protocol': build['protocol'], 'roomArtifact': room_id}
+        else:
+            command, payload = 'failed', {'artifact': identity, 'diagnostics': build['diagnostics']}
+        if execution_profile(self.profile) != profile:
+            raise ValueError('desk admission runtime changed during compilation')
+        path = self.artifact_store / 'attempts' / (digest([inputs['principal'], inputs['intent']]) + '.json')
+        immutable(path, {'inputs': inputs, 'request': {'op': 'invoke', **inputs, 'command': command, 'input': payload},
+                         'executionProfile': profile})
+        return self.check_attempt(inputs)
+
+    def admit_check(self, entry, *, before_exchange=None):
+        """Recover first; otherwise verify custody and let Lean decide admission."""
         retained = self.retained_reply(entry['request'])
         if retained is not None:
             return retained
         if entry.get('executionProfile') != execution_profile(self.profile):
             raise ValueError('pending desk admission runtime pins changed or missing')
-        if expected['state']['proposal'].get('format') == source_store.PROPOSAL:
-            proposal_material(expected['state']['proposal'], self.artifact_store)
-        # Detect corruption without repeating translation or adopting a new artifact.
+        proposal = entry['inputs']['expected']['state']['proposal']
+        if proposal.get('format') == source_store.PROPOSAL:
+            proposal_material(proposal, self.artifact_store)
         build = load_artifact(self.artifact_store, entry['request']['input']['artifact'])
         preserve_build_dependencies(self.artifact_store, build)
+        if before_exchange is not None:
+            before_exchange()
         return self.exchange(entry['request'])
+
+    def check(self, object_id, principal, intent, expected):
+        inputs = {'object': object_id, 'principal': principal, 'intent': intent, 'expected': expected}
+        entry = self.check_attempt(inputs)
+        if entry is None:
+            profile = execution_profile(self.profile)
+            options = {'profile': self.profile}
+            if expected['state']['proposal'].get('format') == source_store.PROPOSAL:
+                proposal_material(expected['state']['proposal'], self.artifact_store)
+                options['artifact_store'] = self.artifact_store
+            entry = self.prepare_check(inputs, bounded_compile(expected, **options), profile)
+        return self.admit_check(entry)
 
     def adopt(self, object_id, target, principal, intent, expected_candidate, expected_target):
         return self.exchange(adoption.request(object_id, target, principal, intent,

@@ -51,17 +51,9 @@ def execute_job(path):
     client = desk.Desk(job['database'], job['artifacts'], profile=job['profile'])
     inputs = job['inputs']
     compiled = Path(path).parent.parent / 'compiled' / (Path(path).stem + '.json')
-    memo = client.artifact_store / 'attempts' / (digest([inputs['principal'], inputs['intent']]) + '.json')
-    if memo.exists():
-        attempt = loads(memo.read_bytes())
-        if canonical(attempt['inputs']) != canonical(inputs):
-            raise ValueError('compiler intent already bound to another candidate/root')
-        request = attempt['request']
-        if (set(request) != {'op', 'object', 'principal', 'intent', 'expected', 'command', 'input'}
-                or request['op'] != 'invoke' or request['command'] not in ('compiled', 'failed')
-                or any(canonical(request[key]) != canonical(value) for key, value in inputs.items())):
-            raise ValueError('compiler attempt is not the exact queued completion request')
-        retained = client.retained_reply(request)
+    attempt = client.check_attempt(inputs)
+    if attempt is not None:
+        retained = client.retained_reply(attempt['request'])
         if retained is not None:
             return {'receipt': retained, 'artifact': attempt['request']['input']['artifact']}
         if (not compiled.exists() or loads(compiled.read_bytes())['artifact']
@@ -79,41 +71,25 @@ def execute_job(path):
     if canonical(client.inspect(inputs['object'])) != canonical(inputs['expected']):
         raise ValueError('queued candidate changed; retain this job and enqueue a fresh intent')
 
-    def saved_build():
+    profile = desk.execution_profile(job['profile'])
+    if compiled.exists():
         artifact = desk.load_artifact(client.artifact_store, loads(compiled.read_bytes())['artifact'])
         if (artifact.get('format') != 'delvetalk-desk-build-v1'
                 or artifact.get('candidateRootSha256') != digest(inputs['expected'])):
             raise ValueError('saved compiler artifact does not match queued candidate')
         if 'sourceBindings' in job and canonical(artifact.get('sourceBindings')) != canonical(job['sourceBindings']):
             raise ValueError('saved compiler artifact does not match queued source bindings')
-        return artifact
-
-    if memo.exists():
-        saved_build()
-
-    def compile_in_group(root, *, profile, artifact_store=None):
-        # Reuse the trusted compiler API without desk.bounded_compile's nested
-        # session: all scenario descendants remain in worker.command's kill group.
-        if compiled.exists():
-            return saved_build()
-        artifact = desk.compile_proposal({'root': root, 'profile': profile, 'artifactStore': str(client.artifact_store)})
-        check_pins()  # Refuse changed compiler bytes before publishing an admission.
-        identity = desk.store_artifact(client.artifact_store, artifact)
-        recorded = desk.immutable(compiled, {'artifact': identity})
-        if recorded != {'artifact': identity}:
-            raise ValueError('compiler build provenance mismatch')
-        return artifact
-
-    desk.bounded_compile = compile_in_group
-    exchange = client.exchange
-
-    def pinned_exchange(request):
+    else:
+        # Already inside worker.command's kill group; no nested compiler session.
+        artifact = desk.compile_proposal({'root': inputs['expected'], 'profile': job['profile'],
+                                         'artifactStore': str(client.artifact_store)})
         check_pins()
-        return exchange(request)
-
-    client.exchange = pinned_exchange
-    receipt = client.check(inputs['object'], inputs['principal'], inputs['intent'], inputs['expected'])
-    attempt = loads(memo.read_bytes())
+        identity = desk.store_artifact(client.artifact_store, artifact)
+        if desk.immutable(compiled, {'artifact': identity}) != {'artifact': identity}:
+            raise ValueError('compiler build provenance mismatch')
+    if attempt is None:
+        attempt = client.prepare_check(inputs, artifact, profile)
+    receipt = client.admit_check(attempt, before_exchange=check_pins)
     return {'receipt': receipt, 'artifact': attempt['request']['input']['artifact']}
 
 

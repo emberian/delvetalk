@@ -40,6 +40,7 @@ world:
 	python3 conformance/test_workshop_seed.py
 	python3 conformance/test_authority.py
 	python3 conformance/test_compiled.py
+	python3 conformance/test_source_transition.py
 	python3 conformance/test_runtime_profile.py
 	python3 conformance/test_convergence.py
 	python3 conformance/test_game_table.py
@@ -57,8 +58,11 @@ world:
 	python3 conformance/test_source_history.py
 	python3 conformance/test_workspace.py
 	python3 conformance/test_commons.py
+	python3 conformance/test_guarded_movement.py
+	python3 conformance/test_guarded_authoring.py
 	python3 conformance/test_work_ticket.py
 	python3 conformance/test_town_garden.py
+	python3 conformance/test_garden_source.py
 	python3 conformance/test_town_forge.py
 	python3 conformance/test_exhibition_journey.py
 wiki:
@@ -110,6 +114,7 @@ portal:
 	python3 conformance/test_portal_adversarial.py
 	python3 conformance/test_portal_bridge.py
 	python3 conformance/test_authoring.py
+	python3 conformance/test_submission.py
 	python3 conformance/test_portal_public.py
 	node --check portal/static/app.js
 check: build worker-resources scene-build capsules core typed packages world wiki syntax delve proposals scene portal

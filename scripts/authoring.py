@@ -1,13 +1,10 @@
 """Retained portal authoring; source custody and explicit Lean requests only."""
-from pathlib import Path
 import re
 import secrets
-import subprocess
-import tempfile
 
 import desk
 import compiler_queue
-import worker
+import submission
 from delve import save
 
 canonical, loads, digest = desk.canonical, desk.loads, desk.digest
@@ -162,22 +159,10 @@ class Authoring:
                     result = {'job': job['job']}
                     save(self.state / 'results' / (key + '.json'), result)
             else:
-                reply = result.get('receipt') or self.portal._retained(saved['request'])
-                if reply is None:
-                    self._pins(saved)
-                    path = None
-                    try:
-                        with tempfile.NamedTemporaryFile('wb', dir=self.state, delete=False) as stream:
-                            path = Path(stream.name)
-                            stream.write(canonical(saved['request']))
-                        reply = worker.command([str(desk.ROOT / 'scripts/world.py'), '--profile', self.portal.profile,
-                                                str(self.portal.database), str(path)], 20)
-                    except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as error:
-                        return {'kind': 'uncertain', 'draft': key,
-                                'summary': 'Retry this saved draft to recover its exact receipt.', 'detail': type(error).__name__}
-                    finally:
-                        if path is not None:
-                            path.unlink(missing_ok=True)
+                reply, error = submission.execute(self.portal, saved, result.get('receipt'), self.state, self._pins)
+                if error:
+                    return {'kind': 'uncertain', 'draft': key,
+                            'summary': 'Retry this saved draft to recover its exact receipt.', 'detail': error}
                 save(self.state / 'results' / (key + '.json'), {'receipt': reply})
         return self.status(key)
 

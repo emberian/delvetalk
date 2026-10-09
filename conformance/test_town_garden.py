@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A two-voice garden with real Lean admission and pure state-dependent views."""
+"""Legacy garden behavior remains replayable on the original world profile."""
 import copy
 import importlib.util
 import json
@@ -18,7 +18,6 @@ def module(name, path):
     return value
 
 
-author = module('garden_author', 'protocols/town-garden/generate.py')
 world = module('garden_world', 'scripts/world.py')
 room = module('garden_room', 'scene/room.py')
 affordances = module('garden_affordances', 'scripts/affordances.py')
@@ -32,7 +31,8 @@ class TownGarden(unittest.TestCase):
         self.db = Path(self.temp.name) / 'garden.json'
         self.serial = 0
         reply = self.call({'op': 'create', 'object': 'garden', 'principal': 'operator', 'intent': 'create',
-            'protocol': author.build(), 'law': author.law(['moss', 'iris', 'fern'], ['builder'], ['steward'])})
+            'protocol': json.loads((PACKAGE / 'legacy-v1.json').read_bytes()),
+            'law': json.loads((PACKAGE / 'law.json').read_bytes())})
         self.assertEqual(reply['kind'], 'committed', reply)
 
     def call(self, request):
@@ -59,15 +59,6 @@ class TownGarden(unittest.TestCase):
 
     def rain(self):
         return self.invoke('iris', 'rain', {'line': 'Rain carries the names of forgotten stars.'})
-
-    def test_generated_source_is_exact(self):
-        for name, value in [('protocol.json', author.build()), ('migration.json', author.build()['initial']),
-                            ('scenarios.json', author.scenarios())]:
-            self.assertEqual(json.loads((PACKAGE / name).read_text()), value)
-        with self.assertRaises(ValueError):
-            author.law([])
-        with self.assertRaises(ValueError):
-            author.law(['moss', 'moss'])
 
     def test_two_voices_change_image_and_can_start_next_season(self):
         empty_image = self.card('image')['prose']
@@ -130,7 +121,8 @@ class TownGarden(unittest.TestCase):
                 {'seed': 'x' * 81, 'colour': 'violet'})
         self.assertEqual(self.call(request)['kind'], 'committed')
         before = self.root()
-        updated = author.law(['moss', 'fern'], ['builder'], ['steward'])
+        updated = json.loads((PACKAGE / 'law.json').read_bytes())
+        updated['invoke'] = {'plant': ['moss', 'fern'], 'rain': ['moss', 'fern']}
         self.assertEqual(self.call({'op': 'law', 'object': 'garden', 'principal': 'steward', 'intent': 'revoke',
             'expected': before, 'law': updated})['kind'], 'committed')
         self.invoke('iris', 'rain', {'line': 'Revoked rain'}, 'refused')

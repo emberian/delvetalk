@@ -1,0 +1,36 @@
+{
+  "entry": "migrateComplete",
+  "before": {
+    "phase": "blooming",
+    "seed": "A bell for lost moths",
+    "colour": "amber",
+    "planter": "moss",
+    "rain": "Rain remembers the names of stars.",
+    "rainmaker": "iris",
+    "lastCompleted": {
+      "seed": "A bell for lost moths",
+      "colour": "amber",
+      "planter": "moss",
+      "rain": "Rain remembers the names of stars.",
+      "rainmaker": "iris"
+    }
+  },
+  "after": {
+    "value": {
+      "phase": "blooming",
+      "seed": "A bell for lost moths",
+      "colour": "amber",
+      "planter": "moss",
+      "rain": "Rain remembers the names of stars.",
+      "rainmaker": "iris",
+      "lastCompleted": {
+        "seed": "A bell for lost moths",
+        "colour": "amber",
+        "planter": "moss",
+        "rain": "Rain remembers the names of stars.",
+        "rainmaker": "iris"
+      },
+      "hasCompleted": true
+    }
+  }
+}

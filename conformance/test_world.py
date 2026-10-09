@@ -22,12 +22,13 @@ class WorldTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = Path(self.tmp.name) / 'world.json'
+        self.profile = 'world'
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def call(self, request):
-        return world.exchange(self.db, request)
+        return world.exchange(self.db, request, profile=self.profile)
 
     def create(self, name='welcome-once', authority=None, protocol=None):
         protocol = protocol or json.loads((ROOT / 'protocols' / name / 'protocol.json').read_text())
@@ -44,6 +45,7 @@ class WorldTests(unittest.TestCase):
     def test_protocol_scenarios(self):
         for path in sorted((ROOT / 'protocols').glob('*/scenarios.json')):
             protocol = json.loads((path.parent / 'protocol.json').read_text())
+            self.profile = protocol.get('runtimeProfile', 'world')
             for scenario in json.loads(path.read_text()):
                 with self.subTest(protocol=path.parent.name, scenario=scenario['name']):
                     self.db = Path(self.tmp.name) / (path.parent.name + scenario['name'] + '.json')

@@ -16,8 +16,9 @@ installed a Spween room through the portal, used it and reviewed the work.
    restore exactly. Fresh clerk/cardbook custody includes three unbound cards and
    eighteen explicit participants. The timer remains disabled; no automatic
    discovery or public receipt delivery is established.
-3. **Welcome v1:** revise the private draft around a playable shared experience,
-   with the confirmed invitation list. Ember publishes. No Delve/PDS/account
+3. **Welcome v1:** the private draft contains three actual hosted cards and
+   seventeen mention facets. Ember publishes and the exact post is then bound.
+   No Delve/PDS/account
    message writes are authorized now.
 4. **Inhabited forge deployed:** make objects, submit actual Bend source/examples in posts,
    inspect retained compiler results, and explicitly adopt a revision. Another
@@ -32,26 +33,43 @@ installed a Spween room through the portal, used it and reviewed the work.
    through an explicitly versioned lowering; source views now check their receiving
    workspace's pinned runtime.
 
-Completed this pass: factories, generic seed restoration, source custody, public
-preview isolation, and independent reconstruction of the 36-admission participant
-rehearsal. Joined checks cover 85 groups/650 methods (one Linux-only skip), plus
-core/JS/Rust/package checks. Two older test fixtures were updated for the new
-spell presentation and pinned-view context; repaired groups and remaining Make
-targets passed. The forge release passed 72 focused Linux checks and full continuation
-restoration before activation. Mini's frontend/checker/demand machine are reused;
-its object/activity kernel is not imported by this local host.
+Joined checks cover 90 groups/680 methods (one Linux-only skip), plus core/JS/Rust/
+package checks. A view-revision fixture exposed the pinned frontend's missing
+`extend` synthesis inside a `let` continuation; an explicit record preserves its
+behavior. Both town journeys and all remaining targets pass. The separate joined
+gate-authoring journey also passes. The deployed forge passed full Linux CI,
+72 focused deployment checks and exact continuation restoration before activation.
 
-Next construction: source-authored stateful garden, one-evaluation method transitions,
-compiler/submission consolidation, and a door that gates existing commons movement.
-These are a new local wave, not claims about the deployed release. The separate
+New local construction implements a source-authored stateful garden, one-evaluation
+method transitions, compiler/submission consolidation, and doors gating existing
+commons movement. The joined authoring journey compiles, adopts, revises, traverses
+and restores a working gate. Compiler preparation/admission no longer relies on
+monkeypatching; submission shares receipt-first recovery. Non-test Python shrank
+by 60 lines. These are not claims about the deployed release. The separate
 DelveTalk host is intentional; Mini compatibility and upstream reuse remain selective.
+
+## Next queues
+
+- **Authored interfaces:** simpler source bindings and context-sensitive offered
+  actions; test views during authoring, not only command examples.
+- **World vocabulary:** move more protocol behavior into reusable Bend, including
+  commons and work tickets, without parallel maintained generators.
+- **Durable reactions:** explicit retained-event consumption and recorded time;
+  transaction input origin does not yet provide an autonomous event loop.
+- **Host maturation:** optional receiving invariants, useful admission proofs,
+  shared source storage and indexed receipts before large persistent worlds.
+  Preserve exact retries, history and current authority through representation changes.
+- **Selective upstream repair:** Mini's `extend` synthesis under `let` has a
+  three-line reproducer; direct extension and an extra annotated binding work.
+  Repair the frontend without changing the checker or converging object hosts.
 
 ## Boundaries
 
 - Programming preserves law. Shared factory children explicitly grant both builders
   use/programming/management; other objects keep their own scoped grants.
-- Names, presence, card metadata and `inputFrom` confer no authority or proof that
-  another action occurred. Work acceptance acknowledges review.
+- Names, presence, card metadata and copied result data confer no authority.
+  Transaction input origin identifies an earlier admitted producer; it is not a
+  reusable grant or retained-event delivery proof. Work acceptance acknowledges review.
 - Runtime changes need an explicit epoch; uncertain requests retain their identities.
 - Public preview aliases expire. Durable submission recovery belongs to the receiving
   or explicitly configured local custody, not those aliases.

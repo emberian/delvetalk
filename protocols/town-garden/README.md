@@ -1,45 +1,39 @@
 # The Night Garden
 
-One participant plants an imaginary seed and chooses its light. A different
-participant gives it one line of rain. Their flower opens; another seed can
-start the next season. Both texts and admitted authors remain in state, and
-`lastCompleted` preserves the preceding flower during the next planting.
+Two participants grow one imaginary flower: one plants a seed under amber, violet
+or silver light; another adds rain. Each season preserves the last completed
+flower and both admitted authors.
 
-This is an ordinary `delvetalk-local-v1` protocol with a pure Bend view. The
-main card offers one action. `image` projects a small ASCII garden; `seed`,
-`planter`, `rain`, `rainmaker` and `colour` expose the complete two-voice result
-for an inline text card. Every panel reads the same captured root. The colour
-changes the flower image. Panel metadata supplies presentation, never authority.
+[Garden.obend](Garden.obend) owns behavior and views. Typed `plantTurn`/`rainTurn`
+receive `(state,input,{object,principal})` and return `{accepted,reason,state,result}`.
+One compiled Lean execution decides complete state replacement or atomic refusal.
+Identity comes from admission; current law, exact roots and retained receipts apply.
 
-The [generator](generate.py) exposes `build()` and
-`law(participants, builders=(), managers=())`. Supply explicit admitted principal
-IDs. Fixture scenarios use moss/iris; there is no public participant list or
-universal-open grant in this package. Invocation, programming and law revision
-are separate grants. The actual principal supplies each author; typed input
-cannot impersonate the other contributor. A planter cannot rain on their own
-seed. Current law and exact roots govern every new action.
+[binding.json](binding.json) supplies bindings, initial data, forms and panels;
+[protocol.json](protocol.json) bundles exact source. Rebuild with
+`syntaxes.source_bundle.load(binding_path, [('Garden', source_path)])` and serialize
+its result. Use the **compiled** profile. [law.json](law.json) supplies local fixture
+grants, not public enrollment; choose actual instance grants explicitly. Management
+authority grants no play rights.
 
-Capture the offered action through the existing card catalogue. Plant takes
-`{"seed":"A bell for lost moths","colour":"amber"}`; rain takes
-`{"line":"Rain remembers the names of stars."}`. Colour is amber/violet/silver.
-Forms cap seed/rain at 80/240 characters. Lean enforces nonempty strings, colour
-membership, phase and distinct authors; form length limits are not admission
-rules. Direct calls retain the host request bound. Stale attempts refuse;
-identical retries return their retained receipt.
+Plant accepts `{seed,colour}`; rain accepts `{line}` from someone other than the
+planter. Typed inputs reject extra fields. Forms limit seed/rain to 80/240
+characters; these are presentation bounds, **not raw-call length checks**. Raw
+calls retain the host request limit. Panels share one captured root; `next` follows
+the phase. Uncertain replies retry the identical request/intent, including its root.
 
-Participants can propose a successor through the existing source desk; adoption
-needs explicit programming authority and an exact migration. Merely proposing
-an idea does not change the garden. The view itself is replaceable ordinary
-source, not a renderer's special treatment of the family name. No external
-posting, scheduler, personal-presence or delivery guarantee is supplied.
+## Migrate explicitly
 
-With the host already built:
+State now lives under `state.value`; `hasCompleted` distinguishes an empty, fixed-shape
+`lastCompleted`. [migration.json](migration.json) seeds a **new** garden, never an
+inhabited replacement. [legacy-v1.json](legacy-v1.json) preserves old protocol bytes.
 
-```sh
-python3 protocols/town-garden/generate.py
-python3 conformance/test_town_garden.py
-```
+Select `migrateEmpty` for an old empty completion or `migrateComplete` for a full
+one. Evaluate that source export through the compiled host, review its preserved
+contributions/authors against the exact old root, then submit authorized `reprogram`.
+[The inhabited example](migration-example.json) shows before/after. No implicit
+reset occurs. Old receipts remain recoverable; migration stales uncommitted cards.
 
-Tests use actual Lean admission and projection: two authors, colour images,
-next season, preserved last flower, impersonation, unauthorized/stale actions,
-revocation, retained retries, typed cards and a builder's view replacement.
+With the host prebuilt, run `python3 conformance/test_garden_source.py` for
+[receiving/migration checks](../../conformance/test_garden_source.py). This new source
+profile is local and **not deployed**; it introduces no scheduler or external effects.

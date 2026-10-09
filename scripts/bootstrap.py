@@ -49,17 +49,7 @@ def save_new(path, value):
 
 
 def preserve_dependencies(directory, artifact):
-    custody = Path(directory) / 'artifacts/pins'
-    (custody / 'blobs').mkdir(parents=True, exist_ok=True)
-    for name, sha in history.declared_files(artifact).items():
-        if history.blob_path(custody, sha).is_file():
-            history.read_blob(custody, sha)
-            continue
-        source = (ROOT / name).resolve()
-        if not source.is_relative_to(ROOT) or history.file_hash(source) != sha:
-            raise ValueError('original source dependency missing or changed: ' + name)
-        if history.store_file(custody, source) != sha:
-            raise ValueError('source dependency changed during preservation: ' + name)
+    desk_module.preserve_build_dependencies(Path(directory) / 'artifacts', artifact)
 
 
 def preserve_lowering(directory, source):
@@ -156,7 +146,6 @@ def run_bootstrap(directory, *, profile='transactions'):
                       desk.check(CANDIDATE, 'compiler', 'compile-window', pending))
     ready = compiled['data']['root']
     require(ready['state']['status'] == 'ready', 'proposal compilation failed: ' + str(ready['state']['diagnostics']))
-    preserve_build(directory, ready['state']['artifact'])
     require(inspect()['protocol'] == initial_artifact['protocol'], 'compiling must not change the cafe')
     adopted = record('Moss reviews the migration and adopts the window atomically',
                      desk.adopt(CANDIDATE, CAFE, 'moss', 'adopt-window', ready, repaired['root']))
@@ -194,7 +183,6 @@ def run_bootstrap(directory, *, profile='transactions'):
     sign_ready = record('The compiler checks the sign proposal',
                         desk.check(SIGN_CANDIDATE, 'compiler', 'compile-sign', sign_pending))['data']['root']
     require(sign_ready['state']['status'] == 'ready', 'sign proposal did not compile')
-    preserve_build(directory, sign_ready['state']['artifact'])
     record('Iris adopts the proposed view program', desk.adopt(
         SIGN_CANDIDATE, SIGN, 'iris', 'adopt-sign', sign_ready, sign_before['root']))
     sign_after = projection.project(inspect(SIGN), SIGN)

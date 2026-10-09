@@ -24,9 +24,14 @@ def empty : Json := obj [("objects", obj []), ("receipts", .arr #[])]
 abbrev BendTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term
 abbrev Evaluation := StateT Nat (Except String)
 
+def noInputOrigin : Json := obj [
+  ("present", .bool false), ("object", .str ""), ("command", .str ""),
+  ("immediatelyPrevious", .bool false)]
+
 -- Host-bound identity for one actual receiving call, separate from user data.
 structure CallContext where
   object : String
+  inputOrigin : Json := noInputOrigin
 
 -- Executable-selected extensions; requests and protocols cannot choose a budget.
 structure Runtime where
@@ -35,6 +40,10 @@ structure Runtime where
     fun _ _ => throw "unknown expression"
   evaluateExtra : CallContext → Json → (Json → Evaluation Json) → Evaluation Json :=
     fun _ _ _ => throw "unknown expression"
+  validateTransition : Json → Except String Unit :=
+    fun _ => throw "source transitions require compiled profile"
+  executeTransition : CallContext → Json → Json → String → Json → Evaluation (Json × Json × Array Json) :=
+    fun _ _ _ _ _ => throw "source transitions require compiled profile"
 
 def tick : Evaluation Unit := do
   let remaining ← get
@@ -82,6 +91,7 @@ def evaluateWith (runtime : Runtime) (context : CallContext) (depth : Nat) (stat
     let a ← expr.getArr?
     let tag ← (a[0]?.toExcept "empty expression").bind Json.getStr?
     if tag == "principal" && a.size == 1 then return .str principal
+    if tag == "input-origin" && a.size == 1 then return context.inputOrigin
     if tag == "bend" then
       if a.size != 3 then throw "Bend expression arity"
       let mut term ← Delvetalk.decode a[1]!
@@ -103,7 +113,7 @@ def evaluateWith (runtime : Runtime) (context : CallContext) (depth : Nat) (stat
     | _ => throw "unknown expression"
 
 def evaluate (depth : Nat) (state input : Json) (principal : String) (expr : Json) : Evaluation Json :=
-  evaluateWith {} ⟨""⟩ depth state input principal expr
+  evaluateWith {} { object := "" } depth state input principal expr
 
 -- Reject malformed definitions at installation, including branches not yet used.
 def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except String Unit := do
@@ -113,6 +123,7 @@ def validateExprWith (runtime : Runtime) (fuel : Nat) (expr : Json) : Except Str
     let a ← expr.getArr?
     let tag ← (a[0]?.toExcept "empty expression").bind Json.getStr?
     if tag == "principal" && a.size == 1 then return
+    if tag == "input-origin" && a.size == 1 then return
     if tag == "bend" then
       if a.size != 3 then throw "Bend expression arity"
       discard (Delvetalk.decode a[1]!)
@@ -137,29 +148,44 @@ def allocationLimit (protocol : Json) : Except String (Option Nat) := do
       if key != "limit" then throw "unsupported allocation policy field"
     return some (← (← field allocation "limit").getNat?)
 
+-- An exact versioned marker opts in. Other legacy metadata stays inert.
+def sourceTransition? (command : Json) : Option Json := do
+  let transition ← (field command "transition").toOption
+  if (str transition "profile").toOption == some "delvetalk-source-transition-v1" then
+    some transition
+  else none
+
+def validateTransitionCommand (command : Json) : Except String Unit := do
+  if (← pairs command).map Prod.fst != ["transition"] then
+    throw "source transition cannot mix legacy command fields"
+
 def validateProtocolWith (runtime : Runtime) (p : Json) : Except String Unit := do
   if (← str p "profile") != "delvetalk-local-v1" then throw "unknown profile"
   discard (pairs (← field p "initial"))
   let limit ← allocationLimit p
   for (_,c) in (← pairs (← field p "commands")) do
-    for requirement in (← (← field c "require").getArr?) do
-      let r ← requirement.getArr?
-      if r.size != 2 then throw "require expects two expressions"
-      validateExprWith runtime 64 r[0]!
-      validateExprWith runtime 64 r[1]!
-    for (_,e) in (← pairs (← field c "set")) do validateExprWith runtime 64 e
-    validateExprWith runtime 64 (← field c "result")
-    for e in (← (← field c "outbox").getArr?) do validateExprWith runtime 64 e
-    match (field c "allocate").toOption with
-    | none => pure ()
-    | some allocations =>
-      if limit.isNone then throw "allocation requires factory policy"
-      for allocation in (← allocations.getArr?) do
-        for (key, _) in (← pairs allocation) do
-          if !(["name", "protocol", "law"].contains key) then
-            throw "unsupported allocation descriptor field"
-        for key in ["name", "protocol", "law"] do
-          validateExprWith runtime 64 (← field allocation key)
+    if let some transition := sourceTransition? c then
+      validateTransitionCommand c
+      runtime.validateTransition transition
+    else
+      for requirement in (← (← field c "require").getArr?) do
+        let r ← requirement.getArr?
+        if r.size != 2 then throw "require expects two expressions"
+        validateExprWith runtime 64 r[0]!
+        validateExprWith runtime 64 r[1]!
+      for (_,e) in (← pairs (← field c "set")) do validateExprWith runtime 64 e
+      validateExprWith runtime 64 (← field c "result")
+      for e in (← (← field c "outbox").getArr?) do validateExprWith runtime 64 e
+      match (field c "allocate").toOption with
+      | none => pure ()
+      | some allocations =>
+        if limit.isNone then throw "allocation requires factory policy"
+        for allocation in (← allocations.getArr?) do
+          for (key, _) in (← pairs allocation) do
+            if !(["name", "protocol", "law"].contains key) then
+              throw "unsupported allocation descriptor field"
+          for key in ["name", "protocol", "law"] do
+            validateExprWith runtime 64 (← field allocation key)
 
 def validateExpr (fuel : Nat) (expr : Json) : Except String Unit :=
   validateExprWith {} fuel expr
@@ -235,13 +261,17 @@ def receipt (request : Json) (kind : String) (data : Json) : Json :=
        ("object", (field request "object").toOption.getD .null),
        ("kind", .str kind), ("data", data)]
 
-def executeCommandWith (runtime : Runtime) (o request : Json) (principal : String) : Evaluation (Json × Json × Array Json) := do
+def executeCommandWith (runtime : Runtime) (o request : Json) (principal : String)
+    (inputOrigin : Json := noInputOrigin) : Evaluation (Json × Json × Array Json) := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   let state ← field o "state"
   let input ← field request "input"
   discard (pairs input)
-  let context : CallContext := ⟨← str request "object"⟩
+  let context : CallContext := { object := ← str request "object", inputOrigin := inputOrigin }
+  if let some transition := sourceTransition? command then
+    validateTransitionCommand command
+    return ← runtime.executeTransition context state input principal transition
   let eval := evaluateWith runtime context 64 state input principal
   for requirement in (← (← field command "require").getArr?) do
     let r ← requirement.getArr?
@@ -290,7 +320,8 @@ def directChild (parent child : String) : Bool :=
 -- Every descriptor uses the factory pre-state. Staging makes collisions and
 -- quota checks compose across a batch; failures discard parent and children.
 def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
-    (principal : String) (absent : Array String) : Evaluation (Json × Json) := do
+    (principal : String) (absent : Array String)
+    (inputOrigin : Json := noInputOrigin) : Evaluation (Json × Json) := do
   let protocol ← field o "protocol"
   let command ← field (← field protocol "commands") (← str request "command")
   match (field command "allocate").toOption with
@@ -298,7 +329,8 @@ def allocateChildrenWith (runtime : Runtime) (objects o request : Json)
   | some allocations =>
     let limit ← (← allocationLimit protocol).toExcept "allocation requires factory policy"
     let parent ← str request "object"
-    let eval := evaluateWith runtime ⟨parent⟩ 64 (← field o "state") (← field request "input") principal
+    let eval := evaluateWith runtime { object := parent, inputOrigin := inputOrigin }
+      64 (← field o "state") (← field request "input") principal
     let mut staged := objects
     let mut roots : Array (String × Json) := #[]
     -- Only successful direct allocations change this count during this call.

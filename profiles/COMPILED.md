@@ -1,6 +1,6 @@
 # Compiled source host
 
-**`delvetalk-compiled` adds source packages and digests to shared admission.**
+**`delvetalk-compiled` adds source packages, whole transitions and digests to shared admission.**
 Select `world.exchange(...,profile='compiled')` or `scripts/world.py --profile
 compiled`. One fixed 100,000-tick budget covers the request. Default hosts retain
 10,000 ticks and reject these tags.
@@ -23,6 +23,29 @@ materialization and conversion consume the shared budget. Capacities: 100,000
 heap cells/materialized nodes, 10,000 stack frames, 1,048,576 materialized bytes.
 Parsing/checking/compilation use structural bounds outside demand ticks; this
 is no complete CPU/memory tariff.
+
+## Whole source transitions
+
+An opt-in command contains only
+`{"transition":{"profile":"delvetalk-source-transition-v1","package":SOURCE_DESCRIPTOR}}`.
+Its entry receives `(state,input,{object,principal})` and returns exactly
+`{accepted:Bool,reason:String,state:S,result:R}`. Identity comes from admission,
+never input fields. One package execution eagerly materializes the entire decision
+under the shared budget, including payloads of a refused decision.
+
+Acceptance requires an empty reason and record-valued state, replacing the
+**whole state** and advancing version once. False requires a nonempty reason;
+`source refused: REASON`, malformed results or exhaustion retain one atomic
+refusal. Transaction failure rolls back every call. This first profile emits no
+outbox and cannot allocate or mix legacy command fields.
+
+Installation checks source compilation; typed application and output shape are
+checked at invocation. Neither establishes a persistent state invariant or an
+installation-time transition ABI guarantee. Legacy commands and incidental
+transition metadata remain unchanged. [Implementation](Compiled.lean),
+[receiving tests](../conformance/test_source_transition.py).
+
+## Digest expressions
 
 | Expression | Result |
 | --- | --- |
