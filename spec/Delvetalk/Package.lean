@@ -254,6 +254,39 @@ def executeDataValues (packet : Json) (arguments : Array Data) (limits : Json) :
     + (arguments.size - 1)
   executePreparedData (PackageData.prepareValues packet arguments) argumentBytes limits
 
+/-- A native receiving caller supplies the exact size of its retained physical
+argument frames; it must not replace compact physical bytes with an expanded
+internal DataWire representation when enforcing the transport cap. -/
+def executeDataValuesSized (packet : Json) (arguments : Array Data) (physicalBytes : Nat)
+    (limits : Json) : Except String DataExecution :=
+  executePreparedData (PackageData.prepareValues packet arguments) physicalBytes limits
+
+/-- All-compact physical package boundary: input and output interpretation is
+bound to the exact checked packet carried by the verified artifact. -/
+def runCompactDataVerified (j : Json) : Except String Json := do
+  let artifact ← j.getObjVal? "artifact"
+  let packet ← artifact.getObjVal? "packet"
+  let arguments ← j.getObjVal? "arguments"
+  let execution ← executePreparedData (PackageData.prepareCompact packet arguments)
+    arguments.compress.utf8ByteSize (getLimits j)
+  match execution with
+  | .refused _ _ => return execution.wire
+  | .finished value type nodes usage =>
+    let decoded ← decodePacket packet
+    let ticks ← bounded (getLimits j) "ticks" 100000 1000000
+    let work ← bounded (getLimits j) "work" ticks 1000000
+    let allowance := min ticks work
+    let available := allowance - (usage.ticksUsed + usage.conversionNodes)
+    let (wire, remaining) ← (PackageData.encodeCompact decoded.source.assumptions 256 type value).run available
+    let usage := { usage with conversionNodes := usage.conversionNodes + available - remaining }
+    return Json.mkObj ([("executionProfile", toJson "delvetalk-package-compact"),
+      ("status", toJson "finished"), ("value", wire), ("type", typeJson type),
+      ("nodesUsed", toJson nodes), ("schemaPacketSha256", ← artifact.getObjVal? "packetSha256")] ++ usage.fields)
+
+def runCompactData (j : Json) : Except String Json := do
+  verifyArtifact (← j.getObjVal? "artifact")
+  runCompactDataVerified j
+
 /-- The external recursive-data wire is unchanged. Native receiving uses the
 same execution function without serializing and decoding its checked result. -/
 def executeDataPacket (packet arguments limits : Json) : Except String Json := do
@@ -289,6 +322,32 @@ def selectedDataType (selection : Json) : Except String (Assumptions × Ty × Js
   let some checked := check packet.source [] packet.fuel | throw "type comparison checker refusal"
   return (packet.source.assumptions, checked.type, ← selection.getObjVal? "path")
 
+/-- Physical conversion against a selected type of the exact verified artifact.
+The packet hash travels with the result; a different schema is never inferred. -/
+def compactCodec (j : Json) (encode : Bool) : Except String Json := do
+  let selection ← j.getObjVal? "selection"
+  let (a, declared, path) ← selectedDataType selection
+  let work ← bounded j "work" 100000 1000000
+  let bytes ← bounded j "bytes" 1048576 16777216
+  let value ← j.getObjVal? "value"
+  if value.compress.utf8ByteSize > bytes then throw "compact codec input byte capacity"
+  let action : PackageData.Work Json := do
+    let ty ← PackageData.select a declared path
+    PackageData.shape a 256 [] ty
+    if encode then
+      let data ← PackageData.decode 256 value
+      PackageData.validate a 256 data ty
+      PackageData.encodeCompact a 256 ty data
+    else
+      let data ← PackageData.decodeCompact a 256 ty value
+      PackageData.validate a 256 data ty
+      return dataJson data
+  let (wire, remaining) ← action.run work
+  if wire.compress.utf8ByteSize > bytes then throw "compact codec output byte capacity"
+  return Json.mkObj [("status", toJson (if encode then "encoded" else "decoded")),
+    ("value", wire), ("conversionNodes", toJson (work - remaining)),
+    ("schemaPacketSha256", ← (← selection.getObjVal? "artifact").getObjVal? "packetSha256")]
+
 def compareDataTypes (j : Json) : Except String Json := do
   let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
   let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
@@ -305,6 +364,24 @@ def compareDataTypes (j : Json) : Except String Json := do
 
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
+  | "source-imports-v1" =>
+    let raw ← (← j.getObjVal? "modules").getArr?
+    if raw.isEmpty || raw.size > 64 then throw "source import request requires 1..64 modules"
+    let mut names : List String := []
+    let mut total := 0
+    let mut parsed : Array Json := #[]
+    for value in raw do
+      let name ← value.getObjValAs? String "name"
+      unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw "invalid module name"
+      if names.contains name then throw "duplicate module name"
+      names := name :: names
+      let source ← value.getObjValAs? String "source"
+      if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
+      total := total + source.utf8ByteSize
+      if total > 1048576 then throw "source import request exceeds 1 MiB"
+      let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
+      parsed := parsed.push (Json.mkObj [("name", toJson name), ("imports", ← ast.getObjVal? "imports")])
+    return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]
   | "template-expand" =>
     let source ← j.getObjValAs? String "source"
     if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
@@ -314,6 +391,9 @@ def job (j : Json) : Except String Json := do
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
   | "run-data-v1" => runData j
+  | "run-compact" => runCompactData j
+  | "encode-compact" => compactCodec j true
+  | "decode-compact" => compactCodec j false
   | "inspect-spec-v1" => inspectSpecification j
   | "compare-data-types-v1" => compareDataTypes j
   | _ => throw "package operation must be compile or run"

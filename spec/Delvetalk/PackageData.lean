@@ -4,6 +4,7 @@
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendTyping
 import Std.Data.HashSet
+import Std.Data.HashMap
 
 namespace Delvetalk.PackageData
 open Lean (Json toJson)
@@ -131,11 +132,15 @@ def quoteWith {α : Type} (sink : QuoteSink α) (a : Assumptions) : Nat → Data
     | .label s, .label => return sink.label s
     | .record fields, row =>
         let types ← members depth row
-        if fields.length != types.length || (fields.map Prod.fst).eraseDups.length != fields.length then
+        if fields.length != types.length then
           throw "typed data record fields differ from declared type"
+        let mut indexed : Std.HashMap String Data := {}
+        for (name, field) in fields do
+          if indexed.contains name then throw "typed data record fields differ from declared type"
+          indexed := indexed.insert name field
         let mut result := sink.emptyRecord
         for (name, ty) in types do
-          let some field := fields.lookup name | throw "typed data record is missing a declared field"
+          let some field := indexed[name]? | throw "typed data record is missing a declared field"
           let child ← quoteWith sink a depth field ty
           result := sink.field result name child
         return result
@@ -205,17 +210,81 @@ def admitValue : Nat → Data → Work Data
         let _ ← admitValue depth child
       return value
 
-def prepareWith {α : Type} (read : α → Work Data) (packet : Json)
-    (arguments : Array α) : Work (AnnotatedTerm × Ty × Nat) := do
+/-- A physical compact value is meaningful only relative to this exact checked
+schema. Records carry canonical positional members; sums retain their label.
+Naturals remain arbitrary precision canonical decimal strings. -/
+def decodeCompact (a : Assumptions) : Nat → Ty → Json → Work Data
+  | 0, _, _ => failDepth
+  | depth + 1, declared, wire => do
+    spend
+    let expanded ← match declared with
+      | .variable index => sumAlias a index
+      | other => pure other
+    match expanded.canonical with
+    | .natural =>
+      let text ← wire.getStr?
+      let some n := text.toNat? | throw "compact natural must be canonical decimal"
+      unless toString n == text do throw "compact natural must be canonical decimal"
+      return .natural n
+    | .boolean => return .boolean (← wire.getBool?)
+    | .label => return .label (← wire.getStr?)
+    | .emptyRow | .field .. =>
+      let types := (← members depth expanded.canonical).toArray
+      let values ← wire.getArr?
+      unless values.size == types.size do throw "compact record arity differs from declared type"
+      let mut fields := []
+      for ((name, ty), child) in types.zip values do
+        fields := (name, ← decodeCompact a depth ty child) :: fields
+      return .record fields.reverse
+    | .variant row =>
+      let values ← wire.getArr?
+      unless values.size == 2 do throw "compact variant requires label and payload"
+      let label ← values[0]!.getStr?
+      let some member := (← members depth row.canonical).lookup label
+        | throw "compact variant label is undeclared"
+      return .variant label (← decodeCompact a depth member values[1]!)
+    | _ => throw "type is not serializable package data"
+
+def encodeCompact (a : Assumptions) : Nat → Ty → Data → Work Json
+  | 0, _, _ => failDepth
+  | depth + 1, declared, value => do
+    spend
+    let expanded ← match declared with
+      | .variable index => sumAlias a index
+      | other => pure other
+    match value, expanded.canonical with
+    | .natural n, .natural => return toJson (toString n)
+    | .boolean b, .boolean => return toJson b
+    | .label text, .label => return toJson text
+    | .record fields, row =>
+      let types ← members depth row
+      unless fields.length == types.length do throw "compact record fields differ from declared type"
+      let mut indexed : Std.HashMap String Data := {}
+      for (name, child) in fields do
+        if indexed.contains name then throw "duplicate typed data field"
+        indexed := indexed.insert name child
+      let mut values := #[]
+      for (name, ty) in types do
+        let some child := indexed[name]? | throw "compact record is missing a declared field"
+        values := values.push (← encodeCompact a depth ty child)
+      return .arr values
+    | .variant label payload, .variant row =>
+      let some member := (← members depth row.canonical).lookup label
+        | throw "compact variant label is undeclared"
+      return .arr #[toJson label, ← encodeCompact a depth member payload]
+    | _, _ => throw "typed data value does not conform to declared type"
+
+def prepareWith {α : Type} (read : Assumptions → Ty → α → Work Data) (packet : Json)
+    (arguments : Work (Array α)) : Work (AnnotatedTerm × Ty × Nat) := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let mut source := decoded.source
   let some initial := check source [] decoded.fuel | throw "typed package refused by Mini type checker"
   let mut type := initial.type
-  for argument in arguments do
+  for argument in (← arguments) do
     let .arrow _ _ domain codomain := callable type | throw "typed package argument requires a function"
     shape source.assumptions 256 [] domain
-    let value ← read argument
+    let value ← read source.assumptions domain argument
     let quoted ← quote source.assumptions 256 value domain
     source := apply source quoted
     let some checked := check source [] decoded.fuel | throw "applied typed package refused by Mini type checker"
@@ -225,10 +294,13 @@ def prepareWith {α : Type} (read : α → Work Data) (packet : Json)
   return (source, type, decoded.fuel)
 
 def prepare (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) := do
-  prepareWith (decode 256) packet (← arguments.getArr?)
+  prepareWith (fun _ _ => decode 256) packet (do return ← arguments.getArr?)
 
 def prepareValues (packet : Json) (arguments : Array Data) : Work (AnnotatedTerm × Ty × Nat) :=
-  prepareWith (admitValue 256) packet arguments
+  prepareWith (fun _ _ => admitValue 256) packet (pure arguments)
+
+def prepareCompact (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) :=
+  prepareWith (fun a ty => decodeCompact a 256 ty) packet (do return ← arguments.getArr?)
 
 /-- Select only explicit structural positions from a checked artifact's type. -/
 def select (a : Assumptions) (type : Ty) (path : Json) : Work Ty := do
