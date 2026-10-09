@@ -309,10 +309,12 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.perform plan) (.computation planType response response) uses
   /-- Hosted extension: first-order data injected into the universal `Data`
-  type. The only rule that produces `Data`; there is no elimination. -/
-  | toData {context : Context} {value : Term} {type : Ty} {uses : Uses} :
+  type. The only rule that produces `Data`; there is no elimination. The
+  declarative rule takes any walk fuel (`isDataUnder` is a greatest fixed point
+  that more fuel only confirms); the checker supplies `Ty.dataFuel`. -/
+  | toData {context : Context} {value : Term} {type : Ty} {uses : Uses} {fuel : Nat} :
       PartialTyping assumptions context value type uses →
-      type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
+      type.isDataUnder assumptions.bounds assumptions.rigid fuel [] = true →
       PartialTyping assumptions context (.toData value) .data uses
   /-- Hosted extension: join a `List<String>` with a String separator. -/
   | textJoin {context : Context} {list separator : Term} {listType : Ty} {lu su : Uses} :

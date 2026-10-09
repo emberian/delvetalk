@@ -14,6 +14,7 @@ inductive SchemaMatches (a : Assumptions) (graph : SchemaGraph) : Schema → Ty 
   | natural : SchemaMatches a graph .natural .natural
   | boolean : SchemaMatches a graph .boolean .boolean
   | label : SchemaMatches a graph .label .label
+  | data : SchemaMatches a graph .data .data
   | record {fields : List (String × Ty × Schema)} {row : Ty} :
       SchemaFieldsMatch a graph fields row → SchemaMatches a graph (.record fields) row
   | variant {index : Nat} {types : VariantSchema} :

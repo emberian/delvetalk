@@ -53,6 +53,7 @@ private theorem certificates_sound (a : Assumptions) (graph : SchemaGraph) (alia
       | natural => cases ty <;> simp_all [schemaCertificate]; exact .natural
       | boolean => cases ty <;> simp_all [schemaCertificate]; exact .boolean
       | label => cases ty <;> simp_all [schemaCertificate]; exact .label
+      | data => cases ty <;> simp_all [schemaCertificate]; exact .data
       | record fields => exact .record (ih.2 fields ty checked)
       | variant index =>
         cases ty <;> simp_all [schemaCertificate]

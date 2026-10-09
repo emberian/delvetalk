@@ -2,9 +2,12 @@
 
 Each test names what would refute it.
 """
+import json
 import unittest
 
+from tests.test_chain import Chain
 from tests.test_turn import Host, nat, label, variant
+from tests.test_turn_world import closure
 
 CALLER = """edition ObjectiveBend 1
 record Call:
@@ -115,6 +118,190 @@ class DataTypeTests(unittest.TestCase):
         good = h.send({"op": "compile", "entry": "f", "modules": [{"name": "Package", "source":
             "edition ObjectiveBend 1\ndef f(n: Nat) -> Data:\n  Data.of::<Nat>(n)\n"}]})
         self.assertEqual(good["status"], "compiled", good)
+
+
+# A Counter whose state holds a universal `Data` payload (a Wake trigger's stored argument
+# is the motivating case). `put*` write the payload in an activity; `copyAfter` awaits a
+# slot and then copies the payload it read before suspending, so the Data value crosses a
+# checkpoint; `touch` is a pure method, so the state crosses the native admission path.
+DATA_COUNTER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./List.obend as Lists
+record State:
+  count: Nat
+  payload: Data
+  copy: Data
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+  payload: Plans.Edit<Data, Data>
+  copy: Plans.Edit<Data, Data>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, Nat>
+record Tagged:
+  name: String
+  n: Nat
+def initial() -> State:
+  {count: 0n, payload: Data.of::<Nat>(0n), copy: Data.of::<Nat>(0n)}
+def keepData() -> Plans.Edit<Data, Data>:
+  Plans.Edit::<Data, Data>.keep({})
+def setData(value: Data) -> Plans.Edit<Data, Data>:
+  Plans.Edit::<Data, Data>.set({value: value})
+def put(context: Abi.Context, value: Data) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.keep({}), payload: setData(value), copy: keepData()}})):
+    case written(_): 1n
+    case _: 0n
+def putRecord(state: State, input: Tagged, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  put(context, Data.of::<Tagged>(input))
+def putList(state: State, input: {items: Lists.List<Nat>}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  put(context, Data.of::<Lists.List<Nat>>(input.items))
+def copyAfter(state: State, input: {principal: String, intent: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.await({slot: {principal: input.principal, intent: input.intent}, patience: 8n})):
+    case reply(_):
+      match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), payload: keepData(), copy: setData(state.payload)}})):
+        case written(_): 1n
+        case _: 0n
+    case _: 0n
+def touch(state: State, context: Abi.Context) -> State:
+  {count: state.count + 1n, payload: state.payload, copy: state.copy}
+"""
+
+
+def data_counter_modules():
+    modules = closure("Plan")
+    seen = {m["name"] for m in modules}
+    modules += closure("List", seen=seen)
+    return modules + [{"name": "DataCounter", "source": DATA_COUNTER}]
+
+
+def items(*values):
+    return {"tag": "list", "items": list(values)}
+
+
+def set_payload(value):
+    return record(payload=variant("set", record(value=value)))
+
+
+REPEATED = {"tag": "record", "fields": [{"name": "a", "value": nat(1)}, {"name": "a", "value": nat(2)}]}
+
+
+class DataInState(Chain):
+    """A state record with `payload: Data`: created, written, viewed, checkpointed, replayed."""
+
+    def raw(self, **request):
+        """One reply exactly as the host printed it (no list rewriting by the helper)."""
+        self.host.proc.stdin.write(json.dumps(request) + "\n")
+        self.host.proc.stdin.flush()
+        return json.loads(self.host.proc.stdout.readline())
+
+    def payload(self, name="payload"):
+        view = self.raw(op="world-view", principal="ember", object="box")
+        self.assertEqual(view["status"], "viewed", view)
+        return [f["value"] for f in view["state"]["fields"] if f["name"] == name][0]
+
+    def cid(self, value):
+        return self.raw(op="canonical-encode", data=value)["cid"]
+
+    def create(self, payload=None):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-box", object="box",
+                           modules=data_counter_modules(), entry="initial",
+                           seed=record(count=nat(0), payload=payload or nat(0), copy=nat(0)))
+        return r
+
+    def test_created_written_with_a_record_and_a_list_and_viewed_back_identical(self):
+        # Refuted if the State schema refuses a Data field, or a written value comes back changed.
+        self.assertEqual(self.create(record(seeded=label("yes")))["status"], "created")
+        self.assertEqual(self.payload(), record(seeded=label("yes")))
+        tagged = record(name=label("moth"), n=nat(7))
+        r = self.turn("box", "putRecord", tagged)
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+        self.assertEqual(self.payload(), tagged)
+        self.assertEqual(self.cid(self.payload()), self.cid(tagged))
+        listed = items(nat(1), nat(2), nat(3))
+        r = self.turn("box", "putList", record(items=listed))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+        self.assertEqual(self.payload(), listed)
+        self.assertEqual(self.cid(self.payload()), self.cid(listed))
+        # A pure method receives the state (with its Data field) and commits every field.
+        r = self.turn("box", "touch")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(self.payload(), listed)
+        self.assertEqual(self.payload("count"), nat(1))
+
+    def test_a_data_payload_crosses_an_await_checkpoint_a_restart_and_a_replay(self):
+        # Refuted if the Data value read before suspending is not the one written after resuming.
+        self.assertEqual(self.create()["status"], "created")
+        nested = record(shade=variant("light", record(level=nat(3))), tags=items(label("a"), label("b")))
+        self.assertEqual(self.raw(op="world-propose", principal="ember", identity="w1",
+                                  roots=[{"object": "box", "version": 0}],
+                                  writes=[{"object": "box", "edits": set_payload(nested)}]
+                                  )["status"], "admitted")
+        s = self.turn("box", "copyAfter", record(principal=label("glm"), intent=label("post-1")), identity="wait")
+        self.assertEqual(s["status"], "suspended", s)
+        self.reopen()                                    # the checkpoint is rebuilt from the journal
+        settled = self.host.send(op="world-propose", principal="glm", identity="post-1", roots=[], writes=[])
+        self.assertEqual([x["status"] for x in settled["resumed"]], ["admitted"], settled)
+        self.assertEqual(self.payload("copy"), nested)
+        self.assertEqual(self.cid(self.payload("copy")), self.cid(nested))
+        before = self.raw(op="world-view", principal="ember", object="box")
+        self.reopen()                                    # replay of the whole journal
+        self.assertEqual(self.raw(op="world-view", principal="ember", object="box"), before)
+
+    def test_a_malformed_data_value_is_refused_by_name(self):
+        # Refuted if Data admits a record that repeats a field, on any admission path.
+        refused = self.create(REPEATED)
+        self.assertEqual((refused["status"], refused["message"]),
+                         ("error", "seed does not conform to the package state type"), refused)
+        self.assertEqual(self.create()["status"], "created")
+        bad = self.raw(op="world-propose", principal="ember", identity="w2", roots=[{"object": "box", "version": 0}],
+                       writes=[{"object": "box", "edits": set_payload(REPEATED)}])
+        self.assertEqual((bad["status"], bad["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), bad)
+
+
+STATE_PACKAGE = """edition ObjectiveBend 1
+record State:
+  count: Nat
+  payload: Data
+def initial() -> State:
+  {count: 0n, payload: Data.of::<{a: Nat}>({a: 1n})}
+def touch(state: State) -> State:
+  {count: state.count + 1n, payload: state.payload}
+"""
+
+
+class DataInPackageData(unittest.TestCase):
+    """The typed-data schema (run-data-v1, the compact codec) with a Data field."""
+
+    def setUp(self):
+        self.h = Host()
+        self.addCleanup(self.h.close)
+
+    def test_run_data_admits_any_well_formed_value_and_refuses_a_repeated_field_by_name(self):
+        art = self.h.compile(STATE_PACKAGE, "touch")
+        value = variant("deep", record(x=nat(1), y=variant("z", record())))
+        ok = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": [record(count=nat(4), payload=value)]})
+        self.assertEqual(ok["status"], "finished", ok)
+        self.assertEqual(ok["value"], record(count=nat(5), payload=value))
+        bad = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": [record(count=nat(4), payload=REPEATED)]})
+        # The strict typed-data wire refuses the repeat before admission; the compact codec
+        # (below) reaches the Data admission itself.
+        self.assertEqual((bad["status"], bad["message"]), ("error", "duplicate typed data field"), bad)
+
+    def test_initial_state_with_a_data_field_evaluates(self):
+        art = self.h.compile(STATE_PACKAGE, "initial")
+        r = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": []})
+        self.assertEqual((r["status"], r["value"]), ("finished", record(count=nat(0), payload=record(a=nat(1)))), r)
+
+    def test_the_compact_codec_carries_a_data_field_as_its_own_wire_value(self):
+        art = self.h.compile(STATE_PACKAGE, "initial")
+        value = record(count=nat(2), payload=record(b=label("x"), a=nat(3)))
+        enc = self.h.send({"op": "encode-compact", "selection": {"artifact": art, "path": []}, "value": value})
+        self.assertEqual(enc["status"], "encoded", enc)
+        dec = self.h.send({"op": "decode-compact", "selection": {"artifact": art, "path": []}, "value": enc["value"]})
+        self.assertEqual((dec["status"], dec["value"]), ("decoded", value), dec)
+        bad = self.h.send({"op": "decode-compact", "selection": {"artifact": art, "path": []},
+                           "value": ["1", REPEATED]})
+        self.assertEqual((bad["status"], bad["message"]), ("error", "typed data value at Data repeats a record field"), bad)
 
 
 if __name__ == "__main__":

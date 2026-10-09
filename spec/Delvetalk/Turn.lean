@@ -6,6 +6,7 @@
 import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
+import Theory.ObjectiveBendFiniteDataTyping
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendCheckpointRoundTrip
 import Theory.ObjectiveBendDemandCollect
@@ -43,26 +44,19 @@ def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat :
   if value > cap then throw (key ++ " exceeds package capacity")
   return value
 
-/- Closed first-order data as a term. Unlike `run` arguments, variants are
-admitted: a response to a Plan is usually a sum. -/
-mutual
-def dataTerm : Data → Term
-  | .natural n => .nat n
-  | .boolean b => .boolean b
-  | .label s => .label s
-  | .record fields => .record (dataFields fields)
-  | .variant label payload => .inject label (dataTerm payload)
-def dataFields : List (String × Data) → List (String × Term)
-  | [] => []
-  | (k,v) :: rest => (k, dataTerm v) :: dataFields rest
-end
+private instance : Inhabited Term := ⟨.nat 0⟩
 
-/-- A variant argument is injected at its declared sum, never guessed from one
-label: give each injection of closed data the annotation its declared type
-fixes (payload type, sum or recursive variable). Positions follow the checker:
-an injection's payload is child 0, a record's field `i` is child `i`. -/
-partial def annotateData (bounds : DataBounds) (expected : Ty) (data : Data) (path : List Nat) :
-    List (List Nat × LambdaAnnotation) :=
+/-- An argument as a term with its injection annotations, directed by its declared
+type: a variant is injected at its declared sum, never guessed from one label (the
+annotation names its payload type and its sum or recursive variable), and a value
+at a universal position (`Data`) is wrapped in `toData` and checked at its own shape
+(`Data.shapeType`), the host having already decided its conformance. Positions follow
+the checker: an injection's payload is child 0, a record's field `i` is child `i`,
+the operand of `toData` child 0. The term itself is `Data.term` up to those `toData`
+wrappers. -/
+partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) (path : List Nat) :
+    Term × List (List Nat × LambdaAnnotation) :=
+  if expected == .data then (.toData data.term, shapeAnnotations data (path ++ [0])) else
   match data with
   | .variant tag payload =>
     let row? := match expected with
@@ -71,41 +65,25 @@ partial def annotateData (bounds : DataBounds) (expected : Ty) (data : Data) (pa
           | some (.variant row) => some row
           | _ => none
       | _ => none
-    match row? with
-    | none => []
-    | some row => match row.lookup bounds Ty.dataFuel tag with
-      | none => []
-      | some member =>
-        (path, ⟨member, expected, .unrestricted, .reusable⟩) :: annotateData bounds member payload (path ++ [0])
+    match row? >>= fun row => row.lookup bounds Ty.dataFuel tag with
+    | none => (data.term, [])
+    | some member =>
+      let (payloadTerm, annotations) := quoteAt bounds member payload (path ++ [0])
+      (.inject tag payloadTerm, (path, ⟨member, expected, .unrestricted, .reusable⟩) :: annotations)
   | .record fields =>
     let rec memberOf : Ty → String → Option Ty
       | .field n m tail, name => if n == name then some m else memberOf tail name
       | _, _ => none
-    (fields.zipIdx.map fun ((name, value), i) => match memberOf expected name with
-      | some member => annotateData bounds member value (path ++ [i])
-      | none => []).flatten
-  | _ => []
+    let quoted := fields.zipIdx.map fun ((name, value), i) => match memberOf expected name with
+      | some member => (name, quoteAt bounds member value (path ++ [i]))
+      | none => (name, (value.term, []))
+    (.record (quoted.map fun (name, term, _) => (name, term)), (quoted.map (·.2.2)).flatten)
+  | other => (other.term, [])
 
-/-- The singleton type of closed data: the type an argument of the universal type
-`Data` is checked at inside its `toData` injection. Every injection is annotated
-at a one-label sum naming exactly its own label. -/
-instance : Inhabited Ty := ⟨.natural⟩
-partial def shapeType : Data → Ty
-  | .natural _ => .natural
-  | .boolean _ => .boolean
-  | .label _ => .label
-  | .record fields => fields.foldr (fun (name, value) tail => .field name (shapeType value) tail) .emptyRow
-  | .variant tag payload => .variant (.field tag (shapeType payload) .emptyRow)
-
-/-- An argument as a term with its injection annotations. At the universal type the
-host has already decided conformance (well-formed data), so the value is injected
-at its own shape. -/
 def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
     Except String (Term × List (List Nat × LambdaAnnotation)) :=
-  if domain == .data then
-    if !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
-    else .ok (.toData (dataTerm v), annotateData bounds (shapeType v) v [0])
-  else .ok (dataTerm v, annotateData bounds domain v [])
+  if domain == .data && !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
+  else .ok (quoteAt bounds domain v [])
 
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
@@ -338,7 +316,7 @@ def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) 
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   let some state := decodeState checkpoint.tokens | throw "checkpoint does not decode"
   unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
-  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume (dataTerm value) state
+  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
     | throw "turn refused: checkpoint is not a yielded state"
   return (decoded.source.assumptions.bounds, plan, response, result, state, resumed)
 
