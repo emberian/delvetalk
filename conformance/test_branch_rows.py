@@ -1,4 +1,4 @@
-"""Source conditionals agree on canonical rows without changing core conversion."""
+"""Checked conditionals reuse existing conversion without changing the typing relation."""
 import json
 from pathlib import Path
 import subprocess

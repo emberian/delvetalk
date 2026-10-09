@@ -448,7 +448,7 @@ function showDraft(draft, restored = false) {
   $('draft-command-row').hidden = preview;
   $('send-draft').hidden = preview;
   $('draft-target').textContent = draft.reads?.length
-    ? `Captured together: ${draft.reads.map(read => `${text(read.object)} · version ${text(read.version)}`).join('; ')}. All steps commit together.`
+    ? `Captured together: ${draft.reads.map(read => `${text(read.object)} · ${read.version == null ? "captured root" : `version ${text(read.version)}`}`).join('; ')}. All steps commit together.`
     : draft.object ? `${text(draft.object)}${draft.version == null ? '' : ` · read at version ${text(draft.version)}`}` : '';
   $('draft-absence').hidden = !draft.absence?.length;
   $('draft-absence').textContent = draft.absence?.length ? `Creates: ${draft.absence.join(', ')}. These object names must still be absent.` : '';

@@ -69,10 +69,10 @@ def preserve_build(directory, identity):
     return artifact
 
 
-def run_bootstrap(directory, *, profile='transactions'):
+def run_bootstrap(directory, *, profile='compiled'):
     directory = Path(directory).resolve()
-    if profile not in ('transactions', 'compiled'):
-        raise ValueError('bootstrap requires transactions or compiled admission')
+    if profile != 'compiled':
+        raise ValueError('source authoring bootstrap requires compiled admission')
     selected_binary = desk_module.world.PROFILES[profile][0]
     for name in ('delvetalk-world', selected_binary):
         require((ROOT / '.lake/build/bin' / name).is_file(), 'Build ' + name + ' first')
@@ -113,7 +113,6 @@ def run_bootstrap(directory, *, profile='transactions'):
     initial_id = room.store_artifact(artifacts / 'rooms', initial_artifact)
     preserve_dependencies(directory, initial_artifact)
     preserve_lowering(directory, (EXAMPLES / 'table.json').read_bytes())
-    preserve_lowering(directory, (ROOT / 'protocols/source-desk/protocol.json').read_bytes())
     # Explicit future command grants keep authority unchanged across adoption.
     command_names = ['start', 'choose:0:0', 'choose:0:1', 'choose:0:2', 'choose:1:0']
     send('The repair cafe opens', {'op': 'create', 'object': CAFE, 'principal': 'local-operator',
@@ -126,6 +125,7 @@ def run_bootstrap(directory, *, profile='transactions'):
         'profile': 'delvetalk-scoped-law-v1',
         'invoke': {'submit': ['iris'], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': ['moss']},
         'reprogram': [], 'law': ['local-operator']}))
+    preserve_lowering(directory, canonical(inspect(CANDIDATE)['protocol']))
     send('Iris enters the cafe', room.start_request(view(initial_artifact), 'iris', 'enter-cafe'))
     shared_before = view(initial_artifact, 'shared-before-repair.json')
     send('Iris aligns the wing', room.choice_request(shared_before, 0, 'iris', 'align-wing'))
@@ -144,11 +144,11 @@ def run_bootstrap(directory, *, profile='transactions'):
     compiled = record('The compiler checks the proposal without adopting it',
                       desk.check(CANDIDATE, 'compiler', 'compile-window', pending))
     ready = compiled['data']['root']
-    require(ready['state']['status'] == 'ready', 'proposal compilation failed: ' + str(ready['state']['diagnostics']))
+    require(desk_module.candidate_state(ready)['status'] == 'ready', 'proposal compilation failed: ' + str(desk_module.candidate_state(ready)['diagnostics']))
     require(inspect()['protocol'] == initial_artifact['protocol'], 'compiling must not change the cafe')
     adopted = record('Moss reviews the migration and adopts the window atomically',
                      desk.adopt(CANDIDATE, CAFE, 'moss', 'adopt-window', ready, repaired['root']))
-    improved_id = ready['state']['roomArtifact']
+    improved_id = desk_module.candidate_state(ready)['roomArtifact']
     improved_artifact = room.load_artifact(artifacts / 'rooms', improved_id)
     improved = view(improved_artifact, 'after-adoption.json')
     require(improved['variables']['wing_aligned'] == ['bool', True] and
@@ -181,7 +181,7 @@ def run_bootstrap(directory, *, profile='transactions'):
         (EXAMPLES / 'sign-scenarios.json').read_bytes(), sign_before['root']['state'], SIGN))['data']['root']
     sign_ready = record('The compiler checks the sign proposal',
                         desk.check(SIGN_CANDIDATE, 'compiler', 'compile-sign', sign_pending))['data']['root']
-    require(sign_ready['state']['status'] == 'ready', 'sign proposal did not compile')
+    require(desk_module.candidate_state(sign_ready)['status'] == 'ready', 'sign proposal did not compile')
     record('Iris adopts the proposed view program', desk.adopt(
         SIGN_CANDIDATE, SIGN, 'iris', 'adopt-sign', sign_ready, sign_before['root']))
     sign_after = projection.project(inspect(SIGN), SIGN)
@@ -587,7 +587,7 @@ def _restore_contents(bundle, directory, *, expected_genesis, expected_head, bas
         if metadata['initialCafeArtifact'] not in restored_rooms or metadata['currentCafeArtifact'] not in restored_rooms:
             raise ValueError('inhabited index room artifact is absent from verified history')
         for key in ('candidate', 'signCandidate'):
-            identity = roots[metadata[key]]['state'].get('artifact')
+            identity = desk_module.candidate_state(roots[metadata[key]]).get('artifact')
             if identity not in restored_builds:
                 raise ValueError('candidate build artifact is absent from verified history')
     # Preserve original dependency bytes as custody, never as executable code.
@@ -697,7 +697,7 @@ def main():
     restore.add_argument('directory', type=Path)
     run = commands.add_parser('run', help='perform the local journey in an empty directory')
     run.add_argument('directory', type=Path)
-    run.add_argument('--profile', choices=('transactions', 'compiled'), default='transactions')
+    run.add_argument('--profile', choices=('compiled',), default='compiled')
     view = commands.add_parser('view', help='read current committed state and exact source')
     view.add_argument('directory', type=Path)
     view.add_argument('--object')

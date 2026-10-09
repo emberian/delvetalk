@@ -1,0 +1,32 @@
+examples DelveTalk 1
+case two voices survive a cutting and a return
+law moss iris
+as moss
+send plant
+  seed: A bell for lost moths
+  colour: amber
+expect committed
+as moss
+send rain
+  id (Nat): 1
+  line: Both voices are mine.
+expect refusal: source refused: Rain needs a different participant; leave this seed for another gardener.
+as iris
+send rain
+  id (Nat): 1
+  line: Every drop remembers a lost star.
+expect committed
+as iris
+send cutting
+  id (Nat): 1
+  colour: violet
+expect committed
+as moss
+send rain
+  id (Nat): 2
+  line: The old bell learns a second song.
+expect committed
+as iris
+send visit
+  id (Nat): 1
+expect committed

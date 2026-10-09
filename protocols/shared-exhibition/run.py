@@ -62,8 +62,7 @@ def run(directory, content=None):
     (directory / 'events').mkdir()
     # Every creation and replacement retains its original source envelope.
     placeholder = (ROOT / 'protocols/counter/protocol.json').read_bytes()
-    for raw in (placeholder, (ROOT / 'protocols/source-desk/protocol.json').read_bytes()):
-        bootstrap.preserve_lowering(directory, raw)
+    bootstrap.preserve_lowering(directory, placeholder)
     target_law = law({'offerNorth': ['north'], 'offerSouth': ['south'],
                       'consentNorth': ['north'], 'consentSouth': ['south'],
                       'arrange': ['curator'], 'open': ['curator']}, reprogram=['curator'])
@@ -73,6 +72,7 @@ def run(directory, content=None):
     candidate = record('create-source-desk', desk.create(CANDIDATE, 'operator', 'desk-create',
         law({'submit': ['builder'], 'compiled': ['compiler'], 'failed': ['compiler'],
              'adopt': ['curator']})))['data']['root']
+    bootstrap.preserve_lowering(directory, bootstrap.canonical(candidate['protocol']))
     entries = [{'name': item['name'], 'sourceRef': source_store.store_bytes(desk.artifact_store, item['source'].encode())}
                for item in modules]
     proposal = source_store.prepare_module_proposal(desk.artifact_store, source_store.seal_modules(entries),

@@ -299,8 +299,8 @@ class Service:
                     snapshot = self._snapshot(config, deadline)
                     jobs, errors, examined = [], [], 0
                     candidates = [(name, root) for name, root in sorted(snapshot['objects'].items())
-                                  if root['state'].get('status') == 'pending'
-                                  and desk.is_source_desk_protocol(root['protocol'])]
+                                  if desk.is_source_desk_protocol(root['protocol'])
+                                  and desk.candidate_state(root).get('status') == 'pending']
                     cursor = progress.get('compilerCursor', '')
                     candidates = [item for item in candidates if item[0] > cursor] + [item for item in candidates if item[0] <= cursor]
                     for name, root in candidates:

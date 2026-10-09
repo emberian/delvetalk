@@ -90,7 +90,7 @@ def is_source_desk_protocol(protocol):
     return canonical(body(protocol)) == canonical(body(_REVIEWED_CANDIDATE[1]))
 
 
-def execution_paths(profile='transactions'):
+def execution_paths(profile='compiled'):
     """Return custody dependency names independently from byte hashing."""
     return tuple(sorted(set(runtime_profile.paths(profile)) | set(SOURCE_DESK_PROTOCOL_PATHS)
         | set(SOURCE_CANDIDATE_FILES)
@@ -99,7 +99,7 @@ def execution_paths(profile='transactions'):
         'scripts/process_custody.py', 'scripts/source_object.py'}))
 
 
-def execution_profile(profile='transactions'):
+def execution_profile(profile='compiled'):
     return {'profile': profile, 'files': runtime_profile.hash_paths(execution_paths(profile), root=ROOT)}
 
 
@@ -225,7 +225,7 @@ def proposal_material(proposal, artifact_store=None):
 def compile_proposal(payload):
     """Trusted worker computation only; all world transitions happen elsewhere."""
     proposal = module('desk_proposal', 'scripts/propose.py')
-    profile = payload.get('profile', 'transactions')
+    profile = payload.get('profile', 'compiled')
     state = candidate_state(payload['root'])
     source = state['proposal']
     artifact = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(payload['root']),
@@ -266,7 +266,7 @@ def compile_proposal(payload):
     return artifact
 
 
-def bounded_compile(root, *, timeout=45, profile='transactions', artifact_store=None):
+def bounded_compile(root, *, timeout=45, profile='compiled', artifact_store=None):
     """Run the trusted compiler with wall/CPU/file bounds; never execute source text."""
     failed = {'format': 'delvetalk-desk-build-v1', 'candidateRootSha256': digest(root), 'passed': False}
     state = candidate_state(root)
@@ -296,7 +296,7 @@ def bounded_compile(root, *, timeout=45, profile='transactions', artifact_store=
 
 
 class Desk:
-    def __init__(self, database, artifact_store, *, profile='transactions'):
+    def __init__(self, database, artifact_store, *, profile='compiled'):
         if profile not in world.PROFILES:
             raise ValueError('unknown local host profile: ' + str(profile))
         self.database, self.artifact_store = Path(database), Path(artifact_store)
@@ -313,9 +313,9 @@ class Desk:
         return self.exchange({'op': 'inspect', 'object': object_id, 'principal': 'source-desk-reader'})
 
     def create(self, object_id, principal, intent, law):
-        protocol = (module('desk_candidate_package', 'protocols/editor/generate.py').candidate(editor_mode=False)
-                    if self.profile == 'compiled' else
-                    loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes()))
+        if self.profile != 'compiled':
+            raise ValueError('source Candidate creation requires the explicitly selected compiled profile')
+        protocol = module('desk_candidate_package', 'protocols/editor/generate.py').candidate(editor_mode=False)
         return self.exchange({'op': 'create', 'object': object_id, 'principal': principal, 'intent': intent,
                               'protocol': protocol, 'law': law})
 
@@ -421,7 +421,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', required=True, type=Path)
     parser.add_argument('--artifacts', required=True, type=Path)
-    parser.add_argument('--profile', choices=world.PROFILES, default='transactions', help='operator-selected admission and compiler-scenario host')
+    parser.add_argument('--profile', choices=world.PROFILES, default='compiled', help='operator-selected admission and compiler-scenario host')
     commands = parser.add_subparsers(dest='command', required=True)
     create = commands.add_parser('create')
     create.add_argument('--law', required=True, type=Path)

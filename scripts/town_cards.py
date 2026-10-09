@@ -392,14 +392,14 @@ class CardBook:
         with self._db() as db:
             return [row[0] for row in db.execute('SELECT alias FROM cards ORDER BY rowid')]
 
-    def capture(self, view, alias=None, *, roots=None):
-        """Retain a captured view; never read a world or publish a post."""
+    def capture(self, view, alias=None, *, roots=None, database=None):
+        """Retain presentation preimages and optionally mint native read references."""
         metadata = self.metadata()
         view = copy.deepcopy(view)
         projection.assert_runtime(view, metadata['runtime'])
         card = affordances.card(view)
         available = source_offers.capture_available(view,
-            {view['object']: view['root']} if roots is None else roots)
+            {view['object']: view['root']} if roots is None else roots, database=database)
         offers = {}
         for key in sorted(set(available['offers']) | set(available['unavailable'])):
             identity = 'a' + str(len(card['actions']) + 1)
@@ -425,9 +425,9 @@ class CardBook:
             return result
         return self._capture(alias, build)
 
-    def capture_source_offer(self, view, roots, key, *, alias=None):
+    def capture_source_offer(self, view, roots, key, *, alias=None, database=None):
         """Retain one visible authored plan from the same complete observation."""
-        captured = source_offers.capture_available(view, roots)
+        captured = source_offers.capture_available(view, roots, database=database)
         if key not in captured['offers']:
             detail = captured['unavailable'].get(key, {}).get('reason', 'source does not offer this action')
             raise ValueError(detail)
@@ -562,7 +562,7 @@ class CardBook:
             db.execute('INSERT OR IGNORE INTO bindings VALUES(?,?)', (alias, encoded))
         return verified
 
-    def resolve(self, record, author, source, fetch_record, issuers):
+    def resolve(self, record, author, source, fetch_record, issuers, *, database=None):
         metadata = self.metadata()
         if metadata['issuerDid'] not in issuers:
             raise ValueError('card issuer is not configured for this receiver')
@@ -594,7 +594,7 @@ class CardBook:
                           'fields': _spell_fields(chosen, parsed['fields'])}
             if parsed['action'] in captured.get('offers', {}):
                 request = composite_offers.request(captured['offers'][parsed['action']], author,
-                    'delve:' + source['uri'], parsed['fields'])
+                    'delve:' + source['uri'], parsed['fields'], database=database)
             else:
                 request = affordances.request(captured['view'], parsed['action'], author,
                                               'delve:' + source['uri'], parsed['fields'])
@@ -605,7 +605,7 @@ class CardBook:
             fields = (_spell_fields(action, parsed['fields'])
                       if parsed.get('syntax') == 'delvetalk-town-spell-v1' else parsed['fields'])
             request = composite_offers.request(captured['offer'], author,
-                                               'delve:' + source['uri'], fields)
+                                               'delve:' + source['uri'], fields, database=database)
         elif captured['format'] == 'delvetalk-town-adoption-card-v1':
             if parsed['action'] not in ('a1', 'adopt') or parsed['fields']:
                 raise ValueError('adoption permits only a1 with empty fields {}')
@@ -656,5 +656,5 @@ class CardBook:
                 'scope': 'Prepared locally; publication and subsequent binding are separate.'}
 
 
-def resolver(book, record, author, source, fetch_record, issuers):
-    return book.resolve(record, author, source, fetch_record, issuers)
+def resolver(book, record, author, source, fetch_record, issuers, *, database=None):
+    return book.resolve(record, author, source, fetch_record, issuers, database=database)

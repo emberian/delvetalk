@@ -392,7 +392,7 @@ class Clerk:
             self.verify_repository(issuer)
             return self.fetch_record(uri, cid, (FEED,))
         return cards.CardBook(selection['path']).resolve(record, author, source,
-                                                       fetch_publication, selection['issuers'])
+                                                       fetch_publication, selection['issuers'], database=self.database)
 
     def observe(self, uri, cid, config):
         author, collection, _ = parse_uri(uri)

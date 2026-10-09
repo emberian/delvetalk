@@ -8,7 +8,8 @@ complete source documents and the installed state.
 
 The explicit syntax `spween-handler-workshop@1` accepts one `spween` block and
 ordered `obend NAME` blocks ending in `Handler`. Optional runtime modules follow
-Handler and end in `SceneRuntime`. For example:
+Handler and end in `SceneRuntime`. Optional entry modules follow, ending in
+`Scene`, to describe additional typed methods. For example:
 
 ````text
 spween handler workshop 1
@@ -40,7 +41,8 @@ python3 protocols/spween-handler-workshop/generate.py --source --revision 2
 [text examples](moth.examples) are editable source. The compiler supplies a pinned
 ABI, encounter helpers, typed scene data and model, plus the final score and entry
 module. Names `Abi`, `Encounter`, `Kernel`, `SceneData`, `SceneModel`, `Score`,
-`BaseRuntime` and `Scene` are reserved. Handlers receive `Abi.Context`.
+`BaseRuntime` and `DefaultScene` are reserved; `Scene` may be the final authored
+entry module. Handlers receive `Abi.Context`.
 
 Without runtime blocks, the compiler selects the pinned ordinary Bend
 `SceneRuntime`. To select another, append its ordered dependency blocks and a
@@ -52,6 +54,10 @@ pinned ordinary base source; an import never looks it up elsewhere. The
 start, choice and validation behavior. Its full source document fits the existing
 4096-scalar post form. Larger replacements use the source-reference/Desk API.
 The complete selected runtime and dependency text stays in source custody.
+An optional final `Scene` imports `DefaultScene` to reuse standard methods while
+defining its own `describe()` and additional typed exports. See
+[the resonant entry](../../scene/runtime/ResonantScene.obend) for a new method and
+a receive-only method; the generic native source binder checks both.
 
 The native frontend resolves and checks only the explicitly sealed package.
 Python neither executes handlers nor searches for imports.

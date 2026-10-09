@@ -562,9 +562,9 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       let t ← infer assumptions annotations context (position ++ [1]) fuel whenTrue
       let f ← infer assumptions annotations context (position ++ [2]) fuel whenFalse
       if hc : c.type = .boolean then
-        if hb : f.type = t.type then
+        if hb : agree assumptions f.type t.type = true then
           some ⟨t.type, addUses c.uses (addUses t.uses f.uses),
-            .ifBool (hc ▸ c.derivation) t.derivation (hb ▸ f.derivation)⟩
+            .ifBool (hc ▸ c.derivation) t.derivation (.conversion f.derivation (agree_sameType hb))⟩
         else none
       else none
   | fuel + 1, .perform plan => do

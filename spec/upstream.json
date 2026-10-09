@@ -74,7 +74,7 @@
           "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
           "path": "Theory/ObjectiveBendTyping.lean"
         },
-        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly.",
+        "purpose": "Explicit DelveTalk hosted text extension; original pinned semantics are reconstructed exactly. Conditional inference admits existing checked conversion of the false branch to the true branch type, retaining agree shareability checks and the unchanged PartialTyping.ifBool relation.",
         "replacements": [
           {
             "from": "  | .field name member rest, inherited => .field name member (overlay rest inherited)\n  | _, inherited => inherited\n\ndef primitiveTypes : Primitive \u2192 Ty \u00d7 Ty\n  | .add | .multiply | .subtract | .divide | .modulo => (.natural, .natural)\n  | .equal | .less | .lessEqual => (.natural, .boolean)\n  | .conjunction => (.boolean, .boolean)\n  | .labelEqual => (.label, .boolean)\n\ndef literalType (_value : String) : Ty := .label\n\n",
@@ -95,9 +95,13 @@
           {
             "from": "    | \"reflect\" => return .reflect (\u2190 sub \"value\")\n    | \"metadata\" => return .metadata (\u2190 sub \"value\")\n    | \"project\" => return .project (\u2190 sub \"value\")\n    | \"binary\" => return .binary (\u2190 decodePrimitive (\u2190 value.getObjVal? \"primitive\")) (\u2190 sub \"left\") (\u2190 sub \"right\")\n    | \"record\" => return .record (\u2190 fields ())\n    | \"extend\" => return .extend (\u2190 sub \"inherited\") (\u2190 fields ())\n",
             "to": "    | \"reflect\" => return .reflect (\u2190 sub \"value\")\n    | \"metadata\" => return .metadata (\u2190 sub \"value\")\n    | \"project\" => return .project (\u2190 sub \"value\")\n    | \"unary\" => return .unary (\u2190 decodeUnaryPrimitive (\u2190 value.getObjVal? \"primitive\")) (\u2190 decodeTerm fuel (\u2190 value.getObjVal? \"argument\"))\n    | \"binary\" => return .binary (\u2190 decodePrimitive (\u2190 value.getObjVal? \"primitive\")) (\u2190 sub \"left\") (\u2190 sub \"right\")\n    | \"record\" => return .record (\u2190 fields ())\n    | \"extend\" => return .extend (\u2190 sub \"inherited\") (\u2190 fields ())\n"
+          },
+          {
+            "from": "        if hb : f.type = t.type then\n          some \u27e8t.type, addUses c.uses (addUses t.uses f.uses),\n            .ifBool (hc \u25b8 c.derivation) t.derivation (hb \u25b8 f.derivation)\u27e9",
+            "to": "        if hb : agree assumptions f.type t.type = true then\n          some \u27e8t.type, addUses c.uses (addUses t.uses f.uses),\n            .ifBool (hc \u25b8 c.derivation) t.derivation (.conversion f.derivation (agree_sameType hb))\u27e9"
           }
         ],
-        "builtSha256": "f21acac1f722ff4a38737331fda1cd1742a2efc9b872b44aa9eee54416486393"
+        "builtSha256": "d04f9351b3c8b4ffb6eefa125dfdd3f653c94dad6be975a1955d9f92d9b3e27a"
       }
     },
     "Theory/AssertAxioms.lean": {
@@ -154,8 +158,8 @@
           "commit": "dcab86da8f6153ed2b522fc61c5064608694fd83",
           "path": "Compiler/ObjectiveBendElaborate.lean"
         },
-        "purpose": "Expose existing checked prototype types and synthesize record extension results; no runtime or typing-rule changes.; explicit DelveTalk hosted text extension (Unicode scalar text, checked unary and heterogeneous binary primitives, bounded allocation/work). Canonically equivalent pure conditional branches are explicitly converted through checked linear identity applications; checker agreement and shareability rules remain unchanged.",
-        "builtSha256": "81a174985d0c2e71a338e86d5951745f9c7bca1cca6e9b68917d02500bc2622c",
+        "purpose": "Expose existing checked prototype types and synthesize record extension results; no runtime or typing-rule changes.; explicit DelveTalk hosted text extension (Unicode scalar text, checked unary and heterogeneous binary primitives, bounded allocation/work).",
+        "builtSha256": "247138b0e92166459d9734249f089450ae2429ec98b34d78f3e31c9df27be8a3",
         "replacements": [
           {
             "from": "  | specification (metadata extension : PTy)\n",
@@ -236,10 +240,6 @@
           {
             "from": "  | .app f a, path => return (\u2190 annotate bounds f (path ++ [0])) ++ (\u2190 annotate bounds a (path ++ [1]))\n  | .fix s i, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds i (path ++ [1]))\n  | .mix l u, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds u (path ++ [1]))\n  | .binary _ l r, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds r (path ++ [1]))\n  | .prototype s t, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds t (path ++ [1]))\n  | .specification md e, path => return (\u2190 annotate bounds md (path ++ [0])) ++ (\u2190 annotate bounds e (path ++ [1]))\n",
             "to": "  | .app f a, path => return (\u2190 annotate bounds f (path ++ [0])) ++ (\u2190 annotate bounds a (path ++ [1]))\n  | .fix s i, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds i (path ++ [1]))\n  | .mix l u, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds u (path ++ [1]))\n  | .unary _ a, path => annotate bounds a (path ++ [0])\n  | .binary _ l r, path => return (\u2190 annotate bounds l (path ++ [0])) ++ (\u2190 annotate bounds r (path ++ [1]))\n  | .prototype s t, path => return (\u2190 annotate bounds s (path ++ [0])) ++ (\u2190 annotate bounds t (path ++ [1]))\n  | .specification md e, path => return (\u2190 annotate bounds md (path ++ [0])) ++ (\u2190 annotate bounds e (path ++ [1]))\n"
-          },
-          {
-            "from": "      let ft \u2190 expression c fuel whenFalse env m\n      return .ifBool ct tt ft\n",
-            "to": "      let ft \u2190 expression c fuel whenFalse env m\n      -- Core conditionals require identical branch types. Conversion at an ordinary\n      -- linear identity application canonicalizes equivalent rows without relaxing\n      -- `agree` (in particular its no-manufactured-shareability check).\n      let leftType \u2190 synth c fuel whenTrue env m\n      let rightType \u2190 synth c fuel whenFalse env m\n      if sameTy leftType rightType then\n        if let some ty := leftType then\n          let canonical := ty.canonical\n          let identity := ATerm.lam \u27e8some canonical, some canonical, \"linear\", \"reusable\", none\u27e9 (.bound 0)\n          return .ifBool ct (.app identity tt) (.app identity ft)\n      return .ifBool ct tt ft\n"
           }
         ]
       }

@@ -1,0 +1,90 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+
+record State:
+  candidate: String
+  target: String
+  syntax: String
+def initial(config: State) -> State:
+  config
+record Origin:
+  kind: String
+  object: String
+  command: String
+  immediatelyPrevious: Bool
+record Context:
+  object: String
+  principal: String
+  inputOrigin: Origin
+record Decision:
+  accepted: Bool
+  reason: String
+  state: State
+  result: String
+def report(state: State, input: {}, context: Context) -> Decision:
+  {accepted: true, reason: "", state: state, result: "Source and examples are prepared through the captured writing invitation."}
+record Description:
+  name: String
+  initial: State
+  methods: {report: {label: String, fields: {}}}
+  panels: {}
+def describe() -> Description:
+  {name: "Writing", initial: {candidate: "", target: "", syntax: ""}, methods: {report: {label: "About this writing card", fields: {}}}, panels: {}}
+def pair(name: String, value: P.Value, tail: P.Fields) -> P.Fields:
+  P.Fields.cons({head: {name: name, value: value}, tail: tail})
+def text(value: String) -> P.Value:
+  P.Value.text({value: value})
+def prepareSubmit(state: State, contribution: P.Value, observations: P.Observations, context: P.Context) -> P.Preparation:
+  let source: String = P.text(P.get(contribution, "source"))
+  let scenarios: String = P.text(P.get(contribution, "scenarios"))
+  let target: P.Observation = P.observation(observations, state.target)
+  let candidate: P.Observation = P.observation(observations, state.candidate)
+  if state.candidate == "" || state.target == "" || state.syntax == "" then P.Preparation.refused({message: "Configure a candidate, target and source syntax."}) else if target.object == "" || candidate.object == "" then P.Preparation.refused({message: "Capture both the target and candidate."}) else if source == "" || scenarios == "" then P.Preparation.question({message: "Supply source and examples for this variation.", needs: P.Names.cons({head: "source", tail: P.Names.cons({head: "scenarios", tail: P.Names.nil()})})}) else if textLength(source) > 32768n || textLength(scenarios) > 16384n then P.Preparation.refused({message: "The source or examples exceed this writing card's bounds."}) else P.Preparation.ready({summary: "Submit source while preserving the complete captured target state.", reads: P.Reads.cons({head: P.Read.existing({object: state.candidate}), tail: P.Reads.cons({head: P.Read.existing({object: state.target}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: state.candidate, command: "submit", input: P.Value.record({fields: pair("proposal", P.Value.record({fields: pair("syntax", text(state.syntax), pair("source", text(source), pair("scenarios", text(scenarios), P.Fields.nil())))}), pair("migration", target.state, pair("target", text(state.target), P.Fields.nil())))})}), tail: P.Effects.nil()})})
+record Field:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Invitation:
+  visible: Bool
+  text: String
+  prepare: String
+  fields: {source: Field, scenarios: Field}
+  observations: P.Names
+record Child:
+  key: String
+  label: String
+  object: String
+  panel: String
+sum Children:
+  nil: {}
+  cons: {head: Child, tail: Children}
+record View:
+  title: String
+  prose: String
+  actions: {}
+  children: Children
+  invitations: {submit: Invitation}
+def view(state: State, panel: String) -> View:
+  {title: "Write a variation", prose: "Source and examples are checked before adoption. This writing card preserves its captured target's complete state.", actions: {}, children: Children.nil(), invitations: {submit: {visible: state.candidate != "" && state.target != "", text: "Submit source and examples", prepare: "prepareSubmit", fields: {source: {type: "string", minLength: 1n, maxLength: 32768n}, scenarios: {type: "string", minLength: 1n, maxLength: 16384n}}, observations: P.Names.cons({head: state.candidate, tail: P.Names.cons({head: state.target, tail: P.Names.nil()})})}}}
+
+# Configure this checked program as data; receiving admission checks its schema.
+def replaced(fields: P.Fields, name: String, value: P.Value) -> P.Fields:
+  match fields:
+    case nil(_): P.Fields.cons({head: {name: name, value: value}, tail: P.Fields.nil()})
+    case cons(c): if c.head.name == name then P.Fields.cons({head: {name: name, value: value}, tail: c.tail}) else P.Fields.cons({head: c.head, tail: replaced(c.tail, name, value)})
+def replacedValue(value: P.Value, name: String, replacement: P.Value) -> P.Value:
+  match value:
+    case record(r): P.Value.record({fields: replaced(r.fields, name, replacement)})
+    case none(_): P.Value.none()
+    case boolean(_): P.Value.none()
+    case natural(_): P.Value.none()
+    case number(_): P.Value.none()
+    case text(_): P.Value.none()
+    case array(_): P.Value.none()
+def wireText(value: String) -> P.Value:
+  P.Value.record({fields: pair("tag", text("label"), pair("value", text(value), P.Fields.nil()))})
+def wireField(name: String, value: String) -> P.Value:
+  P.Value.record({fields: pair("name", text(name), pair("value", wireText(value), P.Fields.nil()))})
+def configuredProgram(program: P.Value, config: State) -> P.Value:
+  let model: P.Value = P.Value.record({fields: pair("tag", text("record"), pair("fields", P.Value.array({values: P.Values.cons({head: wireField("candidate", config.candidate), tail: P.Values.cons({head: wireField("target", config.target), tail: P.Values.cons({head: wireField("syntax", config.syntax), tail: P.Values.nil()})})})}), P.Fields.nil()))})
+  replacedValue(program, "initial", P.oneField("model", model))

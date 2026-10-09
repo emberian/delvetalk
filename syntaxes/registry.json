@@ -120,7 +120,9 @@
         "scripts/affordances.py",
         "spec/PackageMain.lean",
         ".lake/build/bin/delvetalk-obend",
-        "scripts/source_packages.py"
+        "scripts/source_packages.py",
+        "world/lib/prelude/Preparation.obend",
+        "world/lib/prelude/Allocation.obend"
       ]
     },
     "spween-handler-workshop@1": {
@@ -145,7 +147,16 @@
         "syntaxes/spween_workshop.py",
         "scene/handlers.py",
         "scene/lower.py",
-        "protocols/spween-handlers/Kernel.obend"
+        "protocols/spween-handlers/Kernel.obend",
+        "world/lib/prelude/Preparation.obend",
+        "world/lib/prelude/Allocation.obend",
+        "world/lib/prelude/Abi.obend",
+        "world/lib/prelude/Encounter.obend",
+        "scene/runtime/SceneData.obend",
+        "scene/runtime/SceneModel.obend",
+        "scene/runtime/SceneRuntime.obend",
+        "scene/runtime/DefaultRuntime.obend",
+        "scene/runtime/Scene.obend"
       ]
     }
   },

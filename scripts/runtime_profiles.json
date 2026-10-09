@@ -9,6 +9,7 @@
       "profiles/WorldCore.lean",
       "profiles/FileCustody.lean",
       "profiles/ResidentStore.lean",
+      "profiles/RetainedRoots.lean",
       "spec/upstream/Compiler/Sha256.lean",
       "spec/Delvetalk/Core.lean",
       "spec/upstream/Theory/AxiomPin.lean",
@@ -51,7 +52,8 @@
     ],
     "sourceContracts": [
       "profiles/SourcePackages.lean",
-      "profiles/SourceContract.lean"
+      "profiles/SourceContract.lean",
+      "profiles/Preparation.lean"
     ]
   },
   "profiles": {

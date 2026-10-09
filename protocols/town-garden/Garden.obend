@@ -1,87 +1,86 @@
 edition ObjectiveBend 1
-record Completion:
-  seed: String
-  colour: String
-  planter: String
-  rain: String
-  rainmaker: String
-record Garden:
-  phase: String
-  seed: String
-  colour: String
-  planter: String
-  rain: String
-  rainmaker: String
-  hasCompleted: Bool
-  lastCompleted: Completion
-record Host:
-  value: Garden
-record Context:
-  object: String
-  principal: String
-record PlantInput:
-  seed: String
-  colour: String
-record RainInput:
-  line: String
-record PlantResult:
-  by: String
-  seed: String
-  colour: String
-record RainResult:
-  by: String
-  line: String
-record PlantDecision:
+import ./Abi.obend as Abi
+import ./Encounter.obend as Encounter
+import ./Blooms.obend as Blooms
+record State:
+  beds: Blooms.Beds
+  count: Nat
+  selected: Nat
+  page: Nat
+  home: String
+record Decision:
   accepted: Bool
   reason: String
-  state: Host
-  result: PlantResult
-record RainDecision:
-  accepted: Bool
-  reason: String
-  state: Host
-  result: RainResult
+  state: State
+  result: Blooms.Bloom
+def initial() -> State:
+  {beds: Blooms.Beds.nil(), count: 0, selected: 0, page: 0, home: ""}
+def refusal(state: State, reason: String) -> Decision:
+  {accepted: false, reason: reason, state: state, result: Blooms.blank()}
+def add(state: State, seed: String, colour: String, parent: Nat, context: Abi.Context) -> Decision:
+  let bloom: Blooms.Bloom = Blooms.planted(state.count + 1, seed, colour, context.principal, parent)
+  if state.count >= 32 then refusal(state, "All 32 places are planted. Revisit a bloom and give any waiting seed its rain.") else {accepted: true, reason: "", state: {beds: Blooms.append(state.beds, bloom), count: state.count + 1, selected: bloom.id, page: Blooms.pageFor(bloom.id), home: context.object}, result: bloom}
+def plant(state: State, input: {seed: String, colour: String}, context: Abi.Context) -> Decision:
+  if Blooms.words(input.seed, 80) == false || Blooms.colour(input.colour) == false then refusal(state, "Name a seed in 1–80 characters and choose amber, violet or silver light.") else add(state, input.seed, input.colour, 0, context)
+def rain(state: State, input: {id: Nat, line: String}, context: Abi.Context) -> Decision:
+  let bloom: Blooms.Bloom = Blooms.find(state.beds, input.id)
+  let grown: Blooms.Bloom = Blooms.rained(bloom, input.line, context.principal)
+  if bloom.id == 0 then refusal(state, "Choose a planted seed from the garden history.") else if Blooms.ready(bloom) then refusal(state, "That bloom already has its rain. Its two contributions are kept together.") else if bloom.planter == context.principal then refusal(state, "Rain needs a different participant; leave this seed for another gardener.") else if Blooms.words(input.line, 240) == false then refusal(state, "Give the seed one line of rain in 1–240 characters.") else {accepted: true, reason: "", state: extend(state, {beds: Blooms.replace(state.beds, grown), selected: bloom.id, page: Blooms.pageFor(bloom.id)}), result: grown}
+def visit(state: State, input: {id: Nat}, context: Abi.Context) -> Decision:
+  let bloom: Blooms.Bloom = Blooms.find(state.beds, input.id)
+  if bloom.id == 0 then refusal(state, "There is no planting with that number. Read the garden history.") else {accepted: true, reason: "", state: extend(state, {selected: bloom.id, page: Blooms.pageFor(bloom.id)}), result: bloom}
+def page(state: State, input: {index: Nat}, context: Abi.Context) -> Decision:
+  if input.index > Blooms.pageFor(state.count) then refusal(state, "There is no such history page yet.") else {accepted: true, reason: "", state: extend(state, {page: input.index}), result: Blooms.find(state.beds, state.selected)}
+def cutting(state: State, input: {id: Nat, colour: String}, context: Abi.Context) -> Decision:
+  let parent: Blooms.Bloom = Blooms.find(state.beds, input.id)
+  if Blooms.ready(parent) == false then refusal(state, "Take a cutting from a completed bloom; its original voices remain in the garden.") else if Blooms.colour(input.colour) == false then refusal(state, "Choose amber, violet or silver light for the cutting.") else add(state, parent.seed, input.colour, parent.id, context)
+record TextField:
+  type: String
+  label: String
+  minLength: Nat
+  maxLength: Nat
+  example: String
+record LightField:
+  type: String
+  label: String
+  options: {amber: String, violet: String, silver: String}
+  example: String
+record Description:
+  name: String
+  initial: State
+  methods: {page: {label: String, fields: {index: Abi.NatField}}, plant: {label: String, fields: {seed: TextField, colour: LightField}}, rain: {label: String, fields: {id: Abi.NatField, line: TextField}}, visit: {label: String, fields: {id: Abi.NatField}}, cutting: {label: String, fields: {id: Abi.NatField, colour: LightField}}}
+  panels: {image: String, seed: String, planter: String, rain: String, rainmaker: String, colour: String, history: String, parent: String}
+def light() -> LightField:
+  {type: "enum", label: "Its light", options: {amber: "amber", violet: "violet", silver: "silver"}, example: "amber"}
+def identifier() -> Abi.NatField:
+  {type: "nat", minimum: 1, maximum: 32}
+def describe() -> Description:
+  {name: "The Night Garden", initial: initial(), methods: {page: {label: "Turn the garden history page", fields: {index: {type: "nat", minimum: 0, maximum: 3}}}, plant: {label: "Plant an imaginary seed", fields: {seed: {type: "string", label: "What might grow here?", minLength: 1, maxLength: 80, example: "A bell for lost moths"}, colour: light()}}, rain: {label: "Give a seed its first rain", fields: {id: identifier(), line: {type: "string", label: "One line of rain", minLength: 1, maxLength: 240, example: "Each drop remembers a forgotten star."}}}, visit: {label: "Revisit a planting from the history", fields: {id: identifier()}}, cutting: {label: "Grow a cutting from this bloom", fields: {id: identifier(), colour: light()}}}, panels: {image: "Garden", seed: "Seed", planter: "Planted by", rain: "Rain", rainmaker: "Rain by", colour: "Light", history: "Garden history", parent: "Original bloom"}}
 record Action:
+  visible: Bool
   text: String
   command: String
   input: {}
-record Actions:
-  next: Action
+record ChosenAction:
+  visible: Bool
+  text: String
+  command: String
+  input: {id: Nat}
+record PageAction:
+  visible: Bool
+  text: String
+  command: String
+  input: {index: Nat}
 record View:
   title: String
   prose: String
-  actions: Actions
-record OldEmpty:
-  phase: String
-  seed: String
-  colour: String
-  planter: String
-  rain: String
-  rainmaker: String
-  lastCompleted: {}
-record OldComplete:
-  phase: String
-  seed: String
-  colour: String
-  planter: String
-  rain: String
-  rainmaker: String
-  lastCompleted: Completion
-def blankCompletion() -> Completion:
-  {seed: "", colour: "", planter: "", rain: "", rainmaker: ""}
-def migrateEmpty(old: OldEmpty) -> Host:
-  {value: {phase: old.phase, seed: old.seed, colour: old.colour, planter: old.planter, rain: old.rain, rainmaker: old.rainmaker, hasCompleted: false, lastCompleted: blankCompletion()}}
-def migrateComplete(old: OldComplete) -> Host:
-  {value: {phase: old.phase, seed: old.seed, colour: old.colour, planter: old.planter, rain: old.rain, rainmaker: old.rainmaker, hasCompleted: true, lastCompleted: old.lastCompleted}}
-def planted(s: Garden, input: PlantInput, context: Context) -> Garden:
-  extend(s, {phase: "planted", seed: input.seed, colour: input.colour, planter: context.principal, rain: "", rainmaker: ""})
-def rained(s: Garden, input: RainInput, context: Context) -> Garden:
-  extend(s, {phase: "blooming", rain: input.line, rainmaker: context.principal, hasCompleted: true, lastCompleted: {seed: s.seed, colour: s.colour, planter: s.planter, rain: input.line, rainmaker: context.principal}})
-def plantTurn(host: Host, input: PlantInput, context: Context) -> PlantDecision:
-  let s: Garden = host.value in let accepted: Bool = (s.phase == "waiting" || s.phase == "blooming") && input.seed != "" && (input.colour == "amber" || input.colour == "violet" || input.colour == "silver") in {accepted: accepted, reason: if accepted then "" else "Plant needs an empty or completed garden, a seed, and amber/violet/silver light.", state: {value: planted(s, input, context)}, result: {by: context.principal, seed: input.seed, colour: input.colour}}
-def rainTurn(host: Host, input: RainInput, context: Context) -> RainDecision:
-  let s: Garden = host.value in let accepted: Bool = s.phase == "planted" && input.line != "" && s.planter != context.principal in {accepted: accepted, reason: if accepted then "" else "Rain needs a planted seed, a nonempty line, and a different participant.", state: {value: rained(s, input, context)}, result: {by: context.principal, line: input.line}}
-def image(s: Garden) -> String:
-  if s.phase == "waiting" then "  .        *\n       .\n  __________\n /          \\\n |   soil   |\n \\__________/" else if s.phase != "blooming" then "  .        *\n      .\n      v\n  ____|_____\n /   seed   \\\n \\__________/" else if s.colour == "amber" then "   *     .\n    \\ | /\n  -- AMBER --\n    / | \\\n      |\n  ____|____" else if s.colour == "violet" then "     .   *\n    (\\ /)\n   (VIOLET)\n    (/ \\)\n      |\n  ____|____" else "   .       *\n      /\\\n  ___/  \\___\n /  SILVER  \\\n |  BLOOM   |\n  \\__  __/\n     ||\n  ___||___"
-def view(host: Host, panel: String) -> View:
-  let s: Garden = host.value in let waiting: Bool = s.phase == "waiting" in let blooming: Bool = s.phase == "blooming" in let prose: String = if waiting then "Behind the last lit window is a patch of dark soil. Plant something that could only grow here." else if blooming then s.rain else "A seed is resting here. Someone other than its planter: give it one line of rain." in {title: if waiting then "The Night Garden · an empty patch" else s.seed, prose: if panel == "image" then image(s) else if panel == "seed" then s.seed else if panel == "planter" then s.planter else if panel == "rain" then s.rain else if panel == "rainmaker" then s.rainmaker else if panel == "colour" then s.colour else prose, actions: {next: {text: if waiting || blooming then "Plant an imaginary seed" else "Give the seed its first rain", command: if waiting || blooming then "plant" else "rain", input: {}}}}
+  actions: {plant: Action, rain: ChosenAction, visit: Action, cutting: ChosenAction, previous: PageAction, next: PageAction}
+  children: Encounter.Children
+def image(bloom: Blooms.Bloom) -> String:
+  if bloom.id == 0 then "  .        *\n       .\n  __________\n /   soil   \\ \n \\__________/" else if Blooms.ready(bloom) == false then "      v\n  ____|_____\n /   seed   \\ \n \\__________/" else if bloom.colour == "amber" then "    \\ | /\n  -- AMBER --\n    / | \\ \n  ____|____" else if bloom.colour == "violet" then "    (\\ /)\n   (VIOLET)\n    (/ \\)\n  ____|____" else "      /\\\n  ___/  \\___\n /  SILVER  \\ \n |  BLOOM   |\n  \\__  __/"
+def related(state: State, bloom: Blooms.Bloom) -> Encounter.Children:
+  if bloom.parent == 0 then Encounter.Children.nil() else Encounter.childrenOffer(Encounter.Children.nil(), {key: "parent", label: "The original bloom and its two authors", object: state.home, panel: "parent"}, 1)
+def view(state: State, panel: String) -> View:
+  let bloom: Blooms.Bloom = Blooms.find(state.beds, state.selected)
+  let prose: String = if state.count == 0 then "Behind the last lit window is a patch of dark soil. Plant something that could only grow here. Someone else will give it rain; both voices stay in the garden." else Blooms.story(bloom)
+  {title: if bloom.id == 0 then "The Night Garden · an empty patch" else bloom.seed, prose: if panel == "image" then image(bloom) else if panel == "seed" then bloom.seed else if panel == "planter" then bloom.planter else if panel == "rain" then bloom.rain else if panel == "rainmaker" then bloom.rainmaker else if panel == "colour" then bloom.colour else if panel == "history" then textConcat(textConcat("Garden history, page ", natText(state.page + 1)), textConcat(". Every planting stays here; revisit its number.\n", Blooms.history(state.beds, state.page))) else if panel == "parent" then if bloom.parent == 0 then "" else Blooms.story(Blooms.find(state.beds, bloom.parent)) else prose, actions: {plant: {visible: state.count < 32, text: "Plant an imaginary seed beside these", command: "plant", input: {}}, rain: {visible: bloom.id > 0 && Blooms.ready(bloom) == false, text: "Another gardener: give this seed its first rain", command: "rain", input: {id: bloom.id}}, visit: {visible: state.count > 0, text: "Revisit a numbered planting from the history", command: "visit", input: {}}, cutting: {visible: Blooms.ready(bloom) && state.count < 32, text: "Take a cutting; keep its original voices", command: "cutting", input: {id: bloom.id}}, previous: {visible: state.page > 0, text: "Previous eight plantings", command: "page", input: {index: state.page - 1}}, next: {visible: state.page < Blooms.pageFor(state.count), text: "Next eight plantings", command: "page", input: {index: state.page + 1}}}, children: related(state, bloom)}

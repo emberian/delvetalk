@@ -316,7 +316,7 @@ class Portal:
         bootstrap.projection.children(view)  # Validate before retaining any observation.
         import composite_offers
         import source_offers
-        captured_offers = source_offers.capture_available(view, snapshot['objects'])
+        captured_offers = source_offers.capture_available(view, snapshot['objects'], database=self.database)
         offers = {}
         for index, key in enumerate(sorted(set(captured_offers['offers']) | set(captured_offers['unavailable'])), 1):
             action_id = 'o' + str(index)
@@ -440,12 +440,12 @@ class Portal:
             result.update(ephemeral=True, expiresInSeconds=self.preview.lifetime('preparations', identity))
         return result
 
-    @staticmethod
-    def captured_request(saved, action, principal, intent, fields):
+    def captured_request(self, saved, action, principal, intent, fields):
         """Frame only a retained offer; never refresh its roots during preparation."""
         if action in saved.get('offers', {}):
             import composite_offers
-            return composite_offers.request(saved['offers'][action], principal, intent, fields)
+            return composite_offers.request(saved['offers'][action], principal, intent, fields,
+                                            database=self.database)
         return affordances.request(saved['view'], action, principal, intent, fields)
 
     @staticmethod
@@ -474,7 +474,7 @@ class Portal:
                             if transaction else request.get('absent', [])),
                 'scope': 'Preparing does not submit. Execute or retry retains this draft’s original intent.'}
         if transaction:
-            result['reads'] = [{'object': name, 'version': descriptor['expected']['version']}
+            result['reads'] = [{'object': name, 'version': descriptor['expected'].get('version')}
                               for name, descriptor in saved['wire']['reads'].items()
                               if descriptor['expected'] is not None]
         if self.public:

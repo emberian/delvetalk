@@ -6,7 +6,6 @@ evaluation, action construction, card binding and durable admission are real.
 """
 import copy
 import importlib.util
-import json
 from pathlib import Path
 import sys
 import tempfile
@@ -26,7 +25,7 @@ def module(name, path):
 
 
 room = module('authored_interface_room', 'scene/room.py')
-bundle = module('authored_interface_bundle', 'syntaxes/source_bundle.py')
+garden_source = module('authored_interface_garden', 'conformance/test_garden_source.py')
 GARDEN = ROOT / 'protocols/town-garden'
 ISSUER, MOSS, IRIS = ['did:plc:' + c * 24 for c in 'abc']
 
@@ -37,8 +36,7 @@ class AuthoredInterfaces(unittest.TestCase):
             base = Path(temporary)
             database = base / 'world.json'
             runtime = history.runtime('compiled')
-            protocol = bundle.load(GARDEN / 'binding.json', [('Garden', GARDEN / 'Garden.obend')])
-            self.assertEqual(protocol, json.loads((GARDEN / 'protocol.json').read_bytes()))
+            protocol = garden_source.protocol()
             call = lambda request: world.exchange(database, request, profile='compiled')
             inspect = lambda: call({'op': 'inspect', 'object': 'garden', 'principal': MOSS})
             law = {'profile': 'delvetalk-scoped-law-v1',
@@ -66,7 +64,7 @@ class AuthoredInterfaces(unittest.TestCase):
                 return card, publication
 
             def attempt(card, publication, actor, key):
-                action, = card['card']['actions']
+                action = next(a for a in card['card']['actions'] if a['command'] == key)
                 values = {field['name']: field['example'] for field in action['fields']}
                 text = town.spell(card['alias'], action, values,
                                   selector=town.action_word(action, card['card']['actions']))
@@ -79,7 +77,7 @@ class AuthoredInterfaces(unittest.TestCase):
                           'author': actor, 'pds': 'https://pds.delve.town'}
                 wire, evidence = book.resolve(record, actor, source, fetch, [ISSUER])
                 self.assertEqual(evidence['parsed']['fields'], values)
-                self.assertEqual(wire['input'], values)
+                self.assertEqual(wire['input'], {**card['view']['data']['actions'][key]['input'], **values})
                 self.assertNotIn('principal', wire)
                 return {**wire, 'principal': actor, 'intent': 'delve:' + source['uri']}
 
@@ -90,7 +88,7 @@ class AuthoredInterfaces(unittest.TestCase):
             planted = call(plant)
             self.assertEqual(planted['kind'], 'committed', planted)
             waiting, publication = capture('garden-rain')
-            self.assertEqual([a['command'] for a in waiting['card']['actions']], ['rain'])
+            self.assertIn('rain', [a['command'] for a in waiting['card']['actions']])
             self.assertIn('@moss', waiting['body'])
             rain = attempt(waiting, publication, IRIS, 'rain')
             same_voice = {**rain, 'principal': MOSS, 'intent': 'same-voice'}
@@ -109,11 +107,10 @@ class AuthoredInterfaces(unittest.TestCase):
             self.assertIn('AMBER', panels['image'])
             self.assertIn('@moss', blooming['body'])
             self.assertIn('@iris', blooming['body'])
-            self.assertEqual([a['command'] for a in blooming['card']['actions']], ['plant'])
+            self.assertEqual(set(a['command'] for a in blooming['card']['actions']), {'plant', 'visit', 'cutting'})
             current = inspect()
-            self.assertEqual(current['protocol']['viewProgram']['package']['modules'],
-                             [{'name': 'Garden', 'source': (GARDEN / 'Garden.obend').read_text()}])
-            self.assertEqual(current['protocol']['commands']['plant']['transition']['package']['entry'], 'plantTurn')
+            self.assertEqual(current['protocol']['sourcePackages']['resident']['modules'], garden_source.modules())
+            self.assertEqual(current['protocol']['commands']['plant']['transition']['package']['entry'], 'plant')
             # Every exchange starts a new native host: retained identity recovers
             # its old answer, while the same words as a new attempt are stale.
             book = town.CardBook(base / 'cards')

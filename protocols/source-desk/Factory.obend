@@ -1,0 +1,51 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Allocation.obend as A
+import ./Encounter.obend as Encounter
+import ./Factory.obend as F
+
+# An ordinary workshop reuses the Candidate factory's child authority.
+# This specialization accepts a direct name rather than an Editor.plan origin.
+record Input:
+  name: String
+record Result:
+  name: String
+  maker: String
+record Decision:
+  accepted: Bool
+  reason: String
+  state: F.State
+  result: Result
+  allocations: A.Allocations
+def initial(config: P.Value) -> F.State:
+  F.initial(config)
+def make(state: F.State, input: Input, context: F.Context) -> Decision:
+  let ready: Bool = input.name != "" && state.compiler != ""
+  {accepted: ready, reason: if ready then "" else "Name the desk and configure its compiler.", state: if ready then F.remembered(state, input.name) else state, result: {name: input.name, maker: context.principal}, allocations: if ready then A.Allocations.cons({head: {name: input.name, protocol: state.candidate, law: F.authority(state, context.principal)}, tail: A.Allocations.nil()}) else A.Allocations.nil()}
+record TextField:
+  type: String
+  minLength: Nat
+  maxLength: Nat
+record Method:
+  label: String
+  fields: {name: TextField}
+record Description:
+  name: String
+  initial: F.State
+  methods: {make: Method}
+  panels: {last: String}
+  allocation: {limit: Nat}
+def describe() -> Description:
+  {name: "Writing desks", initial: initial(P.Value.none()), methods: {make: {label: "Make a writing desk", fields: {name: {type: "string", minLength: 1n, maxLength: 64n}}}}, panels: {last: "Last made"}, allocation: {limit: 16n}}
+record Action:
+  visible: Bool
+  text: String
+  command: String
+  input: {}
+record View:
+  title: String
+  prose: String
+  actions: {make: Action}
+  children: Encounter.Children
+def view(state: F.State, panel: String) -> View:
+  {title: "Writing desks", prose: if panel == "last" then state.last else "Make a fresh desk for a proposal. Its maker may submit and release it; the configured compiler may report results.", actions: {make: {visible: state.compiler != "", text: "Make a writing desk", command: "make", input: {}}}, children: Encounter.Children.nil()}

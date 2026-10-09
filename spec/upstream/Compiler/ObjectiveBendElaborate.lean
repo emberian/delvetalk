@@ -1475,16 +1475,6 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       let ct ← expression c fuel condition env m
       let tt ← expression c fuel whenTrue env m
       let ft ← expression c fuel whenFalse env m
-      -- Core conditionals require identical branch types. Conversion at an ordinary
-      -- linear identity application canonicalizes equivalent rows without relaxing
-      -- `agree` (in particular its no-manufactured-shareability check).
-      let leftType ← synth c fuel whenTrue env m
-      let rightType ← synth c fuel whenFalse env m
-      if sameTy leftType rightType then
-        if let some ty := leftType then
-          let canonical := ty.canonical
-          let identity := ATerm.lam ⟨some canonical, some canonical, "linear", "reusable", none⟩ (.bound 0)
-          return .ifBool ct (.app identity tt) (.app identity ft)
       return .ifBool ct tt ft
     | .letE name type value bodyE =>
       -- Not a tail position: the body is a pure expression even inside an activity body.

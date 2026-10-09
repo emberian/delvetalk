@@ -4,7 +4,7 @@
 workflows, scene relation and interaction logic are source programs. Lean supplies
 the language implementation and the smallest explicit admission boundary. Python
 supplies necessary physical custody, process and platform I/O. This is the target
-architecture; the audit below identifies current violations, not accepted layers.
+architecture. Remaining behavioral owners below require consumer cutovers.
 
 Native execution is insufficient: Python which chooses an AST's guards, writes,
 phases or action sequences is still the author of those semantics. Moving its
@@ -12,18 +12,41 @@ output into a `.obend` file without reusable source definitions preserves the
 wrong authoring model. A JSON encoding is unobjectionable as transport; an extra
 Python language for deciding what that encoding means is not.
 
-## Concrete replacements
+## Current source owners
 
-| Current owner | Source owner to build | Removal |
+[ReviewableWork and Ticket](../../protocols/work-ticket/README.md) own ticket
+phases, review and encounters. [Agreement and Exhibition](../../protocols/shared-exhibition/README.md)
+own arrangements and revision-bound approval. Their package loaders retain exact
+modules and explicit configuration; they do not generate behavior.
+
+[Editor, Candidate and Factory](../../protocols/editor/README.md) now own their
+lifecycle, preparation, child construction and child law in source. The Editor
+client retains native preparation results and admission receipts. Source
+preparation returns complete plans, questions or refusals through the native
+boundary; `source_offers.py` retains captured invitations and transports those
+calls. These paths replace the client recipe interpreter.
+
+[SceneRuntime](../../scene/runtime/README.md) owns guards, effects, entry,
+visitation and navigation. `scene/handlers.py` serializes the parsed scene as
+typed data and packages explicit handler/runtime/scene modules. Serialization of
+that data is not control-flow generation.
+
+These are current implementation boundaries, not claims of whole-system
+qualification or deployment. [TRACKING](../../TRACKING.md) owns integration status.
+
+## Remaining consumer replacements
+
+| Behavioral owner | Source replacement | Cutover obligation |
 | --- | --- | --- |
-| `protocols/work-ticket/generate.py` | `ReviewableWork` and a ticket object: phase, participants, submission, review, encounter | Guard/write/view generator and generated scenario authoring |
-| `protocols/shared-exhibition/generate.py` | Arrangement plus approvals bound to that arrangement; independently authored exhibition | Parallel role, consent and menu construction |
-| `protocols/commons/generate.py` | Typed presence/graph relations over configured data | Unrolled participant/edge code and copied place descriptions |
-| `protocols/editor/offers.py`, `scripts/editor.py` | Editor's actual source lifecycle and reusable preparation functions | Source-writing DSL and editor-specific orchestration |
-| Town-forge and Editor factory generators | Source `CandidateDesk` and `Factory` specializations | Python-generated phases, child policy and scalar migration language |
-| `scripts/contract_authoring.py` | Source `ContractWorkshop` composing verified observations and law proposals | Python's eligibility, law-amendment policy and release choreography |
-| `scene/handlers.py` control-flow generation | `SceneRuntime` over typed scene data, importing the selected Handler | Python definitions of guards, entry, effects, visitation and navigation |
-| `game/table/protocol.py` | `CommitRevealTable` around the existing qualified Bend game | Commitment/reveal/reset behavior authored as Python AST |
+| `protocols/commons/generate.py` | Typed presence/graph relations over configured data | Remove unrolled participant/edge policy; preserve gated origin checks and distinguish presence from containment. |
+| Town-forge, stateful and Spween workshop generators; JSON factory seeds | Source Candidate/Factory and authored workshop preparation | Change bootstrap, desk recognition and workshop callers; delete scalar migration templates and old recipe submissions. The source Editor loader is already separate from this debt. |
+| `scripts/authoring.py` | Source workshop encounters/preparation | Remove Python selection of application steps as its actual CLI/portal consumers move. |
+| `scripts/contract_authoring.py` | Source `ContractWorkshop` | Move candidate eligibility, law-amendment policy and release choreography; retain exact source/build custody. |
+| `game/table/protocol.py` | `CommitRevealTable` around the existing Bend game | Move commitment/reveal/reset behavior; retain private nonce custody and transport. |
+
+The [repository consumer graph](REPOSITORY.md#cut-over-consumers-then-delete-the-duplicate)
+identifies callers that must move together. A new source object does not finish a
+cutover while the advertised seed or CLI still installs its generated predecessor.
 
 Automatafl gameplay already lives in Bend; preserve the original two-player
 11×11 rules and opening. Its small presentation wrapper is not the substantive
@@ -42,10 +65,10 @@ binding only where a concrete source interface needs it.
 **Preparation is source evaluation.** An ordinary pure Bend export takes typed
 arguments and explicit observations and returns a complete bounded plan or an
 authored question/refusal. Root binding and validation belong to one native
-boundary. Retire `source_offers.py`'s alias environment, dotted substitutions,
-result registers and captures as an operational Python language. Source chooses
-participants and ordering; native admission checks every actual effect. A source
-plan is a proposal, never authority. See [composition](COMPOSITION.md).
+boundary. Clients retain invitations and native results; source chooses participants
+and ordering. Remaining recipe callers must use that invitation contract. Native
+admission checks every effect. A source plan is a proposal, never authority. See
+[composition](COMPOSITION.md).
 
 **Environment services are explicit.** Compilation, verified specification
 observation, hashing, governed allocation and persistence need a host boundary.
@@ -56,11 +79,9 @@ exact absence checks. A source-produced law amendment still faces old and new la
 
 ## Parallel implementation
 
-Ticket, agreement, presence and scene-runtime conversions can proceed independently
-on the existing typed source substrate. Preparation and source-allocation are
-separate native/source seams. Contract workshop and reusable candidate/factory
-objects consume those seams as they become available. Commit/reveal can progress
-against the existing game kernel without waiting for any of them.
+Presence and commit/reveal can progress independently. Contract workshops consume
+the native preparation, verified observation and law boundaries. Candidate/factory
+consumer cutovers share workshop seeds and desk recognition and must be coordinated.
 
 Each conversion ends by changing its consumers and deleting the old behavioral
 owner. Do not accumulate a new Bend object beside a permanently supported Python
@@ -76,23 +97,24 @@ composes them must remain available to Bend authors.
 ## Make source sufficient for inhabitants
 
 The replacement requires language ergonomics as well as correct ownership. These
-fronts extend the decision above; they are not claims of completed implementation.
+fronts distinguish existing substrate from remaining consumer and design work.
 
-- **One explicit prelude.** Share Context, Origin, encounters, effect data and
-  collection definitions through the sealed module mechanism. A convenient
-  implicit import must still resolve to a retained dependency, never ambient
-  mutable source. Reuse existing collection modules before inventing another List.
-- **Text computation.** Add deliberate, tested text construction and inspection
-  semantics, including concatenation and numeric rendering. Decide Unicode
-  length/slicing and resource charging before installing primitives. Check the
-  upstream language boundary; distinguish a declared extension from the pinned
-  normative core. Objects must be able to describe their own changing contents.
-- **Collections with explicit bounds.** Replace hand-enumerated mail, consent and
-  appointment slots with collection algorithms where supported. Keep capacity,
+- **One explicit prelude.** [Shared source modules](../../world/lib/prelude/README.md)
+  provide context, encounters, preparation and allocation data. Sealed packages
+  retain their exact dependencies; no ambient import is supplied. Replace remaining
+  repeated declarations at consumers. Domain-specific collections can remain beside
+  their behavior rather than pretending to provide polymorphism.
+- **Text computation.** Hosted text operations implement concatenation, decimal
+  rendering and Unicode-scalar length/slicing without normalization. The
+  [focused checks](../../conformance/test_text_primitives.py) cover types, lazy
+  evaluation and work/allocation budgets. Preserve the explicit extension boundary
+  and source provenance; qualify receiving consumers with the matching runtime.
+- **Collections with explicit bounds.** Use domain collections for mail, consent
+  and appointments rather than hand-enumerated slots. Keep capacity,
   per-turn work and causal growth as explicit budgets. Lists alone do not make
-  evaluation efficient: measure an inhabited room with 200 objects, including
-  view construction and action preparation, before choosing representation or
-  evaluator improvements.
+  evaluation efficient. Paged encounter collections and 200-entry workloads exist;
+  qualify inhabited-room view construction and action preparation before claiming
+  that those measurements establish the whole interaction budget.
 - **References with precise meaning.** Design a typed distinction between text,
   resolved object identity and authenticated provenance. A host-minted identity
   value can prevent accidental text substitution; it does not automatically
@@ -127,5 +149,5 @@ A conditional may return an existing record on one branch and `extend(record,
 {field: value})` on another. Equivalent record fields may appear in a different
 order; both branches must still agree on each field's type. This also works for
 an updated record nested inside a decision. An unchosen branch stays lazy.
-The frontend aligns equivalent row types through ordinary checked conversions;
-core branch equality and restricted-value sharing rules remain unchanged.
+The checker admits equivalent rows through its existing checked conversion;
+the typing rule and restricted-value sharing rules remain unchanged.

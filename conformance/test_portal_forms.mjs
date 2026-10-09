@@ -161,6 +161,9 @@ assert.equal(document.getElementById('draft-target').textContent,
   `Captured together: workshop · version 2; ${malicious} · version 0. All steps commit together.`);
 assert.equal(document.getElementById('draft-absence').textContent,
   'Creates: candidates/new. These object names must still be absent.');
+context.showDraft({ ...draft, reads: [{ object: 'workshop', version: null }] });
+assert.equal(document.getElementById('draft-target').textContent,
+  'Captured together: workshop · captured root. All steps commit together.');
 vm.runInContext("state.world.mode = 'local-interactive'; state.uncertain = true;", context);
 location.href = 'https://example.invalid/?object=door&panel=ink%20%26%20light';
 await events.popstate();

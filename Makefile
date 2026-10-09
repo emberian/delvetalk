@@ -32,6 +32,8 @@ packages:
 	python3 conformance/test_package_collections.py
 	python3 conformance/test_reflection.py
 	python3 conformance/test_frontend_abstractions.py
+	python3 conformance/test_text_primitives.py
+	python3 conformance/test_branch_rows.py
 	python3 conformance/test_source_prelude.py
 	python3 conformance/test_automatafl.py
 	python3 conformance/test_automatafl_audit.py
@@ -51,8 +53,10 @@ world:
 	python3 conformance/test_compiled.py
 	python3 conformance/test_source_packages.py
 	python3 conformance/test_source_contract.py
+	python3 conformance/test_preparation.py
 	python3 conformance/test_source_transition.py
 	python3 conformance/test_source_data_transition.py
+	python3 conformance/test_source_allocation.py
 	python3 conformance/test_resident_messages.py
 	python3 conformance/test_resident_library.py
 	python3 conformance/test_encounter_pages.py
@@ -60,6 +64,7 @@ world:
 	python3 conformance/test_file_custody.py
 	python3 conformance/test_resident_store.py
 	python3 conformance/test_resident_transport.py
+	python3 conformance/test_retained_roots.py
 	python3 conformance/test_runtime_profile.py
 	python3 conformance/test_runtime_hashing.py
 	python3 conformance/test_convergence.py
@@ -68,6 +73,7 @@ world:
 	python3 conformance/test_table_participant.py
 	python3 conformance/test_automatafl_companion.py
 	python3 conformance/test_desk.py
+	python3 conformance/test_candidate_custody.py
 	python3 conformance/test_desk_profiles.py
 	python3 conformance/test_projection.py
 	python3 conformance/test_inhabited_bootstrap.py
@@ -110,9 +116,10 @@ delve:
 	python3 conformance/test_clerk_attach.py
 	python3 conformance/test_town_cards.py
 	python3 conformance/test_child_navigation.py
-	python3 conformance/test_composite_offers.py
+	python3 conformance/test_source_offer_capture.py
 	python3 conformance/test_authored_interfaces.py
 	python3 conformance/test_town_receiving.py
+	python3 conformance/test_town_preparation.py
 	python3 conformance/test_town_journey.py
 	python3 conformance/test_town_operator.py
 	python3 conformance/test_town_authoring.py
@@ -126,6 +133,7 @@ delve:
 	python3 conformance/test_obend_object.py
 	python3 conformance/test_obend_data_object.py
 	python3 conformance/test_source_package_adapter.py
+	python3 conformance/test_source_binding_codecs.py
 	python3 conformance/test_obend_messages.py
 	python3 conformance/test_stateful_authoring.py
 	python3 conformance/test_peer_layers.py
@@ -165,6 +173,7 @@ portal:
 	python3 conformance/test_submission.py
 	python3 conformance/test_portal_public.py
 	python3 conformance/test_portal_panels.py
+	python3 conformance/test_portal_preparation.py
 	python3 -m unittest conformance.test_portal_children
 	python3 -m unittest conformance.test_portal_resident
 	node --check portal/static/app.js

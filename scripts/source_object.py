@@ -132,7 +132,9 @@ def load(modules, *, syntax, constructor=None, arguments=None):
     if value.get('tag') != 'record':
         raise ValueError('source constructor must produce a record state')
     protocol['initial'] = {'model': value}
-    protocol['sourceConfiguration'] = {'entry': constructor, 'arguments': deepcopy(arguments)}
+    # The exact evaluated initial value is operative configuration. Original
+    # constructor inputs belong to caller custody, not a second executable copy.
+    protocol['sourceConfiguration'] = {'entry': constructor}
     if captured != pins(syntax):
         raise ValueError('source object runtime changed during configuration')
     return protocol

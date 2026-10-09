@@ -6,8 +6,10 @@ from pathlib import Path
 import tempfile
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location('retained_world', ROOT / 'scripts/world.py')
 world = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(world)
@@ -88,6 +90,47 @@ class RetainedRootTests(unittest.TestCase):
         with self.assertRaises((ValueError, RuntimeError)):
             self.reference(database, changed)
 
+    def test_compact_uncertain_commit_recovery_and_full_native_audit(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import resident_store
+        from conformance.test_resident_store import create
+        database = self.directory / 'audit.sqlite'
+        with resident_store.Resident(database, profile='compiled') as resident:
+            root = resident.exchange(create())['data']['root']
+            reference = resident.query({'op': 'retained-root', 'object': 'room', 'root': root})
+            request = {'op': 'invoke', 'object': 'room', 'principal': 'keeper', 'intent': 'write',
+                'expected': reference, 'command': 'write', 'input': {'value': 7}}
+            def fail(stage):
+                if stage == 'after_commit':
+                    raise OSError('lost durable reply')
+            with patch.object(resident, '_boundary', fail):
+                with self.assertRaises(OSError):
+                    resident.exchange(request)
+            reply = resident.recover()
+            self.assertEqual(reply['kind'], 'committed')
+            resident.checkpoint()
+            self.assertEqual(resident.audit()['sequence'], 2)
+            self.assertEqual(resident.retained_reply(request), reply)
+        with resident_store.Resident(database, profile='compiled') as resident:
+            self.assertEqual(resident.exchange(request), reply)
+            self.assertEqual(resident.query({'op': 'retained-root', 'object': 'room', 'root': root}), reference)
+
+    def test_file_queries_create_no_custody_files_and_reject_mutations(self):
+        database = self.directory / 'readonly.json'
+        root = self.create(database)
+        before = database.read_bytes()
+        # Query must work without the writer's lock file or any writable path.
+        Path(str(database) + '.lock').unlink()
+        names = set(self.directory.iterdir())
+        with patch.object(world.tempfile, 'NamedTemporaryFile', side_effect=AssertionError('query created custody')):
+            reference = self.reference(database, root)
+            inspected = world.query(database, {'op': 'inspect', 'object': 'counter', 'principal': 'reader'})
+            self.assertEqual(inspected, root)
+            with self.assertRaisesRegex(ValueError, 'read-only file query refuses mutations'):
+                world.query(database, self.write(reference))
+        self.assertEqual(database.read_bytes(), before)
+        self.assertEqual(set(self.directory.iterdir()), names)
+
     def test_actual_captured_source_preparation_is_compact_without_refresh(self):
         sys.path.insert(0, str(ROOT))
         sys.path.insert(0, str(ROOT / 'scripts'))
@@ -121,8 +164,8 @@ class RetainedRootTests(unittest.TestCase):
                 'intent': 'move', 'expected': invitation['observations'][0]['root'], 'command': 'touch',
                 'input': {'gesture': 'second'}}, profile='compiled')
             self.assertEqual(moved['kind'], 'committed')
-            captured = source_offers.prepare({**invitation, 'entry': 'prepareData'}, 'actor', 'old-data', {}, database=database)
-            self.assertEqual(captured['request']['calls'][0]['input']['gesture'], 'first')
+            captured = source_offers.prepare(invitation, 'actor', 'after-move', {'gesture': 'wave'}, database=database)
+            self.assertEqual(captured['request']['reads'], outcome['request']['reads'])
             refused = world.exchange(database, outcome['request'], profile='compiled')
             self.assertEqual(refused['kind'], 'refused')
 

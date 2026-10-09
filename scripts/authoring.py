@@ -51,7 +51,7 @@ class Authoring:
         registry = loads((desk.ROOT / 'syntaxes/registry.json').read_bytes())
         return {'syntaxes': sorted(registry['syntaxes']),
                 'candidates': [name for name, root in snapshot['objects'].items()
-                               if root['protocol'].get('name') == 'source-desk-v1'],
+                               if desk.is_source_desk_protocol(root['protocol'])],
                 'maxSourceBytes': MAX_SOURCE,
                 'links': {'prepare': '/api/authoring/prepare', 'source': '/api/authoring/source'}}
 

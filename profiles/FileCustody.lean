@@ -40,6 +40,26 @@ def lookup (snapshot : System.FilePath) : IO Unit := do
   catch error => pure (World.obj [("error", .str error.toString)])
   (← IO.getStdout).putStrLn (encode result)
 
+-- This endpoint is read-only by construction, including its physical custody.
+-- Reject mutations before invoking the shared native receiver. The unchanged
+-- world assertion also catches an accidentally effectful future query hook.
+def queryOperations : List String := ["inspect", "messages-pending", "message-event",
+  "retained-root", "prepare", "prepare-retained", "value-codec"]
+
+def query (receive : Json → Json → Except String (Json × Json))
+    (snapshot : System.FilePath) : IO Unit := do
+  let result ← try
+    let request ← readRequest
+    if !queryOperations.contains (← IO.ofExcept (World.str request "op")) then
+      throw (IO.userError "read-only file query refuses mutations")
+    if !(← snapshot.pathExists) then throw (IO.userError "read-only query snapshot unavailable")
+    let world ← IO.ofExcept (Json.parse (← IO.FS.readFile snapshot))
+    let (next, reply) ← IO.ofExcept (receive world request)
+    if next != world then throw (IO.userError "read-only query changed world")
+    pure (World.obj [("reply", reply)])
+  catch error => pure (World.obj [("error", .str error.toString)])
+  (← IO.getStdout).putStrLn (encode result)
+
 def run (receive : Json → Json → Except String (Json × Json))
     (snapshot candidate : System.FilePath) : IO Unit := do
   let stdout ← IO.getStdout
@@ -62,6 +82,7 @@ def mainWith (receive : Json → Json → Except String (Json × Json))
   | [] => World.serve framed encode
   | ["--files", snapshot, candidate] => run receive snapshot candidate
   | ["--lookup-files", snapshot] => lookup snapshot
-  | _ => throw (IO.userError "expected no arguments, --files SNAPSHOT CANDIDATE, or --lookup-files SNAPSHOT")
+  | ["--query-files", snapshot] => query receive snapshot
+  | _ => throw (IO.userError "expected no arguments, --files SNAPSHOT CANDIDATE, --lookup-files SNAPSHOT, or --query-files SNAPSHOT")
 
 end FileCustody

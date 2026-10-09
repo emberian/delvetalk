@@ -72,15 +72,16 @@ class EditorGenerations(unittest.TestCase):
         return view['data']['prose']
 
     def invitation(self, key):
-        snapshot = workspace.bootstrap.world.snapshot(self.client.database)
+        snapshot = desk.world.snapshot(self.client.database)
         view = workspace.bootstrap.room.inspect_object(snapshot['objects'][EDITOR], EDITOR)
         self.assertEqual(view['mode'], 'projection', view)
-        return source_offers.capture(view, snapshot['objects'])[key]
+        return source_offers.capture(view, snapshot['objects'], database=self.client.database)[key]
 
     def candidate_state(self, candidate):
         return desk.candidate_state(self.root(candidate))
 
     def prepared(self, name, source=SOURCE, examples='counter.examples'):
+        baseline = copy.deepcopy(self.root(TARGET))
         invitation = self.invitation('make')
         intent = self.intent('make')
         if name == 'first':
@@ -97,7 +98,6 @@ class EditorGenerations(unittest.TestCase):
         self.assertEqual(self.editor.interact(invitation, {'name': name}, MAKER, intent), allocation)
         plan = allocation['receipt']['data']['results'][2]
         candidate = next(iter(allocation['receipt']['data']['allocated']))
-        baseline = allocation['preparation']['request']['reads'][TARGET]
         submission = self.editor.interact(self.invitation('submit'),
             {'syntax': 'objective-bend-spell@2', 'source': source,
              'examples': (PACKAGE / examples).read_text()}, MAKER, self.intent('submit'))

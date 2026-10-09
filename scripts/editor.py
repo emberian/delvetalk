@@ -29,7 +29,8 @@ class Editor:
             retained = {'inputs': inputs}
             clerk.save(path, retained)
         if 'preparation' not in retained:
-            retained['preparation'] = source_offers.prepare(invitation, principal, intent, contribution)
+            retained['preparation'] = source_offers.prepare(invitation, principal, intent, contribution,
+                                                          database=self.client.database)
             clerk.save(path, retained)
         if retained['preparation']['kind'] == 'ready' and 'receipt' not in retained:
             retained['receipt'] = self.client.exchange(retained['preparation']['request'])

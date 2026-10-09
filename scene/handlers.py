@@ -22,7 +22,7 @@ PROFILE = 'spween-obend-handlers-i64-v1'
 LIBRARY = ROOT / 'protocols/spween-handlers'
 RUNTIME = ROOT / 'scene/runtime'
 PRELUDE = ROOT / 'world/lib/prelude'
-RESERVED = {'Abi', 'Encounter', 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'SceneRuntime', 'Score', 'Scene'}
+RESERVED = {'Abi', 'Encounter', 'Kernel', 'SceneData', 'SceneModel', 'BaseRuntime', 'SceneRuntime', 'Score', 'DefaultScene', 'Scene'}
 
 
 def quote(text):
@@ -118,7 +118,7 @@ def score_source(document):
             'def scene() -> D.Scene:\n  ' + scene + '\n')
 
 
-def modules_for(document, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None):
+def modules_for(document, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None, scene_source=None, scene_modules=None):
     if handler_modules is not None:
         if handler_source is not None:
             raise LoweringError('supply handler_source or handler_modules, not both')
@@ -148,6 +148,23 @@ def modules_for(document, handler_source=None, *, handler_modules=None, runtime_
             raise LoweringError('ordered distinct runtime modules must end in SceneRuntime')
     else:
         runtime_modules = [{'name': 'SceneRuntime', 'source': (RUNTIME / 'DefaultRuntime.obend').read_text() if runtime_source is None else runtime_source}]
+    if scene_modules is not None:
+        if scene_source is not None:
+            raise LoweringError('supply scene_source or scene_modules, not both')
+        if (not isinstance(scene_modules, list) or not scene_modules
+                or any(not isinstance(m, dict) or set(m) != {'name', 'source'}
+                       or not isinstance(m['name'], str) or not isinstance(m['source'], str)
+                       for m in scene_modules)
+                or scene_modules[-1]['name'] != 'Scene'
+                or any(m['name'] in RESERVED - {'Scene'} for m in scene_modules)
+                or len({m['name'] for m in scene_modules}) != len(scene_modules)
+                or {m['name'] for m in scene_modules} & {m['name'] for m in handler_modules + runtime_modules}):
+            raise LoweringError('ordered distinct scene entry modules must end in Scene')
+    elif scene_source is not None:
+        scene_modules = [{'name': 'Scene', 'source': scene_source}]
+    default_scene = (RUNTIME / 'Scene.obend').read_text()
+    entry_modules = ([{'name': 'DefaultScene', 'source': default_scene}] + scene_modules
+                     if scene_modules is not None else [{'name': 'Scene', 'source': default_scene}])
     return ([{'name': 'Abi', 'source': (PRELUDE / 'Abi.obend').read_text()},
              {'name': 'Encounter', 'source': (PRELUDE / 'Encounter.obend').read_text()},
              {'name': 'Kernel', 'source': (LIBRARY / 'Kernel.obend').read_text()},
@@ -156,8 +173,7 @@ def modules_for(document, handler_source=None, *, handler_modules=None, runtime_
             + [{'name': 'SceneModel', 'source': (RUNTIME / 'SceneModel.obend').read_text()},
                {'name': 'BaseRuntime', 'source': (RUNTIME / 'SceneRuntime.obend').read_text()}]
             + runtime_modules
-            + [{'name': 'Score', 'source': score_source(document)},
-               {'name': 'Scene', 'source': (RUNTIME / 'Scene.obend').read_text()}])
+            + [{'name': 'Score', 'source': score_source(document)}] + entry_modules)
 
 
 def check_data(modules):
@@ -175,9 +191,10 @@ def check_data(modules):
         raise LoweringError(validation['reason'])
 
 
-def compile_document(document, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None):
+def compile_document(document, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None, scene_source=None, scene_modules=None):
     """Seal selected source modules with typed scene data and native checked ABI."""
-    modules = modules_for(document, handler_source, handler_modules=handler_modules, runtime_source=runtime_source, runtime_modules=runtime_modules)
+    modules = modules_for(document, handler_source, handler_modules=handler_modules, runtime_source=runtime_source, runtime_modules=runtime_modules,
+                          scene_source=scene_source, scene_modules=scene_modules)
     check_data(modules)
     protocol = obend_object.lower_data_modules(modules)
     protocol['spweenSource'] = {'profile': PROFILE, 'upstream': UPSTREAM,
@@ -187,9 +204,10 @@ def compile_document(document, handler_source=None, *, handler_modules=None, run
             'compilerSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
 
 
-def compile_source(source, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None):
+def compile_source(source, handler_source=None, *, handler_modules=None, runtime_source=None, runtime_modules=None, scene_source=None, scene_modules=None):
     return compile_document(bridge({'op': 'parse', 'source': source}), handler_source,
-                            handler_modules=handler_modules, runtime_source=runtime_source, runtime_modules=runtime_modules)
+                            handler_modules=handler_modules, runtime_source=runtime_source, runtime_modules=runtime_modules,
+                          scene_source=scene_source, scene_modules=scene_modules)
 
 
 def main():
@@ -197,9 +215,11 @@ def main():
     parser.add_argument('scene', type=Path)
     parser.add_argument('--handler', type=Path, help='explicit Handler.obend module bytes')
     parser.add_argument('--runtime', type=Path, help='explicit SceneRuntime.obend module bytes')
+    parser.add_argument('--entry', type=Path, help='explicit final Scene.obend module bytes')
     args = parser.parse_args()
     result = compile_source(args.scene.read_text(), args.handler.read_text() if args.handler else None,
-                            runtime_source=args.runtime.read_text() if args.runtime else None)
+                            runtime_source=args.runtime.read_text() if args.runtime else None,
+                            scene_source=args.entry.read_text() if args.entry else None)
     print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
 
 

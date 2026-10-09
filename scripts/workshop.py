@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 commons = b.module('workshop_commons', 'protocols/commons/generate.py')
 ticket = b.module('workshop_ticket', 'protocols/work-ticket/package.py')
 table = b.module('workshop_table', 'game/table/protocol.py')
+writing = b.module('workshop_source_desks', 'protocols/source-desk/package.py')
 
 
 def scoped(commands, people, *, programmers=(), managers=()):
@@ -57,8 +58,7 @@ def initialize(directory, *, builders=('moss', 'iris'), compiler='compiler', ste
         list(builders)]
     objects['commands']['make']['allocate'][0]['protocol'][1]['description'] = 'A shared object. Both workshop builders may use, reprogram and govern it.'
     add('factory:objects', objects, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
-    desks = b.loads((ROOT / 'protocols/factories/source-desk.json').read_bytes())
-    desks['initial']['compiler'] = compiler
+    desks = writing.factory(compiler, builders)
     add('factory:desks', desks, scoped(['make'], builders, programmers=(steward,), managers=(steward,)))
     add('ticket:welcome', ticket.build(requester=builders[0], links={'context': ref('commons')}),
         {'profile': 'delvetalk-scoped-law-v1',

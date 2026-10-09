@@ -266,7 +266,22 @@ def retained_reply(database, request, *, timeout=30):
 def query(database, request, *, profile='compiled', timeout=30):
     config = resident_config(database)
     if config is None:
-        return exchange(database, request, profile=profile, timeout=timeout)
+        if profile not in PROFILES:
+            raise ValueError('unknown native query profile')
+        executable = ROOT / '.lake/build/bin' / PROFILES[profile][0]
+        response = subprocess.run([str(executable), '--query-files', str(Path(database).resolve())],
+            cwd=ROOT, input=wire_dumps(request) + '\n', text=True, capture_output=True,
+            timeout=_timeout(timeout), env={**os.environ, 'LEAN_NUM_THREADS': '1'})
+        if response.returncode:
+            raise RuntimeError(response.stderr + response.stdout)
+        result = wire_loads(response.stdout)
+        if not isinstance(result, dict):
+            raise ValueError('malformed native query response')
+        if set(result) == {'error'}:
+            raise ValueError(result['error'])
+        if set(result) != {'reply'}:
+            raise ValueError('malformed native query fields')
+        return result['reply']
     if profile != config['profile']:
         raise ValueError('selected resident profile differs from caller')
     return _resident_rpc(database, config, 'query', timeout=timeout, readonly=True, request=request)

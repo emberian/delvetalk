@@ -30,7 +30,7 @@ table. There is no mutable import lookup or extra authority from choosing code.
 output contains constructors and literals, not generated guards, branches,
 transitions, effect loops, passage methods or menu fields. Null targets, named
 end targets and passage names stay distinct data until the Bend runtime interprets
-them. The fixed `Scene.obend` adapter delegates describe/start/choose/view to the
+them. The default `Scene.obend` adapter delegates describe/start/choose/view to the
 selected `Behavior`; it does not specialize per scene.
 
 The runtime's `validate` export checks the supported configuration. The adapter
@@ -49,3 +49,28 @@ operation. The host's source/data limits still bound evaluation and presentation
 This runtime retains the supported i64 profile and its deliberate atomic-refusal
 difference from upstream's partially mutable error paths; see
 `protocols/spween-handlers/README.md` and the independent Rust comparison.
+
+## Authored entry methods
+
+An optional final `Scene` module replaces the thin adapter, without replacing the
+parser or adding a host dispatcher. Use `--entry scene/runtime/ResonantScene.obend`
+or pass ordered `scene_modules` ending in `Scene` to `compile_source`. Entry
+modules follow `Score`, so they may import the exact typed scene data, selected
+runtime, handler and sealed prelude. The package retains the default thin adapter
+as `DefaultScene` for ordinary imports and delegation. Without an authored entry,
+the original default module selection is unchanged.
+
+The workshop fence syntax accepts these entry dependencies after Handler and any
+selected SceneRuntime, ending in `obend Scene`. The native generic source binder
+reads that module's `describe()` and checks the actual typed exports. Its
+`validate()` remains the configuration-validation entry. No declared method
+acquires an invocation grant by appearing in source or in a view.
+
+`ResonantScene.obend` delegates start, choose and view to DefaultScene and adds
+`tune {amount: Nat}` plus `hear {chord: String}`. Tune enforces its own bounds in
+Bend as well as publishing form bounds. Hear takes authenticated `Abi.Event`,
+checks the originating bell and chord, and grants local resonance membership.
+A subsequent ordinary Spween `inventory.resonance` guard sees that same state.
+Direct invocation cannot fabricate a receive event. The receive result omits
+emissions, matching the current receive ABI; it cannot relay new messages within
+that turn. This example claims no knowledge of independently governed inventory.

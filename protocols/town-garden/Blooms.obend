@@ -1,0 +1,74 @@
+edition ObjectiveBend 1
+record Bloom:
+  id: Nat
+  seed: String
+  colour: String
+  planter: String
+  rain: String
+  rainmaker: String
+  parent: Nat
+sum Row:
+  nil: {}
+  cons: {head: Bloom, tail: Row}
+sum Beds:
+  nil: {}
+  cons: {row: Row, tail: Beds}
+def blank() -> Bloom:
+  {id: 0, seed: "", colour: "", planter: "", rain: "", rainmaker: "", parent: 0}
+def rowLength(row: Row) -> Nat:
+  match row:
+    case nil(_): 0
+    case cons(c): 1 + rowLength(c.tail)
+def appendRow(row: Row, bloom: Bloom) -> Row:
+  match row:
+    case nil(_): Row.cons({head: bloom, tail: row})
+    case cons(c): Row.cons({head: c.head, tail: appendRow(c.tail, bloom)})
+def append(beds: Beds, bloom: Bloom) -> Beds:
+  match beds:
+    case nil(_): Beds.cons({row: Row.cons({head: bloom, tail: Row.nil()}), tail: Beds.nil()})
+    case cons(c):
+      match c.tail:
+        case nil(_): if rowLength(c.row) < 16 then Beds.cons({row: appendRow(c.row, bloom), tail: c.tail}) else Beds.cons({row: c.row, tail: append(c.tail, bloom)})
+        case cons(_): Beds.cons({row: c.row, tail: append(c.tail, bloom)})
+def findRow(row: Row, id: Nat) -> Bloom:
+  match row:
+    case nil(_): blank()
+    case cons(c): if c.head.id == id then c.head else findRow(c.tail, id)
+def find(beds: Beds, id: Nat) -> Bloom:
+  match beds:
+    case nil(_): blank()
+    case cons(c):
+      let found: Bloom = findRow(c.row, id)
+      if found.id == 0 then find(c.tail, id) else found
+def replaceRow(row: Row, bloom: Bloom) -> Row:
+  match row:
+    case nil(_): row
+    case cons(c): Row.cons({head: if c.head.id == bloom.id then bloom else c.head, tail: replaceRow(c.tail, bloom)})
+def replace(beds: Beds, bloom: Bloom) -> Beds:
+  match beds:
+    case nil(_): beds
+    case cons(c): Beds.cons({row: replaceRow(c.row, bloom), tail: replace(c.tail, bloom)})
+def ready(bloom: Bloom) -> Bool:
+  bloom.id > 0 && bloom.rainmaker != ""
+def colour(value: String) -> Bool:
+  value == "amber" || value == "violet" || value == "silver"
+def words(value: String, maximum: Nat) -> Bool:
+  textLength(value) > 0 && textLength(value) <= maximum
+def planted(id: Nat, seed: String, light: String, author: String, parent: Nat) -> Bloom:
+  {id: id, seed: seed, colour: light, planter: author, rain: "", rainmaker: "", parent: parent}
+def rained(bloom: Bloom, line: String, author: String) -> Bloom:
+  extend(bloom, {rain: line, rainmaker: author})
+def caption(bloom: Bloom) -> String:
+  textConcat(textConcat(natText(bloom.id), ". "), textConcat(bloom.seed, textConcat(" — planted by ", textConcat(bloom.planter, if ready(bloom) then textConcat("; rain by ", bloom.rainmaker) else "; waiting for another gardener's rain"))))
+def pageFor(id: Nat) -> Nat:
+  if id <= 8 then 0 else 1 + pageFor(id - 8)
+def rowHistory(row: Row, first: Nat, last: Nat) -> String:
+  match row:
+    case nil(_): ""
+    case cons(c): if c.head.id < first || c.head.id > last then rowHistory(c.tail, first, last) else textConcat(caption(c.head), textConcat("\n", rowHistory(c.tail, first, last)))
+def history(beds: Beds, page: Nat) -> String:
+  match beds:
+    case nil(_): ""
+    case cons(c): textConcat(rowHistory(c.row, page * 8 + 1, page * 8 + 8), history(c.tail, page))
+def story(bloom: Bloom) -> String:
+  if bloom.id == 0 then "No bloom is selected." else textConcat(caption(bloom), if ready(bloom) then textConcat("\n", bloom.rain) else "\nGive this seed one line of rain. Its planter must leave that part to someone else.")

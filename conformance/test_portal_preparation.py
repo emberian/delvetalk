@@ -34,7 +34,11 @@ class PortalPreparation(unittest.TestCase):
     def app(self, public=False):
         app = portal.Portal(self.directory, **({'public_origin': 'https://delvetalk.example'} if public else
                             {'principal': 'visitor', 'allow_local_actions': True}))
-        with patch.object(app, '_view', return_value=copy.deepcopy(self.view)):
+        # This class uses a synthetic view; native source/retention is exercised
+        # by NativePortalPreparation below rather than admitted by this mock.
+        with patch.object(app, '_view', return_value=copy.deepcopy(self.view)), patch.object(
+                source_offers.world, 'query', side_effect=lambda database, request: {
+                    'profile': 'delvetalk-retained-root-v1', 'object': request['object'], 'key': 'test-reference'}):
             card = app.object('gestures')
         return app, card
 
@@ -153,6 +157,17 @@ class NativePortalPreparation(unittest.TestCase):
             before = (directory / 'world.json').read_bytes()
             binary = Path(os.environ.get('DELVETALK_PREPARATION_BINARY', source_offers.BINARY))
             selected.enter_context(patch.object(source_offers, 'BINARY', binary))
+            # Explicit full-preimage preparation remains supported separately
+            # from compact consumer guards, including real expanded admission.
+            view = app._read('cards', card['card'])['view']
+            full_invitation = next(iter(source_offers.capture(view, app.snapshot()['objects'], database=None).values()))
+            expanded = source_offers.prepare(full_invitation, 'visitor', 'full-preimage', {'gesture': 'expanded'}, binary=binary)
+            self.assertGreater(len(portal.world.wire_dumps(expanded['request']).encode()), 76000)
+            expanded_database = directory / 'expanded.json'
+            portal.save(expanded_database, app.snapshot())
+            expanded_reply = portal.world.exchange(expanded_database, expanded['request'], profile='compiled')
+            self.assertEqual(expanded_reply['kind'], 'committed', expanded_reply)
+            self.assertEqual(portal.world.exchange(expanded_database, expanded['request'], profile='compiled'), expanded_reply)
             question = app.prepare({'card': card['card'], 'action': 'o1', 'fields': {}})
             refused = app.prepare({'card': card['card'], 'action': 'o1', 'fields': {'gesture': 'refuse'}})
             ready = app.prepare({'card': card['card'], 'action': 'o1', 'fields': {'gesture': 'wave'}})
@@ -164,10 +179,10 @@ class NativePortalPreparation(unittest.TestCase):
             self.assertEqual(set(ready['wire']['reads']), {'gestures', 'peer'})
             self.assertEqual(app.preparation(question['preparation']), question)
             self.assertEqual((directory / 'world.json').read_bytes(), before)
-            self.assertGreater(len(ready['wireJson'].encode()), 76000)
-            # Publication remains separately bounded even though this local turn fits.
-            with self.assertRaisesRegex(ValueError, 'Repository request exceeds'):
-                app.repository_prepare({'draft': ready['draft']})
+            self.assertLess(len(ready['wireJson'].encode()), 1500)
+            self.assertEqual(ready['wire']['reads']['peer']['expected']['profile'], 'delvetalk-retained-root-v1')
+            prepared = app.repository_prepare({'draft': ready['draft']})
+            self.assertIn('recordJson', prepared)
             admitted = app.execute({'draft': ready['draft']})
             self.assertEqual(admitted['kind'], 'committed', admitted)
             self.assertEqual(app.snapshot()['objects']['peer']['state']['touched'], 'wave')

@@ -69,7 +69,7 @@ class Town:
                 raise ValueError('object is not enrolled in this clerk')
             snapshot = world.snapshot(self.clerk.database)
             captured = book.capture(self._views([object_id], book.metadata()['runtime'], snapshot=snapshot)[0],
-                alias=alias, roots=snapshot['objects'])
+                alias=alias, roots=snapshot['objects'], database=self.clerk.database)
             return {'status': 'prepared', **captured}
 
     def capture_offer(self, object_id, key, *, alias=None):
@@ -85,7 +85,7 @@ class Town:
             artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
             view = bootstrap.room.inspect_object(root, object_id, artifact,
                 expected_runtime=book.metadata()['runtime'])
-            captured = book.capture_source_offer(view, snapshot['objects'], key, alias=alias)
+            captured = book.capture_source_offer(view, snapshot['objects'], key, alias=alias, database=self.clerk.database)
             return {'status': 'prepared', **captured}
 
     def capture_child(self, parent_alias, child_key, *, alias=None):
@@ -122,7 +122,7 @@ class Town:
                     raise ValueError(view.get('reason', 'Child view is unavailable.'))
             except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
                 return unavailable('view-unavailable', str(error)[:2000])
-            captured = book.capture(view, alias=alias, roots=snapshot['objects'])
+            captured = book.capture(view, alias=alias, roots=snapshot['objects'], database=self.clerk.database)
             return {'status': 'prepared', **selected, 'card': captured}
 
     def bind(self, alias, uri, cid):
@@ -209,19 +209,21 @@ class Town:
                         entry['notices'].append({'object': target, 'reason': 'view-unavailable', 'detail': str(error)[:2000]})
                 entry['offerRoots'] = {}
                 for view in entry['views']:
-                    capture = town_cards.source_offers.capture_available(view, snapshot['objects'])
+                    # Preserve presentation preimages independently of the native
+                    # references minted when the follow-up card is captured.
                     entry['offerRoots'][view['object']] = view['root']
-                    for offer in capture['offers'].values():
-                        entry['offerRoots'][offer['object']] = offer['root']
-                        for observation in offer['observations']:
-                            entry['offerRoots'][observation['object']] = observation['root']
+                    for invitation in town_cards.projection.invitations(view).values():
+                        for identity in invitation['observations']:
+                            if identity in snapshot['objects']:
+                                entry['offerRoots'][identity] = snapshot['objects'][identity]
                 entry['aliases'] = ['reply-' + str(entry['sequence']) + '-' + str(n + 1) for n in range(len(entry['views']))]
                 save(path, entry)  # Capture exact views before allocating any follow-up card.
             cards = []
             notices = list(entry.get('notices', []))
             for view, alias in zip(entry['views'], entry['aliases']):
                 try:
-                    cards.append(book.capture(view, alias=alias, roots=entry.get('offerRoots')))
+                    cards.append(book.capture(view, alias=alias, roots=entry.get('offerRoots'),
+                                              database=self.clerk.database))
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                     notices.append({'object': view['object'], 'reason': 'card-unavailable', 'detail': str(error)[:2000]})
             prepared = book.prepare_outcome(receipt['reply'])

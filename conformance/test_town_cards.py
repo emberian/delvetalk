@@ -303,23 +303,26 @@ class TownCardsTests(unittest.TestCase):
         self.assertNotIn('refused', uncertain['body'])
 
     def test_panels_are_installed_pure_views_of_one_root_and_names_are_display_only(self):
-        protocol = town.loads((ROOT / 'protocols/town-garden/legacy-v1.json').read_bytes())
-        root = self.exchange({'op': 'create', 'object': 'garden', 'principal': 'operator',
+        from conformance.test_garden_source import protocol as garden_protocol
+        import history
+        protocol = garden_protocol()
+        exchange = lambda request: world.exchange(self.path / 'garden.json', request, profile='compiled')
+        root = exchange({'op': 'create', 'object': 'garden', 'principal': 'operator',
             'intent': 'seed-garden', 'protocol': protocol, 'law': [ACTOR]})['data']['root']
         spec = town.importlib.util.spec_from_file_location('garden_room', ROOT / 'scene/room.py')
         room = town.importlib.util.module_from_spec(spec); spec.loader.exec_module(room)
         view = room.inspect_object(root, 'garden')
         book = town.CardBook.create(self.path / 'garden-book', issuer_did=ISSUER, world_id='urn:test:garden',
-            runtime={'name': 'world'}, display_names={ACTOR: '@gardener'})
+            runtime=history.runtime('compiled'), display_names={ACTOR: '@gardener'})
         card = book.capture(view, 'garden')
-        self.assertEqual(len(card['panels']), 6)
+        self.assertEqual(len(card['panels']), 8)
         self.assertTrue(all(p['view']['root'] == root for p in card['panels']))
         self.assertIn('"Garden":', card['body'])
         self.assertNotIn('"Planted by":', card['body'])
         self.assertNotIn('captured version', card['body'])
         self.assertNotIn('Object "garden"', card['body'])
         self.assertEqual(card['objectRef']['object'], 'garden')
-        planted = self.exchange({'op': 'invoke', 'object': 'garden', 'principal': ACTOR,
+        planted = exchange({'op': 'invoke', 'object': 'garden', 'principal': ACTOR,
             'intent': 'plant', 'expected': root, 'command': 'plant',
             'input': {'seed': 'a bell for lost moths', 'colour': 'amber'}})['data']['root']
         planted_card = book.capture(room.inspect_object(planted, 'garden'), 'planted')

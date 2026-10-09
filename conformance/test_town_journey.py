@@ -4,7 +4,6 @@
 All publications are records in an in-memory fake PDS. The receiving transport,
 installed garden protocol, pure views and admission engine are the real paths.
 """
-import copy
 from pathlib import Path
 import sys
 import tempfile
@@ -16,7 +15,7 @@ import clerk
 import town_cards
 
 fixture = clerk.module('town_journey_pds', 'conformance/test_clerk.py')
-source_bundle = clerk.module('town_journey_bundle', 'syntaxes/source_bundle.py')
+garden_source = clerk.module('town_journey_garden', 'conformance/test_garden_source.py')
 GARDEN = ROOT / 'protocols/town-garden'
 room = clerk.module('town_journey_room', 'scene/room.py')
 history = clerk.module('town_journey_history', 'scripts/history.py')
@@ -27,7 +26,7 @@ RAIN = 'Rain carries the names of forgotten stars.'
 
 
 class TownJourneyTests(unittest.TestCase):
-    runtime_profile = 'world'
+    runtime_profile = 'compiled'
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -35,9 +34,8 @@ class TownJourneyTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.pds = fixture.FakePDS()
         self.clerk = clerk.Clerk(self.base / 'clerk', self.pds)
-        protocol = (source_bundle.load(GARDEN / 'binding.json', [('Garden', GARDEN / 'Garden.obend')])
-                    if self.runtime_profile == 'compiled' else clerk.loads((GARDEN / 'legacy-v1.json').read_bytes()))
-        self.law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'plant': [A, B], 'rain': [A, B]},
+        protocol = garden_source.protocol()
+        self.law = {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'plant': [A, B], 'rain': [A, B], 'visit': [A, B], 'cutting': [A, B]},
                     'reprogram': [A], 'law': []}
         seeded = self.clerk.bootstrap('garden', protocol, self.law, [A, B],
                                       runtime_profile=self.runtime_profile)
@@ -50,7 +48,7 @@ class TownJourneyTests(unittest.TestCase):
             'path': str(self.book.path), 'issuers': [ISSUER], 'metadata': self.book.metadata()})
 
     def garden_state(self, root):
-        return root['state']['value'] if self.runtime_profile == 'compiled' else root['state']
+        return garden_source.plantings(root)
 
     def feed(self, author, key, text, parent=None):
         reference = {'uri': f'at://{author}/{clerk.FEED}/{key}', 'cid': 'cid-' + key}
@@ -94,7 +92,7 @@ class TownJourneyTests(unittest.TestCase):
         self.assertEqual(len(draft['cards']), 1)
         card = draft['cards'][0]
         self.assertEqual(card['view']['root'], root)
-        self.assertEqual(len(card['panels']), 6)
+        self.assertEqual(len(card['panels']), 8)
         self.assertTrue(all(panel['view']['root'] == root for panel in card['panels']))
         # Preparation alone has not fabricated a publication binding.
         with self.assertRaisesRegex(ValueError, 'publication'):
@@ -116,18 +114,18 @@ class TownJourneyTests(unittest.TestCase):
         self.welcome = self.publish_fixture('welcome', 'Welcome to the Night Garden.\n' + welcome_card['body'], [welcome_card])
         self.assertEqual([a['command'] for a in welcome_card['card']['actions']], ['plant'])
         self.assertIn('soil', welcome_card['body'])
-        self.assertEqual(len(welcome_card['panels']), 6)
+        self.assertEqual(len(welcome_card['panels']), 8)
 
         planted_source, planted = self.act(A, 'moss-plants', welcome_card, self.welcome, 'plant',
                                           {'seed': SEED, 'colour': 'amber'})
         self.assertEqual(planted['reply']['kind'], 'committed', planted)
         planted_root = planted['reply']['data']['root']
-        self.assertEqual(self.garden_state(planted_root)['planter'], A)
+        self.assertEqual(self.garden_state(planted_root)[0]['planter'], A)
         plant_draft, rain_card, rain_post = self.outcome(planted, 'plant-outcome', planted_source, planted_root)
         self.assertIn('committed', plant_draft['body'])
         self.assertIn(SEED, rain_card['body'])
         self.assertIn('@moss', rain_card['body'])
-        self.assertEqual([a['command'] for a in rain_card['card']['actions']], ['rain'])
+        self.assertIn('rain', [a['command'] for a in rain_card['card']['actions']])
 
         competitor_source, competitor = self.act(B, 'iris-old-soil', welcome_card, self.welcome, 'plant',
                                                   {'seed': 'A competing silver ladder', 'colour': 'silver'})
@@ -144,7 +142,7 @@ class TownJourneyTests(unittest.TestCase):
         rained_source, rained = self.act(B, 'iris-rains', rain_card, rain_post, 'rain', {'line': RAIN})
         self.assertEqual(rained['reply']['kind'], 'committed', rained)
         blooming_root = rained['reply']['data']['root']
-        self.assertEqual(self.garden_state(blooming_root)['lastCompleted'], {
+        self.assertEqual(self.garden_state(blooming_root)[0], {'id': 1, 'parent': 0,
             'seed': SEED, 'colour': 'amber', 'planter': A, 'rain': RAIN, 'rainmaker': B})
         _, bloom_card, bloom_post = self.outcome(rained, 'rain-outcome', rained_source, blooming_root)
         panels = {panel['id']: panel['view']['data']['prose'] for panel in bloom_card['panels']}
@@ -155,7 +153,7 @@ class TownJourneyTests(unittest.TestCase):
         self.assertEqual(panels['rainmaker'], B)
         self.assertIn('@moss', bloom_card['body'])
         self.assertIn('@iris', bloom_card['body'])
-        self.assertEqual([a['command'] for a in bloom_card['card']['actions']], ['plant'])
+        self.assertEqual(set(a['command'] for a in bloom_card['card']['actions']), {'plant', 'visit', 'cutting'})
 
         # Old URI/CID retries remain historical after later turns and a restart.
         calls = len(self.pds.calls)
@@ -168,20 +166,8 @@ class TownJourneyTests(unittest.TestCase):
         self.pds.records = records
         self.assertEqual(self.clerk.snapshot('garden')['root'], blooming_root)
 
-        successor = copy.deepcopy(blooming_root['protocol'])
-        # Revise only the authored view; preserve panels, actions, and contributions.
-        title = 'The Night Garden · a sign made together'
-        if self.runtime_profile == 'compiled':
-            package = successor['viewProgram']['package']
-            package['modules'][0]['source'] += (
-                '\ndef revisedView(host: Host, panel: String) -> View:\n'
-                '  let original: View = view(host, panel) in {title: "' + title
-                + '", prose: original.prose, actions: original.actions}\n')
-            package['entry'] = 'revisedView'
-        else:
-            result_fields = successor['viewProgram']['term'][1][1][1]
-            self.assertEqual(result_fields[0][0], 'title')
-            result_fields[0][1] = ['label', title]
+        successor = garden_source.adapter.lower_data_modules(garden_source.modules() + [
+            {'name': 'EveningGarden', 'source': (GARDEN / 'EveningGarden.obend').read_text()}])
         _, forbidden = self.program(B, 'iris-program-proposal', successor, blooming_root, bloom_post)
         self.assertEqual(forbidden['reply']['data'], 'unauthorized')
         programmed_source, programmed = self.program(A, 'moss-installs-sign', successor, blooming_root, bloom_post)
@@ -195,23 +181,19 @@ class TownJourneyTests(unittest.TestCase):
         self.assertIn(SEED, revised_card['body'])
         self.assertIn(RAIN, revised_card['body'])
         self.assertIn('AMBER', revised_card['body'])
-        self.assertEqual(revised_card['card']['prose'], RAIN)
+        self.assertIn(RAIN, revised_card['card']['prose'])
         self.assertNotEqual(revised_card['alias'], bloom_card['alias'])
         self.assertEqual(town_cards.CardBook(self.book.path).card(bloom_card['alias']), bloom_card)
 
         _, next_season = self.act(B, 'iris-next-season', revised_card, revised_post, 'plant',
                                  {'seed': 'A quiet violet staircase', 'colour': 'violet'})
         self.assertEqual(next_season['reply']['kind'], 'committed')
-        self.assertEqual(self.garden_state(next_season['reply']['data']['root'])['lastCompleted'],
-                         self.garden_state(blooming_root)['lastCompleted'])
+        self.assertEqual(self.garden_state(next_season['reply']['data']['root'])[0],
+                         self.garden_state(blooming_root)[0])
         self.assertEqual(self.clerk.receive(programmed_source['uri'], programmed_source['cid']), programmed)
         self.assertTrue(all(method == 'GET' and base == clerk.PDS for method, base, _, _ in self.pds.calls))
         self.assertTrue(all(nsid in ('com.atproto.repo.describeRepo', 'com.atproto.repo.getRecord')
                             for _, _, nsid, _ in self.pds.calls))
-
-
-class CompiledTownJourneyTests(TownJourneyTests):
-    runtime_profile = 'compiled'
 
 
 if __name__ == '__main__':

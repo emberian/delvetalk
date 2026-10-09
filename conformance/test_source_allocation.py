@@ -23,9 +23,13 @@ class SourceAllocation(unittest.TestCase):
     def setUp(self):
         home = tempfile.TemporaryDirectory()
         self.addCleanup(home.cleanup)
-        self.db = Path(home.name) / 'world.json'
+        self.home = Path(home.name)
+        self.db = self.home / 'world.json'
         self.serial = 0
-        self.factory = self.create('factory', self.program, ['maker'])
+        self.seed(self.program)
+
+    def seed(self, program):
+        self.factory = self.create('factory', program, ['maker'])
         # This boundary fixture emits data. The receiving Factory must distinguish
         # its authentic result from byte-identical directly submitted assertions.
         self.plan = {'factory': 'factory', 'name': 'first', 'editor': 'editor',
@@ -74,6 +78,20 @@ class SourceAllocation(unittest.TestCase):
         self.assertEqual(self.call(request), receipt)
         self.assertEqual(self.inspect('factory')['version'], 1)
 
+    def test_configured_factory_reprograms_within_normal_budget_and_still_allocates(self):
+        request = {'op': 'reprogram', 'object': 'factory', 'intent': 'revise-factory',
+                   'expected': self.factory, 'protocol': self.program,
+                   'state': self.factory['state']}
+        receipt = self.call(request)
+        self.assertEqual(receipt['kind'], 'committed', receipt)
+        self.factory = receipt['data']['root']
+        self.assertEqual(self.factory['version'], 1)
+        self.assertEqual(self.factory['protocol'], self.program)
+        self.assertEqual(self.call(request), receipt)
+        allocated = self.call(self.request(intent='after-revision'))
+        self.assertEqual(allocated['kind'], 'committed', allocated)
+        self.assertEqual(self.inspect('factory/first')['law']['invoke']['compiled'], ['compiler'])
+
     def test_same_plan_text_has_no_provenance_and_missing_absence_rolls_back(self):
         direct = self.call({'op': 'invoke', 'object': 'factory', 'expected': self.factory,
                            'command': 'make', 'input': self.plan, 'absent': ['factory/first']})
@@ -104,10 +122,8 @@ class SourceAllocation(unittest.TestCase):
         reporters = next(field for field in fields if field['name'] == 'reporters')
         reporters['value'] = {'tag': 'variant', 'label': 'natural', 'payload': {
             'tag': 'record', 'fields': [{'name': 'value', 'value': {'tag': 'natural', 'value': '1'}}]}}
-        revised = self.call({'op': 'reprogram', 'object': 'factory', 'expected': self.factory,
-                             'protocol': malformed, 'state': malformed['initial']})
-        self.assertEqual(revised['kind'], 'committed', revised)
-        self.factory = revised['data']['root']
+        self.db = self.home / 'bad-law.json'
+        self.seed(malformed)
         refused = self.call(self.request(intent='bad-law'))
         self.assertEqual(refused['kind'], 'refused', refused)
         self.assertEqual(self.inspect('factory'), self.factory)
@@ -117,10 +133,8 @@ class SourceAllocation(unittest.TestCase):
     def test_quota_refuses_source_effect_and_current_authority_still_controls_factory(self):
         program = copy.deepcopy(self.program)
         program['allocation']['limit'] = 0
-        revised = self.call({'op': 'reprogram', 'object': 'factory', 'expected': self.factory,
-                             'protocol': program, 'state': program['initial']})
-        self.assertEqual(revised['kind'], 'committed', revised)
-        self.factory = revised['data']['root']
+        self.db = self.home / 'no-capacity.json'
+        self.seed(program)
         refused = self.call(self.request(intent='quota'))
         self.assertEqual(refused['data'], 'factory child quota exhausted')
         self.assertEqual(self.inspect('factory'), self.factory)

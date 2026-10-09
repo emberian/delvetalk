@@ -171,8 +171,8 @@ def loadCheckpoint (world : Json) (sequence : Nat) (head : String) : Except Stri
   let history ← (← field world "receipts").getArr?
   if history.size != sequence then throw "checkpoint sequence differs from retained history"
   let base ← put world "receipts" (.arr #[])
-  history.foldlM checkedAppend { base, head,
-    roots := RetainedRoots.collect {} (← field world "objects") }
+  let roots := RetainedRoots.collect {} (← field world "objects")
+  history.foldlM checkedAppend { base, head, roots }
 
 abbrev Query := Json → Json → Except String Json
 

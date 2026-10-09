@@ -51,6 +51,39 @@ superseded deployment reports, duplicated status documents and historical varian
 Maintain one tracker of present work. Design previews are explicitly hypothetical,
 not a second current specification.
 
+## Cut over consumers, then delete the duplicate
+
+The [workshop entry point](../../scripts/workshop.py) still imports generated
+commons and table behavior and loads JSON object/desk factories. A source-only
+example elsewhere does not remove those actual bootstrap dependencies.
+
+| Boundary | Consumers to move together | Replacement and retained meaning |
+| --- | --- | --- |
+| Candidate and factory | [Town forge](../../protocols/town-forge/generate.py), stateful workshop, Spween handler workshop, workshop seed factories, desk recognition and authoring catalog | Ordinary source Candidate/Factory/Editor, explicit configuration and current authority. Remove JSON twins, scalar migration templates and recipe-based submissions after callers use source preparation. |
+| Presence and crossings | [Commons](../../protocols/commons/generate.py), workshop seed, crossing journeys | Source-owned participant/path policy. Preserve the immediately preceding door's authenticated origin and each receiver's own law. Declared presence and containment are different relations; choose their intended composition explicitly. |
+| Commit/reveal table | [Table](../../game/table/protocol.py), table participant/journey, workshop seed, Automatafl companion | Source `CommitRevealTable` around the existing Bend game. Preserve round/seat/domain binding, both commitments before reveal, private nonce custody and original 11×11 rules. |
+| Contract release | [Contract authoring](../../scripts/contract_authoring.py) and its receiving journey | Source-owned candidate eligibility and atomic adoption/law amendment. Retain physical source/build custody, exact reviewed roots and uncertain-reply recovery. |
+| Workspace custody | [Bootstrap](../../scripts/bootstrap.py), workspace export/restore, example journeys | Separate generic physical custody from the old cafe fixture, then replace fixture behavior. Preserve seed enrollment, runtime/source binding and no-clobber restore. |
+
+The fixed two-slot [constellation preview](../../protocols/constellation-commons/README.md)
+has no dedicated production importer; generic scenario discovery still finds it.
+Do not retain its representation merely to satisfy that discovery. Either author
+its desired collaborative-art behavior as an ordinary source object or remove the
+preview and its migration together.
+
+Source files and retained compiled artifacts have different custody roles; their
+coexistence is not automatically duplication. A checked-in generated behavior twin
+and the generator that owns its policy are a competing authoring path. Likewise,
+[editor packaging](../../protocols/editor/generate.py) now loads source modules;
+[scene packaging](../../scene/handlers.py) serializes scene data for a source
+runtime. Their Python filenames do not make them behavior owners.
+
+Tickets and exhibitions already have ordinary source modules and package loaders.
+Their remaining journey/bootstrap dependencies must be cut over without restoring
+the deleted behavior generators. Source preparation already replaces the client
+recipe interpreter; remove remaining old recipe callers and update
+[the offer contract](../../profiles/COMPOSITE-OFFERS.md) with that cutover.
+
 ## Work without another bottleneck
 
 Ports of tickets, agreements, places, scenes and contribution objects proceed in

@@ -9,6 +9,8 @@ local case does not establish deployment or a general proof.
 The current architectural correction is explicit: [Bend owns behavior](design/BEND.md),
 [durable objects compose](design/COMPOSITION.md), [objects author encounters](design/ENCOUNTERS.md),
 and [the repository follows those responsibilities](design/REPOSITORY.md).
+Its [consumer cutovers](design/REPOSITORY.md#cut-over-consumers-then-delete-the-duplicate)
+identify remaining competing behavior owners and the callers that must move together.
 These decisions identify replacements still to implement; existing Python workflow
 code is not the intended architecture.
 
@@ -30,7 +32,8 @@ Executable examples include [the workshop](../protocols/workshop/README.md),
 [PlaceIndex](../protocols/place-index/README.md),
 [containment](../protocols/containment/README.md),
 [appointments](../protocols/appointments/README.md),
-[work tickets](../protocols/work-ticket/README.md), and
+[work tickets](../protocols/work-ticket/README.md),
+[shared exhibitions](../protocols/shared-exhibition/README.md), and
 [Automatafl](../protocols/automatafl/README.md). Their linked receiving tests state
 what was exercised; presence, ownership, references and command authority differ.
 
