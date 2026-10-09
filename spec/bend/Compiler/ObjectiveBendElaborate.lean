@@ -29,7 +29,6 @@ abbrev CoreUnaryPrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.UnaryPr
 def isSpace (c : Char) : Bool := c == ' ' || c == '\t' || c == '\n' || c == '\r'
 def trimStart (s : String) : String := String.ofList (s.toList.dropWhile isSpace)
 def trimEnd (s : String) : String := String.ofList ((s.toList.reverse.dropWhile isSpace).reverse)
-def trimStr (s : String) : String := trimEnd (trimStart s)
 def dropStr (s : String) (n : Nat) : String := String.ofList (s.toList.drop n)
 def dropEndStr (s : String) (n : Nat) : String := String.ofList (s.toList.take (s.length - n))
 
@@ -496,22 +495,52 @@ def qualifiedName (s : String) : Option (String × String) :=
   | [a, b] => if isIdent a && isIdent b then some (a, b) else none
   | _ => none
 
-/-- Split at top-level occurrences of `sep`, outside `<`, `(`, `{` nesting
-(a `>` preceded by `-` is part of an arrow, not a closing bracket). -/
-def splitTop (text : String) (sep : String) : List String :=
-  let chars := text.toList
-  let sepChars := sep.toList
-  -- `current` and `parts` are accumulated reversed.
-  let rec go : Nat → List Char → Option Char → Int → List Char → List String → List String
-    | 0, _, _, _, current, parts => String.ofList current.reverse :: parts
-    | _ + 1, [], _, _, current, parts => String.ofList current.reverse :: parts
-    | fuel + 1, c :: rest, prev, depth, current, parts =>
-      if "<({".toList.contains c then go fuel rest (some c) (depth + 1) (c :: current) parts
-      else if ">)}".toList.contains c && !(c == '>' && prev == some '-') then go fuel rest (some c) (depth - 1) (c :: current) parts
-      else if depth == 0 && sepChars.isPrefixOf (c :: rest) then
-        go fuel ((c :: rest).drop sepChars.length) (sepChars.getLast?) depth [] (String.ofList current.reverse :: parts)
-      else go fuel rest (some c) depth (c :: current) parts
-  (go (chars.length + 1) chars none 0 [] []).reverse.map trimStr
+/-- The bytes `[start, stop)` of `bytes` without ASCII spaces at either end (`isSpace`), as a
+string; every cut is at an ASCII byte, so the range is whole UTF-8. -/
+def trimmedRange (bytes : ByteArray) (start stop : Nat) : String := Id.run do
+  let space := fun (b : UInt8) => b == 32 || b == 9 || b == 10 || b == 13
+  let mut a := start
+  let mut z := stop
+  while a < z && space bytes[a]! do a := a + 1
+  while a < z && space bytes[z - 1]! do z := z - 1
+  return String.fromUTF8! (bytes.extract a z)
+
+def trimStr (s : String) : String :=
+  let bytes := s.toUTF8
+  trimmedRange bytes 0 bytes.size
+
+/-- `text` cut at every `sep` outside `<...>`, `(...)` and `{...}` (the `>` of an arrow `->` is
+not a bracket), each piece trimmed. It scans UTF-8 bytes: brackets and separators are ASCII,
+so no byte of a multi-byte character is mistaken for one, and the character before a `>` is
+`-` exactly when the byte before it is. -/
+def splitTop (text : String) (sep : String) : List String := Id.run do
+  let bytes := text.toUTF8
+  let sepBytes := sep.toUTF8
+  let isPrefixAt := fun (i : Nat) => Id.run do
+    if i + sepBytes.size > bytes.size then return false
+    for k in [0:sepBytes.size] do
+      if bytes[i + k]! != sepBytes[k]! then return false
+    return true
+  let mut parts : Array String := #[]
+  let mut start := 0
+  let mut depth : Int := 0
+  let mut prev : UInt8 := 0
+  let mut i := 0
+  while i < bytes.size do
+    let c := bytes[i]!
+    if c == 60 || c == 40 || c == 123 then
+      depth := depth + 1; prev := c; i := i + 1
+    else if (c == 62 || c == 41 || c == 125) && !(c == 62 && prev == 45) then
+      depth := depth - 1; prev := c; i := i + 1
+    else if depth == 0 && sepBytes.size > 0 && isPrefixAt i then
+      parts := parts.push (trimmedRange bytes start i)
+      i := i + sepBytes.size
+      start := i
+      prev := sepBytes[sepBytes.size - 1]!
+    else
+      prev := c; i := i + 1
+  parts := parts.push (trimmedRange bytes start bytes.size)
+  return parts.toList
 
 /-- The one public metadata type of every specification (`Specification<T>` is
 `specification(SpecMeta, Extension<T>)`), declared in the built-in module as two
