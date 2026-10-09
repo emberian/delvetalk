@@ -1,0 +1,59 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+record Door:
+  label: String
+  description: String
+  to: Plans.Reference
+record State:
+  doors: Lists.List<Door>
+record Edits:
+  doors: Plans.Entries<Door, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, {}>
+# The same input as every card's receive: the text, who wrote it, the post it is in.
+record Heard:
+  text: String
+  who: String
+  post: String
+sum Answer:
+  done: {}
+  refused: {reason: String}
+def initial() -> State:
+  {doors: Lists.List::<Door>.nil()}
+def position(doors: Lists.List<Door>, label: String, index: Nat) -> Plans.Position:
+  match doors:
+    case nil(_): Plans.Position.absent({})
+    case cons(c): if c.head.label == label then Plans.Position.at({index: index}) else position(c.tail, label, index + 1n)
+def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answer>:
+  match perform(Plan.write({object: Plans.self(context), edits: edits})):
+    case written(_): Answer.done({})
+    case refused(r): Answer.refused({reason: r.clause})
+    case _: Answer.refused({reason: "The write was not answered."})
+# Adds a door at the end of the menu; a label names one door.
+def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
+  match position(state.doors, input.door.label, 0n):
+    case at(_): Answer.refused({reason: textConcat("There is already a door called ", input.door.label)})
+    case absent(_): edited(context, {doors: Plans.Entries::<Door, {}>.append({item: input.door})})
+def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
+  match position(state.doors, input.label, 0n):
+    case absent(_): Answer.refused({reason: textConcat("There is no door called ", input.label)})
+    case at(a): edited(context, {doors: Plans.Entries::<Door, {}>.remove({index: a.index})})
+def doorLine(door: Door) -> Document.Document:
+  Document.text(textConcat(door.label, textConcat("\n", textConcat(door.description, "\n\n"))))
+# Affordances first, since readers clip near 1,400 characters; then the doors.
+def render(state: State) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat::<Document.Document>(Lists.map::<Door, Document.Document>(state.doors, doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
+def card(state: State) -> String:
+  Document.plain(render(state))
+def show(state: State) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.offer({document: render(state)})):
+    case offered(_): Lists.length::<Door>(state.doors)
+    case _: 0n
+# A summon: whatever was said, the menu is the answer.
+def receive(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  show(state)
+def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  show(state)

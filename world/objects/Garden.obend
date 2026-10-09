@@ -28,9 +28,12 @@ def planted(context: Abi.Context, reference: Plans.Reference) -> Activity<Plan, 
     case written(_): Made.made({object: reference})
     case _: Made.refused({clause: "garden count"})
 # The create names the reference the bell will occupy; the host refuses it if taken.
-def plant(state: State, input: {colour: Bell.Colour, seed: String}, context: Abi.Context) -> Activity<Plan, Response, Made>:
-  let reference = child(context, "bell", state.planted + 1n)
-  match perform(Plan.create({package: "Bell", seed: Seed.bell({planter: context.principal, colour: input.colour, seed: input.seed}), law: "Bell", requireAbsent: reference})):
+# The bell's planting slot is the planter and the post that asked for it, which is
+# what the bell's strike later awaits.
+def plant(state: State, input: {colour: Bell.Colour, seed: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Made>:
+  sow(state, input.colour, input.seed, context.principal, input.post, context)
+def sow(state: State, colour: Bell.Colour, seed: String, planter: String, post: String, context: Abi.Context) -> Activity<Plan, Response, Made>:
+  match perform(Plan.create({package: "Bell", seed: Seed.bell({planter: planter, colour: colour, seed: seed, planting: {principal: planter, intent: post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
     case created(c): planted(context, c.object)
     case refused(r): Made.refused({clause: r.clause})
     case _: Made.refused({clause: "no creation"})
@@ -57,3 +60,61 @@ def present(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Res
   match perform(Plan.offer({document: render(state)})):
     case offered(_): state.planted
     case _: 0n
+# What the town says to the garden: the reply text, who wrote it, and the post it
+# is in (the post is the intent of the planting, which the bell's strike awaits).
+record Heard:
+  text: String
+  who: String
+  post: String
+sum Reply:
+  planted: {object: Plans.Reference, colour: String, seed: String}
+  unclear: {needs: Spell.Names}
+  refused: {reason: String}
+def cat(left: String, right: String) -> String:
+  textConcat(left, right)
+def entryText(entries: Spell.Entries, name: String) -> String:
+  match entries:
+    case nil(_): ""
+    case cons(c): if c.head.name == name then spoken(c.head.value) else entryText(c.tail, name)
+def spoken(value: Spell.Value) -> String:
+  match value:
+    case text(t): t.value
+    case choice(c): c.value
+    case natural(n): natText(n.value)
+def colourNamed(name: String) -> Bell.Colour:
+  if name == "amber" then Bell.Colour.amber({}) else if name == "violet" then Bell.Colour.violet({}) else Bell.Colour.silver({})
+def spell(card: String, seed: String, colour: String) -> String:
+  cat("    delvetalk ", cat(card, cat(" plant\n    seed: ", cat(seed, cat("\n    colour: ", cat(colour, "\n"))))))
+def plantedCard(context: Abi.Context, who: String, reference: Plans.Reference, colour: String, seed: String, count: Nat) -> Document.Document:
+  let what = cat("Planted for ", cat(who, cat(": a ", cat(colour, cat(" bell, “", cat(seed, "”."))))))
+  let where = cat("It lives at ", cat(reference.object, cat(". The garden now holds ", cat(natText(count), " planted."))))
+  Document.text(cat("✾ THE NIGHT GARDEN\n\n", cat(what, cat("\n", cat(where, cat("\n\nTo plant another, reply:\n\n", spell(context.object, "a fern that remembers yesterday", "silver")))))))
+def unclearCard(context: Abi.Context, needs: Spell.Names, parsed: Spell.Parsed) -> Document.Document:
+  Document.text(cat("✾ THE NIGHT GARDEN\n\nAlmost. I still need: ", cat(Spell.joined(needs), cat(".\nReply with the spell, filled in:\n\n", spell(context.object, filled(parsed, "seed", "<what might grow here, 1 to 80 characters>"), filled(parsed, "colour", "<amber, violet or silver>"))))))
+def filled(parsed: Spell.Parsed, name: String, hint: String) -> String:
+  match parsed:
+    case spell(s): if Spell.valueOf(s.fields, name) == "" then hint else Spell.valueOf(s.fields, name)
+    case notASpell(_): hint
+def refusedCard(reason: String) -> Document.Document:
+  Document.text(cat("Not planted: ", cat(reason, "\n")))
+# Every observed spell arrives here. It parses, fits the plant form, plants on a
+# proposal and writes nothing otherwise; it always ends by offering a reply card.
+def receive(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Reply>:
+  hear(state, input, context, Spell.parse(input.text))
+def hear(state: State, input: Heard, context: Abi.Context, parsed: Spell.Parsed) -> Activity<Plan, Response, Reply>:
+  match Spell.fit(parsed, plantForm(context)):
+    case proposal(p): grow(state, input, context, entryText(p.bindings, "colour"), entryText(p.bindings, "seed"))
+    case unclear(u): tell(Reply.unclear({needs: u.needs}), unclearCard(context, u.needs, parsed))
+    case refused(r): tell(Reply.refused({reason: r.reason}), refusedCard(r.reason))
+def grow(state: State, input: Heard, context: Abi.Context, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.create({package: "Bell", seed: Seed.bell({planter: input.who, colour: colourNamed(colour), seed: seed, planting: {principal: input.who, intent: input.post}}), law: "Bell", requireAbsent: child(context, "bell", state.planted + 1n)})):
+    case created(c): counted(state, input, context, c.object, colour, seed)
+    case refused(r): tell(Reply.refused({reason: r.clause}), refusedCard(r.clause))
+    case _: tell(Reply.refused({reason: "The garden could not plant it."}), refusedCard("The garden could not plant it."))
+def counted(state: State, input: Heard, context: Abi.Context, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case written(_): tell(Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, input.who, reference, colour, seed, state.planted + 1n))
+    case _: tell(Reply.refused({reason: "The garden could not count it."}), refusedCard("The garden could not count it."))
+def tell(reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.offer({document: card})):
+    case _: reply

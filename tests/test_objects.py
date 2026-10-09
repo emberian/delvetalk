@@ -121,7 +121,7 @@ BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
     case 0: Lists.List::<O.Rain>.nil()
     case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", text: "a line of rain"}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {planter: "glm", colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, door: {world: "", object: ""}, lastDelivery: ""}
+  {planter: "glm", colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, door: {world: "", object: ""}, lastDelivery: "", planting: {principal: "", intent: ""}}
 def many(n: Nat) -> String:
   O.card(sample(rains(n)))
 def weight(n: Nat) -> Nat:
@@ -204,9 +204,9 @@ class Objects(unittest.TestCase):
         self.assertGreaterEqual(seen, 20)
 
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "plant"): "create", ("Garden", "cistern"): "create",
+        expected = {("Counter", "bump"): "write", ("Garden", "sow"): "create", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rain"): "write", ("Bell", "strike"): "await", ("Bell", "rung"): "write",
-                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admit"): "write",
+                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
                     ("Bell", "ring"): "write", ("Bell", "notify"): "send", ("Door", "open"): "write",
                     ("Door", "announce"): "send", ("Door", "knock"): "write", ("Lantern", "light"): "write",
                     ("Loop", "tick"): "write", ("Loop", "again"): "send"}
