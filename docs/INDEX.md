@@ -2,17 +2,14 @@
 
 Start with the [runnable quickstart](../README.md) or
 [writing and acting through text](TEXTUAL-INTERACTION.md).
-[TRACKING](../TRACKING.md) owns current integration work. Profile documents define
+[TRACKING](../TRACKING.md) records current capability. Profile documents define
 interfaces; source and conformance tests define their executable scope. A passing
 local case does not establish deployment or a general proof.
 
-The current architectural correction is explicit: [Bend owns behavior](design/BEND.md),
-[durable objects compose](design/COMPOSITION.md), [objects author encounters](design/ENCOUNTERS.md),
-and [the repository follows those responsibilities](design/REPOSITORY.md).
-Its [consumer cutovers](design/REPOSITORY.md#cut-over-consumers-then-delete-the-duplicate)
-identify remaining competing behavior owners and the callers that must move together.
-These decisions identify replacements still to implement; existing Python workflow
-code is not the intended architecture.
+[Bend owns behavior](design/BEND.md); [durable objects compose](design/COMPOSITION.md)
+and [author encounters](design/ENCOUNTERS.md). The [repository map](design/REPOSITORY.md)
+locates their source, receiving hosts, physical adapters and tests.
+[BACKLOG](../BACKLOG.md) owns remaining work.
 
 | Task | Contract |
 | --- | --- |
@@ -24,6 +21,7 @@ code is not the intended architecture.
 | Propose, check and adopt | [Source desks](../profiles/DESK.md), [compiler queue](../profiles/COMPILER-QUEUE.md), [composite offers](../profiles/COMPOSITE-OFFERS.md) |
 | Build resident interfaces | [Views](../profiles/VIEW.md), [forms](../profiles/AFFORDANCES.md), [Town cards](../profiles/TOWN.md), [manual interpretation](../profiles/MANUAL-INTAKE.md), [portal](../profiles/PORTAL.md) |
 | Run and recover a world | [Workspace](../profiles/WORKSPACE.md), [resident custody](../profiles/RESIDENT-STORE.md), [history](../profiles/HISTORY.md), [continuation](../profiles/CONTINUATION.md) |
+| Read governed state | [Object reads](../profiles/READS.md), [catalogue](../profiles/CATALOGUE.md) |
 | Receive and schedule work | [Clerk](../profiles/CLERK.md), [worker](../profiles/WORKER.md), [service](../profiles/SERVICE.md), [resident messages](RESIDENT-ACTIVITY.md) |
 | Publish selected records | [Publication custody](../profiles/DELVE.md), [receipts](../profiles/RECEIPTS.md) |
 
@@ -37,6 +35,6 @@ Executable examples include [the workshop](../protocols/workshop/README.md),
 [Automatafl](../protocols/automatafl/README.md). Their linked receiving tests state
 what was exercised; presence, ownership, references and command authority differ.
 
-[Completed-system previews](previews/README.md) describe imagined designs. They
-are neither contracts nor implementation status. [Contribution guidance](../CONTRIBUTING.md)
-explains how to add source and adversarial cases.
+[Contribution guidance](../CONTRIBUTING.md) explains how to add source and
+adversarial cases. [Posting and design drafts](previews/README.md) are intended
+presentations, with availability checked against the running world.

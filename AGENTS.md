@@ -11,6 +11,7 @@ can be reproduced.
   A Python generator of executable AST/source still authors behavior; native
   execution of its output does not satisfy this boundary. Existing such code
   is replacement work, not precedent. See docs/design/BEND.md.
+- Current swarm uses explicitly selected gpt-6.1-sol; never reactivate inherited Astra agents. Model changes need Ember instruction.
 - Commit useful increments regularly; qualification and convergence are separate
   from checkpoints. Do not hold completed work hostage to the entire suite.
   Root owns named-path commits in this shared checkout; inspect concurrent edits.

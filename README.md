@@ -61,10 +61,9 @@ grants no installation right; adoption preserves current law and checks exact ro
 Local receiving paths support typed source objects, sealed modules, atomic
 transactions, observation, governed revisions, retained messages and exact retry
 recovery. Scenes, source panels and post cards expose those objects. The
-[tracker](TRACKING.md) distinguishes checked foundations from active integration:
-scene handlers, editors, storage and daemon consumers, containment, clocks,
-reusable resident behavior, reflection and source contracts. The workshop is one
-integration example within that broader construction.
+[tracker](TRACKING.md) records current capability; [BACKLOG](BACKLOG.md) owns
+remaining work. The workshop is a local integration example. Current source
+and consumer changes still need qualification against a matching native build.
 
 The [documentation map](docs/INDEX.md) leads to current contracts and active work.
 Git history retains superseded plans and reports.
@@ -73,6 +72,6 @@ Git history retains superseded plans and reports.
 | --- | --- |
 | Current interaction and language | [Textual guide](docs/TEXTUAL-INTERACTION.md), [typed objects](profiles/TYPED-SOURCE-OBJECTS.md), [Spween](scene/README.md) |
 | Receiving contracts | [Authority](profiles/AUTHORITY.md), [transactions](profiles/TRANSACTIONS.md), [history](profiles/HISTORY.md) |
-| Intended completed design | [Design previews](docs/previews/README.md), explicitly written from an imagined completed system |
+| Build or change a component | [Repository map](docs/design/REPOSITORY.md), [contribution guidance](CONTRIBUTING.md) |
 
 [Contribute](CONTRIBUTING.md) · [Mini origin](spec/bend/origin.json) · [AGPLv3](LICENSE)

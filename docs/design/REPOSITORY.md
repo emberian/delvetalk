@@ -1,98 +1,68 @@
-# A repository for the system we are building
+# Repository map
 
-**Decision.** Organize by semantic responsibility, not by implementation episodes.
-There is no launched v1 to preserve. Superseded designs and experiments belong in
-Git history. Current source dependencies, licenses and useful independent oracles
-remain because they serve the system, not because they are old.
+Bend owns object behavior and encounters. Lean owns the source relation and host
+admission. Platform adapters retain bytes, authenticate callers, drive processes
+and render offered meaning. Start with [the quickstart](../../README.md) to run a
+local workshop, or [the documentation map](../INDEX.md) to find a contract.
 
-`profiles/` currently mixes native host implementation, proofs, language ABI
-descriptions and operator manuals. `protocols/` mixes source objects, generated
-behavior, static seeds and journeys. `scripts/` mixes platform I/O with application
-workflows. Renaming these drawers without eliminating the competing meanings
-would accomplish little. The replacements in [Bend](BEND.md) are part of the layout.
+## Find the owner
 
-## Destination
-
-| Directory | Responsibility |
+| Work | Current location |
 | --- | --- |
-| `language/` | Bend frontend, semantics, typed evaluator and narrowly pinned upstream dependencies; Spween parsing/data schema |
-| `host/native/` | Admission, roots, authority, effects, source/service boundaries, native receiving proofs |
-| `host/platform/` | Durable byte custody, process/socket I/O, physical compiler/clock/relay drivers |
-| `world/lib/` | Reusable Bend definitions: preparation, encounters, agreement, placement, conversations, lifecycle |
-| `world/objects/` | Inspectable Bend workshop, editor, candidate/factory, mailbox and clock objects |
-| `world/scenes/`, `world/games/` | Scene data/handlers and games, including the original two-player Automatafl |
-| `surfaces/town/`, `surfaces/web/` | Authentication/platform adaptation and rendering of the common encounter |
-| `tests/` | Current behavior/composition tests and independent reference engines; no historical result museum |
-| `docs/` | Getting started, language/host contracts, these active design decisions and useful authored examples |
-| `tools/` | Development/build/source-pin checks; no world policy |
+| Bend frontend, semantics and evaluator | [Editable language edition](../../spec/bend/), [DelveTalk package runtime](../../spec/Delvetalk/) |
+| Admission, roots, authority and effects | [Native host and proofs](../../profiles/), with interface contracts beside them |
+| Reusable source definitions | [World library](../../world/lib/), including preparation, encounters and documents |
+| Authored objects and examples | [Protocols](../../protocols/), [joined examples](../../examples/) |
+| Scenes and games | [Spween](../../scene/README.md), [Automatafl](../../game/automatafl/README.md), [table](../../game/table/README.md) |
+| Physical custody and surfaces | [Scripts](../../scripts/), [portal contract](../../profiles/PORTAL.md), [Town contract](../../profiles/TOWN.md) |
+| Refuting cases and independent evaluators | [Conformance](../../conformance/), [core implementations](../../impl/) |
+| Capability and remaining work | [TRACKING](../../TRACKING.md), [BACKLOG](../../BACKLOG.md) |
 
-This is a destination map, not a claim that these moves have already happened.
-Move a component with its consumers, build paths, runtime-closure paths, tests
-and links. Keep one source owner; do not retain an old directory as an API facade
-merely to avoid updating imports. Source pins still verify exact bytes/projections.
+Read the source before inferring responsibility from a filename.
+[Commons packaging](../../protocols/commons/generate.py) loads
+[Commons](../../protocols/commons/Commons.obend);
+[table packaging](../../game/table/protocol.py) loads
+[CommitRevealTable](../../game/table/CommitRevealTable.obend) around the original
+11×11 two-player game. The [workshop seed](../../scripts/workshop.py) uses these
+loaders and source factories. Packaging transports configuration and exact source;
+its receiving tests separately establish behavior under a matching native host.
 
-## Disposition rules
+Likewise, [editor packaging](../../protocols/editor/generate.py) loads source
+modules, and [scene packaging](../../scene/handlers.py) serializes scene data for
+a source runtime. A Python filename is not evidence of a behavioral generator.
+A generator that authors commands, guards or transitions is a competing source
+owner and must be replaced with its consumers.
 
-Remove frozen blind/capsule reconstruction studies and their result bundles.
-Separate upstream source verification from the concluded capsule-size experiment;
-source verification remains a build gate. The explicitly requested compact
-language descriptions need a separate decision about which remain useful current
-documentation; they are not runtime dependencies or a reason to keep experiments.
+## Component moves
 
-Replace the legacy generated command DSL at its authored-object consumers rather
-than blessing it as another resident language. Retire old scene implementations
-when the source runtime covers the desired language. Preserve tests that express
-desired behavior; rewrite tests whose only assertion is fidelity to an obsolete
-representation. A test's existence is not a product requirement.
+The intended layout separates `language/`, `host/native/`, `host/platform/`,
+`world/lib/`, `world/objects/`, `world/scenes/`, `world/games/`, `surfaces/`,
+`tests/`, `docs/` and `tools/`. These directories are a destination, not the current
+filesystem. Move each component with its imports, build registrations, runtime
+closure paths, tests and links. Keep one source owner rather than an old-directory
+facade. Source pins continue to bind exact bytes.
 
-Keep qualification evidence scoped in CI/results outside the public source tree
-unless it is a small reusable fixture or an actual proof dependency. Remove
-superseded deployment reports, duplicated status documents and historical variants.
-Maintain one tracker of present work. Design previews are explicitly hypothetical,
-not a second current specification.
+Preserve current source dependencies, attribution, licenses and useful independent
+oracles. Retire superseded behavior only after its consumers move. Source and
+retained compiled artifacts have different custody roles; their coexistence is
+not automatically duplication. Preserve tests for desired behavior, and replace
+assertions whose only purpose is fidelity to an obsolete representation.
 
-## Cut over consumers, then delete the duplicate
+## Remove finished experiments
 
-The [workshop entry point](../../scripts/workshop.py) still imports generated
-commons and table behavior and loads JSON object/desk factories. A source-only
-example elsewhere does not remove those actual bootstrap dependencies.
+Frozen reconstruction studies, result bundles, superseded deployment reports and
+duplicated status pages belong in Git history. Keep upstream-source verification
+as a build gate independently of concluded capsule-size experiments. The requested
+compact language descriptions need a usefulness review; they are not runtime
+dependencies and do not justify retaining experiment machinery.
 
-| Boundary | Consumers to move together | Replacement and retained meaning |
-| --- | --- | --- |
-| Candidate and factory | [Town forge](../../protocols/town-forge/generate.py), stateful workshop, Spween handler workshop, workshop seed factories, desk recognition and authoring catalog | Ordinary source Candidate/Factory/Editor, explicit configuration and current authority. Remove JSON twins, scalar migration templates and recipe-based submissions after callers use source preparation. |
-| Presence and crossings | [Commons](../../protocols/commons/generate.py), workshop seed, crossing journeys | Source-owned participant/path policy. Preserve the immediately preceding door's authenticated origin and each receiver's own law. Declared presence and containment are different relations; choose their intended composition explicitly. |
-| Commit/reveal table | [Table](../../game/table/protocol.py), table participant/journey, workshop seed, Automatafl companion | Source `CommitRevealTable` around the existing Bend game. Preserve round/seat/domain binding, both commitments before reveal, private nonce custody and original 11×11 rules. |
-| Contract release | [Contract authoring](../../scripts/contract_authoring.py) and its receiving journey | Source-owned candidate eligibility and atomic adoption/law amendment. Retain physical source/build custody, exact reviewed roots and uncertain-reply recovery. |
-| Workspace custody | [Bootstrap](../../scripts/bootstrap.py), workspace export/restore, example journeys | Separate generic physical custody from the old cafe fixture, then replace fixture behavior. Preserve seed enrollment, runtime/source binding and no-clobber restore. |
+The [source constellation instrument](../../protocols/constellation-commons/README.md)
+is an ordinary collaborative Bend object: twelve attributed lights, own-author
+revision and a shared offered encounter. Its dedicated receiving test replaces
+the obsolete fixed two-slot preview and empty migration twin.
 
-The fixed two-slot [constellation preview](../../protocols/constellation-commons/README.md)
-has no dedicated production importer; generic scenario discovery still finds it.
-Do not retain its representation merely to satisfy that discovery. Either author
-its desired collaborative-art behavior as an ordinary source object or remove the
-preview and its migration together.
-
-Source files and retained compiled artifacts have different custody roles; their
-coexistence is not automatically duplication. A checked-in generated behavior twin
-and the generator that owns its policy are a competing authoring path. Likewise,
-[editor packaging](../../protocols/editor/generate.py) now loads source modules;
-[scene packaging](../../scene/handlers.py) serializes scene data for a source
-runtime. Their Python filenames do not make them behavior owners.
-
-Tickets and exhibitions already have ordinary source modules and package loaders.
-Their remaining journey/bootstrap dependencies must be cut over without restoring
-the deleted behavior generators. Source preparation already replaces the client
-recipe interpreter; remove remaining old recipe callers and update
-[the offer contract](../../profiles/COMPOSITE-OFFERS.md) with that cutover.
-
-## Work without another bottleneck
-
-Ports of tickets, agreements, places, scenes and contribution objects proceed in
-parallel with native preparation and allocation. Physical directory moves happen
-at component boundaries as their owners finish, not during another lane's edit.
-Use captured source/build snapshots for long checks; a shared source file changing
-must not force every lane to restart its entire journey repeatedly.
-
-Commit small useful checkpoints with clear scope. Qualification and convergence
-are independent activities; a checkpoint need not claim release readiness. Batch
-cross-component tests when shared contracts change. Track deletion of replaced
-code as part of each implementation task, not as indefinitely deferred cleanup.
+Keep dated qualification bundles outside the public tree unless they are reusable
+fixtures or proof dependencies. [Posting drafts](../previews/README.md) serve a
+current authoring purpose; they do not establish running-world availability.
+Track cleanup in [BACKLOG](../../BACKLOG.md), alongside implementation, rather
+than maintaining a second queue here.
