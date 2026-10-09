@@ -37,17 +37,15 @@ def law(participants=None, managers=('steward',)):
     participants = default_participants() if participants is None else participants
     for principal in participants: bounded_name(principal)
     for manager in managers: bounded_name(manager)
-    return {'profile': 'delvetalk-scoped-law',
-            'invoke': {name: list(participants) for name in ('enter', 'move', 'leave')},
-            'reprogram': list(managers), 'law': list(managers)}
+    modules = source_object.read_closure([('Authority', ROOT / 'world/lib/prelude/Authority.obend'), ('Commons', HERE / 'Commons.obend')])
+    ids = source_object.list_data(source_object.data(who) for who in participants)
+    owners = source_object.list_data(source_object.data(who) for who in managers)
+    return source_object.values('decode', [source_object.evaluate(modules, 'authority', [ids, owners])])[0]
 
 
 def linked(items):
     """Frame a typed source list; source owns its interpretation and bounds."""
-    result = source_object.variant('nil', source_object.record({}))
-    for item in reversed(list(items)):
-        result = source_object.variant('cons', source_object.record({'head': item, 'tail': result}))
-    return result
+    return source_object.list_data(items)
 
 
 def build(participants=None, places=None, paths=None, entries=('porch',), gates=None):
@@ -70,7 +68,7 @@ def build(participants=None, places=None, paths=None, entries=('porch',), gates=
         'gates': linked(source_object.data({'source': gate['from'], 'target': gate['to'],
             **{key: value for key, value in gate.items() if key not in ('from', 'to')}}) for gate in gates)})
     modules = source_object.read_closure([
-        ('Commons', HERE / 'Commons.obend')])
+        ('Authority', ROOT / 'world/lib/prelude/Authority.obend'), ('Commons', HERE / 'Commons.obend')])
     protocol = source_object.load(modules, syntax='objective-bend-object',
         constructor='initial', arguments=[config])
     if not source_object.plain(source_object.state_data(

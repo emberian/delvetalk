@@ -118,6 +118,58 @@ class SourceMaterialOrder(unittest.TestCase):
 
 
 class NativeSourceClosure(unittest.TestCase):
+    def test_editor_crlf_utf8_file_preimage_survives_native_package_and_custody(self):
+        import hashlib
+        import importlib.util
+        import time
+        spec = importlib.util.spec_from_file_location('exact_editor_source_reader', ROOT / 'protocols/editor/generate.py')
+        loader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loader)
+        original = (ROOT / 'protocols/editor/Editor.obend').read_bytes().decode('utf-8')
+        raw = (original.replace('\r\n', '\n').replace('\n', '\r\n') + '# café λ 🌱\r\n').encode('utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'Editor.obend').write_bytes(raw)
+            with patch.object(loader, 'HERE', root):
+                source = loader.editor_source()
+            ref = source_store.store_bytes(root / 'artifacts', source.encode('utf-8'), kind='source')
+            self.assertEqual(ref['sha256'], hashlib.sha256(raw).hexdigest())
+            self.assertEqual(source_store.read_bytes(root / 'artifacts', ref, kind='source'), raw)
+            # A repeat uses the original retained bytes; a normalized preimage is distinct.
+            self.assertEqual(source_store.store_bytes(root / 'artifacts', raw, kind='source'), ref)
+            self.assertNotEqual(source_store.reference(raw.replace(b'\r\n', b'\n')), ref)
+            allowed = dict(source_closure.LIBRARY)
+            allowed['Authority'] = 'world/lib/prelude/Authority.obend'
+            modules = loader.source_object.read_modules([(name, ROOT / path) for name, path in allowed.items()])
+            modules = source_closure.order(['Editor'], modules + [{'name': 'Editor', 'source': source}])
+            reply = loader.source_object.adapter._native({'op': 'compile', 'modules': modules,
+                'entry': 'describe'}, time.monotonic() + 30)
+            self.assertEqual(reply['status'], 'compiled', reply)
+            artifact = reply['artifact']
+            self.assertEqual(artifact['modules'][-1]['source'].encode('utf-8'), raw)
+            self.assertEqual(artifact['sourcesSha256'], hashlib.sha256(source_store.canonical(modules)).hexdigest())
+
+    def test_forge_source_and_examples_retain_exact_utf8_crlf_references(self):
+        import hashlib
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('exact_forge_source_reader', ROOT / 'protocols/town-forge/generate.py')
+        loader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loader)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'syntaxes/examples').mkdir(parents=True)
+            raw_source = 'edition ObjectiveBend 1\r\n# café λ\r\ndef entry() -> Nat:\r\n  7n\r\n'.encode('utf-8')
+            raw_examples = '# retained examples café 🌱\r\n'.encode('utf-8')
+            (root / 'syntaxes/examples/paper-door.obend').write_bytes(raw_source)
+            for name in ('paper-door.examples', 'moon-challenge.examples'):
+                (root / name).write_bytes(raw_examples)
+            with patch.object(loader, 'ROOT', root), patch.object(loader, 'HERE', root):
+                texts = [loader.spell_source(), loader.example_source(), loader.challenge_source()]
+            for text, raw, kind in zip(texts, (raw_source, raw_examples, raw_examples), ('source', 'scenarios', 'scenarios')):
+                ref = source_store.store_bytes(root / 'artifacts', text.encode('utf-8'), kind=kind)
+                self.assertEqual(ref['sha256'], hashlib.sha256(raw).hexdigest())
+                self.assertEqual(source_store.read_bytes(root / 'artifacts', ref, kind=kind), raw)
+
     def test_actual_parser_preserves_aliases_and_compiler_accepts_order(self):
         import process_custody
         with tempfile.TemporaryDirectory() as directory:

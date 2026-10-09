@@ -24,9 +24,9 @@ def exchange(job, timeout=120):
 
 
 def export(entry='play', validated=True):
-    modules = [{'name': 'Automatafl', 'source': (HERE / 'Automatafl.obend').read_text()}]
+    modules = [{'name': 'Automatafl', 'source': (HERE / 'Automatafl.obend').read_bytes().decode('utf-8')}]
     if validated:
-        modules.append({'name': 'Validated', 'source': (HERE / 'Validated.obend').read_text()})
+        modules.append({'name': 'Validated', 'source': (HERE / 'Validated.obend').read_bytes().decode('utf-8')})
     result = exchange({'op': 'compile', 'modules': modules, 'entry': entry})
     if result['status'] != 'compiled':
         raise RuntimeError(result)

@@ -1,0 +1,31 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+import ./Authority.obend as A
+import ./Editor.obend as E
+import ./Commons.obend as C
+import ./ObjectFactory.obend as F
+def one(name: String) -> P.Names:
+  P.Names.cons({head: name, tail: P.Names.nil()})
+def member(value: P.Value, name: String) -> Bool:
+  match P.asArray(value):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(a): members(a.value, name)
+def members(values: P.Values, name: String) -> Bool:
+  match values:
+    case nil(_): false
+    case cons(c): P.textEquals(c.head, name) || members(c.tail, name)
+def empty(value: P.Value) -> Bool:
+  match P.asArray(value):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(a):
+      match a.value:
+        case nil(_): true
+        case cons(_): false
+def checks() -> {editorMaker: Bool, editorNoInvented: Bool, commonsParticipant: Bool, commonsManager: Bool, commonsNoOwnerBypass: Bool, forgeMaker: Bool, forgeEmptyManagement: Bool, explicitPublicPanel: Bool, absentPublicPanel: Bool}:
+  let editor = E.authority(one("maker"))
+  let commons = C.authority(one("visitor"), one("steward"))
+  let locked = F.factoryAuthority(one("maker"), P.Names.nil())
+  let public = A.configured({commands: one("readThought"), participants: one("maker"), managers: P.Names.nil(), stewards: P.Names.nil(), publicPanels: one("main")})
+  {editorMaker: member(P.get(P.get(editor, "invoke"), "approve"), "maker"), editorNoInvented: member(P.get(P.get(editor, "invoke"), "invented"), "maker") == false, commonsParticipant: member(P.get(P.get(commons, "invoke"), "move"), "visitor"), commonsManager: member(P.get(commons, "law"), "steward"), commonsNoOwnerBypass: member(P.get(commons, "law"), "visitor") == false, forgeMaker: member(P.get(P.get(locked, "invoke"), "make"), "maker"), forgeEmptyManagement: empty(P.get(locked, "law")) && empty(P.get(locked, "reprogram")), explicitPublicPanel: P.textEquals(P.get(P.get(public, "view"), "main"), "public"), absentPublicPanel: P.textEquals(P.get(P.get(public, "view"), "private"), "public") == false}

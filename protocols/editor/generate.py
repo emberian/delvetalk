@@ -32,7 +32,7 @@ def factory(compiler, makers):
 
 
 def editor_source():
-    return (HERE / 'Editor.obend').read_text()
+    return (HERE / 'Editor.obend').read_bytes().decode('utf-8')
 
 
 def editor_artifact(target, factory):
@@ -44,6 +44,7 @@ def editor_artifact(target, factory):
 
 
 def editor_law(makers):
-    return {'profile': 'delvetalk-scoped-law',
-        'invoke': {key: list(makers) for key in ('draft', 'plan', 'review', 'approve', 'finish')},
-        'reprogram': list(makers), 'law': list(makers)}
+    modules = source_object.read_closure([('Authority', ROOT / 'world/lib/prelude/Authority.obend'),
+        ('Editor', HERE / 'Editor.obend')])
+    ids = source_object.list_data(source_object.data(who) for who in makers)
+    return source_object.values('decode', [source_object.evaluate(modules, 'authority', [ids])])[0]

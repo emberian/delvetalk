@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./Authority.obend as Authority
 import ./List.obend as Lists
 import ./Abi.obend as Abi
 import ./Preparation.obend as P
@@ -168,3 +169,6 @@ def placesText(items: Places) -> String:
     case cons(c): textConcat(textConcat(textConcat(c.head.name, ": "), textConcat(c.head.description, " ")), placesText(c.tail))
 def view(state: State, panel: String) -> View:
   {title: "The commons", prose: textConcat(peopleText(state.config.participants), textConcat(placesText(state.config.places), "Presence is declared here; it grants no access to other objects.")), actions: {enter: {visible: true, text: "Enter the commons", command: "enter", input: {}}, move: {visible: true, text: "Move to a place", command: "move", input: {}}, leave: {visible: true, text: "Leave the commons", command: "leave", input: {}}}, children: E.Children.nil()}
+
+def authority(participants: P.Names, managers: P.Names) -> P.Value:
+  Authority.assemble({reading: P.Value.text({value: "public"}), invocation: Authority.uniform(P.Names.cons({head: "enter", tail: P.Names.cons({head: "move", tail: P.Names.cons({head: "leave", tail: P.Names.nil()})})}), participants), reprogramming: managers, management: managers, publicPanels: P.Names.cons({head: "main", tail: P.Names.nil()})})

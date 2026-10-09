@@ -24,12 +24,26 @@ def principals(values):
 
 
 def scoped(invoke, reprogram=(), managers=()):
-    return {'profile': 'delvetalk-scoped-law', 'invoke': invoke,
-            'reprogram': list(reprogram), 'law': list(managers)}
+    # Explicit caller configuration is framed; the shared source encodes law.
+    modules = source_object.read_closure([('Authority', ROOT / 'world/lib/prelude/Authority.obend')])
+    grants = source_object.list_data(source_object.record({'command': source_object.data(command),
+        'principals': source_object.list_data(source_object.data(who) for who in people)})
+        for command, people in invoke.items())
+    policy = source_object.record({'reading': source_object.value('public'), 'invocation': grants,
+        'reprogramming': source_object.list_data(source_object.data(who) for who in reprogram),
+        'management': source_object.list_data(source_object.data(who) for who in managers),
+        'publicPanels': source_object.list_data([])})
+    return source_object.values('decode', [source_object.evaluate(modules, 'assemble', [policy])])[0]
 
 
 def factory_law(makers, managers=()):
-    return scoped({'make': principals(makers)}, managers, managers)
+    modules = source_object.read_closure([('Authority', ROOT / 'world/lib/prelude/Authority.obend'),
+        ('Factory', ROOT / 'protocols/editor/Factory.obend'),
+        ('Creation', ROOT / 'protocols/factories/Creation.obend'),
+        ('ObjectFactory', HERE / 'ObjectFactory.obend')])
+    ids = source_object.list_data(source_object.data(who) for who in principals(makers))
+    owners = source_object.list_data(source_object.data(who) for who in managers)
+    return source_object.values('decode', [source_object.evaluate(modules, 'factoryAuthority', [ids, owners])])[0]
 
 
 def door(revision=0):
@@ -40,15 +54,15 @@ def door(revision=0):
 
 def spell_source(revision=1):
     names = {1: 'paper-door.obend', 2: 'moon-door.obend'}
-    return (ROOT / 'syntaxes/examples' / names[revision]).read_text()
+    return (ROOT / 'syntaxes/examples' / names[revision]).read_bytes().decode('utf-8')
 
 
 def example_source(revision=1):
-    return (HERE / {1: 'paper-door.examples', 2: 'moon-door.examples'}[revision]).read_text()
+    return (HERE / {1: 'paper-door.examples', 2: 'moon-door.examples'}[revision]).read_bytes().decode('utf-8')
 
 
 def challenge_source():
-    return (HERE / 'moon-challenge.examples').read_text()
+    return (HERE / 'moon-challenge.examples').read_bytes().decode('utf-8')
 
 
 def source_desk():
@@ -57,6 +71,7 @@ def source_desk():
 
 def object_factory(child, visitors, methods, *, managers=(), read="public"):
     modules = source_object.read_closure([
+        ('Authority', ROOT / 'world/lib/prelude/Authority.obend'),
         ('Factory', ROOT / 'protocols/editor/Factory.obend'),
         ('Creation', ROOT / 'protocols/factories/Creation.obend'),
         ('ObjectFactory', HERE / 'ObjectFactory.obend')])
