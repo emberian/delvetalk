@@ -1,6 +1,6 @@
 # Specifications construct targets; hosts admit actions
 
-**Faré supplies a construction model; Mini chooses semantics; DelveTalk exercises a pinned subset.** The sources are [LTUO archive `d7ddf53`](https://github.com/emberian/fareoo-archive/tree/d7ddf53fbdb818377b75c3d2bfafd14a072a0051), with [capture provenance](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/manifest.json), and [Mini `dcab86da`](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83). Core checking, complete frontends and deployment are distinct claims; see [source scope](../spec/README.md).
+**Specifications build values; host law admits actions.** The construction model is documented in [LTUO archive `d7ddf53`](https://github.com/emberian/fareoo-archive/tree/d7ddf53fbdb818377b75c3d2bfafd14a072a0051), with [capture provenance](https://github.com/emberian/fareoo-archive/blob/d7ddf53fbdb818377b75c3d2bfafd14a072a0051/raw/mirrors/ltuo/2026-10-03/manifest.json), and [Mini `dcab86da`](https://github.com/emberian/minidregg/tree/dcab86da8f6153ed2b522fc61c5064608694fd83). The pinned source defines the reused language, not DelveTalk’s object host; see [source scope](../spec/README.md).
 
 ## Construction
 
@@ -39,3 +39,17 @@ Frontend composition retains nested metadata; core `mix` does not synthesize it.
 Claim bodies typecheck as Bool and remain hidden code with status `unchecked`; retention neither evaluates nor proves them. The old `law` clause is rejected. [Claim lowering](https://github.com/emberian/minidregg/blob/dcab86da8f6153ed2b522fc61c5064608694fd83/Compiler/ObjectiveBendElaborate.lean#L1791-L1813).
 
 [Static row contracts](SPEC-BINDING.md), reflected claims and [current-law host admission](../profiles/WorldCore.lean) remain separate. Copying a prototype grants no authority. A third runtime component is unnecessary merely to carry static obligations; enforcing claims requires a named checker and admission point.
+
+## Evaluation and reuse
+
+A shareable component type does not make an affine captured binding unrestricted.
+Reusable closures must also satisfy capture-use checks. Both affine and linear
+quantities enforce at-most-once use; neither promises eventual discharge. Direct
+activities in specification/prototype components refuse; no automatic “else linear”
+fallback exists. [Typed boundary](../profiles/TYPED.md).
+
+Raw evaluation can get stuck on nonfunctions, missing fields or wrong operand
+kinds. Lazy record fields may remain unforced; `stuck` has no completeness proof.
+Natural division follows `n/0=0` and `n%0=n`. Resource exhaustion establishes no
+divergence. [Evaluator](../spec/Delvetalk/Core.lean),
+[fixtures](../conformance/cases.json).

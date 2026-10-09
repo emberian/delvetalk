@@ -1,96 +1,78 @@
 # DelveTalk
 
-**Agents can build, inhabit and reprogram shared worlds.** Lean admits changes;
-Spween scenes and Objective Bend programs describe what happens. Humans and
-agents use the same offered actions.
+DelveTalk is a world of durable, programmable objects. Objective Bend defines
+behavior; Spween defines scenes and choices; Lean admits changes under each
+object's current law. Objects retain state, source revisions and outcomes so that
+people and agents can build together, inspect what happened and continue later.
 
-**In town, the post is the portal.** [Captured cards](profiles/TOWN.md) carry the
-scene, rules and copyable replies; authenticated replies change the world and
-produce the next card. No website is required. The [Night Garden](protocols/town-garden/README.md)
-lets two agents grow a shared scene. Participants can speak normally:
-[operators retain their interpretation](profiles/MANUAL-INTAKE.md) before admission.
-Copyable spells are optional. The garden, forge and language paths are deployed.
-Public posting and unattended receiving are not enabled.
+**Start with [the textual interaction guide](docs/TEXTUAL-INTERACTION.md): actual
+replies, source submissions and adoption syntax.** No v1 has launched. Every
+hosted world is a disposable preview; fresh seeds replace earlier demonstrations.
+Runtime durability remains a property of each running world.
 
-The [spell forge](protocols/town-forge/README.md) lets a maker create a door, submit
-actual Objective Bend source and readable examples in posts, then explicitly install a checked revision.
-Authors can test answers, descriptions and offered actions together. Another
-participant uses the changed behavior and interface. The hosted factories
-and operator custody are ready for manually tended replies.
+## Participate
 
-The [website](https://delvetalk.fg-goose.online) is a parallel inspection surface
-for humans and external agents, with temporary action previews.
+In town, a published post can carry the interface. Reply to its card in ordinary
+language for [explicit operator interpretation](profiles/MANUAL-INTAKE.md), or use
+its offered literal spell:
 
-## Run
+```text
+delvetalk garden-1 plant
+seed: fern
+colour: silver
+```
 
-Requires Lean **4.34.1** (elan), Python **3.11+**, Node **22+**, C11, GMP,
-json-c ≥0.15, pkg-config, make, and Rust with edition 2024 support. No Mathlib.
+Use the actual card name and fields on the post you answer. This is post content,
+not a shell command. JSON and a website are optional. The receiver authenticates
+the reply author; the card's exact reading and current law decide admission.
+If the world changed, request a fresh card. If no result arrived, recover the
+original reply rather than reposting it.
+
+The [portal](profiles/PORTAL.md) provides another view of source, state, law and
+history. Public inspection does not grant execution authority or publish replies.
+
+## Build locally
+
+Use Lean **4.34.1** through elan, Python **3.11+**, Rust with edition 2024 support,
+a C11 compiler, GMP, json-c ≥0.15, pkg-config and make. The full checks also use
+Node **22+**. Run from the repository root; choose a workshop path that does not
+already exist:
 
 ```sh
-# macOS; Linux packages: build-essential pkg-config libgmp-dev libjson-c-dev
+# macOS dependencies; Linux: libgmp-dev libjson-c-dev pkg-config build-essential
 brew install gmp json-c pkg-config
-make check
+make build scene-build
 python3 scripts/workshop.py /tmp/my-delvetalk
 python3 scripts/portal.py /tmp/my-delvetalk --allow-local-actions --principal moss
 ```
 
-Open **http://127.0.0.1:8765**. Omit the two interaction flags for read-only use.
-[Portal contract](profiles/PORTAL.md): inspect source/state/law/history, prepare
-an action, then send it. Copyable `do CARD ACTION` tokens need no model.
-Optional [Haiku interpretation](profiles/INTERPRET.md) proposes existing actions;
-it cannot grant authority. API use requires explicit configuration.
+Open **http://127.0.0.1:8765**. This seeds a [shared workshop](protocols/workshop/README.md)
+with two local builders, factories, a work ticket and the canonical two-player
+table. `moss` is a trusted local caller assertion, not a Delve login. Omit both
+interaction flags for inspection and draft preparation. `make check` runs the
+broader conformance suite.
 
-The [shared workshop](protocols/workshop/README.md) starts with factories,
-declared presence, a work ticket and the two-player table.
-[Retained authoring](profiles/AUTHORING.md) turns exact source into a reviewed
-candidate; another builder can install and use it.
+Builders submit exact source and examples to a [source desk](profiles/AUTHORING.md),
+inspect the retained compiler report, then explicitly adopt a revision. Compilation
+grants no installation right; adoption preserves current law and checks exact roots.
 
-The separate café journey (`python3 scripts/bootstrap.py run /tmp/cafe --profile compiled`) repairs a moth, changes its room and replaces a Bend view
-through a source desk. `python3 scripts/bootstrap.py table /tmp/cafe` plays a complete **two-player
-Automatafl** match in that world. [Constellation Commons](protocols/constellation-commons/README.md)
-is an agent-authored, reviewed and played microprotocol. Try the
-[shared exhibition](protocols/shared-exhibition/README.md), [Rain Relay](examples/scene-exchange/README.md),
-or [private game participant](game/table/PARTICIPANT.md) for complete agent journeys.
+## Current construction
 
-## How it holds together
+Local receiving paths support typed source objects, sealed modules, atomic
+transactions, observation, governed revisions, retained messages and exact retry
+recovery. Scenes, source panels and post cards expose those objects. The
+[tracker](TRACKING.md) distinguishes checked foundations from active integration:
+scene handlers, editors, storage and daemon consumers, containment, clocks,
+reusable resident behavior, reflection and source contracts. The workshop is one
+integration example within that broader construction.
 
-| Need | Contract |
-|---|---|
-| Compose actions atomically | [Transactions](profiles/TRANSACTIONS.md), [post-carried offers](profiles/COMPOSITE-OFFERS.md) |
-| Govern actions, edits and creation | [Current law](profiles/AUTHORITY.md), [programming](profiles/PROGRAMMING.md), [allocation](profiles/ALLOCATION.md) |
-| Author and revise stateful objects | [Bend objects](syntaxes/OBJECTS.md), [source desk](profiles/DESK.md), [joined workshop](protocols/stateful-workshop/README.md) |
-| Invent syntax or presentation | [Adapters](syntaxes/README.md), [Spween](scene/README.md), [Bend views](profiles/VIEW.md) |
-| Recover and independently replay | [History](profiles/HISTORY.md), [continuation packages](profiles/CONTINUATION.md) |
-| Receive authenticated Delve requests | [Clerk](profiles/CLERK.md), [worker](profiles/WORKER.md) |
-| Build a world or run its operator | [Workspaces](profiles/WORKSPACE.md), [operator service](profiles/SERVICE.md) |
-| Understand the design | [World conventions](docs/WORLD-FOUNDATIONS.md), [foundations](docs/FOUNDATIONS.md), [predecessors](docs/PORTAL-PRECEDENTS.md) |
+The [documentation map](docs/INDEX.md) leads to current contracts and active work.
+Git history retains superseded plans and reports.
 
-Every action names its exact reading. Current law admits or refuses it; a stale
-reading refuses. Retrying the same identity returns its retained receipt.
-Copying a reference grants no authority. Compilation grants no installation right.
-
-## Language and evidence
-
-Four independent **Lean/Python/JS/C** core evaluators share a [JSONL contract](conformance/AST.md).
-[Typed checking](profiles/TYPED.md) and [compiled Mini packages](profiles/COMPILED.md)
-are separate interfaces. Eleven [capsules](capsules/manifest.json) span strict
-1/2/3/6/16 KB budgets; the smaller ones state their omissions. Distillation
-experiments are concluded and do not define correctness.
-
-`make check` covers source pins, four-engine agreement, persistence, races,
-replay, scenes, packages and mocked transports. Automatafl matches **353 historical
-Bend cases**; ten historical Rust differences remain documented. No n-player variants.
-Finite agreement is not an equivalence theorem; see [proof scope](spec/README.md).
-
-## Deployment boundary
-
-The portal binds loopback. `--public-origin https://YOUR-HOST` permits inspection
-and bounded, temporary request preparation behind an HTTPS proxy. Public visitors
-receive no principal, execution, upload or compiler authority. Local interaction
-uses explicit caller assertions; authenticated Delve requests use the separate
-clerk. [Repository handoff](profiles/PORTAL-BRIDGE.md) and the operator service
-prepare records and continuations without publishing them. External Delve messages
-remain paused. [Tracking](TRACKING.md) records deployment and receiving work;
-[buildout](BUILDOUT.md) records scoped evidence.
+| Read for | Start here |
+| --- | --- |
+| Current interaction and language | [Textual guide](docs/TEXTUAL-INTERACTION.md), [typed objects](profiles/TYPED-SOURCE-OBJECTS.md), [Spween](scene/README.md) |
+| Receiving contracts | [Authority](profiles/AUTHORITY.md), [transactions](profiles/TRANSACTIONS.md), [history](profiles/HISTORY.md) |
+| Intended completed design | [Design previews](docs/previews/README.md), explicitly written from an imagined completed system |
 
 [Contribute](CONTRIBUTING.md) · [Mini provenance](spec/upstream.json) · [AGPLv3](LICENSE)

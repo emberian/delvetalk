@@ -1,91 +1,61 @@
-# Where meaning lives
+# Architecture and semantic boundaries
 
-DelveTalk reuses Mini's Bend frontend, checker and demand machine, **not its object
-kernel**. Its Lean host implements a smaller, separate admission contract. Python
-transports, retains and presents results. Independent C/Python/JS core evaluators
-remain useful cross-checks, not production admission engines.
-The separate object host is intentional: DelveTalk experiments with its own
-programmable environment. Convergence with Mini is not a project requirement.
+DelveTalk has its own Lean object host. It reuses Mini's Objective Bend frontend,
+checker and demand machine; it does not inherit Mini's object kernel or its
+activity, delegation and custody guarantees. Host convergence is not required.
+Python supplies translation, transport, presentation and durable storage. The
+independent C/Python/JS core evaluators cross-check language behavior; they do not
+admit world changes.
 
-## Connected in this pass
+## Meaning and admission
 
-- [Authored spells](../syntaxes/obend_spell.py) now carry real Objective Bend source.
-  The pinned frontend checks it and the demand machine executes it. The examples
-  use extensions, `self`, `super`, composition and `fix`; source also computes views.
-  Generated JSON remains transport. The obsolete JSON spell implementations were
-  removed.
-- [Manual interpretation](../profiles/MANUAL-INTAKE.md) retains the original post
-  and a separate operator attestation. It shares ordinary normalization, identity,
-  current-law checks and admission. It is not proof that prose uniquely entails
-  the action. Copyable syntax is optional.
+[Source](../profiles/TYPED-SOURCE-OBJECTS.md) defines state, methods and views.
+[Current law](../profiles/AUTHORITY.md) governs invocation, programming and law
+revision. Grants, receiving predicates, law-held invariants and checked source
+contracts have distinct jobs; their versioned profiles specify which candidates
+and operations they check. Form schemas and descriptive metadata cannot substitute
+for receiving checks. Compilation alone grants no installation right.
 
-## Priorities exposed by the review
+A new action supplies complete expected roots. Exact `(principal,intent)` retries
+recover retained outcomes before current-law checks. Reusing that identity for
+changed bytes refuses. Programming preserves law; deliberately empty law has no
+owner recovery bypass. [Desk adoption](../profiles/DESK.md) atomically releases
+the exact candidate and replaces the target under both authorities.
 
-1. **Whole Bend transitions — implemented locally.** The opt-in
-   [source-transition profile](../profiles/COMPILED.md) executes one typed source
-   call over state, input and host identity; its decision replaces complete state
-   or refuses atomically. The [garden](../protocols/town-garden/Garden.obend) uses it.
-   Compilation at installation and typed invocation do not establish permanent
-   state invariants; this first profile has no outbox or allocation. Legacy
-   commands remain intact. This is DelveTalk's chosen interface, not Mini's kernel.
-2. **Admission contracts, not form promises.** Field types/lengths in affordances
-   constrain offered requests. They do not automatically constrain raw requests:
-   the text factory's unrestricted `write` can store nontext. Source types provide
-   real checks, but bounds and migration invariants need explicit receiving rules.
-   Management predicates currently cannot inspect proposed replacement state/code.
-3. **Stable scene meaning — corrected in v2.** Spween v1 caches source-dependent string ranks in state.
-   Adding an unrelated literal can change a migrated comparison. Preserve string
-   text and derive ordering in the receiving program: v2 now does this, refusing
-   ordering for migrated text outside its closed source domain. V1 remains explicit
-   historical behavior. Source projections now check the receiving workspace's pins;
-   standalone observations retain their actual runtime identity.
-4. **Mechanical places.** Transaction [input origin](../profiles/TRANSACTIONS.md)
-   now identifies the actual earlier result producer. Gated commons movement
-   can require an immediately preceding door invocation; copied input carries no
-   origin, and provenance grants no authority. Retained-event delivery and
-   autonomous reactions remain a [separate future profile](RESIDENT-ACTIVITY.md).
+[Transactions](../profiles/TRANSACTIONS.md) stage ordered calls and commit together.
+`inputFrom` transfers an earlier result with host-derived origin; copied data
+cannot forge that origin. Each callee still checks the caller's current authority.
+Observation records a read without executing the target. Provenance authenticates
+what occurred, not permission to perform the next operation. Atomicity covers the
+submitted calls, not an assumed complete workflow.
 
-Source `law` declarations and host grant predicates have different meanings. The
-current compiler refuses source laws; integrating new-state invariants requires
-explicit old/new/request checks across every write route, not a renaming.
-Mini's pure declared-state and source-law judgments are possible reuse points,
-if their contracts suit the chosen DelveTalk semantics. Importing them is not
-an accepted migration plan.
-DelveTalk does not inherit Mini's activities, protected cells, scoped nested-call
-delegation, linear custody, drain/rebirth upgrades or resource accounting merely
-because its own admission also runs in Lean.
+## Identity and interaction
 
-Factory allocation, actor-bound work tickets, atomic desk adoption, exact replay
-and compiled game execution are real receiving paths. Ticket acceptance acknowledges
-review; it deliberately does not install a target. Scoped grants are not linear
-custody. Finite tests, typed-core evidence and whole-host correctness remain
-different claims.
+World/object references differ from display names, network routes and observed
+roots. Copying references grants neither custody nor authority; foreign resolution
+needs an explicit route and trust decision. [PlaceIndex](../protocols/place-index/README.md)
+curates references. [Commons](../protocols/commons/README.md) declares presence;
+[containment](../protocols/containment/README.md) owns a local placement/possession
+relation. None changes the referenced object's law or proves a live connection.
 
-The deployed checkpoint remains `2926fcb`; the new source-transition and
-input-origin changes described here are not deployed there.
+Views expose actions from retained observations. Buttons, literal spells and
+interpreted prose prepare requests through the same receiving boundary. Preserve
+source, selected syntax, interpretation and roots; natural language cannot choose
+an adapter, silently refresh a card or grant a role. [Work-ticket acceptance](../protocols/work-ticket/README.md)
+records review, not an external effect. Version semantics, syntax and presentation
+independently; unknown required meaning stops automation while permitting inspection.
 
-## Exchange with Mini
+## Persistence and scope
 
-**Explore compatibility without prescribing convergence.** Reusing Mini's language
-does not make DelveTalk's host a kernel subset or confer its proofs. Three examples:
-DelveTalk assignments may add fields; Mini edits require existing declared fields.
-DelveTalk advances a version on an empty update; Mini's keep-only return does not.
-DelveTalk transactions retain one caller throughout; Mini nested calls require
-explicit scoped delegation. These are design differences, not defects by themselves.
+[Resident custody](../profiles/RESIDENT-STORE.md) commits native preparations before
+replying. A missing reply or caller timeout leaves an uncertain outcome: recover
+the exact attempt. A retained evaluator-budget refusal is already terminal.
+[Ordinary messages](RESIDENT-ACTIVITY.md) retain admitted provenance and consume
+atomically with recipient effects. External outboxes and publication remain
+separate; local consumption does not establish exactly-once delivery across copies.
 
-Choose each host behavior for resident use, composition, recovery and simplicity.
-Share an implementation when its meaning matches; preserve separate semantics
-when the experiment needs them. A future common fragment would need explicit
-identity, authority, state, result, refusal and resource mappings. It would not
-justify silently changing historical receipts or current programs.
-
-Learnings can travel upstream without moving the host: source-derived affordances,
-manual interpretation with explicit provenance, replayable authoring journeys,
-and failures involving stale views, migration or uncertain replies. Reusable Bend
-libraries and portable examples offer another exchange. Mini's methods, admission
-judgments and proofs are references to study and selectively reuse, not a checklist
-of facilities DelveTalk must acquire.
-
-Python cleanup is independent: remove duplicate workflow machinery and put authored
-behavior into Bend where that clarifies the system. Moving a module into Mini or
-another language does not itself simplify it.
+[History replay](../profiles/HISTORY.md) requires accepted anchors and a matching
+trusted runtime. Hashes identify bytes; they authenticate no author. Typechecking,
+finite conformance, source-relation proofs and whole-host correctness are separate
+claims. [Source scope](../spec/README.md) identifies the actual proof boundary;
+[TRACKING](../TRACKING.md) identifies unfinished integration and opening work.

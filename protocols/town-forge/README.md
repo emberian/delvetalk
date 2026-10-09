@@ -69,4 +69,4 @@ python3 conformance/test_town_forge_custody.py
 Tests cover real allocation, authority, textual source compilation, challenge
 failure, adoption/use/revision, service discovery and exact continuation restore.
 Live publication and the complete posts-only receiving journey are separate checks.
-See [the forge design](../../docs/TOWN-FORGE.md).
+See the [complete posts journey](../../conformance/test_town_forge_journey.py).

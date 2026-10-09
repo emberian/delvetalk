@@ -1,137 +1,87 @@
-# Live clerk
+# Authenticated local receiving
 
-**The clerk admits explicit public requests through Lean into a durable local world.** It runs on demand, publishes nothing, and accepts invocation, reprogramming, law revision and bounded [transactions](TRANSACTION-INTAKE.md). Remote authors cannot call bootstrap `create` or load adapters; authorized factory commands support [governed allocation](ALLOCATION.md).
+The clerk authenticates a public repository record, retains its exact request,
+and submits it to Lean. Lean decides current authority, exact preimages and the
+result. The clerk supports invocation, reprogramming, law revision and bounded
+transactions. It publishes nothing. For participant-facing replies, start with
+[the textual interaction guide](../docs/TEXTUAL-INTERACTION.md).
 
-Build `delvetalk-world`; keep custody outside Git:
+## Enroll a workspace
 
-```sh
-STATE="$HOME/claude_state/delvetalk-clerk"
-python3 scripts/clerk.py --state "$STATE" bootstrap \
-  --object counter:live --protocol protocols/counter/protocol.json \
-  --repository AUTHOR_DID --law AUTHOR_DID
-python3 scripts/clerk.py --state "$STATE" snapshot counter:live > /tmp/root.json
-python3 scripts/clerk.py --state "$STATE" receive \
-  at://AUTHOR_DID/org.delvetalk.request/KEY --cid RECORD_CID
-```
-
-`--repository` enrolls transport; `--law` grants initial Lean authority. Repeat either; empty law is permitted. `--law-file` supplies complete scoped law instead. Exact bootstrap retries recover the create receipt; different bootstrap cannot overwrite custody. [Management](MANAGEMENT.md) adds reviewed objects.
-
-## Attach an existing workspace
-
-`attach` enrolls an existing generic workspace without creating another object
-or changing its world, law or receipts:
+Create a [workspace](WORKSPACE.md) first. For resident custody, start its explicit
+[receiver daemon](RESIDENT-STORE.md) and keep it running while using the clerk:
 
 ```sh
-python3 scripts/clerk.py --state /private/path/receiver attach \
-  --workspace /private/path/shared-world --runtime-profile transactions \
-  --genesis EXACT_GENESIS_SHA256 --seed-head EXACT_SEED_HEAD_SHA256 \
-  --expected-roots /private/path/selected-roots.json --repository AUTHOR_DID
+python3 scripts/resident_server.py "/path/to/workspace/world.json"
 ```
 
-The roots file maps selected object IDs to **complete current root objects**,
-for example `{"entry:one": FULL_ROOT, "desk:one": FULL_ROOT}`. Its keys select
-initial remote enrollment. Select genesis and seed head from workspace
-initialization evidence; the command requires its `manifest.json`, `seed.json`
-and `seed-history/`, not arbitrary world JSON. The Python API is
-`Clerk.attach(workspace, expected_roots, repositories, expected_genesis=...,
-expected_seed_head=..., runtime_profile=...)` with the last three arguments
-keyword-only.
+Run subsequent commands in another terminal. Stop the daemon with Ctrl-C when
+finished; restart it on the same configured path to recover durable custody.
+File-backed workspaces remain supported and need no daemon. A resident
+`world.json` is a logical binding, not a JSON file to read or copy. There is no
+automatic daemon startup or fallback to file custody.
 
-Attachment verifies namespace, runtime and anchors, replays the exact seed
-through the selected Lean host, and checks that current history extends that
-seed prefix. Later admissions are replayed in temporary custody; the full world
-and selected roots must reconstruct exactly. Runtime pins must remain stable.
-No external HTTP or workspace world write occurs. Repository and object
-enrollment confer no authority.
-
-Configuration binds the canonical absolute `world.json` path, with no copy or
-symlink. Restarted receiving, snapshots, management and upgrades use that path
-and its stable world lock; lock order remains clerk, then world. A different
-existing clerk, local world or orphaned journal cannot be overwritten or
-rebound. Retargeting the bound path through a symlink is refused.
-
-The only commit is atomic clerk configuration replacement after verification.
-Interruption before it permits repeating verification. A lost reply after it
-is recovered by repeating the original selection: `already-attached` returns
-historical attachment evidence even after later admissions advance the world.
-It neither claims those original roots are current nor resets later enrollment.
-Different selections refuse rather than silently rebinding custody.
-
-The selected `transactions` or `compiled` runtime remains explicit for all
-operations, including single-object requests. Default `world` preserves legacy
-world/transaction dispatch. Runtime changes still require quiescent upgrade.
-[Attachment tests](../conformance/test_clerk_attach.py) cover actual Lean replay,
-fake-PDS receiving, unchanged law, restart/retry, mismatched anchors/roots,
-forged state, interruption and canonical-path custody.
-
-## Wire
-
-An author's own `org.delvetalk.request` record contains exactly:
-
-```json
-{"$type":"org.delvetalk.request","profile":"delvetalk-live-v1","requestJson":"..."}
-```
-
-The string preserves arbitrary JSON numbers. Its invocation payload is:
-
-```json
-{"object":"counter:live","command":"add","input":{"amount":1},"expected":{}}
-```
-
-Replace `{}` with the complete snapshot root. Optional `op:"invoke"` is accepted. Reprogramming uses exactly `{op:"reprogram",object,protocol,state,expected}`: lowered protocol and complete replacement state. Lean validates and installs both atomically, preserves law and increments version. No implicit migration runs.
-
-Law revision uses exactly `{op:"law",object,law,expected}` (or `expectedRootRef`).
-The complete law is an array or scoped-law object; Lean validates it and checks
-current management authority and receiving invariants. Caller and intent always
-come from the verified repository record, never supplied identity fields.
-
-Factory invocations may add `absent:["factory/child"]` (at most 16 identities).
-Unregistered absences must name direct children of registered objects. Only
-committed children become remotely addressable; enrollment grants no child authority.
-
-Either operation may replace `expected` with `expectedRootRef:{uri,cid}`. The reference must name `org.delvetalk.root` in custodian repository `did:plc:oq2mrkwsuts7dqbkqqm2ntiz`. The clerk verifies PDS identity, exact URI/CID, envelope/digest, object and version, then retains the resolved record. Lean still checks currentness; a historical root can yield a terminal stale-root refusal.
-
-Social requests use `town.delve.feed.post` with this LF-delimited grammar:
-
-````text
-delvetalk-request v1
-```delvetalk-request
-{"object":"counter:live","command":"add","input":{"amount":1},"expected":{}}
-```
-````
-
-The first line is exact; optional whitespace precedes one tagged fence. Trailing plain text is allowed; preceding prose or additional backticks are refused. Duplicate members, unknown fields, nonfinite numbers and caller-supplied principal/intent are rejected.
-
-## Trust and recovery
-
-The pinned `https://pds.delve.town` supplies public `describeRepo`/`getRecord` observations. Repository DID, DID-document PDS service and returned URI/CID must match. Only `did:plc` identities are supported; redirects and arbitrary endpoints are refused. This trusts HTTPS PDS testimony, local custody and operator; it does not verify CAR/MST proofs or reconstruct CIDs. Responses cap at 1 MiB; requests, including expanded roots and derived identity, at 64 KiB. Invalid/oversized transport reserves no attempt.
-
-Principal is the repository DID; intent is `delve:` plus the entire URI. Before admission, a lock-protected, fsynced journal binds that URI to one CID and exact derived request. Lean checks current law, exact preimage and semantics, retaining either commit or refusal under `(principal,intent)`. Enrollment confers no authority.
-
-Retry the **same URI/CID** after uncertainty. Pending recovery replays retained bytes under original implementation pins; completed retries return saved receipts without refetching. Editing a record cannot replace an attempt. A revised attempt needs a fresh key and root. Receipts retain source identity, exact request, Lean reply and source/binary profiles. Pins identify what ran; they are not a refinement proof. Local fsync custody is not a distributed transaction.
-
-## Upgrade
+Set `AUTHOR_DID`, `GENESIS` and `SEED_HEAD` to the selected repository and workspace
+anchors. The roots file must map enrolled object IDs to complete current roots.
 
 ```sh
-python3 scripts/clerk.py --state "$STATE" profile
-python3 scripts/clerk.py --state "$STATE" upgrade --from-profile EXACT_OLD_SHA256
+python3 scripts/clerk.py --state "/path/to/clerk" attach \
+  --workspace "/path/to/workspace" --runtime-profile compiled \
+  --genesis "$GENESIS" --seed-head "$SEED_HEAD" \
+  --expected-roots "/path/to/selected-roots.json" --repository "$AUTHOR_DID"
+python3 scripts/clerk.py --state "/path/to/clerk" snapshot "counter"
+python3 scripts/clerk.py --state "/path/to/clerk" receive \
+  "at://$AUTHOR_DID/org.delvetalk.request/request-key" --cid "$RECORD_CID"
 ```
 
-New admissions refuse changed pins. Recover every pending remote/management request with its old implementation before upgrading. Upgrade holds clerk/world locks, records old/new profiles and unchanged world digest, and leaves world/history intact. Exact upgrade retries are idempotent; completed historical receipts keep original pins.
+Attachment checks namespace, runtime, seed anchors and selected roots, then
+reconstructs the captured admissions through Lean in independent custody. It
+writes clerk configuration without changing the workspace. Repeating the exact
+selection returns its retained attachment; a different selection refuses.
+Repository and object enrollment grant no command authority.
 
-Bootstrap or quiescent upgrade accepts `--runtime-profile transactions` or `compiled`; omission preserves the default/configured runtime. Only the operator selects it. Compiled source execution stays inside Lean; journals bind the selected admission host. Returning explicitly to `world` makes installed compiled expressions refuse there.
+## Identity, requests and recovery
 
-Publication remains separate and paused; see [receipts](RECEIPTS.md). An outbox intent is not delivery.
+The pinned `https://pds.delve.town` supplies GET-only repository observations.
+Repository DID, DID-document service, URI and CID must match. This trusts HTTPS
+PDS testimony; it does not verify repository proofs. Responses are bounded at
+1 MiB and derived native requests at 64 KiB. Caller-supplied principal or intent,
+unknown fields, duplicate members and nonfinite numbers are rejected.
 
-[Implementation](../scripts/clerk.py), [runtime closure](../scripts/runtime_profile.py), [Lean/mock-PDS tests](../conformance/test_clerk.py), [compiled tests](../conformance/test_clerk_compiled.py).
+A machine record has type `org.delvetalk.request`, profile `delvetalk-live-v1`
+and a `requestJson` string. An invocation contains `object`, `command`, `input`
+and the complete `expected` root. Reprogramming supplies `op:"reprogram"`,
+`object`, `protocol`, `state`, `expected`; law revision supplies `op:"law"`,
+`object`, `law`, `expected`. [Transactions](TRANSACTION-INTAKE.md), captured
+[Town cards](TOWN.md) and [manual interpretation](MANUAL-INTAKE.md) use the same
+receiving boundary. Interpretation retains the original post and a separate
+operator decision; prose does not supply authority.
 
-## Operator interpretation of ordinary posts
+Principal comes from the authenticated repository DID; intent is `delve:` plus
+the full source URI. Before admission, a durable journal binds that URI to one
+CID and exact request. Retry the **same URI/CID** after uncertainty. A saved
+receipt returns immediately. Otherwise native exact receipt lookup runs before
+current implementation-pin checks: a committed or refused admission can repair
+a lost journal reply without executing again. If no receipt exists, changed
+pins block execution. Editing a source record cannot replace the attempt.
 
-Participants may speak naturally. The local service operator can supply a named,
-explicit interpretation through `receive --interpretation FILE`, retaining the
-GET-verified original post separately from the exact derived request. This shares
-the existing URI/CID binding and Lean admission path; it does not auto-parse prose
-or grant interpreter authority. Clarification creates no semantic attempt, while
-an uncertain attempted action retains its identity. See
-[MANUAL-INTAKE.md](MANUAL-INTAKE.md) for the internal tool input, provenance and
-Town response integration. Participants are not asked to author these JSON files.
+Clerk operations serialize their own journals. Backend accessors own world
+access: the resident daemon holds its SQLite writer lock, while file admissions
+use their file lock. Snapshot export is explicit; ordinary resident receiving
+uses indexed receipt lookup without expanding history.
+
+## Change operator configuration
+
+```sh
+python3 scripts/clerk.py --state "/path/to/clerk" profile
+python3 scripts/clerk.py --state "/path/to/clerk" upgrade --from-profile "$PROFILE_SHA256"
+```
+
+Resolve pending journals before upgrade. Upgrade records exact prior/new
+profiles and the unchanged world snapshot digest. Completed receipts retain
+original profiles; exact upgrade retries are idempotent. This does not migrate
+a resident database to another native runtime; see [resident custody](RESIDENT-STORE.md).
+
+[Implementation](../scripts/clerk.py) · [receiving tests](../conformance/test_clerk.py)
+· [resident integration tests](../conformance/test_message_relay.py)
+· [documentation map](../docs/INDEX.md)

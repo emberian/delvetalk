@@ -1,60 +1,50 @@
-# Resident activity: a bell that opens someone else’s door
+# Resident activity: a bell that opens a listening door
 
-**Next receiving primitive; not implemented or deployed.** Residents should be
-able to leave contributions and return to find independently authored objects
-have reacted. Posts expose the source, invitation and consequence. Publication
-remains separate and paused.
+**Ordinary retained messages are implemented locally.** The
+[receiving tests](../conformance/test_resident_messages.py) cover real compiled
+admission, source-desk adoption, forgery refusal, current law, capacity, interrupted
+replies and history restoration. This is not deployment evidence; broader consumer
+integration continues. [Bell and Door](../protocols/resident-messages/README.md)
+provide the executable source and exact ABI.
 
-## Retained messages first
+## Send and receive
 
-Transactions already provide atomic changes and inert outboxes; `inputFrom`
-authenticates earlier results within one transaction. Neither authenticates a
-retained event or prevents its consumption under another intent. Source
-transitions currently emit no outbox. A Python dispatcher must not invent that
-missing semantic authority.
+Trusted custody initializes an immutable lineage before creating objects. Opt-in
+source effects expose four validated emission slots containing destination, command,
+recipient program digest and record payload. Lean stamps enabled slots with the
+actual emitting call's source preimage, originating principal and admission/call/slot
+identity. Source changes, events and receipt commit atomically. These messages do
+not become ordinary external outboxes.
 
-Add an opt-in source effect ABI with bounded, addressed messages: destination,
-command and record payload. Lean stamps each emission with its originating
-receipt, call/slot ordinal, source identity and actual source preimage at the
-emitting call. Transaction-final roots cannot replace that intermediate evidence.
-Event identity is local to the receiving world; public references also retain
-its custody identity.
+Delivery supplies an event reference, explicit recipient and complete current root.
+Lean resolves the retained payload and supplies authenticated event facts separately
+from input. The recipient's current law must authorize the relay for the stored
+command, and its current program must match the bound digest. Direct invocation
+cannot impersonate delivery. **Source revision or revocation cannot unsend an
+admitted ordinary message.** No new source-release invocation is required.
 
-`deliver(eventRef, expectedRecipientRoot)` resolves committed evidence. Callers
-cannot substitute source, destination, command or payload. The relay still needs
-the recipient’s current grant; provenance confers no authority. The method sees
-host-authenticated event context separately from supplied input. Successful
-recipient effects and terminal consumption commit together. A new intent cannot
-consume the same event again. Refusal leaves it pending; exact retries recover
-the original receipt before changed rules are checked.
+Recipient effects and consumption commit together. Refusal leaves the event pending;
+an accepted no-op can explicitly decline it. An exact retry recovers its original
+receipt before current-root or permission checks; a fresh attempt cannot consume
+that event again. Initial receive-only profiles cannot emit descendants.
 
-An admitted ordinary send has happened. Do not require a fresh source-release
-invocation for every message. **Retractable offers are a separate protocol**:
-explicit source release/cancellation and destination acceptance may compose under
-both current laws. Their stronger commitment must be visible to their authors.
+Pending capacity is at most 128 globally and 32 per emitter or recipient. Payloads
+are bounded to 4 KiB and captured source roots to 64 KiB. Capacity or budget failure
+rolls back the entire admission, including earlier transaction calls. Consumed
+evidence remains retained; the bounded pending index supports discovery without
+scanning terminal history.
 
-Initially delivery should emit no descendants. Bound message count, pending
-capacity and delivery batches explicitly; refuse atomically rather than discard
-emissions. This gives a useful mailbox before choosing causal-tree accounting.
-A clock can later be an ordinary object with an explicitly granted driver;
-service ticks and wall time are not replayable world time.
+## Local custody and further composition
 
-## Custody and acceptance
+The [local relay](../scripts/message_relay.py) retains the exact attempt before
+admission and retries it after uncertainty. A confirmed stale refusal permits a
+fresh-root attempt for the same pending event. It exposes blocked deliveries and
+performs no external posting. Exported/forked custody branches do not establish
+global exactly-once execution across copies.
 
-Persist the exact attempt before admission. After an uncertain reply, retry that
-identity; after a confirmed stale refusal, a fresh-root attempt may address the
-same still-pending event. Interrupted delivery must not become a second effect.
-Expose blocked events and reasons to operators and residents.
-
-The first joined journey: two residents author a bell and door through separate
-desks. Ringing emits a real message; delivery changes the door’s offered action.
-A forged payload fails. Kill after commit and before reply, restart, recover one
-reaction, then reconstruct from history. Revise either program with an event
-pending and exercise its specified revision policy; do not silently move a
-captured continuation to new code.
-
-Local file custody removes the whole-world wire ceiling. Parsing, receipt scans
-and snapshot rewriting remain linear; sustained activity still needs measured
-capacity and a receiving-owned indexed/journal representation. Arbitrary saved
-language stacks, terminal linear obligations and exactly-once external delivery
-are further contracts, not consequences of this mailbox.
+Retractable offers are separate protocol behavior: cancellation, release and
+acceptance need their own visible commitments. [Recorded clocks and appointments](../protocols/appointments/README.md)
+are ordinary source objects driven by explicit logical-time admissions;
+service wall time is not recorded world time. Saved language stacks and exactly-once
+external delivery are also separate contracts. No external Delve/PDS/wiki messages
+are authorized.

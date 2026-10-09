@@ -22,7 +22,7 @@ All collections use `$type` and `profile:"delvetalk-live-v1"`:
 
 JSON strings preserve exact selected UTF-8 bytes and arbitrary numbers. Hashes cover those bytes; discovery metadata must match. Duplicate members/non-JSON numbers refuse. Root references are shape-checked here, resolved by the clerk. Publication authenticates the custodian's claim, not arbitrary local files as Lean results.
 
-Request/receipt keys derive from account, kind and intent; creation uses `swapRecord:null`. Root keys derive from account/object: one identity must keep one world's version history. Root updates require increasing versions and exact observed CID; CAS losers never rebase automatically.
+Request/receipt keys derive from account, kind and intent; creation uses `swapRecord:null`. Root keys derive from account/object: one identity must keep one world's version history. Root updates require increasing versions and exact observed CID; CAS losers never rebase automatically. This overwritten record is a discovery pointer, not an append-only revision card.
 
 Retry lost replies with **identical intent, input bytes and expected CID**. Fsynced preparation fixes the record; readback reconciles equality or refuses conflict. Confirmed deletions stay deleted. Superseded confirmed roots return historical confirmation without replaying writes.
 

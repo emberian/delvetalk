@@ -1,49 +1,51 @@
 # Local compiler queue
 
-The queue checks exact pending source-desk candidates and records their `compiled`
-or `failed` admission. It never adopts or reprograms targets. Lean still decides
-current authority and exact-preimage admission; local principal names are caller
-assertions. No network access or credentials are used.
+The queue checks exact pending source-desk candidates and admits their `compiled`
+or `failed` result. It never adopts or reprograms targets. Lean checks current
+authority and exact preimages; a local compiler principal name grants nothing.
+No network access or credentials are used. Start with [source desks](DESK.md), or
+[the textual guide](../docs/TEXTUAL-INTERACTION.md) for participant interaction.
 
 ```sh
-python3 scripts/compiler_queue.py --state QUEUE --database WORLD --artifacts ARTIFACTS \
-  enqueue --object CANDIDATE --principal compiler --intent UNIQUE --expected-root ROOT.json
-python3 scripts/compiler_queue.py --state QUEUE --database WORLD --artifacts ARTIFACTS run
+python3 scripts/compiler_queue.py --state "/path/to/queue" \
+  --database "/path/to/workspace/world.json" --artifacts "/path/to/workspace/artifacts" \
+  --profile compiled enqueue --object "candidate" --principal "compiler" \
+  --intent "compile-request-1" --expected-root "/path/to/candidate-root.json"
+python3 scripts/compiler_queue.py --state "/path/to/queue" \
+  --database "/path/to/workspace/world.json" --artifacts "/path/to/workspace/artifacts" \
+  --profile compiled run --limit 10 --deadline-seconds 60
 ```
 
-Select `--profile compiled` for the compiled host. The chosen binary must already
-exist. `--json` before the command returns machine-readable output.
-`inspect JOB` and `retry JOB` take the full ID
-from JSON output or the job filename. Python callers use
-`CompilerQueue(state, database, artifacts, profile='transactions')` with `enqueue`,
-`run`, `inspect`, and `retry`.
+The selected native binaries must already exist. Resident workspaces require an
+explicit running [receiver daemon or session](RESIDENT-STORE.md); the queue never
+starts one or falls back to file custody. File-backed workspaces are also
+supported. Select the same profile as the world (`transactions` is the queue
+default). `--json` before the subcommand returns full machine-readable identities;
+`inspect JOB` and `retry JOB` use that full job ID.
 
-Immutable `jobs/` retain exact roots, principal/intent, target/migration, runtime
-pins and source bindings. Inline proposals retain their strings; reference
-proposals bind exact source/scenario hashes, byte lengths, UTF-8 encoding and
-adapter pins without duplicating large input text.
-One principal/intent cannot be rebound to another content-derived job.
-`compiled/` links a job to its retained build. Existing desk `builds/`, `rooms/`
-and `attempts/` preserve artifacts, diagnostics and exact admission requests.
-Mutable `status/` retains attempts, transport errors and receipts; nothing is
-automatically pruned.
+Immutable jobs bind exact candidate roots, principal/intent, migration, target,
+source/scenario digests, byte lengths, encoding, adapter pins and runtime pins.
+Inline proposals retain their strings; reference proposals resolve only from the
+selected artifact store. Builds retain diagnostics and executable dependencies;
+rooms and exact admission attempts remain available for replay. One
+principal/intent cannot bind another job. Custody is not automatically pruned.
 
-`run` defaults to ten jobs, sixty seconds and three attempts; configurable maxima
-are 100 jobs, 300 seconds and twenty attempts. Queues retain at most 10,000 jobs.
-The existing worker command API bounds subprocess wall time, inherited CPU and
-Linux address space (default 2048 MiB per process); it kills the process group on
-interruption. Linux reserves a 128 MiB initial allocator arena; Lean’s early libuv thread still needs a 1 GiB stack. Explicit memory budgets remain exact. Queue lock waits and child world locks share the deadline. macOS has
-no address-space limit. This is local custody, not an OS sandbox or aggregate
-memory/output quota.
+Restart keeps the original attempt. Native exact receipt lookup precedes current
+candidate, source and runtime checks, so a confirmed admission repairs a lost
+reply without recompilation or reexecution. Without a receipt, changed roots,
+missing/tampered references and changed pins refuse. `retry` resets the attempt
+budget without replacing identity or pins. A changed proposal needs a fresh
+intent and reading.
 
-Restart repeats unfinished work with the original identity. A saved build avoids
-recompilation; an exact retained receipt wins even after candidate/runtime changes.
-Otherwise changed candidates, missing/tampered source references, missing binaries
-and changed adapter/runtime pins refuse before admission. Sources resolve only
-from the selected artifact store; history must preserve them even before compilation.
-References do not bypass the 64 KiB compiled-request limit. The 16 MiB
-whole-world cap applies only to the legacy framed CLI. `retry` resets the attempt budget without changing pins
-or source. Runtime hashes identify bytes, not compiler correctness or authority.
+Defaults are ten jobs, sixty seconds and three attempts; maxima are 100 jobs,
+300 seconds, twenty attempts and 10,000 retained jobs. Queue locks and subprocess
+work share a deadline. Worker processes bound output, CPU and Linux address space
+(default 2048 MiB); macOS has no address-space cap. A separate resident daemon
+has its own lifecycle and resource budget.
 
-Check: `python3 conformance/test_compiler_queue.py` (uses the built transactions
-host; mocks only a lost transport reply).
+References preserve large original sources; they do not bypass the 64 KiB native
+request bound. Resident RPC frames are bounded separately from exported history
+files. See [resident custody](RESIDENT-STORE.md) for exact storage limits.
+
+[Queue tests](../conformance/test_compiler_queue.py) · [file/resident desk tests](../conformance/test_desk.py)
+· [service composition](SERVICE.md) · [documentation map](../docs/INDEX.md)
