@@ -191,10 +191,12 @@ removes.
 ## 9. Milestones
 
 1. **Kernel builds alone.** `lake build` produces `delvetalk-obend` from the
-   kernel and nothing else. This commit.
+   kernel and nothing else. Done, `eb6c533`.
 2. **Host with `view`, `write`, `call`.** A Counter written as an activity, a
    store, a journal, commit-on-roots, receipts with named silences, restart
-   replay. Checkpoint codec ported from Mini.
+   replay. Checkpoint codec ported from Mini. Done, `24e6b92`: `world-turn`
+   drives activities against the store; recursive sums cross Plans; read
+   policy per object; the journal is fsynced per entry (about 5 ms).
 3. **`send` and the causal ledger.** Bell, Door and Lantern as activities; the
    chain "bell rings, door opens" runs and exhausts a budget on a cycle.
 4. **The replay test** (§10) passes end to end with `create`, `await` and
