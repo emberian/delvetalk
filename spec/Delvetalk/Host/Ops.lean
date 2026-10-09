@@ -1029,6 +1029,15 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
 
 /-! ## Entries -/
 
+/-- Card names that mean the acting principal's own object: a turn or card naming `env` or
+    `wake` runs `env/<principal>` or `wake/<principal>`. No object may take these ids, so no one
+    can stand in for another's own. -/
+def ownCards : List String := ["env", "wake"]
+
+/-- The object a principal means by `object`: its own for a name in `ownCards`. -/
+def resolveCard (principal object : String) : String :=
+  if ownCards.contains object then s!"{object}/{principal}" else object
+
 /-- The principal under which a settled interpretation is journaled. -/
 def interpretationPrincipal : String := "interpretation"
 
@@ -1313,6 +1322,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
     (j.getObj?.toOption.map (·.toList.filter (·.1 != "op")) |>.getD []))
   if let some r := retained w principal intent digest then return (w, r)
   if id == "self" then throw "object id self is reserved for the running object"
+  if ownCards.contains id then throw s!"object id {id} is reserved: it names each principal's own {id}/<principal>"
   if w.objects.contains id then throw s!"object {id} already exists"
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
@@ -1738,12 +1748,16 @@ def view (w : World) (j : Json) : Except String Json := do
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
 /-- The public projection of a refusal: observed, not committed, the class and the root it
-    names, and nothing else. -/
+    names, and nothing else; an `unknownObject` refusal also names the id the author wrote (as
+    resolved, so `env` reads `env/<did>`) and where the list of cards is. -/
 def publicRefusal (entry : Json) : Json :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-  Json.mkObj [("status", toJson "refused"),
-    ("class", (outcome.getObjVal? "class").toOption.getD (toJson "unknown")),
-    ("root", toJson ((outcome.getObjValAs? String "object").toOption.getD ""))]
+  let root := (outcome.getObjValAs? String "object").toOption.getD ""
+  let cls := (outcome.getObjValAs? String "class").toOption.getD "unknown"
+  Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", toJson root)] ++
+    (if cls == "unknownObject" then
+      [("object", toJson root), ("hint", toJson s!"no card named {root}; reply to the directory for the list")]
+    else []))
 
 /-- A reader may see an object's changes if it may view the object (an object no longer in
     the world is not viewable). -/

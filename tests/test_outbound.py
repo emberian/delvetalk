@@ -436,6 +436,31 @@ class Projection(Reflection):
         self.assertIn("secret-xyz", json.dumps(full))
         self.assertEqual(self.host.send(op="world-history", object="lamp")["status"], "error")
 
+    def test_an_unknown_card_is_named_with_a_hint_in_public_and_to_its_author(self):
+        """Rehearsal finding 7: `delvetalk forge make` with no forge said only `unknownObject`."""
+        r = self.turn("forge", "make", principal="gemini", identity="forge-1")
+        public = {"status": "refused", "class": "unknownObject", "root": "forge", "object": "forge",
+                  "hint": "no card named forge; reply to the directory for the list"}
+        self.assertEqual((r["status"], r["public"]), ("refused", public), r)
+        self.assertEqual(self.host.send(op="world-receipt", principal="cid", identity="forge-1", of="gemini"), public)
+
+    def test_env_and_wake_are_the_speakers_own_and_cannot_be_taken(self):
+        self.make("env/ann", TELLER, record(note=label("")))
+        mine = self.turn("env", "stamp", record(text=label("seen")), principal="ann", identity="e-1")
+        self.assertEqual(mine["status"], "admitted", mine)
+        self.assertEqual([w["object"] for w in mine["receipt"]["outcome"]["writes"]], ["env/ann"])
+        theirs = self.turn("env", "stamp", record(text=label("seen")), principal="bob", identity="e-2")
+        self.assertEqual((theirs["status"], theirs["public"]["object"]), ("refused", "env/bob"), theirs)
+        self.assertEqual(theirs["public"]["hint"], "no card named env/bob; reply to the directory for the list")
+        wake = self.turn("wake", "stamp", record(text=label("x")), principal="ann", identity="w-1")
+        self.assertEqual(wake["public"]["object"], "wake/ann", wake)
+        self.assertEqual(self.host.send(op="world-card", principal="ann", object="env")["object"], "env/ann")
+        for reserved in ("env", "wake"):
+            taken = self.host.send(op="world-create", principal="ember", identity="mk-" + reserved, object=reserved,
+                                   source=TELLER, entry="initial", seed=record(note=label("")))
+            self.assertEqual(taken["status"], "error", taken)
+            self.assertIn("reserved", taken["message"])
+
 
 class Transient(Reflection):
     """staleRoot, budget and evaluation refusals are journaled but do not bind the identity."""

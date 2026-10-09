@@ -771,7 +771,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
     let s ← get
     let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
-    if id.isEmpty || id == "self" || id.utf8ByteSize > Limits.maxObjectIdBytes then
+    if id.isEmpty || id == "self" || ownCards.contains id || id.utf8ByteSize > Limits.maxObjectIdBytes then
       refusedWith bounds responseType "objectId"
     else if s.world.objects.contains id || s.creates.any (·.1 == id) then
       -- The reply says so now; the turn will be refused at its commit, naming the root.
@@ -902,7 +902,9 @@ def turnReply (r : Json) : Json :=
       | .ok to, .ok text => if to == principal then some (Json.mkObj [("principal", toJson to), ("text", toJson text)]) else none
       | _, _ => none
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
-      (if mine.isEmpty then [] else [("offers", Json.arr mine)]))
+      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++
+      -- What a refusal may say in public, for transport to draft from.
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
@@ -1096,8 +1098,10 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let (w', r) ← finishTurn w ctx result st
   return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
+/-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
+    `unknownObject` naming `env/<principal>` when it has none. -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
-  runTurnWith w req {}
+  runTurnWith w { req with object := resolveCard req.principal req.object } {}
 
 /-! ## Resuming suspended turns -/
 
@@ -1433,8 +1437,8 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
 def cardOp (w : World) (j : Json) : Except String Json := do
-  let id ← j.getObjValAs? String "object"
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let id := resolveCard principal (← j.getObjValAs? String "object")
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   | some o =>
