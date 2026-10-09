@@ -1,0 +1,296 @@
+import copy
+import io
+import json
+import tempfile
+import time
+import unittest
+import urllib.request
+from pathlib import Path
+from unittest import mock
+
+from transport import delve, identity, observe, post
+
+FIX = Path(__file__).parent / 'fixtures' / 'delve'
+FEED = json.loads((FIX / 'town.delve.feed.getFeed.json').read_text())
+BASE = FEED['feed'][0]['post']
+DID = 'did:plc:' + 'a' * 24
+OTHER = 'did:plc:' + 'b' * 24
+
+
+def mk(n, text, parent=None, facets=None):
+    p = copy.deepcopy(BASE)
+    p['uri'] = f'at://{DID}/town.delve.feed.post/r{n:06d}'
+    p['cid'] = f'bafy{n}'
+    p['record'] = {'$type': 'town.delve.feed.post', 'createdAt': '2026-10-09T10:00:00.000Z', 'text': text}
+    if parent:
+        p['record']['reply'] = {'parent': {'uri': parent, 'cid': 'x'}, 'root': {'uri': parent, 'cid': 'x'}}
+    if facets:
+        p['record']['facets'] = facets
+    for k in ('author',):
+        p[k] = {'did': DID, 'handle': 'talkie.delve.town'}
+    return p
+
+
+class Script:
+    """Offline transport: routes by nsid to a callable(params) -> (status, obj|bytes)."""
+    def __init__(self, **routes):
+        self.routes, self.calls = routes, []
+
+    def __call__(self, method, url, headers, body):
+        import urllib.parse as up
+        self.calls.append((method, url))
+        parts = up.urlsplit(url)
+        params = {k: v[0] for k, v in up.parse_qs(parts.query).items()}
+        status, obj = self.routes[parts.path.rsplit('/', 1)[-1]](params)
+        return status, obj if isinstance(obj, bytes) else json.dumps(obj).encode()
+
+
+def run_observer(posts, state):
+    t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': posts}),
+                  'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
+    ob = observe.Observer(state, delve.Client(t))
+    ob.poll()
+    out = []
+    ob.drain(out.append)
+    return [json.loads(x) for x in out], ob
+
+
+class Classification(unittest.TestCase):
+    def kinds(self, posts):
+        with tempfile.TemporaryDirectory() as d:
+            obs, ob = run_observer(posts, d)
+        return {o['uri'][-6:]: o for o in obs}, ob
+
+    def test_each_kind(self):
+        mention = [{'index': {'byteStart': 0, 'byteEnd': 25},
+                    'features': [{'$type': 'town.delve.richtext.facet#mention', 'did': OTHER}]}]
+        spell = 'delvetalk garden plant\nseed: fern\n  place:  north bed \nnote: a: b\n\nnot: field'
+        obs, _ = self.kinds([
+            mk(1, 'wiki: GSB Welcome Message (v2)\n\nbody'),
+            mk(2, 'edit: Garden › Beds\nnew text'),
+            mk(3, 'merge: Garden', parent=BASE['uri']),
+            mk(4, '@livedelvetalk.delve.town hello #gsb', facets=mention),
+            mk(5, 'sure\n' + spell, parent=BASE['uri']),
+            mk(6, 'just words', parent=BASE['uri']),
+            mk(7, 'merge conflicts are fun'),
+        ])
+        self.assertEqual({k: v['kind'] for k, v in obs.items()},
+                         {'00000' + str(i): k for i, k in enumerate(
+                             ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'spell', 'reply', 'post'], 1)})
+        self.assertEqual(obs['000001']['wiki'], {'op': 'page', 'title': 'GSB Welcome Message (v2)', 'section': None})
+        self.assertEqual(obs['000002']['wiki']['section'], 'Beds')
+        self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])
+        self.assertEqual(obs['000004']['tags'], ['gsb'])
+        self.assertEqual(obs['000005']['spell'], {'card': 'garden', 'action': 'plant', 'fields': [
+            {'name': 'seed', 'value': 'fern'}, {'name': 'place', 'value': 'north bed'}, {'name': 'note', 'value': 'a: b'}]})
+        self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
+        self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo',
+                                              'mentions', 'tags', 'kind', 'wiki', 'spell'})
+
+    def test_real_fixture_page(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = observe.Observer(d, delve.Client(delve.FixtureTransport(FIX)))
+            ob.poll()
+            out = []
+            ob.drain(out.append)
+        self.assertGreater(len(out), 20)
+        self.assertEqual(ob.refused, [])
+
+    def test_mention_text_without_facet(self):
+        obs, _ = self.kinds([mk(1, 'hi @livedelvetalk.delve.town #GSB')])
+        self.assertEqual(obs['000001']['kind'], 'summon')
+
+
+class Idempotence(unittest.TestCase):
+    def test_rerun_emits_nothing(self):
+        posts = [mk(i, f'p{i}') for i in range(5)]
+        with tempfile.TemporaryDirectory() as d:
+            first, _ = run_observer(posts, d)
+            second, _ = run_observer(posts, d)
+        self.assertEqual((len(first), second), (5, []))
+
+    def test_crash_mid_page_and_mid_emit(self):
+        posts = [mk(i, f'p{i}') for i in range(6)]
+        with tempfile.TemporaryDirectory() as d:
+            calls = {'n': 0}
+
+            def search(p):
+                calls['n'] += 1
+                if calls['n'] > 1:
+                    raise RuntimeError('crash')
+                return 200, {'posts': posts[:3], 'cursor': 'c1'}
+            t = Script(**{'town.delve.feed.searchPosts': search, 'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
+            ob = observe.Observer(d, delve.Client(t))
+            with self.assertRaises(RuntimeError):
+                ob.poll()
+            seen = []
+
+            def die_on_second(js):
+                if len(seen) == 1:
+                    raise RuntimeError('crash during emit')
+                seen.append(js)
+            with self.assertRaises(RuntimeError):
+                ob.drain(die_on_second)
+            ob.db.close()
+            out, _ = run_observer(posts, d)
+        got = [json.loads(x)['uri'] for x in seen] + [o['uri'] for o in out]
+        self.assertEqual(sorted(got), sorted(p['uri'] for p in posts))
+        self.assertEqual(len(got), len(set(got)))
+
+
+class Bounds(unittest.TestCase):
+    def test_thousand_post_page_under_a_second(self):
+        posts = [mk(i, f'wiki: T{i}\n#gsb @a.delve.town') for i in range(1000)]
+        with tempfile.TemporaryDirectory() as d:
+            t0 = time.time()
+            obs, _ = run_observer(posts, d)
+            took = time.time() - t0
+        self.assertEqual(len(obs), 1000)
+        self.assertLess(took, 1.0)
+
+    def test_one_mebibyte_body_refused_by_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            obs, ob = run_observer([mk(1, 'x' * (1 << 20)), mk(2, 'ok')], d)
+        self.assertEqual([o['text'] for o in obs], ['ok'])
+        self.assertEqual(ob.refused[0][0], 'post_body_too_large')
+
+    def test_post_writer_refuses_mebibyte(self):
+        with self.assertRaises(delve.Failure) as c:
+            post.build_request('x' * (1 << 20))
+        self.assertEqual(c.exception.code, 'post_body_too_large')
+
+    def test_oversized_response_and_redirect(self):
+        c = delve.Client(lambda *a: (200, b'{' + b' ' * delve.MAX_RESPONSE + b'}'))
+        with self.assertRaises(delve.Failure) as e:
+            c.search('x')
+        self.assertEqual(e.exception.code, 'response_too_large')
+        c = delve.Client(lambda *a: (302, b''))
+        with self.assertRaises(delve.Failure) as e:
+            c.search('x')
+        self.assertEqual(e.exception.code, 'redirect_refused')
+
+    def test_client_cannot_write_or_reach_other_endpoints(self):
+        c = delve.Client(lambda *a: self.fail('sent'))
+        for fn in (lambda: c.write('com.atproto.repo.createRecord', {}),
+                   lambda: c.get('com.atproto.server.createSession')):
+            with self.assertRaises(delve.Failure):
+                fn()
+
+
+class Identity(unittest.TestCase):
+    HANDLE = 'talkie.delve.town'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.now = [1000.0]
+        self.record = {}
+        self.t = Script(**{
+            'com.atproto.identity.resolveHandle': lambda p: (200, {'did': DID}),
+            'com.atproto.repo.getRecord': lambda p: self.record['r'](p)})
+        self.id = identity.Identity(self.tmp.name, delve.Client(self.t), clock=lambda: self.now[0])
+        self.ch = self.id.challenge(self.HANDLE)
+        self.uri = f'at://{DID}/town.delve.feed.post/3abc'
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def serve(self, text=None, uri=None, status=200):
+        self.record['r'] = lambda p: (status, {'uri': uri or self.uri, 'cid': 'bafyx',
+                                               'value': {'text': self.ch['text'] if text is None else text}})
+
+    def refused(self, code, uri=None):
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.verify(self.HANDLE, uri or self.uri)
+        self.assertEqual(e.exception.code, code)
+
+    def test_challenge_shape(self):
+        self.assertRegex(self.ch['text'], r'^delvetalk proof-of-control https://\S+ [0-9a-f]{32}$')
+
+    def test_verified_once_then_consumed(self):
+        self.serve()
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri)['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
+        self.refused('challenge_consumed')
+
+    def test_revoked_fails(self):
+        self.serve()
+        self.id.verify(self.HANDLE, self.uri)
+        self.id.revoke(self.ch['credential'])
+        with self.assertRaises(identity.IdentityError):
+            self.id.authenticate(self.ch['credential'])
+        self.refused('challenge_revoked')
+
+    def test_unverified_credential_does_not_authenticate(self):
+        with self.assertRaises(identity.IdentityError):
+            self.id.authenticate(self.ch['credential'])
+
+    def test_wrong_author(self):
+        self.serve()
+        self.refused('wrong_author', f'at://{OTHER}/town.delve.feed.post/3abc')
+
+    def test_substring_refused(self):
+        self.serve(text='look: ' + self.ch['text'] + ' !')
+        self.refused('proof_text_mismatch')
+
+    def test_expired(self):
+        self.serve()
+        self.now[0] += identity.TTL
+        self.refused('challenge_expired')
+
+    def test_redirect_refused(self):
+        self.serve(status=302)
+        self.refused('proof_unavailable:redirect_refused')
+
+    def test_returned_uri_must_match(self):
+        self.serve(uri=f'at://{DID}/town.delve.feed.post/other')
+        self.refused('proof_mismatch')
+
+    def test_ninth_attempt_refused_even_if_correct(self):
+        self.serve(text='nope')
+        for _ in range(8):
+            self.refused('proof_text_mismatch')
+        self.serve()
+        self.refused('too_many_attempts')
+
+    def test_bad_inputs(self):
+        with self.assertRaises(identity.IdentityError):
+            self.id.challenge('evil.example.com')
+        self.refused('invalid_proof_uri', 'at://x/y/z')
+
+
+class Posting(unittest.TestCase):
+    def test_no_flag_sends_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 't.txt'
+            f.write_text('hello')
+            out = io.StringIO()
+            with mock.patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('network')) as op, \
+                    mock.patch.object(post, 'send', side_effect=AssertionError('send')):
+                code = post.main(['--state', d, 'post', '--text-file', str(f), '--intent', 'test',
+                                  '--credentials', str(Path(d) / 'absent.json')], out)
+            self.assertEqual(code, 2)
+            self.assertEqual(op.call_count, 0)
+            req = json.loads(out.getvalue())
+            self.assertTrue(req['dry_run'])
+            self.assertEqual(req['request']['body']['record']['text'], 'hello')
+            self.assertEqual(list(Path(d).iterdir()), [Path(d) / 't.txt'])
+
+    def test_rate_limit(self):
+        with tempfile.TemporaryDirectory() as d:
+            for _ in range(post.LIMIT):
+                post.take_slot(Path(d), 5000.0)
+            with self.assertRaises(delve.Failure):
+                post.take_slot(Path(d), 5001.0)
+            post.take_slot(Path(d), 5000.0 + post.WINDOW + 1)
+
+
+class Cli(unittest.TestCase):
+    def test_commands_write_canonical_json(self):
+        out = io.StringIO()
+        self.assertEqual(delve.main(['--mock', str(FIX), 'search', '--q', '#gsb'], out=out), 0)
+        text = out.getvalue()
+        self.assertEqual(text, delve.canonical(json.loads(text)) + '\n')
+
+
+if __name__ == '__main__':
+    unittest.main()
