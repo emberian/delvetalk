@@ -53,7 +53,7 @@ def sent(state: State) -> Activity<Plan, Response, Done>:
   match perform(Plan.send({object: state.to, method: "note", argument: Data.of::<{text: String}>({text: textConcat("appointment: ", state.topic)})})):
     case _: Done.kept({})
 def cancel(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.principal != state.owner then Done.refused({reason: textConcat("Only its owner cancels it; that is ", Card.handle(state.owner))}) else if open(state) then cancelling(context) else Done.refused({reason: "This appointment is no longer booked."})
+  if context.principal != state.owner then Done.refused({reason: textConcat("Only its owner cancels it; that is ", Card.name(state.owner, context))}) else if open(state) then cancelling(context) else Done.refused({reason: "This appointment is no longer booked."})
 def cancelling(context: Abi.Context) -> Activity<Plan, Response, Done>:
   match perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit::<Status, {}>.set({value: Status.cancelled({})})}})):
     case _: Done.cancelled({})
@@ -70,4 +70,4 @@ def statusName(status: Status) -> String:
     case cancelled(_): "cancelled"
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("Appointment: ", textConcat(state.topic, textConcat(" for ", textConcat(Card.handle(state.to.object), textConcat(", after ", textConcat(natText(state.after), textConcat(" (", textConcat(statusName(state.status), textConcat(")", textConcat(Card.mine(state.owner, context), "\n")))))))))))
+  Document.text(textConcat("Appointment: ", textConcat(state.topic, textConcat(" for ", textConcat(Card.name(state.to.object, context), textConcat(", after ", textConcat(natText(state.after), textConcat(" (", textConcat(statusName(state.status), textConcat(")", textConcat(Card.mine(state.owner, context), "\n")))))))))))

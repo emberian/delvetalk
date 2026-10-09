@@ -38,4 +38,4 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.handle(state.litBy), textConcat(Card.mine(state.litBy, context), ".\n"))) else "The lantern is dark.\n")
+  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.name(state.litBy, context), textConcat(Card.mine(state.litBy, context), ".\n"))) else "The lantern is dark.\n")

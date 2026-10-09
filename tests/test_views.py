@@ -104,6 +104,33 @@ class Handles(test_chain.Chain):
         self.assertNotIn("a5uoyxqts4y3iwo2dk74ygma", card.split("Reply with a spell")[0])
 
 
+class ObservedHandles(test_chain.Chain):
+    """A card names its reader by the handle the host's registry holds (context.handle, filled by
+    the clock principal with world-principal); anyone else by "…" and the DID's last eight."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    DID = "did:plc:nmjdxe6fex23zslnnbwgruj3"
+
+    def test_the_reader_sees_their_handle_and_a_stranger_the_last_eight(self):
+        opened = self.host.send(op="world-open", path=self.path, clock="transport")
+        self.assertEqual(opened["status"], "opened", opened)
+        self.make("bell", closure("Bell"), record(colour=silver(), seed=label("moths"),
+                                                  planting=record(principal=label(self.DID), intent=label("p"))))
+        self.assertEqual(self.card("bell", self.DID).split("\n")[0], "A silver bell planted by …gbruj3 (yours): moths (silent)".replace("…gbruj3", "…" + self.DID[-8:]))
+        r = self.host.send(op="world-principal", principal="transport", did=self.DID, handle="glm.delve.town")
+        self.assertEqual(r["status"], "principal", r)
+        mine = self.card("bell", self.DID).split("\n")[0]
+        theirs = self.card("bell", KIM).split("\n")[0]
+        print("\n--- bell, its planter with a handle ---\n" + mine + "\n--- a stranger ---\n" + theirs)
+        self.assertEqual(mine, "A silver bell planted by glm.delve.town (yours): moths (silent)")
+        self.assertEqual(theirs, "A silver bell planted by …%s: moths (silent)" % self.DID[-8:])
+
+    def card(self, name, principal):
+        reply = self.turn(name, "receive", heard(), principal=principal)
+        self.assertEqual(reply["status"], "admitted", reply)
+        return reply["offers"][0]["text"]
+
+
 class PartyViews(test_chain.Chain):
     test_ring_then_open_then_light = None
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None

@@ -121,7 +121,7 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case act(a): if a.action == "tick" then ticked::<Card.Reply>(state, context, render(state, context), doneReply) else subscribed::<Card.Reply>(state, Card.natural(a.fields, "every"), Card.text(a.fields, "note"), context, render(state, context), doneReply)
     case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 def line(context: Abi.Context) -> Sub -> Document.Document:
-  fn(sub: Sub) -> Document.Document: Document.text(textConcat(Card.handle(sub.who), textConcat(Card.mine(sub.who, context), textConcat(" every ", textConcat(natText(sub.every), textConcat(" from tick ", textConcat(natText(sub.since), textConcat(": ", textConcat(sub.note, "\n")))))))))
+  fn(sub: Sub) -> Document.Document: Document.text(textConcat(Card.name(sub.who, context), textConcat(Card.mine(sub.who, context), textConcat(" every ", textConcat(natText(sub.every), textConcat(" from tick ", textConcat(natText(sub.since), textConcat(": ", textConcat(sub.note, "\n")))))))))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("TIDE at tick ", textConcat(natText(state.ticks), textConcat(", last at clock ", textConcat(natText(state.last), textConcat("; the next no sooner than ", textConcat(natText(state.last + state.gap), "\n"))))))), tail: Card.clipped(Lists.map::<Sub, Document.Document>(state.subs, line(context)), 8n)})})

@@ -39,7 +39,7 @@ def commitment(table: String, round: Nat, seat: Nat, source: Nat, target: Nat, n
 def hex(text: String) -> Bool:
   textLength(text) == 64n && textSpan(text, "0123456789abcdef") == 64n
 def mine(state: State, round: Nat, context: Abi.Context) -> String:
-  if context.principal != state.owner then textConcat("This seat is ", Card.handle(state.owner)) else if round != state.round then textConcat("The round is ", natText(state.round)) else ""
+  if context.principal != state.owner then textConcat("This seat is ", Card.name(state.owner, context)) else if round != state.round then textConcat("The round is ", natText(state.round)) else ""
 def commit(state: State, input: {round: Nat, digest: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
   if mine(state, input.round, context) != "" then Done.refused({reason: mine(state, input.round, context)}) else if state.digest != "" then Done.refused({reason: "Already sealed this round."}) else if hex(input.digest) == false then Done.refused({reason: "A digest is 64 lower-case hex characters."}) else if context.intent != Seats.commitIntent(state.table.object, state.round) then Done.refused({reason: textConcat("Seal in the turn named ", Seats.commitIntent(state.table.object, state.round))}) else sealed(input.digest, context)
 def sealed(digest: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
@@ -82,4 +82,4 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), textConcat("'s seat, round ", textConcat(natText(state.round), textConcat(": ", textConcat(if state.opened then textConcat("opened ", textConcat(natText(state.source), textConcat(" to ", natText(state.target)))) else if state.digest != "" then "sealed" else "choosing", "\n")))))))
+  Document.text(textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), textConcat("'s seat, round ", textConcat(natText(state.round), textConcat(": ", textConcat(if state.opened then textConcat("opened ", textConcat(natText(state.source), textConcat(" to ", natText(state.target)))) else if state.digest != "" then "sealed" else "choosing", "\n")))))))
