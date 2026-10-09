@@ -25,14 +25,14 @@ record Arg:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   lit: Plans.Edit<Bool, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 %(law)sdef initial() -> State:
   {count: 0n, lit: false}
 def keep() -> Edits:
   {count: Plans.Edit::<Nat, Nat>.keep({}), lit: Plans.Edit::<Bool, {}>.keep({})}
 def sendTo(target: String, method: String, argument: Arg) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.send({object: {world: "", object: target}, method: method, argument: argument})):
+  match perform(Plan.send({object: {world: "", object: target}, method: method, argument: Data.of::<Arg>(argument)})):
     case delivery(_): 1n
     case _: 0n
 def tally(context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -69,7 +69,7 @@ def fanOut(target: String, left: Nat) -> Activity<Plan, Response, Nat>:
   match left:
     case 0: 1n
     case 1+previous:
-      match perform(Plan.send({object: {world: "", object: target}, method: "light", argument: {target: "", left: 0n}})):
+      match perform(Plan.send({object: {world: "", object: target}, method: "light", argument: Data.of::<Arg>({target: "", left: 0n})})):
         case delivery(_): fanOut(target, previous)
         case _: 0n
 """

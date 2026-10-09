@@ -87,10 +87,17 @@ def interpret_body(status, raw, model):
         if body.get('stop_reason') == 'refusal':
             return failed('refused', 'model refusal')
         text = ''.join(b.get('text', '') for b in body['content'] if b.get('type') == 'text')
-        return {'status': 'replied', 'json': extract(text), 'raw': text, 'model': body.get('model', model),
-                'usage': body.get('usage', {})}
     except (ValueError, KeyError, TypeError, AttributeError):
         return failed('malformed')
+    # A reply is the model's text; `json` is the first JSON value in it when there is one.
+    # The Policy prompt asks for a plain spell, so a text-only reply is not malformed: the host
+    # fits `raw` against the offered forms, and `json` is for callers that asked for JSON.
+    try:
+        value = extract(text)
+    except ValueError:
+        value = None
+    return {'status': 'replied', 'json': value, 'raw': text, 'model': body.get('model', model),
+            'usage': body.get('usage', {})}
 
 
 def call(transport, headers, wire, model_id):

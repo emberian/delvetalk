@@ -7,6 +7,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
+from tests.test_chain import garden_state
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
@@ -267,7 +268,7 @@ class HttpFront(unittest.TestCase):
 
     def test_html_card_and_spell_form(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(2), policy=record(world=label(''), object=label('')))})
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(2)})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)
@@ -284,7 +285,7 @@ class HttpFront(unittest.TestCase):
         self.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
         s, _, page = self.request('GET', '/o/garden', headers={'Cookie': cookie})
         self.assertEqual(s, 200)
-        self.assertIn(b'The Night Garden: 2 planted', page)
+        self.assertIn(b'2 planted, newest first:', page)
         self.assertIn(b'prefers-color-scheme', self.request('GET', '/static/style.css')[2])
         before = self.host.send({'op': 'world-status'})['height']
         s, _, page = self.request('POST', '/o/garden/spell', raw='text=' + urllib.parse.quote('delvetalk garden plant'),

@@ -5,6 +5,7 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Spell.obend as Spell
 import ./Form.obend as Form
+import ./Card.obend as Card
 record State:
   title: String
 # A creator supplies a Seed; seeded makes the child's State from it.
@@ -12,7 +13,7 @@ record Seed:
   title: String
 record Edits:
   title: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 # What the workshop did, as data: nothing is a silent default.
 sum Verdict:
@@ -20,10 +21,6 @@ sum Verdict:
   flawed: {diagnostics: Form.Names}
   reprogrammed: {pin: String}
   refused: {reason: String}
-record Heard:
-  text: String
-  who: String
-  post: String
 sum Block:
   none: {}
   some: {source: String}
@@ -111,11 +108,11 @@ def askedFirst(parsed: Spell.Parsed, text: String) -> Spell.Parsed:
   match parsed:
     case spell(_): parsed
     case notASpell(_): Spell.parse(text)
-def receive(state: State, input: Heard, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match spellOf(input.text):
     case notASpell(_): tell(Verdict.refused({reason: "Reply with a workshop spell."}), usage())
     case spell(s): routed(input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"))
-def routed(input: Heard, context: Abi.Context, card: String, action: String, target: String, migration: String) -> Activity<Plan, Response, Verdict>:
+def routed(input: Card.Heard, context: Abi.Context, card: String, action: String, target: String, migration: String) -> Activity<Plan, Response, Verdict>:
   if card != context.object then tell(Verdict.refused({reason: cat("This card is ", context.object)}), refusedCard(cat("This card is ", context.object))) else acted(action, target, migration, fenced(input.text), context)
 def acted(action: String, target: String, migration: String, block: Block, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match block:
@@ -125,11 +122,11 @@ def withBlock(action: String, target: String, migration: String, source: String,
   if action == "check" then runCheck(source) else if action == "propose" && target != "" then runPropose(target, source, migration, context) else tell(Verdict.refused({reason: "Name a target to propose to."}), usage())
 def withoutBlock(action: String, target: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   if action == "check" && target != "" then checkTarget(target, context) else tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
+# The workshop's actions carry a fenced block, which a form cannot describe: its
+# card is the usage text, and receive reads the block itself.
+def forms() -> Card.Forms:
+  Card.Forms.nil()
+def door() -> Card.Door:
+  {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 def render(state: State) -> Document.Document:
   usage()
-def card(state: State) -> String:
-  Document.plain(render(state))
-def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.offer({to: "", document: render(state)})):
-    case offered(_): true
-    case _: false

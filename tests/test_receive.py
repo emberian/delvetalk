@@ -1,14 +1,11 @@
 """The cards the town sees first: Garden.receive and Directory.receive.
 
-Every observed spell reaches `<card>.receive {text, who, post}`; the reply card is
-what the turn offers. Planting needs the host's `create`, which is not landed:
-a valid spell is refused with {'class': 'evaluation', 'reason': 'plan not
-supported: create'}, so the planted-card test is an expected failure and the
-planted card text is checked through a pure probe instead.
+Every observed spell reaches `<card>.receive {text, post, slot}`; who wrote it is the turn's
+principal, and the reply card is what the turn offers.
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, nil, reference
+from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
@@ -29,10 +26,10 @@ def door(label_, description, to):
 
 class Cards(Chain):
     def garden(self):
-        self.make("garden", closure("Garden"), record(planted=nat(0), policy=record(world=label(""), object=label(""))))
+        self.make("garden", closure("Garden"), garden_seed())
 
     def say(self, text, who="glm", post="at://glm/post/1", obj="garden", method="receive"):
-        return self.turn(obj, method, record(text=label(text), who=label(who), post=label(post)), principal=who)
+        return self.turn(obj, method, record(text=label(text), post=label(post), slot=label("")), principal=who)
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
@@ -113,7 +110,7 @@ def planted(context: Abi.Context) -> String:
     # --- the root menu ------------------------------------------------------------
 
     def directory(self):
-        self.make("root", closure("Directory"), record(doors=nil()))
+        self.make("root", closure("Directory"), record())
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
             self.assertEqual(reply["result"]["label"], "done", reply)
@@ -126,7 +123,7 @@ def planted(context: Abi.Context) -> String:
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)
-        self.assertEqual(self.card(self.turn("root", "describe", principal="glm")), text)
+        self.assertEqual(self.card(self.say("", obj="root")), text)
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()
@@ -134,7 +131,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(again["result"]["label"], "refused")
         gone = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
-        self.assertNotIn("PLAY\n", self.card(self.turn("root", "describe", principal="glm")))
+        self.assertNotIn("PLAY\n", self.card(self.say("", obj="root")))
         missing = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
         self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called PLAY")
 

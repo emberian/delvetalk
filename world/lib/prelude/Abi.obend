@@ -1,4 +1,5 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
 record Origin:
   kind: String
   object: String
@@ -26,3 +27,21 @@ record NatField:
   type: String
   minimum: Nat
   maximum: Nat
+# The two-tier law: a package's optional pure predicate
+#   def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict
+# judged by the host beside the law text (FOUNDATION section 13). A refusal names its
+# clause, as a law text's does.
+sum Verdict:
+  admitted: {}
+  refused: {clause: String}
+record Read:
+  object: String
+  version: Nat
+  state: Data
+record Request:
+  context: Context
+  method: String
+  argument: Data
+  kind: Nat
+  pin: String
+  reads: Lists.List<Read>

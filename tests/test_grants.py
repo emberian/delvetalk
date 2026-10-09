@@ -21,7 +21,7 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, String>
 def initial() -> State:
   {note: ""}
@@ -39,12 +39,12 @@ def authorizeBell(state: State, context: Abi.Context) -> Activity<Plan, Response
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
 def fire(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: {n: 1n}, via: input.via})):
+  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via})):
     case delivery(_): said(context, "sent")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
 def fireThenWait(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: {n: 1n}, via: input.via})):
+  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via})):
     case delivery(_): waited(context)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
@@ -53,7 +53,7 @@ def waited(context: Abi.Context) -> Activity<Plan, Response, String>:
     case timedOut(_): said(context, "waited")
     case _: said(context, "other")
 def poke(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.callVia({object: {world: "", object: input.target}, method: "ring", argument: {n: 1n}, via: input.via})):
+  match perform(Plan.callVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via})):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
@@ -63,7 +63,7 @@ def cancel(state: State, input: {id: String}, context: Abi.Context) -> Activity<
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
 def relay(state: State, input: {other: String, target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: input.other}, method: "authorizeBell", argument: {n: 0n}})):
+  match perform(Plan.call({object: {world: "", object: input.other}, method: "authorizeBell", argument: Data.of::<Arg>({n: 0n})})):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
@@ -82,7 +82,7 @@ record Edits:
   count: Plans.Edit<Nat, Nat>
   by: Plans.Edit<String, {}>
   from: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, Arg>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, String>
 law registrar: request.kind == 0 implies request.subject == "registrar"
 def initial() -> State:
@@ -103,7 +103,7 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   members: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 law members: request.kind == 0 implies (request.subject in new.members or request.subject == "ember")
 law rings: request.kind == 0 implies (request.method == "ring" or request.method == "admit")
