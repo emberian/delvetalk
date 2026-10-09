@@ -55,6 +55,7 @@ def pick(n: Nat) -> Lists.Maybe<Nat>:
 UNRELATED = {
     "typed-packet refusal": QUALIFIED_MAYBE + "def bad(n: Nat) -> Bool:\n  n + 1n\n",
     "multi-line if": QUALIFIED_MAYBE + "def bad(n: Nat) -> Nat:\n  if n == 0n\n    then 1n else 2n\n",
+    "unbalanced parenthesis": QUALIFIED_MAYBE + "def bad(n: Nat) -> Nat:\n  (n + 1n\n",
 }
 
 
@@ -102,6 +103,8 @@ class HintTests(unittest.TestCase):
                                      "modules": closure("List") + [{"name": "Probe", "source": source}]})
                 self.assertEqual(reply["status"], "refused", reply)
                 self.assertNotIn("hint", reply["diagnostic"], reply)
+                if name == "unbalanced parenthesis":
+                    self.assertEqual(reply["diagnostic"]["stage"], "objective-source-parse", reply)
         reply = self.h.send({"op": "check-package", "entry": "bad",
                              "modules": closure("List") + [{"name": "Probe", "source": UNRELATED["typed-packet refusal"]}]})
         self.assertEqual(reply["diagnostic"]["stage"], "objective-typed-check", reply)
