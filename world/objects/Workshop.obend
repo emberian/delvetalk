@@ -128,5 +128,9 @@ def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
-def render(state: State) -> Document.Document:
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
   usage()
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

@@ -207,6 +207,9 @@ class PolicyObject(Chain):
         self.assertEqual(asked["status"], "admitted", asked)
         self.assertEqual(asked["result"]["label"], "confirming")
         self.assertIn("Reply yes or correct it.", asked["offers"][0]["text"])
+        # The confirm card is addressed: to the principal who spoke, and by name.
+        self.assertTrue(asked["offers"][0]["text"].startswith("✾ THE NIGHT GARDEN\n\nglm, I understood this:\n"), asked["offers"][0])
+        self.assertEqual(asked["offers"][0]["principal"], "glm", asked["offers"][0])
         self.assertNotEqual(self.pending()["items"], [])
         # Another principal's yes is not glm's: it is heard afresh (prose, so interpreted).
         other = self.say("yes", principal="kimik3")

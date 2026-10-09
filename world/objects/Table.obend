@@ -64,7 +64,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, Seats.State, Seats.Done>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, Seats.State, Seats.Done>(Card.route(input.text, context, forms()), context, forms(), renderFor(state, context))
 def glyph(cell: Nat) -> String:
   if cell == 1n then "+" else if cell == 2n then "-" else if cell == 3n then "@" else "."
 def row(board: Nat, at: Nat, left: Nat) -> String:
@@ -73,5 +73,9 @@ def rows(state: State, y: Nat) -> Document.Documents:
   if y == state.height then Document.Documents.nil() else Document.Documents.cons({head: Document.text(row(state.game.board, y * state.width, state.width)), tail: rows(state, y + 1n)})
 def outcome(game: Game.Result) -> String:
   if game.winner == 1n then "North wins." else if game.winner == 2n then "South wins." else if game.status == 1n then "The last pair conflicted; the board stayed." else if game.status == 2n then "The last pair was invalid; the board stayed." else "Seal, open, resolve."
-def render(state: State) -> Document.Document:
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("AUTOMATAFL, round ", textConcat(natText(state.round), textConcat(": ", textConcat(outcome(state.game), "\n\n"))))), tail: rows(state, 0n)})})
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

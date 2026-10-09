@@ -136,11 +136,18 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "move" then walk::<Card.Reply>(state, Card.text(a.fields, "exit"), context, movedReply) else noted::<Card.Reply>(Card.text(a.fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"}))
-    case _: Card.answer::<Edits, Place.State, Place.Done>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, Place.State, Place.Done>(routed, context, forms(), renderFor(state, context))
 def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text(textConcat("Holding: ", textConcat(item.object, "\n")))
 def noteLine(item: Note) -> Document.Document:
   Document.text(textConcat(Card.handle(item.from), textConcat(": ", textConcat(item.text, "\n"))))
 # Notes newest first; eight of each list, then a count.
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: Document.text(textConcat(state.handle, textConcat(" is at ", textConcat(state.at.object, "\n")))), tail: Document.Documents.nil()}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.holding, holdingLine), 8n)), inboxFor(state, context))})
+# The notes are the avatar's principal's alone; anyone else sees how many there are.
+def inboxFor(state: State, context: Abi.Context) -> Document.Documents:
+  if Card.reads(context.object, context) then Card.clipped(Lists.map::<Note, Document.Document>(Lists.reverse::<Note>(state.inbox), noteLine), 8n) else Document.Documents.cons({head: Document.text(if Lists.length::<Note>(state.inbox) == 1n then "1 note\n" else textConcat(natText(Lists.length::<Note>(state.inbox)), " notes\n")), tail: Document.Documents.nil()})
+# The card for the host's `card {object}` until the host passes the reader's context.
 def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: Document.text(textConcat(state.handle, textConcat(" is at ", textConcat(state.at.object, "\n")))), tail: Document.Documents.nil()}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.holding, holdingLine), 8n)), Card.clipped(Lists.map::<Note, Document.Document>(Lists.reverse::<Note>(state.inbox), noteLine), 8n))})
+  renderFor(state, Card.stranger())

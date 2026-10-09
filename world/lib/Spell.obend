@@ -34,10 +34,7 @@ type Bindings = Lists.List<Binding>
 sum Parsed:
   spell: {card: String, action: String, fields: Bindings}
   notASpell: {reason: String}
-sum Value:
-  text: {value: String}
-  natural: {value: Nat}
-  choice: {value: String}
+type Value = Form.Value
 record Entry:
   name: String
   value: Value

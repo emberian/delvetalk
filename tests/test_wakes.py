@@ -126,9 +126,13 @@ class Wakes(Chain):
         self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: lantern" % wake), principal=OWNER)), "done")
         stranger = self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: x" % wake), principal=OTHER)
         self.assertEqual(self.label_of(stranger), "refused")
-        card = self.turn(wake, "receive", heard(""), principal=OTHER)["offers"][0]["text"]
+        card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
         print("\n--- wake card ---\n" + card)
         self.assertIn("#4 on the word lantern: note me", card)
+        # A stranger's card counts the triggers and shows none of them.
+        seen = self.turn(wake, "receive", heard(""), principal=OTHER)["offers"][0]["text"]
+        self.assertTrue(seen.startswith("WAKE of inkling: 3 triggers\n"), seen)
+        self.assertNotIn("lantern", seen)
 
     def test_a_keyword_inside_a_longer_text_fires_and_a_call_reaches_its_card(self):
         wake = self.wake()

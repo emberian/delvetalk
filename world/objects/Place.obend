@@ -87,8 +87,14 @@ def reference(prefix: String) -> Plans.Reference -> Document.Document:
   fn(item: Plans.Reference) -> Document.Document: line(prefix, Card.handle(item.object))
 def exit(item: Exit) -> Document.Document:
   line("Exit ", textConcat(item.label, textConcat(" to ", item.to.object)))
-def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: ")), 8n)), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: ")), 8n)), Lists.map::<Exit, Document.Document>(state.exits, exit))})
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: ")), 8n)), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: ")), 8n)), Lists.concat::<Document.Document>(Lists.map::<Exit, Document.Document>(state.exits, exit), hereLine(state, context)))})
+# A reader whose avatar is here is told so.
+def hereLine(state: State, context: Abi.Context) -> Document.Documents:
+  match Plans.indexOf(state.present, person(context)):
+    case some(_): Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()})
+    case none(_): Document.Documents.nil()
 # A room is entered and left by an avatar's move, and things take and put themselves:
 # its card offers no spell of its own.
 def forms() -> Card.Forms:
@@ -96,4 +102,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), renderFor(state, context))
+# The card for the host's `card {object}` until the host passes the reader's context.
+def render(state: State) -> Document.Document:
+  renderFor(state, Card.stranger())

@@ -64,8 +64,8 @@ class Floor(Chain):
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
 
-    def card(self, name, principal="glm"):
-        """The card is what receive offers for an empty reply."""
+    def card(self, name, principal="visitor"):
+        """The card is what receive offers for an empty reply, here to someone not in the room."""
         reply = self.turn(name, "receive", record(text=label(""), post=label(""), slot=label("")), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["offers"][0]["text"]

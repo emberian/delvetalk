@@ -58,12 +58,16 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): submitted::<Card.Reply>(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
 def statusName(status: Status) -> String:
   match status:
     case proposed(_): "proposed"
     case admitted(_): "admitted"
-def entry(proposal: Proposal) -> Document.Document:
-  Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.handle(proposal.author), textConcat(": ", textConcat(proposal.line, "\n")))))))
+def entry(context: Abi.Context) -> Proposal -> Document.Document:
+  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.handle(proposal.author), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
+# The card as the reader in the context sees it.
+def renderFor(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology\n"), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry(context)), 8n)})})
+# The card for the host's `card {object}` until the host passes the reader's context.
 def render(state: State) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology\n"), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry), 8n)})})
+  renderFor(state, Card.stranger())
