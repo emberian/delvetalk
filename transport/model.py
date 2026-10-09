@@ -54,11 +54,11 @@ def http(method, url, headers, body):
     req = urllib.request.Request(url, body, headers, method=method)
     try:
         with urllib.request.build_opener(_NoRedirect).open(req, timeout=TIMEOUT) as resp:
-            return resp.status, resp.read(MAX_RESPONSE + 1)
+            return resp.status, resp.read(MAX_RESPONSE + 1), dict(resp.headers)
     except urllib.error.HTTPError as err:
-        return err.code, err.read(MAX_RESPONSE + 1)
+        return err.code, err.read(MAX_RESPONSE + 1), dict(err.headers)
     except (urllib.error.URLError, TimeoutError, OSError):
-        return 0, b''
+        return 0, b'', {}
 
 
 def extract(text):
@@ -93,7 +93,26 @@ def interpret_body(status, raw, model):
         return failed('malformed')
 
 
-def ask(request, mock=None, transport=http, tokeman=None):
+def call(transport, headers, wire, model_id):
+    """One wire call -> (status, result with any anthropic-ratelimit-* headers attached)."""
+    status, raw, *rest = transport('POST', URL, headers, wire)
+    out = interpret_body(status, raw, model_id)
+    limits = {k.lower(): v for k, v in (rest[0] if rest else {}).items() if k.lower().startswith('anthropic-ratelimit-')}
+    return status, ({**out, 'rateLimits': limits} if limits else out)
+
+
+def spend(state, out, who):
+    """Append one line per replied call so the operator can total spend against the monthly grant."""
+    if state and out.get('status') == 'replied':
+        usage = out.get('usage') or {}
+        Path(state).mkdir(parents=True, exist_ok=True, mode=0o700)
+        with open(Path(state) / 'model-spend.jsonl', 'a') as f:
+            f.write(canonical({'at': time.time(), 'model': out.get('model'), 'inputTokens': usage.get('input_tokens'),
+                               'outputTokens': usage.get('output_tokens'), 'account': who}) + '\n')
+    return out
+
+
+def ask(request, mock=None, transport=http, tokeman=None, state=None):
     req = normalise(request)
     if len(req['system'].encode()) > MAX_INPUT or len(req['user'].encode()) > MAX_INPUT:
         return failed('refused', 'input too large')
@@ -102,15 +121,20 @@ def ask(request, mock=None, transport=http, tokeman=None):
         if not path.exists():
             return failed('transport', 'no fixture ' + path.name)
         return interpret_body(200, path.read_bytes(), req['model'])
-    wire = json.dumps({'model': req['model'], 'max_tokens': req['maxTokens'], 'system': req['system'],
-                       'messages': [{'role': 'user', 'content': req['user']}]}).encode()
+    # Only these fields are ever sent: never temperature, top_p or top_k (Haiku 5.5 answers 400 for some values).
+    body = {'model': req['model'], 'max_tokens': req['maxTokens'], 'system': req['system'],
+            'messages': [{'role': 'user', 'content': req['user']}]}
+    if os.environ.get('DELVETALK_MODEL_THINKING') == 'off':
+        body['thinking'] = {'type': 'disabled'}  # adaptive thinking is on by default; off for cheap deterministic JSON
+    wire = json.dumps(body).encode()
     base = {'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
     if os.environ.get('DELVETALK_MODEL_AUTH', 'key') == 'oauth':
-        return ask_oauth(req, wire, base, transport, tokeman)
+        return ask_oauth(req, wire, base, transport, tokeman, state)
     secret = key()
     if not secret:
         return failed('refused', 'no key: set DELVETALK_ANTHROPIC_KEY or DELVETALK_ANTHROPIC_KEY_FILE')
-    return interpret_body(*transport('POST', URL, {**base, 'x-api-key': secret}, wire), req['model'])
+    out = call(transport, {**base, 'x-api-key': secret}, wire, req['model'])[1]
+    return spend(state, out, os.environ.get('DELVETALK_KEY_NAME', 'key'))
 
 
 def load_accounts():
@@ -159,7 +183,7 @@ def overage_enabled(probe):
     return q.get('overage_status') not in (None, 'rejected', 'disabled') and not q.get('overage_disabled_reason')
 
 
-def ask_oauth(req, wire, base, transport, tokeman):
+def ask_oauth(req, wire, base, transport, tokeman, state=None):
     accounts = load_accounts()
     if 'status' in accounts:
         return accounts
@@ -171,12 +195,11 @@ def ask_oauth(req, wire, base, transport, tokeman):
     order = ([chosen] + [n for n in ranked if n != chosen]) if chosen in accounts else ranked
     for i, name in enumerate(order[:2]):
         headers = {**base, 'Authorization': 'Bearer ' + accounts[name], 'anthropic-beta': BETA}
-        status, raw = transport('POST', URL, headers, wire)
+        status, out = call(transport, headers, wire, req['model'])
         if status in (429, 529) and i == 0 and len(order) > 1:
             continue
-        out = interpret_body(status, raw, req['model'])
         billed = bool(((probes.get(name) or {}).get('quota') or {}).get('overage_in_use'))
-        return {**out, 'account': name, 'rotated': i == 1, 'overageInUse': billed}
+        return spend(state, {**out, 'account': name, 'rotated': i == 1, 'overageInUse': billed}, name)
     return failed('rate', 'no account')
 
 
@@ -185,8 +208,9 @@ def main(argv=None, out=None):
     ap = argparse.ArgumentParser(prog='model.py')
     ap.add_argument('--request-file', required=True, help='JSON {model?, system, user, maxTokens?}')
     ap.add_argument('--mock', metavar='DIR')
+    ap.add_argument('--state', help='append usage to <state>/model-spend.jsonl')
     a = ap.parse_args(argv)
-    out.write(canonical(ask(json.loads(Path(a.request_file).read_text()), a.mock)) + '\n')
+    out.write(canonical(ask(json.loads(Path(a.request_file).read_text()), a.mock, state=a.state)) + '\n')
     return 0
 
 
