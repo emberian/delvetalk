@@ -7,3 +7,7 @@ impl/c/evaluator
 /world-state/
 *.dSYM/
 **/target/
+/transport-state/
+/state/
+*.sqlite
+*.db
