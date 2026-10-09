@@ -8,6 +8,7 @@ import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendDemandCollect
+import Delvetalk.Limits
 
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTyping
@@ -117,9 +118,11 @@ structure Budgets where
   bytes : Nat
 
 def budgets (limits : Json) : Except String Budgets := do
-  return ⟨← bounded limits "ticks" 100000 1000000, ← bounded limits "heap" 100000 1000000,
-    ← bounded limits "stack" 10000 100000, ← bounded limits "nodes" 100000 1000000,
-    ← bounded limits "bytes" 1048576 16777216⟩
+  return ⟨← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax,
+    ← bounded limits "heap" Bounds.heapDefault Bounds.heapMax,
+    ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax,
+    ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax,
+    ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax⟩
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
 def tokensJson (tokens : Tokens) : Json := Json.arr (tokens.map tokenJson).toArray
@@ -136,33 +139,77 @@ def tokensOfJson (json : Json) : Except String Tokens := do
         return Token.nat value
     | .error _ => return Token.text (← item.getObjValAs? String "s")
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
-/-- A suspended activity: its collected machine state as canonical tokens, bound
-to the exact packet it was produced by and to its own token stream. -/
-structure Checkpoint where
-  packetSha256 : String
-  tokens : Tokens
-  digest : String
-
 def packetDigest (packet : Json) : String := Minidregg.Compiler.Sha256.hexString packet.compress
 
 def tokensDigest (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : String :=
   Minidregg.Compiler.Sha256.hexString (tokensJson tokens).compress
 
-def Checkpoint.make (packet : Json) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : Checkpoint :=
-  ⟨packetDigest packet, tokens, tokensDigest tokens⟩
+/-- SHA-256 of the canonical roots list: `[{object, version}]` in recorded order. -/
+def rootsDigest (roots : List (String × Nat)) : String :=
+  Minidregg.Compiler.Sha256.hexString (Json.arr (roots.map fun (object, version) =>
+    Json.mkObj [("object", Lean.toJson object), ("version", Lean.toJson version)]).toArray).compress
+
+/-- What a suspended activity belongs to: the object whose method it runs, the
+principal and intent of the turn, and the roots the turn had read when it
+yielded. A checkpoint resumes only for the same binding. -/
+structure Binding where
+  object : String
+  principal : String
+  intent : String
+  rootsDigest : String
+
+def Binding.make (object principal intent : String) (roots : List (String × Nat)) : Binding :=
+  ⟨object, principal, intent, Delvetalk.Turn.rootsDigest roots⟩
+
+/-- Wire: `object`, `principal`, `intent` strings and `roots`, an array of `{object, version}`. -/
+def Binding.ofJson (j : Json) : Except String Binding := do
+  let roots ← (← j.getObjVal? "roots").getArr?
+  let pairs ← roots.toList.mapM fun r => do return (← r.getObjValAs? String "object", ← jsonNat (← r.getObjVal? "version"))
+  return Binding.make (← j.getObjValAs? String "object") (← j.getObjValAs? String "principal")
+    (← j.getObjValAs? String "intent") pairs
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- A suspended activity: its collected machine state as canonical tokens, bound
+to the exact packet and the binding it was produced under, and to its own
+contents by a digest covering all of them. -/
+structure Checkpoint where
+  packetSha256 : String
+  object : String
+  principal : String
+  intent : String
+  rootsDigest : String
+  tokens : Tokens
+  digest : String
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+def checkpointDigest (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : String :=
+  Minidregg.Compiler.Sha256.hexString (Json.mkObj [("packetSha256", Lean.toJson packetSha256),
+    ("object", Lean.toJson object), ("principal", Lean.toJson principal), ("intent", Lean.toJson intent),
+    ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)]).compress
+
+def Checkpoint.make (packet : Json) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
+    Checkpoint :=
+  let p := packetDigest packet
+  ⟨p, binding.object, binding.principal, binding.intent, binding.rootsDigest, tokens,
+    checkpointDigest p binding.object binding.principal binding.intent binding.rootsDigest tokens⟩
 
 def Checkpoint.toJson (c : Checkpoint) : Json :=
-  Json.mkObj [("packetSha256", Lean.toJson c.packetSha256), ("tokens", tokensJson c.tokens),
-    ("digest", Lean.toJson c.digest)]
+  Json.mkObj [("packetSha256", Lean.toJson c.packetSha256), ("object", Lean.toJson c.object),
+    ("principal", Lean.toJson c.principal), ("intent", Lean.toJson c.intent),
+    ("rootsDigest", Lean.toJson c.rootsDigest), ("tokens", tokensJson c.tokens), ("digest", Lean.toJson c.digest)]
 
 def Checkpoint.fromJson (j : Json) : Except String Checkpoint := do
-  return ⟨← j.getObjValAs? String "packetSha256", ← tokensOfJson (← j.getObjVal? "tokens"),
+  return ⟨← j.getObjValAs? String "packetSha256", ← j.getObjValAs? String "object",
+    ← j.getObjValAs? String "principal", ← j.getObjValAs? String "intent",
+    ← j.getObjValAs? String "rootsDigest", ← tokensOfJson (← j.getObjVal? "tokens"),
     ← j.getObjValAs? String "digest"⟩
 
 inductive Outcome where
   | finished (value : Data) (result : Ty) (ticksUsed : Nat)
   | yielded (plan : Data) (planType responseType : Ty) (checkpoint : Checkpoint) (ticksUsed : Nat)
+  /-- A budget ran out: `resource` is one of ticks, heap, stack, nodes, bytes. Not an
+  error: the turn is a named silence the host journals as class `budget`. -/
+  | exhausted (resource : String) (ticksUsed : Nat)
 
 def Outcome.toJson : Outcome → Json
   | .finished value result ticks => Json.mkObj [("status", Lean.toJson "finished"),
@@ -170,10 +217,28 @@ def Outcome.toJson : Outcome → Json
   | .yielded plan planType responseType checkpoint ticks => Json.mkObj [("status", Lean.toJson "yielded"),
       ("plan", dataJson plan), ("planType", typeJson planType), ("responseType", typeJson responseType),
       ("checkpoint", checkpoint.toJson), ("ticksUsed", Lean.toJson ticks)]
+  | .exhausted resource ticks => Json.mkObj [("status", Lean.toJson "exhausted"),
+      ("resource", Lean.toJson resource), ("ticksUsed", Lean.toJson ticks)]
+
+open Minidregg.Theory.ObjectiveBendDemandMachine in
+/-- Which budget a machine failure names, if it is budget exhaustion. A capacity
+suspension keeps the pre-step state: whichever of heap or stack the next step would
+exceed is the resource; otherwise the step's text allocation exceeded `bytes`. -/
+def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (remaining : Budget) :
+    Option String :=
+  match failure with
+  | .tickExhausted => some "ticks"
+  | .budget => some (if remaining.nodes == 0 then "nodes" else "bytes")
+  | .suspended =>
+      let next := stepRaw state
+      if next.heap.size > limits.heap then some "heap"
+      else if next.stack.length > limits.stack then some "stack"
+      else some "bytes"
+  | _ => none
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed outcome. -/
-def conclude (packet : Json) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
+def conclude (packet : Json) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
     (outcome : Except (Failure × State × Budget) (Data × Budget)) : Except String Delvetalk.Turn.Outcome :=
   match outcome with
   | .ok (value, remaining) =>
@@ -181,16 +246,28 @@ def conclude (packet : Json) (bounds : DataBounds) (plan response result : Ty) (
       else .ok (.finished value result (b.ticks - remaining.ticks))
   | .error (.yielded, state, remaining) =>
       match yieldedPlan limits remaining state with
-      | .error (failure, _, _) => .error ("turn refused: " ++ failureName failure)
+      | .error (failure, st, rem) =>
+          -- A materialization budget failure is nodes when it vanishes with unlimited nodes.
+          let resource? := match failure with
+            | .budget => some (match yieldedPlan limits {remaining with nodes := 1 <<< 40} state with
+                | .error (.budget, _, _) => "bytes"
+                | _ => "nodes")
+            | _ => exhaustedResource limits failure st rem
+          match resource? with
+          | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
+          | none => .error ("turn refused: " ++ failureName failure)
       | .ok extracted =>
           if !extracted.value.conformsUnder bounds plan then .error "turn refused: Plan does not conform to its type"
           else .ok (.yielded extracted.value plan response
-            (Checkpoint.make packet (encodeState (checkpoint extracted.state)))
+            (Checkpoint.make packet binding (encodeState (checkpoint extracted.state)))
             (b.ticks - extracted.remaining.ticks))
-  | .error (failure, _, _) => .error ("turn refused: " ++ failureName failure)
+  | .error (failure, st, rem) =>
+      match exhaustedResource limits failure st rem with
+      | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
+      | none => .error ("turn refused: " ++ failureName failure)
 
 /-- `packet` belongs to an artifact the caller has already verified. -/
-def startActivity (packet : Json) (arguments : List Data) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
+def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
@@ -207,17 +284,22 @@ def startActivity (packet : Json) (arguments : List Data) (b : Budgets) : Except
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude packet source.assumptions.bounds plan response result b capacities outcome
+  conclude packet binding source.assumptions.bounds plan response result b capacities outcome
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
-def resumeActivity (packet : Json) (checkpoint : Checkpoint) (value : Data) (b : Budgets) :
+def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) (b : Budgets) :
     Except String Delvetalk.Turn.Outcome := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
-  let (plan, response, result) ← activityShape decoded.source.assumptions (peelArrows 64 entry.type)
+  let (plan, response, result) ← activityShape decoded.source.assumptions (peelArrows Bounds.entryArrowDepth entry.type)
   unless checkpoint.packetSha256 == packetDigest packet do throw "checkpoint belongs to another package"
-  unless checkpoint.digest == tokensDigest checkpoint.tokens do throw "checkpoint digest mismatch"
+  unless checkpoint.digest == checkpointDigest checkpoint.packetSha256 checkpoint.object checkpoint.principal
+      checkpoint.intent checkpoint.rootsDigest checkpoint.tokens do throw "checkpoint digest mismatch"
+  unless checkpoint.object == binding.object do throw "checkpoint belongs to another object"
+  unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
+  unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
+  unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   let some state := decodeState checkpoint.tokens | throw "checkpoint does not decode"
   unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume (dataTerm value) state
@@ -225,15 +307,15 @@ def resumeActivity (packet : Json) (checkpoint : Checkpoint) (value : Data) (b :
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude packet decoded.source.assumptions.bounds plan response result b capacities outcome
+  conclude packet binding decoded.source.assumptions.bounds plan response result b capacities outcome
 
-def start (packet arguments limits : Json) : Except String Json := do
-  let values ← (← arguments.getArr?).toList.mapM (decodeData 256)
-  return (← startActivity packet values (← budgets limits)).toJson
+def start (packet arguments limits request : Json) : Except String Json := do
+  let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
+  return (← startActivity packet values (← Binding.ofJson request) (← budgets limits)).toJson
 
-def resumeTurn (packet checkpointJson responseJson limits : Json) : Except String Json := do
+def resumeTurn (packet checkpointJson responseJson limits request : Json) : Except String Json := do
   let checkpoint ← Checkpoint.fromJson checkpointJson
-  let value ← decodeData 256 responseJson
-  return (← resumeActivity packet checkpoint value (← budgets limits)).toJson
+  let value ← decodeData Bounds.dataWireDepth responseJson
+  return (← resumeActivity packet checkpoint (← Binding.ofJson request) value (← budgets limits)).toJson
 
 end Delvetalk.Turn

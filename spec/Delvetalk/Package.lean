@@ -10,6 +10,7 @@ import Delvetalk.Reflection
 import Delvetalk.Turn
 import Delvetalk.Document
 import Delvetalk.EvaluateTerm
+import Delvetalk.Limits
 
 open Lean (Json toJson)
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -23,46 +24,64 @@ open Minidregg.Compiler.ObjectiveBendDataWire
 namespace Delvetalk.Package
 
 def defaultLimits : Json := Json.mkObj [
-  ("ticks", toJson "100000"), ("heap", toJson "100000"),
-  ("stack", toJson "10000"), ("typeFuel", toJson "16384")]
+  ("ticks", toJson (toString Bounds.ticksDefault)), ("heap", toJson (toString Bounds.heapDefault)),
+  ("stack", toJson (toString Bounds.stackDefault)), ("typeFuel", toJson (toString Bounds.typeFuelDefault))]
 
 def getLimits (j : Json) : Json := (j.getObjVal? "limits").toOption.getD defaultLimits
 
+/-- A compiler refusal, structurally: stage, message, and for a source refusal the
+module and line span (`dregg.bend.compiler-diagnostic.v1` as data). -/
+abbrev Diagnostic := Minidregg.Compiler.ObjectiveBendFrontEnd.Diagnostic
+
+/-- A refusal of the request itself (not of the source): no module, no span. -/
+def requestRefusal (message : String) : Diagnostic := { stage := "package-request", message }
+
+/-- The flat form: a request refusal is its message, a compiler refusal its diagnostic JSON. -/
+def Diagnostic.render (d : Diagnostic) : String :=
+  if d.stage == "package-request" then d.message else d.json.compress
+
+private def lift {α : Type} (x : Except String α) : Except Diagnostic α := x.mapError requestRefusal
+
 /-- A sealed in-memory package: imports name earlier modules explicitly supplied
 by the caller. The adapter never reads an import path from the filesystem. -/
-def modulesOf (j : Json) : Except String (List SourceModule × Json) := do
+def modulesOfStructured (j : Json) : Except Diagnostic (List SourceModule × Json) := do
   let raw ← match j.getObjVal? "modules" with
-    | .ok value => value.getArr?
-    | .error _ => pure #[Json.mkObj [("name", toJson "Package"), ("source", ← j.getObjVal? "source")]]
-  if raw.isEmpty || raw.size > 64 then throw "package requires 1..64 modules"
+    | .ok value => lift value.getArr?
+    | .error _ => pure #[Json.mkObj [("name", toJson "Package"), ("source", ← lift (j.getObjVal? "source"))]]
+  if raw.isEmpty || raw.size > Bounds.maxModules then
+    throw (requestRefusal s!"package requires 1..{Bounds.maxModules} modules")
   let mut modules : List SourceModule := []
   for value in raw do
-    let name ← value.getObjValAs? String "name"
-    let source ← value.getObjValAs? String "source"
-    unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw "invalid module name"
-    if modules.any (fun m => m.name == name) then throw "duplicate module name"
-    if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
-    let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
+    let name ← lift (value.getObjValAs? String "name")
+    let source ← lift (value.getObjValAs? String "source")
+    unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal "invalid module name")
+    if modules.any (fun m => m.name == name) then throw (requestRefusal "duplicate module name")
+    if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal "source exceeds 512 KiB")
+    let ast ← FrontEnd.parseSource name source
     let mut imports : List LockedImport := []
-    for edge in (← (← ast.getObjVal? "imports").getArr?) do
-      let path ← edge.getObjValAs? String "path"
+    for edge in (← lift ((← lift (ast.getObjVal? "imports")).getArr?)) do
+      let path ← lift (edge.getObjValAs? String "path")
       let some target := modules.zipIdx.find? (fun (m,_) => path == "./" ++ m.name ++ ".obend")
-        | throw "import must name an earlier supplied module"
-      imports := imports ++ [⟨path, ← edge.getObjValAs? String "alias", ← edge.getObjVal? "span",
+        | throw { stage := "package-request", message := "import must name an earlier supplied module",
+                  sourceModule := some name }
+      imports := imports ++ [⟨path, ← lift (edge.getObjValAs? String "alias"), ← lift (edge.getObjVal? "span"),
         target.2, target.1.name, target.1.sha256⟩]
     modules := modules ++ [⟨name,source,Minidregg.Compiler.Sha256.hexString source,imports⟩]
   return (modules, .arr raw)
 
-/-- Compilation proper. A host that owns a law adapter (`Delvetalk.Host`) keeps
-the parsed laws and the entry's checked type; the pure profile refuses laws. -/
-def compileKeepingLaws (j : Json) :
-    Except String (Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)) := do
-  let (modules, sources) ← modulesOf j
-  let entry ← j.getObjValAs? String "entry"
-  let (lowered, genericInstances) ← (FrontEnd.lowerWithInstances modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition").mapError
-    (fun diagnostic => diagnostic.json.compress)
-  let accepted ← (accept lowered).mapError (fun diagnostic => ({ diagnostic with message := diagnostic.message ++
-      (if genericInstances == Json.arr #[] then "" else "; selected generic instances: " ++ genericInstances.compress) }).json.compress)
+def modulesOf (j : Json) : Except String (List SourceModule × Json) :=
+  (modulesOfStructured j).mapError Diagnostic.render
+
+/-- A compiled package: the artifact JSON, the entry's checked type and its laws. -/
+abbrev Compiled := Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
+
+/-- Compilation proper, refusing with the structured diagnostic. -/
+def compileStructured (j : Json) : Except Diagnostic Compiled := do
+  let (modules, sources) ← modulesOfStructured j
+  let entry ← lift (j.getObjValAs? String "entry")
+  let (lowered, genericInstances) ← FrontEnd.lowerWithInstances modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition"
+  let accepted ← (accept lowered).mapError (fun diagnostic => { diagnostic with message := diagnostic.message ++
+      (if genericInstances == Json.arr #[] then "" else "; selected generic instances: " ++ genericInstances.compress) })
   let packet := lowered.packet
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
@@ -72,6 +91,55 @@ def compileKeepingLaws (j : Json) :
     ("packetSha256", toJson (Minidregg.Compiler.Sha256.hexString packet.compress)),
     ("type", typeJson accepted.typed.type)]
   return (artifact, accepted.typed.type, lowered.laws)
+
+/-- The functions of a module with the span of each body, in source order. -/
+def functionBodies (ast : Json) : List (String × Minidregg.Compiler.ObjectiveBendParse.Span) :=
+  match ast.getObjVal? "declarations" >>= Json.getArr? with
+  | .error _ => []
+  | .ok declarations => declarations.toList.filterMap fun d => do
+      guard ((d.getObjValAs? String "kind").toOption == some "function")
+      let name ← (d.getObjVal? "signature" >>= (·.getObjValAs? String "name")).toOption
+      let span ← (d.getObjVal? "body" >>= (·.getObjVal? "span")).toOption
+      let start ← (span.getObjValAs? Nat "start").toOption
+      let stop ← (span.getObjValAs? Nat "end").toOption
+      let line ← (span.getObjValAs? Nat "line").toOption
+      return (name, ⟨start, stop, line⟩)
+
+/-- The elaborator and the checker refuse without a position. For a refusal that has none,
+find the first function (in module, then source order) that on its own, with the modules
+before it, is refused with the same stage and message, and report that module and the span of
+its body. A refusal that already carries a span is returned unchanged. -/
+def localize (modules : List (String × String)) (limits : Json) (d : Diagnostic) : Diagnostic := Id.run do
+  if d.span.isSome then return d
+  let mut seen := 0
+  for (name, source) in modules do
+    seen := seen + 1
+    let .ok ast := FrontEnd.parseSource name source | continue
+    for (function, span) in functionBodies ast do
+      let request := Json.mkObj [("entry", toJson function), ("limits", limits),
+        ("modules", Json.arr ((modules.take seen).map fun (n, src) =>
+          Json.mkObj [("name", toJson n), ("source", toJson src)]).toArray)]
+      if let .error e := compileStructured request then
+        if e.stage == d.stage && e.message == d.message then
+          return { d with span := some span, sourceModule := some name }
+  return d
+
+/-- A pure dry-run compile of `(name, source)` modules, in dependency order, for `entry`:
+the artifact, or the diagnostic with its stage, message, module and span intact. -/
+def checkPackage (modules : List (String × String)) (entry : String) (limits : Json := defaultLimits) :
+    Except Diagnostic Json := do
+  let request := Json.mkObj [("entry", toJson entry), ("limits", limits),
+    ("modules", Json.arr (modules.map fun (name, source) =>
+      Json.mkObj [("name", toJson name), ("source", toJson source)]).toArray)]
+  match compileStructured request with
+  | .error d => throw (localize modules limits d)
+  | .ok (artifact, _, laws) =>
+    if !laws.isEmpty then throw (requestRefusal "package laws require a host law adapter; this pure profile refuses them")
+    return artifact
+
+def compileKeepingLaws (j : Json) :
+    Except String (Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)) :=
+  (compileStructured j).mapError Diagnostic.render
 
 def compile (j : Json) : Except String Json := do
   let (artifact, _, laws) ← compileKeepingLaws j
@@ -98,16 +166,16 @@ open Delvetalk.Turn (applyArgument bounded)
 def executePacket (packet arguments limits : Json) : Except String Json := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
-  let values ← (← arguments.getArr?).toList.mapM (decodeData 256)
+  let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
   let terms ← values.mapM argumentTerm
   let source := terms.foldl applyArgument decoded.source
   let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
   if !checked.type.isData then throw "package result must have first-order data type"
-  let ticks ← bounded limits "ticks" 100000 1000000
-  let heap ← bounded limits "heap" 100000 1000000
-  let stack ← bounded limits "stack" 10000 100000
-  let nodes ← bounded limits "nodes" 100000 1000000
-  let bytes ← bounded limits "bytes" 1048576 16777216
+  let ticks ← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax
+  let heap ← bounded limits "heap" Bounds.heapDefault Bounds.heapMax
+  let stack ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax
+  let nodes ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax
+  let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
   let budget : Budget := ⟨nodes,ticks,bytes⟩
   let capacities : Limits := ⟨heap,stack⟩
   match execute capacities budget source.term with
@@ -156,11 +224,11 @@ def dataPlain : Nat → Data → Except String (Json × Nat)
 caller supplies remaining ticks, charges ticksUsed AND conversionNodes against
 its enclosing budget, and commits nothing on refusal. -/
 def executeJsonPacket (packet arguments limits : Json) : Except String Json := do
-  let converted ← (← arguments.getArr?).toList.mapM (jsonData 64)
+  let converted ← (← arguments.getArr?).toList.mapM (jsonData Bounds.plainJsonDepth)
   let inputNodes := (converted.map Prod.snd).foldl (· + ·) 0
   let result ← executePacket packet (.arr ((converted.map fun pair => dataJson pair.1).toArray)) limits
   if (← result.getObjValAs? String "status") != "finished" then return result
-  let (value,outputNodes) ← dataPlain 64 (← decodeData 256 (← result.getObjVal? "value"))
+  let (value,outputNodes) ← dataPlain Bounds.plainJsonDepth (← decodeData Bounds.dataWireDepth (← result.getObjVal? "value"))
   return Json.mkObj [("status",toJson "finished"),("value",value),
     ("type",← result.getObjVal? "type"),("ticksUsed",← result.getObjVal? "ticksUsed"),
     ("heapCells",← result.getObjVal? "heapCells"),("nodesUsed",← result.getObjVal? "nodesUsed"),
@@ -217,17 +285,17 @@ shape checking happen here, before any native consumer sees a Data value.
 Conversion and machine work share the existing whole-execution allowance. -/
 private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × Ty × Nat))
     (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
-  let bytes ← bounded limits "bytes" 1048576 16777216
-  let inputBytes ← bounded limits "inputBytes" bytes 16777216
+  let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
+  let inputBytes ← bounded limits "inputBytes" bytes Bounds.bytesMax
   if argumentBytes > inputBytes then throw "typed data input byte capacity"
-  let ticks ← bounded limits "ticks" 100000 1000000
-  let work ← bounded limits "work" ticks 1000000
+  let ticks ← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax
+  let work ← bounded limits "work" ticks Bounds.ticksMax
   let allowance := min ticks work
   let ((source, type, _), remaining) ← prepared.run allowance
   let before := allowance - remaining
-  let heap ← bounded limits "heap" 100000 1000000
-  let stack ← bounded limits "stack" 10000 100000
-  let nodes ← bounded limits "nodes" 100000 1000000
+  let heap ← bounded limits "heap" Bounds.heapDefault Bounds.heapMax
+  let stack ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax
+  let nodes ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax
   let budget : Budget := ⟨nodes, ticks - before, bytes⟩
   match execute ⟨heap, stack⟩ budget source.term with
   | .error (failure, state, rest) =>
@@ -237,7 +305,7 @@ private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × T
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
       let outputAllowance := min remaining result.remaining.ticks
-      let (_, after) ← (PackageData.validate source.assumptions 256 result.value type).run outputAllowance
+      let (_, after) ← (PackageData.validate source.assumptions Bounds.dataWireDepth result.value type).run outputAllowance
       return .finished result.value type (nodes - result.remaining.nodes)
         ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
 
@@ -245,19 +313,19 @@ private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × T
 Their preparation and extraction still consume the shared execution allowance. -/
 private def executePreparedNative (prepared : PackageData.Work PackageData.NativePreparation)
     (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
-  let bytes ← bounded limits "bytes" 1048576 16777216
-  let inputBytes ← bounded limits "inputBytes" bytes 16777216
+  let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
+  let inputBytes ← bounded limits "inputBytes" bytes Bounds.bytesMax
   if argumentBytes > inputBytes then throw "typed data input byte capacity"
-  let ticks ← bounded limits "ticks" 100000 1000000
-  let work ← bounded limits "work" ticks 1000000
+  let ticks ← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax
+  let work ← bounded limits "work" ticks Bounds.ticksMax
   let allowance := min ticks work
   let (preparation, remaining) ← prepared.run allowance
   let source := preparation.source
   let type := preparation.resultType
   let before := allowance - remaining
-  let heap ← bounded limits "heap" 100000 1000000
-  let stack ← bounded limits "stack" 10000 100000
-  let nodes ← bounded limits "nodes" 100000 1000000
+  let heap ← bounded limits "heap" Bounds.heapDefault Bounds.heapMax
+  let stack ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax
+  let nodes ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax
   let budget : Budget := ⟨nodes, ticks - before, bytes⟩
   match executeDataArguments ⟨heap, stack⟩ budget source.term preparation.arguments.toList with
   | .error (failure, state, rest) =>
@@ -267,7 +335,7 @@ private def executePreparedNative (prepared : PackageData.Work PackageData.Nativ
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
       let outputAllowance := min remaining result.remaining.ticks
-      let (_, after) ← (PackageData.validate source.assumptions 256 result.value type).run outputAllowance
+      let (_, after) ← (PackageData.validate source.assumptions Bounds.dataWireDepth result.value type).run outputAllowance
       return .finished result.value type (nodes - result.remaining.nodes)
         ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
 
@@ -304,11 +372,11 @@ def runCompactDataVerified (j : Json) : Except String Json := do
   | .refused _ _ => return execution.wire
   | .finished value type nodes usage =>
     let decoded ← decodePacket packet
-    let ticks ← bounded (getLimits j) "ticks" 100000 1000000
-    let work ← bounded (getLimits j) "work" ticks 1000000
+    let ticks ← bounded (getLimits j) "ticks" Bounds.ticksDefault Bounds.ticksMax
+    let work ← bounded (getLimits j) "work" ticks Bounds.ticksMax
     let allowance := min ticks work
     let available := allowance - (usage.ticksUsed + usage.conversionNodes)
-    let (wire, remaining) ← (PackageData.encodeCompact decoded.source.assumptions 256 type value).run available
+    let (wire, remaining) ← (PackageData.encodeCompact decoded.source.assumptions Bounds.dataWireDepth type value).run available
     let usage := { usage with conversionNodes := usage.conversionNodes + available - remaining }
     return Json.mkObj ([("executionProfile", toJson "delvetalk-package-compact"),
       ("status", toJson "finished"), ("value", wire), ("type", typeJson type),
@@ -358,20 +426,20 @@ The packet hash travels with the result; a different schema is never inferred. -
 def compactCodec (j : Json) (encode : Bool) : Except String Json := do
   let selection ← j.getObjVal? "selection"
   let (a, declared, path) ← selectedDataType selection
-  let work ← bounded j "work" 100000 1000000
-  let bytes ← bounded j "bytes" 1048576 16777216
+  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
+  let bytes ← bounded j "bytes" Bounds.bytesDefault Bounds.bytesMax
   let value ← j.getObjVal? "value"
   if value.compress.utf8ByteSize > bytes then throw "compact codec input byte capacity"
   let action : PackageData.Work Json := do
     let ty ← PackageData.select a declared path
-    PackageData.shape a 256 [] ty
+    PackageData.shape a Bounds.dataWireDepth [] ty
     if encode then
-      let data ← PackageData.decode 256 value
-      PackageData.validate a 256 data ty
-      PackageData.encodeCompact a 256 ty data
+      let data ← PackageData.decode Bounds.dataWireDepth value
+      PackageData.validate a Bounds.dataWireDepth data ty
+      PackageData.encodeCompact a Bounds.dataWireDepth ty data
     else
-      let data ← PackageData.decodeCompact a 256 ty value
-      PackageData.validate a 256 data ty
+      let data ← PackageData.decodeCompact a Bounds.dataWireDepth ty value
+      PackageData.validate a Bounds.dataWireDepth data ty
       return dataJson data
   let (wire, remaining) ← action.run work
   if wire.compress.utf8ByteSize > bytes then throw "compact codec output byte capacity"
@@ -382,13 +450,13 @@ def compactCodec (j : Json) (encode : Bool) : Except String Json := do
 def compareDataTypes (j : Json) : Except String Json := do
   let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
   let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
-  let work ← bounded j "work" 100000 1000000
+  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
   let action : PackageData.Work Bool := do
     let a ← PackageData.select left lt lp
     let b ← PackageData.select right rt rp
-    PackageData.shape left 256 [] a
-    PackageData.shape right 256 [] b
-    PackageData.equivalent left right 256 [] a b
+    PackageData.shape left Bounds.dataWireDepth [] a
+    PackageData.shape right Bounds.dataWireDepth [] b
+    PackageData.equivalent left right Bounds.dataWireDepth [] a b
   let (equal, remaining) ← action.run work
   return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
     ("conversionNodes", toJson (work - remaining))]
@@ -398,17 +466,17 @@ ABI. Configuration models remain independently typed for receiving admission. -/
 def allocationDataTypes (j : Json) : Except String Json := do
   let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
   let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
-  let work ← bounded j "work" 100000 1000000
+  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
   let action : PackageData.Work Bool := do
     let allocations ← PackageData.select left lt lp
     let value ← PackageData.select right rt rp
-    PackageData.shape right 256 [] value
+    PackageData.shape right Bounds.dataWireDepth [] value
     let head ← PackageData.allocationListType left allocations
-    for leaf in (← PackageData.allocationLeaves left 256 head) do
-      let fields ← PackageData.members 256 leaf
+    for leaf in (← PackageData.allocationLeaves left Bounds.dataWireDepth head) do
+      let fields ← PackageData.members Bounds.dataWireDepth leaf
       for key in ["protocol", "law"] do
         let some member := fields.lookup key | throw "allocation descriptor field missing"
-        unless (← PackageData.equivalent left right 256 [] member value) do return false
+        unless (← PackageData.equivalent left right Bounds.dataWireDepth [] member value) do return false
     return true
   let (equal, remaining) ← action.run work
   return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
@@ -416,12 +484,12 @@ def allocationDataTypes (j : Json) : Except String Json := do
 
 def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
-  Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
+  Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j) j
 
 def turnResumeVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   Delvetalk.Turn.resumeTurn (← artifact.getObjVal? "packet") (← j.getObjVal? "checkpoint")
-    (← j.getObjVal? "response") (getLimits j)
+    (← j.getObjVal? "response") (getLimits j) j
 
 def turnStart (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
@@ -435,7 +503,7 @@ def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
   | "source-imports-v1" =>
     let raw ← (← j.getObjVal? "modules").getArr?
-    if raw.isEmpty || raw.size > 64 then throw "source import request requires 1..64 modules"
+    if raw.isEmpty || raw.size > Bounds.maxModules then throw s!"source import request requires 1..{Bounds.maxModules} modules"
     let mut names : List String := []
     let mut total := 0
     let mut parsed : Array Json := #[]
@@ -445,18 +513,24 @@ def job (j : Json) : Except String Json := do
       if names.contains name then throw "duplicate module name"
       names := name :: names
       let source ← value.getObjValAs? String "source"
-      if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
+      if source.utf8ByteSize > Bounds.maxModuleBytes then throw "source exceeds 512 KiB"
       total := total + source.utf8ByteSize
-      if total > 1048576 then throw "source import request exceeds 1 MiB"
+      if total > Bounds.maxPackageSourceBytes then throw "source import request exceeds 1 MiB"
       let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
       parsed := parsed.push (Json.mkObj [("name", toJson name), ("imports", ← ast.getObjVal? "imports")])
     return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]
   | "template-expand" =>
     let source ← j.getObjValAs? String "source"
-    if source.utf8ByteSize > 524288 then throw "source exceeds 512 KiB"
+    if source.utf8ByteSize > Bounds.maxModuleBytes then throw "source exceeds 512 KiB"
     let expanded ← (FrontEnd.parse "Template" source).mapError (fun d => d.json.compress)
     return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.expandedSource),
       ("schema", toJson "delvetalk.document-template-expansion.v1")]
+  | "check-package" =>
+    let raw ← (← j.getObjVal? "modules").getArr?
+    let modules ← raw.toList.mapM fun m => do return (← m.getObjValAs? String "name", ← m.getObjValAs? String "source")
+    match checkPackage modules (← j.getObjValAs? String "entry") (getLimits j) with
+    | .ok artifact => return Json.mkObj [("status", toJson "checked"), ("artifact", artifact)]
+    | .error d => return Json.mkObj [("status", toJson "refused"), ("diagnostic", d.json)]
   | "compile" => return Json.mkObj [("status", toJson "compiled"), ("artifact", ← compile j)]
   | "run" => run j
   | "evaluate-term" => Delvetalk.EvaluateTerm.op j

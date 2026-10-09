@@ -56,6 +56,10 @@ def wide(text: String) -> Activity<Plan, Reply, Nat>:
 """
 
 
+BINDING = {"object": "counter", "principal": "glm", "intent": "t1",
+           "roots": [{"object": "counter", "version": 0}]}
+
+
 def nat(n):
     return {"tag": "natural", "value": str(n)}
 
@@ -70,9 +74,11 @@ def variant(name, payload=None):
 
 
 def redigest(checkpoint):
-    """Recompute a checkpoint's digest after editing its tokens (SHA-256 of the
-    compact token JSON), so a test can get past the digest to the decoder."""
-    text = json.dumps(checkpoint["tokens"], separators=(",", ":"), ensure_ascii=False)
+    """Recompute a checkpoint's digest after editing it (SHA-256 of the compact,
+    key-sorted JSON of its package, binding and tokens), so a test can get past the
+    digest to the decoder or to the binding checks."""
+    body = {k: checkpoint[k] for k in ("packetSha256", "object", "principal", "intent", "rootsDigest", "tokens")}
+    text = json.dumps(body, separators=(",", ":"), ensure_ascii=False, sort_keys=True)
     checkpoint["digest"] = hashlib.sha256(text.encode()).hexdigest()
     return checkpoint
 
@@ -194,15 +200,15 @@ class Host:
         assert reply["status"] == "compiled", reply
         return reply["artifact"]
 
-    def start(self, artifact, arguments, **limits):
-        request = {"op": "turn-start", "artifact": artifact, "arguments": arguments}
+    def start(self, artifact, arguments, binding=None, **limits):
+        request = {"op": "turn-start", "artifact": artifact, "arguments": arguments, **(binding or BINDING)}
         if limits:
             request["limits"] = limits
         return self.send(request)
 
-    def resume(self, artifact, checkpoint, response, **limits):
+    def resume(self, artifact, checkpoint, response, binding=None, **limits):
         request = {"op": "turn-resume", "artifact": artifact, "checkpoint": checkpoint,
-                   "response": response}
+                   "response": response, **(binding or BINDING)}
         if limits:
             request["limits"] = limits
         return self.send(request)
@@ -329,16 +335,14 @@ class TurnTests(TurnCase):
         self.assertEqual((r["status"], r["message"]), ("error", "checkpoint belongs to another package"), r)
         self.assertEqual(h.resume(a, y["checkpoint"], variant("written"))["status"], "finished")
 
-    def test_tick_exhaustion_on_resume_is_a_named_error_not_a_crash(self):
+    def test_tick_exhaustion_is_a_named_silence_not_a_crash(self):
         h = self.host()
         art = h.compile(PLANS, "bump")
         y = h.start(art, [nat(3)])
         r = h.resume(art, y["checkpoint"], variant("written"), ticks=1)
-        self.assertEqual(r["status"], "error", r)
-        self.assertIn("tick budget exhausted", r["message"])
+        self.assertEqual((r["status"], r["resource"]), ("exhausted", "ticks"), r)
         s = h.start(art, [nat(3)], ticks=1)
-        self.assertEqual(s["status"], "error", s)
-        self.assertIn("tick budget exhausted", s["message"])
+        self.assertEqual((s["status"], s["resource"]), ("exhausted", "ticks"), s)
         # the host survived both
         done = h.resume(art, y["checkpoint"], variant("written"))
         self.assertEqual(done["status"], "finished", done)
@@ -453,6 +457,123 @@ class TurnTests(TurnCase):
         self.assertEqual(plan_field(y["plan"]["payload"], "f62"), nat(62))
         done = h.resume(art, y["checkpoint"], variant("ok"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(1)), done)
+
+
+BYTES = """edition ObjectiveBend 1
+sum Plan:
+  put: Nat
+sum Reply:
+  ok: {}
+def cat(t: String) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.put(textLength(textConcat(t, t)))):
+    case ok(_): 1n
+"""
+
+
+class BindingTests(TurnCase):
+    def test_a_checkpoint_resumes_only_for_the_same_object_principal_intent_and_roots(self):
+        h = self.host()
+        art = h.compile(PLANS, "bump")
+        y = h.start(art, [nat(3)])
+        cp = y["checkpoint"]
+        self.assertEqual(h.resume(art, cp, variant("written"))["status"], "finished")
+        cases = {
+            "checkpoint belongs to another object": {**BINDING, "object": "other"},
+            "checkpoint belongs to another principal": {**BINDING, "principal": "kimik3"},
+            "checkpoint belongs to another intent": {**BINDING, "intent": "t2"},
+            "checkpoint was taken under different roots": {**BINDING, "roots": []},
+        }
+        cases["checkpoint was taken under different roots"]["roots"] = [{"object": "counter", "version": 1}]
+        for message, binding in cases.items():
+            r = h.resume(art, cp, variant("written"), binding=binding)
+            self.assertEqual((r["status"], r["message"]), ("error", message), r)
+
+    def test_editing_the_claimed_binding_inside_the_checkpoint_breaks_the_digest(self):
+        h = self.host()
+        art = h.compile(PLANS, "bump")
+        y = h.start(art, [nat(3)])
+        for field, value in (("object", "other"), ("principal", "kimik3"), ("intent", "t2"),
+                             ("rootsDigest", "0" * 64)):
+            forged = copy.deepcopy(y["checkpoint"]); forged[field] = value
+            r = h.resume(art, forged, variant("written"))
+            self.assertEqual((r["status"], r["message"]), ("error", "checkpoint digest mismatch"), (field, r))
+
+    def test_the_binding_is_required_by_both_ops(self):
+        h = self.host()
+        art = h.compile(PLANS, "bump")
+        for missing in ("object", "principal", "intent", "roots"):
+            binding = {k: v for k, v in BINDING.items() if k != missing}
+            r = h.send({"op": "turn-start", "artifact": art, "arguments": [nat(3)], **binding})
+            self.assertEqual(r["status"], "error", (missing, r))
+        y = h.start(art, [nat(3)])
+        r = h.send({"op": "turn-resume", "artifact": art, "checkpoint": y["checkpoint"],
+                    "response": variant("written")})
+        self.assertEqual(r["status"], "error", r)
+
+
+class ExhaustionTests(TurnCase):
+    def test_each_budgeted_resource_is_a_named_silence_on_start(self):
+        h = self.host()
+        art = h.compile(PLANS, "bump")
+        wide = h.compile(wide_source(), "wide")
+        cat = h.compile(BYTES, "cat")
+        cases = [
+            ("ticks", h.start(art, [nat(3)], ticks=1)),
+            ("heap", h.start(art, [nat(3)], heap=2)),
+            ("stack", h.start(art, [nat(3)], stack=1)),
+            ("nodes", h.start(wide, [label("x")], nodes=5)),
+            ("bytes", h.start(cat, [label("y" * 200)], bytes=100)),
+        ]
+        for resource, reply in cases:
+            with self.subTest(resource=resource):
+                self.assertEqual((reply["status"], reply["resource"]), ("exhausted", resource), reply)
+                self.assertIn("ticksUsed", reply)
+                self.assertNotIn("message", reply)
+
+    def test_each_budgeted_resource_is_a_named_silence_on_resume(self):
+        h = self.host()
+        art = h.compile(PLANS, "twice")
+        y = h.start(art, [nat(3)])
+        for resource, limits in (("ticks", {"ticks": 1}), ("stack", {"stack": 1}), ("heap", {"heap": 0})):
+            with self.subTest(resource=resource):
+                r = h.resume(art, y["checkpoint"], variant("written"), **limits)
+                self.assertEqual((r["status"], r["resource"]), ("exhausted", resource), r)
+        cat = h.compile(BYTES, "cat")
+        # a plan too large for the node budget, reached after a resume
+        wide = h.compile(wide_source(), "wide")
+        yw = h.start(wide, [label("x")])
+        self.assertEqual(yw["status"], "yielded")
+        done = h.resume(wide, yw["checkpoint"], variant("ok"))
+        self.assertEqual(done["status"], "finished")
+        self.assertEqual(h.start(cat, [label("y" * 200)])["status"], "yielded")
+
+    def test_ordinary_refusals_stay_errors(self):
+        h = self.host()
+        art = h.compile(PLANS, "bump")
+        r = h.start(art, [label("not a number")])
+        self.assertEqual(r["status"], "error", r)
+
+
+class DiagnosticTests(TurnCase):
+    def test_a_type_error_in_module_2_line_3_reports_module_and_line(self):
+        h = self.host()
+        good = "edition ObjectiveBend 1\ndef one() -> Nat:\n  1n\n"
+        bad = "edition ObjectiveBend 1\ndef two() -> Nat:\n  1n + true\n"
+        reply = h.send({"op": "check-package", "entry": "two",
+                        "modules": [{"name": "First", "source": good}, {"name": "Second", "source": bad}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        d = reply["diagnostic"]
+        self.assertEqual(d["module"], "Second", d)
+        self.assertEqual(d["span"]["line"], 3, d)
+        self.assertTrue(d["stage"] and d["message"], d)
+        # a parse error likewise
+        broken = "edition ObjectiveBend 1\ndef three() -> Nat:\n  1n +\n"
+        reply = h.send({"op": "check-package", "entry": "three",
+                        "modules": [{"name": "First", "source": good}, {"name": "Third", "source": broken}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertEqual(reply["diagnostic"].get("module"), "Third", reply)
+        self.assertEqual(h.send({"op": "check-package", "entry": "one",
+                                 "modules": [{"name": "First", "source": good}]})["status"], "checked")
 
 
 class TextTariffTests(TurnCase):
