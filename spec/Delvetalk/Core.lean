@@ -119,7 +119,8 @@ termination_by sizeOf t
 private def primNames : List (String × Primitive) :=
   [("add",.add),("multiply",.multiply),("equal",.equal),("conjunction",.conjunction),
    ("labelEqual",.labelEqual),("subtract",.subtract),("divide",.divide),
-   ("less",.less),("lessEqual",.lessEqual),("modulo",.modulo),("textConcat",.textConcat),("textTake",.textTake),("textDrop",.textDrop)]
+   ("less",.less),("lessEqual",.lessEqual),("modulo",.modulo),("textConcat",.textConcat),
+   ("textTake",.textTake),("textDrop",.textDrop),("textSpan",.textSpan),("textBreak",.textBreak)]
 private def primName (p : Primitive) : String :=
   ((primNames.find? (fun x => x.2 == p)).map Prod.fst).getD "unknown"
 
