@@ -38,9 +38,16 @@ def openWorld (path : String) : IO (Except String Open) := do
 
 /-- Run a pure world step and make its entry durable before the reply exists. -/
 def durable (s : Open) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
-  match step s.world with
+  -- A step, then whatever it let go on: resumptions follow in the same durable write.
+  let settled := fun (w : World) => w.suspended.isEmpty
+  match (do
+      let (w', r) ← step s.world
+      if settled w' then return (w', r, #[])
+      let (w'', resumed) ← settle w'
+      return (w'', r, resumed) : Except String (World × Json × Array Json)) with
   | .error e => return (some s, .error e)
-  | .ok (w', r) =>
+  | .ok (w', r0, resumed) =>
+    let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr resumed)
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
     let fresh := w'.entries.extract s.world.height w'.height
     if fresh.any (·.compress.utf8ByteSize > Limits.maxEntryBytes) then
@@ -80,6 +87,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-pending" => return (session, .ok (pendingReply s.world))
       | "world-reprogram" => durable s (fun w => reprogramOp w request)
       | "world-amend" => durable s (fun w => amendOp w request)
+      | "world-advance" => durable s (fun w => advance w request)
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
       | "world-receipt" => return (session, receipt s.world request)

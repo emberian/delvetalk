@@ -108,7 +108,7 @@ def finish(context: Abi.Context, result: Nat) -> Activity<Plan, Response, Nat>:
     case written(_): result
     case _: 996n
 def shout(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.await({slot: {principal: "x", intent: "y"}, patience: 1n})):
+  match perform(Plan.publish({page: "p", section: "s", body: "b"})):
     case _: 0n
 def grow(state: State, input: {by: Nat}, context: Abi.Context) -> State:
   {count: state.count + input.by}
@@ -333,7 +333,7 @@ class Plans(TurnWorld):
         r = self.turn("a", "shout", self.target("b"))
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"], out["reason"]),
-                         ("refused", "evaluation", "plan not supported: await"))
+                         ("refused", "evaluation", "plan not supported: publish"))
         self.assertEqual((self.count("a"), self.count("b")), ((0, "1"), (0, "7")))
 
     def test_a_pure_method_commits_its_result_as_a_set_of_every_field(self):

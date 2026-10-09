@@ -53,6 +53,8 @@ inductive Abort where
   | request (message : String)
   /-- The turn is refused by name; a refused entry is journaled. -/
   | evaluation (reason : String)
+  /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
+  | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
   deriving Inhabited
 
 structure TurnState where
@@ -69,6 +71,14 @@ structure TurnState where
   plans : Nat := 0
   /-- Rendered `offer` documents in order; the receipt carries them, the journal their count. -/
   offers : List String := []
+  /-- Objects created, and objects the turn required absent (created ones included). -/
+  creates : List (String × CreateRec) := []
+  absent : List String := []
+  /-- An object a `create` found already there: the turn will be refused naming it. -/
+  violation : Option String := none
+  /-- Slots this turn already awaited, as identity keys, and how many awaits it has made. -/
+  awaited : List String := []
+  awaits : Nat := 0
   limits : Json
 
 abbrev M := ExceptT Abort (StateM TurnState)
@@ -172,6 +182,73 @@ def contextData (id principal kind origin command : String) : Data :=
     ("inputOrigin", .record [("kind", .label kind), ("object", .label origin), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
 
+/-- The receipt a settled slot answers an await with. -/
+def receiptData (entry : Json) : Data :=
+  let identity := (entry.getObjVal? "identity").toOption.getD Json.null
+  let text := fun (j : Json) (k : String) => ((j.getObjValAs? String k).toOption).getD ""
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let result : Data := match outcome.getObjValAs? String "tag" with
+    | .ok "refused" => .variant "refused" (.record [("class", .label (text outcome "class")),
+        ("root", .label (text outcome "object"))])
+    | _ => .variant "admitted" (.record [])
+  .record [("slot", .record [("principal", .label (text identity "principal")),
+      ("intent", .label (text identity "intent"))]),
+    ("height", .natural ((entry.getObjValAs? Nat "height").toOption.getD 0)), ("outcome", result)]
+
+/-- The settled entry of an identity, if it has one (a suspension is not settled). -/
+def settled (w : World) (principal intent : String) : Option Json :=
+  match w.receipts[identityKey principal intent]? with
+  | some i => let e := w.entries[i]!; if tagOf e == "suspended" then none else some e
+  | none => none
+
+/-- Compile an object's new sibling: `package` is a module of the creator's own sealed
+    chain (a name), or the source of one more module over that chain. -/
+def creationInputs (creator : Object) (package : String) : Except (String × String) Json := do
+  if package.utf8ByteSize > Limits.maxPackageBytes then
+    throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+  let limits := (creator.inputs.getObjVal? "limits").toOption
+  let finish := fun (fields : List (String × Json)) =>
+    Json.mkObj (fields ++ [("entry", toJson "initial")] ++ (limits.map fun l => [("limits", l)]).getD [])
+  match creator.inputs.getObjVal? "modules" with
+  | .ok (.arr modules) =>
+    if package.startsWith "edition" then
+      let named := modules.pop.push (Json.mkObj [("name", toJson "Created"), ("source", toJson package)])
+      return finish [("modules", .arr named)]
+    else
+      match modules.findIdx? fun m => (m.getObjValAs? String "name").toOption == some package with
+      | some i => return finish [("modules", .arr (modules.extract 0 (i + 1)))]
+      | none => throw ("unknownPackage", s!"no module {package} in the creator's package")
+  | _ =>
+    if package.startsWith "edition" then return finish [("source", toJson package)]
+    else throw ("unknownPackage", "the creator has no sealed modules to name")
+
+/-- A seed is a whole state, or a record naming some fields of it (the rest come from
+    `initial()`); a variant around the record is only a wrapper for the creator's types. -/
+def mergeSeed (initial seed : Data) (bounds : DataBounds) (ty : Ty) : Except String Data := do
+  let payload := match seed with
+    | .variant _ p => p
+    | d => d
+  if payload.conformsUnder bounds ty then return payload
+  match payload, initial with
+  | .record given, .record base =>
+    if given.any fun (k, _) => !base.any (·.1 == k) then throw "the seed names a field the state does not have"
+    return .record (base.map fun (k, v) => (k, (given.lookup k).getD v))
+  | _, _ => throw "the seed is not a record"
+
+def buildCreated (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
+    (height : Nat) : Except (String × String) CreateRec := do
+  let inputs ← creationInputs creator package
+  let built ← (compileObject inputs).mapError (("compile", ·))
+  let packet ← (built.artifact.getObjVal? "packet").mapError (("compile", ·))
+  let initial ← match Package.executeDataValues packet #[] (Json.mkObj []) with
+    | .ok (.finished v _ _ _) => pure v
+    | _ => throw ("compile", "initial() did not evaluate")
+  let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
+  let lawText := if lawArg.startsWith "law " then some lawArg else none
+  let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
+    (fun e => (if e == noAmendmentClause then "law" else "typeMismatch", e))
+  return { object, sources, seed := dataJson state }
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (origin : String) : M Data := do
@@ -211,10 +288,44 @@ partial def drive (depth : Nat) (self : String) (compiled : Compiled)
   | .yielded plan _ responseType checkpoint used =>
     spend used
     countPlan
-    let response ← answer depth self compiled.bounds plan responseType
+    let response ← match plan with
+      | .variant "await" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
+      | _ => answer depth self compiled.bounds plan responseType
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint response b)
     drive depth self compiled next 0
+
+/-- `await {slot, patience}`: answered at once if the slot is settled or hopeless;
+    otherwise the turn suspends (only at the top of a turn, never inside a call). -/
+partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : List (String × Data))
+    (responseType : Ty) (checkpoint : Delvetalk.Turn.Checkpoint) : M Data := do
+  let some (.record slot) := f.lookup "slot" | evaluation "malformed await plan"
+  let some sp := (slot.lookup "principal").bind labelOf | evaluation "malformed await plan"
+  let some si := (slot.lookup "intent").bind labelOf | evaluation "malformed await plan"
+  let some (.natural patience) := f.lookup "patience" | evaluation "malformed await plan"
+  let s ← get
+  let key := identityKey sp si
+  if (sp == s.principal && si == s.intent) || s.awaited.contains key then
+    respond bounds responseType "broken" [emptyRecord]
+  else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
+  else
+    set { s with awaited := s.awaited ++ [key], awaits := s.awaits + 1 }
+    match settled s.world sp si with
+    | some entry => respond bounds responseType "reply" [.record [("receipt", receiptData entry)]]
+    | none =>
+      if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
+      else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
+      else if depth != 0 then evaluation "await inside a call is not supported"
+      else if (s.world.suspended.filter fun e =>
+          ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+            |>.bind (·.getObjValAs? String "object" |>.toOption)) == some self).size
+          ≥ Limits.pendingActivitiesPerObject then
+        evaluation "pending activity capacity (pendingActivitiesPerObject) reached for the object"
+      else if s.world.suspended.size ≥ Limits.maxSuspended then
+        evaluation "pending activity capacity (maxSuspended) reached"
+      else if (Delvetalk.Turn.tokensJson checkpoint.tokens).compress.utf8ByteSize > Limits.maxCheckpointBytes then
+        evaluation "checkpoint exceeds its byte capacity"
+      else throw (.suspend sp si patience checkpoint)
 
 partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
@@ -279,6 +390,29 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
         else
           modify fun s => { s with laws := s.laws ++ [(id, text)] }
           respond bounds responseType "amended" [emptyRecord]
+  | .variant "create" (.record f) =>
+    let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
+    let some seed := f.lookup "seed" | evaluation "malformed create plan"
+    let lawArg := ((f.lookup "law").bind labelOf).getD ""
+    let some target := f.lookup "requireAbsent" | evaluation "malformed create plan"
+    let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
+    let s ← get
+    let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
+    if id.isEmpty || id == "self" || id.utf8ByteSize > Limits.maxObjectIdBytes then
+      refusedWith bounds responseType "objectId"
+    else if s.world.objects.contains id || s.creates.any (·.1 == id) then
+      -- The reply says so now; the turn will be refused at its commit, naming the root.
+      set { note s with violation := s.violation.orElse fun _ => some id }
+      refusedWith bounds responseType "requiredAbsence"
+    else if s.creates.length ≥ Limits.createsPerTurn || s.absent.length ≥ Limits.maxRoots then
+      refusedWith bounds responseType "capacity"
+    else
+      let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
+      match buildCreated creator package seed lawArg s.principal (s.world.height + 1) with
+      | .error (clause, _) => refusedWith bounds responseType clause
+      | .ok rec =>
+        set { note s with creates := s.creates ++ [(id, rec)] }
+        respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed send plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed send plan"
@@ -306,12 +440,14 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
   | _ => evaluation "plan is not a variant"
 end
 
-/-- Lift `result` and `ticksUsed` of the receipt to the reply. -/
+/-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply. -/
 def turnReply (r : Json) : Json :=
   match r.getObjVal? "receipt" with
   | .error _ => r
   | .ok entry =>
-    let extra := ["result", "ticksUsed"].filterMap fun k => (entry.getObjVal? k).toOption.map (k, ·)
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let extra := ["result", "ticksUsed"].filterMap (fun k => (entry.getObjVal? k).toOption.map (k, ·)) ++
+      ["slot", "deadline"].filterMap (fun k => (outcome.getObjVal? k).toOption.map (k, ·))
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra)
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
@@ -344,41 +480,246 @@ def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : 
     [("id", toJson (deliveryId principal intent i)), ("to", toJson to), ("method", toJson method),
      ("argument", dataJson argument), ("ledger", child.json)]))]
 
+/-- What a turn segment carries into its end: who it is, how it began, what it has spent. -/
+structure Ctx where
+  principal : String
+  intent : String
+  object : String
+  method : String
+  argument : Data
+  /-- Digest of the original request; binds the identity for retries. -/
+  digest : String
+  ledger : Ledger
+  delivery : Option (String × Json)
+  /-- Hash of the suspension this segment continues. -/
+  resumes : Option String := none
+  usedBefore : Nat := 0
+  ticksStart : Nat
+
+def sendJson (s : String × String × Data) : Json :=
+  Json.mkObj [("to", toJson s.1), ("method", toJson s.2.1), ("argument", dataJson s.2.2)]
+
+def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
+  [("turnRequest", toJson ctx.digest), ("ticksUsed", toJson used), ("ledger", ctx.ledger.json)] ++
+    (ctx.delivery.map fun (id, sender) => [("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]).getD [] ++
+    (ctx.resumes.map fun h => [("resumes", toJson h)]).getD []
+
+/-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
+def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
+    Except String (World × Json) := do
+  let w := { w with compiled := st.world.compiled, programs := st.world.programs }
+  let used := ctx.usedBefore + (ctx.ticksStart - st.ticks)
+  let proposal : Proposal :=
+    { principal := ctx.principal
+      intent := ctx.intent
+      roots := st.roots
+      writes := st.writes
+      turn := w.height + 1
+      programs := st.programs
+      laws := st.laws
+      absent := st.absent
+      creates := st.creates }
+  let base := entryBase ctx used
+  let refuse := fun (reason : String) =>
+    let cls := if st.roots.isEmpty && !w.objects.contains ctx.object then "unknownObject" else "evaluation"
+    let (w', r) := commit w { proposal with writes := [], creates := [] } base
+      (some { cls, reason := some reason, object := if cls == "unknownObject" then some ctx.object else none })
+    (w', turnReply r)
+  match result with
+  | .error (.request message) => if ctx.delivery.isSome || ctx.resumes.isSome then return refuse message else throw message
+  | .error (.evaluation reason) => return refuse reason
+  | .error (.suspend sp si patience checkpoint) =>
+    let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
+      ("argument", dataJson ctx.argument),
+      ("checkpoint", Json.mkObj [("packetSha256", toJson checkpoint.packetSha256),
+        ("tokens", Delvetalk.Turn.tokensJson checkpoint.tokens),
+        ("digest", toJson (Delvetalk.Turn.tokensDigest checkpoint.tokens))]),
+      ("roots", rootsJson st.roots), ("absent", toJson st.absent),
+      ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
+      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
+      ("programs", Json.arr (st.programs.toArray.map fun (id, (src, mig)) => Json.mkObj
+        [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
+      ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
+      ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
+      ("offers", toJson st.offers)] ++
+      (if st.violation.isSome then [("violation", toJson st.violation)] else []))
+    let outcome := Json.mkObj [("tag", toJson "suspended"),
+      ("slot", Json.mkObj [("principal", toJson sp), ("intent", toJson si)]),
+      ("deadline", toJson (w.clock + patience)), ("activity", activity)]
+    let (w', entry) := push w (identityKey ctx.principal ctx.intent)
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots),
+        ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)]) []
+    return (w', turnReply (reply entry))
+  | .ok value =>
+    match st.violation with
+    | some id =>
+      let (w', r) := commit w { proposal with writes := [], creates := [] } base
+        (some { cls := "requiredAbsence", object := some id })
+      return (w', turnReply r)
+    | none =>
+    let offered := if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]
+    let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
+      (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends)
+    let reply := turnReply r
+    -- The texts leave on the reply only; the journal keeps their count.
+    return (w', if st.offers.isEmpty then reply else reply.setObjVal! "offers"
+      (Json.arr (st.offers.toArray.map fun t => Json.mkObj [("principal", toJson ctx.principal), ("text", toJson t)])))
+
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing, except for a delivery, which must be consumed. -/
 def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String (World × Json) := do
   if let some r := retainedTurn w req then return (w, r)
   let ledger := how.ledger.getD ((w.objects[req.object]?).map (·.chain) |>.getD Ledger.start)
-  let requested ← match Delvetalk.Turn.budgets req.limits with
+  let ticks ← match Delvetalk.Turn.budgets req.limits with
     | .ok b => pure b.ticks
     | .error e => throw e
-  let ticks := requested
-  let init : TurnState := { world := w, principal := req.principal, intent := req.intent, ticks := 1000000, limits := req.limits }
-  let (result, st) := (runMethod 0 req.object req.method req.argument "" |>.run).run { init with ticks }
-  let w := { w with compiled := st.world.compiled, programs := st.world.programs }
-  let used := ticks - st.ticks
-  let proposal : Proposal := { principal := req.principal, intent := req.intent, roots := st.roots, writes := st.writes, turn := w.height + 1, programs := st.programs, laws := st.laws }
-  let base := [("turnRequest", toJson req.digest), ("ticksUsed", toJson used), ("ledger", ledger.json)] ++
-    (how.delivery.map fun (id, sender) => [("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]).getD []
-  let refuse := fun (reason : String) =>
-    let cls := if st.roots.isEmpty && !w.objects.contains req.object then "unknownObject" else "evaluation"
-    let (w', r) := commit w { proposal with writes := [] } base
-      (some { cls, reason := some reason, object := if cls == "unknownObject" then some req.object else none })
-    (w', turnReply r)
-  match result with
-  | .error (.request message) => if how.delivery.isSome then return refuse message else throw message
-  | .error (.evaluation reason) => return refuse reason
-  | .ok value =>
-    let offered := if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]
-    let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
-      (sendsJson w req.principal req.intent ledger used st.sends)
-    let reply := turnReply r
-    -- The texts leave on the reply only; the journal keeps their count.
-    return (w', if st.offers.isEmpty then reply else reply.setObjVal! "offers"
-      (Json.arr (st.offers.toArray.map fun t => Json.mkObj [("principal", toJson req.principal), ("text", toJson t)])))
+  let init : TurnState := { world := w, principal := req.principal, intent := req.intent, ticks, limits := req.limits }
+  let (result, st) := (runMethod 0 req.object req.method req.argument "" |>.run).run init
+  let ctx : Ctx :=
+    { principal := req.principal
+      intent := req.intent
+      object := req.object
+      method := req.method
+      argument := req.argument
+      digest := req.digest
+      ledger := ledger
+      delivery := how.delivery
+      ticksStart := ticks }
+  finishTurn w ctx result st
 
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   runTurnWith w req {}
+
+/-! ## Resuming suspended turns -/
+
+inductive Resume where
+  | reply (entry : Json)
+  | timedOut
+
+def computationParts : Ty → Option (Ty × Ty × Ty)
+  | .arrow _ _ _ c => computationParts c
+  | .computation p r a => some (p, r, a)
+  | _ => none
+
+def strings (j : Option Json) : List String :=
+  ((j.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun a => a.getStr?.toOption
+
+/-- Continue the activity a suspension entry journaled. The turn's roots are
+    re-validated first: if anything it read or required absent has moved, the whole
+    turn is refused `staleRoot` and journaled under its original identity. -/
+def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
+  let hash ← sus.getObjValAs? String "hash"
+  let identity ← sus.getObjVal? "identity"
+  let principal ← identity.getObjValAs? String "principal"
+  let intent ← identity.getObjValAs? String "intent"
+  let outcome ← sus.getObjVal? "outcome"
+  let act ← outcome.getObjVal? "activity"
+  let object ← act.getObjValAs? String "object"
+  let method ← act.getObjValAs? String "method"
+  let argument ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
+  let roots ← parseRoots (← act.getObjVal? "roots")
+  let absent := strings (act.getObjVal? "absent").toOption
+  let ticks ← natField act "ticks"
+  let ledger ← ledgerOf (← sus.getObjVal? "ledger")
+  let delivery ← match sus.getObjVal? "delivery" with
+    | .ok d => pure (some (← d.getObjValAs? String "id", ← d.getObjVal? "from"))
+    | .error _ => pure none
+  let ctx : Ctx :=
+    { principal := principal
+      intent := intent
+      object := object
+      method := method
+      argument := argument
+      digest := ← sus.getObjValAs? String "turnRequest"
+      ledger := ledger
+      delivery := delivery
+      resumes := some hash
+      usedBefore := ← natField sus "ticksUsed"
+      ticksStart := ticks }
+  let stale? := (roots.find? fun (id, v) => (w.objects[id]?).map (·.version) != some v).map (·.1)
+    <|> absent.find? fun id => w.objects.contains id
+  if let some id := stale? then
+    let stalled : Proposal :=
+      { principal := principal
+        intent := intent
+        roots := roots
+        writes := []
+        turn := w.height + 1
+        absent := absent }
+    let (w', r) := commit w stalled (entryBase ctx ctx.usedBefore) (some { cls := "staleRoot", object := some id })
+    return (w', turnReply r)
+  let writes ← parseWrites (← act.getObjVal? "writes")
+  let sends ← ((← (← act.getObjVal? "sends").getArr?).toList.mapM fun s => do
+    return (← s.getObjValAs? String "to", ← s.getObjValAs? String "method",
+      ← decodeData Limits.dataDepth (← s.getObjVal? "argument")))
+  let creates ← ((← (← act.getObjVal? "creates").getArr?).toList.mapM fun r => do
+    let id ← r.getObjValAs? String "object"
+    let seed ← r.getObjVal? "seed"
+    let (o, sources) ← buildObject (← r.getObjVal? "compile") seed (r.getObjVal? "read").toOption
+      (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+    return (id, ({ object := o, sources, seed } : CreateRec)))
+  let programs ← ((← (← act.getObjVal? "programs").getArr?).toList.mapM fun r => do
+    return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
+  let laws ← ((← (← act.getObjVal? "laws").getArr?).toList.mapM fun r => do
+    return (← r.getObjValAs? String "object", ← r.getObjValAs? String "law"))
+  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← act.getObjVal? "checkpoint")
+  -- The digest is the store's own, never the token's.
+  let checkpoint := { checkpoint with digest := Delvetalk.Turn.tokensDigest checkpoint.tokens }
+  let init : TurnState :=
+    { world := w
+      roots := roots
+      writes := writes
+      principal := principal
+      intent := intent
+      sends := sends
+      programs := programs
+      laws := laws
+      ticks := ticks
+      offers := strings (act.getObjVal? "offers").toOption
+      creates := creates
+      absent := absent
+      violation := (act.getObjValAs? String "violation").toOption
+      awaited := strings (act.getObjVal? "awaited").toOption
+      awaits := ← natField act "awaits"
+      limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
+  let action : M Data := do
+    let s ← get
+    let some obj := s.world.objects[object]? | evaluation s!"unknown object {object}"
+    let compiled ← compiledMethod obj method
+    let some (_, responseType, _) := computationParts compiled.type | evaluation "the method is not an activity"
+    let response ← match kind with
+      | .reply e => respond compiled.bounds responseType "reply" [.record [("receipt", receiptData e)]]
+      | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
+    let b ← budgetsNow
+    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint response b)
+    drive 0 object compiled next 0
+  let (result, st) := action.run.run init
+  finishTurn w ctx result st
+
+/-- The first suspended activity that can go on: its slot settled, or its deadline passed. -/
+def pickResumable (w : World) : Option (Json × Resume) :=
+  w.suspended.findSome? fun s =>
+    let outcome := (s.getObjVal? "outcome").toOption.getD Json.null
+    let slot := (outcome.getObjVal? "slot").toOption.getD Json.null
+    match (slot.getObjValAs? String "principal").toOption, (slot.getObjValAs? String "intent").toOption,
+        (outcome.getObjValAs? Nat "deadline").toOption with
+    | some sp, some si, some deadline =>
+      match settled w sp si with
+      | some e => some (s, .reply e)
+      | none => if w.clock > deadline then some (s, .timedOut) else none
+    | _, _, _ => none
+
+/-- Resume everything that can be resumed, oldest first; resumed turns may settle
+    other slots, which the next pass picks up. -/
+def settle (w : World) : Except String (World × Array Json) := do
+  let mut w := w
+  let mut out : Array Json := #[]
+  for _ in [0:Limits.maxResumesPerCall] do
+    let some (s, kind) := pickResumable w | break
+    let (w', r) ← resumeOne w s kind
+    w := w'
+    out := out.push r
+  return (w, out)
 
 /-- Run the oldest pending delivery as a turn of its sender's principal. -/
 def deliverOne (w : World) (d : Json) : Except String (World × Json) := do

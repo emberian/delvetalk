@@ -21,13 +21,13 @@ def maxRoots : Nat := 64
 def maxWrites : Nat := 64
 def maxEditsPerWrite : Nat := 256
 /-- Compressed `dataJson` of one object's state. -/
-def maxStateBytes : Nat := 65536
+def maxStateBytes : Nat := 262144
 /-- One compressed journal line. -/
 def maxEntryBytes : Nat := 1048576
 def maxJournalEntries : Nat := 1000000
 def maxJournalBytes : Nat := 268435456
 def maxHistoryLimit : Nat := 100
-def dataDepth : Nat := 64
+def dataDepth : Nat := 8192
 /-- Nested `call` depth inside one turn. -/
 def maxCallDepth : Nat := 8
 /-- Plans answered in one turn, across all nested calls. -/
@@ -50,6 +50,21 @@ def sendsPerTurn : Nat := 32
 def maxPending : Nat := 4096
 /-- Ticks of one turn: the default and the ceiling a request may ask for (the kernel's own cap). -/
 def maxTurnTicks : Nat := 1000000
+/-- Seed state of a created object, compressed wire bytes. -/
+def maxSeedBytes : Nat := 262144
+/-- Objects one turn may create. -/
+def createsPerTurn : Nat := 8
+/-- Suspended activities waiting on one object, and in the whole world. -/
+def pendingActivitiesPerObject : Nat := 8
+def maxSuspended : Nat := 4096
+/-- Awaits one turn may perform, across its suspensions. -/
+def awaitsPerTurn : Nat := 8
+/-- Largest patience of an await, in clock units. -/
+def maxPatience : Nat := 1000000
+/-- Compressed checkpoint tokens a suspension may journal. -/
+def maxCheckpointBytes : Nat := 524288
+/-- Suspended activities one settling pass resumes. -/
+def maxResumesPerCall : Nat := 1024
 /-- Source text of a package offered to `reprogram`. -/
 def maxPackageBytes : Nat := 32768
 /-- Law text of an `amend`, and the clauses in it. -/
@@ -146,6 +161,10 @@ structure World where
   pending : Array Json := #[]
   /-- Memory only: prepared reprograms by `programKey`. -/
   programs : Std.HashMap String Program := {}
+  /-- The logical clock, moved only by `world-advance` entries. -/
+  clock : Nat := 0
+  /-- Suspension entries still waiting, in journal order. -/
+  suspended : Array Json := #[]
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress
