@@ -109,7 +109,7 @@ private theorem bind_success {α β : Type} {first : Except String α}
       cases success
   | ok value =>
       rw [computed] at success
-      exact ⟨value, computed, success⟩
+      exact ⟨value, rfl, success⟩
 
 /-- Successful checkpoint admission uses the actual parser, rejects an occupied
     index key, and performs exactly the same remember operation as live admission. -/
@@ -126,10 +126,15 @@ theorem checkedAppend_success (state final : State) (entry : Json)
       cases validated
       cases fresh : state.index[key]? with
       | none =>
+          rw [fresh] at success
+          change Except.ok (remember state key entry state.base state.head) = Except.ok final at success
           have output : remember state key entry state.base state.head = final := by
-            simpa [fresh] using success
-          exact ⟨key, keyed, fresh, output.symm⟩
-      | some prior => simp [fresh] at success
+            exact Except.ok.inj success
+          exact ⟨key, rfl, fresh, output.symm⟩
+      | some prior =>
+          rw [fresh] at success
+          change (Except.error "duplicate checkpoint receipt identity" : Except String State) = .ok final at success
+          cases success
 
 /-- A successful checked checkpoint append preserves the real receipt index. -/
 theorem indexCorrect_checkedAppend (state final : State) (entry : Json)

@@ -2,12 +2,14 @@
 import copy
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import composite_offers
 import source_offers
 import transaction_intake
+import town_cards
 
 ROOT = {'law': ['maker'], 'protocol': {'commands': {}}, 'state': {'count': 7}, 'version': 3}
 
@@ -77,6 +79,48 @@ class SourceOfferCapture(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'same exact owner'):
             source_offers.capture_descriptor({'object': 'editor', 'root': ROOT},
                 {'editor': {**ROOT, 'version': 4}}, descriptor())
+
+    def test_normal_town_card_discovers_and_resolves_source_plan(self):
+        def wire(value):
+            if isinstance(value, str): return {'tag': 'label', 'value': value}
+            if type(value) is bool: return {'tag': 'boolean', 'value': value}
+            if type(value) is int: return {'tag': 'natural', 'value': str(value)}
+            return {'tag': 'record', 'fields': [{'name': key, 'value': wire(child)} for key, child in value.items()]}
+        source = descriptor()
+        owner = copy.deepcopy(ROOT)
+        owner['protocol']['viewProgram'] = {'profile': town_cards.projection.DATA_OFFERS_PROFILE}
+        raw = wire({'title': 'Workshop', 'prose': 'Submit a variation.', 'actions': {}, 'offers': {'submit': source}})
+        raw['fields'].append({'name': 'children', 'value': {'tag': 'variant', 'label': 'nil', 'payload': wire({})}})
+        pins = {'.lake/build/bin/delvetalk-compiled': 'framing-test'}
+        view = {'object': 'editor', 'root': owner, 'mode': 'projection', 'rawData': raw,
+                'data': {'title': 'Workshop', 'prose': 'Submit a variation.', 'actions': {}},
+                'actions': {}, 'children': [], 'offers': {'submit': source},
+                'runtimeProfile': {'profile': 'compiled', 'files': pins}, 'runtimeSha256': 'framing-test'}
+        issuer, actor = 'did:plc:' + 'a' * 24, 'did:plc:' + 'b' * 24
+        roots = {'editor': owner, 'target': copy.deepcopy(ROOT), 'factory/first': copy.deepcopy(ROOT)}
+        with tempfile.TemporaryDirectory() as directory:
+            book = town_cards.CardBook.create(Path(directory) / 'book', issuer_did=issuer,
+                world_id='urn:test:source-offer', runtime={'name': 'compiled', 'files': pins})
+            captured = book.capture(view, 'ordinary', roots=roots)
+            self.assertIn('delvetalk ordinary submit', captured['body'])
+            self.assertEqual(captured['card']['actions'][0]['command'], 'submit')
+            self.assertEqual(set(captured['offers']), {'a1'})
+            missing = book.capture(view, 'missing')
+            self.assertFalse(missing['card']['actions'][0]['available'])
+            self.assertNotIn('offers', missing)
+            publication = {'uri': 'at://' + issuer + '/' + town_cards.FEED + '/card', 'cid': 'card-cid'}
+            record = {'$type': town_cards.FEED, 'text': captured['body']}
+            book.bind('ordinary', publication, lambda uri, cid: copy.deepcopy(record))
+            roots['target']['state']['count'] = 999
+            reply = {'$type': town_cards.FEED, 'text': 'delvetalk ordinary submit\nsource: exact bytes',
+                     'reply': {'parent': publication}}
+            reply_source = {'uri': 'at://' + actor + '/' + town_cards.FEED + '/reply', 'cid': 'reply-cid'}
+            payload, _ = book.resolve(reply, actor, reply_source,
+                lambda uri, cid: copy.deepcopy(record), [issuer])
+            self.assertEqual(payload['op'], 'transaction')
+            self.assertEqual(payload['calls'][0]['input']['proposal']['source'], 'exact bytes')
+            self.assertEqual(payload['calls'][0]['input']['migration'], {'count': 7})
+            transaction_intake.validate(payload)
 
     def test_reprogram_and_law_steps_are_exact_native_shapes(self):
         offer, _ = self.capture()

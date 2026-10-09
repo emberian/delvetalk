@@ -284,6 +284,8 @@ def render_card(alias, card, view, panels=(), display_names=None):
         lines.append(word + ': ' + canonical(action['label']))
         if not action.get('available') or action.get('inspectOnly'):
             lines.append('Look only; no spell offered.')
+            if action.get('reason'):
+                lines.append(action['reason'])
             continue
         tokens = {name: token for token, name in field_words(action).items()}
         lines.extend('  ' + _field(f, tokens[f['name']]) for f in action['fields'])
@@ -386,20 +388,37 @@ class CardBook:
         with self._db() as db:
             return [row[0] for row in db.execute('SELECT alias FROM cards ORDER BY rowid')]
 
-    def capture(self, view, alias=None):
+    def capture(self, view, alias=None, *, roots=None):
         """Retain a captured view; never read a world or publish a post."""
         metadata = self.metadata()
         view = copy.deepcopy(view)
         projection.assert_runtime(view, metadata['runtime'])
         card = affordances.card(view)
+        available = source_offers.capture_available(view,
+            {view['object']: view['root']} if roots is None else roots)
+        offers = {}
+        for key in sorted(set(available['offers']) | set(available['unavailable'])):
+            identity = 'a' + str(len(card['actions']) + 1)
+            if key in available['offers']:
+                offer = available['offers'][key]
+                action = {**composite_offers.action(offer), 'id': identity}
+                offers[identity] = offer
+            else:
+                detail = available['unavailable'][key]
+                action = {'id': identity, 'command': detail['command'], 'label': detail['label'],
+                          'available': False, 'fields': [], 'reason': detail['reason']}
+            card['actions'].append(action)
         panels = _panels(view, metadata['runtime'])
         object_ref = references.object_reference(metadata['worldId'], view['object'])
         def build(name):
             body = render_card(name, card, view, panels, metadata['displayNames'])
-            return {'format': 'delvetalk-town-card-v1', 'alias': name, 'view': view,
-                    'card': card, 'runtime': metadata['runtime'],
-                    'objectRef': object_ref, 'panels': panels,
-                    'body': body, 'textSha256': sha(body)}
+            result = {'format': 'delvetalk-town-card-v1', 'alias': name, 'view': view,
+                      'card': card, 'runtime': metadata['runtime'],
+                      'objectRef': object_ref, 'panels': panels,
+                      'body': body, 'textSha256': sha(body)}
+            if offers:
+                result['offers'] = offers
+            return result
         return self._capture(alias, build)
 
     def capture_source_offer(self, view, roots, key, *, alias=None):
@@ -571,8 +590,12 @@ class CardBook:
                     raise ValueError('word is not offered by this captured card')
                 parsed = {**parsed, 'offeredWord': parsed['action'], 'action': chosen['id'],
                           'fields': _spell_fields(chosen, parsed['fields'])}
-            request = affordances.request(captured['view'], parsed['action'], author,
-                                          'delve:' + source['uri'], parsed['fields'])
+            if parsed['action'] in captured.get('offers', {}):
+                request = composite_offers.request(captured['offers'][parsed['action']], author,
+                    'delve:' + source['uri'], parsed['fields'])
+            else:
+                request = affordances.request(captured['view'], parsed['action'], author,
+                                              'delve:' + source['uri'], parsed['fields'])
         elif captured['format'] == 'delvetalk-town-composite-card-v1':
             action = composite_offers.action(captured['offer'])
             if parsed['action'] not in ('a1', action['command']):

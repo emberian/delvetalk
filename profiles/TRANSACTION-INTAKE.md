@@ -8,7 +8,7 @@
 
 Replace placeholders with the complete root and fixed custodian reference. Each read has exactly `expected` or `expectedRootRef`. Bounds: 1–16 reads, 1–32 calls, 64 KiB after expansion. Reads/targets and the author repository must be enrolled, except `expected:null` may name a direct child of an enrolled object. This asserts initial absence for [governed allocation](ALLOCATION.md); later calls may use the staged child. Only committed children become enrolled; enrollment grants no authority.
 
-Invocation uses `{object,command,input}` or `inputFrom`; optional `op:"invoke"`. Reprogramming uses `{op:"reprogram",object,protocol,state}` or `inputFrom`. Indices select prior pure results; program candidates contain protocol/state. Results convey data, never authority. Remote create/law and principal/intent overrides refuse.
+Invocation uses `{object,command,input}` or `inputFrom`; optional `op:"invoke"`. Reprogramming uses `{op:"reprogram",object,protocol,state}` or `inputFrom`. Indices select prior pure results; program candidates contain protocol/state. Observation uses `{op:"observe",object}`. Law revision uses exactly `{op:"law",object,law}` with an explicit law record or array; it checks current staged management authority and both applicable law guards. It returns null and supplies no invocation provenance. Results convey data, never authority. Remote create and principal/intent overrides refuse.
 
 Lean checks current staged law, complete initial read set, exact roots and execution; any refusal rolls back all calls. Standard custody selects `transactions`; operator-configured compiled custody selects its pinned compiled host. Sources cannot override runtime. Pending recovery retains that admission profile.
 

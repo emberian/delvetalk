@@ -59,19 +59,14 @@ def expand (state : State) : Except String Json :=
 -- arrays/scalars remain atomic. Traversal may scale with current data, never with
 -- the receipt history kept separately below.
 partial def changes (before after : Json) (path : List String := []) : Array Json := Id.run do
+  if before == after then return #[]
   let location := .arr (path.map Json.str).toArray
   match before, after with
   | .obj old, .obj next =>
     let mut result := #[]
     for (key, value) in next.toList do
       match old[key]? with
-      | some prior =>
-        -- Prune unchanged object children before constructing their paths. The
-        -- outer object is already being compared by this traversal.
-        match prior, value with
-        | .obj _, .obj _ =>
-          if prior != value then result := result ++ changes prior value (path ++ [key])
-        | _, _ => result := result ++ changes prior value (path ++ [key])
+      | some prior => result := result ++ changes prior value (path ++ [key])
       | none => result := result.push (obj [
           ("path", .arr ((path ++ [key]).map Json.str).toArray), ("value", value)])
     for (key, _) in old.toList do
@@ -79,9 +74,7 @@ partial def changes (before after : Json) (path : List String := []) : Array Jso
         result := result.push (obj [
           ("path", .arr ((path ++ [key]).map Json.str).toArray), ("remove", .bool true)])
     return result
-  | _, _ =>
-    if before == after then return #[]
-    return #[obj [("path", location), ("value", after)]]
+  | _, _ => return #[obj [("path", location), ("value", after)]]
 
 -- The selected receipt is only an optimization of handleWith's search. Its
 -- own envelope checks and full Json equality still decide retry/collision.

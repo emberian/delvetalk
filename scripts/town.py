@@ -50,8 +50,8 @@ class Town:
             raise ValueError('cardbook already belongs to another operator custody directory')
         return config, book
 
-    def _views(self, object_ids, expected_runtime):
-        snapshot = world.snapshot(self.clerk.database)
+    def _views(self, object_ids, expected_runtime, *, snapshot=None):
+        snapshot = world.snapshot(self.clerk.database) if snapshot is None else snapshot
         views = []
         for object_id in object_ids:
             root = snapshot['objects'].get(object_id)
@@ -67,7 +67,9 @@ class Town:
             config, book = self._configuration()
             if object_id not in config['objects']:
                 raise ValueError('object is not enrolled in this clerk')
-            captured = book.capture(self._views([object_id], book.metadata()['runtime'])[0], alias=alias)
+            snapshot = world.snapshot(self.clerk.database)
+            captured = book.capture(self._views([object_id], book.metadata()['runtime'], snapshot=snapshot)[0],
+                alias=alias, roots=snapshot['objects'])
             return {'status': 'prepared', **captured}
 
     def capture_offer(self, object_id, key, *, alias=None):
@@ -120,7 +122,7 @@ class Town:
                     raise ValueError(view.get('reason', 'Child view is unavailable.'))
             except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
                 return unavailable('view-unavailable', str(error)[:2000])
-            captured = book.capture(view, alias=alias)
+            captured = book.capture(view, alias=alias, roots=snapshot['objects'])
             return {'status': 'prepared', **selected, 'card': captured}
 
     def bind(self, alias, uri, cid):
@@ -198,13 +200,19 @@ class Town:
                                                     expected_runtime=book.metadata()['runtime']))
                     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                         entry['notices'].append({'object': target, 'reason': 'view-unavailable', 'detail': str(error)[:2000]})
+                entry['offerRoots'] = {}
+                for view in entry['views']:
+                    capture = town_cards.source_offers.capture_available(view, snapshot['objects'])
+                    entry['offerRoots'][view['object']] = view['root']
+                    for offer in capture['offers'].values():
+                        entry['offerRoots'].update(offer['reads'])
                 entry['aliases'] = ['reply-' + str(entry['sequence']) + '-' + str(n + 1) for n in range(len(entry['views']))]
                 save(path, entry)  # Capture exact views before allocating any follow-up card.
             cards = []
             notices = list(entry.get('notices', []))
             for view, alias in zip(entry['views'], entry['aliases']):
                 try:
-                    cards.append(book.capture(view, alias=alias))
+                    cards.append(book.capture(view, alias=alias, roots=entry.get('offerRoots')))
                 except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                     notices.append({'object': view['object'], 'reason': 'card-unavailable', 'detail': str(error)[:2000]})
             prepared = book.prepare_outcome(receipt['reply'])

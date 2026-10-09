@@ -87,6 +87,30 @@ class TransactionIntake(unittest.TestCase):
         self.assertEqual(missing['reply']['data'], 'transaction target missing from read set')
         self.assertEqual(self.clerk.snapshot('a')['root'], self.a)
 
+    def test_law_step_current_authority_stale_rollback_and_exact_retry(self):
+        payload = {'op': 'transaction', 'reads': {'a': {'expected': self.a}, 'b': {'expected': self.b}},
+            'calls': [{'object': 'a', 'command': 'add', 'input': {'amount': 3}},
+                      {'op': 'law', 'object': 'b', 'law': []}]}
+        receipt = self.receive(payload, 'law-batch')
+        self.assertEqual(receipt['request']['principal'], delve.DID)
+        self.assertEqual(receipt['reply']['kind'], 'committed', receipt)
+        current_a, current_b = self.clerk.snapshot('a')['root'], self.clerk.snapshot('b')['root']
+        self.assertEqual(current_a['state']['count'], 3)
+        self.assertEqual(current_b['law'], [])
+        self.assertEqual(current_b['state'], self.b['state'])
+        self.assertEqual(current_b['version'], self.b['version'] + 1)
+        self.assertIsNone(receipt['reply']['data']['results'][1])
+        self.assertEqual(self.clerk.receive(receipt['source']['uri'], receipt['source']['cid']), receipt)
+        denied = copy.deepcopy(payload)
+        denied['reads'] = {'a': {'expected': current_a}, 'b': {'expected': current_b}}
+        denied['calls'][1]['law'] = [delve.DID]
+        refusal = self.receive(denied, 'current-law-denies')
+        self.assertEqual(refusal['reply']['kind'], 'refused')
+        self.assertEqual(self.clerk.snapshot('a')['root'], current_a)
+        self.assertEqual(self.clerk.snapshot('b')['root'], current_b)
+        stale = self.receive(payload, 'law-stale')
+        self.assertEqual(stale['reply']['data'], 'stale read root')
+
     def test_bounded_shape_enrollment_and_forged_principals(self):
         for mutate in (lambda x: x.update(principal=delve.DID), lambda x: x.update(intent='forged'),
                        lambda x: x['calls'][0].update(principal=delve.DID),

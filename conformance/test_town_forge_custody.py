@@ -22,7 +22,8 @@ AUTHOR = service.clerk.delve.DID
 class ForgeCustodyTests(unittest.TestCase):
     def test_catalog_is_exact_and_all_protocol_bodies_are_pinned(self):
         expected = ('protocols/source-desk/protocol.json', 'protocols/town-forge/source-desk.json',
-                    'protocols/stateful-workshop/source-desk.json')
+                    'protocols/stateful-workshop/source-desk.json', 'protocols/editor/candidate.json',
+                    'protocols/spween-handler-workshop/source-desk.json')
         self.assertEqual(desk.SOURCE_DESK_PROTOCOL_PATHS, expected)
         pins = desk.execution_profile('compiled')['files']
         for path in expected:

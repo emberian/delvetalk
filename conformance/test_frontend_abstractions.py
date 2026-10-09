@@ -75,7 +75,7 @@ class FrontendAbstractions(unittest.TestCase):
         self.assertEqual(self.execute('answer', source), {'tag': 'natural', 'value': '5'})
 
     def test_reversible_git_pin_verification(self):
-        result = subprocess.run(['python3', 'scripts/check_capsules.py'], cwd=ROOT,
+        result = subprocess.run(['python3', 'scripts/check_source_pins.py'], cwd=ROOT,
                                 text=True, capture_output=True, check=True)
         self.assertIn('identities match', result.stdout)
 

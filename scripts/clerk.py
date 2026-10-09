@@ -32,7 +32,7 @@ FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
 TRANSPORT_PIN_PATHS = ['scripts/worker.py', 'scripts/process_custody.py', 'scripts/manual_intake.py', 'scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py',
-                       'scripts/town_cards.py', 'scripts/adoption.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
+                       'scripts/town_cards.py', 'scripts/source_offers.py', 'scripts/composite_offers.py', 'scripts/adoption.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
                        'scene/room.py', 'scene/lower.py', 'scene/projection.py']
 UNCHANGED = object()
 RUNTIME_CHOICES = tuple(world.PROFILES)

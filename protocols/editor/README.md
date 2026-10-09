@@ -38,3 +38,24 @@ late completion, target drift, failed compilation, rebasing, authenticated
 adoption, exact history restoration, old receipt retry and another successful
 revision. These are local receiving-path examples; they make no publication or
 remote identity claim.
+
+The current source emits `delvetalk-obend-data-offers-v1`: ordinary typed menu
+content plus visible source-authored transaction recipes. `make` also rebases by
+allocating a fresh candidate and capturing a fresh baseline. `submit` asks for
+source language (@2 or @3), exact Bend text and examples; it submits an existing
+inline source proposal and copies the captured target state. No source-store write
+or compilation occurs while preparing a card. `review` and `adopt` use authentic
+prior results. The source chooses visibility, references, calls and substitutions;
+`scripts/source_offers.py` interprets those recipes against one snapshot. This
+competing workflow language is being replaced by Bend preparation under
+[the source-ownership design](../../docs/design/BEND.md). Every
+offer also retains the exact source owner's root, so changed availability stales
+an earlier card.
+
+Portal captures these same recipes. For town, use `Town.capture_offer(object,key)`
+or `scripts/town.py --clerk-state STATE capture editor --offer make`. The cardbook
+retains the complete composite offer; later replies cannot supply another plan or
+silently refresh its roots. Publication remains a separate authorized action.
+Source fields are bounded to 32 KiB and examples to 16 KiB; the complete receiving
+request must still fit 64 KiB. Missing dependencies appear unavailable. Current
+laws decide whether the actual replying author may perform every step.

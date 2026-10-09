@@ -49,7 +49,7 @@ inside open Self/Super layers; synthesized extension types retain abstract row t
 Prototypes remain executable values, not serializable package data.
 
 The repair is recorded as exact reversible edits in `spec/upstream.json`, tied to
-the original upstream Git commit and SHA-256. `scripts/check_capsules.py` reconstructs
+the original upstream Git commit and SHA-256. `scripts/check_source_pins.py` reconstructs
 and verifies those original bytes without retaining a duplicate archive. Core rules
 and the checker are unchanged. A provenance-establishing constructor or reflective
 `self` inside the recursive knot remains a separate design.

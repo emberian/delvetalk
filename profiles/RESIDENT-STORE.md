@@ -55,8 +55,9 @@ user requests retain their existing 64 KiB bound. The frame bound is not a limit
 on checkpoint/export file size.
 
 `ResidentStoreProofs.lean` connects the actual index selection and `remember`
-helper to first-match ordered history under valid fresh keys, and proves ordered
-export/history-count preservation. It does not establish arbitrary admission
+helper to first-match ordered history under valid fresh keys, proves ordered
+export/history-count preservation, and proves that successful native checkpoint
+reconstruction rebuilds that same index invariant. It does not establish arbitrary admission
 functions independent of receipts: the selected host transitions must have that
 property. The message registry initializes only before objects exist and before
 a registry exists; it does not consult receipt history.
