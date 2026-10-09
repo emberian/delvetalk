@@ -62,7 +62,8 @@ abbrev M := ExceptT Abort (StateM TurnState)
 
 Session ops (`stepWorld`): `world-open {path, library?, principal?, libraryLaw?}` (replay; with `library` it seals
 that directory, journals it on first open or refuses by name if the bytes differ from the journal's pin), `world-create`, `world-turn`, `world-propose`,
-`world-view {principal, object}`, `world-receipt {principal, identity}`, `world-history`, `world-status`,
+`world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
+`world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
@@ -98,7 +99,7 @@ turn number unchanged and needs no ordering against judging.) Reprogram `source`
 Optional top-level fields, all inside the hash: `absent [id]` (objects required absent), `turnRequest`
 (digest of the original turn request), `ticksUsed`, `ledger {depth, work, storage}`, `result` (Data wire),
 `sends [{id,to,method,argument,ledger}]`, `delivery {id, from}`, `resumes` (hash of the suspension it
-continues), `offers` (count).
+continues), `offers [{to, text}]` (the rendered offers, retained; see 5.10).
 
 Outcomes:
 
@@ -156,7 +157,7 @@ Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes` in Ops):
   `sendsPerTurn`, `maxPending` checked when the Plan is answered.
 - `creates : (id, CreateRec)` : built in-turn by `buildCreated` (compile, evaluate `initial()`, overlay the
   partial seed with `mergeSeed`, `makeObject`), installed by `commit` via `Judged.creations`.
-- `offers : List String` : rendered `offer` documents; the reply carries texts, the journal a count.
+- `offers : List (to, text)` : rendered `offer` documents with their addressees; the journal retains them.
 - `ticks` : remaining machine ticks (`spend`); `plans`, `awaited`, `awaits` : counters.
 - Ledger : `Ctx.ledger` (object `chain` at start, or the delivery's inherited one). A send's ledger is
   `{depth-1, work - used, storage - bytes added}` (saturating), computed in `sendsJson` only for an
@@ -248,6 +249,17 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    turn's ticks (records the target as a root; `denied` without read authority, `noCard` without `render`,
    `refused {clause: render}` if it fails). Op `world-card {principal, object}` -> `{status: "card", text, document}`
    (text by `Document.render`), journals nothing.
+10. **The outbound channel.** `offer {to, document}`: `to` "" is the frame's subject. An admitted entry retains
+   `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`), and `world-offers {principal, after?}`
+   answers `{status: "offers", offers [{height, ordinal, identity, text}], more}` (after = journal height,
+   exclusive). A turn's reply carries only the offers addressed to its own principal (`turnReply`, derived from
+   the entry, so a retry returns them identically); receipts in `delivered`, `resumed` and `world-deliver`'s
+   `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
+   {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
+   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root}`, exactly)
+   and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
+   view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
+   ("" = anonymous, public objects only), is `denied` for an object the reader cannot view, and projects each entry.
 
 ## 6. Gotchas
 
@@ -297,6 +309,5 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **Tests**: never run an unfiltered package suite on a loop; `tests.test_replay` and `test_await` each
   take ~12 to 40 s because every `world-create` compiles. `python3 -W error` turns leaked subprocess
   warnings into failures; close hosts in `tearDown`.
-- **Not done**: `publish` and `offer` to a real transport are out of the kernel (`offer` renders
-  text on the reply only); history/receipt reads do not apply `ReadPolicy`; `world-reprogram`/`amend`
-  are gated only by the object's law; foreign worlds (`Reference.world != ""`) are always refused.
+- **Not done**: `publish` is not answered; `world-reprogram`/`amend` are gated only by the object's law;
+  foreign worlds (`Reference.world != ""`) are always refused.

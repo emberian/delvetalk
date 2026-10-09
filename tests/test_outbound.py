@@ -189,6 +189,144 @@ class Time(Reflection):
         self.assertEqual((r["status"], r["result"]), ("admitted", label("timedOut")), r)
 
 
+TELLER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./Document.obend as Document
+record Said:
+  text: String
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits, Said>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+    case _: text
+def offered(to: String, text: String, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.offer({to: to, document: Document.text(text)})):
+    case _: said(context, "told")
+def tell(state: State, input: {to: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  offered(input.to, input.text, context)
+def echo(state: State, input: Said, context: Abi.Context) -> Activity<Plan, Response, String>:
+  offered("", input.text, context)
+def relay(state: State, input: {target: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.send({object: {world: "", object: input.target}, method: "echo", argument: {text: input.text}})):
+    case _: said(context, "sent")
+def waitAndTell(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.await({slot: {principal: "glm", intent: "x"}, patience: 10n})):
+    case _: offered("", "woken", context)
+def stamp(state: State, input: Said, context: Abi.Context) -> Activity<Plan, Response, String>:
+  said(context, input.text)
+def pokeOther(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: "secret-xyz"})}})):
+    case _: poked(input.target)
+def poked(target: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.call({object: {world: "", object: target}, method: "stamp", argument: {text: "stamped"}})):
+    case returned(r): r.result
+    case _: "other"
+"""
+
+
+class Offers(Reflection):
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("teller", TELLER, record(note=label("")))
+
+    def offers(self, principal, after=None):
+        request = dict(op="world-offers", principal=principal)
+        if after is not None:
+            request["after"] = after
+        r = self.host.send(**request)
+        self.assertEqual(r["status"], "offers", r)
+        return [o["text"] for o in r["offers"]]
+
+    def test_an_offer_to_b_in_a_turn_run_by_a_is_readable_by_b_and_not_by_c(self):
+        r = self.turn("teller", "tell", record(to=label("bea"), text=label("for bea")), principal="ann", identity="t-1")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertNotIn("offers", r)                    # not addressed to ann
+        self.assertEqual(r["receipt"]["offers"], [{"to": "bea", "text": "for bea"}])
+        self.assertEqual(self.offers("bea"), ["for bea"])
+        self.assertEqual(self.offers("cid"), [])
+        self.assertEqual(self.offers("ann"), [])
+
+    def test_a_retry_returns_the_same_offer_and_retains_it_once(self):
+        first = self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+        again = self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+        self.assertEqual(first["offers"], [{"principal": "ann", "text": "hello"}])
+        self.assertEqual((again["offers"], again["receipt"]), (first["offers"], first["receipt"]))
+        self.assertEqual(self.offers("ann"), ["hello"])
+        self.reopen()
+        self.assertEqual(self.offers("ann"), ["hello"])
+        height = first["receipt"]["height"]
+        self.assertEqual(self.offers("ann", after=height), [])
+        self.assertEqual(self.host.send(op="world-offers", principal="ann", after="soon")["status"], "error")
+
+    def test_a_delivered_offer_goes_to_its_addressee_not_into_the_reply_that_ran_it(self):
+        self.make("echo", TELLER, record(note=label("")))
+        r = self.turn("teller", "relay", record(target=label("echo"), text=label("echoed")), principal="ann")
+        [delivered] = r["delivered"]
+        self.assertEqual(delivered["status"], "admitted", delivered)
+        self.assertNotIn("offers", delivered)
+        self.assertEqual(self.offers("ann"), ["echoed"])
+
+    def test_a_resumed_turns_offer_goes_to_its_principal_not_to_whoever_settled_the_slot(self):
+        waiting = self.turn("teller", "waitAndTell", principal="kim")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        self.make("other", TELLER, record(note=label("")))
+        settler = self.turn("other", "tell", record(to=label("nobody"), text=label("x")), principal="glm", identity="x")
+        [resumed] = settler["resumed"]
+        self.assertEqual(resumed["status"], "admitted", resumed)
+        self.assertNotIn("offers", settler)
+        self.assertNotIn("offers", resumed)
+        self.assertEqual(self.offers("kim"), ["woken"])
+        self.assertEqual(self.offers("glm"), [])
+
+
+class Projection(Reflection):
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("vault", TELLER, record(note=label("")), read={"principals": ["ann"]})
+        self.make("lamp", TELLER, record(note=label("")))
+
+    def test_a_stranger_reading_a_receipt_sees_the_projection_and_nothing_of_the_state(self):
+        r = self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
+        self.assertEqual(r["status"], "admitted", r)
+        mine = self.host.send(op="world-receipt", principal="ann", identity="poke")
+        self.assertEqual(mine["receipt"], r["receipt"])
+        theirs = self.host.send(op="world-receipt", principal="cid", identity="poke", of="ann")
+        self.assertEqual(theirs["status"], "receipt", theirs)
+        shown = theirs["receipt"]
+        self.assertEqual([w["object"] for w in shown["outcome"]["writes"]], ["lamp"])
+        self.assertEqual(shown["elided"], 2)            # the vault's root and its write
+        self.assertNotIn("result", shown)
+        self.assertNotIn("secret-xyz", json.dumps(theirs))
+        self.assertEqual(shown["hash"], r["receipt"]["hash"])
+
+    def test_a_refusal_shows_a_stranger_its_class_and_root_and_nothing_else(self):
+        stale = self.host.send(op="world-propose", principal="ann", identity="stale",
+                               roots=[{"object": "vault", "version": 7}], writes=[])
+        self.assertEqual(stale["status"], "refused", stale)
+        theirs = self.host.send(op="world-receipt", principal="cid", identity="stale", of="ann")
+        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": "vault"})
+
+    def test_history_is_denied_for_an_object_the_reader_cannot_view_and_elides_the_rest(self):
+        self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
+        self.assertEqual(self.host.send(op="world-history", principal="cid", object="vault")["status"], "denied")
+        history = self.host.send(op="world-history", principal="cid", object="lamp")
+        last = history["entries"][-1]
+        self.assertEqual((last["identity"]["principal"], last["elided"]), ("ann", 2))
+        self.assertNotIn("secret-xyz", json.dumps(history))
+        full = self.host.send(op="world-history", principal="ann", object="vault")
+        self.assertIn("secret-xyz", json.dumps(full))
+        self.assertEqual(self.host.send(op="world-history", object="lamp")["status"], "error")
+
+
 class Settings(Reflection):
     def test_a_named_clock_alone_moves_the_clock_and_confirms_posts(self):
         r = self.host.send(op="world-open", path=self.path, library=self.library(), principal="ember", clock="transport")

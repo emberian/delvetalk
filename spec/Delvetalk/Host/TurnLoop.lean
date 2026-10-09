@@ -93,8 +93,8 @@ structure TurnState where
   laws : List (String × String) := []
   ticks : Nat
   plans : Nat := 0
-  /-- Rendered `offer` documents in order; the receipt carries them, the journal their count. -/
-  offers : List String := []
+  /-- Rendered `offer` documents in order, each with its addressee: the journal retains them. -/
+  offers : List (String × String) := []
   /-- Objects created, and objects the turn required absent (created ones included). -/
   creates : List (String × CreateRec) := []
   absent : List String := []
@@ -621,16 +621,25 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some document := f.lookup "document" | evaluation "malformed offer plan"
     let text ← liftEval (Delvetalk.Document.render document)
     let s ← get
+    -- `to` is a principal; "" is the acting principal (the frame's subject).
+    let to := match (f.lookup "to").bind labelOf with
+      | some t => if t.isEmpty then s.subject else t
+      | none => s.subject
+    if to.utf8ByteSize > Limits.maxPrincipalBytes then evaluation "offer addressee exceeds its byte capacity"
     if s.offers.length ≥ Delvetalk.Document.maxOffersPerTurn
-        || (s.offers.foldl (· + ·.utf8ByteSize) text.utf8ByteSize) > Delvetalk.Document.maxOutputBytes then
+        || (s.offers.foldl (· + ·.2.utf8ByteSize) text.utf8ByteSize) > Delvetalk.Document.maxOutputBytes then
       evaluation "turn exceeds the offer capacity"
-    set { s with offers := s.offers ++ [text] }
+    set { s with offers := s.offers ++ [(to, text)] }
     respond bounds responseType "offered" [emptyRecord]
   | .variant label _ => evaluation s!"plan not supported: {label}"
   | _ => evaluation "plan is not a variant"
 end
 
-/-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply. -/
+def offersJson (offers : List (String × String)) : Json :=
+  Json.arr (offers.toArray.map fun (to, text) => Json.mkObj [("to", toJson to), ("text", toJson text)])
+
+/-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
+    offers the entry retains for the turn's own principal (others are read with `world-offers`). -/
 def turnReply (r : Json) : Json :=
   match r.getObjVal? "receipt" with
   | .error _ => r
@@ -638,7 +647,13 @@ def turnReply (r : Json) : Json :=
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let extra := ["result", "ticksUsed"].filterMap (fun k => (entry.getObjVal? k).toOption.map (k, ·)) ++
       ["slot", "deadline"].filterMap (fun k => (outcome.getObjVal? k).toOption.map (k, ·))
-    Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra)
+    let principal := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+    let mine := (((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).getD #[]).filterMap fun o =>
+      match o.getObjValAs? String "to", o.getObjValAs? String "text" with
+      | .ok to, .ok text => if to == principal then some (Json.mkObj [("principal", toJson to), ("text", toJson text)]) else none
+      | _, _ => none
+    Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
+      (if mine.isEmpty then [] else [("offers", Json.arr mine)]))
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
@@ -755,7 +770,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
       ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
       ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
-      ("offers", toJson st.offers), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
+      ("offers", offersJson st.offers), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes)] ++
       (if st.violation.isSome then [("violation", toJson st.violation)] else []))
     let outcome := Json.mkObj <| [("tag", toJson "suspended"),
@@ -781,14 +796,11 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         (some { cls := "lawRefused", clause := some "noGrant", object := some x.to })
       return (w', turnReply r)
     | none =>
-    let offered := (if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]) ++
+    let offered := (if st.offers.isEmpty then [] else [("offers", offersJson st.offers)]) ++
       (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
       (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends)
-    let reply := turnReply r
-    -- The texts leave on the reply only; the journal keeps their count.
-    return (w', if st.offers.isEmpty then reply else reply.setObjVal! "offers"
-      (Json.arr (st.offers.toArray.map fun t => Json.mkObj [("principal", toJson ctx.principal), ("text", toJson t)])))
+    return (w', turnReply r)
 
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing, except for a delivery, which must be consumed. -/
@@ -923,7 +935,10 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       programs := programs
       laws := laws
       ticks := ticks
-      offers := strings (act.getObjVal? "offers").toOption
+      offers := (((act.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun o =>
+        match o.getObjValAs? String "to", o.getObjValAs? String "text" with
+        | .ok to, .ok text => some (to, text)
+        | _, _ => none
       creates := creates
       absent := absent
       violation := (act.getObjValAs? String "violation").toOption
@@ -1023,7 +1038,10 @@ def deliver (w : World) (limit : Nat) : Except String (World × Json) := do
     let some d := w.pending[0]? | break
     let (w', r) ← deliverOne w d
     w := w'
-    receipts := receipts.push r
+    -- A delivery's offers are its addressees' (`world-offers`), not the caller's of this op.
+    receipts := receipts.push (match r.getObj? with
+      | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "offers"))
+      | .error _ => r)
   return (w, Json.mkObj [("status", toJson "delivered"), ("receipts", Json.arr receipts),
     ("pending", toJson w.pending.size)])
 

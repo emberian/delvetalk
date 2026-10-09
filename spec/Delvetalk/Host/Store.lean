@@ -246,6 +246,8 @@ structure World where
   /-- Source modules by CID, from `module` entries: the journal carries each source once and
       compile inputs name it by `cid`. -/
   modules : Std.HashMap String String := {}
+  /-- Offers admitted turns retained, by addressee: (entry index, ordinal in the entry). -/
+  outbox : Std.HashMap String (Array (Nat × Nat)) := {}
   /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
       repeated creation compile each distinct package once. -/
   builds : Std.HashMap String Built := {}

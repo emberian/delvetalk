@@ -733,7 +733,12 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
             [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
   let sources := (entrySources entry).toOption.getD []
+  -- Offers of an admitted entry are retained for their addressees.
+  let offered := if tagOf entry != "admitted" then #[] else
+    (((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).getD #[]).zipIdx.filterMap fun (o, i) =>
+      (o.getObjValAs? String "to").toOption.map (·, i)
   { w with
+    outbox := offered.foldl (fun box (to, i) => box.insert to ((box.getD to #[]).push (index, i))) w.outbox
     modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
@@ -1312,26 +1317,109 @@ def view (w : World) (j : Json) : Except String Json := do
     return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
+/-- The public projection of a refusal: observed, not committed, the class and the root it
+    names, and nothing else. -/
+def publicRefusal (entry : Json) : Json :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  Json.mkObj [("status", toJson "refused"),
+    ("class", (outcome.getObjVal? "class").toOption.getD (toJson "unknown")),
+    ("root", toJson ((outcome.getObjValAs? String "object").toOption.getD ""))]
+
+/-- A reader may see an object's changes if it may view the object (an object no longer in
+    the world is not viewable). -/
+def viewable (w : World) (reader id : String) : Bool :=
+  match w.objects[id]? with
+  | some o => o.read.permits reader
+  | none => false
+
+/-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else
+    sees a refusal only as its public projection, and any other entry as its chain fields,
+    identity, turn and outcome tag, with the roots and writes of objects it may view; the rest
+    is elided and counted. Results, offers, sends, sources and checkpoints never show. -/
+def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
+  let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+  if owner == reader && !reader.isEmpty then entry
+  else if tagOf entry == "refused" then
+    (publicRefusal entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)
+      |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
+  else
+    let objectOf := fun (x : Json) => (x.getObjValAs? String "object").toOption.getD ""
+    let arr := fun (x : Option Json) => ((x.bind (·.getArr?.toOption)).getD #[])
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let roots := arr (entry.getObjVal? "roots").toOption
+    let writes := arr (outcome.getObjVal? "writes").toOption
+    let shownRoots := roots.filter fun r => viewable w reader (objectOf r)
+    let shownWrites := writes.filter fun x => viewable w reader (objectOf x)
+    let elided := (roots.size - shownRoots.size) + (writes.size - shownWrites.size)
+    Json.mkObj ((["height", "previous", "hash", "identity", "turn"].filterMap fun k =>
+        (entry.getObjVal? k).toOption.map (k, ·)) ++
+      [("roots", Json.arr shownRoots),
+       ("outcome", Json.mkObj ([("tag", toJson (tagOf entry))] ++
+         (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
+       ("elided", toJson elided)])
+
+/-- A request's optional text field, refused by name when present and not text. -/
+def optText (j : Json) (key : String) : Except String (Option String) :=
+  match j.getObjVal? key with
+  | .ok (.str s) => pure (some s)
+  | .ok _ => throw s!"{key} must be text"
+  | .error _ => pure none
+
+/-- A request's optional natural field, refused by name when present and malformed. -/
+def optNat (j : Json) (key : String) : Except String (Option Nat) :=
+  match j.getObjVal? key with
+  | .ok v => match natOf v with
+    | .ok n => pure (some n)
+    | .error _ => throw s!"{key} must be a natural number"
+  | .error _ => pure none
+
+/-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
+def readerOf (j : Json) : Except String String := do
+  let p ← j.getObjValAs? String "principal"
+  if p.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  return p
+
+/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
+    reader, `identity`), projected under the reader's authority. -/
 def receipt (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let reader ← readerOf j
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  match w.receipts[identityKey principal intent]? with
+  let owner := (← optText j "of").getD reader
+  match w.receipts[identityKey owner intent]? with
   | none => return Json.mkObj [("status", toJson "unknown")]
-  | some index => return Json.mkObj [("status", toJson "receipt"), ("receipt", w.entries[index]!)]
+  | some index =>
+    let entry := w.entries[index]!
+    let shown := projectEntry w reader entry
+    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
+    return Json.mkObj [("status", toJson "receipt"), ("receipt", shown)]
 
 def history (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
-  let after := match j.getObjVal? "after" with
-    | .ok a => (natOf a).toOption.getD 0
-    | .error _ => 0
-  let limit := min Limits.maxHistoryLimit (match j.getObjVal? "limit" with
-    | .ok l => (natOf l).toOption.getD Limits.maxHistoryLimit
-    | .error _ => Limits.maxHistoryLimit)
+  let after := (← optNat j "after").getD 0
+  let asked := (← optNat j "limit").getD Limits.maxHistoryLimit
+  if asked == 0 || asked > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   if !w.objects.contains id then return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  if !viewable w reader id then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
   let all := (w.touched.getD id #[]).filter fun index => index + 1 > after
-  let page := all.extract 0 limit
+  let page := all.extract 0 asked
   return Json.mkObj [("status", toJson "history"), ("object", toJson id),
-    ("entries", Json.arr (page.map fun index => w.entries[index]!)),
-    ("more", toJson (decide (all.size > limit)))]
+    ("entries", Json.arr (page.map fun index => projectEntry w reader w.entries[index]!)),
+    ("more", toJson (decide (all.size > asked)))]
+
+/-- `world-offers {principal, after?}`: the offers addressed to the principal, oldest first,
+    after journal height `after`; one page. -/
+def offersOp (w : World) (j : Json) : Except String Json := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let after := (← optNat j "after").getD 0
+  let all := (w.outbox.getD principal #[]).filter fun (index, _) => index + 1 > after
+  let page := all.extract 0 Limits.maxHistoryLimit
+  let items := page.filterMap fun (index, i) => do
+    let entry ← w.entries[index]?
+    let offer ← ((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
+    pure (Json.mkObj [("height", toJson (index + 1)), ("ordinal", toJson i),
+      ("identity", (entry.getObjVal? "identity").toOption.getD Json.null),
+      ("text", (offer.getObjVal? "text").toOption.getD Json.null)])
+  return Json.mkObj [("status", toJson "offers"), ("offers", Json.arr items), ("more", toJson (decide (all.size > page.size)))]
 
 end Delvetalk.Host

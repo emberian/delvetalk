@@ -71,8 +71,13 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
       return (w'', r, resumed, delivered) : Except String (World × Json × Array Json × Array Json)) with
   | .error e => return (some s, .error e)
   | .ok (w', r0, resumed, delivered) =>
-    let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr resumed)
-    let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr delivered)
+    -- Turns the settling pass ran belong to their own principals: their offers are read with
+    -- `world-offers` by their addressees, never handed to whoever caused the pass.
+    let quiet := fun (rs : Array Json) => rs.map fun x => match x.getObj? with
+      | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "offers"))
+      | .error _ => x
+    let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr (quiet resumed))
+    let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr (quiet delivered))
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
     let fresh := w'.entries.extract s.world.height w'.height
     if fresh.any (·.compress.utf8ByteSize > Limits.maxEntryBytes) then
@@ -182,6 +187,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-objects" => return (session, objectsOp s.world request)
+      | "world-offers" => return (session, offersOp s.world request)
       | "world-card" => return (session, cardOp s.world request)
       | _ => return (session, .error s!"unknown world operation {op}")
 

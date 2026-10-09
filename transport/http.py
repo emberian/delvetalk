@@ -359,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
         card = self.card(host, principal, name, view['version']) if principal else None
-        self.html(200, pages.obj(name, handle, view, card, self.history(host, name), result))
+        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), result))
 
     def card(self, host, principal, name, version):
         """The object's own card: an offer from present/describe, cached because a retried identity returns no offers."""
@@ -376,10 +376,10 @@ class Handler(BaseHTTPRequestHandler):
             self.server.cards[key] = text
         return self.server.cards[key]
 
-    def history(self, host, name):
+    def history(self, host, name, principal=''):
         entries, after = [], None
         for _ in range(50):
-            req = {'op': 'world-history', 'object': name, 'limit': 100}
+            req = {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100}
             if after is not None:
                 req['after'] = after
             page = host.send(req)

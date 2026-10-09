@@ -320,19 +320,23 @@ class History(WorldCase):
             self.propose(f"a{i}", [root("c1", i)], [write("c1", add("count", 1))])
         self.propose("stale", [root("c1", 0)], [write("c1", add("count", 1))])
         self.propose("other", [root("c2", 0)], [write("c2", add("count", 1))])
-        h = self.host.send(op="world-history", object="c1", limit=3)
+        h = self.host.send(op="world-history", principal="ember", object="c1", limit=3)
         heights = [e["height"] for e in h["entries"]]
         self.assertEqual(heights, [1, 3, 4])  # creation, then two writes
         self.assertTrue(h["more"])
-        rest = self.host.send(op="world-history", object="c1", after=heights[-1], limit=100)
+        rest = self.host.send(op="world-history", principal="ember", object="c1", after=heights[-1], limit=100)
         self.assertEqual([e["height"] for e in rest["entries"]], [5, 6, 7])
         self.assertFalse(rest["more"])
-        self.assertEqual(self.host.send(op="world-history", object="ghost")["status"], "unknown")
+        self.assertEqual(self.host.send(op="world-history", principal="ember", object="ghost")["status"], "unknown")
 
-    def test_history_limit_is_capped_by_the_host(self):
+    def test_a_history_limit_beyond_the_cap_or_malformed_is_refused_by_name(self):
         self.create()
-        h = self.host.send(op="world-history", object="c1", limit=10 ** 9)
-        self.assertEqual(h["status"], "history")
+        for bad in (10 ** 9, 0, "ten", -1):
+            h = self.host.send(op="world-history", principal="ember", object="c1", limit=bad)
+            self.assertEqual(h["status"], "error", (bad, h))
+            self.assertIn("limit", h["message"])
+        self.assertEqual(self.host.send(op="world-history", principal="ember", object="c1", after="x")["status"], "error")
+        self.assertEqual(self.host.send(op="world-history", principal="ember", object="c1", limit=100)["status"], "history")
 
 
 class Restart(WorldCase):
