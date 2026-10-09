@@ -81,6 +81,11 @@ class Cards(Chain):
         self.assertEqual(reply["result"]["label"], "planted")
         self.assertIn("Planted for glm: a silver bell", reply["offers"][0]["text"])
 
+    def test_an_amber_bell_takes_an(self):
+        self.garden()
+        reply = self.say("delvetalk garden plant / colour: amber / seed: a moth lamp")
+        self.assertIn("Planted for glm: an amber bell, “a moth lamp”.", reply["offers"][0]["text"])
+
     def test_the_planted_card_text(self):
         probe = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
