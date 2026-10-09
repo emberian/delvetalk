@@ -4,6 +4,8 @@ DelveTalk reuses Mini's Bend frontend, checker and demand machine, **not its obj
 kernel**. Its Lean host implements a smaller, separate admission contract. Python
 transports, retains and presents results. Independent C/Python/JS core evaluators
 remain useful cross-checks, not production admission engines.
+The separate object host is intentional: DelveTalk experiments with its own
+programmable environment. Convergence with Mini is not a project requirement.
 
 ## Connected in this pass
 
@@ -21,8 +23,9 @@ remain useful cross-checks, not production admission engines.
 
 1. **Whole Bend transitions.** [WorldCore](../profiles/WorldCore.lean) separately
    interprets requirements, assignments and results; compiled packages are currently
-   expression leaves. An optional typed `Context → Proposal` could evaluate a method
-   once, then reuse existing authority, exact-root, transaction and receipt machinery.
+   expression leaves. A single-evaluation binding could make an authored method
+   compute its complete transition. Mini's `{result, write}` convention is a useful
+   comparison, not a prescribed interface.
    Stateful source bindings can already use package expressions; single evaluation
    would remove repeated compilation and manually synchronized calculations.
 2. **Admission contracts, not form promises.** Field types/lengths in affordances
@@ -44,8 +47,9 @@ remain useful cross-checks, not production admission engines.
 Source `law` declarations and host grant predicates have different meanings. The
 current compiler refuses source laws; integrating new-state invariants requires
 explicit old/new/request checks across every write route, not a renaming.
-The bounded reuse seam is Mini's pure declared-state and source-law judgments,
-with their proof connections, imported through a pinned dependency boundary.
+Mini's pure declared-state and source-law judgments are possible reuse points,
+if their contracts suit the chosen DelveTalk semantics. Importing them is not
+an accepted migration plan.
 DelveTalk does not inherit Mini's activities, protected cells, scoped nested-call
 delegation, linear custody, drain/rebirth upgrades or resource accounting merely
 because its own admission also runs in Lean.
@@ -55,3 +59,29 @@ and compiled game execution are real receiving paths. Ticket acceptance acknowle
 review; it deliberately does not install a target. Scoped grants are not linear
 custody. Finite tests, typed-core evidence and whole-host correctness remain
 different claims.
+
+## Exchange with Mini
+
+**Explore compatibility without prescribing convergence.** Reusing Mini's language
+does not make DelveTalk's host a kernel subset or confer its proofs. Three examples:
+DelveTalk assignments may add fields; Mini edits require existing declared fields.
+DelveTalk advances a version on an empty update; Mini's keep-only return does not.
+DelveTalk transactions retain one caller throughout; Mini nested calls require
+explicit scoped delegation. These are design differences, not defects by themselves.
+
+Choose each host behavior for resident use, composition, recovery and simplicity.
+Share an implementation when its meaning matches; preserve separate semantics
+when the experiment needs them. A future common fragment would need explicit
+identity, authority, state, result, refusal and resource mappings. It would not
+justify silently changing historical receipts or current programs.
+
+Learnings can travel upstream without moving the host: source-derived affordances,
+manual interpretation with explicit provenance, replayable authoring journeys,
+and failures involving stale views, migration or uncertain replies. Reusable Bend
+libraries and portable examples offer another exchange. Mini's methods, admission
+judgments and proofs are references to study and selectively reuse, not a checklist
+of facilities DelveTalk must acquire.
+
+Python cleanup is independent: remove duplicate workflow machinery and put authored
+behavior into Bend where that clarifies the system. Moving a module into Mini or
+another language does not itself simplify it.
