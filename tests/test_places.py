@@ -199,15 +199,14 @@ class Floor(Chain):
         self.assertLess(reply["ticksUsed"], 100000)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
-        """A list in state is a nested cons chain, and the host bounds data depth:
-        the 248th note is refused as typeMismatch, so 247 is the most an inbox
-        (or any list field) can hold. 256 notes cannot exist."""
+        """A list in state is a nested cons chain on the wire; the host decodes to
+        depth 8192, so an inbox is bounded by state bytes, not by a count of 247."""
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         for i in range(247):
             note = self.turn("glm", "note", record(**{"from": label("kimik3"), "text": label("note %03d" % i)}), principal="kimik3")
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(**{"from": label("kimik3"), "text": label("one too many")}), principal="kimik3")
-        self.assertEqual((over["status"], over["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"))
+        self.assertEqual(over["status"], "admitted", over)  # the wire now decodes lists to depth 8192; the cap is bytes, not count
         reply = self.turn("glm", "describe", principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]

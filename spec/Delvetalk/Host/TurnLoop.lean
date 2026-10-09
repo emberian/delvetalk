@@ -667,9 +667,17 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
   let laws ← ((← (← act.getObjVal? "laws").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", ← r.getObjValAs? String "law"))
-  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← act.getObjVal? "checkpoint")
+  let stored ← act.getObjVal? "checkpoint"
+  let tokens ← Delvetalk.Turn.tokensOfJson (← stored.getObjVal? "tokens")
+  let checkpoint : Delvetalk.Turn.Checkpoint :=
+    { packetSha256 := ← stored.getObjValAs? String "packetSha256", tokens := tokens, object := object,
+      principal := principal, intent := intent, rootsDigest := "", digest := "" }
   -- The digest is the store's own, never the token's.
-  let checkpoint := { checkpoint with digest := Delvetalk.Turn.tokensDigest checkpoint.tokens }
+  let binding := Delvetalk.Turn.Binding.make object principal intent roots
+  let digest := Delvetalk.Turn.checkpointDigest checkpoint.packetSha256 object principal intent binding.rootsDigest checkpoint.tokens
+  let checkpoint : Delvetalk.Turn.Checkpoint :=
+    { packetSha256 := checkpoint.packetSha256, tokens := checkpoint.tokens, object := object, principal := principal,
+      intent := intent, rootsDigest := binding.rootsDigest, digest := digest }
   let init : TurnState :=
     { world := w
       roots := roots
@@ -696,8 +704,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       | .reply e => respond compiled.bounds responseType "reply" [.record [("receipt", receiptData e)]]
       | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint response b)
-    drive 0 object compiled next 0
+    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
+    drive 0 object compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st
 
