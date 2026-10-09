@@ -42,13 +42,13 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
   | .error e => return (some s, .error e)
   | .ok (w', r) =>
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
-    let line := w'.entries.back!.compress
-    if line.utf8ByteSize > Limits.maxEntryBytes then
+    let fresh := w'.entries.extract s.world.height w'.height
+    if fresh.any (·.compress.utf8ByteSize > Limits.maxEntryBytes) then
       return (some s, .error "journal entry exceeds capacity")
     if w'.height > Limits.maxJournalEntries then
       return (some s, .error "journal is full")
     try
-      s.handle.putStr (line ++ "\n")
+      for entry in fresh do s.handle.putStr (entry.compress ++ "\n")
       syncHandle s.handle
       return (some { s with world := w' }, .ok r)
     catch e => return (some s, .error s!"journal write failed: {e}")
@@ -72,6 +72,12 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       match op with
       | "world-create" => durable s (fun w => create w request)
       | "world-turn" => durable s (fun w => do runTurn w (← parseTurn request))
+      | "world-deliver" => durable s (fun w => do
+          let limit := match request.getObjVal? "limit" with
+            | .ok l => (natOf l).toOption.getD Limits.deliveriesPerCall
+            | .error _ => Limits.deliveriesPerCall
+          deliver w limit)
+      | "world-pending" => return (session, .ok (pendingReply s.world))
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
       | "world-receipt" => return (session, receipt s.world request)

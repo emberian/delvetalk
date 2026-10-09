@@ -137,7 +137,7 @@ def Proposal.digest (p : Proposal) : String :=
 /-- The closed set of refusal classes. -/
 def refusalClasses : List String :=
   ["staleRoot", "unreadWrite", "typeMismatch", "lawRefused", "unknownObject", "duplicateIdentity",
-   "evaluation"]
+   "evaluation", "budgetExhausted"]
 
 structure Refusal where
   cls : String
@@ -217,7 +217,18 @@ def identityJson (principal intent : String) : Json :=
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.entries.size
+  let delivered := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
+  let identity := (entry.getObjVal? "identity").toOption.getD Json.null
+  let sent := match (entry.getObjVal? "outcome").toOption.bind (fun o => (o.getObjValAs? String "tag").toOption),
+      (entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) with
+    | some "admitted", some sends => sends.map fun s => Json.mkObj
+        ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
+          (s.getObj?.toOption.map (·.toList) |>.getD []))
+    | _, _ => #[]
   { w with
+    pending := (match delivered with
+      | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
+      | none => w.pending) ++ sent
     height := w.height + 1, head := hash, entries := w.entries.push entry
     receipts := if w.receipts.contains key then w.receipts else w.receipts.insert key index
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched }
@@ -254,7 +265,8 @@ def retained (w : World) (principal intent digest : String) : Option Json :=
 /-- The commit rule. Pure: the turn loop calls this with the roots it recorded and
     the writes it produced. Returns the next world and the reply (a receipt). -/
 def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
-    (forced : Option Refusal := none) : World × Json :=
+    (forced : Option Refusal := none)
+    (onAdmit : List (String × Object) → List (String × Json) := fun _ => []) : World × Json :=
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
   | none =>
@@ -277,7 +289,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         [("object", toJson id), ("version", toJson o.version),
          ("edits", stepsJson ((p.writes.lookup id).getD []))])
       let outcome := Json.mkObj [("tag", toJson "admitted"), ("writes", writes)]
-      let (w', entry) := push w key (base ++ [("outcome", outcome)]) (updates.map (·.1))
+      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates) (updates.map (·.1))
       (w', reply entry)
 
 /-! ## Creation -/
@@ -313,7 +325,16 @@ def parseRead (j : Option Json) : Except String ReadPolicy :=
     let names ← raw.toList.mapM fun r => do boundedText "reader" Limits.maxPrincipalBytes (← r.getStr?)
     pure (.principals names)
 
-def buildObject (inputs seed : Json) (read : Option Json := none) : Except String (Object × String) := do
+def parseChain (j : Option Json) : Except String Ledger :=
+  match j with
+  | none => pure Ledger.start
+  | some c => do
+    let l : Ledger := ⟨← natField c "depth", ← natField c "work", ← natField c "storage"⟩
+    if l.depth > Limits.maxDepth || l.work > Limits.chainWork || l.storage > Limits.chainStorage then
+      throw "a chain ledger may be lowered at creation, never raised above the host limits"
+    pure l
+
+def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none) : Except String (Object × String) := do
   let (artifact, ty, laws) ← Package.compileKeepingLaws inputs
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
@@ -328,10 +349,10 @@ def buildObject (inputs seed : Json) (read : Option Json := none) : Except Strin
   let inputsKey := Journal.bodyHash (Json.mkObj
     (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
   return ({ pin, law := laws, version := 0, state, stateType := ty, bounds := assumptions.bounds,
-            read := ← parseRead read, inputs, inputsKey }, sources)
+            read := ← parseRead read, chain := ← parseChain chain, inputs, inputsKey }, sources)
 
 def createOutcome (id : String) (o : Object) (sources : String) (artifact seed : Json) : Json :=
-  Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("object", toJson id), ("pin", toJson o.pin),
+  Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
     ("sourcesSha256", toJson sources), ("compile", artifact), ("seed", seed)]
 
 def create (w : World) (j : Json) : Except String (World × Json) := do
@@ -346,7 +367,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← compileInputs j
   let seed ← j.getObjVal? "seed"
-  let (o, sources) ← buildObject inputs seed (j.getObjVal? "read").toOption
+  let (o, sources) ← buildObject inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   let outcome := createOutcome id o sources inputs seed
   let (w', entry) := push { w with objects := w.objects.insert id o } (identityKey principal intent)
@@ -356,17 +377,55 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
 
 /-! ## Replay -/
 
+/-- The id of the `ordinal`th send of the turn with this identity. -/
+def deliveryId (principal intent : String) (ordinal : Nat) : String :=
+  Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson ordinal])
+
+def ledgerOf (j : Json) : Except String Ledger := do
+  return ⟨← natField j "depth", ← natField j "work", ← natField j "storage"⟩
+
+/-- A delivery entry must consume exactly the pending delivery it names, under
+    the sender's principal; a budget refusal must name a field that is zero. -/
+def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcome : Json) : Except String Unit := do
+  let some d := (entry.getObjVal? "delivery").toOption | return ()
+  let id ← d.getObjValAs? String "id"
+  let some p := w.pending.find? fun p => (p.getObjValAs? String "id").toOption == some id
+    | throw "delivery of an unknown or already delivered id"
+  unless (p.getObjValAs? String "principal").toOption == some principal && intent == id do
+    throw "delivery runs under another principal than its sender's"
+  unless (d.getObjVal? "from").toOption == (p.getObjVal? "from").toOption do throw "delivery names another sender"
+  if (outcome.getObjValAs? String "class").toOption == some "budgetExhausted" then
+    let ledger ← ledgerOf (← p.getObjVal? "ledger")
+    unless ledger.exhausted == (outcome.getObjValAs? String "reason").toOption do
+      throw "budget refusal names a field that is not exhausted"
+  else if (← ledgerOf (← p.getObjVal? "ledger")).exhausted.isSome then
+    throw "a delivery with an exhausted ledger ran"
+
+def checkSends (entry : Json) (principal intent : String) : Except String Unit := do
+  let some sends := (entry.getObjVal? "sends").toOption | return ()
+  let mut ordinal := 0
+  for s in ← sends.getArr? do
+    unless (s.getObjValAs? String "id").toOption == some (deliveryId principal intent ordinal) do
+      throw "send id does not match its ordinal"
+    discard <| s.getObjValAs? String "to"
+    discard <| s.getObjValAs? String "method"
+    discard <| decodeData Limits.dataDepth (← s.getObjVal? "argument")
+    discard <| ledgerOf (← s.getObjVal? "ledger")
+    ordinal := ordinal + 1
+
 def replayEntry (w : World) (entry : Json) : Except String World := do
   let identity ← entry.getObjVal? "identity"
   let principal ← identity.getObjValAs? String "principal"
   let intent ← identity.getObjValAs? String "intent"
   let key := identityKey principal intent
   let outcome ← entry.getObjVal? "outcome"
+  checkDelivery w entry principal intent outcome
+  checkSends entry principal intent
   match ← outcome.getObjValAs? String "tag" with
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
     if w.objects.contains id then throw s!"object {id} created twice"
-    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption
+    let (o, sources) ← buildObject (← outcome.getObjVal? "compile") (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == (← outcome.getObjValAs? String "sourcesSha256") do
       throw s!"object {id} no longer compiles to its recorded pin"
     return record { w with objects := w.objects.insert id o } entry key [id]
