@@ -367,6 +367,8 @@ inductive ATerm where
   | done (plan response : PTy) (value : ATerm)
   /-- `Data.of::<T>(value)`; `type` is the authored `T`. -/
   | toData (type : PTy) (value : ATerm)
+  /-- `textJoin(list, separator)`. -/
+  | textJoin (list separator : ATerm)
   deriving Inhabited
 
 mutual
@@ -396,6 +398,7 @@ def ATerm.json : ATerm → Json
   | .perform _ _ v => Json.mkObj [("tag", "perform"), ("plan", v.json)]
   | .done _ _ v => Json.mkObj [("tag", "done"), ("value", v.json)]
   | .toData _ v => Json.mkObj [("tag", "toData"), ("value", v.json)]
+  | .textJoin l s => Json.mkObj [("tag", "textJoin"), ("list", l.json), ("separator", s.json)]
 def fieldsJson : List (String × ATerm) → Json
   | fs => Json.arr (fieldsArray fs).toArray
 def fieldsArray : List (String × ATerm) → List Json
@@ -452,6 +455,7 @@ def ATerm.erase : ATerm → Except String CoreTerm
   | .perform _ _ v => return .perform (← v.erase)
   | .done _ _ v => return .done (← v.erase)
   | .toData _ v => return .toData (← v.erase)
+  | .textJoin l s => return .textJoin (← l.erase) (← s.erase)
 def eraseFields : List (String × ATerm) → Except String (List (String × CoreTerm))
   | [] => .ok []
   | (n, v) :: rest => return (n, ← v.erase) :: (← eraseFields rest)
@@ -1059,6 +1063,7 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
           if ["textSpan", "textBreak"].contains name && args.length == 2 then return some .natural
           if ["textTake", "textDrop"].contains name && args.length == 2 then return some .label
           if name == "textSlice" && args.length == 3 then return some .label
+          if name == "textJoin" && args.length == 2 then return some .label
         if ["reflect", "metadata", "targetOf", "prototype"].contains name &&
             !env.any (·.name == name) && (lookupGlobal c name m).isNone then
           match name, args with
@@ -1216,6 +1221,7 @@ def ATerm.mapTypes (f : PTy → PTy) : ATerm → ATerm
   | .perform p r x => .perform (f p) (f r) (x.mapTypes f)
   | .done p r x => .done (f p) (f r) (x.mapTypes f)
   | .toData t x => .toData (f t) (x.mapTypes f)
+  | .textJoin l s => .textJoin (l.mapTypes f) (s.mapTypes f)
 def ATerm.mapFieldTypes (f : PTy → PTy) : List (String × ATerm) → List (String × ATerm)
   | [] => []
   | (n, x) :: rest => (n, x.mapTypes f) :: ATerm.mapFieldTypes f rest
@@ -1579,13 +1585,15 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
-          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textTake", "textDrop"].contains name then
+          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textTake", "textDrop", "textJoin"].contains name then
             for a in args do noActivity c fuel a env m "effect-in-text" "text operands are pure"
             match name, args with
             | "natText", [a] | "textLength", [a] | "sha256Text", [a] => return .unary name (← expression c fuel a env m)
             | "textConcat", [a,b] => return .binary "textConcat" (← expression c fuel a env m) (← expression c fuel b env m)
             | "textSpan", [a,b] | "textBreak", [a,b] | "textTake", [a,b] | "textDrop", [a,b] =>
               return .binary name (← expression c fuel a env m) (← expression c fuel b env m)
+            | "textJoin", [list, separator] =>
+              return .textJoin (← expression c fuel list env m) (← expression c fuel separator env m)
             | "textSlice", [a,start,count] =>
               return .binary "textTake" (.binary "textDrop" (← expression c fuel a env m) (← expression c fuel start env m)) (← expression c fuel count env m)
             | _, _ => fail (name ++ " has wrong arity")
@@ -2232,6 +2240,7 @@ def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String
   | .perform p r v, path | .done p r v, path => do
     return ⟨path, p, r, "unrestricted", "reusable"⟩ :: (← annotate bounds v (path ++ [0]))
   | .toData _ v, path => annotate bounds v (path ++ [0])
+  | .textJoin l s, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds s (path ++ [1]))
   | .app f a, path => return (← annotate bounds f (path ++ [0])) ++ (← annotate bounds a (path ++ [1]))
   | .fix s i, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds i (path ++ [1]))
   | .mix l u, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds u (path ++ [1]))

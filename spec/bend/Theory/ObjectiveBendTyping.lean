@@ -314,6 +314,12 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context value type uses →
       type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.toData value) .data uses
+  /-- Hosted extension: join a `List<String>` with a String separator. -/
+  | textJoin {context : Context} {list separator : Term} {listType : Ty} {lu su : Uses} :
+      listType.isTextList assumptions.bounds = true →
+      PartialTyping assumptions context list listType lu →
+      PartialTyping assumptions context separator .label su →
+      PartialTyping assumptions context (.textJoin list separator) .label (addUses lu su)
   /-- A pure value where an activity is expected. -/
   | done {context : Context} {value : Term} {planType response result : Ty} {uses : Uses} :
       PartialTyping assumptions context value result uses → result.isComputation = false →
@@ -602,6 +608,14 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
             some ⟨.computation annotation.domain annotation.codomain annotation.codomain, value.uses,
               .perform (.conversion value.derivation (agree_sameType hs)) hp hr⟩
           else none
+        else none
+      else none
+  | fuel + 1, .textJoin list separator => do
+      let l ← infer assumptions annotations context (position ++ [0]) fuel list
+      let s ← infer assumptions annotations context (position ++ [1]) fuel separator
+      if hl : l.type.isTextList assumptions.bounds = true then
+        if hs : s.type = .label then
+          some ⟨.label, addUses l.uses s.uses, .textJoin hl l.derivation (hs ▸ s.derivation)⟩
         else none
       else none
   | fuel + 1, .toData inner => do
@@ -1214,6 +1228,7 @@ def decodeTerm : Nat → Json → Except String Term
     | "perform" => return .perform (← sub "plan")
     | "done" => return .done (← sub "value")
     | "toData" => return .toData (← sub "value")
+    | "textJoin" => return .textJoin (← sub "list") (← sub "separator")
     | _ => .error "unknown Objective runtime constructor"
 
 def decodeLambda (table : Array (Ty × Nat)) (value : Json) : Except String LambdaAnnotation := do

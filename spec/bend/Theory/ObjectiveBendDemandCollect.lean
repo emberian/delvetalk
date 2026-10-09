@@ -46,6 +46,9 @@ def frameAddresses : Frame → List Nat
   | .update address => [address]
   | .field _ | .reflect | .metadata | .project | .nativeArgument _ | .unary _ => []
   | .binaryRight _ value => valueAddresses value
+  | .joinSeparator _ environment => environment
+  | .joinList .. | .joinCons .. => []
+  | .joinHead _ _ _ tail => [tail]
 
 def controlAddresses : Control → List Nat
   | .evaluate _ environment => environment
@@ -95,6 +98,10 @@ def renameFrame (f : Nat → Nat) : Frame → Frame
   | .ifBool whenTrue whenFalse environment => .ifBool whenTrue whenFalse (environment.map f)
   | .nativeArgument value => .nativeArgument value
   | .unary primitive => .unary primitive
+  | .joinSeparator list environment => .joinSeparator list (environment.map f)
+  | .joinList separator accumulated first => .joinList separator accumulated first
+  | .joinCons separator accumulated first => .joinCons separator accumulated first
+  | .joinHead separator accumulated first tail => .joinHead separator accumulated first (f tail)
 
 def renameControl (f : Nat → Nat) : Control → Control
   | .evaluate term environment => .evaluate term (environment.map f)

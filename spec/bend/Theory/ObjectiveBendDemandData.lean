@@ -78,8 +78,13 @@ def textPrefixCost (text alphabet : String) (member : Bool) (ticks : Nat) : Nat 
 Unicode operations traverse scalar sequences; their UTF-8 size bounds both the
 scalar traversal and copied bytes. `textTake` and `textDrop` are charged by the
 prefix they traverse (the taken, respectively the dropped, scalars: at most four
-bytes each), not by the whole input; `textDrop` still reserves the whole input's
-size as its allocation bound. Decimal conversion uses a conservative
+bytes each), not by the whole input. Each reserves what it allocates: `textTake`
+copies the taken prefix (at most `min B (4n)` bytes); `textDrop` retains nothing
+of the dropped prefix and copies the suffix, which is at most `B - n` bytes since
+every dropped scalar is at least one byte. (The runtime's `String.Slice.toString`
+is `lean_string_utf8_extract`, a fresh string: the suffix is copied, not shared.
+That copy is the one text work not charged in ticks, so that a drop-by-one walk
+stays linear; its bytes are bounded here.) Decimal conversion uses a conservative
 quadratic bit-work allowance and bit-count allocation bound. -/
 def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   match state.control,state.stack with
@@ -95,7 +100,12 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   | .returned (.natural n), .binaryRight .textDrop (.label text) :: _ =>
       if n == 0 || n >= text.utf8ByteSize then (1, 0)
       else let dropped := min text.utf8ByteSize (4 * n)
-           (1 + 2 * dropped, text.utf8ByteSize)
+           (1 + 2 * dropped, text.utf8ByteSize - n)
+  | .returned (.label head), .joinHead separator accumulated first _ :: _ =>
+      -- Appending onto the join's own accumulator: charged by the bytes added, so a
+      -- join is linear in its output; it reserves the whole new accumulator.
+      let added := if first then head.utf8ByteSize else separator.utf8ByteSize + head.utf8ByteSize
+      (1 + 2 * added, if first then added else accumulated.utf8ByteSize + added)
   | .returned (.label text), .unary .textLength :: _ => (1 + text.utf8ByteSize, 0)
   | .returned (.label text), .unary .sha256Text :: _ =>
       let bytes := text.utf8ByteSize

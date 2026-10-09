@@ -55,6 +55,7 @@ def termOf : Nat → Json → Except String Term
     | "perform" => return .perform (← child 1)
     | "done" => return .done (← child 1)
     | "toData" => return .toData (← child 1)
+    | "textJoin" => return .textJoin (← child 1) (← child 2)
     | "unary" => return .unary (← unaryOfName (← (items[1]?.getD Json.null).getStr?)) (← child 2)
     | "binary" => return .binary (← primitiveOfName (← (items[1]?.getD Json.null).getStr?)) (← child 2) (← child 3)
     | "get" => return .get (← child 1) (← (items[2]?.getD Json.null).getStr?)

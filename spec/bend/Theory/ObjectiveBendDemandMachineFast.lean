@@ -136,7 +136,7 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
     | .specification _ _ | .prototype _ _ => (size+2,depth)
     | .record fields => (size+fields.length,depth)
     | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _
-    | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ => (size,depth+1)
+    | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ | .textJoin _ _ => (size,depth+1)
     | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)
     | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ | .toData _ => (size,depth)
   | .returned value => match state.stack with
@@ -150,6 +150,13 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
         | some _ => (size+1,depth-1)
         | none => (size,depth-1)
       | .binaryLeft _ _ _,_ => (size,depth)
+      | .joinSeparator _ _,.label _ | .joinHead _ _ _ _,.label _ => (size,depth)
+      | .joinList _ _ _,.variant tag _ => if tag == "nil" then (size,depth-1)
+          else if tag == "cons" then (size,depth) else (size,depth-1)
+      | .joinCons _ _ _,.record fields =>
+        match fields.find? (fun field => field.1 == "head"), fields.find? (fun field => field.1 == "tail") with
+        | some _, some _ => (size,depth)
+        | _, _ => (size,depth-1)
       | _,_ => (size,depth-1)
 
 theorem sizesAfter_eq (state : State) :

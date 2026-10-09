@@ -184,6 +184,29 @@ def Ty.lookup (bounds : Bounds) : Nat → Ty → String → Option Ty
       bound.lookup bounds fuel name
   | _, _, _ => none
 
+def Ty.rowMember : Ty → String → Option Ty
+  | .field name member tail, query => if name = query then some member else tail.rowMember query
+  | _, _ => none
+
+/-- The field count of a closed row (`none` for an open one). -/
+def Ty.closedRowCount : Ty → Option Nat
+  | .emptyRow => some 0
+  | .field _ _ tail => tail.closedRowCount.map (· + 1)
+  | _ => none
+
+/-- `List<String>`: a variable whose declared bound is the closed sum
+`nil: {} | cons: {head: String, tail: <the variable>}` (in either order). -/
+def Ty.isTextList (bounds : Bounds) : Ty → Bool
+  | .variable index => match bounds.lookup index with
+    | some (.variant row) =>
+      row.closedRowCount == some 2 && row.rowMember "nil" == some .emptyRow &&
+      match row.rowMember "cons" with
+      | some cons => cons.closedRowCount == some 2 && cons.rowMember "head" == some .label &&
+          cons.rowMember "tail" == some (.variable index)
+      | none => false
+    | _ => false
+  | _ => false
+
 def Ty.isRow (bounds : Bounds) : Nat → Ty → Bool
   | 0, _ => false
   | _ + 1, .emptyRow => true

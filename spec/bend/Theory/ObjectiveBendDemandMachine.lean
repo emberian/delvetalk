@@ -56,6 +56,15 @@ inductive Frame where
   | binaryRight (primitive : Primitive) (left : RuntimeValue)
   | case (arms : List (String × Term)) (environment : Environment)
   | ifBool (whenTrue whenFalse : Term) (environment : Environment)
+  /-- `textJoin`: the separator is being evaluated; the list comes next. -/
+  | joinSeparator (list : Term) (environment : Environment)
+  /-- `textJoin`: the list cell (nil or cons) is being forced. `first` holds
+  until the first head is appended. -/
+  | joinList (separator accumulated : String) (first : Bool)
+  /-- `textJoin`: a cons payload (the record of head and tail) is being forced. -/
+  | joinCons (separator accumulated : String) (first : Bool)
+  /-- `textJoin`: a head is being forced; the tail cell is next. -/
+  | joinHead (separator accumulated : String) (first : Bool) (tail : Address)
   deriving Repr
 inductive Refusal where
   | unbound | missingCell | missingField | wrongValue | invalidUpdate | capacity | missingArm
@@ -185,6 +194,8 @@ def stepRaw (state : State) : State :=
     | .case scrutinee arms => {state with control:=.evaluate scrutinee environment, stack:=.case arms environment::state.stack}
     | .ifBool condition whenTrue whenFalse => {state with control:=.evaluate condition environment, stack:=.ifBool whenTrue whenFalse environment::state.stack}
     | .done value | .toData value => {state with control:=.evaluate value environment}
+    | .textJoin list separator =>
+      {state with control:=.evaluate separator environment, stack:=.joinSeparator list environment::state.stack}
     | .perform plan =>
       if forcingShared state.stack then {state with control:=.refused .sharedEffect} else
       let address := state.heap.size
@@ -254,6 +265,27 @@ def stepRaw (state : State) : State :=
       | .ifBool whenTrue whenFalse environment => match value with
         | .boolean true => {state with control:=.evaluate whenTrue environment,stack:=rest}
         | .boolean false => {state with control:=.evaluate whenFalse environment,stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .joinSeparator list environment => match value with
+        | .label separator => {state with control:=.evaluate list environment,stack:=.joinList separator "" true::rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .joinList separator accumulated first => match value with
+        | .variant tag payload =>
+          if tag == "nil" then {state with control:=.returned (.label accumulated),stack:=rest}
+          else if tag == "cons" then {state with control:=.enter payload,stack:=.joinCons separator accumulated first::rest}
+          else {state with control:=.refused .missingArm,stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .joinCons separator accumulated first => match value with
+        | .record fields =>
+          match fields.find? (fun field => field.1 == "head"), fields.find? (fun field => field.1 == "tail") with
+          | some head, some tail =>
+            {state with control:=.enter head.2,stack:=.joinHead separator accumulated first tail.2::rest}
+          | _, _ => {state with control:=.refused .missingField,stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .joinHead separator accumulated first tail => match value with
+        | .label head =>
+          let joined := if first then head else accumulated ++ separator ++ head
+          {state with control:=.enter tail,stack:=.joinList separator joined false::rest}
         | _ => {state with control:=.refused .wrongValue,stack:=rest}
 
 /-- A blackhole is a non-result divergence observation, not a catchable language

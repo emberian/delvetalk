@@ -95,6 +95,9 @@ theorem term_roundTrip : ∀ (term : Term) (fuel : Nat) (rest : Tokens),
   | .toData v, fuel+1, rest, h => by
       simp only [encodeTerm,List.length_cons] at h
       simp [encodeTerm,decodeTerm,term_roundTrip v fuel rest (by omega)]
+  | .textJoin l s, fuel+1, rest, h => by
+      simp only [encodeTerm,List.length_cons,List.length_append] at h
+      simp [encodeTerm,decodeTerm,List.append_assoc,term_roundTrip l fuel _ (by omega),term_roundTrip s fuel rest (by omega)]
   | term, 0, rest, h => by cases term <;> simp [encodeTerm] at h
 theorem fields_roundTrip : ∀ (fields : List (String × Term)) (fuel : Nat) (rest : Tokens),
     (encodeFields fields).length ≤ fuel → decodeFields fuel (encodeFields fields ++ rest) = some (fields,rest)
@@ -223,6 +226,12 @@ theorem frame_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
       simp only [encodeFrame,List.length_cons] at enough
       simp [encodeFrame,decodeFrame,data_roundTrip value fuel rest (by omega)]
   | unary primitive => simp [encodeFrame,decodeFrame,unary_roundTrip]
+  | joinSeparator list environment =>
+      simp only [encodeFrame,List.length_cons,List.length_append] at enough
+      simp [encodeFrame,decodeFrame,List.append_assoc,term_roundTrip list fuel _ (by omega),addresses_roundTrip]
+  | joinList s a first => cases first <;> simp [encodeFrame,decodeFrame]
+  | joinCons s a first => cases first <;> simp [encodeFrame,decodeFrame]
+  | joinHead s a first tail => cases first <;> simp [encodeFrame,decodeFrame]
   | _ => simp [encodeFrame,decodeFrame]
 
 theorem length_le_flatMap {α : Type} (encode : α → Tokens) :

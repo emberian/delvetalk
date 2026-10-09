@@ -67,6 +67,7 @@ def encodeTerm : Term → Tokens
   | .done value => .nat 22 :: encodeTerm value
   | .unary primitive argument => .nat 23 :: .nat (unaryCode primitive) :: encodeTerm argument
   | .toData value => .nat 24 :: encodeTerm value
+  | .textJoin list separator => .nat 25 :: (encodeTerm list ++ encodeTerm separator)
 def encodeFields : List (String × Term) → Tokens
   | [] => [.nat 0]
   | (name,body) :: rest => .nat 1 :: .text name :: (encodeTerm body ++ encodeFields rest)
@@ -120,6 +121,7 @@ def decodeTerm : Nat → Tokens → Option (Term × Tokens)
         let (argument, rest) ← decodeTerm fuel rest
         pure (.unary primitive argument, rest)
     | 24, _ => one .toData
+    | 25, _ => two .textJoin
     | _, _ => none
   | _ + 1, _ => none
 def decodeFields : Nat → Tokens → Option (List (String × Term) × Tokens)
@@ -252,6 +254,11 @@ def encodeFrame : Frame → Tokens
       .nat 11 :: (encodeTerm whenTrue ++ encodeTerm whenFalse ++ encodeAddresses environment)
   | .nativeArgument value => .nat 12 :: encodeData value
   | .unary primitive => [.nat 13, .nat (unaryCode primitive)]
+  | .joinSeparator list environment => .nat 14 :: (encodeTerm list ++ encodeAddresses environment)
+  | .joinList separator accumulated first => [.nat 15, .text separator, .text accumulated, .nat (if first then 1 else 0)]
+  | .joinCons separator accumulated first => [.nat 16, .text separator, .text accumulated, .nat (if first then 1 else 0)]
+  | .joinHead separator accumulated first tail =>
+      [.nat 17, .text separator, .text accumulated, .nat (if first then 1 else 0), .nat tail]
 def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
   | .nat 0 :: rest => do
       let (term, rest) ← decodeTerm fuel rest; let (environment, rest) ← decodeAddresses rest
@@ -285,6 +292,17 @@ def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
       pure (.ifBool whenTrue whenFalse environment, rest)
   | .nat 12 :: rest => do let (value, rest) ← decodeData fuel rest; pure (.nativeArgument value, rest)
   | .nat 13 :: .nat code :: rest => do pure (.unary (← unaryOf code), rest)
+  | .nat 14 :: rest => do
+      let (list, rest) ← decodeTerm fuel rest; let (environment, rest) ← decodeAddresses rest
+      pure (.joinSeparator list environment, rest)
+  | .nat 15 :: .text separator :: .text accumulated :: .nat 0 :: rest => some (.joinList separator accumulated false, rest)
+  | .nat 15 :: .text separator :: .text accumulated :: .nat 1 :: rest => some (.joinList separator accumulated true, rest)
+  | .nat 16 :: .text separator :: .text accumulated :: .nat 0 :: rest => some (.joinCons separator accumulated false, rest)
+  | .nat 16 :: .text separator :: .text accumulated :: .nat 1 :: rest => some (.joinCons separator accumulated true, rest)
+  | .nat 17 :: .text separator :: .text accumulated :: .nat 0 :: .nat tail :: rest =>
+      some (.joinHead separator accumulated false tail, rest)
+  | .nat 17 :: .text separator :: .text accumulated :: .nat 1 :: .nat tail :: rest =>
+      some (.joinHead separator accumulated true tail, rest)
   | _ => none
 
 def refusalCode : Refusal → Nat
