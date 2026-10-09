@@ -7,13 +7,19 @@ record State:
   litBy: String
 record Who:
   who: String
+# A creator supplies a Seed; seeded makes the child's State from it.
+type Seed = {}
 record Edits:
   lit: Plans.Edit<Bool, {}>
   litBy: Plans.Edit<String, {}>
 type Plan = Plans.Plan<Edits, {}>
 type Response = Plans.Response<State, {}>
-def initial() -> State:
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
   {lit: false, litBy: ""}
+def initial() -> State:
+  seeded(defaultSeed())
 # Light the lantern and remember who did.
 def light(state: State, input: Who, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit::<Bool, {}>.set({value: true}), litBy: Plans.Edit::<String, {}>.set({value: input.who})}})):

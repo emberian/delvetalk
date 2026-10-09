@@ -11,7 +11,8 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BINARY = os.path.join(ROOT, ".lake", "build", "bin", "delvetalk-obend")
+from tests.host import binary
+BINARY = binary()
 
 PLANS = """edition ObjectiveBend 1
 record Edit:

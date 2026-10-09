@@ -20,7 +20,8 @@ import unittest
 from tests.conformance.generate import BINARY, TAGS, UNARY, generate, size, tags
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LEAN = os.path.join(ROOT, ".lake", "build", "bin", "delvetalk-obend")
+from tests.host import binary
+LEAN = binary()
 COUNT = int(os.environ.get("CONFORMANCE_CASES", "400"))
 
 # Disagreements we chose not to fix. Key: the generator's case kind; value: why.

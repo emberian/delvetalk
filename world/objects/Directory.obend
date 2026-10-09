@@ -9,6 +9,8 @@ record Door:
   to: Plans.Reference
 record State:
   doors: Lists.List<Door>
+# A creator supplies a Seed; seeded makes the child's State from it.
+type Seed = {}
 record Edits:
   doors: Plans.Entries<Door, {}>
 type Plan = Plans.Plan<Edits, {}>
@@ -21,8 +23,12 @@ record Heard:
 sum Answer:
   done: {}
   refused: {reason: String}
-def initial() -> State:
+def defaultSeed() -> Seed:
+  {}
+def seeded(seed: Seed) -> State:
   {doors: Lists.List::<Door>.nil()}
+def initial() -> State:
+  seeded(defaultSeed())
 def position(doors: Lists.List<Door>, label: String, index: Nat) -> Plans.Position:
   match doors:
     case nil(_): Plans.Position.absent({})
@@ -30,7 +36,6 @@ def position(doors: Lists.List<Door>, label: String, index: Nat) -> Plans.Positi
 def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answer>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case written(_): Answer.done({})
-    case refused(r): Answer.refused({reason: r.clause})
     case _: Answer.refused({reason: "The write was not answered."})
 # Adds a door at the end of the menu; a label names one door.
 def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Plan, Response, Answer>:

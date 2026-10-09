@@ -25,7 +25,7 @@ type Response = Plans.Response<State, Nat>
 %s
 def initial() -> State:
   {seen: 5n}
-def receive(state: State, input: {text: String, who: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def receive(state: State, input: {text: String, who: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
 """
 OFFERING = """  match perform(Plan.offer({document: Document.text(textConcat("hello ", input.who))})):
@@ -100,8 +100,8 @@ class Bridging(BridgeCase):
         for d in drafts:
             self.assertFalse(d['posted'])
             self.assertFalse(d['principalVerified'])
-            self.assertEqual(d['principal'], 'talkie.delve.town')
-            self.assertEqual(d['text'], 'hello talkie.delve.town')
+            self.assertEqual((d['principal'], d['replyHandle']), (DID, 'talkie.delve.town'))
+            self.assertEqual(d['text'], 'hello ' + DID)
         self.assertEqual(self.run_bridge(), {'turns': [], 'failed': []})
         self.assertEqual(len(self.drafts()), 3)
 
@@ -113,7 +113,7 @@ class Bridging(BridgeCase):
                 self.run_bridge()
         self.assertEqual(self.drafts(), [])
         uri = f'at://{DID}/town.delve.feed.post/r000001'
-        before = self.host.send({'op': 'world-receipt', 'principal': 'talkie.delve.town', 'identity': uri})['receipt']
+        before = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': uri})['receipt']
         self.run_bridge()
         (d,) = self.drafts()
         self.assertEqual(d['receipt']['hash'], before['hash'])
@@ -150,15 +150,13 @@ class Bridging(BridgeCase):
         out = io.StringIO()
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertTrue(out.getvalue().startswith('=== reply to: at://'))
-        self.assertIn('hello talkie.delve.town', out.getvalue())
+        self.assertIn('hello ' + DID, out.getvalue())
         bridge.main(['mark-posted', str(next((self.state / 'outbox').glob('*.json')))])
         out = io.StringIO()
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertEqual(out.getvalue(), '')
 
-    @unittest.expectedFailure
     def test_real_garden_receive_end_to_end(self):
-        # Until the objects lane adds Garden.receive the host answers status=error with its own message.
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0))})
         self.assertEqual(r['status'], 'created', r)

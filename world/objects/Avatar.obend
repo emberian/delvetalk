@@ -1,0 +1,117 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+import ./Place.obend as Place
+record Note:
+  from: String
+  text: String
+# The object a verified principal gets; its id is the principal's DID string.
+record State:
+  handle: String
+  at: Plans.Reference
+  holding: Lists.List<Plans.Reference>
+  inbox: Lists.List<Note>
+# A creator supplies a Seed; seeded makes the child's State from it.
+record Seed:
+  handle: String
+  at: Plans.Reference
+record Edits:
+  at: Plans.Edit<Plans.Reference, {}>
+  holding: Plans.Entries<Plans.Reference, {}>
+  inbox: Plans.Entries<Note, {}>
+# The argument of its calls into places: leave and enter.
+type Plan = Plans.Plan<Edits, Place.Who>
+type Response = Plans.Response<Place.State, Place.Done>
+sum Moved:
+  moved: {to: Plans.Reference}
+  refused: {reason: String}
+sum Found:
+  none: {}
+  some: {exit: Place.Exit}
+def defaultSeed() -> Seed:
+  {handle: "", at: Plans.nobody()}
+def seeded(seed: Seed) -> State:
+  {handle: seed.handle, at: seed.at, holding: Lists.List::<Plans.Reference>.nil(), inbox: Lists.List::<Note>.nil()}
+def initial() -> State:
+  seeded(defaultSeed())
+def keep() -> Edits:
+  {at: Plans.Edit::<Plans.Reference, {}>.keep({}), holding: Plans.Entries::<Plans.Reference, {}>.keep({}), inbox: Plans.Entries::<Note, {}>.keep({})}
+def edited(edits: Edits, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: edits})):
+    case written(_): true
+    case _: false
+# Appears somewhere: the place's own record of who is present is its business.
+def arrive(state: State, input: {at: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  edited(extend(keep(), {at: Plans.Edit::<Plans.Reference, {}>.set({value: input.at})}), context)
+# A note from somebody; it is appended in the order it arrives.
+def note(state: State, input: Note, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  edited(extend(keep(), {inbox: Plans.Entries::<Note, {}>.append({item: input})}), context)
+# Things call hold and release on their holder's avatar. Both are idempotent and
+# never refuse, so a thing that has already staged its own writes cannot be left
+# half done. Receiving something from somebody else also leaves a note.
+def hold(state: State, input: Place.Handling, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match Plans.indexOf(state.holding, input.thing):
+    case at(_): Place.Done.done({})
+    case absent(_): held(input, context)
+def held(input: Place.Handling, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.append({item: input.thing}), inbox: noted(input, context)})})):
+    case _: Place.Done.done({})
+def noted(input: Place.Handling, context: Abi.Context) -> Plans.Entries<Note, {}>:
+  if Plans.same(input.by, Plans.self(context)) then Plans.Entries::<Note, {}>.keep({}) else Plans.Entries::<Note, {}>.append({item: {from: input.by.object, text: textConcat("gave you ", input.thing.object)}})
+def release(state: State, input: Place.Handling, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match Plans.indexOf(state.holding, input.thing):
+    case absent(_): Place.Done.done({})
+    case at(a): released(a.index, context)
+def released(index: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries::<Plans.Reference, {}>.remove({index: index})})})):
+    case _: Place.Done.done({})
+def find(exits: Lists.List<Place.Exit>, label: String) -> Found:
+  match exits:
+    case nil(_): Found.none({})
+    case cons(c): if c.head.label == label then Found.some({exit: c.head}) else find(c.tail, label)
+# Walk through an exit of the current place: view it, leave it, enter the next
+# place, and record where we are. A typed refusal before any write leaves nothing
+# changed; the calls into places are the only things staged.
+def move(state: State, input: {exit: String}, context: Abi.Context) -> Activity<Plan, Response, Moved>:
+  match perform(Plan.view({object: state.at})):
+    case viewed(v): through(state, input.exit, context, find(v.state.exits, input.exit))
+    case denied(_): Moved.refused({reason: "The place is not visible."})
+    case _: Moved.refused({reason: "The place did not answer."})
+def through(state: State, label: String, context: Abi.Context, found: Found) -> Activity<Plan, Response, Moved>:
+  match found:
+    case none(_): Moved.refused({reason: textConcat("There is no exit named ", label)})
+    case some(s): leaving(state, s.exit.to, context)
+def leaving(state: State, to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Moved>:
+  match perform(Plan.call({object: state.at, method: "leave", argument: {who: Plans.self(context)}})):
+    case returned(r): left(r.result, to, context)
+    case _: Moved.refused({reason: "The place did not answer."})
+def left(result: Place.Done, to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Moved>:
+  match result:
+    case done(_): entering(to, context)
+    case refused(r): Moved.refused({reason: r.reason})
+def entering(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Moved>:
+  match perform(Plan.call({object: to, method: "enter", argument: {who: Plans.self(context)}})):
+    case returned(r): entered(r.result, to, context)
+    case _: Moved.refused({reason: "The place did not answer."})
+def entered(result: Place.Done, to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Moved>:
+  match result:
+    case done(_): arrived(to, context)
+    case refused(r): Moved.refused({reason: r.reason})
+def arrived(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Moved>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {at: Plans.Edit::<Plans.Reference, {}>.set({value: to})})})):
+    case _: Moved.moved({to: to})
+def holdingLine(item: Plans.Reference) -> Document.Document:
+  Document.text(textConcat("Holding: ", textConcat(item.object, "\n")))
+def noteLine(item: Note) -> Document.Document:
+  Document.text(textConcat(item.from, textConcat(": ", textConcat(item.text, "\n"))))
+def render(state: State) -> Document.Document:
+  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: Document.text(textConcat(state.handle, textConcat(" is at ", textConcat(state.at.object, "\n")))), tail: Document.Documents.nil()}), Lists.map::<Plans.Reference, Document.Document>(state.holding, holdingLine)), Lists.map::<Note, Document.Document>(state.inbox, noteLine))})
+def card(state: State) -> String:
+  Document.plain(render(state))
+# Who you are, what you carry, what has been said to you.
+def describe(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.offer({document: render(state)})):
+    case offered(_): true
+    case _: false

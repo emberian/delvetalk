@@ -1,0 +1,15 @@
+:root{color-scheme:light;--paper:#f8f5ed;--card:#fffdf6;--ink:#28352e;--muted:#626a5e;--line:#dcded0;--green:#3c634c;--code:#eeeee4;--refused:#f5e7db;--refused-ink:#743f2e;--focus:#b86d26}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--paper:#171d19;--card:#202820;--ink:#e8ecdf;--muted:#aab4a3;--line:#3e4a3d;--green:#accda5;--code:#19211c;--refused:#412f26;--refused-ink:#f0c4ab;--focus:#edbe77}}
+:root[data-theme=dark]{color-scheme:dark;--paper:#171d19;--card:#202820;--ink:#e8ecdf;--muted:#aab4a3;--line:#3e4a3d;--green:#accda5;--code:#19211c;--refused:#412f26;--refused-ink:#f0c4ab;--focus:#edbe77}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.7 ui-sans-serif,system-ui,sans-serif}
+header,main,footer{max-width:46rem;margin:auto;padding:1rem 1.25rem}
+header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
+a{color:var(--green)}h1,h2{font-family:Georgia,serif;font-weight:400}h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.5rem;margin:1rem 0}
+.card{font-family:Georgia,serif;font-size:1.1rem;white-space:pre-wrap}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}
+code,pre{font:.8rem ui-monospace,monospace;background:var(--code);overflow-wrap:anywhere}pre{padding:.75rem;overflow:auto;white-space:pre-wrap}
+table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{text-align:left;padding:.25rem .5rem;border-bottom:1px solid var(--line)}
+textarea,input{width:100%;box-sizing:border-box;font:inherit;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:.5rem}
+button{font:inherit;background:var(--green);color:var(--paper);border:0;border-radius:6px;padding:.5rem 1rem;cursor:pointer}
+.refused{background:var(--refused);color:var(--refused-ink)}:focus-visible{outline:3px solid var(--focus)}

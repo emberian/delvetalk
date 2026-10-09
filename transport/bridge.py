@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Observed town posts -> host turns -> reply drafts for a human to post.
 
-Never posts: post.py is the only writer. Principals here are the observed handles,
+Never posts: post.py is the only writer. Principals here are the observed authors' DIDs,
 which are UNVERIFIED (this path serves ember's manual posting).
 Run as `python3 -m transport.bridge`.
 """
@@ -39,6 +39,13 @@ def write_atomic(path, value):
     os.replace(tmp, path)
 
 
+def web_url(uri, handle):
+    return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
+
+
+# TODO(host `publish`): when the host answers a turn with a `published` result ({page, section, body}),
+# turn it into a wiki-edit draft whose text is `edit: <page> › <section>\n\n<body>` and whose replyTo is
+# the page post, for post.py --wiki-edit. Until the host supports publish nothing produces one.
 def draft_text(reply):
     """The only text a draft carries. A refusal names its class and receipt, nothing of state."""
     receipt = reply['receipt']
@@ -71,18 +78,19 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS):
     for obs in pending_observations(state):
         if draft_exists(outbox, obs['uri']):
             continue
-        handle = obs['author']['handle']
+        handle, did = obs['author']['handle'], obs['author']['did']
         obj = 'directory' if obs['kind'] == 'summon' else obs['spell']['card']
-        reply = host.send({'op': 'world-turn', 'principal': handle, 'object': obj, 'method': 'receive',
+        reply = host.send({'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
                            'argument': {'tag': 'record', 'fields': [
                                {'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}},
-                               {'name': 'who', 'value': {'tag': 'label', 'value': handle}}]},
+                               {'name': 'who', 'value': {'tag': 'label', 'value': did}},
+                               {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]},
                            'identity': obs['uri']})
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
-            'replyTo': obs['uri'], 'principal': handle, 'principalVerified': False,
+            'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})
         done.append(obs['uri'])
     for _ in range(rounds):
@@ -123,7 +131,7 @@ def main(argv=None, out=None):
     a = ap.parse_args(argv)
     if a.cmd == 'outbox':
         for path, d in unposted(a.state):
-            out.write(f"=== reply to: {d['replyTo']}\n=== as: {d['principal']} (unverified)  file: {path}\n{d['text'].rstrip()}\n\n")
+            out.write(f"=== reply to: {d['replyTo']}\n=== web: {web_url(d['replyTo'], d['replyHandle'])}\n=== as: {d['replyHandle']} {d['principal']} (unverified)  file: {path}\n{d['text'].rstrip()}\n\n")
     elif a.cmd == 'mark-posted':
         mark_posted(a.file)
     else:

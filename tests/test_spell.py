@@ -90,11 +90,30 @@ class Parse(unittest.TestCase):
 
     def test_prose_is_not_a_spell(self):
         for prose in ("Could we plant a silver fern whose leaves remember last night's rain?",
-                      "Sure!\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver",
                       "", "\n\n# only a comment\n"):
             with self.subTest(prose=prose[:30]):
                 self.assertTrue(parse(prose).startswith("not a spell: The reply has no delvetalk line"))
         self.assertTrue(propose("Could we plant a fern?").startswith("refused The reply has no delvetalk line"))
+
+    def test_lines_before_the_spell_are_skipped_so_a_quoted_invitation_may_precede_it(self):
+        quoted = ("> ✾ DELVETALK · ROOT\n> \n> GARDEN\n> Plant something.\n> Say: delvetalk is the word\n"
+                  "---\nSure!\n\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver\n---\ntrailing prose")
+        self.assertEqual(propose(quoted), "proposal garden-1 plant colour=silver;seed=fern;")
+        self.assertEqual(propose("Sure!\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver"),
+                         "proposal garden-1 plant colour=silver;seed=fern;")
+        self.assertEqual(parse("one\ntwo\nthree"), "not a spell: The reply has no delvetalk line.")
+
+    def test_the_one_line_form_takes_comma_separated_fields_after_the_action(self):
+        self.assertEqual(parse("delvetalk garden-1 plant seed: fern, colour: silver"),
+                         "spell garden-1 plant seed=fern;colour=silver;")
+        self.assertEqual(propose("delvetalk garden-1 plant seed: a fern, that remembers, colour: silver"),
+                         "proposal garden-1 plant colour=silver;seed=a fern, that remembers;")
+        self.assertEqual(propose("Quoted menu\n  delvetalk garden-1 plant  colour: amber ,  seed: moth  \n"),
+                         "proposal garden-1 plant colour=amber;seed=moth;")
+        self.assertEqual(parse("delvetalk garden-1 plant seed: fern\ncolour: silver"),
+                         "spell garden-1 plant seed=fern;colour=silver;")
+        self.assertEqual(parse("delvetalk a b x: 1, y: 2, ---"), "spell a b x=1;y=2, ---;")
+        self.assertTrue(parse("delvetalk garden-1 plant now").startswith("not a spell: Not a field"))
 
     def test_malformed_lines_are_not_a_spell(self):
         for bad in ("delvetalk garden-1\nseed: fern", "delvetalk Garden-1 plant", "delvetalk garden-1 plant now",
