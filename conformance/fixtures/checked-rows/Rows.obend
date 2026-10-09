@@ -1,0 +1,60 @@
+edition ObjectiveBend 1
+record State:
+  a: String
+  b: String
+record Decision:
+  state: State
+def revise(s: State, choose: Bool) -> Decision:
+  if choose then {state: s} else {state: extend(s, {b: "new"})}
+def forever() -> State:
+  forever()
+def lazy() -> State:
+  if true then {b: "kept", a: "safe"} else extend(forever(), {b: "unused"})
+def branchNested() -> String:
+  revise({a: "old", b: "old"}, false).state.b
+def inherited() -> String:
+  revise({a: "old", b: "old"}, true).state.b
+def rowOrder() -> String:
+  let row = if false then {a: "one", b: "two"} else {b: "four", a: "three"} in row.a
+record Row:
+  a: String
+  b: String
+sum Choice:
+  first: {}
+  second: {}
+  third: {}
+def natural(n: Nat) -> Row:
+  match n:
+    case 0: {a: "zero", b: "kept"}
+    case 1+k: {b: "kept", a: "successor"}
+def choice(tag: Choice) -> Row:
+  match tag:
+    case first(_): {a: "first", b: "kept"}
+    case second(_): extend({a: "old", b: "kept"}, {a: "second"})
+    case third(_): {b: "kept", a: "third"}
+def nested(n: Nat) -> {row: Row}:
+  match n:
+    case 0: {row: {a: "zero", b: "kept"}}
+    case 1+k: {row: {b: "kept", a: "nested"}}
+def zero() -> String:
+  natural(0n).a
+def successor() -> String:
+  natural(3n).a
+def second() -> String:
+  choice(Choice.second()).a
+def third() -> String:
+  choice(Choice.third()).a
+def nestedResult() -> String:
+  nested(2n).row.a
+sum V:
+  none: {}
+  list: {values: L}
+sum L:
+  nil: {}
+  cons: {head: V, tail: L}
+def find(xs: L) -> V:
+  match xs:
+    case nil(_): V.none()
+    case cons(c): if true then c.head else find(c.tail)
+def entry() -> V:
+  find(L.cons({head: V.none(), tail: L.nil()}))

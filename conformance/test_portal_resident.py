@@ -108,21 +108,17 @@ class ResidentConsumerRoutingTest(unittest.TestCase):
 
 class NativeResidentPortalTest(unittest.TestCase):
     def test_authored_object_and_lost_local_reply_recover_exact_resident_receipt(self):
-        from conformance.test_obend_view import SOURCE
+        import source_object
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         directory = Path(temporary.name).resolve()
         database = directory / 'world.json'
-        protocol = {'profile': 'delvetalk-local-v1', 'initial': {'lit': False},
-            'commands': {'knock': {'require': [], 'set': {'lit': ['literal', True]},
-                'result': ['literal', 'Welcome'], 'outbox': []}},
-            'viewProgram': {'profile': 'delvetalk-obend-view-v1', 'package': {
-                'modules': [{'name': 'Main', 'source': SOURCE}], 'entry': 'view'}}}
+        protocol = source_object.load([{'name': 'Door', 'source': (Path(__file__).parent / 'fixtures/views/Door.obend').read_text()}], syntax='objective-bend-object')
         p.save(directory / 'manifest.json', {'cafe': 'door', 'runtime': p.bootstrap.history.runtime('compiled')})
         p.world.configure_resident(database, profile='compiled')
         with p.world.resident_session(database):
             created = p.world.exchange(database, {'op': 'create', 'object': 'door', 'principal': 'maker',
-                'intent': 'create-door', 'protocol': protocol, 'law': ['visitor']}, profile='compiled')
+                'intent': 'create-door', 'protocol': protocol, 'law': {'profile': 'delvetalk-scoped-law', 'invoke': {'knock': ['visitor']}, 'reprogram': ['maker'], 'law': ['maker']}}, profile='compiled')
             self.assertEqual(created['kind'], 'committed', created)
             self.assertFalse(database.exists())
             previous_bytecode = sys.dont_write_bytecode

@@ -80,14 +80,10 @@ class PortalPanelsTest(unittest.TestCase):
                 self.app.object('door', 'ink & light')
 
     def test_actual_source_view_uses_selected_panel_and_exact_captured_root(self):
-        from conformance.test_obend_view import SOURCE
-        self.root['protocol'].update(initial={'lit': False}, commands={'knock': {
-            'require': [], 'set': {'lit': ['literal', True]},
-            'result': ['literal', 'Welcome'], 'outbox': []}},
-            viewProgram={'profile': 'delvetalk-obend-view-v1', 'package': {
-                'modules': [{'name': 'Main', 'source': SOURCE}], 'entry': 'view'}},
-            viewPanels=[{'id': 'details', 'label': 'Door details'}])
-        self.root['state'] = {'lit': False}
+        import source_object
+        self.root['protocol'] = source_object.load([{'name': 'Door', 'source': (Path(__file__).parent / 'fixtures/views/Door.obend').read_text()}], syntax='objective-bend-object')
+        self.root['state'] = self.root['protocol']['initial']
+        self.root['law'] = {'profile': 'delvetalk-scoped-law', 'invoke': {'knock': ['visitor']}, 'reprogram': ['maker'], 'law': ['maker']}
         p.save(self.directory / 'world.json', {'objects': {'door': self.root}, 'receipts': []})
         p.save(self.directory / 'manifest.json', {'cafe': 'door',
             'runtime': p.bootstrap.history.runtime('compiled')})

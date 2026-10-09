@@ -1,0 +1,56 @@
+edition ObjectiveBend 1
+record Row:
+  a: String
+  b: String
+def wrongBranch(s: Row) -> Row:
+  if true then s else extend(s, {b: 7n})
+-- fixture boundary --
+edition ObjectiveBend 1
+record Row:
+  a: String
+  b: String
+def wrongNatural(n: Nat) -> Row:
+  match n:
+    case 0: {a: "zero", b: "kept"}
+    case 1+k: {a: 7n, b: "kept"}
+-- fixture boundary --
+edition ObjectiveBend 1
+record Row:
+  a: String
+  b: String
+sum Choice:
+  left: {}
+  right: {}
+def wrongSum(tag: Choice) -> Row:
+  match tag:
+    case left(_): {a: "left", b: "kept"}
+    case right(_): {a: 7n, b: "kept"}
+-- fixture boundary --
+edition ObjectiveBend 1
+def hiddenBranch(affine token: Nat) -> {x: Nat}:
+  if true then {x: 1n} else extend({x: fn(u: Nat) -> Nat: token}, {x: 1n})
+-- fixture boundary --
+edition ObjectiveBend 1
+def reusedBranch(affine token: Nat) -> Nat:
+  if true then token else token
+-- fixture boundary --
+edition ObjectiveBend 1
+def hiddenNatural(affine token: Nat, n: Nat) -> {x: Nat}:
+  match n:
+    case 0: {x: 1n}
+    case 1+k: extend({x: fn(u: Nat) -> Nat: token}, {x: 1n})
+-- fixture boundary --
+edition ObjectiveBend 1
+def hiddenBoolean(affine token: Nat, n: Nat) -> {x: Nat}:
+  match n == 0n:
+    case true: {x: 1n}
+    case false: extend({x: fn(u: Nat) -> Nat: token}, {x: 1n})
+-- fixture boundary --
+edition ObjectiveBend 1
+sum Choice:
+  left: {}
+  right: {}
+def hiddenSum(affine token: Nat, tag: Choice) -> {x: Nat}:
+  match tag:
+    case left(_): {x: 1n}
+    case right(_): extend({x: fn(u: Nat) -> Nat: token}, {x: 1n})

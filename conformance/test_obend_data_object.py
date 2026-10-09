@@ -27,6 +27,7 @@ record Origin:
   kind: String
   object: String
   command: String
+  program: String
   immediatelyPrevious: Bool
 record Context:
   object: String

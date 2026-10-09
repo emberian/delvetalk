@@ -126,17 +126,14 @@ class SourceTableFraming(unittest.TestCase):
         root['state'] = {'model': wire({})}
         binary = '.lake/build/bin/' + projection.runtime_profile.PROFILES['compiled'][0]
         pins = {binary: 'a' * 64}
-        response = {'reply': {'kind': 'committed', 'data': {'result': view['rawData']}}}
+        response = {'result': view['rawData']}
         process = Mock(returncode=0, stdout=projection.world.wire_dumps(response).encode('utf-8'))
         with patch.object(projection.runtime_profile, 'file_hashes', return_value=pins), \
                 patch.object(projection.world.process_custody, 'run_native', return_value=process) as run:
             actual = projection.project(root, 'gallery')
         job = projection.world.wire_loads(run.call_args.kwargs['input'])
-        synthetic = job['world']['objects']['projection']['protocol']
-        self.assertEqual(synthetic['sourcePackages'], root['protocol']['sourcePackages'])
-        expression = synthetic['commands']['project']['result']
-        self.assertEqual(expression[:2], ['package-data-v1', package])
-        self.assertNotIn('modules', expression[1])
+        self.assertEqual(job, {'root': root, 'panel': 'main'})
+        self.assertNotIn('modules', package)
         self.assertEqual(actual['source']['package'], package)
         self.assertEqual(actual['root'], root)
         self.assertIn('exact source bytes', projection.html_view(actual))
@@ -155,14 +152,14 @@ class SourceTableFraming(unittest.TestCase):
 class NativeTypedViews(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.protocol = translate.translate('objective-bend-spell@3', SOURCE.encode())['lowered']
+        cls.protocol = translate.translate('objective-bend-object', SOURCE.encode())['lowered']
 
     def test_real_typed_state_source_children_and_captured_root(self):
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / 'world.json'
             call = lambda request: projection.world.exchange(database, request, profile='compiled')
             made = call({'op': 'create', 'object': 'shelf', 'principal': 'maker', 'intent': 'create',
-                         'protocol': self.protocol, 'law': ['maker']})
+                         'protocol': self.protocol, 'law': {'profile': 'delvetalk-scoped-law', 'invoke': {'add': ['maker']}, 'reprogram': ['maker'], 'law': ['maker']}})
             self.assertEqual(made['kind'], 'committed', made)
             root = made['data']['root']
             runtime = history.runtime('compiled')

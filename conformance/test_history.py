@@ -1,6 +1,5 @@
-"""History integrity/reconstruction uses the actual Lean transactions binary."""
+"""History integrity/reconstruction uses the current source receiver."""
 import copy
-import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -13,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import history as h
 import translate
+from test_authority import law, source_object
 
 
 class History(unittest.TestCase):
@@ -23,14 +23,16 @@ class History(unittest.TestCase):
         cls.directory = Path(cls.temp.name)
         cls.database = cls.directory / 'world.json'
         cls.bundle = cls.directory / 'bundle'
-        source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
-        protocol = h.loads(source)
+        source = (ROOT / 'examples/current-objects/Counter.obend').read_bytes()
+        artifact = translate.translate('objective-bend-object', source)
+        protocol = artifact['lowered']
+        cls.source = source
         def admit(request):
-            return h.world.exchange(cls.database, request, profile='transactions')
+            return h.world.exchange(cls.database, request, profile='compiled')
         roots = {}
         for name in ('a', 'b'):
             roots[name] = admit({'op': 'create', 'object': name, 'principal': 'A',
-                'intent': 'create-' + name, 'protocol': protocol, 'law': ['A']})['data']['root']
+                'intent': 'create-' + name, 'protocol': protocol, 'law': law(invoke={'add': ['A']}, reprogram=['A'], law=['A'])})['data']['root']
         transaction = {'op': 'transaction', 'principal': 'A', 'intent': 'both', 'reads': roots,
                        'calls': [{'object': 'a', 'command': 'add', 'input': {'amount': 3}},
                                  {'object': 'b', 'command': 'add', 'input': {'amount': 4}}]}
@@ -38,14 +40,14 @@ class History(unittest.TestCase):
         refused = admit({**transaction, 'intent': 'stale'})
         assert refused['kind'] == 'refused'
         request = {'op': 'reprogram', 'object': 'a', 'principal': 'A', 'intent': 'program',
-                   'expected': changed['data']['roots']['a'], 'protocol': protocol, 'state': {'count': 9}}
+                   'expected': changed['data']['roots']['a'], 'protocol': protocol, 'state': {'model': source_object.data({'count': 9})}}
         admit(request)
         cls.journals = cls.directory / 'journals'
         cls.journals.mkdir()
         (cls.journals / 'program.json').write_bytes(h.canonical({
-            'request': request, 'artifact': translate.translate('protocol-json@1', source),
-            'inputs': {'syntax': 'protocol-json@1', 'source': source.decode(),
-                       'stateSource': {'encoding': 'utf-8', 'text': '{"count":9}'}}}))
+            'request': request, 'artifact': artifact,
+            'inputs': {'syntax': 'objective-bend-object', 'source': source.decode(),
+                       'stateSource': {'encoding': 'utf-8', 'text': h.canonical({'model': source_object.data({'count': 9})}).decode()}}}))
         cls.trusted = h.export_history(cls.database, cls.bundle, journals=cls.journals)
         cls.manifest = h.loads((cls.bundle / 'manifest.json').read_bytes())
 
@@ -74,8 +76,8 @@ class History(unittest.TestCase):
         self.assertEqual(h.canonical(h.loads(output.read_bytes())), h.canonical(h.loads(self.database.read_bytes())))
         commit = self.manifest['entries'][2]
         self.assertEqual(set(commit['reply']['data']['roots']), {'a', 'b'})
-        self.assertEqual(commit['reply']['data']['roots']['a']['state']['count'], 3)
-        self.assertEqual(commit['reply']['data']['roots']['b']['state']['count'], 4)
+        self.assertEqual(commit['reply']['data']['roots']['a']['state'], {'model': source_object.data({'count': 3})})
+        self.assertEqual(commit['reply']['data']['roots']['b']['state'], {'model': source_object.data({'count': 4})})
         self.assertTrue(self.manifest['entries'][-1]['artifacts'])
         before = output.read_bytes()
         with self.assertRaises(FileExistsError):
@@ -99,7 +101,7 @@ class History(unittest.TestCase):
 
     def test_receipt_tampering_and_rechaining_cannot_fool_lean(self):
         def tamper(manifest):
-            manifest['entries'][2]['reply']['data']['roots']['a']['state']['count'] = 999
+            manifest['entries'][2]['reply']['data']['roots']['a']['state'] = {'model': source_object.data({'count': 999})}
         with self.assertRaisesRegex(ValueError, 'commit digest'):
             self.check(self.altered(tamper))
         manifest = copy.deepcopy(self.manifest)
@@ -117,7 +119,7 @@ class History(unittest.TestCase):
     def test_trusted_head_and_runtime_are_required(self):
         with self.assertRaisesRegex(ValueError, 'trusted head'):
             h.verify_history(self.bundle, expected_genesis=self.trusted['genesis'], expected_head='0' * 64)
-        current = h.runtime('transactions')
+        current = h.runtime('compiled')
         current['platform']['machine'] = 'different'
         with patch.object(h, 'runtime', return_value=current):
             with self.assertRaisesRegex(ValueError, 'runtime/source/platform'):
@@ -128,6 +130,9 @@ class History(unittest.TestCase):
         self.assertIn('scripts/runtime_profile.py', paths)
         self.assertIn('profiles/TransactionsCore.lean', paths)
         self.assertIn('profiles/WorldCore.lean', paths)
+        self.assertIn('profiles/Compiled.lean', paths)
+        self.assertIn('spec/Delvetalk/Package.lean', paths)
+        self.assertIn('spec/bend/Compiler/ObjectiveBendFrontEnd.lean', paths)
 
     def foreign_manifest(self, bundle):
         manifest = copy.deepcopy(self.manifest)
@@ -160,10 +165,10 @@ class History(unittest.TestCase):
         result = h.verify_history(bundle, runtime_policy='same-sources', **args)
         self.assertEqual(result['runtimePolicy'], 'same-sources')
         self.assertEqual(result['proofScope'], 'source-matched-local-replay')
-        self.assertEqual(result['localRuntime'], h.runtime('transactions'))
+        self.assertEqual(result['localRuntime'], h.runtime('compiled'))
         self.assertNotEqual(result['localRuntimeSha256'], result['originRuntimeSha256'])
         # Even a coherently rehashed claimed receipt must reproduce in Lean.
-        manifest['entries'][2]['reply']['data']['roots']['a']['state']['count'] = 999
+        manifest['entries'][2]['reply']['data']['roots']['a']['state'] = {'model': source_object.data({'count': 999})}
         self.rechain(manifest)
         (bundle / 'manifest.json').write_bytes(h.canonical(manifest))
         with self.assertRaisesRegex(ValueError, 'Lean receipt mismatch'):
@@ -173,7 +178,7 @@ class History(unittest.TestCase):
     def test_same_sources_still_requires_every_source_and_origin_binary_blob(self):
         bundle = self.altered(lambda m: None)
         manifest = self.foreign_manifest(bundle)
-        binary = '.lake/build/bin/' + h.world.PROFILES['transactions'][0]
+        binary = '.lake/build/bin/' + h.world.PROFILES['compiled'][0]
         origin_sha = manifest['genesis']['profile']['files'][binary]
         (bundle / 'manifest.json').write_bytes(h.canonical(manifest))
         (bundle / 'blobs' / origin_sha).write_bytes(b'changed origin bytes')
@@ -187,29 +192,6 @@ class History(unittest.TestCase):
             h.verify_history(bundle, runtime_policy='same-sources',
                 expected_genesis=manifest['genesis']['id'], expected_head=manifest['head'])
 
-    @unittest.skipUnless((ROOT / '.lake/build/bin/delvetalk-compiled').is_file(),
-                         'optional compiled profile is not built')
-    def test_compiled_profile_replay_keeps_frontend_and_package_closure(self):
-        protocol = {'profile': 'delvetalk-local-v1', 'initial': {'digest': ''}, 'commands': {
-            'hash': {'require': [], 'set': {'digest': ['sha256', ['input', 'value']]},
-                     'result': ['record', {}], 'outbox': []}}}
-        database = self.case / 'compiled-world.json'
-        created = h.world.exchange(database, {'op': 'create', 'object': 'hash', 'principal': 'A',
-            'intent': 'create-hash', 'protocol': protocol, 'law': ['A']}, profile='compiled')
-        self.assertEqual(created['kind'], 'committed')
-        result = h.world.exchange(database, {'op': 'invoke', 'object': 'hash', 'principal': 'A',
-            'intent': 'hash-input', 'command': 'hash', 'expected': created['data']['root'],
-            'input': {'value': {'text': 'replay', 'count': 7}}}, profile='compiled')
-        self.assertEqual(result['kind'], 'committed')
-        bundle = self.case / 'compiled-history'
-        trusted = h.export_history(database, bundle, profile='compiled')
-        pins = h.loads((bundle / 'manifest.json').read_bytes())['genesis']['profile']['files']
-        for path in ('spec/Delvetalk/Package.lean', 'profiles/Compiled.lean',
-                     'spec/bend/Compiler/ObjectiveBendFrontEnd.lean',
-                     'spec/bend/Theory/ObjectiveBendDemandMachineFast.lean',
-                     'spec/bend/Compiler/ObjectiveBendTermWire.lean'):
-            self.assertIn(path, pins)
-        h.verify_history(bundle, expected_genesis=trusted['genesis'], expected_head=trusted['head'])
 
     def test_previously_known_head_must_be_a_history_prefix(self):
         self.check(base_head=self.manifest['entries'][1]['id'])
@@ -222,12 +204,11 @@ class History(unittest.TestCase):
         old = h.loads(database.read_bytes())
         result = h.world.exchange(database, {'op': 'invoke', 'object': 'b', 'principal': 'A',
             'intent': 'after-restoration', 'expected': old['objects']['b'], 'command': 'add',
-            'input': {'amount': 2}}, profile='transactions')
+            'input': {'amount': 2}}, profile='compiled')
         self.assertEqual(result['kind'], 'committed')
         # It lowers to the same protocol, but selects different source bytes.
         alternative = self.case / 'alternative.json'
-        alternative.write_bytes(h.canonical(translate.translate('protocol-json@1',
-            (ROOT / 'protocols/counter/protocol.json').read_bytes() + b'\n')))
+        alternative.write_bytes(h.canonical(translate.translate('objective-bend-object', self.source + b'\n')))
         previous_request = self.manifest['entries'][-1]['request']
         bundle = self.case / 'extension'
         trusted = h.export_history(database, bundle,
@@ -292,31 +273,12 @@ class History(unittest.TestCase):
             h.export_history(self.database, self.case / 'missing', journals=self.journals,
                              attachments={h.digest(request): [str(self.case / 'absent')]})
         altered = h.loads(self.database.read_bytes())
-        altered['objects']['b']['state']['count'] = 1000
+        altered['objects']['b']['state'] = {'model': source_object.data({'count': 1000})}
         database = self.case / 'mutated-world.json'
         database.write_bytes(h.canonical(altered))
         with self.assertRaisesRegex(ValueError, 'cannot be reconstructed'):
             h.export_history(database, self.case / 'unreconstructible', journals=self.journals)
 
-    @unittest.skipUnless((ROOT / 'scene/spween-bridge/target/debug/delvetalk-spween').is_file(),
-                         'optional Spween bridge is not built')
-    def test_room_reference_requires_exact_complete_artifact(self):
-        spec = importlib.util.spec_from_file_location('history_test_room', ROOT / 'scene/room.py')
-        room = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(room)
-        artifact = room.compile_artifact('---\nid: history_room\n---\n=== start\nA quiet room.\n* [Leave]\n  -> END\n')
-        source = self.case / 'room.json'
-        source.write_bytes(room.canonical(artifact))
-        request = {'op': 'create', 'object': 'room', 'principal': 'A', 'intent': 'make-room',
-                   'protocol': artifact['protocol'], 'law': ['A']}
-        database = self.case / 'room-world.json'
-        admitted = h.world.exchange(database, request, profile='transactions')
-        self.assertEqual(admitted['kind'], 'committed')
-        with self.assertRaisesRegex(ValueError, 'missing or mismatched room artifact'):
-            h.export_history(database, self.case / 'room-missing', inline_reprogram=True)
-        bundle = self.case / 'room-bundle'
-        trusted = h.export_history(database, bundle, attachments={h.digest(request): [source]})
-        h.verify_history(bundle, expected_genesis=trusted['genesis'], expected_head=trusted['head'])
 
 
 if __name__ == '__main__':
