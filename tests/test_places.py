@@ -183,21 +183,21 @@ class Floor(Chain):
         self.assertLess(reply["ticksUsed"], 100000)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
-        """A list in state is a nested cons chain on the wire; the host decodes to
-        depth 8192, so an inbox is bounded by state bytes, not by a count of 247."""
+        """The inbox keeps the newest 64 notes (the mailbox's bound): 248 notes leave 64, and the
+        card shows eight of them and counts the rest."""
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         for i in range(247):
             note = self.turn("glm", "note", record(text=label("note %03d" % i)), principal="kimik3")
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
-        self.assertEqual(over["status"], "admitted", over)  # the wire now decodes lists to depth 8192; the cap is bytes, not count
+        self.assertEqual(over["status"], "admitted", over)  # a full inbox drops its oldest
         reply = self.turn("glm", "receive", record(text=label(""), post=label(""), slot=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest
         self.assertLess(text.index("one too many"), text.index("kimik3: note 246"))  # newest first
-        self.assertIn("… and 240 more\n", text)
-        print("\n  avatar with 247 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
+        self.assertIn("… and 56 more\n", text)
+        print("\n  avatar with 64 of 248 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
         self.assertLess(reply["ticksUsed"], 100000)
 
     # --- paths through remove -----------------------------------------------------------

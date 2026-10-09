@@ -72,7 +72,7 @@ class Views(test_chain.Chain):
         print("\n--- avatar, own ---\n" + mine + "--- avatar, other ---\n" + theirs)
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm is at porch\n1 note\n", theirs)
+        self.assertIn("glm is at porch\n0 following, follows 0\n1 note\n", theirs)
 
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"

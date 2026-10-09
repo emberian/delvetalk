@@ -209,9 +209,13 @@ sum Change:
   edit: {entries: Plans.Entries<Observer, {}>, count: Nat}
   refused: {reason: String}
 def observing(observers: Observers, input: Observer) -> Change:
-  if Lists.any::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)) then Change.unchanged({count: Lists.length::<Observer>(observers)}) else adding(Lists.length::<Observer>(observers), input)
-def adding(count: Nat, input: Observer) -> Change:
-  if count < 16n then Change.edit({entries: Plans.Entries::<Observer, {}>.append({item: input}), count: count + 1n}) else Change.refused({reason: "Too many observers."})
+  observingUpTo(observers, input, 16n)
+# The same with the object's own bound (an Avatar's mailing list holds as many as one
+# turn may send).
+def observingUpTo(observers: Observers, input: Observer, cap: Nat) -> Change:
+  if Lists.any::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)) then Change.unchanged({count: Lists.length::<Observer>(observers)}) else adding(Lists.length::<Observer>(observers), input, cap)
+def adding(count: Nat, input: Observer, cap: Nat) -> Change:
+  if count < cap then Change.edit({entries: Plans.Entries::<Observer, {}>.append({item: input}), count: count + 1n}) else Change.refused({reason: "Too many observers."})
 def unobserving(observers: Observers, input: Observer) -> Change:
   match Lists.find::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)):
     case none(_): Change.refused({reason: "Not observing."})
