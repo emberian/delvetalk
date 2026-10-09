@@ -3,15 +3,18 @@
 // Nat arithmetic uses BigInt; the wire preserves decimal strings, not Numbers.
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const arities = new Map(Object.entries({
   bound: 2, lam: 2, app: 3, mix: 3, fix: 3, specification: 3, prototype: 3,
   reflect: 2, metadata: 2, project: 2, nat: 2, boolean: 2, label: 2,
-  binary: 4, extend: 3, record: 2, get: 3, ifZero: 4, inject: 3,
+  binary: 4, unary: 3, extend: 3, record: 2, get: 3, ifZero: 4, inject: 3,
   case: 3, ifBool: 4, perform: 2, done: 2,
 }));
 const primitives = new Set(['add', 'multiply', 'equal', 'conjunction',
-  'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo']);
+  'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo',
+  'textConcat', 'textTake', 'textDrop', 'textSpan', 'textBreak']);
+const unaries = new Set(['natText', 'textLength', 'sha256Text']);
 const values = new Set(['lam', 'nat', 'boolean', 'label', 'record',
   'specification', 'prototype', 'inject']);
 const scalarString = x => typeof x === 'string' && !/[\uD800-\uDFFF]/u.test(x);
@@ -47,6 +50,9 @@ export function validate(term) {
     } else if (tag === 'binary') {
       requireThat(primitives.has(a), 'unknown primitive');
       pending.push(b, t[3]);
+    } else if (tag === 'unary') {
+      requireThat(unaries.has(a), 'unknown unary primitive');
+      pending.push(b);
     } else pending.push(...t.slice(1));
   }
   return term;
@@ -68,6 +74,7 @@ function substitute(t, env) {
     case 'get': return ['get', sub(t[1]), t[2]];
     case 'inject': return ['inject', t[1], sub(t[2])];
     case 'binary': return ['binary', t[1], sub(t[2]), sub(t[3])];
+    case 'unary': return ['unary', t[1], sub(t[2])];
     default: return [t[0], ...t.slice(1).map(sub)];
   }
 }
@@ -82,12 +89,33 @@ const instantiate = (body, argument) => substitute(body, i => i === 0 ? argument
 const nat = n => ['nat', n.toString()];
 const bool = b => ['boolean', b];
 
+const scalars = text => Array.from(text);
+function prefixLength(text, alphabet, member) {
+  const set = new Set(scalars(alphabet));
+  let count = 0;
+  for (const c of scalars(text)) { if (set.has(c) !== member) break; count++; }
+  return count;
+}
 function primitive(op, left, right) {
-  if (op === 'conjunction' && left[0] === 'boolean' && right[0] === 'boolean')
-    return () => bool(left[1] && right[1]);
-  if (op === 'labelEqual' && left[0] === 'label' && right[0] === 'label')
-    return () => bool(left[1] === right[1]);
-  if (left[0] !== 'nat' || right[0] !== 'nat' || op === 'conjunction' || op === 'labelEqual') return null;
+  if (op === 'conjunction')
+    return left[0] === 'boolean' && right[0] === 'boolean' ? () => bool(left[1] && right[1]) : null;
+  if (op === 'labelEqual')
+    return left[0] === 'label' && right[0] === 'label' ? () => bool(left[1] === right[1]) : null;
+  if (op === 'textConcat' || op === 'textSpan' || op === 'textBreak') {
+    if (left[0] !== 'label' || right[0] !== 'label') return null;
+    if (op === 'textConcat') return () => ['label', left[1] + right[1]];
+    return () => nat(BigInt(prefixLength(left[1], right[1], op === 'textSpan')));
+  }
+  if (op === 'textTake' || op === 'textDrop') {
+    if (left[0] !== 'label' || right[0] !== 'nat') return null;
+    return () => {
+      const n = BigInt(right[1]), size = BigInt(Buffer.byteLength(left[1], 'utf8'));
+      const chars = scalars(left[1]);
+      if (op === 'textTake') return ['label', n === 0n ? '' : n >= size ? left[1] : chars.slice(0, Number(n)).join('')];
+      return ['label', n === 0n ? left[1] : n >= size ? '' : chars.slice(Number(n)).join('')];
+    };
+  }
+  if (left[0] !== 'nat' || right[0] !== 'nat') return null;
   return () => {
     const a = BigInt(left[1]), b = BigInt(right[1]);
     switch (op) {
@@ -101,6 +129,13 @@ function primitive(op, left, right) {
       case 'lessEqual': return bool(a <= b);
     }
   };
+}
+function unaryOp(op, arg) {
+  if (op === 'natText' && arg[0] === 'nat') return () => ['label', arg[1]];
+  if (op === 'textLength' && arg[0] === 'label') return () => nat(BigInt(scalars(arg[1]).length));
+  if (op === 'sha256Text' && arg[0] === 'label')
+    return () => ['label', createHash('sha256').update(arg[1], 'utf8').digest('hex')];
+  return null;
 }
 
 const stuck = { kind: 'stuck' };
@@ -145,6 +180,11 @@ function inspect(t) {
       if (!values.has(b[0])) return inside(t, 2);
       if (!values.has(c[0])) return inside(t, 3);
       const reduce = primitive(a, b, c);
+      return reduce ? step(reduce) : stuck;
+    }
+    case 'unary': {
+      if (!values.has(b[0])) return inside(t, 2);
+      const reduce = unaryOp(a, b);
       return reduce ? step(reduce) : stuck;
     }
     case 'ifZero':
