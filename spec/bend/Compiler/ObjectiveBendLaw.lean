@@ -36,6 +36,8 @@ inductive LawRef where
   | caller
   | height
   | turn
+  /-- The pin of the package the object runs after the write (host extension). -/
+  | pin
   deriving DecidableEq, Repr, Inhabited
 
 /-- The enforced fragment. `old.` appears only through `monotone` and `writeOnce`. -/
@@ -43,6 +45,8 @@ inductive LawExpr where
   | eqC (ref : LawRef) (value : Int)
   | leC (ref : LawRef) (value : Int)
   | inC (ref : LawRef) (values : List Int)
+  /-- `request.subject`, `request.caller` or `request.pin` equals a text constant. -/
+  | eqS (ref : LawRef) (text : String)
   | eqR (left right : LawRef)
   | leR (left right : LawRef)
   | leROff (left right : LawRef) (offset : Int)
@@ -60,7 +64,7 @@ def LawRef.fields : LawRef → List String
   | _ => []
 
 def LawExpr.fields : LawExpr → List String
-  | .eqC ref _ | .leC ref _ | .inC ref _ => ref.fields
+  | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.fields
   | .eqR left right | .leR left right | .leROff left right _ => left.fields ++ right.fields
   | .monotone field | .writeOnce field => [field]
   | .not body => body.fields
@@ -79,7 +83,7 @@ def LawRef.plain : LawRef → Bool
 
 /-- Every field a law names is a law field name. -/
 def LawExpr.fieldsPlain : LawExpr → Bool
-  | .eqC ref _ | .leC ref _ | .inC ref _ => ref.plain
+  | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.plain
   | .eqR left right | .leR left right | .leROff left right _ => left.plain && right.plain
   | .monotone field | .writeOnce field => plainName field
   | .not body => body.fieldsPlain
@@ -94,11 +98,14 @@ def LawRef.slot : LawRef → Slot
   | .caller => "request/caller"
   | .height => "request/height"
   | .turn => "request/turn"
+  | .pin => "request/pin"
 
 /-- The predicate the kernel installs for a law (`Kernel.ObjectLaw.compile_sound`: it evaluates
 to the law's meaning on every view the kernel judges). -/
 def compile : LawExpr → Pred
   | .eqC ref value => .eq ref.slot value
+  -- Text constants have no integer reading: the kernel predicate refuses (host laws judge them).
+  | .eqS _ _ => Pred.any []
   | .leC ref value => .le ref.slot value
   | .inC ref values => .memberOf ref.slot values
   | .eqR left right => .eqSlots left.slot right.slot
@@ -125,9 +132,11 @@ def LawRef.render : LawRef → String
   | .caller => "request.caller"
   | .height => "request.height"
   | .turn => "request.turn"
+  | .pin => "request.pin"
 
 def LawExpr.render : LawExpr → String
   | .eqC ref value => s!"{ref.render} == {value}"
+  | .eqS ref text => s!"{ref.render} == \"{text}\""
   | .leC ref value => s!"{ref.render} <= {value}"
   | .inC ref values => s!"{ref.render} in [{", ".intercalate (values.map toString)}]"
   | .eqR left right => s!"{left.render} == {right.render}"
@@ -145,12 +154,14 @@ def LawExpr.render : LawExpr → String
 inductive Tok where
   | ident (name : String)
   | int (value : Nat)
+  | str (text : String)
   | sym (text : String)
   deriving DecidableEq, Repr, Inhabited
 
 def Tok.render : Tok → String
   | .ident name => "`" ++ name ++ "`"
   | .int value => "`" ++ toString value ++ "`"
+  | .str text => "\"" ++ text ++ "\""
   | .sym text => "`" ++ text ++ "`"
 
 def refusalPrefix : String := "law outside the enforced fragment: "
@@ -175,6 +186,13 @@ def tokenize : Nat → List Char → Except String (List Tok)
     else if digit c then
       let digits := (c :: rest).takeWhile digit
       return Tok.int (digitsValue digits) :: (← tokenize fuel ((c :: rest).dropWhile digit))
+    else if c == '"' then
+      let body := rest.takeWhile (fun d => d != '"')
+      match rest.dropWhile (fun d => d != '"') with
+      | _ :: more =>
+        if body.any (fun d => d == '\\' || d.toNat < 32) then refuse "a text constant with a backslash or control character"
+        else return Tok.str (String.ofList body) :: (← tokenize fuel more)
+      | [] => refuse "an unterminated text constant"
     else match c, rest with
       | '=', '=' :: more => return Tok.sym "==" :: (← tokenize fuel more)
       | '<', '=' :: more => return Tok.sym "<=" :: (← tokenize fuel more)
@@ -206,6 +224,7 @@ def requestFact : String → Option LawRef
   | "caller" => some .caller
   | "height" => some .height
   | "turn" => some .turn
+  | "pin" => some .pin
   | _ => none
 
 def parseRef : List Tok → Except String (LawRef × List Tok)
@@ -217,8 +236,8 @@ def parseRef : List Tok → Except String (LawRef × List Tok)
   | .ident "request" :: .sym "." :: .ident fact :: rest =>
     match requestFact fact with
     | some ref => .ok (ref, rest)
-    | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height and \
-        request.turn)")
+    | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn \
+        and request.pin)")
   | .ident "old" :: _ => refuse "old.FIELD outside monotone(FIELD) and writeOnce(FIELD)"
   | t :: _ => refuse (t.render ++ " where a reference new.FIELD or request.FACT was expected")
   | [] => refuse "a comparison missing its reference"
@@ -236,6 +255,10 @@ def parseIntList : Nat → List Tok → Except String (List Int × List Tok)
 def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × List Tok) := do
   let (left, rest) ← parseRef toks
   match rest with
+  | .sym "==" :: .str text :: after =>
+    match left with
+    | .subject | .caller | .pin => return (.eqS left text, after)
+    | _ => refuse "a text constant compares with request.subject, request.caller or request.pin only"
   | .sym "==" :: more =>
     if startsInt more then
       let (value, after) ← parseInt more

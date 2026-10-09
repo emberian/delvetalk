@@ -59,6 +59,8 @@ structure TurnState where
   intent : String
   /-- Sends in order: target object, method, argument. They leave with the commit. -/
   sends : List (String × String × Data) := []
+  programs : List (String × (String × String)) := []
+  laws : List (String × String) := []
   ticks : Nat
   plans : Nat := 0
   /-- Rendered `offer` documents in order; the receipt carries them, the journal their count. -/
@@ -153,6 +155,14 @@ def addWrite (id : String) (step : Step) : M Bool := do
   set { s with writes }
   return true
 
+/-- Make sure the turn's write set names `id` (a reprogram or amendment is a write). -/
+def ensureWrite (id : String) : M Bool := do
+  let s ← get
+  if s.writes.any (·.1 == id) then return true
+  if s.writes.length ≥ Limits.maxWrites then return false
+  set { s with writes := s.writes ++ [(id, [])] }
+  return true
+
 def contextData (id principal kind origin command : String) : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label origin), ("command", .label command),
@@ -234,6 +244,37 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
       else
         let result ← runMethod (depth + 1) id method argument self
         respond bounds responseType "returned" [.record [("result", result)]]
+  | .variant "reprogram" (.record f) =>
+    let some target := f.lookup "object" | evaluation "malformed reprogram plan"
+    let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
+    let some migration := (f.lookup "migration").bind labelOf | evaluation "malformed reprogram plan"
+    let some id := referenceId target | refusedWith bounds responseType "unreadWrite"
+    let s ← get
+    let some o := s.world.objects[id]? | refusedWith bounds responseType "unreadWrite"
+    if !s.roots.any (·.1 == id) then refusedWith bounds responseType "unreadWrite"
+    else if s.programs.any (·.1 == id) then refusedWith bounds responseType "duplicate"
+    else match programFor s.world o source migration with
+      | .error (clause, _) => refusedWith bounds responseType clause
+      | .ok prog =>
+        if !(← ensureWrite id) then refusedWith bounds responseType "writeCapacity"
+        else
+          modify fun s => { s with world := cacheProgram s.world o source migration prog,
+                                   programs := s.programs ++ [(id, (source, migration))] }
+          respond bounds responseType "reprogrammed" [.record [("pin", .label prog.pin)]]
+  | .variant "amend" (.record f) =>
+    let some target := f.lookup "object" | evaluation "malformed amend plan"
+    let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"
+    let some id := referenceId target | refusedWith bounds responseType "unreadWrite"
+    let s ← get
+    if !s.roots.any (·.1 == id) then refusedWith bounds responseType "unreadWrite"
+    else if s.laws.any (·.1 == id) then refusedWith bounds responseType "duplicate"
+    else match parseLawText text with
+      | .error _ => refusedWith bounds responseType "law syntax"
+      | .ok _ =>
+        if !(← ensureWrite id) then refusedWith bounds responseType "writeCapacity"
+        else
+          modify fun s => { s with laws := s.laws ++ [(id, text)] }
+          respond bounds responseType "amended" [emptyRecord]
   | .variant "send" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed send plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed send plan"
@@ -310,9 +351,9 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let ticks := requested
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, ticks := 1000000, limits := req.limits }
   let (result, st) := (runMethod 0 req.object req.method req.argument "" |>.run).run { init with ticks }
-  let w := { w with compiled := st.world.compiled }
+  let w := { w with compiled := st.world.compiled, programs := st.world.programs }
   let used := ticks - st.ticks
-  let proposal : Proposal := ⟨req.principal, req.intent, st.roots, st.writes, w.height + 1⟩
+  let proposal : Proposal := { principal := req.principal, intent := req.intent, roots := st.roots, writes := st.writes, turn := w.height + 1, programs := st.programs, laws := st.laws }
   let base := [("turnRequest", toJson req.digest), ("ticksUsed", toJson used), ("ledger", ledger.json)] ++
     (how.delivery.map fun (id, sender) => [("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]).getD []
   let refuse := fun (reason : String) =>
@@ -344,7 +385,7 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   let how : TurnMeta := { ledger := some ledger, delivery := some (id, sender) }
   match ledger.exhausted with
   | some field =>
-    let p : Proposal := ⟨principal, id, [], [], w.height + 1⟩
+    let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
     let (w', r) := commit w p
       [("ledger", ledger.json), ("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]
       (some { cls := "budgetExhausted", reason := some field })
@@ -379,5 +420,53 @@ def pendingReply (w : World) : Json :=
   Json.mkObj [("status", toJson "pending"), ("count", toJson w.pending.size),
     ("ids", Json.arr ((w.pending.extract 0 Limits.maxHistoryLimit).map fun p =>
       (p.getObjVal? "id").toOption.getD Json.null))]
+
+/-! ## Reprogramming and amending as ops -/
+
+def withProgramRefusal (w : World) (p : Proposal) (clause message : String) : World × Json :=
+  commit w p [] (some { cls := "programRefused", clause := some clause, reason := some message })
+
+/-- `world-reprogram {principal, identity, object, version, package, migration?}`. -/
+def reprogramOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
+  let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
+  let source ← j.getObjValAs? String "package"
+  let migration := (j.getObjValAs? String "migration").toOption.getD ""
+  let version ← natField j "version"
+  let turn := ((j.getObjVal? "turn").toOption.bind (natOf · |>.toOption)).getD 0
+  let p : Proposal :=
+    { principal := principal
+      intent := intent
+      roots := [(object, version)]
+      writes := []
+      programs := [(object, (source, migration))]
+      turn := turn }
+  if let some r := retained w principal intent p.digest then return (w, r)
+  match w.objects[object]? with
+  | none => return commit w p
+  | some o => match programFor w o source migration with
+    | .error (clause, message) => return withProgramRefusal w p clause message
+    | .ok prog => return commit (cacheProgram w o source migration prog) p
+
+/-- `world-amend {principal, identity, object, version, law}`. -/
+def amendOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
+  let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
+  let text ← j.getObjValAs? String "law"
+  let version ← natField j "version"
+  let turn := ((j.getObjVal? "turn").toOption.bind (natOf · |>.toOption)).getD 0
+  let p : Proposal :=
+    { principal := principal
+      intent := intent
+      roots := [(object, version)]
+      writes := []
+      laws := [(object, text)]
+      turn := turn }
+  if let some r := retained w principal intent p.digest then return (w, r)
+  match parseLawText text with
+  | .error message => return withProgramRefusal w p "law syntax" message
+  | .ok _ => return commit w p
 
 end Delvetalk.Host
