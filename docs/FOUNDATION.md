@@ -36,10 +36,15 @@ with responses of type `R` (first-order data) and finishes with an `A`. The
 checker refuses an activity in any shared position, so an effect is never
 cached. The machine suspends at `perform` as `yielded`, keeping heap and stack,
 and `resume` continues it. Mini proves the pieces we rely on: a yield is
-quiescent, resume preserves typing, and `encodeState`/`decodeState` round-trip a
-suspended machine. The checkpoint codec and its collector are the one part of
-Mini this fork still has to take (`Theory/ObjectiveBendDemandCollect.lean`,
-`Theory/ObjectiveBendCheckpoint.lean`).
+quiescent and resume preserves typing. The checkpoint codec and its collector
+are ported, and this fork proves its own `state_roundTrip` for the codec with
+the native cells and `settle_resume_segment` on the runner a turn uses
+(`Theory/ObjectiveBendCheckpointRoundTrip.lean`,
+`Theory/ObjectiveBendDemandSettleProofs.lean`); the collector's simulation is
+tested, not yet proved. The runtime data check agrees with a declarative typing
+(`Theory/ObjectiveBendDataConformance.lean`). A universal first-order type
+`Data`, produced only by `Data.of::<T>(v)` and never taken apart in Bend, lets
+a Plan carry any payload the host checks at the callee.
 
 Everything an object does to the world is a Plan. There is no second effect
 language.
