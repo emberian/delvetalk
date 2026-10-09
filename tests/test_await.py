@@ -85,15 +85,12 @@ record State:
   made: Nat
 record Edits:
   made: Plans.Edit<Nat, Nat>
-sum Seed:
-  good: {n: Nat}
-  bad: {ghost: Nat}
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
   {made: 0n}
 def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "Child", seed: Data.of::<Seed>(if input.bad then Seed.bad({ghost: 1n}) else Seed.good({n: 5n})), law: "", requireAbsent: {world: "", object: input.kid}})):
+  match perform(Plan.create({package: "Child", seed: if input.bad then Data.of::<{ghost: Nat}>({ghost: 1n}) else Data.of::<{n: Nat}>({n: 5n}), law: "", requireAbsent: {world: "", object: input.kid}})):
     case created(_): "created"
     case refused(r): r.clause
     case _: "other"

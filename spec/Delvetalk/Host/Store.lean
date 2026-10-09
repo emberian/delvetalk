@@ -2,6 +2,7 @@
    The journal (Journal.lean) is the only source of a World; Ops.lean is the only
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
+import Delvetalk.Entry
 import Std.Data.HashMap
 
 namespace Delvetalk.Host
@@ -102,6 +103,13 @@ def maxTitleBytes : Nat := 256
 def listPage : Nat := 64
 /-- Bytes of a post's AT URI and CID. -/
 def maxUriBytes : Nat := 512
+/-- A text field of a form derived from a method's input type: at most the characters a card
+    reader shows. A natural field: at most this. -/
+def formTextMax : Nat := 1400
+def formNaturalMax : Nat := 1000000000
+/-- Journal entries between snapshots, and bytes of one snapshot file. -/
+def snapshotEvery : Nat := 1000
+def maxSnapshotBytes : Nat := 268435456
 end Limits
 
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
@@ -115,6 +123,9 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
+  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
+      `Turn.resumeEntry`, `Package.executeDataEntry`), never from the packet JSON. -/
+  entry : Option Delvetalk.CheckedEntry := none
 
 /-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
 structure Ledger where
@@ -153,6 +164,10 @@ structure Program where
   stateType : Ty
   bounds : DataBounds
   migration : Option Compiled
+  /-- The artifact's method table and whether it declares a Bend law (and `lawReads`). -/
+  methods : Json := Json.arr #[]
+  predicate : Bool := false
+  predicateReads : Bool := false
 
 structure Object where
   /-- `packetSha256` of the compiled artifact the object was created from. -/
@@ -172,6 +187,15 @@ structure Object where
   inputs : Json := Json.null
   /-- Digest of `inputs`, the key of this object's compiled methods. -/
   inputsKey : String := ""
+  /-- The compiler's method table of the pinned artifact (`[{name, input, result, activity, context}]`). -/
+  methods : Json := Json.arr #[]
+  /-- The artifact's `law: {present, reads}`: the package declares `def law(old, new, request)`,
+      and `def lawReads()` beside it. -/
+  predicate : Bool := false
+  predicateReads : Bool := false
+  /-- The object told `ended {receipt, how}` when an activity of this one ends `timedOut`,
+      `broken` or `budget` ("" for none); fixed at creation. -/
+  supervisor : String := ""
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/
@@ -191,17 +215,24 @@ structure Grant where
   method : String
   expires : Nat
   revoked : Bool := false
+  /-- Attenuation: the part of the callee's argument the grant fixes (Data wire), merged with the
+      caller's at each use; a field the caller gives otherwise is refused `grantConflict`. -/
+  fixed : Option Json := none
+  /-- Uses left (each admitted call or send under the grant spends one); none is unlimited. -/
+  uses : Option Nat := none
   deriving BEq
 
 def Grant.json (g : Grant) : Json :=
-  Json.mkObj [("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
-    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)]
+  Json.mkObj ([("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
+    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)] ++
+    (g.fixed.map fun f => [("fixed", f)]).getD [] ++ (g.uses.map fun n => [("uses", toJson n)]).getD [])
 
 def Grant.ofJson (j : Json) : Except String Grant := do
   return { id := ← j.getObjValAs? String "id", grantor := ← j.getObjValAs? String "grantor",
            holder := ← j.getObjValAs? String "holder", to := ← j.getObjValAs? String "to",
            object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
-           expires := ← j.getObjValAs? Nat "until" }
+           expires := ← j.getObjValAs? Nat "until", fixed := (j.getObjVal? "fixed").toOption,
+           uses := (j.getObjValAs? Nat "uses").toOption }
 
 /-- A package compiled as an object's code: artifact, entry type, declared laws. -/
 structure Built where
@@ -253,6 +284,9 @@ structure World where
   outbox : Std.HashMap String (Array (Nat × Nat)) := {}
   /-- Publications admitted turns retained, for transport to post: (entry index, ordinal). -/
   published : Array (Nat × Nat) := #[]
+  /-- Memory only: each package's closure prepared once (`Package.prepareRequest`), by the digest
+      of its resolved compile inputs; every method of it compiles from this. -/
+  requests : Std.HashMap String Package.PreparedRequest := {}
   /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
       repeated creation compile each distinct package once. -/
   builds : Std.HashMap String Built := {}
