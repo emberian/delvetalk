@@ -125,14 +125,14 @@ class Predicates(LawWorld):
         self.assertEqual(self.clause(r), "lawRefused/tooSoon", r)
 
     def test_wakes_predicate_refuses_a_strangers_trigger(self):
-        self.create("wake", wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
-        r = self.turn("wake", "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
+        self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/owner", r)
 
     def test_the_owners_own_writes_pass_both_tiers(self):
-        self.create("wake", wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
-        r = self.turn("wake", "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
+        self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OWNER)
         self.assertEqual(r["status"], "admitted", r)
         self.create("tide", closure("Tide"), TIDE_SEED)
