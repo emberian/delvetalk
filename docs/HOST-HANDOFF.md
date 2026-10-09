@@ -15,7 +15,7 @@ Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes 
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Ops, TurnLoop, Session; `PackageSession.lean`
+Import order: Store, Journal, Law, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
 - **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
@@ -33,6 +33,7 @@ imports Session and `PackageMain.lean` drives it.
 - **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
+- **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
 
@@ -71,6 +72,8 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
+`world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
+`world-snapshot` writes a snapshot now (`{status: "snapshot", height}` or `{refused}`), journaling nothing.
 `world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
 uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
 either journals a `settings` entry, and a later open with other values is refused by name.
@@ -290,6 +293,29 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    empty payloads (choice); a method with any other input field (a list, a nested record, a sum held as a
    bounds variable) is not listed. An object whose Response predates the field gets the old three-field form.
    `Object.predicate`/`predicateReads` record the artifact's `law: {present, reads}` for item 3(e).
+
+13. **Snapshots (host4).** `durable` writes `<journal>.snapshot.<height>.cbor` after the fsync whenever the height is
+   `Limits.snapshotEvery` (1000) past the last snapshot written or resumed from (`Open.snapshotAt`), so the
+   height is the first durable boundary at or past each thousand; the reply that crossed it carries
+   `snapshot {height}` (or `{refused}`; a failed snapshot refuses nothing). The newest three are kept. File:
+   the DAG-CBOR map `{cid, body: bytes}`, `cid` the CID of the canonical body bytes (an independent Python
+   encoder agrees, `tests/test_snapshot.py`). The body holds what replay pays for: objects (state, law text,
+   version, read policy, ledger, compile inputs by CID), their types, method tables and law shapes by pin
+   (`types`), libraries, grants (with `revoked`), posts, settings; plus `clock`, `pending` ids and
+   `suspended` hashes as cross-checks. Everything `record` derives (receipts, touched, outbox, published,
+   modules, pending, suspended, clock) is rebuilt by `recordAll`, a bookkeeping-only pass over the entries up
+   to the height. `openContent`: parse and hash-walk every entry from genesis (`entriesOf`), then for each
+   snapshot newest first check: CID over the stored bytes, edition, `binary` (= `binaryPin`, the CID of the
+   executable's size and 256 evenly spaced 4 KiB pages, computed once per process; the whole 100 MB file would
+   cost a second per open), height within the journal, `head` = the journal's hash at that height, the derived
+   copies, each object's version and pin against what the entries record (`expectedObjects`), every law
+   reading back from its text, and finally that every later entry replays on it. The first failure refuses
+   the snapshot by name in the report and the next older is tried, then full replay. A forger who recomputes
+   the CID and keeps versions and pins can change a state unnoticed by a plain open; `world-open {verify:
+   true}` replays everything and refuses, by name, each snapshot whose body differs from the replayed store's
+   at its height ("it disagrees with replay at its height"). 500 creates of one package: reopen 0.16 s from
+   the snapshot, 0.21 s by full replay (the build cache already makes that cheap; the snapshot pays off with
+   many packages, reprograms and judged turns), snapshot ~4 KB per object type plus ~1 KB per object.
 
 ## 6. Gotchas
 
