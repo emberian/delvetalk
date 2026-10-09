@@ -56,10 +56,14 @@ def list_wire(items):
 
 
 def nil():
+    return {"tag": "list", "items": []}
+
+
+def chain_nil():
     return {"tag": "variant", "label": "nil", "payload": record()}
 
 
-def cons(head, tail):
+def chain_cons(head, tail):
     return {"tag": "variant", "label": "cons", "payload": record(head=head, tail=tail)}
 
 
@@ -150,16 +154,21 @@ class Canonical(unittest.TestCase):
         r = self.host.send(op="canonical-decode", hex=deep)
         self.assertIn("nesting", r["message"])
 
-    def test_lists_cross_the_wire_as_arrays_and_nil_cons_is_still_accepted(self):
-        chain = nil()
-        for i in reversed(range(5)):
-            chain = cons(nat(i), chain)
-        a = self.encode(data=chain)
+    def test_lists_cross_the_wire_as_arrays_and_a_nil_cons_chain_is_refused_by_name(self):
         b = self.encode(data=list_wire([nat(i) for i in range(5)]))
-        self.assertEqual(a["cid"], b["cid"])
-        back = self.host.send(op="canonical-decode", hex=a["hex"])["data"]
+        back = self.host.send(op="canonical-decode", hex=b["hex"])["data"]
         self.assertEqual(back["tag"], "list")
         self.assertEqual(len(back["items"]), 5)
+        chain = chain_nil()
+        for i in reversed(range(5)):
+            chain = chain_cons(nat(i), chain)
+        refused = self.host.send(op="canonical-encode", data=chain)
+        self.assertEqual((refused["status"], refused["message"]),
+                         ("error", "cons chains are no longer accepted on the wire; send a list"), refused)
+        tail_list = chain_cons(nat(0), list_wire([nat(1)]))          # a cons onto an array is a chain too
+        self.assertEqual(self.host.send(op="canonical-encode", data=tail_list)["status"], "error")
+        improper = chain_cons(nat(0), nat(1))                          # not a list: still an ordinary variant
+        self.assertNotEqual(self.host.send(op="canonical-encode", data=improper).get("status"), "error")
 
     def test_a_long_list_is_bounded_by_element_nesting_not_by_length(self):
         items = [nat(i) for i in range(5000)]

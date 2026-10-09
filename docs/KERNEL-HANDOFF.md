@@ -1,4 +1,4 @@
-# Kernel handoff (lane/turn)
+# Kernel handoff (lane/turn, lane/kernel2)
 
 For the next agent changing the language, the turn machinery or the wire. Paths are relative to
 the repository root; line numbers are for foundation 62b7dfd and drift. Everything below was read
@@ -11,9 +11,13 @@ from source or measured; "unproved" means I left it so, and says what would prov
   copies the binary into a temp dir per run for exactly this reason (`DELVETALK_OBEND` names the
   source, `DELVETALK_OBEND_COPY` shares one copy across workers; `tests/run.py` is the parallel
   runner). A suite started before a rebuild with a bare path races it.
-- Narrow tests first: `python3 -m unittest tests.test_turn` (23, 1 s), `tests.test_canonical` (12),
-  `tests.test_conformance` (3, 10 s), `tests.test_document`. The whole discover run is ~240 s,
-  314 tests: `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -m unittest discover -s tests -t . -p "test_*.py"`.
+- Narrow tests first: `python3 -m unittest tests.test_turn`, `tests.test_canonical`,
+  `tests.test_conformance` (10 s), `tests.test_document`, `tests.test_data_type`. The whole suite is
+  576 tests: `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -W ignore -m tests.run`
+  (parallel, 91 s wall on hbox at 9246901), or `python3 -m unittest discover -s tests -t . -p "test_*.py"`
+  (serial, ~300 s).
+- Builds may run on `hbox` (24 cores): rsync the tree without `.lake` to `~/scratch/<dir>`,
+  `swarm-build lake build`, run the tests there with `DELVETALK_OBEND` pointing at its binary.
 - Commits: name files (`git add <paths>`), message via `git commit -F file` (zsh eats backticks),
   end with the Co-Authored-By line. 1Password sometimes refuses to sign ("failed to fill whole
   buffer"): commit unsigned with `git -c commit.gpgsign=false commit ...`; unsigned means
@@ -76,10 +80,15 @@ What is proved now (kernel lane 2, see also section 8), and what is not:
 - `settle_resume_segment` and the agreement lemmas behind it on the hosted runner
   (`agree_forceHostedFrom`, `agree_materializeWith`, `agree_yieldedPlanWith`, `agree_completeWith`;
   `Theory/ObjectiveBendDemandSettleProofs.lean`). NOT ported: `typed_settle` (no state-typing
-  judgment in this edition) and Mini's collector simulation (`ObjectiveBendDemandCollectProofs`,
-  2,090 lines, renaming simulation). So `checkpoint = collect (settle s)` is proved for its settle
-  half only; the collect half is tested (restart/tamper/resume tests), and a new frame or cell with
-  addresses must be added to `frameAddresses`/`renameFrame` by hand or `collect` frees live cells.
+  judgment in this edition).
+- The collector (kernel lane 3, `Theory/ObjectiveBendDemandCollectProofs.lean`): `related_collect`
+  (no reachable address dangles), `related_stepRaw` (every constructor of this machine),
+  `related_forceHostedFrom` (the hosted runner, exact under `ExactRoom`, which `limitsPast`
+  gives), extraction agreement, and `checkpoint_resume_segment`: resuming
+  `checkpoint s = collect (settle s)` decides the same verdict, spends the same ticks and extracts
+  the same Plan/result Data as resuming `s`. A new frame, cell or control holding addresses must be
+  added to `frameAddresses`/`cellAddresses`/`controlAddresses` and the renamings, or
+  `related_stepRaw` stops building. Mini's typing transfer is not ported (no state typing).
 - `conformsUnder_iff : d.conformsUnder bounds ty = true ↔ HasType bounds d ty`
   (`Theory/ObjectiveBendDataConformance.lean`): runtime conformance is sound and complete at the
   fuel the code uses; fuel is never a false negative (`short_chain`, a pigeonhole over the bounds'
@@ -133,14 +142,15 @@ Data JSON (`spec/bend/Compiler/ObjectiveBendDataWire.lean`): `{"tag":"natural","
 (decimal STRING), `boolean`, `label` (value), `record {fields:[{name,value}]}`,
 `variant {label,payload}`, and lists: `{"tag":"list","items":[...]}`. `dataJson` emits `list`
 whenever `listItems?` finds a proper chain (`nil{}` / `cons{head,tail}` ending in nil, fields in
-either order). `decodeData` accepts `list` and the legacy `nil|cons` chain ("one release" window;
-nothing enforces the end of it: delete the `nil|cons` reading and re-run everything). Decode depth
+either order). `decodeData` accepts `list` and refuses a variant chain that forms a proper list:
+"cons chains are no longer accepted on the wire; send a list" (`consChainRefusal`); a `cons` whose
+tail is not a list stays an ordinary variant. PackageData's strict wire (`PackageData.decode`)
+applies the same rule and reads `list` too. Decode depth
 is by NESTING: `decodeData fuel` spends one fuel per record/variant/list level, not per element
 (`Bounds.dataWireDepth = 256`; chains still cost 2 levels per cell, arrays do not). A decoded list
 becomes a `cons` chain in memory (deep structure; fine to 5,000+, functions over Data are `partial`).
 `dataJsonBytes` must equal `(dataJson d).compress.utf8ByteSize` (checked by hand; keep in sync).
-Tests that read replies through `tests/host.py`/`test_world.py`/`test_turn.py` see the chain because
-`tests/wire.py:relist` converts arrays back; `tests/test_canonical.py` uses a raw host.
+The tests send and read arrays; the `relist` shim is gone.
 
 Canonical bytes (`spec/Delvetalk/Canonical.lean`, DAG-CBOR as AT Protocol):
 - unsigned int, shortest head (24/25/26/27 widths); Nat >= 2^64 -> byte string, big-endian, no
@@ -265,8 +275,6 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
   fails differently and is skipped. It costs one compile per function and only runs in `check-package`.
 - `EvaluateTerm` and `Turn` run pure `Except` code; timing a pure op needs the `repeat` trick (see
   `canonical-encode`) or an IO wrapper in `PackageMain`.
-- `tests/test_http.py::test_repl_*` fail on foundation: `transport/http.py` calls `turn-start` without the
-  binding (`roots` etc.). Not kernel; the transport lane owns it.
 - Host-side resume of suspended activities rebuilds the `Checkpoint` from journaled tokens plus the
   activity's object/principal/intent/roots (`resumeOne` in TurnLoop); if you change `Checkpoint`'s
   fields, journals written before the change stop resuming (no migration exists).
@@ -287,7 +295,7 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
   "turn refused: argument does not conform to its type" (host: map to `typeMismatch`). Canonical
   bytes: a Data value is encoded as itself; untyped decode cannot tell a variant from a one-field
   record, so never `decodeAs` against `.data` expecting variants back. `PackageData` schema
-  certificates do not support `.data` (closed rows only): a State with a Data field will need it.
+  certificates support `.data` since lane 3 (§9).
   Plan.obend's `call`/`send`/`create` payloads are still `A` (objects lane).
 - `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing
   `Ty.isTextList` (a variable bound to `nil: {} | cons: {head: String, tail: itself}`), reference
@@ -297,3 +305,58 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
 - Checkpoint edition is still `v1` although term tags 24-25 and frames 14-17 were added: old
   checkpoints decode unchanged (only additions); a checkpoint using the new tags does not decode
   on an older binary.
+
+## 9. Kernel lane 3 additions (2026-10-09)
+
+- `Data` in state: the typed-data schema has `Schema.data`; `buildSchema`, the certificates,
+  `quoteSchema` (every sink: `termSink` wraps `toData` with `shapeAnnotations`, `nativeSink` passes
+  the value through), the compact codec (a Data field carries its own typed-data wire value) and
+  `equivalent` handle it. Admission charges `admissionWork` (nodes plus each record's width squared,
+  for `eraseDups`) and refuses "typed data value at Data repeats a record field". Proofs:
+  `SchemaMatches.data`, `Admitted.universal`, `Data.shapeType`/`shape_typing`/`universal_typing`.
+  `Admitted.typing`, `normalizeNative_typing` and `prepareNativeWith_typing` now give an existential
+  `Literal` term (the value's literal with `toData` at universal positions), not `data.term`.
+  The declarative `toData` rule takes any `isDataUnder` fuel (the checker still uses `Ty.dataFuel`).
+- Turn arguments are quoted by their declared type (`Turn.quoteAt`), so a state record with a Data
+  field is wrapped at that field. Still true: a turn argument is applied as a literal and the whole
+  applied program re-checked (`prepareStart`), so a Data value whose shape type is deeper than
+  `Ty.dataFuel` (a list of a few thousand) is refused by the checker on the activity path; the
+  pure-method path (`prepareNative`) has no such bound. Moving `startActivity` to native arguments
+  (`initialDataArguments`) removes it, at the price of changed tick pins.
+- `forceHostedFrom`'s refund of a failed text preflight is the named `preflightRemaining`.
+- The package knot holds only what the entry reaches (`Elaborated.select`, `Output.knotRow`;
+  `globalRow` stays whole for the method table and law shape), and the whole closure is checked
+  once per package (`ObjectiveBendFrontEnd.checkClosure`: every template and the knot of every
+  declaration as one term), so pruning skips no checking. The type decoder charges a row's tail to
+  row width (`typeRowCapacity`), not nesting, so an entry may reach any number of definitions
+  (3,000 measured; before, 254).
+- Compile is split: `FrontEnd.Prepared` (parse once, generics, `elaboratePackage`, closure check:
+  entry-independent) and `Prepared.lower` per entry. Speedups: `sourceType` memo (`St.typeMemo`),
+  generics index and rewrite memo, proposal/packet built once (`Lowering.make`), annotations
+  indexed by path in `decodePacket`, `PTy.intern` subtree memo.
+- Held entries, for the host: `Delvetalk.CheckedEntry {pin, source, checked, fuel}`
+  (`Delvetalk/Entry.lean`; `.type`, `.ofPacket packet`, `.apply term annotations`). API:
+  `Package.prepareRequest j : Except Diagnostic PreparedRequest` (cache it per package, keyed by
+  modules and limits), `Package.compileEntryFrom request entry : Except Diagnostic EntryCompiled`
+  (`{artifact, entry : CheckedEntry, laws}`), `Package.compileEntry j`,
+  `Package.executeDataEntry entry (args : Array Data) limits : Except String DataExecution`,
+  `Package.executeEntry entry argsJson limits`, `Turn.startEntry entry args binding budgets`,
+  `Turn.resumeEntry entry checkpoint binding value budgets`. None decodes the packet or re-checks
+  the package; arguments are checked alone and composed (`Checked.apply`). The artifact and pin
+  are unchanged (`packetSha256` = CID of the entry packet JSON), so journals and checkpoints are
+  unaffected.
+- Wire session: prepared-closure cache (bounded by `Bounds.frontCacheSourceBytes` of source) and
+  held-entry cache indexed by `packetSha256` (bounded by `Bounds.entryCacheBytes` of artifact).
+  `run`, `run-data-v1`, `turn-start`, `turn-resume` take `artifact` as the whole artifact (held if
+  equal to the one this process compiled under that pin, else recompiled and compared) or as
+  `{"packetSha256": pin}` alone (held entries only; "unknown packetSha256: ..." otherwise).
+  `{"op":"packet-cache-status"}` answers `{fronts, frontSourceBytes, maxFrontSourceBytes, entries,
+  entryBytes, maxEntryBytes, hits, misses}`.
+- Measured on hbox at 5b07855 (Garden, 11 modules): first compile 285 ms, further entries 7-47 ms;
+  `run initial` held 4.6 ms with the whole artifact, under 0.1 ms by pin; a fresh process's first
+  run of a known artifact 195 ms; `tests.run test_await test_turn_world test_http` 32.5 s; objects
+  suite 8.9 s; whole suite 581 tests, 47.7 s wall.
+- Wrong in this file before lane 3: §1 "collect half tested, not proved"; §3 "`decodeData` accepts
+  the legacy chain" and the `relist` note; §8 "`PackageData` schema certificates do not support
+  `.data`" and "Turn arguments at Data are injected at their own shape" (now type-directed at every
+  depth); §7's `test_http` failures (the suite passes); the test counts in §0.

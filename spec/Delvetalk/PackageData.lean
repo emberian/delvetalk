@@ -3,6 +3,7 @@
    accepts every complete application, including generated injection annotations. -/
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendTyping
+import Theory.ObjectiveBendFiniteDataTyping
 import Std.Data.HashSet
 import Std.Data.HashMap
 
@@ -37,7 +38,7 @@ def shape (a : Assumptions) : Nat → List Nat → Ty → Work Unit
   | depth + 1, seen, type => do
     spend
     match type with
-    | .natural | .boolean | .label => pure ()
+    | .natural | .boolean | .label | .data => pure ()
     | .emptyRow | .field .. => rowShape a depth seen [] type
     | .variant row => rowShape a depth seen [] row
     | .variable index =>
@@ -88,7 +89,15 @@ def decode : Nat → Json → Work Data
         return .record values.reverse
     | "variant" =>
         exact json ["tag", "label", "payload"]
-        return .variant (← json.getObjValAs? String "label") (← decode depth (← json.getObjVal? "payload"))
+        let value := Data.variant (← json.getObjValAs? String "label") (← decode depth (← json.getObjVal? "payload"))
+        if (listItems? value).isSome then throw consChainRefusal
+        return value
+    | "list" =>
+        exact json ["tag", "items"]
+        let mut items := #[]
+        for item in ← (← json.getObjVal? "items").getArr? do
+          items := items.push (← decode depth item)
+        return listData items
     | _ => throw "unknown typed data tag"
 
 structure Quoted where
@@ -116,11 +125,15 @@ structure QuoteSink (α : Type) where
   emptyRecord : α
   field : α → String → α → α
   variant : String → Ty → Ty → α → α
+  /-- A whole value at the universal type `Data`, already found well-formed. -/
+  data : Data → α
 
 /-- A bounded graph of the selected static schema. Recursive sums retain alias
 references; their rows are checked/indexed once, rather than once per value node. -/
 inductive Schema where
   | natural | boolean | label
+  /-- The universal type: any well-formed finite value, admitted whole. -/
+  | data
   | record (fields : List (String × Ty × Schema))
   | variant (index : Nat)
   | reference (index : Nat)
@@ -145,6 +158,7 @@ def buildSchema (a : Assumptions) (canonical : Bool) : Nat → Ty → SchemaBuil
     | .natural => pure .natural
     | .boolean => pure .boolean
     | .label => pure .label
+    | .data => pure .data
     | .emptyRow | .field .. =>
       let fields ← buildMembers a canonical depth {} ty
       if canonical then
@@ -206,7 +220,7 @@ alias targets, without recursively traversing a cycle. -/
 def schemaCertificate (a : Assumptions) (graph : SchemaGraph) : Nat → Schema → Ty → Bool
   | 0, _, _ => false
   | depth + 1, schema, ty => match schema, ty with
-    | .natural, .natural | .boolean, .boolean | .label, .label => true
+    | .natural, .natural | .boolean, .boolean | .label, .label | .data, .data => true
     | .record fields, row => fieldsCertificate a graph depth fields row
     | .variant index, .variant row => match graph.variants[index]? with
       | none => false
@@ -327,6 +341,20 @@ def dereference (graph : SchemaGraph) (schema : Schema) : Work Schema := do
     pure schema
   | schema => pure schema
 
+mutual
+/-- The work of deciding `Data.wellFormed`: every node once, and the pairwise
+name comparison of each record (`eraseDups` is quadratic in its width). -/
+def admissionWork : Data → Nat
+  | .natural _ | .boolean _ | .label _ => 1
+  | .record fields => 1 + fields.length * fields.length + admissionFieldsWork fields
+  | .variant _ payload => 1 + admissionWork payload
+def admissionFieldsWork : List (String × Data) → Nat
+  | [] => 0
+  | (_, value) :: rest => admissionWork value + admissionFieldsWork rest
+end
+
+def notWellFormed : String := "typed data value at Data repeats a record field"
+
 def indexRecordFields (fields : List (String × Data)) : Work (Std.HashMap String Data) := do
   let mut indexed : Std.HashMap String Data := {}
   for (name, field) in fields do
@@ -340,15 +368,18 @@ def quoteSchema {α : Type} (sink : QuoteSink α) (graph : SchemaGraph) : Nat �
   | 0, _, _, _ => failDepth
   | depth + 1, value, declared, schema => do
     spend
-    match value, ← dereference graph schema with
-    | .natural n, .natural => return sink.natural n
-    | .boolean b, .boolean => return sink.boolean b
-    | .label s, .label => return sink.label s
-    | .record fields, .record types =>
+    match ← dereference graph schema, value with
+    | .data, value =>
+      spend (admissionWork value)
+      if value.wellFormed then return sink.data value else throw notWellFormed
+    | .natural, .natural n => return sink.natural n
+    | .boolean, .boolean b => return sink.boolean b
+    | .label, .label s => return sink.label s
+    | .record types, .record fields =>
       if fields.length != types.length then throw "typed data record fields differ from declared type"
       let indexed ← indexRecordFields fields
       quoteRecordFields sink graph depth indexed types sink.emptyRecord
-    | .variant label payload, .variant index =>
+    | .variant index, .variant label payload =>
       spend 2
       let some types := graph.variants[index]? | throw "unresolved variant schema row"
       let some (ty, childSchema) := types.members[label]? | throw "typed data variant label is undeclared"
@@ -388,6 +419,7 @@ def termSink : QuoteSink Quoted where
     | _ => prior
   variant label ty declared child := ⟨.inject label child.term,
     ([], ⟨ty, declared, .unrestricted, .reusable⟩) :: prefixAnnotations 0 child.annotations⟩
+  data value := ⟨.toData value.term, Minidregg.Theory.ObjectiveBendDemandData.shapeAnnotations value [0]⟩
 
 def validationSink : QuoteSink Unit where
   natural _ := ()
@@ -396,6 +428,7 @@ def validationSink : QuoteSink Unit where
   emptyRecord := ()
   field _ _ _ := ()
   variant _ _ _ _ := ()
+  data _ := ()
 
 /-- Record builders are reversed until attached to their parent. This preserves
 the checked declaration's field order without allocating a literal term. -/
@@ -412,6 +445,9 @@ def nativeSink : QuoteSink Data where
     | .record fields => .record ((name, finishNative child) :: fields)
     | other => other
   variant name _ _ child := .variant name (finishNative child)
+  -- Builders hold records reversed until their parent finishes them; a whole
+  -- value is handed over in that same unfinished form.
+  data value := finishNative value
 
 def normalizeNative (a : Assumptions) (depth : Nat) (value : Data) (type : Ty) : Work Data := do
   return finishNative (← quoteWith nativeSink a depth value type)
@@ -440,6 +476,12 @@ def decodeCompactSchema (graph : SchemaGraph) : Nat → Schema → Json → Work
   | depth + 1, schema, wire => do
     spend
     match ← dereference graph schema with
+    | .data =>
+      -- A universal value carries its own shape: the typed data wire (lists as arrays).
+      let value ← decodeData depth wire
+      spend (admissionWork value)
+      unless value.wellFormed do throw notWellFormed
+      return value
     | .natural =>
       let text ← wire.getStr?
       let some n := text.toNat? | throw "compact natural must be canonical decimal"
@@ -470,6 +512,10 @@ def encodeCompactSchema (graph : SchemaGraph) : Nat → Schema → Data → Work
   | depth + 1, schema, value => do
     spend
     match value, ← dereference graph schema with
+    | value, .data =>
+      spend (admissionWork value)
+      unless value.wellFormed do throw notWellFormed
+      return dataJson value
     | .natural n, .natural => return toJson (toString n)
     | .boolean b, .boolean => return toJson b
     | .label text, .label => return toJson text
@@ -562,6 +608,15 @@ def prepareNativeWith {α : Type} (read : Assumptions → Ty → α → Work Dat
   shape source.assumptions 256 [] type
   return ⟨source, type, normalized.toArray, decoded.fuel⟩
 
+/-- The same admission for a source already checked (a selected package entry): only
+the arguments are admitted; the package is not decoded or checked again. -/
+def prepareNativeChecked (source : AnnotatedTerm) (initial : Checked source []) (fuel : Nat)
+    (arguments : Array Data) : Work NativePreparation := do
+  let (type, normalized) ← prepareNativeArguments (fun _ _ value => pure value) source.assumptions initial.type
+    arguments.toList
+  shape source.assumptions 256 [] type
+  return ⟨source, type, normalized.toArray, fuel⟩
+
 def prepareNative (packet : Json) (arguments : Array Data) : Work NativePreparation :=
   prepareNativeWith (fun _ _ value => pure value) packet (pure arguments)
 
@@ -610,7 +665,8 @@ def equivalent (left right : Assumptions) : Nat → List (Ty × Ty) → Ty → T
     match a, b with
     | .variable i, _ => equivalent left right depth next (← sumAlias left i) b
     | _, .variable i => equivalent left right depth next a (← sumAlias right i)
-    | .natural, .natural | .boolean, .boolean | .label, .label | .emptyRow, .emptyRow => return true
+    | .natural, .natural | .boolean, .boolean | .label, .label | .emptyRow, .emptyRow
+    | .data, .data => return true
     | .field an am aTail, .field bn bm bTail =>
         if an != bn then return false
         if !(← equivalent left right depth next am bm) then return false

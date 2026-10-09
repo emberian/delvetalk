@@ -80,6 +80,12 @@ structure State where
   active : List (String × String) := []
   remaining : Nat := maxExpansionNodes
   remainingStringBytes : Nat := maxExpansionStringBytes
+  /-- The first declaration of each (module, name), as `resolve` finds it. -/
+  byName : Std.HashMap (String × String) Declaration := {}
+  /-- Rendered rewrites of unbound type texts, by (origin, target module, text): a
+  rewrite outside any type-parameter binding is a function of these once its instances
+  exist. -/
+  rendered : Std.HashMap (Nat × String × String) String := {}
 
 abbrev M := StateT State (Except String)
 
@@ -123,9 +129,7 @@ def resolve (origin : Nat) (name : String) : M (Option Declaration) := do
         | return none
       pure (imported.moduleName, n)
     | _ => throw ("invalid generic declaration reference: " ++ name)
-  let s ← get
-  return s.declarations.find? fun d =>
-    d.name == localName && ((s.sources[d.origin]?).map (·.module.name)) == some target
+  return (← get).byName[(target, localName)]?
 
 partial def render (target : String) : GType → M String
   | .atom n => pure n
@@ -267,8 +271,12 @@ def rewrite : Nat → Nat → String → List (String × GType) → List String 
     let implicitNames := if kind j == "spec" then ["self", "super"] else []
     let recur := rewrite fuel origin target bindings (parameterNames ++ implicitNames ++ locals) lifted
     let rewriteType := fun raw => do
+      if bindings.isEmpty then
+        if let some rendered := (← get).rendered[(origin, target, raw)]? then return rendered
       let rendered ← render target (← typeOf fuel origin bindings raw)
       spendString rendered
+      if bindings.isEmpty then
+        modify fun s => { s with rendered := s.rendered.insert (origin, target, raw) rendered }
       return rendered
     if kind j == "reexport" then
       let name := string j "target"
@@ -372,7 +380,11 @@ def run (sources : Array Source) : Except String Output := do
       return toJson [edge.moduleName, edge.sha256, identity]
     sealedIdentities := sealedIdentities.push (Minidregg.Compiler.Sha256.hexString
       (toJson [toJson source.module.name, toJson source.module.sha256, toJson imports]).compress)
-  let initial : State := { sources, declarations, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names }
+  let byName := declarations.foldl (fun (map : Std.HashMap (String × String) Declaration) d =>
+    match sources[d.origin]? with
+    | some source => if map.contains (source.module.name, d.name) then map else map.insert (source.module.name, d.name) d
+    | none => map) {}
+  let initial : State := { sources, declarations, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names, byName }
   let action : M Output := do
     let moduleName ← fresh
     let moduleAlias ← fresh

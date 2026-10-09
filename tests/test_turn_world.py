@@ -342,18 +342,13 @@ def names_modules():
 
 def list_items(state):
     names = [f["value"] for f in state["fields"] if f["name"] == "names"][0]
-    out = []
-    while names["label"] == "cons":
-        f = {x["name"]: x["value"] for x in names["payload"]["fields"]}
-        out.append(f["head"]["value"])
-        names = f["tail"]
-    return out
+    return [item["value"] for item in names["items"]]
 
 
 class ListEdits(TurnWorld):
     def test_append_then_amend_on_a_list_field_read_back_in_order_and_replayed(self):
         empty = {"tag": "record", "fields": []}
-        seed = record(names={"tag": "variant", "label": "nil", "payload": empty})
+        seed = record(names={"tag": "list", "items": []})
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="n",
                            modules=names_modules(), entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
@@ -372,7 +367,7 @@ class ListEdits(TurnWorld):
         empty = {"tag": "record", "fields": []}
         self.host.send(op="world-create", principal="ember", identity="mk", object="n",
                        modules=names_modules(), entry="initial",
-                       seed=record(names={"tag": "variant", "label": "nil", "payload": empty}))
+                       seed=record(names={"tag": "list", "items": []}))
         for text in ("one", "two", "three"):
             self.turn("n", "add", record(text=label(text)))
         view = lambda: self.host.send(op="world-view", principal="e", object="n")
@@ -392,7 +387,7 @@ class ListEdits(TurnWorld):
         empty = {"tag": "record", "fields": []}
         self.host.send(op="world-create", principal="ember", identity="mk", object="n",
                        modules=names_modules(), entry="initial",
-                       seed=record(names={"tag": "variant", "label": "nil", "payload": empty}))
+                       seed=record(names={"tag": "list", "items": []}))
         self.turn("n", "add", record(text=label("only")))
         r = self.turn("n", "fix", record(index=nat(5), text=label("x")))
         self.assertEqual(r["receipt"]["outcome"]["class"], "outOfRange")
@@ -403,7 +398,7 @@ class BellList(TurnWorld):
     def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
         modules = closure("Bell")
         empty = {"tag": "record", "fields": []}
-        nil = {"tag": "variant", "label": "nil", "payload": empty}
+        nil = {"tag": "list", "items": []}
         seed = record(colour={"tag": "variant", "label": "silver", "payload": empty},
                       seed=label("s"), rains=nil, rung={"tag": "boolean", "value": False},
                       planting=record(principal=label("glm"), intent=label("")), observers=nil)
@@ -417,12 +412,7 @@ class BellList(TurnWorld):
 
         def authors(state):
             rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
-            out = []
-            while rains["label"] == "cons":
-                f = {x["name"]: x["value"] for x in rains["payload"]["fields"]}
-                out.append({x["name"]: x["value"]["value"] for x in f["head"]["fields"]}["author"])
-                rains = f["tail"]
-            return out
+            return [{x["name"]: x["value"]["value"] for x in item["fields"]}["author"] for item in rains["items"]]
         self.assertEqual(authors(before), ["kimik3", "gemini"])
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)

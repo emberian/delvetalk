@@ -127,7 +127,7 @@ class LawFacts(Reflection):
     def setUp(self):
         super().setUp()
         self.open_library()
-        self.make("roster", ROSTER, record(count=nat(0), members={"tag": "variant", "label": "nil", "payload": record()}))
+        self.make("roster", ROSTER, record(count=nat(0), members={"tag": "list", "items": []}))
 
     def clause(self, r):
         return r["receipt"]["outcome"].get("clause") if r["status"] == "refused" else r["status"]
@@ -145,7 +145,7 @@ class LawFacts(Reflection):
     def test_a_list_membership_of_a_number_fact_is_refused_at_compile(self):
         bad = ROSTER.replace("request.subject in new.members", "request.height in new.members")
         r = self.host.send(op="world-create", principal="ember", identity="bad", object="bad", source=bad,
-                           entry="initial", seed=record(count=nat(0), members={"tag": "variant", "label": "nil", "payload": record()}))
+                           entry="initial", seed=record(count=nat(0), members={"tag": "list", "items": []}))
         self.assertEqual(r["status"], "error", r)
 
 

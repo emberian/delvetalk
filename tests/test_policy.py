@@ -207,7 +207,7 @@ class PolicyObject(Chain):
         self.assertEqual(asked["status"], "admitted", asked)
         self.assertEqual(asked["result"]["label"], "confirming")
         self.assertIn("Reply yes or correct it.", asked["offers"][0]["text"])
-        self.assertEqual(self.pending()["label"], "cons")
+        self.assertNotEqual(self.pending()["items"], [])
         # Another principal's yes is not glm's: it is heard afresh (prose, so interpreted).
         other = self.say("yes", principal="kimik3")
         self.assertEqual(other["status"], "suspended", other)
@@ -215,7 +215,7 @@ class PolicyObject(Chain):
         self.assertEqual(planted["status"], "admitted", planted["receipt"]["outcome"])
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
-        self.assertEqual(self.pending()["label"], "nil")
+        self.assertEqual(self.pending()["items"], [])
 
     def test_no_drops_the_waiting_proposal(self):
         self.policy()
@@ -224,7 +224,7 @@ class PolicyObject(Chain):
         self.interpret(self.planting("violet", "a moth"))
         dropped = self.say("no")
         self.assertEqual(dropped["result"]["label"], "cleared", dropped)
-        self.assertEqual(self.pending()["label"], "nil")
+        self.assertEqual(self.pending()["items"], [])
         self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(0))
 
     def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_refused_by_name(self):

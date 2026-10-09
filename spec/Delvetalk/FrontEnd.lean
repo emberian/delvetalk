@@ -50,20 +50,51 @@ def parse (name source : String) : Except Diagnostic Parsed := do
 def parseSource (name source : String) : Except Diagnostic Json := do
   return (← parse name source).ast
 
-/-- The normal typed frontend on hosted parsed modules. Original source hashes
-and the exact derived import transcript travel through the existing check. -/
+/-- A closure through elaboration, checked once (the normal typed frontend on hosted parsed
+modules; original source hashes and the exact derived import transcript travel through the
+existing check): everything about a package that does not
+depend on the entry. Lowering an entry from it (`Prepared.lower`) selects the reached knot,
+builds the proposal and the packet, nothing more. -/
+structure Prepared where
+  modules : List SourceModule
+  asts : List Json
+  decoded : List ObjectiveBendElaborate.Module
+  elaborated : ObjectiveBendElaborate.Elaborated
+  instances : Json
+
+def instancesNote (instances : Json) (diagnostic : Diagnostic) : Diagnostic :=
+  { diagnostic with message := diagnostic.message ++
+    (if instances == Json.arr #[] then "" else "; selected generic instances: " ++ instances.compress) }
+
+/-- Specialize, elaborate and check a closure whose modules are already parsed. -/
+def prepareParsed (modules : List SourceModule) (asts : List Json) (limits : Json) : Except Diagnostic Prepared := do
+  if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
+  let sources := (modules.zip asts).map fun (module, ast) => Generics.Source.mk module ast
+  let specialized ← (Generics.run sources.toArray).mapError fun message =>
+    { stage := "source-specialization", message }
+  let note := instancesNote specialized.instances
+  let elaborated ← (ObjectiveBendElaborate.elaboratePackage specialized.modules).mapError
+    (fun e => note (elaborationRefusal e))
+  (checkClosure modules elaborated limits).mapError note
+  return ⟨modules, asts, specialized.modules, elaborated, specialized.instances⟩
+
+def prepare (modules : List SourceModule) (limits : Json) : Except Diagnostic Prepared := do
+  let asts ← modules.mapM fun module => do
+    let ast ← parseSource module.name module.source
+    checkImports module ast
+    return ast
+  prepareParsed modules asts limits
+
+def Prepared.lower (p : Prepared) (entryModule : Nat) (entryDefinition : String)
+    (args projections limits : Json) (mode : String) : Except Diagnostic Lowering :=
+  (lowerElaborated p.modules p.decoded p.elaborated true entryModule entryDefinition args projections limits mode).mapError
+    (instancesNote p.instances)
+
 def lowerWithInstances (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
     (args projections limits : Json) (mode : String) : Except Diagnostic (Lowering × Json) := do
   discard <| options projections limits mode
-  let sources ← modules.mapM fun module => do
-    let ast ← parseSource module.name module.source
-    checkImports module ast
-    return Generics.Source.mk module ast
-  let specialized ← (Generics.run sources.toArray).mapError fun message =>
-    { stage := "source-specialization", message }
-  let lowered ← (lowerDecoded modules specialized.modules entryModule entryDefinition args projections limits mode).mapError fun diagnostic =>
-    { diagnostic with message := diagnostic.message ++ (if specialized.instances == Json.arr #[] then "" else "; selected generic instances: " ++ specialized.instances.compress) }
-  return (lowered, specialized.instances)
+  let prepared ← prepare modules limits
+  return (← prepared.lower entryModule entryDefinition args projections limits mode, prepared.instances)
 
 def lower (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
     (args projections limits : Json) (mode : String) : Except Diagnostic Lowering := do

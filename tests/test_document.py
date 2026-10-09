@@ -24,18 +24,15 @@ def variant(name, **fields):
 
 
 def nil():
-    return {"tag": "variant", "label": "nil", "payload": record()}
+    return {"tag": "list", "items": []}
 
 
 def cons(head, tail):
-    return {"tag": "variant", "label": "cons", "payload": record(head=head, tail=tail)}
+    return {"tag": "list", "items": [head] + tail["items"]}
 
 
 def as_list(items):
-    out = nil()
-    for item in reversed(items):
-        out = cons(item, out)
-    return out
+    return {"tag": "list", "items": list(items)}
 
 
 # A document as a small Python tree; to_wire and to_bend are its two renderings.
