@@ -1,5 +1,0 @@
-edition ObjectiveBend 1
-import ./Interpretation.obend as Super
-# A room owns the chosen phrasebook. Specialization preserves the result schema.
-def policy()->Super.Policy:
-  extend(Super.defaultPolicy(),{revision:"workshop-interpretation-v1",vocabulary:"A moth is a displayed specimen. Lending means selecting the captured lend offer, never granting new authority.",examples:"Visitor: lend the moth for two nights. If recipient is absent, propose only nights=2 and ask who should receive it.",escalation:"Ask about the missing recipient first. If the visitor requests an unavailable operation, explain the missing local affordance and retain an escalation."})

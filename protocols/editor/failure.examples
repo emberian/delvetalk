@@ -1,7 +1,0 @@
-examples DelveTalk 1
-case an intentional failing experiment
-law maker visitor
-as visitor
-send add
-  amount (Nat): 1
-expect result (Nat): 999

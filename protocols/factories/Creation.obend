@@ -1,7 +1,0 @@
-edition ObjectiveBend 1
-import ./Preparation.obend as P
-
-# Source factories share the same explicit existing/absence reads and invocation.
-# Admission still checks the actual parent law, child law, quota and collision.
-def make(object: String, name: String, input: P.Value, summary: String) -> P.Preparation:
-  P.Preparation.ready({summary: summary, reads: P.Reads.cons({head: P.Read.existing({object: object}), tail: P.Reads.cons({head: P.Read.absent({object: textConcat(textConcat(object, "/"), name)}), tail: P.Reads.nil()})}), calls: P.Effects.cons({head: P.Effect.invoke({object: object, command: "make", input: input}), tail: P.Effects.nil()})})

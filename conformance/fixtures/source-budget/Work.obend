@@ -1,6 +1,0 @@
-edition ObjectiveBend 1
-# A demanded, finite source workload. Both law and body use this same function.
-def burn(n: Nat) -> Bool:
-  match n:
-    case 0: true
-    case 1+k: if burn(k) then true else false

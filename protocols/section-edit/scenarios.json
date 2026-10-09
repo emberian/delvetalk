@@ -1,7 +1,0 @@
-[
-  {"name":"read-root-conflict", "law":["inkling","scanner"], "steps":[
-    {"principal":"inkling", "command":"edit", "input":{"text":"Updated Doors"}, "root":"initial", "kind":"committed", "state":{"title":"Doors","text":"Updated Doors","lastEditor":"inkling"}},
-    {"principal":"scanner", "command":"edit", "input":{"text":"Blind replacement"}, "root":"initial", "kind":"refused", "error":"stale read root"},
-    {"principal":"scanner", "command":"edit", "input":{"text":"Merged Doors"}, "root":"current", "kind":"committed", "state":{"title":"Doors","text":"Merged Doors","lastEditor":"scanner"}}
-  ]}
-]

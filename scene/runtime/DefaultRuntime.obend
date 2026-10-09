@@ -1,5 +1,0 @@
-edition ObjectiveBend 1
-import ./SceneModel.obend as M
-import ./BaseRuntime.obend as Base
-def behavior() -> M.Behavior:
-  Base.behavior()

@@ -1,8 +1,0 @@
-examples DelveTalk 1
-
-case a visitor asks for the moon
-law visitor
-as visitor
-send knock
-  word: moon
-expect result: The silver door opens into a room full of small moons.

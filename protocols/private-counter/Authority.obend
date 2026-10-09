@@ -1,7 +1,0 @@
-edition ObjectiveBend 1
-import ./Preparation.obend as P
-import ./ScenarioLaw.obend as L
-def authority(owner: String, visitor: String) -> P.Value:
-  let manager: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: owner}), tail: P.Values.nil()})})
-  let users: P.Value = P.Value.array({values: P.Values.cons({head: P.Value.text({value: owner}), tail: P.Values.cons({head: P.Value.text({value: visitor}), tail: P.Values.nil()})})})
-  P.Value.record({fields: L.pair("profile", P.Value.text({value: "delvetalk-scoped-law"}), L.pair("read", manager, L.pair("view", P.Value.record({fields: L.pair("main", P.Value.text({value: "public"}), P.Fields.nil())}), L.pair("invoke", P.Value.record({fields: L.pair("add", users, P.Fields.nil())}), L.pair("reprogram", manager, L.pair("law", manager, P.Fields.nil()))))))})

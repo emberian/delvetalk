@@ -1,8 +1,0 @@
-[
-  {"name":"pure-bend-in-atomic-turn", "law":["builder"], "steps":[
-    {"principal":"builder", "command":"add", "input":{"amount":3}, "root":"initial", "kind":"committed", "state":{"count":3}},
-    {"principal":"builder", "command":"add", "input":{"amount":9}, "root":"initial", "kind":"refused", "error":"stale read root"},
-    {"principal":"builder", "command":"add", "input":{"amount":4}, "root":"current", "kind":"committed", "state":{"count":7}},
-    {"principal":"outsider", "command":"add", "input":{"amount":2}, "root":"current", "kind":"refused", "error":"unauthorized"}
-  ]}
-]
