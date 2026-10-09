@@ -1063,8 +1063,10 @@ def tagOf (entry : Json) : String :=
   | .error _ => "unknown"
 
 /-- Refusals a retry may outrun: a root moved, a machine budget ran out, an evaluation
-    failed. They are journaled but do not bind the identity's outcome. -/
-def transientClasses : List String := ["staleRoot", "budget", "evaluation"]
+    failed, a capacity was full (pending activities and interpretations drain; a capacity
+    that never drains refuses the retry again). They are journaled but do not bind the
+    identity's outcome. -/
+def transientClasses : List String := ["staleRoot", "budget", "evaluation", "capacity"]
 
 def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&

@@ -309,7 +309,20 @@ class PolicyObject(Chain):
         over = self.say("one more fern", identity="p64")
         out = over["receipt"]["outcome"]
         self.assertEqual((over["status"], out["class"], out["reason"]), ("refused", "capacity", "pendingInterpretationsPerObject"))
-        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 64)
+        pending = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual(len(pending), 64)
+        # A capacity refusal is transient: once the interpretations settle, the same post
+        # (the same identity) is retried and runs.
+        for item in pending:
+            self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        retried = self.say("one more fern", identity="p64")
+        self.assertEqual(retried["status"], "suspended", retried)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+        [resumed] = settled["resumed"]
+        self.assertEqual((resumed["status"], resumed["receipt"]["identity"]["intent"]), ("admitted", "p64"), resumed)
+        self.assertEqual(self.host.send(op="world-receipt", principal="glm", identity="p64")["receipt"]["outcome"]["tag"], "admitted")
 
 
 if __name__ == "__main__":
