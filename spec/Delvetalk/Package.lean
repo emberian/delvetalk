@@ -50,22 +50,30 @@ def modulesOf (j : Json) : Except String (List SourceModule × Json) := do
     modules := modules ++ [⟨name,source,Minidregg.Compiler.Sha256.hexString source,imports⟩]
   return (modules, .arr raw)
 
-def compile (j : Json) : Except String Json := do
+/-- Compilation proper. A host that owns a law adapter (`Delvetalk.Host`) keeps
+the parsed laws and the entry's checked type; the pure profile refuses laws. -/
+def compileKeepingLaws (j : Json) :
+    Except String (Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)) := do
   let (modules, sources) ← modulesOf j
   let entry ← j.getObjValAs? String "entry"
   let (lowered, genericInstances) ← (FrontEnd.lowerWithInstances modules (modules.length - 1) entry (.arr #[]) (.arr #[]) (getLimits j) "definition").mapError
     (fun diagnostic => diagnostic.json.compress)
-  if !lowered.laws.isEmpty then throw "package laws require a host law adapter; this pure profile refuses them"
   let accepted ← (accept lowered).mapError (fun diagnostic => ({ diagnostic with message := diagnostic.message ++
       (if genericInstances == Json.arr #[] then "" else "; selected generic instances: " ++ genericInstances.compress) }).json.compress)
   let packet := lowered.packet
-  return Json.mkObj [
+  let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
     ("modules", sources),
     ("sourcesSha256", toJson (Minidregg.Compiler.Sha256.hexString sources.compress)),
     ("entry", toJson entry), ("genericInstances", genericInstances), ("limits", getLimits j), ("packet", packet),
     ("packetSha256", toJson (Minidregg.Compiler.Sha256.hexString packet.compress)),
     ("type", typeJson accepted.typed.type)]
+  return (artifact, accepted.typed.type, lowered.laws)
+
+def compile (j : Json) : Except String Json := do
+  let (artifact, _, laws) ← compileKeepingLaws j
+  if !laws.isEmpty then throw "package laws require a host law adapter; this pure profile refuses them"
+  return artifact
 
 /- Arguments are closed ordinary first-order data. Variants require annotation
 construction and are deliberately refused at this small initial boundary. -/

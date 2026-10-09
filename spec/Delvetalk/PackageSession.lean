@@ -1,4 +1,5 @@
 import Delvetalk.Package
+import Delvetalk.Host.Ops
 
 namespace Delvetalk.PackageSession
 open Lean (Json toJson)
@@ -47,5 +48,24 @@ def step (cache : Cache) (request : Json) : Cache × Except String Json :=
       else if known && operation == "run-data-v1" then (cache, Package.runDataVerified request)
       else (cache, Package.job request)
   | .error _ => (cache, Package.job request)
+
+/-- Per-process state: the compile cache beside an optional open World. -/
+structure Session where
+  cache : Cache := []
+  world : Host.Session := none
+
+/-- World ops own their journal file; everything else is `step`. -/
+def stepIO (session : Session) (request : Json) : IO (Session × Except String Json) := do
+  match request.getObjValAs? String "op" with
+  | .ok op =>
+    if Host.isWorldOp op then
+      let (world, result) ← Host.stepWorld session.world request
+      return ({ session with world }, result)
+    else
+      let (cache, result) := step session.cache request
+      return ({ session with cache }, result)
+  | .error _ =>
+    let (cache, result) := step session.cache request
+    return ({ session with cache }, result)
 
 end Delvetalk.PackageSession
