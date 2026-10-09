@@ -1,0 +1,23 @@
+edition ObjectiveBend 1
+import ./Preparation.obend as P
+record State:
+  count: Nat
+sum Commands:
+  add: {amount: Nat}
+sum OperationInput:
+  none: {}
+  invoke: Commands
+record CandidateFacts:
+  object: String
+  principal: String
+  op: String
+  command: String
+  state: State
+  input: OperationInput
+  nextState: State
+# Receiving supplies logical checked state; the law never parses storage framing.
+def invariant(facts: CandidateFacts, config: P.Value) -> Bool:
+  match P.asNatural(config):
+    case missing(_): false
+    case wrongKind(_): false
+    case found(blocked): facts.nextState.count != blocked.value
