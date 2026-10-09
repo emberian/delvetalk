@@ -120,10 +120,10 @@ class Identity:
         return parts[2], parts[4]
 
     def authenticate(self, credential):
-        row = self.db.execute("SELECT did,handle FROM challenges WHERE credential=? AND state='verified'", (digest(credential),)).fetchone()
+        row = self.db.execute("SELECT did,handle,verified FROM challenges WHERE credential=? AND state='verified'", (digest(credential),)).fetchone()
         if row is None:
             raise IdentityError('invalid_credential')
-        return {'did': row['did'], 'handle': row['handle']}
+        return {'did': row['did'], 'handle': row['handle'], 'verified': row['verified']}
 
     def revoke(self, credential):
         cur = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE credential=? AND state IN ('pending','verified')",

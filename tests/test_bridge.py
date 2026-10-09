@@ -156,10 +156,7 @@ class Bridging(BridgeCase):
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertEqual(out.getvalue(), '')
 
-    @unittest.expectedFailure
     def test_real_garden_receive_end_to_end(self):
-        # Garden.receive exists; until the host lane lands Plan.create the turn is refused with
-        # outcome {'class': 'evaluation', 'reason': 'plan not supported: create'}.
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0))})
         self.assertEqual(r['status'], 'created', r)
