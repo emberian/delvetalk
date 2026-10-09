@@ -13,7 +13,7 @@ spec.loader.exec_module(table)
 
 
 def presentation():
-    return {'description': 'Facilitated two-player Automatafl; private operator custody precedes public openings.',
+    return {'description': 'Original 11x11 two-player Automatafl; private operator custody precedes public openings.',
         'affordances': {'resolve': {'label': 'Resolve both opened moves',
             'fields': {'round': {'type': 'nat', 'maximum': (1 << 53) - 1}}}},
         'viewProgram': {'profile': 'delvetalk-obend-menu-v1', 'package': {

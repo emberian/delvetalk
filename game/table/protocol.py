@@ -3,10 +3,12 @@
 The returned JSON is interpreted only by the compiled Lean profile. This module
 fills a userspace protocol template with a table identity and two DID grants.
 """
+import json
 from pathlib import Path
 
 GAME = Path(__file__).resolve().parents[1] / 'automatafl'
 DOMAIN = 'delvetalk.automatafl.commit.v1'
+OPENING = json.loads((GAME / 'original-opening.json').read_text())
 
 
 def literal(value):
@@ -39,10 +41,10 @@ def source_bundle(entry='play'):
 
 
 def initial_state(table_id):
-    # The existing qualified "independent" fixture, reversibly packed base 4.
-    return {'table': table_id, 'round': 0, 'width': 5, 'height': 5,
-            'game': {'board': 1 + 2 * 4 ** 4 + 3 * 4 ** 12,
-                     'automaton': 12, 'marks': 0, 'status': 0, 'winner': 0},
+    # The original stock two-player opening; there is no offered board parameter.
+    return {'table': table_id, 'round': 0, 'width': OPENING['width'], 'height': OPENING['height'],
+            'game': {'board': int(OPENING['board']),
+                     'automaton': OPENING['automaton'], 'marks': 0, 'status': 0, 'winner': 0},
             'commit0': '', 'commit1': '', 'revealed0': False, 'revealed1': False,
             'source0': 0, 'target0': 0, 'source1': 0, 'target1': 0}
 

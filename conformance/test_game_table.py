@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Admitted two-player table journeys; all gameplay and authority execute in Lean."""
+# Smaller boards below are isolated algorithm fixtures, never offered game layouts.
 import concurrent.futures
 import copy
 import importlib.util

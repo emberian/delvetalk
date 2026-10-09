@@ -100,7 +100,12 @@ class AutomataflCompanion(unittest.TestCase):
     def test_full_match_private_choices_public_receiving_and_restart(self):
         public, actions = self.capture('start')
         self.assertEqual(actions, [])
-        self.assertIn('  1 + . . . -', public['text'])
+        state = self.root()['state']
+        self.assertEqual((state['width'], state['height'], state['game']['automaton']), (11, 11, 60))
+        self.assertEqual(state['game']['board'], int(generate.table.OPENING['board']))
+        self.assertIn('  1  - . . . + - + . . . -', public['text'])
+        self.assertIn(' 11  - . . . + - + . . . -', public['text'])
+        self.assertIn('K11 is 120', public['text'])
         self.assertIn('operator can see choices', public['text'])
         with self.assertRaisesRegex(ValueError, 'not offered'):
             self.players[0].prepare(self.players[0].observe()['card'], 'reveal', {}, 'too-early')
@@ -125,7 +130,7 @@ class AutomataflCompanion(unittest.TestCase):
             if number == 0:
                 opened, actions = self.capture('north-open')
                 self.assertEqual(actions, [])
-                self.assertIn('North opened: A1 to C1', opened['text'])
+                self.assertIn('North opened: F10 to F7', opened['text'])
                 self.assertNotIn('South opened:', opened['text'])
             self.private(1, 'reveal', {}, f'r{number}-open-1')
             alias = 'resolve-' + str(number)
@@ -178,7 +183,7 @@ class AutomataflCompanion(unittest.TestCase):
         self.assertTrue(companion.client.same_game(qualified, qualified))
         self.assertTrue(companion.client.same_game(program, qualified))
         mutations = [lambda p: p['commands']['resolve']['set'].update(round=['literal', 99]),
-                     lambda p: p['initial'].update(width=7),
+                     lambda p: p['initial'].update(width=5, height=5),
                      lambda p: p['initial'].update(round=False),
                      lambda p: p.update(extraExecutionRoute={}),
                      lambda p: p['commands'].update(cheat=copy.deepcopy(p['commands']['resolve'])),

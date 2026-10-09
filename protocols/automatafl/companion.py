@@ -26,16 +26,16 @@ def board(root):
     """Decode existing board/mark digits for display; no movement decisions."""
     view = client.public_view(root)
     width, height = view['width'], view['height']
-    if width != 5 or height != 5:
-        raise ValueError('This companion displays the ordinary qualified 5 by 5 table')
-    lines = [f'Round {view["round"]} · table version {view["version"]}', '    A B C D E']
+    if width != 11 or height != 11:
+        raise ValueError('This companion displays the original 11 by 11 two-player table')
+    lines = [f'Round {view["round"]} · table version {view["version"]}', '     A B C D E F G H I J K']
     for row in range(height):
         cells = view['cells'][row * width:(row + 1) * width]
-        lines.append(f'  {row + 1} ' + ' '.join('.+-@'[cell] for cell in cells))
+        lines.append(f'{row + 1:>3}  ' + ' '.join('.+-@'[cell] for cell in cells))
     marks = [chr(65 + i % width) + str(i // width + 1)
              for i in range(width * height) if view['marks'] & (1 << i)]
     lines += ['Marked: ' + (', '.join(marks) if marks else 'none'),
-              'A1 is index 0; E1 is 4; A2 is 5. Rows increase downward.',
+              'A1 is index 0; K1 is 10; A2 is 11; K11 is 120. Rows increase downward.',
               '+ attractor, - repulsor, @ automaton. North owns top corners; South owns bottom corners.']
     def coordinate(index):
         return (chr(65 + index % width) + str(index // width + 1) if index < width * height

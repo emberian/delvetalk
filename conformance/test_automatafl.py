@@ -1,5 +1,6 @@
 """Actual pinned Obend gameplay through the generic compiler/demand executable."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -94,7 +95,7 @@ class AutomataflTests(unittest.TestCase):
         args = [int(n) for n in self.jobs['independent']['arguments']]
         self.assertTrue(self.execute(self.valid, args[:5]))
         invalid = []
-        for position, value in [(0, 0), (0, 1), (1, 10), (2, 0), (2, args[2] + 3*4**1),
+        for position, value in [(0, 0), (0, 1), (1, 12), (2, 0), (2, args[2] + 3*4**1),
                                 (2, args[2] + 4**25), (3, 25), (3, 11), (4, 2**25)]:
             changed = list(args)
             changed[position] = value
@@ -106,7 +107,7 @@ class AutomataflTests(unittest.TestCase):
                 self.assertEqual(result, {'board': changed[2], 'automaton': changed[3],
                                          'marks': changed[4], 'status': 2, 'winner': 0})
 
-    def test_nine_by_nine_and_exact_tick_boundary(self):
+    def test_nine_by_nine_algorithm_fixture_and_exact_tick_boundary(self):
         args = [9, 9, 3*4**40 + 1 + 2*4**8, 40, 0, 0, 9, 8, 17]
         reply = bridge.run(self.play, args, {'ticks': 100000})
         self.assertEqual(reply['status'], 'finished', reply)
@@ -124,6 +125,43 @@ class AutomataflTests(unittest.TestCase):
                                       ('board-valid', 'boardValid', True), ('automaton', 'automaton', False)]:
             with self.subTest(artifact=name):
                 self.assertEqual(bridge.export(entry, validated), load(name + '.package.json'))
+
+    def test_original_eleven_board_and_actual_rust_match(self):
+        opening = load('original-opening.json')
+        evidence = load('original-opening-qualification.json')
+        rows = ['-...+-+...-', '-...+-+...-', '...........', '.+.......+.',
+                '--.......--', '--...@...--', '--.......--', '.+.......+.',
+                '...........', '-...+-+...-', '-...+-+...-']
+        cells = ['.+-@'.index(c) for row in rows for c in row]
+        self.assertEqual(opening['rows'], rows)
+        self.assertEqual((opening['width'], opening['height'], opening['automaton']), (11, 11, 60))
+        self.assertEqual(bridge.pack(cells), int(opening['board']))
+        self.assertEqual([cells.count(i) for i in range(4)], [84, 12, 24, 1])
+        for key, name in [('gameSha256', 'Automatafl.obend'),
+                          ('validatedSha256', 'Validated.obend')]:
+            self.assertEqual(evidence[key], hashlib.sha256((HERE / name).read_bytes()).hexdigest())
+        self.assertEqual(evidence['playPacketSha256'], self.play['packetSha256'])
+        self.assertEqual(evidence['originalRust']['adapterSha256'],
+                         hashlib.sha256((HERE / 'original-rust-oracle.rs').read_bytes()).hexdigest())
+        game = {'board': int(opening['board']), 'automaton': 60, 'marks': 0, 'status': 0, 'winner': 0}
+        probe = evidence['openingProbe']
+        self.assertEqual(self.execute(self.play, list(map(int, probe['arguments']))), game)
+        self.assertEqual(probe['originalRust']['cells'], cells)
+        for number, round in enumerate(evidence['rounds']):
+            with self.subTest(round=number):
+                args = list(map(int, round['arguments']))
+                self.assertEqual(args[:5], [11, 11, game['board'], game['automaton'], game['marks']])
+                game = self.execute(self.play, args)
+                self.assertEqual(game, bridge.data(round['result']['value']))
+                self.assertEqual({'cells': bridge.unpack(game['board'], 121),
+                    'automaton': game['automaton'],
+                    'marks': [i for i in range(121) if game['marks'] & (1 << i)],
+                    'status': game['status'], 'winner': game['winner']}, round['originalRust'])
+        self.assertEqual(len(evidence['rounds']), 10)
+        self.assertEqual((game['automaton'], game['winner']), (0, 1))
+        # The terminal board remains terminal under the same 11x11 representation.
+        self.assertEqual(self.execute(self.play, [11, 11, game['board'], 0, 0, 24, 25, 30, 29]),
+                         {**game, 'status': 3})
 
 
 if __name__ == '__main__':

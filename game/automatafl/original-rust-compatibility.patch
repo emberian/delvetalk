@@ -1,0 +1,13 @@
+--- src/lib.rs
++++ src/lib.rs
+@@ -343,7 +343,9 @@
+                 conflict_moves.push(m);
+                 // We conflicted with some previous move, pull them out of the
+                 // locked list and into the conflict list.
+-                for p in locked_moves.drain_filter(|p| p.from == m.from || p.to == m.to) {
++                let removed: Vec<_> = locked_moves.iter().copied().filter(|p| p.from == m.from || p.to == m.to).collect();
++                locked_moves.retain(|p| !(p.from == m.from || p.to == m.to));
++                for p in removed {
+                     trace!("caused conflict with player {pid:?}", pid = p.who);
+                     conflict_moves.push(p);
+                 }

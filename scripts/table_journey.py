@@ -23,10 +23,13 @@ bootstrap = module('table_journey_bootstrap','scripts/bootstrap.py')
 table = module('table_journey_protocol','game/table/protocol.py')
 client = module('table_journey_client','game/table/client.py')
 SEATS = ['did:plc:aaaaaaaaaaaaaaaaaaaaaaaa','did:plc:bbbbbbbbbbbbbbbbbbbbbbbb']
-# Authored sequence from the ordinary initial board, qualified by actual Lean play.
-MATCH = [((0,2),(4,9)), ((2,1),(20,21)), ((1,2),(20,21)),
-         ((2,3),(9,14)), ((3,4),(14,10))]
-
+# Authored original 11x11 match; all ten rounds agree with the original Rust core.
+# Coordinates and exact states: game/automatafl/original-opening-qualification.json.
+MATCH = [((104, 71), (0, 3)), ((71, 60), (17, 18)),
+         ((60, 49), (16, 17)), ((49, 38), (11, 22)),
+         ((15, 13), (90, 91)), ((13, 12), (90, 91)),
+         ((90, 91), (96, 95)), ((12, 11), (90, 91)),
+         ((11, 0), (90, 91)), ((0, 1), (90, 91))]
 
 def immutable_private(path, value):
     path = Path(path)
@@ -103,7 +106,7 @@ def run(directory):
               [client.prepare(target,number,seat,*move) for seat,move in enumerate(moves)]))
         for seat in (0,1):
             invoke(f'{number}-commit-{seat}','commit'+str(seat),pair[seat]['commit'],seat)
-        if number==4:
+        if number==len(MATCH)-1:
             invoke('late-wrong-reveal','reveal1',{**pair[1]['reveal'],'nonce':'f'*64},1,'refused')
         for seat in (0,1):
             invoke(f'{number}-reveal-{seat}','reveal'+str(seat),pair[seat]['reveal'],seat)

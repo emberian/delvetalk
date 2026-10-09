@@ -15,8 +15,10 @@ python3 scripts/world.py --profile compiled /tmp/table-world.json /tmp/table-cre
 python3 conformance/test_game_table.py
 ```
 
-Use a fresh database. The initial 5×5 board places an attractor at 0, repulsor
-at 4 and automaton at 12, with row-major indices. Each seat receives its own commit/reveal commands; either
+Use a fresh database. Every new table uses the [original 11×11 opening](../automatafl/original-opening.json):
+12 attractors, 24 repulsors and the automaton at F6 (index 60). Indices are
+row-major: A1=0, K1=10, A2=11, K11=120; rows increase downward. No alternate
+board or rules parameter is offered. Each seat receives its own commit/reveal commands; either
 can resolve. Nobody receives management rights. Inspection is public. Local
 principal strings do not authenticate DID control.
 
@@ -24,7 +26,7 @@ principal strings do not authenticate DID control.
 
 ```sh
 python3 game/table/client.py prepare --table table:cafe --round 0 --seat 0 \
-  --source 0 --target 5 --private /tmp/alice-round0.private.json
+  --source 104 --target 71 --private /tmp/alice-round0.private.json
 ```
 
 The helper prints `{round,digest}` and durably creates a new mode-0600 reveal
@@ -62,3 +64,7 @@ requests. The transition matches 353 stored Bend outputs; ten disagree with the
 historical Rust oracle. Qualification is scoped to this two-player profile.
 
 [Participant cards](PARTICIPANT.md) supply typed move selection and private opening/retry custody.
+
+The [ten-round original-board match](../automatafl/original-opening-qualification.json)
+agrees cell-for-cell with the original Rust rule core using its documented adapter.
+Smaller boards in conformance tests are isolated algorithm fixtures, not game variants.

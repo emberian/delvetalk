@@ -114,7 +114,7 @@ class TableParticipant(unittest.TestCase):
     def test_fields_and_authority_remain_separate(self):
         forged = self.player(0, 'bob', self.base / 'forged')
         card = forged.observe()
-        for fields in ({'source': True, 'target': 9}, {'source': 0, 'target': 25},
+        for fields in ({'source': True, 'target': 9}, {'source': 0, 'target': 121},
                        {'source': 0, 'target': 5, 'principal': 'alice'}):
             with self.assertRaises(ValueError):
                 forged.prepare(card['card'], 'commit', fields, 'bad-fields')

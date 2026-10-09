@@ -61,7 +61,7 @@ class TableJourney(unittest.TestCase):
         report=journey.run(world)
         self.assertEqual(report['object'],journey.bootstrap.TABLE)
         self.assertEqual(report['finalRoot']['state']['game']['winner'],1)
-        self.assertEqual(report['finalRoot']['state']['round'],5)
+        self.assertEqual(report['finalRoot']['state']['round'],len(journey.MATCH))
         self.assertEqual(report['cafeAfter'],report['cafeBefore'])
         after=journey.bootstrap.loads((world/'world.json').read_bytes())
         for identity,root in before['objects'].items():
@@ -139,7 +139,7 @@ class TableJourney(unittest.TestCase):
             pair=[journey.client.prepare(table_id,number,seat,*move) for seat,move in enumerate(moves)]
             for seat in (0,1):
                 authored(f'r{number}-commit{seat}','commit'+str(seat),pair[seat]['commit'],seat)
-            if number==4:
+            if number==len(journey.MATCH)-1:
                 before=receiving.snapshot(table_id)['root']
                 bad=authored('late-bad-opening','reveal1',
                     {**pair[1]['reveal'],'nonce':'f'*64},seat=1,kind='refused')
@@ -151,10 +151,10 @@ class TableJourney(unittest.TestCase):
         final=receiving.snapshot(table_id)
         self.assertEqual(final['root']['state']['game']['winner'],1)
         self.assertEqual(final['root']['state']['game']['automaton'],0)
-        self.assertEqual(final['root']['state']['round'],5)
-        self.assertEqual(final['root']['version'],25)
+        self.assertEqual(final['root']['state']['round'],len(journey.MATCH))
+        self.assertEqual(final['root']['version'],5*len(journey.MATCH))
         self.assertEqual(room.room_view(receiving.snapshot(cafe)['root'],artifact,cafe),cafe_before)
-        authored('terminal-commit','commit0',{'round':5,'digest':'0'*64},kind='refused')
+        authored('terminal-commit','commit0',{'round':len(journey.MATCH),'digest':'0'*64},kind='refused')
         # Restart recovers every original receipt without touching the mock network,
         # including an early refused turn and the final committed resolution.
         pds.records.clear()

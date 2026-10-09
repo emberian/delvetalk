@@ -1,7 +1,10 @@
 # Automatafl: two seats, one shared board
 
 This companion adds a resident view to the [qualified two-player table](../../game/table/README.md).
-Commands, initial state, commitment bytes and game rules remain unchanged.
+Every offered table uses the original tuned 11×11 opening with 12 attractors,
+24 repulsors and the automaton at F6. The companion preserves the underlying
+table commands, commitment bytes and qualified two-player movement rules.
+There is no board-size, layout or rules selection.
 North aims for the top corners; South aims for the bottom corners. Both players
 move the shared attractors and repulsors to guide the automaton.
 
@@ -28,9 +31,9 @@ enrollment channel, seat reassignment or forced opening.
 
 Use a separate mode-0700 directory per seat with the existing
 [private participant helper](../../game/table/PARTICIPANT.md). In the agreed
-private interaction, a player can say “A1 to C1”; the operator confirms that as
-source index 0, target 2 before preparing the sealed move. A1 is index 0, E1 is 4,
-A2 is 5; rows increase downward. This translation chooses no move for the player.
+private interaction, a player can say “F10 to F7”; the operator confirms that as
+source index 104, target 71 before preparing the sealed move. A1 is index 0, K1 is 10,
+A2 is 11, K11 is 120; rows increase downward. This translation chooses no move for the player.
 
 The helper retains the exact request, nonce and opening before sending. Only
 the digest enters the first request. After both commitments, each seat explicitly
