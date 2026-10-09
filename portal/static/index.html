@@ -57,34 +57,12 @@
         </div>
       </details>
       <details id="source-desk" class="source-desk">
-        <summary>Make something here <span>Source desk</span></summary>
+        <summary>Keep source text</summary>
         <div class="source-desk-body">
-          <p class="help">Keep source, propose a change, and follow its checks. A prepared proposal changes nothing until you send it.</p>
-          <form id="source-form">
-            <div class="desk-grid">
-              <label class="field-label">Candidate object<input id="source-candidate" type="text" list="candidate-objects" required placeholder="candidate:my-object"><datalist id="candidate-objects"></datalist></label>
-              <label class="field-label">Target object<input id="source-target" type="text" list="target-objects" required placeholder="object:my-object"><datalist id="target-objects"></datalist></label>
-              <label class="field-label">Syntax<select id="source-syntax" required><option value="">Choose a syntax…</option></select></label>
-            </div>
-            <label class="field-label">Source<textarea id="source-text" rows="10" spellcheck="false" placeholder="Write or paste your program…"></textarea></label>
-            <div class="source-file-row"><label class="field-label">Or open a UTF-8 file<input id="source-file" type="file"></label><button id="retain-source" type="button" class="secondary">Keep source</button><span id="source-retained" class="help" role="status"></span></div>
-            <details class="desk-references"><summary>Use retained source</summary><div class="input-row"><input id="source-reference" type="text" aria-label="Retained source reference" placeholder="Exact source reference"><button id="load-source" class="secondary" type="button">Open</button></div></details>
-            <details class="desk-inputs"><summary>Scenarios & migration <span>Required for a candidate</span></summary>
-              <label class="field-label">Scenario JSON<textarea id="source-scenarios" rows="6" spellcheck="false" placeholder="Paste the scenario suite for this program"></textarea></label>
-              <label class="field-label">Scenario file<input id="scenario-file" type="file" accept=".json,application/json"></label>
-              <label class="field-label">Complete target state after adoption (JSON)<textarea id="source-migration" rows="5" spellcheck="false" placeholder="An exact JSON state object"></textarea></label>
-              <p class="help">These are retained as exact text. The compiler and world check their meaning.</p>
-            </details>
-            <div class="desk-buttons"><button id="prepare-source" type="submit" class="primary">Prepare candidate</button><button id="prepare-compile" type="button" class="secondary">Prepare compile</button><button id="prepare-adopt" type="button" class="secondary">Prepare adoption</button></div>
-          </form>
-          <section id="authoring-work" class="authoring-work" hidden aria-label="Saved source desk proposal">
-            <div class="draft-heading"><h3 id="authoring-title">Saved proposal</h3><button id="dismiss-authoring" type="button" class="icon-button" aria-label="Dismiss source desk proposal">×</button></div>
-            <p id="authoring-summary"></p><code id="authoring-alias"></code>
-            <p id="authoring-status" class="help" role="status" aria-live="polite"></p>
-            <div class="desk-buttons"><button id="send-authoring" type="button" class="primary">Send proposal</button><button id="run-authoring" type="button" class="secondary" hidden>Run compile job</button><button id="refresh-authoring" type="button" class="text-button">Check status</button></div>
-            <div id="authoring-diagnostics" class="authoring-diagnostics" hidden><h3>Compiler notes</h3><pre id="authoring-notes" tabindex="0"></pre></div>
-            <details class="desk-exact"><summary>Exact proposal & status</summary><button id="copy-authoring" type="button" class="text-button">Copy exact proposal</button><pre id="authoring-exact" tabindex="0"></pre><pre id="authoring-status-exact" tabindex="0" hidden></pre></details>
-          </section>
+          <p class="help">Inspect a writing card to copy its installed source. Edit it here, then paste your source and examples into that card's offered submission. The candidate offers its own checks and release.</p>
+          <label class="field-label">Source<textarea id="source-text" rows="10" spellcheck="false" placeholder="Paste the inspected source to edit…"></textarea></label>
+          <div class="source-file-row"><label class="field-label">Or open a UTF-8 file<input id="source-file" type="file"></label><button id="retain-source" type="button" class="secondary">Keep exact text</button><button id="copy-source" type="button" class="text-button">Copy text</button><span id="source-retained" class="help" role="status"></span></div>
+          <details class="desk-references"><summary>Open retained text</summary><div class="input-row"><input id="source-reference" type="text" aria-label="Retained source reference" placeholder="Exact source reference"><button id="load-source" class="secondary" type="button">Open</button></div></details>
         </div>
       </details>
       <article id="object-card" class="object-card" tabindex="-1">

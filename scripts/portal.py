@@ -168,8 +168,8 @@ class Portal:
     def authoring(self):
         if self.public:
             raise PermissionError('Authoring is unavailable on a public preview')
-        from authoring import Authoring
-        return Authoring(self)
+        from authoring import SourceCustody
+        return SourceCustody(self)
 
     def snapshot(self):
         # The selected backend owns synchronization. A resident daemon may hold
@@ -272,36 +272,7 @@ class Portal:
             raise RuntimeError('Could not allocate a saved reference')
 
     def _view(self, root, object_id, panel):
-        artifact = None
-        if 'roomArtifact' in root['protocol']:
-            binding = root['protocol']['roomArtifact']
-            if (not isinstance(binding, dict) or set(binding) != {'format', 'contentSha256'}
-                    or binding['format'] != bootstrap.room.FORMAT
-                    or not isinstance(binding['contentSha256'], str)
-                    or not re.fullmatch(r'[0-9a-f]{64}', binding['contentSha256'])):
-                raise ValueError('Invalid admitted room artifact binding')
-            admitted_protocol = canonical(root['protocol'])
-            # A declaration selects a candidate, never authenticates it. Unrelated
-            # damaged files must not prevent reading this admitted room; validate
-            # byte identity and the complete contract only for matching candidates.
-            for path in sorted((self.directory / 'artifacts/rooms').glob('*.json')):
-                try:
-                    envelope = loads(path.read_bytes())
-                except (OSError, ValueError, UnicodeError):
-                    continue
-                if not isinstance(envelope, dict) or not isinstance(envelope.get('protocol'), dict):
-                    continue
-                if envelope['protocol'].get('roomArtifact') != binding:
-                    continue
-                if canonical(envelope['protocol']) != admitted_protocol:
-                    continue
-                candidate = bootstrap.room.load_artifact(path.parent, path.stem)
-                if canonical(candidate['protocol']) != admitted_protocol:
-                    raise ValueError('Bound room artifact protocol differs from the admitted program')
-                artifact = candidate
-            if artifact is None:
-                raise ValueError('Exact bound room artifact is unavailable')
-        return bootstrap.room.inspect_object(root, object_id, artifact, panel=panel,
+        return bootstrap.room.inspect_object(root, object_id, panel=panel,
                                              expected_runtime=self.runtime)
 
     def object(self, object_id=None, panel='main', *, navigation=False):
@@ -323,8 +294,7 @@ class Portal:
         if panel not in {item['id'] for item in panels}:
             raise ValueError('Unknown declared panel; read the object overview')
         view = self._view(root, object_id, panel)
-        if navigation and (('viewProgram' in root['protocol'] and view['mode'] != 'projection')
-                           or ('roomArtifact' in root['protocol'] and view['mode'] != 'room')):
+        if navigation and 'viewProgram' in root['protocol'] and view['mode'] != 'projection':
             raise ValueError('The child’s authored view is unavailable')
         if view['mode'] != 'projection':
             panels = [{'id': 'main', 'label': 'Overview'}]
@@ -682,10 +652,6 @@ def make_server(portal, port=0, *, agents=None):
                     exact(q, ('card',)); result = portal.detail(q['card'])
                 elif url.path == '/api/authoring/source':
                     exact(q, ('source',), ('kind',)); result = portal.authoring.read_source(q['source'], q.get('kind', 'source'))
-                elif url.path == '/api/authoring/draft':
-                    exact(q, ('draft',)); result = portal.authoring.draft(q['draft'])
-                elif url.path == '/api/authoring/status':
-                    exact(q, ('draft',)); result = portal.authoring.status(q['draft'])
                 elif url.path == '/api/preparation':
                     exact(q, ('preparation',)); result = portal.preparation(q['preparation'])
                 elif url.path == '/api/draft':
@@ -714,10 +680,7 @@ def make_server(portal, port=0, *, agents=None):
                 if not portal.public:
                     routes.update({'/api/execute': portal.execute,
                                    '/api/repository/prepare': portal.repository_prepare,
-                                   '/api/authoring/source': portal.authoring.source,
-                                   '/api/authoring/prepare': portal.authoring.prepare,
-                                   '/api/authoring/execute': portal.authoring.execute,
-                                   '/api/authoring/run': portal.authoring.run})
+                                   '/api/authoring/source': portal.authoring.source})
                 if url.path not in routes or q:
                     return self.respond(404, {'error': 'not-found', 'message': 'Unknown portal relation'})
                 result = routes[url.path](payload)
@@ -758,6 +721,7 @@ def main():
     parser.add_argument('--principal', help='trusted local caller identity; never a Delve login')
     parser.add_argument('--allow-local-actions', action='store_true')
     parser.add_argument('--anthropic', action='store_true', help='opt into one paid proposal call per NL interpretation')
+    parser.add_argument('--tokeman-account', help='explicit tokeman account instead of ANTHROPIC_API_KEY; requires an Anthropic opt-in')
     args = parser.parse_args()
     if args.public_origin and (args.principal is not None or args.allow_local_actions or args.anthropic or args.state is not None):
         parser.error('--public-origin cannot combine with --principal, --allow-local-actions, --anthropic or --state')
@@ -771,12 +735,14 @@ def main():
         parser.error('--agent-anthropic requires --agent-state')
     proposer = None
     model_provider = None
+    if args.tokeman_account is not None and not (args.anthropic or args.agent_anthropic):
+        parser.error('--tokeman-account requires --anthropic or --agent-anthropic')
     if args.anthropic or args.agent_anthropic:
-        key = os.environ.get('ANTHROPIC_API_KEY')
-        if not key:
-            parser.error('Anthropic configuration requires ANTHROPIC_API_KEY')
-        from model_service import AnthropicMessages
-        model_provider = AnthropicMessages(key)
+        from model_service import AnthropicMessages, configured_credential
+        try:
+            model_provider = AnthropicMessages(configured_credential(args.tokeman_account))
+        except (ValueError, OSError):
+            parser.error('Anthropic configuration requires a usable explicit environment key or private tokeman account')
     portal = Portal(args.directory, state=args.state, principal=args.principal,
                     allow_local_actions=args.allow_local_actions, proposer=proposer,
                     public_origin=args.public_origin)

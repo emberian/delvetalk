@@ -16,7 +16,7 @@ themePreference.addEventListener('change', () => {
 });
 
 const state = { world: null, card: null, draft: null, preparation: null, preparationGeneration: 0, detail: null, generation: 0, routeGeneration: 0, location: location.href, sending: false, uncertain: false };
-const authoring = { draft: null, pending: false, preparing: false, uncertain: false, source: null, sourceText: null, rawFiles: {}, status: null };
+const sourceCustody = { rawFiles: {} };
 const agentSession = { token: '', me: null, surface: 'studio', generation: 0, readGeneration: 0, prepareGeneration: 0, card: null, conversation: null, conversations: new Map(), proposal: null, sending: false, uncertain: false, challenge: null, proof: null };
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
 function element(tag, className, content) {
@@ -174,7 +174,7 @@ async function openObject(id, focus = false, panel = 'main', navigation = 'repla
       card = result.card;
       id = card.object;
     } else card = await api(`/api/object?object=${encodeURIComponent(id)}&panel=${encodeURIComponent(panel)}`);
-    if (generation !== state.generation || state.sending || authoring.pending) return;
+    if (generation !== state.generation || state.sending) return;
     state.card = card;
     state.detail = null;
     if (!state.uncertain) clearDraft(false);
@@ -519,12 +519,11 @@ function renderLivingDocument(card, target, forms, context = {}) {
 async function prepare(card, action, fields) {
   if (state.sending) throw new Error('Wait for the send result before preparing another action.');
   if (state.uncertain) throw new Error('Resolve or dismiss the uncertain draft before preparing another action.');
-  if (authoring.pending || authoring.preparing || authoring.uncertain) throw new Error('Finish or resolve the source desk work before preparing another action.');
   const generation = ++state.preparationGeneration;
   const route = state.routeGeneration;
   const draft = await api('/api/prepare', { card, action, fields });
   if (generation !== state.preparationGeneration || route !== state.routeGeneration || state.card?.card !== card
-      || state.sending || state.uncertain || authoring.pending || authoring.preparing || authoring.uncertain) return;
+      || state.sending || state.uncertain) return;
   if (draft.format === 'delvetalk-portal-preparation-v1') showPreparation(draft);
   else showDraft(draft);
 }
@@ -535,7 +534,8 @@ function showPreparation(result) {
   clearRepositoryRecord();
   preparationAnswers.replaceChildren();
   const question = result.outcome.kind === 'question';
-  $('draft-title').textContent = question ? 'A question from this object' : 'Preparation declined';
+  const inspection = result.outcome.kind === 'inspection';
+  $('draft-title').textContent = question ? 'A question from this object' : inspection ? 'An inspection from this object' : 'Preparation declined';
   $('draft-summary').textContent = text(result.outcome.message);
   $('draft-fields').replaceChildren();
   $('draft-target').textContent = `${text(result.object)} · read at version ${text(result.version)}`;
@@ -543,6 +543,7 @@ function showPreparation(result) {
   $('send-draft').disabled = true;
   $('draft-wire').textContent = '';
   document.querySelector('.draft-exact').hidden = true;
+  if (inspection) renderLivingDocument({ document: result.outcome.document, actions: [] }, preparationAnswers, $('draft-fields'));
   $('draft-state').textContent = '';
   $('draft-help').textContent = 'Nothing has been submitted. These answers belong to the captured reading.';
   const needs = Array.isArray(result.outcome.needs) ? [...new Set(result.outcome.needs.filter(name => typeof name === 'string'))] : [];
@@ -815,41 +816,7 @@ function renderPartialInterpretation(target, proposal, continueWith) {
   target.append(button);
 }
 function configureAuthoring(config) {
-  const enabled = Boolean(config) && state.world.mode !== 'public-preview' && state.world.capabilities?.authoring !== false;
-  $('source-desk').hidden = !enabled;
-  if (!enabled) return;
-  const current = $('source-syntax').value;
-  $('source-syntax').replaceChildren();
-  for (const syntax of config.syntaxes || []) {
-    const option = element('option', '', syntax);
-    option.value = syntax;
-    $('source-syntax').append(option);
-  }
-  if ([...$('source-syntax').options].some(option => option.value === current)) $('source-syntax').value = current;
-  if (!$('source-candidate').value && config.candidates?.length === 1) $('source-candidate').value = config.candidates[0];
-  for (const [id, names] of [['candidate-objects', config.candidates || []], ['target-objects', (state.world.objects || []).map(object => object.id)]]) {
-    $(id).replaceChildren();
-    for (const name of names) {
-      const option = element('option');
-      option.value = name;
-      $(id).append(option);
-    }
-  }
-  if (!$('source-migration').value) $('source-migration').value = '{}';
-}
-function authoringUrl(id) {
-  const url = new URL(location.href);
-  if (id) url.searchParams.set('work', id);
-  else url.searchParams.delete('work');
-  writeLocation(url);
-}
-function clearAuthoring() {
-  if (authoring.pending) return;
-  authoring.draft = null;
-  authoring.status = null;
-  authoring.uncertain = false;
-  $('authoring-work').hidden = true;
-  authoringUrl(null);
+  $('source-desk').hidden = !config || state.world.mode === 'public-preview';
 }
 async function retainSourceText(value, kind = 'source') {
   const limit = kind === 'scenarios' ? 1048576 : state.world.authoring?.maxSourceBytes || 524288;
@@ -857,151 +824,41 @@ async function retainSourceText(value, kind = 'source') {
   return api('/api/authoring/source', { text: value, kind });
 }
 function exactSourceText(id) {
-  const retained = authoring.rawFiles[id];
+  const retained = sourceCustody.rawFiles[id];
   return retained?.display === $(id).value ? retained.exact : $(id).value;
 }
 async function keepSource() {
   const sourceText = exactSourceText('source-text');
   const saved = await retainSourceText(sourceText);
-  authoring.source = saved.source;
-  authoring.sourceText = $('source-text').value;
   $('source-reference').value = saved.source;
   $('source-retained').textContent = `Kept · ${saved.bytes.toLocaleString()} bytes · ${saved.source.slice(0, 12)}`;
   return saved.source;
 }
-function updateAuthoringControls() {
-  const draft = authoring.draft;
-  if (!draft) return;
-  const settled = draft.outcome === 'committed' || draft.outcome === 'refused' || Boolean(authoring.status?.job);
-  $('send-authoring').disabled = authoring.pending || settled || !draft.canExecute || state.world.mode !== 'local-interactive';
-  $('send-authoring').textContent = authoring.status?.job ? 'Job retained' : settled ? 'Outcome retained' : authoring.uncertain ? 'Send / retry saved proposal' : 'Send proposal';
-  $('dismiss-authoring').disabled = authoring.pending;
-  const phase = authoring.status?.phase;
-  $('run-authoring').hidden = draft.operation !== 'compile' || !['queued', 'running'].includes(phase);
-  $('run-authoring').disabled = authoring.pending || state.world.mode !== 'local-interactive';
-  $('refresh-authoring').disabled = authoring.pending;
-}
-function showAuthoringDraft(draft, restored = false) {
-  authoring.draft = draft;
-  authoring.status = null;
-  authoring.uncertain = restored && !draft.outcome;
-  $('authoring-summary').textContent = text(draft.summary);
-  $('authoring-title').textContent = `${draft.operation[0].toUpperCase() + draft.operation.slice(1)} proposal`;
-  $('authoring-alias').textContent = `work ${draft.draft.slice(0, 12)}`;
-  $('authoring-exact').textContent = draft.wireJson || draft.requestJson || JSON.stringify(draft, null, 2);
-  $('authoring-status-exact').hidden = true;
-  $('authoring-diagnostics').hidden = true;
-  $('authoring-status').textContent = draft.outcome
-    ? `Retained outcome: ${draft.outcome}.`
-    : restored ? 'Saved proposal restored with its original intent. Check status or send the same proposal to recover its receipt.'
-      : state.world.mode === 'read-only' ? 'Prepared for review. Sending and compilation require a configured local session.'
-        : 'Prepared only. Review the exact proposal before sending.';
-  $('source-candidate').value = draft.candidate || $('source-candidate').value;
-  if (draft.target) $('source-target').value = draft.target;
-  $('source-desk').open = true;
-  $('authoring-work').hidden = false;
-  authoringUrl(draft.draft);
-  updateAuthoringControls();
-}
-async function prepareAuthoring(operation) {
-  if (authoring.pending || authoring.preparing || authoring.uncertain) throw new Error('Resolve or dismiss the saved source desk proposal before preparing another.');
-  authoring.preparing = true;
-  try {
-    const candidate = $('source-candidate').value.trim();
-    if (!candidate) throw new Error('Choose a candidate object.');
-    const payload = { operation, candidate };
-    if (operation !== 'compile') {
-      payload.target = $('source-target').value.trim();
-      if (!payload.target) throw new Error('Choose a target object.');
-    }
-    if (operation === 'submit') {
-      payload.syntax = $('source-syntax').value;
-      if (!payload.syntax) throw new Error('Choose a syntax.');
-      payload.source = authoring.sourceText === $('source-text').value && authoring.source ? authoring.source : await keepSource();
-      if (!$('source-scenarios').value.trim()) throw new Error('Supply the scenario JSON for this candidate.');
-    payload.scenarios = (await retainSourceText(exactSourceText('source-scenarios'), 'scenarios')).source;
-      payload.migrationJson = $('source-migration').value;
-    }
-    const draft = await api('/api/authoring/prepare', payload);
-    showAuthoringDraft(draft);
-  } finally { authoring.preparing = false; }
-}
-async function checkAuthoringStatus() {
-  const draft = authoring.draft;
-  if (!draft) return;
-  const status = await api(`/api/authoring/status?draft=${encodeURIComponent(draft.draft)}`);
-  if (authoring.draft !== draft) return;
-  authoring.status = status;
-  if (status.job) authoring.uncertain = false;
-  if (status.receipt?.kind === 'committed' || status.receipt?.kind === 'refused') {
-    draft.outcome = status.receipt.kind;
-    authoring.uncertain = false;
-  }
-  const phaseLabels = { prepared: 'Proposal prepared', queued: 'Compile job queued', running: 'Compile job in progress', finished: draft.operation === 'compile' ? 'Compile job finished' : 'Proposal processed' };
-  $('authoring-status').textContent = `${phaseLabels[status.phase] || text(status.phase)}${draft.outcome ? ` · ${draft.outcome}` : ''}${status.job ? ` · job ${status.job.slice(0, 12)}` : ''}`;
-  const notes = [...(status.diagnostics || []), ...(status.errors || [])];
-  $('authoring-diagnostics').hidden = notes.length === 0;
-  $('authoring-notes').textContent = notes.map(note => typeof note === 'string' ? note : JSON.stringify(note, null, 2)).join('\n\n');
-  $('authoring-status-exact').textContent = status.exactJson || JSON.stringify(status, null, 2);
-  $('authoring-status-exact').hidden = false;
-  updateAuthoringControls();
-}
-async function authoringAction(operation) {
-  const draft = authoring.draft;
-  if (!draft || authoring.pending || authoring.preparing || state.world.mode !== 'local-interactive') return;
-  authoring.pending = true;
-  updateAuthoringControls();
-  $('authoring-status').textContent = operation === 'run' ? 'Running the saved compile job…' : 'Sending the saved proposal…';
-  try {
-    const reply = await api(`/api/authoring/${operation}`, { draft: draft.draft });
-    if (authoring.draft !== draft) return;
-    if (reply.kind === 'uncertain') authoring.uncertain = true;
-    await checkAuthoringStatus();
-    if (reply.children) renderCreatedChildren(reply.children);
-    try { await loadWorld(); } catch { /* The retained work remains recoverable. */ }
-  } catch (error) {
-    if (authoring.draft === draft) {
-      authoring.uncertain = true;
-      $('authoring-status').textContent = `${error.message} Keep this saved proposal; check status or retry it to recover the same intent.`;
-    }
-  } finally { authoring.pending = false; updateAuthoringControls(); }
-}
-$('source-form').addEventListener('submit', event => { event.preventDefault(); busy($('prepare-source'), 'Preparing…', () => prepareAuthoring('submit')); });
-$('prepare-compile').addEventListener('click', () => busy($('prepare-compile'), 'Preparing…', () => prepareAuthoring('compile')));
-$('prepare-adopt').addEventListener('click', () => busy($('prepare-adopt'), 'Preparing…', () => prepareAuthoring('adopt')));
 $('retain-source').addEventListener('click', () => busy($('retain-source'), 'Keeping…', keepSource));
 $('load-source').addEventListener('click', () => busy($('load-source'), 'Opening…', async () => {
   const source = $('source-reference').value.trim();
   const saved = await api(`/api/authoring/source?source=${encodeURIComponent(source)}`);
   $('source-text').value = saved.text;
-  authoring.rawFiles['source-text'] = { display: $('source-text').value, exact: saved.text };
-  authoring.source = saved.source || source;
-  authoring.sourceText = $('source-text').value;
+  sourceCustody.rawFiles['source-text'] = { display: $('source-text').value, exact: saved.text };
   $('source-retained').textContent = `Opened retained source · ${source.slice(0, 12)}`;
 }));
-for (const [fileId, textId] of [['source-file', 'source-text'], ['scenario-file', 'source-scenarios']]) {
-  $(fileId).addEventListener('change', async () => {
-    const file = $(fileId).files[0];
-    if (!file) return;
-    try {
-      const limit = fileId === 'scenario-file' ? 1048576 : state.world.authoring?.maxSourceBytes || 524288;
-      if (file.size > limit) throw new Error('This file exceeds the source size limit.');
-      const exact = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await file.arrayBuffer());
-      $(textId).value = exact;
-      authoring.rawFiles[textId] = { exact, display: $(textId).value };
-      if (fileId === 'source-file') $('source-retained').textContent = 'File opened locally. Keep source to retain it.';
-    } catch (error) { notice(error.message, true); }
-  });
-}
+$('source-file').addEventListener('change', async () => {
+  const file = $('source-file').files[0];
+  if (!file) return;
+  try {
+    const limit = state.world.authoring?.maxSourceBytes || 524288;
+    if (file.size > limit) throw new Error('This file exceeds the source size limit.');
+    const exact = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await file.arrayBuffer());
+    $('source-text').value = exact;
+    sourceCustody.rawFiles['source-text'] = { exact, display: $('source-text').value };
+    $('source-retained').textContent = 'File opened locally. Keep exact text to retain it.';
+  } catch (error) { notice(error.message, true); }
+});
 $('source-text').addEventListener('input', () => { $('source-retained').textContent = 'Edited · not yet retained'; });
-$('dismiss-authoring').addEventListener('click', clearAuthoring);
-$('copy-authoring').addEventListener('click', () => copy($('authoring-exact').textContent, $('copy-authoring')));
-$('send-authoring').addEventListener('click', () => authoringAction('execute'));
-$('run-authoring').addEventListener('click', () => authoringAction('run'));
-$('refresh-authoring').addEventListener('click', () => busy($('refresh-authoring'), 'Checking…', checkAuthoringStatus));
+$('copy-source').addEventListener('click', () => copy(exactSourceText('source-text'), $('copy-source')));
 async function openLocation() {
   try {
-    if (state.sending || authoring.pending) {
+    if (state.sending) {
       writeLocation(state.location);
       return notice('Wait for the send result before navigating.');
     }
@@ -1011,12 +868,6 @@ async function openLocation() {
     const savedDraftId = requestedParams.get('draft');
     const preparationId = requestedParams.get('preparation');
     const preparationGeneration = state.preparationGeneration;
-    const workId = requestedParams.get('work');
-    if (authoring.uncertain && authoring.draft && workId !== authoring.draft.draft) {
-      const url = new URL(location.href);
-      url.searchParams.set('work', authoring.draft.draft);
-      writeLocation(url);
-    }
     const world = state.world;
     let savedDraft = state.uncertain ? state.draft : null;
     let draftError = null;
@@ -1031,45 +882,23 @@ async function openLocation() {
       catch (error) { preparationError = error; }
     }
     if (routeGeneration !== state.routeGeneration) return;
-    if (savedPreparation && (preparationGeneration !== state.preparationGeneration || state.sending || state.uncertain
-        || authoring.pending || authoring.preparing || authoring.uncertain)) {
+    if (savedPreparation && (preparationGeneration !== state.preparationGeneration || state.sending || state.uncertain)) {
       if (state.uncertain && state.draft) {
         const kept = new URL(state.location);
         kept.searchParams.set('draft', state.draft.draft);
         kept.searchParams.delete('preparation');
         writeLocation(kept);
-      } else if (state.sending || authoring.pending || authoring.preparing || authoring.uncertain) writeLocation(state.location);
+      } else if (state.sending) writeLocation(state.location);
       return;
     }
     const id = savedPreparation?.object || (world.objects || []).find(object => object.id === requested)?.id
       || savedDraft?.object || world.defaultObject || world.objects?.[0]?.id;
-    const panel = requestedParams.get('panel') || (savedDraft?.object === id ? savedDraft.panel : null) || 'main';
+    const panel = requestedParams.get('panel') || (savedDraft && savedDraft.object === id ? savedDraft.panel : null) || 'main';
     if (id && !await openObject(id, false, panel, 'replace', null, savedPreparation?.card)) return;
     if (savedDraft) showDraft(savedDraft, true);
     else if (draftError) notice(`The saved draft could not be opened: ${draftError.message}`, true);
-    else if (savedPreparation && preparationGeneration === state.preparationGeneration && !state.sending && !state.uncertain
-        && !authoring.pending && !authoring.preparing && !authoring.uncertain) showPreparation(savedPreparation);
+    else if (savedPreparation && preparationGeneration === state.preparationGeneration && !state.sending && !state.uncertain) showPreparation(savedPreparation);
     else if (preparationError) notice(`The saved preparation could not be opened: ${preparationError.message}`, true);
-    if (workId && !authoring.uncertain && world.authoring && world.capabilities?.authoring !== false) {
-      // openObject advances the route generation. Capture its winning route,
-      // then recheck after loading: a newer route or local work may now own the UI.
-      const winningRoute = state.routeGeneration;
-      const previousWork = authoring.draft;
-      let restoredWork;
-      const mayRestore = () => winningRoute === state.routeGeneration && !state.sending
-        && !authoring.pending && !authoring.preparing && !authoring.uncertain
-        && authoring.draft === previousWork;
-      try {
-        restoredWork = await api(`/api/authoring/draft?draft=${encodeURIComponent(workId)}`);
-        if (!mayRestore()) return;
-        showAuthoringDraft(restoredWork, true);
-        await checkAuthoringStatus();
-      } catch (error) {
-        if (mayRestore() || (winningRoute === state.routeGeneration
-            && authoring.draft === restoredWork && !authoring.pending))
-          notice(`The saved source desk proposal could not be opened: ${error.message}`, true);
-      }
-    }
   } catch (error) { notice(error.message, true); }
 }
 window.addEventListener('popstate', openLocation);

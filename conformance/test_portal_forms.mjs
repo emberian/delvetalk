@@ -45,7 +45,7 @@ const history = Object.fromEntries(['pushState', 'replaceState'].map(method => [
   location.href = String(url); navigation.push({ method, url: String(url) });
 }]));
 const context = vm.createContext({
-  document, URL, history, location,
+  document, URL, history, location, TextEncoder, TextDecoder,
   window: { addEventListener(name, fn) { events[name] = fn; } },
   matchMedia: () => ({ matches: true }),
   fetch: (url, options) => {
@@ -181,65 +181,7 @@ console.log('Portal panels: selection, refresh, history, safe labels, public cop
 location.href = 'https://example.invalid/?object=other';
 await events.popstate();
 assert.equal(new URL(location.href).searchParams.get('object'), 'door');
-vm.runInContext("state.sending = false; authoring.uncertain = true; authoring.draft = { draft: 'retained-work' };", context);
-location.href = 'https://example.invalid/?object=door&work=other-work';
-await events.popstate();
-assert.equal(new URL(location.href).searchParams.get('work'), 'retained-work');
-assert.equal(vm.runInContext('authoring.draft.draft', context), 'retained-work');
-assert.equal(requests.some(r => r.url.includes('/api/authoring/draft?draft=other-work')), false);
-
-// Resolve two real route requests in reverse order: late old work must not
-// replace a newer restored draft, its uncertainty, or its URL.
-vm.runInContext("state.sending = false; state.uncertain = false; state.draft = null; state.world = { mode: 'local-interactive', objects: [{id: 'door'}], authoring: {} }; authoring.pending = false; authoring.uncertain = false; authoring.draft = null;", context);
-const workReplies = new Map();
-context.fetch = async (url, options) => {
-  requests.push({ url, options });
-  if (url.startsWith('/api/authoring/draft?')) {
-    const id = new URL(url, location.href).searchParams.get('draft');
-    return new Promise(resolve => workReplies.set(id, () => resolve({ ok: true,
-      json: async () => ({ draft: id, operation: 'compile', canExecute: true }) })));
-  }
-  const value = url.startsWith('/api/object')
-    ? { card: 'door-card', object: 'door', panel: 'main', panels, actions: [] }
-    : { phase: 'prepared' };
-  return { ok: true, json: async () => value };
-};
-location.href = 'https://example.invalid/?object=door&work=old';
-const oldRoute = events.popstate();
-await new Promise(resolve => setImmediate(resolve));
-assert.equal(workReplies.has('old'), true);
-location.href = 'https://example.invalid/?object=door&work=new';
-const newRoute = events.popstate();
-await new Promise(resolve => setImmediate(resolve));
-workReplies.get('new')();
-await newRoute;
-assert.equal(vm.runInContext('authoring.draft.draft', context), 'new');
-assert.equal(vm.runInContext('authoring.uncertain', context), true);
-workReplies.get('old')();
-await oldRoute;
-assert.equal(vm.runInContext('authoring.draft.draft', context), 'new');
-assert.equal(vm.runInContext('authoring.uncertain', context), true);
-assert.equal(new URL(location.href).searchParams.get('work'), 'new');
-assert.equal(requests.some(r => r.url === '/api/authoring/status?draft=old'), false);
-
-// A response also loses authority to replace the UI if work starts while it
-// is loading, even when no second route was requested.
-for (const guard of ['pending', 'uncertain', 'preparing']) {
-  vm.runInContext("authoring.pending = false; authoring.uncertain = false; authoring.preparing = false; authoring.draft = { draft: 'kept' };", context);
-  location.href = `https://example.invalid/?object=door&work=delayed-${guard}`;
-  const route = events.popstate();
-  await new Promise(resolve => setImmediate(resolve));
-  vm.runInContext(`authoring.${guard} = true`, context);
-  workReplies.get(`delayed-${guard}`)();
-  await route;
-  assert.equal(vm.runInContext('authoring.draft.draft', context), 'kept');
-  assert.equal(document.getElementById('authoring-alias').textContent, 'work new');
-}
-console.log('Portal delayed authoring responses: newest route and pending/uncertain work remain intact.');
-
-// Authored catalogues contain reads, not invocations. The child endpoint selects
-// from the retained parent card and returns its own fresh object/card/panel.
-vm.runInContext("state.sending = false; state.uncertain = false; state.draft = null; authoring.pending = false; authoring.uncertain = false; authoring.preparing = false; state.world = { mode: 'public-preview', objects: [{id: 'index'}, {id: 'lantern'}] };", context);
+vm.runInContext("state.sending = false; state.uncertain = false; state.draft = null; state.world = { mode: 'public-preview', objects: [{id: 'index'}, {id: 'lantern'}] };", context);
 const catalogue = { card: 'parent-capture', object: 'index', panel: 'main', title: 'An exhibition',
   actions: [], children: [{ key: 'lamp & one', label: malicious, object: 'lantern', panel: 'glow' },
     { key: 'missing', label: 'An absent exhibit', object: 'absent', panel: 'main' }] };
@@ -293,7 +235,7 @@ const preparationCard = {card: 'source-capture', object: 'workshop', version: 4,
   panel: 'main', actions: [{id: 'o1', label: 'Greet', command: 'prepareGreeting', preparation: true,
     available: true, fields: []}]};
 context.preparationCard = preparationCard;
-vm.runInContext("state.world = {mode: 'public-preview', objects: [{id: 'workshop'}]}; state.card = preparationCard; state.draft = null; state.uncertain = false; authoring.uncertain = false; authoring.pending = false; authoring.preparing = false;", context);
+vm.runInContext("state.world = {mode: 'public-preview', objects: [{id: 'workshop'}]}; state.card = preparationCard; state.draft = null; state.uncertain = false;", context);
 const question = {format: 'delvetalk-portal-preparation-v1', preparation: 'question-one',
   card: 'source-capture', action: 'o1', object: 'workshop', version: 4, fields: {},
   summary: 'Greet', outcome: {kind: 'question', message: malicious, needs: ['gesture']}, canExecute: false};
@@ -399,3 +341,31 @@ await dismissedPreparation;
 assert.equal(vm.runInContext('state.preparation', context), null);
 assert.equal(document.getElementById('draft-panel').hidden, true);
 console.log('Portal native preparations: partial answers, authored questions/refusals, exact-card restore and ready drafts passed.');
+
+// Keeping exact source is physical text custody; source cards own all turns.
+vm.runInContext("state.world = {mode: 'local-interactive', authoring: {maxSourceBytes: 524288}}", context);
+const keptText = '\ufefffirst\r\nsecond\r\n';
+document.getElementById('source-text').value = 'first\nsecond\n';
+context.keptText = keptText;
+vm.runInContext("sourceCustody.rawFiles['source-text'] = {exact: keptText, display: document.getElementById('source-text').value}", context);
+context.fetch = async (url, options) => {
+  assert.equal(url, '/api/authoring/source');
+  assert.equal(JSON.parse(options.body).text, keptText);
+  return {ok: true, json: async () => ({source: 'a'.repeat(64), bytes: new TextEncoder().encode(keptText).length})};
+};
+await context.keepSource();
+assert.equal(document.getElementById('source-reference').value, 'a'.repeat(64));
+assert.equal(context.exactSourceText('source-text'), keptText);
+document.getElementById('source-text').value = 'edited';
+assert.equal(context.exactSourceText('source-text'), 'edited');
+const html = readFileSync(new URL('../portal/static/index.html', import.meta.url), 'utf8');
+for (const id of ['prepare-source', 'prepare-compile', 'prepare-adopt', 'run-authoring', 'authoring-work'])
+  assert.equal(html.includes(`id="${id}"`), false);
+assert.ok(html.includes('id="copy-source"'));
+console.log('Source custody: exact file bytes and edits retained; source cards own authoring turns.');
+
+// A brand new world has neither an object nor a saved draft's panel.
+vm.runInContext("state.world.objects = []; state.sending = false; state.uncertain = false; state.draft = null; notice('')", context);
+location.href = 'https://example.invalid/';
+await context.openLocation();
+assert.equal(document.getElementById('notice').textContent, '');
