@@ -50,12 +50,18 @@ def route(text: String, context: Abi.Context, forms: Forms) -> Routed:
 def routeParsed(parsed: Spell.Parsed, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
     case notASpell(_): Routed.usage({})
-    case spell(s): if s.card != context.object then Routed.refused({reason: textConcat("This card is ", context.object)}) else chosen(parsed, s.action, s.fields, Lists.find::<Form.Form>(forms, fn(form: Form.Form) -> Bool: form.action == s.action), context)
+    case spell(s): if names(s.card, context) == false then Routed.refused({reason: textConcat("This card is ", context.object)}) else chosen(parsed, s.card, s.action, s.fields, Lists.find::<Form.Form>(forms, fn(form: Form.Form) -> Bool: form.action == s.action), context)
+# A spell names this card by its id, or, for the speaker's own env/<did> and wake/<did>,
+# by the bare word the town writes (`delvetalk env subscribe`).
+def names(card: String, context: Abi.Context) -> Bool:
+  card == context.object || (card == "env" || card == "wake") && context.object == own(card, context)
+def own(card: String, context: Abi.Context) -> String:
+  textConcat(card, textConcat("/", context.principal))
 # An object's own form wins; otherwise `set` and `?` are the protocol's.
-def chosen(parsed: Spell.Parsed, action: String, bindings: Spell.Bindings, found: Lists.Maybe<Form.Form>, context: Abi.Context) -> Routed:
+def chosen(parsed: Spell.Parsed, card: String, action: String, bindings: Spell.Bindings, found: Lists.Maybe<Form.Form>, context: Abi.Context) -> Routed:
   match found:
     case none(_): if action == "set" then setting(bindings) else if action == "?" then Routed.help({}) else Routed.refused({reason: textConcat("No action called ", action)})
-    case some(f): fitted(action, Spell.fit(parsed, named(f.value, context.object)))
+    case some(f): fitted(action, Spell.fit(parsed, named(f.value, card)))
 def setting(bindings: Spell.Bindings) -> Routed:
   match bindings:
     case cons(c): if Lists.length::<Spell.Binding>(c.tail) == 0n then Routed.set({field: c.head.name, value: c.head.value}) else Routed.refused({reason: "set takes one field: value line."})

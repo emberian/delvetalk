@@ -79,8 +79,9 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   match Spell.parse(input.text):
     case spell(s): if s.card != context.object then passOn(s.card, input, context) else summoned(state, input, context)
     case notASpell(_): summoned(state, input, context)
+# `env` and `wake` are the speaker's own (env/<did>, wake/<did>): a call names the object.
 def passOn(card: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.call({object: {world: context.world, object: card}, method: "receive", argument: Data.of::<Card.Heard>(input)})):
+  match perform(Plan.call({object: {world: context.world, object: if card == "env" || card == "wake" then Card.own(card, context) else card}, method: "receive", argument: Data.of::<Card.Heard>(input)})):
     case returned(_): Heard.passed({card: card})
     case denied(_): Card.tell::<Edits, State, Data, Heard>(Heard.refused({reason: textConcat("Not visible: ", card)}), Document.text(textConcat("The card ", textConcat(card, " is not visible to you.\n"))))
     case refused(r): Card.tell::<Edits, State, Data, Heard>(Heard.refused({reason: r.clause}), Document.text(textConcat("Not passed to ", textConcat(card, textConcat(": ", textConcat(r.clause, "\n"))))))

@@ -189,6 +189,26 @@ def planted(context: Abi.Context) -> String:
         self.assertTrue(self.card(self.say("GARDEN", obj="root", who="kimik3")).startswith("✾ THE NIGHT GARDEN"))
         self.assertEqual(self.card(self.say("rooms", obj="root")), "The door to rooms opens on nothing yet.\n")
 
+    def test_env_and_wake_spells_reach_the_speakers_own(self):
+        """Rehearsal run 4, finding D: mimo's `delvetalk env subscribe / card: wake` and `delvetalk
+        wake watch / …` got the pointer. A call to the bare `env` is refused unknownObject (the host
+        resolves bare ids for a turn's object, not for a call's), so the directory calls the
+        speaker's own env/<did> and wake/<did>, and Card.route takes the bare word as theirs."""
+        self.directory()
+        did = "did:plc:l7exgoq5pjijbeoo3jaxnwse"
+        r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
+                           entry="initial", seed=record(owner=label(did)))
+        self.assertEqual(r["status"], "created", r)
+        observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
+        print("\n--- root, env observe by its owner ---\n" + str(observed.get("offers", observed)))
+        self.assertEqual((observed["status"], observed["result"]["label"]), ("admitted", "passed"), observed)
+        self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
+        self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
+        # A speaker without a wake: the host names what it looked for.
+        missing = self.say("delvetalk wake watch / event: mention / actor: ember.delve.town", obj="root", who=did)
+        print("--- root, wake by someone without one ---\n" + str(missing.get("offers", missing)))
+        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "Not passed to wake: unknownObject\n"), missing)
+
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
         self.garden()
