@@ -17,6 +17,9 @@ can be reproduced.
 - Review includes adjacent design and efficiency problems, not only the assigned
   checklist. Propose improvements and own coordinated fixes. Frozen snapshots
   preserve test evidence; they do not freeze development or suppress findings.
+- Read `BACKLOG.md` when resuming or dispatching a wave. Record every discovered
+  followup there with an owner or explicit queued status and a completion check;
+  reconcile results before dispatching the next wave. Do not keep competing queues.
 
 - Lean owns the DelveTalk source relation and local host admission. Python, JS
   and C are independent evaluators of their supported core fragment. Python world

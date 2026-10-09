@@ -4,6 +4,11 @@
 previous previews; their roots and history need no migration. A running world's
 exact admission, durable receipts and uncertain-reply recovery remain contracts.
 
+**Opening policy:** newcomers may play freely and make participant-owned objects.
+Shared behavior changes use proposals. A clearly designated open programming
+workshop permits direct experimentation under its own source-authored law.
+This does not confer management rights over unrelated shared objects.
+
 ## Implemented locally
 
 These paths have focused receiving checks. A frozen earlier source snapshot
@@ -30,68 +35,28 @@ establish neither deployment nor a general proof.
   a browser. Two-player [Automatafl](protocols/automatafl/README.md) retains the
   original 11×11 setup, private commitments and complete-match receiving checks.
 
-## Remaining work
+## Work queue
+
+[BACKLOG.md](BACKLOG.md) is the single actionable queue: stable IDs, owners,
+dependencies and refuting acceptance examples. It includes every Claude review
+finding and the cross-cutting followups. A qualified slice is not a deployed system.
 
 The [Bend implementation decision](docs/design/BEND.md) owns the replacement
-direction: behavior and interpretation live in source; host adapters supply
-physical custody and I/O. Shared source ABI, text primitives, recursive encounter
-lists, source factories and reusable scene execution now exist. Consumer cutovers
-and their composition still need qualification. See also
-[composition](docs/design/COMPOSITION.md) and [encounters](docs/design/ENCOUNTERS.md).
-Current ownership:
+direction; [composition](docs/design/COMPOSITION.md) and
+[encounters](docs/design/ENCOUNTERS.md) explain source/host contracts. Behavior
+belongs in source, with physical custody and I/O in adapters. Remaining Commons
+and commit/reveal ports, native profile collapse and library cleanup have explicit
+rows in the queue rather than separate lists here.
 
-| Work | Owner |
-| --- | --- |
-| Preparation retained-value ABI, source Editor and workshop joins | `backlog_archaeology` |
-| Checker row-order conversions, including match results | `bend_language` |
-| Bounded native catalogue and Portal/account consumers | `receiving_review`, `core_audit` |
-| Source Candidate/Factory consumer cleanup and adoption cards | `world_design_critique` |
-| TownForge/stateful workshop source conversion | `town_conformance_room` |
-| Joined native generation, serial builds and exact closure evidence | `compiler_queue` |
-| Source conversation, typed documents and actual target interaction | `document_semantics` |
-| Source interpretation/prompt policy and physical model jobs | `model_encounters` |
-| Document presentation and authenticated studio | `delvetalk_js` |
-| Source membership, private heaps and authenticated HTTP joins | `world_foundations`, `protocol_workflow`, `portal_adversarial` |
-| Integration, browser acceptance, fresh deployment and scoped checkpoints | Root |
-| Source ContractWorkshop replacing Python law/adoption recipes | `welcome_semantics_review` |
-| Session factory, verified-post intake and scoped membership continuation | `inhabit_builder`, `town_spells` |
-| Bounded native process launch and Linux resource qualification | `authored_action_examples`, `live_clerk` |
-| SessionFactory reprogram representation and budget review | `bend_execution` |
+Current source Garden has 32 plantings, attribution, cuttings and paged history.
+Authored Spween Scene modules add methods and authenticated message receivers.
+Source allocation and constrained amendments have focused receiving checks.
+Four-target newcomer enrollment still exceeds the current work budget; its atomic
+join remains open. These features need the actual fresh-world seed and rehearsal.
 
-At most two native compiler seats are used. Builds use
-independent writable package snapshots or explicit serial handoff; shared binary
-replacement waits for an announced freeze. Pure source lanes use stable binaries.
-
-Source Garden has 32 plantings, attribution, cuttings and paged history; ten joined
-tests pass. Authored Spween Scene modules add methods and message receivers through
-the generic binder. Source allocation and constrained law amendments have focused
-receiving evidence. These results still need the fresh shared-world seed.
-
-Further work without an active implementation owner: physical time observation and a source-authored
-appointment relationship; bounded message descendants and governed terminal
-settlement; commit/reveal ports; collapse remaining JSON
-expression/profile ladders; deeper scratch editing; physical repository moves.
-Shared source APIs should make these subsequent cuts smaller.
-
-### Integration findings
-
-- Root references retain exact preimages behind collision-checked locators.
-  Atomic capture now joins roots and references at one head; final source
-  preparation uses explicit inspected fields or opaque held values. Combined
-  native/consumer tests must qualify this generation before installation.
-- Preparation questions/refusals remain source-authored no-effect outcomes.
-  Their Portal/Town joins need rechecking against the final preparation ABI.
-- `World.readObject` currently ignores principal. Exact captured inputs are not
-  read authorization; governed acquisition needs an explicit native policy and
-  receiving-path tests before claiming private inspection.
-- Old-program durable events need a governed settlement path, never silent
-  deletion. Existing message admission is not that settlement mechanism.
-- Source alias/row conversion now uses the checker's existing type agreement
-  relation. Template lowering must preserve source locations and exact provenance.
-
-Opening requires a coherent fresh seed, installed game, named seats and agreed
-private move handoff. Capture actual cards before preparing publication bindings.
-Focused tests do not close these integration obligations.
+At most two local native compiler seats are used. Independent snapshots preserve
+build evidence; source review and implementation stay open. Runtime installation
+must qualify the exact joined source and consumer closure.
 
 ## Current access and top-level work
 
@@ -131,8 +96,8 @@ reproducible evidence; they do not close design review.
 
 ## Boundaries
 
-The independent DelveTalk host is intentional; Mini supplies language semantics
-and selective reuse. Programming preserves law. References, presence, possession,
+The independent DelveTalk host and forked Bend edition are intentional; Mini
+supplies the attributed upstream baseline. Programming preserves law. References, presence, possession,
 provenance and presentation grant no authority. Source revocation cannot unsend
 ordinary admitted messages; external outbox intent does not establish delivery.
 
