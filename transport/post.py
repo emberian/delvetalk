@@ -124,6 +124,7 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--reply-to', metavar='AT_URI', help='thread under this post (its cid is read with getRecord)')
     p.add_argument('--intent', required=True)
     p.add_argument('--credentials', default=CREDENTIALS)
+    p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--journal', help='world journal: read the posting quota from its host')
     p.add_argument('--record', metavar='OBJECT', help='after a confirmed post, call world-posted for this object (needs --journal)')
     p.add_argument('--slot')
@@ -138,6 +139,8 @@ def main(argv=None, out=None, client=None):
             text = Path(a.text_file).read_text()
         else:
             text = wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
+        for h in a.mention:
+            text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
         if a.record and not a.journal:
             raise Failure('record_needs_journal')
         reader = client or Client(http_transport)

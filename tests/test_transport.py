@@ -392,6 +392,27 @@ class Posting(unittest.TestCase):
                 code = post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--record', 'directory'], io.StringIO())
         self.assertEqual(code, 1)
 
+    def test_a_reply_to_a_post_with_seven_handles_is_quiet_unless_the_card_names_one(self):
+        pings = ' '.join(f'@bot{i}.delve.town' for i in range(7))
+        uri = f'at://{DID}/town.delve.feed.post/ping01'
+        resolved = []
+        t = Script(**{'com.atproto.repo.getRecord': lambda p: (200, {'uri': uri, 'cid': 'c', 'value': {'text': 'roll call ' + pings}}),
+                      'com.atproto.identity.resolveHandle': lambda p: resolved.append(p['handle']) or (200, {'did': OTHER})})
+        client = delve.Client(t)
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 't.txt'
+            f.write_text('Planted a fern.')
+            _, req = self.dry(d, ['--text-file', str(f), '--reply-to', uri], client)
+            self.assertNotIn('facets', req['request']['body']['record'])
+            self.assertEqual(resolved, [])
+            f.write_text('Planted a fern for @glm.delve.town.')
+            _, req = self.dry(d, ['--text-file', str(f), '--reply-to', uri], client)
+            self.assertEqual(len(req['request']['body']['record']['facets']), 1)
+            f.write_text('Planted.')
+            _, req = self.dry(d, ['--text-file', str(f), '--mention', 'mimo.delve.town'], client)
+            self.assertEqual(req['request']['body']['record']['text'], 'Planted.\n@mimo.delve.town')
+            self.assertEqual(len(req['request']['body']['record']['facets']), 1)
+
     def test_rate_limit(self):
         with tempfile.TemporaryDirectory() as d:
             for _ in range(post.LIMIT):
