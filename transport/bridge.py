@@ -44,6 +44,21 @@ def write_atomic(path, value):
     os.replace(tmp, path)
 
 
+def slot_arg(slot):
+    """A route slot as post.py's --slot argument (principal:intent), or None."""
+    if isinstance(slot, dict) and slot.get('principal') and slot.get('intent'):
+        return f"{slot['principal']}:{slot['intent']}"
+    return slot if isinstance(slot, str) and ':' in slot else None
+
+
+def post_command(path, d):
+    """The one command that posts a draft and records it with the host, then marks it posted."""
+    obj = f" --object {d['object']}" if d.get('object') else ''
+    slot = f" --slot {d['slot']}" if d.get('slot') else ''
+    return (f"=== post: python3 -m transport.post --state STATE post --draft {path} --intent draft-{Path(path).stem}"
+            f" --host-socket SOCKET{obj}{slot} --i-am-ember-and-authorize-posting && python3 -m transport.bridge mark-posted {path}")
+
+
 def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
@@ -63,6 +78,44 @@ def draft_text(reply):
     return f"turn committed; no reply card offered\nreceipt: {receipt['hash']}\n"
 
 
+def awaiting_path(state, uri):
+    return Path(state) / 'awaiting' / f'{uri_hash(uri)}.json'
+
+
+def offer_drafts(state, host):
+    """Draft what resumed turns offered. A suspended turn leaves an `awaiting` record; once its interpretation
+    settles the resumed entry's offer is in the host's outbox for the author, under the turn's identity (the
+    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft."""
+    outbox = Path(state) / 'outbox'
+    waiting = [json.loads(p.read_text()) for p in sorted((Path(state) / 'awaiting').glob('*.json'))]
+    drafted = []
+    for principal in dict.fromkeys(w['principal'] for w in waiting):
+        mine = {w['uri']: w for w in waiting if w['principal'] == principal}
+        after, grouped = min(w['height'] for w in mine.values()) - 1, {}
+        while True:
+            got = host.send({'op': 'world-offers', 'principal': principal, 'after': max(0, after)})
+            if got.get('status') != 'offers':
+                break
+            for o in got['offers']:
+                if o['identity'] in mine:
+                    grouped.setdefault(o['identity'], []).append(o)
+            if not got.get('more') or not got['offers']:
+                break
+            after = got['offers'][-1]['height']
+        for uri, offers in grouped.items():
+            key = hashlib.sha256(f'{principal}\0{uri}'.encode()).hexdigest()[:16]
+            if any(outbox.glob(f'*-off-{key}.json')):
+                continue
+            w = mine[uri]
+            write_atomic(outbox / f"{offers[-1]['height']}-off-{key}.json", {
+                'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                'object': w.get('object'), 'slot': w.get('slot'),
+                'offer': {'height': offers[-1]['height'], 'identity': uri},
+                'text': '\n'.join(o['text'] for o in offers), 'posted': False})
+            drafted.append(uri)
+    return drafted
+
+
 def pending_observations(state):
     db = sqlite3.connect(Path(state) / 'observe.sqlite')
     db.executescript(SCHEMA)  # fresh state has no table yet
@@ -80,8 +133,8 @@ def route(host, obs):
     """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
     card word applies only to posts with no journaled parent. TODO(Directory): drop the summon special
     case once Directory is reachable by replying to the journaled welcome post."""
-    if obs['replyTo']:
-        got = host.send({'op': 'world-addressee', 'parent': obs['replyTo']})
+    for ancestor in dict.fromkeys(u for u in (obs['replyTo'], obs.get('root')) if u):  # the parent, then the thread root
+        got = host.send({'op': 'world-addressee', 'parent': ancestor})
         if got.get('object'):
             return got['object'], got.get('slot')
     if obs['kind'] == 'spell':
@@ -147,7 +200,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
     tick(host, now)
     done, failed, skip = [], [], skipped(state)
     for obs in pending_observations(state):
-        if obs['uri'] in skip or draft_exists(outbox, obs['uri']):
+        if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
         target = route(host, obs)
         if target is None:
@@ -166,18 +219,25 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
+        if reply.get('status') == 'suspended' or reply['receipt'].get('outcome', {}).get('tag') == 'suspended':
+            # Nothing was committed and nothing is offered yet: no draft until the interpretation settles.
+            write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot),
+                                                           'height': reply['receipt']['height']})
+            continue
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+            'object': obj, 'slot': slot_arg(slot),
             'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})
         done.append(obs['uri'])
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
             break
         host.send({'op': 'world-deliver', 'limit': 16})
+    offered = offer_drafts(state, host)
     published, problem = publication_drafts(state, host)
     if problem:
         failed.append({'publications': problem})
-    return {'turns': done, 'failed': failed, **({'published': published} if published else {})}
+    return {'turns': done, 'failed': failed, **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
 def daemon(state, name, interval, step, stop=None, sleep=None):
@@ -242,9 +302,9 @@ def main(argv=None, out=None):
                 where = f"--reply-to {d['replyTo']} " if d['replyTo'] else ''
                 need = '' if d['replyTo'] or not d['section'] else '=== needs: the page post first (post and --record the whole page)\n'
                 out.write(f"=== publish for: {p['object']}  file: {path}\n{need}=== post: python3 -m transport.post --state STATE post "
-                          f"--text-file TEXT {where}--intent {p['id']} --host-socket SOCKET --record {p['object']}\n{d['text'].rstrip()}\n\n")
+                          f"--text-file TEXT {where}--intent {p['id']} --host-socket SOCKET --object {p['object']}\n{d['text'].rstrip()}\n\n")
                 continue
-            out.write(f"=== reply to: {d['replyTo']}\n=== web: {web_url(d['replyTo'], d['replyHandle'])}\n=== as: {d['replyHandle']} {d['principal']} (unverified)  file: {path}\n{d['text'].rstrip()}\n\n")
+            out.write(f"=== reply to: {d['replyTo']}\n=== web: {web_url(d['replyTo'], d['replyHandle'])}\n=== as: {d['replyHandle']} {d['principal']} (unverified)  file: {path}\n{post_command(path, d)}\n{d['text'].rstrip()}\n\n")
     elif a.cmd == 'mark-posted':
         mark_posted(a.file)
     else:

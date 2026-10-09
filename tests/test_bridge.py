@@ -154,6 +154,9 @@ class Bridging(BridgeCase):
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertTrue(out.getvalue().startswith('=== reply to: at://'))
         self.assertIn('hello ' + DID, out.getvalue())
+        self.assertIn('post --draft', out.getvalue())
+        self.assertIn('--object garden-1', out.getvalue())
+        self.assertIn('mark-posted', out.getvalue())
         bridge.main(['mark-posted', str(next((self.state / 'outbox').glob('*.json')))])
         out = io.StringIO()
         bridge.main(['outbox', '--state', str(self.state)], out)
@@ -179,13 +182,17 @@ class Bridging(BridgeCase):
 class Stub:
     """A host that speaks the new ops from canned data and records everything it is sent."""
     def __init__(self, addressee=None):
-        self.ops, self.addressee = [], addressee or {}
+        self.ops, self.addressee, self.suspending, self.offers = [], addressee or {}, set(), {}
 
     def send(self, req):
         self.ops.append(req)
         op = req['op']
         if op == 'world-addressee':
             return self.addressee.get(req['parent'], {'status': 'unknown'})
+        if op == 'world-offers':
+            return {'status': 'offers', 'offers': self.offers.get(req['principal'], []), 'more': False}
+        if op == 'world-turn' and req['object'] in self.suspending:
+            return {'status': 'suspended', 'receipt': {'hash': 'h', 'height': 5, 'outcome': {'tag': 'suspended'}}}
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
                     'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]}
@@ -222,6 +229,17 @@ class Routing(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), n)  # drafts and skips are remembered
 
+    def test_a_reply_deep_in_a_thread_routes_by_the_root_when_its_parent_has_no_address(self):
+        root = f'at://{DID}/town.delve.feed.post/root01'
+        mid = f'at://{DID}/town.delve.feed.post/mid001'
+        stub = Stub({root: {'status': 'addressee', 'object': 'garden-1'}})
+        deep = mk(1, 'silver, then', parent=mid)
+        deep['record']['reply']['root'] = {'uri': root, 'cid': 'x'}
+        self.observe([deep])
+        bridge.run(self.state, stub)
+        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
+        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])
+
     def test_card_word_still_routes_a_post_with_no_journaled_parent(self):
         stub = Stub()
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
@@ -232,6 +250,28 @@ class Routing(BridgeCase):
     def test_end_to_end_clock_and_addressee_against_the_real_host(self):
         # Until the host lands world-addressee: {'message': 'unknown world operation world-addressee'}
         self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': 'at://x/y/z'}).get('status'), 'addressee')
+
+
+class Suspended(BridgeCase):
+    def test_a_suspended_turn_has_no_draft_then_the_resumed_offer_is_drafted_once(self):
+        stub = Stub()
+        stub.suspending = {'garden-1'}
+        p = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        self.observe([p])
+        bridge.run(self.state, stub)
+        self.assertEqual(self.drafts(), [])
+        turns = len([o for o in stub.ops if o['op'] == 'world-turn'])
+        bridge.run(self.state, stub)
+        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-turn']), turns)  # not re-run while it waits
+        self.assertEqual(self.drafts(), [])  # settled with no offer: still no draft
+        stub.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': p['uri'], 'text': 'Planted.'},
+                            {'height': 9, 'ordinal': 1, 'identity': 'someone-else', 'text': 'not mine'}]
+        r = bridge.run(self.state, stub)
+        self.assertEqual(r['offered'], [p['uri']])
+        (d,) = self.drafts()
+        self.assertEqual((d['text'], d['replyTo'], d['principal'], d['posted']), ('Planted.', p['uri'], DID, False))
+        self.assertNotIn('offered', bridge.run(self.state, stub))
+        self.assertEqual(len(self.drafts()), 1)
 
 
 class Daemon(unittest.TestCase):
