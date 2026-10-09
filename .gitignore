@@ -1,0 +1,9 @@
+.lake/
+__pycache__/
+*.pyc
+.DS_Store
+impl/c/evaluator
+/artifacts/
+/world-state/
+*.dSYM/
+**/target/

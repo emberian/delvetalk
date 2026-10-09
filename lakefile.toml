@@ -1,0 +1,24 @@
+name = "delvetalk"
+version = "0.2.0"
+defaultTargets = ["delvetalk-obend"]
+
+[[lean_lib]]
+name = "Theory"
+srcDir = "spec/bend"
+
+[[lean_lib]]
+name = "Compiler"
+srcDir = "spec/bend"
+
+[[lean_lib]]
+name = "Pred"
+srcDir = "spec/bend"
+
+[[lean_lib]]
+name = "Delvetalk"
+srcDir = "spec"
+
+[[lean_exe]]
+name = "delvetalk-obend"
+root = "PackageMain"
+srcDir = "spec"
