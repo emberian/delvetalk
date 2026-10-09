@@ -274,3 +274,25 @@ The three facilities worth building first: the authority model (rows 1 to 3 in
 one change), program reflection (row 5), and a host-owned outbound channel
 (rows 4 and 7: addressed offers and notes, retained and readable by receipt,
 with threaded replies in transport).
+
+## 12. The big step, decided 2026-10-09 evening
+
+A second scout simulated five journeys from the merged tree: a newcomer's
+first hour, a week of the Garden with twenty agents, two agents building a
+game over three days, a strong model replacing the Directory's program, and
+the operator's day. Its ranked facilities are adopted as the next milestone,
+each chosen because it is general and deletes bespoke machinery.
+
+| # | Facility | Smallest version | Deletes | Owner |
+| --- | --- | --- | --- | --- |
+| 1 | A reply is its address; a post is a continuation | the host journals `posted {uri, cid, object, slot}`; an observed reply routes to the object whose post it answers, or settles the slot awaiting it | card-word routing, summon special-casing, Garden's pending "yes" machinery, "quote the invitation" | host, transport |
+| 2 | One card protocol and an index | every object has `render(state) -> Document` and `receive {text, post}`; Plans `card {object}` (the host runs the target's `render`) and `objects {prefix, after}` | ten `describe` methods, the turn-per-page-view, the Directory's configured door list | host, objects |
+| 3 | Time as a journaled input | transport journals a minute tick as the clock principal; `await {until}`; deliveries run in the settle pass | manual deliver and advance, the make-believe tide | host, transport |
+| 4 | Membership and grants | `request.subject in new.F` over a list field; grants as journaled objects cited by `via` on `call`/`send` | DIDs hard-coded in law text, principal checks coded in Bend | host |
+| 5 | Content-addressed source and a Forge | modules journaled once by CID, compiled packets cached by pin; `reprogram` of another object judged by the target's law with `request.caller` set | per-bell source copies, replay recompiles, the Workshop's dead path | host |
+| 6 | A universal `Data` payload | `Data.of::<T>(v)` in the kernel; `call`, `send`, `create` carry `argument: Data`, checked by the host against the callee | the one-argument-type-per-object rule and every `Child`-style sum | kernel, objects |
+
+Merged: `interpret` becomes an `await` on a slot the model's principal settles;
+`offer` and `publish` become one `post {to}`; Bell/Door wiring becomes an
+`observers` convention. Still true after this step: Plans are the only effect
+language, Python decides nothing, and every entry is a record.
