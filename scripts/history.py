@@ -365,10 +365,10 @@ def export_history(database, bundle, *, profile='transactions', attachments=None
     supplied = (prefix_bundle is not None, expected_prefix_genesis is not None, expected_prefix_head is not None)
     if any(supplied) and not all(supplied):
         raise ValueError('prefix bundle requires explicit trusted genesis and head')
-    with open(str(database) + '.lock', 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        snapshot = loads(database.read_bytes())
-    exact(snapshot, ['objects', 'receipts'], 'world snapshot')
+    snapshot = world.snapshot(database)
+    if (not isinstance(snapshot, dict)
+            or set(snapshot) not in ({'objects', 'receipts'}, {'objects', 'receipts', 'messages'})):
+        raise ValueError('world snapshot has missing or unknown fields')
     if not isinstance(snapshot['receipts'], list):
         raise ValueError('snapshot receipts must be ordered array')
     prefix = None

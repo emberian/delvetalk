@@ -2,7 +2,6 @@
 """A local inhabited repair cafe: participants improve the world they share."""
 import argparse
 import ctypes
-import fcntl
 import importlib.util
 import os
 from pathlib import Path
@@ -228,6 +227,7 @@ def validate_workspace_identity(metadata, records):
     if metadata.get('format') != 'delvetalk-workspace-v1':
         return
     identity = world_id(metadata)
+    workspace_message_prefix(metadata, records)
     seeds = []
     for record in records:
         request = record['request']
@@ -238,6 +238,26 @@ def validate_workspace_identity(metadata, records):
             seeds.append(request['object'])
     if not seeds or any(object_id not in seeds for object_id in entry_objects(metadata)):
         raise ValueError('workspace entry objects lack namespace-bound seed admissions')
+
+
+def workspace_message_prefix(metadata, records):
+    """Check the optional lineage bootstrap bound by the anchored workspace index."""
+    messaging = metadata.get('messaging')
+    if messaging is None:
+        return 0
+    if (not isinstance(messaging, dict) or set(messaging) != {'lineage', 'pendingLimit'}
+            or messaging['lineage'] != world_id(metadata) or not records):
+        raise ValueError('workspace message bootstrap metadata differs from its namespace')
+    request = records[0]['request']
+    if (set(request) != {'op', 'principal', 'intent', 'lineage', 'pendingLimit'}
+            or request['op'] != 'messages-init'
+            or request['intent'] != 'workspace-messages:' + world_id(metadata)
+            or canonical({key: request[key] for key in messaging}) != canonical(messaging)):
+        raise ValueError('workspace message bootstrap differs from its anchored first admission')
+    reply = records[0].get('reply', records[0].get('receipt'))
+    if not isinstance(reply, dict) or reply.get('kind') != 'committed':
+        raise ValueError('workspace message bootstrap was not committed')
+    return 1
 
 
 def default_object(metadata):
@@ -375,9 +395,7 @@ def export_bootstrap(directory, bundle, *, extra_attachments=None):
     pinned = metadata.get('runtime')
     if not pinned or canonical(pinned) != canonical(history.runtime(pinned['name'])):
         raise ValueError('bootstrap runtime was not recorded or no longer matches the trusted installation')
-    with open(str(directory / 'world.json') + '.lock', 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        snapshot = loads((directory / 'world.json').read_bytes())
+    snapshot = desk_module.world.snapshot(directory / 'world.json')
     validate_workspace_identity(metadata, snapshot['receipts'])
     extra_attachments = extra_attachments or {}
     if not isinstance(extra_attachments, dict):
@@ -467,10 +485,11 @@ def restore_workspace_seed(directory, metadata, manifest, bundle):
             or any(not isinstance(item, str) or not item for item in seed_objects)
             or len(set(seed_objects)) != len(seed_objects)):
         raise ValueError('workspace seedObjects must be exact distinct ordered object IDs')
-    entries = manifest['entries'][:len(seed_objects)]
-    if len(entries) != len(seed_objects):
+    offset = workspace_message_prefix(metadata, manifest['entries'])
+    entries = manifest['entries'][:len(seed_objects) + offset]
+    if len(entries) != len(seed_objects) + offset:
         raise ValueError('workspace seed prefix is truncated')
-    for index, (entry, object_id) in enumerate(zip(entries, seed_objects)):
+    for index, (entry, object_id) in enumerate(zip(entries[offset:], seed_objects)):
         request = entry['request']
         if (request.get('op') != 'create' or request.get('object') != object_id
                 or request.get('intent') != f'workspace-seed:{identity}:{index}'):

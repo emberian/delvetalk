@@ -168,14 +168,30 @@ class TownReceivingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'pending request'):
             self.c.upgrade(self.c.profile()['sha256'], town_cards=None)
         self.assertEqual(self.journal(source[0]).read_bytes(), pending)
-        with patch.object(clerk, 'pins', return_value={'changed': 'a' * 64}):
-            with self.assertRaisesRegex(ValueError, 'pending request implementation pins'):
-                self.c.receive(*source)
-        # Retry must not consult the publication or cardbook again.
+        # The native commit already exists: recover it before checking current
+        # pins, without executing or resolving the source/card a second time.
         self.pds.records.clear()
-        with patch.object(clerk.Clerk, 'resolve_card', side_effect=AssertionError('re-resolved')):
+        with patch.object(clerk, 'pins', return_value={'changed': 'a' * 64}), \
+                patch.object(clerk.world, 'exchange', side_effect=AssertionError('re-executed')), \
+                patch.object(clerk.Clerk, 'resolve_card', side_effect=AssertionError('re-resolved')):
             recovered = clerk.Clerk(self.c.state, self.pds).receive(*source)
         self.assertEqual(recovered['reply']['kind'], 'committed')
+        self.assertEqual(self.c.snapshot('counter')['root']['version'], 1)
+
+    def test_uncommitted_attempt_refuses_changed_pins_without_reexecution(self):
+        source = self.post()
+        before = self.c.database.read_bytes()
+        with patch.object(clerk.world, 'exchange', side_effect=TimeoutError('before native admission')):
+            with self.assertRaises(TimeoutError):
+                self.c.receive(*source)
+        pending = self.journal(source[0]).read_bytes()
+        with patch.object(clerk, 'pins', return_value={'changed': 'a' * 64}), \
+                patch.object(clerk.world, 'exchange', side_effect=AssertionError('re-executed')):
+            with self.assertRaisesRegex(ValueError, 'pending request implementation pins'):
+                self.c.receive(*source)
+        self.assertEqual(self.journal(source[0]).read_bytes(), pending)
+        self.assertEqual(self.c.database.read_bytes(), before)
+        self.assertEqual(self.c.receive(*source)['reply']['kind'], 'committed')
         self.assertEqual(self.c.snapshot('counter')['root']['version'], 1)
 
     def test_opt_in_configuration_is_quiescent_bound_and_disableable(self):

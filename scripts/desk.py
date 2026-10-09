@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """World-owned source proposals, bounded compiler custody, explicit atomic adoption."""
 import argparse
-import fcntl
 import hashlib
 import importlib.util
 import os
@@ -34,6 +33,8 @@ SOURCE_DESK_PROTOCOL_PATHS = (
     'protocols/source-desk/protocol.json',
     'protocols/town-forge/source-desk.json',
     'protocols/stateful-workshop/source-desk.json',
+    'protocols/editor/candidate.json',
+    'protocols/spween-handler-workshop/source-desk.json',
 )
 
 
@@ -260,13 +261,7 @@ class Desk:
 
     def retained_reply(self, request):
         """Read an exact historical receipt without running a replacement engine."""
-        with open(str(self.database.resolve()) + '.lock', 'a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            if self.database.exists():
-                for entry in loads(self.database.read_bytes())['receipts']:
-                    if canonical(entry['request']) == canonical(request):
-                        return entry['receipt']
-        return None
+        return world.retained_reply(self.database, request)
 
     def inspect(self, object_id):
         return self.exchange({'op': 'inspect', 'object': object_id, 'principal': 'source-desk-reader'})

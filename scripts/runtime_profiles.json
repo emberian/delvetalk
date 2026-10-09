@@ -8,6 +8,8 @@
       "spec/upstream.json",
       "profiles/WorldCore.lean",
       "profiles/FileCustody.lean",
+      "profiles/ResidentStore.lean",
+      "spec/upstream/Compiler/Sha256.lean",
       "spec/Delvetalk/Core.lean",
       "spec/upstream/Theory/AxiomPin.lean",
       "spec/upstream/Theory/ObjectiveBendOpenRecursion.lean"
@@ -17,6 +19,8 @@
     ],
     "package": [
       "spec/Delvetalk/Package.lean",
+      "spec/Delvetalk/PackageData.lean",
+      "spec/Delvetalk/Reflection.lean",
       "spec/original/Theory/AssertAxioms.lean.txt",
       "spec/original/Compiler/ObjectiveBendTermWire.lean.txt",
       "spec/upstream/Compiler/ObjectiveBendC4.lean",
@@ -41,6 +45,13 @@
       "spec/upstream/Theory/Sp800185Cshake256Core.lean",
       "spec/upstream/Theory/Sp800185Cshake256Fast.lean",
       "spec/upstream/Theory/Sp800185Cshake256Spec.lean"
+    ],
+    "messages": [
+      "profiles/MessagesCore.lean"
+    ],
+    "sourceContracts": [
+      "profiles/SourcePackages.lean",
+      "profiles/SourceContract.lean"
     ]
   },
   "profiles": {
@@ -65,7 +76,9 @@
       "groups": [
         "common",
         "transactions",
-        "package"
+        "package",
+        "messages",
+        "sourceContracts"
       ]
     }
   }

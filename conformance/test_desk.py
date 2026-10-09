@@ -24,6 +24,9 @@ class DeskTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name)
         self.desk = desk_module.Desk(self.path / 'world.json', self.path / 'artifacts')
+        if getattr(self, 'backend', 'file') == 'resident':
+            desk_module.world.configure_resident(self.desk.database, profile=self.desk.profile)
+            self.enterContext(desk_module.world.resident_session(self.desk.database, profile=self.desk.profile))
         self.source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
         self.scenarios = (ROOT / 'protocols/counter/scenarios.json').read_bytes()
         self.law = scoped({'submit': ['author'], 'compiled': ['compiler'], 'failed': ['compiler'],
@@ -156,6 +159,16 @@ class DeskTests(unittest.TestCase):
         view = room.room_view(self.desk.inspect('target'), artifact, 'target')
         self.assertIn('source', str(view))
         self.assertEqual(artifact['content']['source'].encode(), source)
+
+
+class ResidentDeskTests(unittest.TestCase):
+    """The same receiving/recovery behavior with no legacy world JSON file."""
+    backend = 'resident'
+    setUp = DeskTests.setUp
+    submit = DeskTests.submit
+    test_complete_proposal_compile_adopt_and_retry = DeskTests.test_complete_proposal_compile_adopt_and_retry
+    test_explicit_prepare_is_not_admission_and_recovers_its_original_request = (
+        DeskTests.test_explicit_prepare_is_not_admission_and_recovers_its_original_request)
 
 
 if __name__ == '__main__':

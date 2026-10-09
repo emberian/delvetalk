@@ -16,6 +16,7 @@ import compiler_queue
 import continuation
 import desk
 import history
+import message_relay
 import source_store
 import worker
 
@@ -31,7 +32,7 @@ def epoch(profile, clerk_profile):
     for syntax in registry['syntaxes']:
         files.update(compiler_queue.compiler_pins(profile,
             {'state': {'proposal': {'syntax': syntax}}})['files'])
-    for name in ('service', 'bootstrap', 'history', 'continuation', 'watch', 'desk', 'source_store'):
+    for name in ('service', 'bootstrap', 'history', 'continuation', 'watch', 'desk', 'source_store', 'message_relay'):
         path = 'scripts/' + name + '.py'
         files[path] = history.file_hash(ROOT / path)
     for path in (*desk.SOURCE_DESK_PROTOCOL_PATHS, 'scene/room.py'):
@@ -87,7 +88,8 @@ class Service:
         self.state = Path(state).expanduser().resolve()
         self.receiver = receiver  # Tests only; production Worker owns bounded receiver subprocesses.
 
-    def initialize(self, world_directory, clerk_state, compiler_principal, *, public_genesis, watch_state=None):
+    def initialize(self, world_directory, clerk_state, compiler_principal, *, public_genesis, watch_state=None,
+                   relay_principal=None):
         if not isinstance(compiler_principal, str) or not compiler_principal or len(compiler_principal) > 256:
             raise ValueError('explicit compiler principal required')
         directory = Path(world_directory).expanduser().resolve()
@@ -109,18 +111,20 @@ class Service:
         profile = 'compiled' if selected == 'compiled' else 'transactions'
         same(metadata['runtime'], history.runtime(profile), 'workspace runtime differs from clerk/service profile')
         origin_path = self.state / 'origin.json'
-        with worker.bounded_lock(Path(str(receiver.database) + '.lock'), time.monotonic() + 10, time.monotonic) as acquired:
-            if not acquired:
-                raise TimeoutError('public world selection deadline reached')
-            snapshot = loads(receiver.database.read_bytes())
-            origin = desk.immutable(origin_path, snapshot) if not origin_path.exists() else loads(origin_path.read_bytes())
-            same(snapshot['receipts'][:len(origin['receipts'])], origin['receipts'], 'world no longer extends selected public prefix')
+        snapshot = clerk.world.snapshot(receiver.database, timeout=10)
+        if relay_principal is not None:
+            registry = clerk.world.query(receiver.database, {'op': 'messages-pending', 'principal': 'service-reader'},
+                                         profile=profile, timeout=10)
+            message_relay.MessageRelay(self.state / 'messages', receiver.database, relay_principal, profile=profile).bind(registry)
+        origin = desk.immutable(origin_path, snapshot) if not origin_path.exists() else loads(origin_path.read_bytes())
+        same(snapshot['receipts'][:len(origin['receipts'])], origin['receipts'], 'world no longer extends selected public prefix')
         value = {'format': FORMAT, 'clerkState': str(receiver.state),
                  'worldDirectory': str(directory), 'publicGenesis': public_genesis,
                  'originSha256': digest(origin), 'manifest': metadata, 'seed': seed,
                  'database': str(receiver.database.resolve()),
                  'artifacts': str(directory / 'artifacts'),
                  'compilerPrincipal': compiler_principal, 'profile': profile,
+                 'relayPrincipal': relay_principal,
                  'clerkProfile': config['profile'],
                  'watchState': str(Path(watch_state).expanduser().resolve()) if watch_state else None,
                  'publication': 'paused', 'epoch': epoch(profile, config['profile'])}
@@ -164,11 +168,10 @@ class Service:
             '--clerk-state', config['clerkState'], 'enqueue', uri, '--cid', cid], deadline_seconds, memory_mib)
 
     def _snapshot(self, config, deadline):
-        path = Path(config['database'])
-        with worker.bounded_lock(Path(str(path) + '.lock'), deadline, time.monotonic) as acquired:
-            if not acquired:
-                raise TimeoutError('world custody deadline reached')
-            snapshot = loads(path.read_bytes())
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('world custody deadline reached')
+        snapshot = clerk.world.snapshot(config['database'], timeout=remaining)
         origin = loads((self.state / 'origin.json').read_bytes())
         same(digest(origin), config['originSha256'], 'selected public prefix changed')
         same(snapshot['receipts'][:len(origin['receipts'])], origin['receipts'], 'world no longer extends selected public prefix')
@@ -286,6 +289,11 @@ class Service:
                 phase('receive', lambda: receiving.run(limit=limit, deadline_seconds=remaining(),
                                                        max_attempts=max_attempts, allow_publication=False))
                 self.check_epoch(config)
+                if config.get('relayPrincipal'):
+                    relay = message_relay.MessageRelay(self.state / 'messages', config['database'],
+                        config['relayPrincipal'], profile=config['profile'], memory_mib=memory_mib)
+                    phase('localMessages', lambda: relay.run(limit=min(limit, 16),
+                        deadline_seconds=remaining(), max_attempts=max_attempts))
                 queue = self.compiler(config, memory_mib)
                 def enqueue_compilers():
                     snapshot = self._snapshot(config, deadline)
@@ -376,6 +384,7 @@ def main():
     init.add_argument('--genesis', required=True)
     init.add_argument('--compiler-principal', required=True)
     init.add_argument('--watch-state', type=Path)
+    init.add_argument('--relay-principal', help='explicit local message delivery principal; requires initialized native messages')
     enqueue = commands.add_parser('enqueue')
     enqueue.add_argument('uri')
     enqueue.add_argument('--cid', required=True)
@@ -389,7 +398,8 @@ def main():
     try:
         app = Service(args.state)
         if args.command == 'init':
-            result = app.initialize(args.world, args.clerk_state, args.compiler_principal, public_genesis=args.genesis, watch_state=args.watch_state)
+            result = app.initialize(args.world, args.clerk_state, args.compiler_principal,
+                public_genesis=args.genesis, watch_state=args.watch_state, relay_principal=args.relay_principal)
         elif args.command == 'enqueue':
             result = app.enqueue(args.uri, args.cid)
         elif args.command == 'tick':

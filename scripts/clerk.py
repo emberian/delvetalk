@@ -234,66 +234,63 @@ class Clerk:
                 raise ValueError('clerk state already contains a different world')
             if any((self.state / 'requests').glob('*.json')):
                 raise ValueError('existing request journals cannot be rebound to another world')
-            if not database.is_file():
-                raise ValueError('workspace world.json does not exist')
-            # Keep custody order identical to receiving/upgrade; all reconstruction
-            # runs against independent temporary databases, never this locked world.
-            with delve.locked(Path(str(database) + '.lock')):
-                bootstrap = module('clerk_attach_bootstrap', 'scripts/bootstrap.py')
-                history = bootstrap.history
-                metadata = loads((directory / 'manifest.json').read_bytes())
-                seed = loads((directory / 'seed.json').read_bytes())
-                seed_manifest = loads((directory / 'seed-history/manifest.json').read_bytes())
-                runtime = history.runtime(runtime_profile)
-                if (metadata.get('format') != 'delvetalk-workspace-v1'
-                        or canonical(metadata.get('runtime')) != canonical(runtime)
-                        or canonical(metadata.get('genesis')) != canonical(seed_manifest.get('genesis'))
-                        or metadata['genesis'].get('id') != expected_genesis
-                        or seed.get('format') != 'delvetalk-workspace-seed-v1'
-                        or seed.get('genesis') != expected_genesis or seed.get('head') != expected_seed_head
-                        or seed.get('worldId') != bootstrap.world_id(metadata)
-                        or seed.get('entryObjects') != bootstrap.entry_objects(metadata)
-                        or seed.get('defaultObject') != bootstrap.default_object(metadata)):
-                    raise ValueError('workspace manifest, runtime or seed anchors mismatch')
-                snapshot = loads(database.read_bytes())
-                exact(snapshot, ['objects', 'receipts'], 'workspace world')
-                prefix = [{'request': entry['request'], 'receipt': entry['reply']}
-                          for entry in seed_manifest['entries']]
-                if (not isinstance(snapshot['receipts'], list)
-                        or canonical({'receipts': snapshot['receipts'][:len(prefix)]}) != canonical({'receipts': prefix})):
-                    raise ValueError('workspace world does not extend its exact seed prefix')
-                bootstrap.validate_workspace_identity(metadata, snapshot['receipts'])
-                selected_runtime = runtime_profile
-                profile = {'name': PROFILE, 'pins': pins(selected_runtime)}
-                with tempfile.TemporaryDirectory(prefix='clerk-attach-') as temporary:
-                    replay = Path(temporary) / 'world.json'
-                    evidence = history.verify_history(directory / 'seed-history', expected_genesis=expected_genesis,
-                                                      expected_head=expected_seed_head, output=replay)
-                    if any(seed.get(key) != evidence[key] for key in ('entries', 'worldSha256')):
-                        raise ValueError('workspace seed evidence mismatch')
-                    for retained in snapshot['receipts'][len(prefix):]:
-                        exact(retained, ['request', 'receipt'], 'retained admission')
-                        reply = world.exchange(replay, retained['request'], profile=runtime_profile)
-                        if canonical(reply) != canonical(retained['receipt']):
-                            raise ValueError('workspace retained receipt does not replay under selected runtime')
-                    if canonical(loads(replay.read_bytes())) != canonical(snapshot):
-                        raise ValueError('workspace world cannot be reconstructed from retained admissions')
-                for object_id, expected in expected_roots.items():
-                    if canonical(snapshot['objects'].get(object_id)) != canonical(expected):
-                        raise ValueError('attachment expected root mismatch: ' + object_id)
-                if (canonical(history.runtime(runtime_profile)) != canonical(runtime)
-                        or pins(selected_runtime) != profile['pins']):
-                    raise ValueError('attachment implementation changed during verification')
-                attachment = {'selection': selection, 'worldSha256': digest(snapshot),
-                              'worldId': metadata['worldId'], 'entries': len(snapshot['receipts'])}
-                attachment['id'] = digest(attachment)
-                config = {'format': PROFILE, 'pds': PDS, 'repositories': selection['repositories'],
-                          'objects': sorted(expected_roots), 'profile': profile, 'database': str(database),
-                          'attachment': attachment}
-                if selected_runtime != 'world':
-                    config['runtimeProfile'] = selected_runtime
-                save(path, config)
-                return {'status': 'attached', 'attachment': attachment}
+            # Capture one atomic backend snapshot; replay uses independent custody.
+            # A resident daemon owns its writer lock throughout its lifetime.
+            snapshot = world.snapshot(database)
+            bootstrap = module('clerk_attach_bootstrap', 'scripts/bootstrap.py')
+            history = bootstrap.history
+            metadata = loads((directory / 'manifest.json').read_bytes())
+            seed = loads((directory / 'seed.json').read_bytes())
+            seed_manifest = loads((directory / 'seed-history/manifest.json').read_bytes())
+            runtime = history.runtime(runtime_profile)
+            if (metadata.get('format') != 'delvetalk-workspace-v1'
+                    or canonical(metadata.get('runtime')) != canonical(runtime)
+                    or canonical(metadata.get('genesis')) != canonical(seed_manifest.get('genesis'))
+                    or metadata['genesis'].get('id') != expected_genesis
+                    or seed.get('format') != 'delvetalk-workspace-seed-v1'
+                    or seed.get('genesis') != expected_genesis or seed.get('head') != expected_seed_head
+                    or seed.get('worldId') != bootstrap.world_id(metadata)
+                    or seed.get('entryObjects') != bootstrap.entry_objects(metadata)
+                    or seed.get('defaultObject') != bootstrap.default_object(metadata)):
+                raise ValueError('workspace manifest, runtime or seed anchors mismatch')
+            exact(snapshot, ['objects', 'receipts'] + (['messages'] if 'messages' in snapshot else []), 'workspace world')
+            prefix = [{'request': entry['request'], 'receipt': entry['reply']}
+                      for entry in seed_manifest['entries']]
+            if (not isinstance(snapshot['receipts'], list)
+                    or canonical({'receipts': snapshot['receipts'][:len(prefix)]}) != canonical({'receipts': prefix})):
+                raise ValueError('workspace world does not extend its exact seed prefix')
+            bootstrap.validate_workspace_identity(metadata, snapshot['receipts'])
+            selected_runtime = runtime_profile
+            profile = {'name': PROFILE, 'pins': pins(selected_runtime)}
+            with tempfile.TemporaryDirectory(prefix='clerk-attach-') as temporary:
+                replay = Path(temporary) / 'world.json'
+                evidence = history.verify_history(directory / 'seed-history', expected_genesis=expected_genesis,
+                                                  expected_head=expected_seed_head, output=replay)
+                if any(seed.get(key) != evidence[key] for key in ('entries', 'worldSha256')):
+                    raise ValueError('workspace seed evidence mismatch')
+                for retained in snapshot['receipts'][len(prefix):]:
+                    exact(retained, ['request', 'receipt'], 'retained admission')
+                    reply = world.exchange(replay, retained['request'], profile=runtime_profile)
+                    if canonical(reply) != canonical(retained['receipt']):
+                        raise ValueError('workspace retained receipt does not replay under selected runtime')
+                if canonical(world.snapshot(replay)) != canonical(snapshot):
+                    raise ValueError('workspace world cannot be reconstructed from retained admissions')
+            for object_id, expected in expected_roots.items():
+                if canonical(snapshot['objects'].get(object_id)) != canonical(expected):
+                    raise ValueError('attachment expected root mismatch: ' + object_id)
+            if (canonical(history.runtime(runtime_profile)) != canonical(runtime)
+                    or pins(selected_runtime) != profile['pins']):
+                raise ValueError('attachment implementation changed during verification')
+            attachment = {'selection': selection, 'worldSha256': digest(snapshot),
+                          'worldId': metadata['worldId'], 'entries': len(snapshot['receipts'])}
+            attachment['id'] = digest(attachment)
+            config = {'format': PROFILE, 'pds': PDS, 'repositories': selection['repositories'],
+                      'objects': sorted(expected_roots), 'profile': profile, 'database': str(database),
+                      'attachment': attachment}
+            if selected_runtime != 'world':
+                config['runtimeProfile'] = selected_runtime
+            save(path, config)
+            return {'status': 'attached', 'attachment': attachment}
 
     def verify_repository(self, author):
         description = self.http('GET', PDS, 'com.atproto.repo.describeRepo', params={'repo': author})
@@ -469,12 +466,12 @@ class Clerk:
             entry['resolvedRoots'] = resolved_transaction
         return entry
 
-    def finish(self, path, entry):
+    def finish(self, path, entry, retained=None):
         if 'receipt' not in entry:
             selected = self.execution_profile(entry['request'])
             if entry.get('admissionProfile', selected) != selected:
                 raise ValueError('retained admission profile does not match request')
-            reply = world.exchange(self.database, entry['request'], profile=selected)
+            reply = retained if retained is not None else world.exchange(self.database, entry['request'], profile=selected)
             receipt = {'format': 'delvetalk-clerk-receipt-v1', 'source': entry['source'],
                        'request': entry['request'], 'reply': reply, 'profile': entry['profile']}
             if 'interpretation' in entry:
@@ -548,9 +545,10 @@ class Clerk:
                 if config['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
                     raise ValueError('clerk implementation pins changed; use the pinned checkout')
                 save(path, entry)
-            if entry['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
+            retained = world.retained_reply(self.database, entry['request'])
+            if retained is None and entry['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
                 raise ValueError('pending request implementation pins changed')
-            return self.finish(path, entry)
+            return self.finish(path, entry, retained)
 
     def profile(self):
         with delve.locked(self.state / 'clerk.lock'):
@@ -563,52 +561,51 @@ class Clerk:
         if not isinstance(from_profile, str) or not re.fullmatch('[0-9a-f]{64}', from_profile):
             raise ValueError('from-profile must be the exact prior profile SHA256')
         with delve.locked(self.state / 'clerk.lock'):
-            # Also exclude direct world.py writers across the snapshot/config commit.
-            with delve.locked(Path(str(self.database) + '.lock')):
-                config = self.config()
-                old = config['profile']
-                prior_runtime = config.get('runtimeProfile', 'world')
-                selected_runtime = prior_runtime if runtime_profile is None else runtime_profile
-                new = {'name': PROFILE, 'pins': pins(selected_runtime)}
-                cards = config.get('townCards') if town_cards is UNCHANGED else town_cards
-                if cards is not None:
-                    new['townCards'] = digest(self.card_configuration(cards, selected_runtime))
-                history = config.get('upgrades', [])
-                if not isinstance(history, list):
-                    raise ValueError('malformed upgrade history')
-                if digest(old) != from_profile:
-                    last = history[-1] if history else None
-                    if (isinstance(last, dict) and last.get('fromSha256') == from_profile
-                            and canonical(last.get('to')) == canonical(old)
-                            and canonical(old) == canonical(new) and prior_runtime == selected_runtime):
-                        return {'format': 'delvetalk-clerk-upgrade-v1',
-                                'status': 'already-upgraded', 'upgrade': last}
-                    raise ValueError('prior profile SHA256 mismatch')
-                for path in sorted((self.state / 'requests').glob('*.json')):
-                    entry = loads(path.read_text())
-                    if not isinstance(entry, dict) or not isinstance(entry.get('receipt'), dict):
-                        raise ValueError('pending request journal prevents upgrade: ' + path.name)
-                if canonical(old) == canonical(new) and prior_runtime == selected_runtime:
+            # The backend supplies an atomic observation; clerk custody serializes configuration.
+            config = self.config()
+            old = config['profile']
+            prior_runtime = config.get('runtimeProfile', 'world')
+            selected_runtime = prior_runtime if runtime_profile is None else runtime_profile
+            new = {'name': PROFILE, 'pins': pins(selected_runtime)}
+            cards = config.get('townCards') if town_cards is UNCHANGED else town_cards
+            if cards is not None:
+                new['townCards'] = digest(self.card_configuration(cards, selected_runtime))
+            history = config.get('upgrades', [])
+            if not isinstance(history, list):
+                raise ValueError('malformed upgrade history')
+            if digest(old) != from_profile:
+                last = history[-1] if history else None
+                if (isinstance(last, dict) and last.get('fromSha256') == from_profile
+                        and canonical(last.get('to')) == canonical(old)
+                        and canonical(old) == canonical(new) and prior_runtime == selected_runtime):
                     return {'format': 'delvetalk-clerk-upgrade-v1',
-                            'status': 'unchanged', 'profileSha256': digest(old)}
-                world_sha = hashlib.sha256(self.database.read_bytes()).hexdigest()
-                transition = {'from': old, 'to': new, 'fromSha256': from_profile,
-                              'toSha256': digest(new), 'worldSha256': world_sha,
-                              'fromRuntime': prior_runtime, 'toRuntime': selected_runtime}
-                transition['id'] = digest(transition)
-                config['profile'] = new
-                if cards is None:
-                    config.pop('townCards', None)
-                else:
-                    config['townCards'] = cards
-                if selected_runtime == 'world':
-                    config.pop('runtimeProfile', None)
-                else:
-                    config['runtimeProfile'] = selected_runtime
-                config['upgrades'] = history + [transition]
-                save(self.state / 'clerk.json', config)
+                            'status': 'already-upgraded', 'upgrade': last}
+                raise ValueError('prior profile SHA256 mismatch')
+            for path in sorted((self.state / 'requests').glob('*.json')):
+                entry = loads(path.read_text())
+                if not isinstance(entry, dict) or not isinstance(entry.get('receipt'), dict):
+                    raise ValueError('pending request journal prevents upgrade: ' + path.name)
+            if canonical(old) == canonical(new) and prior_runtime == selected_runtime:
                 return {'format': 'delvetalk-clerk-upgrade-v1',
-                        'status': 'upgraded', 'upgrade': transition}
+                        'status': 'unchanged', 'profileSha256': digest(old)}
+            world_sha = hashlib.sha256(world.snapshot_bytes(self.database)).hexdigest()
+            transition = {'from': old, 'to': new, 'fromSha256': from_profile,
+                          'toSha256': digest(new), 'worldSha256': world_sha,
+                          'fromRuntime': prior_runtime, 'toRuntime': selected_runtime}
+            transition['id'] = digest(transition)
+            config['profile'] = new
+            if cards is None:
+                config.pop('townCards', None)
+            else:
+                config['townCards'] = cards
+            if selected_runtime == 'world':
+                config.pop('runtimeProfile', None)
+            else:
+                config['runtimeProfile'] = selected_runtime
+            config['upgrades'] = history + [transition]
+            save(self.state / 'clerk.json', config)
+            return {'format': 'delvetalk-clerk-upgrade-v1',
+                    'status': 'upgraded', 'upgrade': transition}
 
     def snapshot(self, object_id):
         with delve.locked(self.state / 'clerk.lock'):

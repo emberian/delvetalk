@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independent source-bound worlds from explicit seeds and an exact empty genesis."""
 import argparse
+from contextlib import nullcontext
 from pathlib import Path
 import sys
 import tempfile
@@ -14,8 +15,13 @@ loads, canonical = bootstrap.loads, bootstrap.canonical
 
 
 def initialize(directory, objects, *, entry_objects, principal, profile='transactions',
-               title='A shared world', default_object=None, world_id=None):
+               title='A shared world', default_object=None, world_id=None,
+               backend='file', messaging=False, pending_limit=128):
     """Admit explicit creation requests in private staging, then publish custody once."""
+    if backend not in ('file', 'resident'):
+        raise ValueError('unknown workspace backend')
+    if type(messaging) is not bool or (messaging and profile != 'compiled'):
+        raise ValueError('messaging requires the compiled profile and an explicit boolean')
     destination = Path(directory).absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError('workspace destination already exists; choose a fresh path')
@@ -40,6 +46,8 @@ def initialize(directory, objects, *, entry_objects, principal, profile='transac
         raise ValueError('world identity must be an explicit nonempty string of at most 256 characters')
     metadata = {'format': FORMAT, 'worldId': namespace, 'title': title, 'entryObjects': entry_objects,
                 'defaultObject': selected_default, 'seedObjects': ids, 'runtime': bootstrap.history.runtime(profile)}
+    if messaging:
+        metadata['messaging'] = {'lineage': namespace, 'pendingLimit': pending_limit}
     bootstrap.entry_objects(metadata)
     if any(identity not in ids for identity in entry_objects):
         raise ValueError('entry objects must be among the explicit seeds')
@@ -49,48 +57,60 @@ def initialize(directory, objects, *, entry_objects, principal, profile='transac
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.workspace-init-', dir=destination.parent) as temporary:
         staging = Path(temporary)
-        desk = bootstrap.desk_module.Desk(staging / 'world.json', staging / 'artifacts', profile=profile)
-        for index, seed in enumerate(objects):
-            artifact = bootstrap.desk_module.translate.translate(seed['syntax'], seed['source'])
-            if artifact['target'] == 'local-protocol-v1':
-                protocol = artifact['lowered']
-            elif artifact['target'] == 'spween-protocol-bundle-v1':
-                wrapped = bootstrap.room.wrap_bundle(artifact['lowered'])
-                bootstrap.room.store_artifact(staging / 'artifacts/rooms', wrapped)
-                bootstrap.preserve_dependencies(staging, wrapped)
-                protocol = wrapped['protocol']
-            else:
-                raise ValueError('seed syntax must lower to an executable local protocol or Spween bundle')
-            identity = bootstrap.history.digest(artifact)
-            bootstrap.desk_module.immutable(staging / 'artifacts/lowerings' / (identity + '.json'), artifact)
-            bootstrap.preserve_dependencies(staging, artifact)
-            receipt = desk.exchange({'op': 'create', 'object': seed['id'], 'principal': principal,
-                'intent': f'workspace-seed:{namespace}:{index}', 'protocol': protocol, 'law': seed['law']})
-            if receipt['kind'] != 'committed':
-                raise ValueError('seed refused by Lean: ' + seed['id'] + ': ' + str(receipt['data']))
-        if canonical(bootstrap.history.runtime(profile)) != canonical(metadata['runtime']):
-            raise ValueError('runtime changed during workspace initialization')
-        bootstrap.save_new(staging / 'manifest.json', metadata)
-        bootstrap.save_new(staging / 'genesis.json', genesis)
-        for index, identity in enumerate(entry_objects):
-            view = bootstrap.inspect_view(staging, identity)
-            filename = 'index.html' if identity == selected_default else f'entry-{index}.html'
-            with (staging / filename).open('x') as stream:
-                stream.write(bootstrap.room.html_view(view))
-        # A populated seed history is distinct from its shared empty runtime genesis.
-        anchors = bootstrap.export_bootstrap(staging, staging / 'seed-history')
-        if anchors['genesis'] != genesis['id']:
-            raise ValueError('seed history differs from declared public genesis')
-        seed = {'format': 'delvetalk-workspace-seed-v1',
-                **{key: anchors[key] for key in ('genesis', 'head', 'entries', 'worldSha256')},
-                'worldId': namespace, 'entryObjects': entry_objects, 'defaultObject': selected_default,
-                'scope': 'Explicit seed admissions only; no demonstration or private history was copied.'}
-        bootstrap.save_new(staging / 'seed.json', seed)
+        world = bootstrap.desk_module.world
+        if backend == 'resident':
+            world.configure_resident(staging / 'world.json', profile=profile)
+        session = (world.resident_session(staging / 'world.json', profile=profile)
+                   if backend == 'resident' else nullcontext())
+        with session:
+            desk = bootstrap.desk_module.Desk(staging / 'world.json', staging / 'artifacts', profile=profile)
+            if messaging:
+                receipt = desk.exchange({'op': 'messages-init', 'principal': principal,
+                    'intent': f'workspace-messages:{namespace}', **metadata['messaging']})
+                if receipt['kind'] != 'committed':
+                    raise ValueError('message bootstrap refused by Lean: ' + str(receipt['data']))
+            for index, seed in enumerate(objects):
+                artifact = bootstrap.desk_module.translate.translate(seed['syntax'], seed['source'])
+                if artifact['target'] == 'local-protocol-v1':
+                    protocol = artifact['lowered']
+                elif artifact['target'] == 'spween-protocol-bundle-v1':
+                    wrapped = bootstrap.room.wrap_bundle(artifact['lowered'])
+                    bootstrap.room.store_artifact(staging / 'artifacts/rooms', wrapped)
+                    bootstrap.preserve_dependencies(staging, wrapped)
+                    protocol = wrapped['protocol']
+                else:
+                    raise ValueError('seed syntax must lower to an executable local protocol or Spween bundle')
+                identity = bootstrap.history.digest(artifact)
+                bootstrap.desk_module.immutable(staging / 'artifacts/lowerings' / (identity + '.json'), artifact)
+                bootstrap.preserve_dependencies(staging, artifact)
+                receipt = desk.exchange({'op': 'create', 'object': seed['id'], 'principal': principal,
+                    'intent': f'workspace-seed:{namespace}:{index}', 'protocol': protocol, 'law': seed['law']})
+                if receipt['kind'] != 'committed':
+                    raise ValueError('seed refused by Lean: ' + seed['id'] + ': ' + str(receipt['data']))
+            if canonical(bootstrap.history.runtime(profile)) != canonical(metadata['runtime']):
+                raise ValueError('runtime changed during workspace initialization')
+            bootstrap.save_new(staging / 'manifest.json', metadata)
+            bootstrap.save_new(staging / 'genesis.json', genesis)
+            for index, identity in enumerate(entry_objects):
+                view = bootstrap.inspect_view(staging, identity)
+                filename = 'index.html' if identity == selected_default else f'entry-{index}.html'
+                with (staging / filename).open('x') as stream:
+                    stream.write(bootstrap.room.html_view(view))
+            # A populated seed history is distinct from its shared empty runtime genesis.
+            anchors = bootstrap.export_bootstrap(staging, staging / 'seed-history')
+            if anchors['genesis'] != genesis['id']:
+                raise ValueError('seed history differs from declared public genesis')
+            seed = {'format': 'delvetalk-workspace-seed-v1',
+                    **{key: anchors[key] for key in ('genesis', 'head', 'entries', 'worldSha256')},
+                    'worldId': namespace, 'entryObjects': entry_objects, 'defaultObject': selected_default,
+                    'scope': 'Explicit seed admissions only; no demonstration or private history was copied.'}
+            bootstrap.save_new(staging / 'seed.json', seed)
         bootstrap._publish_directory(staging, destination)
     return {**seed, 'directory': str(destination), 'view': str(destination / 'index.html')}
 
 
-def initialize_plan(directory, plan, *, base, principal, profile='transactions', world_id=None):
+def initialize_plan(directory, plan, *, base, principal, profile='transactions', world_id=None,
+                    backend='file', messaging=False, pending_limit=128):
     if not isinstance(plan, dict) or set(plan) != {'title', 'entryObjects', 'defaultObject', 'objects'}:
         raise ValueError('plan requires exactly title, entryObjects, defaultObject and objects')
     if not isinstance(plan['objects'], list):
@@ -104,7 +124,8 @@ def initialize_plan(directory, plan, *, base, principal, profile='transactions',
         seeds.append({**item, 'source': (Path(base) / item['source']).read_bytes()})
     return initialize(directory, seeds, entry_objects=plan['entryObjects'],
                       default_object=plan['defaultObject'], title=plan['title'],
-                      principal=principal, profile=profile, world_id=world_id)
+                      principal=principal, profile=profile, world_id=world_id,
+                      backend=backend, messaging=messaging, pending_limit=pending_limit)
 
 
 def main():
@@ -116,6 +137,9 @@ def main():
     init.add_argument('--principal', required=True)
     init.add_argument('--world-id', help='optional explicit immutable namespace; otherwise a fresh urn:uuid')
     init.add_argument('--profile', choices=bootstrap.desk_module.world.PROFILES, default='transactions')
+    init.add_argument('--backend', choices=('file', 'resident'), default='file')
+    init.add_argument('--messaging', action='store_true', help='initialize native message lineage before seeds (compiled only)')
+    init.add_argument('--pending-limit', type=int, default=128)
     inspect = commands.add_parser('inspect')
     inspect.add_argument('directory', type=Path)
     inspect.add_argument('--object')
@@ -136,7 +160,8 @@ def main():
     try:
         if args.command == 'init':
             result = initialize_plan(args.directory, loads(args.plan.read_bytes()), base=args.plan.parent,
-                                     principal=args.principal, profile=args.profile, world_id=args.world_id)
+                                     principal=args.principal, profile=args.profile, world_id=args.world_id,
+                                     backend=args.backend, messaging=args.messaging, pending_limit=args.pending_limit)
         elif args.command == 'inspect':
             result = bootstrap.inspect_view(args.directory, args.object, args.panel)
             if args.html:
