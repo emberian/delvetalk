@@ -95,6 +95,9 @@ def plainDepth : Nat := 64
 def grantsPerTurn : Nat := 8
 def maxGrants : Nat := 4096
 def genesis : String := "".pushn '0' 64
+/-- `publish` Plans one turn may make; bytes of a page title and a section name. -/
+def publishesPerTurn : Nat := 4
+def maxTitleBytes : Nat := 256
 /-- Ids one `objects` listing answers. -/
 def listPage : Nat := 64
 /-- Bytes of a post's AT URI and CID. -/
@@ -248,6 +251,8 @@ structure World where
   modules : Std.HashMap String String := {}
   /-- Offers admitted turns retained, by addressee: (entry index, ordinal in the entry). -/
   outbox : Std.HashMap String (Array (Nat × Nat)) := {}
+  /-- Publications admitted turns retained, for transport to post: (entry index, ordinal). -/
+  published : Array (Nat × Nat) := #[]
   /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
       repeated creation compile each distinct package once. -/
   builds : Std.HashMap String Built := {}

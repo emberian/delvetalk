@@ -771,7 +771,10 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
   let offered := if tagOf entry != "admitted" then #[] else
     (((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).getD #[]).zipIdx.filterMap fun (o, i) =>
       (o.getObjValAs? String "to").toOption.map (·, i)
+  let publications := if tagOf entry != "admitted" then #[] else
+    (((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).zipIdx.map fun (_, i) => (index, i)
   { w with
+    published := w.published ++ publications
     outbox := offered.foldl (fun box (to, i) => box.insert to ((box.getD to #[]).push (index, i))) w.outbox
     modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
     pending := (match delivered with
@@ -1431,8 +1434,12 @@ def history (w : World) (j : Json) : Except String Json := do
     ("entries", Json.arr (page.map fun index => projectEntry w reader w.entries[index]!)),
     ("more", toJson (decide (all.size > asked)))]
 
+/-- The principal transport reads publications as: the world's clock principal, or "transport". -/
+def publisher (w : World) : String := if w.clockPrincipal.isEmpty then "transport" else w.clockPrincipal
+
 /-- `world-offers {principal, after?}`: the offers addressed to the principal, oldest first,
-    after journal height `after`; one page. -/
+    after journal height `after`; one page. The publisher also gets the `publications`
+    (`{height, ordinal, id, object, page, section, text}`) to post. -/
 def offersOp (w : World) (j : Json) : Except String Json := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let after := (← optNat j "after").getD 0
@@ -1444,6 +1451,14 @@ def offersOp (w : World) (j : Json) : Except String Json := do
     pure (Json.mkObj [("height", toJson (index + 1)), ("ordinal", toJson i),
       ("identity", (entry.getObjVal? "identity").toOption.getD Json.null),
       ("text", (offer.getObjVal? "text").toOption.getD Json.null)])
-  return Json.mkObj [("status", toJson "offers"), ("offers", Json.arr items), ("more", toJson (decide (all.size > page.size)))]
+  let pubs := if principal != publisher w then #[] else
+    let mine := w.published.filter fun (index, _) => index + 1 > after
+    (mine.extract 0 Limits.maxHistoryLimit).filterMap fun (index, i) => do
+      let entry ← w.entries[index]?
+      let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
+      let fields ← p.getObj?.toOption
+      pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i)] ++ fields.toList))
+  return Json.mkObj ([("status", toJson "offers"), ("offers", Json.arr items), ("more", toJson (decide (all.size > page.size)))] ++
+    (if principal == publisher w then [("publications", Json.arr pubs)] else []))
 
 end Delvetalk.Host

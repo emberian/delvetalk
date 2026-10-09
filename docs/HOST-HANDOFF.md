@@ -262,6 +262,13 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
    view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
    ("" = anonymous, public objects only), is `denied` for an object the reader cannot view, and projects each entry.
+11. **publish.** `publish {page, section, body}` -> `published {post}` (post = hash of `["publish", principal,
+   intent, ordinal]`; at most `publishesPerTurn` 4; a title or section with a line break or over 256 bytes is
+   `refused {clause: title}`). The page is the object's: `page` "" means the object id. The admitted entry
+   retains `publishes [{id, object, page, section, text}]` with the agentwiki text (`wiki: Title\n\nbody`, or
+   `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
+   adds `publications`. Transport posts the text, confirms with `world-posted {uri, cid, object}`, and routes a
+   reply (`merge` from the page's owner) by `world-addressee` to the object's `receive` (bridge work).
 
 ## 6. Gotchas
 
@@ -316,5 +323,5 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 - **Tests**: never run an unfiltered package suite on a loop; `tests.test_replay` and `test_await` each
   take ~12 to 40 s because every `world-create` compiles. `python3 -W error` turns leaked subprocess
   warnings into failures; close hosts in `tearDown`.
-- **Not done**: `publish` is not answered; `world-reprogram`/`amend` are gated only by the object's law;
+- **Not done**: `world-reprogram`/`amend` are gated only by the object's law;
   foreign worlds (`Reference.world != ""`) are always refused.

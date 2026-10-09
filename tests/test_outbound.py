@@ -219,6 +219,11 @@ def relay(state: State, input: {target: String, text: String}, context: Abi.Cont
 def waitAndTell(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.await({slot: {principal: "glm", intent: "x"}, patience: 10n})):
     case _: offered("", "woken", context)
+def page(state: State, input: {section: String, body: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.publish({page: "", section: input.section, body: input.body})):
+    case published(p): said(context, p.post)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
 def stamp(state: State, input: Said, context: Abi.Context) -> Activity<Plan, Response, String>:
   said(context, input.text)
 def pokeOther(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
@@ -285,6 +290,48 @@ class Offers(Reflection):
         self.assertNotIn("offers", resumed)
         self.assertEqual(self.offers("kim"), ["woken"])
         self.assertEqual(self.offers("glm"), [])
+
+
+class Publish(Reflection):
+    """publish is retained like an addressed offer, for transport to post as the object's page."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("teller", TELLER, record(note=label("")))
+
+    def publish(self, section="Notes", body="the bell rang", identity="pub"):
+        r = self.turn("teller", "page", record(section=label(section), body=label(body)), principal="ann", identity=identity)
+        self.assertEqual(r["status"], "admitted", r)
+        return r
+
+    def publications(self, principal="transport"):
+        return self.host.send(op="world-offers", principal=principal).get("publications")
+
+    def test_a_publication_is_retained_and_listed_for_the_transport_as_the_objects_page(self):
+        r = self.publish()
+        post = r["result"]["value"]
+        [p] = self.publications()
+        self.assertEqual((p["id"], p["object"], p["page"], p["section"]), (post, "teller", "teller", "Notes"))
+        self.assertEqual(p["text"], "edit: teller › Notes\n\nthe bell rang")
+        self.assertIsNone(self.publications("ann"))
+        whole = self.publish(section="", body="all of it", identity="pub-2")
+        self.assertEqual(self.publications()[1]["text"], "wiki: teller\n\nall of it")
+        self.reopen()
+        self.assertEqual(len(self.publications()), 2)
+        self.assertEqual(self.publish()["receipt"], r["receipt"])          # a retry publishes nothing twice
+        self.assertEqual(len(self.publications()), 2)
+
+    def test_a_reply_to_the_confirmed_post_finds_the_object(self):
+        self.publish()
+        posted = self.host.send(op="world-posted", principal="transport", uri=URI, cid="bafyreipage", object="teller")
+        self.assertEqual(posted["status"], "posted", posted)
+        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["object"], "teller")
+
+    def test_a_title_with_a_line_break_is_refused(self):
+        r = self.publish(section="a\nb")
+        self.assertEqual(r["result"], label("title"))
+        self.assertEqual(self.publications(), [])
 
 
 class Projection(Reflection):

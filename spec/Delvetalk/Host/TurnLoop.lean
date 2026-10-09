@@ -98,6 +98,8 @@ structure TurnState where
   plans : Nat := 0
   /-- Rendered `offer` documents in order, each with its addressee: the journal retains them. -/
   offers : List (String × String) := []
+  /-- Publications in order, as journaled: `{id, object, page, section, text}`. -/
+  publishes : List Json := []
   /-- Objects created, and objects the turn required absent (created ones included). -/
   creates : List (String × CreateRec) := []
   absent : List String := []
@@ -634,6 +636,25 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       evaluation "turn exceeds the offer capacity"
     set { s with offers := s.offers ++ [(to, text)] }
     respond bounds responseType "offered" [emptyRecord]
+  | .variant "publish" (.record f) =>
+    let some page := (f.lookup "page").bind labelOf | evaluation "malformed publish plan"
+    let some part := (f.lookup "section").bind labelOf | evaluation "malformed publish plan"
+    let some body := (f.lookup "body").bind labelOf | evaluation "malformed publish plan"
+    let s ← get
+    -- The page belongs to the object: its title is the one given, or the object's id.
+    let title := if page.isEmpty then self else page
+    if title.utf8ByteSize > Limits.maxTitleBytes || part.utf8ByteSize > Limits.maxTitleBytes
+        || (title.any (· == '\n')) || (part.any (· == '\n')) then
+      refusedWith bounds responseType "title"
+    else if body.utf8ByteSize > Delvetalk.Document.maxOutputBytes then refusedWith bounds responseType "capacity"
+    else if s.publishes.length ≥ Limits.publishesPerTurn then refusedWith bounds responseType "capacity"
+    else
+      let id := Journal.bodyHash (Json.arr #[toJson "publish", toJson s.principal, toJson s.intent, toJson s.publishes.length])
+      -- agentwiki: a page is `wiki: Title` then its sections; a section edit is `edit: Title › Section`.
+      let text := if part.isEmpty then s!"wiki: {title}\n\n{body}" else s!"edit: {title} › {part}\n\n{body}"
+      set { s with publishes := s.publishes ++ [Json.mkObj [("id", toJson id), ("object", toJson self),
+        ("page", toJson title), ("section", toJson part), ("text", toJson text)]] }
+      respond bounds responseType "published" [.record [("post", .label id)]]
   | .variant label _ => evaluation s!"plan not supported: {label}"
   | _ => evaluation "plan is not a variant"
 end
@@ -775,7 +796,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
       ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
       ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
-      ("offers", offersJson st.offers), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
+      ("offers", offersJson st.offers), ("publishes", Json.arr st.publishes.toArray), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes)] ++
       (if st.violation.isSome then [("violation", toJson st.violation)] else []))
     let outcome := Json.mkObj <| [("tag", toJson "suspended"),
@@ -802,6 +823,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       return (w', turnReply r)
     | none =>
     let offered := (if st.offers.isEmpty then [] else [("offers", offersJson st.offers)]) ++
+      (if st.publishes.isEmpty then [] else [("publishes", Json.arr st.publishes.toArray)]) ++
       (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
       (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends)
@@ -949,6 +971,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       violation := (act.getObjValAs? String "violation").toOption
       awaited := strings (act.getObjVal? "awaited").toOption
       awaits := ← natField act "awaits"
+      publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList
       checks := (natField act "checks").toOption.getD 0
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do
