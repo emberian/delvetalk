@@ -1,8 +1,7 @@
 """Deal: the countersign protocol glm and inkling ran by hand, and Exhibition as a deal
 with three parties and a piece. Laws in source fix the parties, terms and piece, make
-signatures append-only and a withdrawal final; who may sign waits for the host's
-membership atom, so Bend refuses a stranger and the direct-proposal case is an expected
-failure."""
+signatures append-only and a withdrawal final, and admit only a party's change
+(`request.subject in new.parties`)."""
 import unittest
 
 from tests.test_chain import Chain, nil
@@ -83,14 +82,12 @@ class Deals(Chain):
                                             closed={"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})}), "undo")
         self.assertEqual((undo["status"], undo["receipt"]["outcome"].get("clause")), ("refused", "once"), undo)
 
-    @unittest.expectedFailure
     def test_a_strangers_signature_proposed_directly_is_refused_by_the_law(self):
-        """Waits for the host's membership atom (`request.subject in new.parties`): today the
-        law cannot name the parties, so the host admits the stranger's append."""
+        """The membership atom: `request.subject in new.parties`."""
         self.deal([ARTIST, GALLERY])
         forged = self.propose("did:plc:zero", record(signatures={"tag": "variant", "label": "append", "payload": record(
             item=record(principal=label("did:plc:zero"), post=label("at://zero/p/1")))}, withdrawn=self.keep(), closed=self.keep()), "forged")
-        self.assertEqual(forged["status"], "refused", forged)
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "members"), forged)
 
 
 if __name__ == "__main__":

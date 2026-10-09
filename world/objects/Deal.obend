@@ -29,10 +29,11 @@ record Edits:
   closed: Plans.Edit<Nat, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
-# What the law says today: the parties, terms and piece never change, a signature is
-# only ever appended, a withdrawal is final (closed goes 0 to 1 once: writeOnce reads
-# naturals only, and passes any text field unjudged). Who may sign is a membership atom the host
-# has queued (request.subject in new.parties); until then Bend refuses a stranger.
+# The law: only a party changes the deal; the parties, terms and piece never change; a
+# signature is only ever appended; a withdrawal is final (closed goes 0 to 1 once:
+# writeOnce reads naturals only, and passes any text field unjudged). Bend refuses a
+# stranger by name first.
+law members: request.kind == 0 implies request.subject in new.parties
 law fixed: unchanged(parties) and unchanged(terms) and unchanged(piece)
 law signed: appendOnly(signatures)
 law once: writeOnce(closed)
