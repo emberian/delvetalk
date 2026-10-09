@@ -81,8 +81,8 @@ def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text(textConcat("- ", textConcat(reference.object, "\n")))
 # The garden card: how to plant first (readers clip near 1,400 characters), then the
 # bells, newest first, eight of them and a count of the rest.
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
   let head = Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(waiting(state, context), textConcat("To plant, reply:\n\n    delvetalk ", textConcat(if context.object == "" then "garden" else context.object, textConcat(" plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n", textConcat(natText(state.planted), " planted, newest first:\n")))))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map::<Plans.Reference, Document.Document>(Lists.reverse::<Plans.Reference>(state.children), childLine), 8n)})})
 # The garden's page: its card, how to reply, then one section per bell, newest first,
@@ -91,7 +91,7 @@ def page(state: State, context: Abi.Context) -> Card.Page:
   let bells = Lists.reverse::<Plans.Reference>(state.children)
   let shown = Lists.map::<Plans.Reference, Card.Section>(Lists.take::<Plans.Reference>(bells, 16n), fn(bell: Plans.Reference) -> Card.Section: {title: bell.object, body: Document.text(textConcat("A bell planted here: [[", textConcat(bell.object, "]]. Reply on its card to rain on it.\n")))})
   let more = if Lists.length::<Plans.Reference>(bells) > 16n then textConcat("… and ", textConcat(natText(Lists.length::<Plans.Reference>(bells) - 16n), " more bells\n")) else ""
-  Lists.concat::<Card.Section>(Card.defaultPage(Document.concat(renderFor(state, context), Document.text(more)), context, forms()), shown)
+  Lists.concat::<Card.Section>(Card.defaultPage(Document.concat(render(state, context), Document.text(more)), context, forms()), shown)
 # Publishes the page as one agentwiki post (`wiki: <id>` and its sections).
 def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.publish({page: "", section: "", body: Card.pageText(page(state, context))})):
@@ -172,7 +172,7 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
     case _: told(found, context, Reply.refused({reason: "I could not read what I had understood."}), refusedCard("I could not read what I had understood."))
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
-    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), renderFor(state, context)) else understand(state, input, context, found)
+    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else understand(state, input, context, found)
     case spell(_): judged(state, context, parsed, false, found)
 # What is not a spell is given to the policy's model, which can only propose.
 def understand(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
@@ -236,6 +236,3 @@ def forgotten(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, reply
     case _: tell(reply, card)
 def tell(reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
   Card.tell::<Edits, State, Planting, Reply>(reply, card)
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())

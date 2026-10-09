@@ -5,10 +5,9 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Spell.obend as Spell
 import ./Plan.obend as Plans
-# The uniform card protocol. Every object has a pure renderFor(state, context) ->
+# The uniform card protocol. Every object has a pure render(state, context) ->
 # Document (its card as the reader in the context sees it: a member may see more than a
-# stranger), keeps render(state) = renderFor(state, Card.stranger()) for the host's
-# `card {object}` until the host passes the reader's context, exports forms() (the
+# stranger; the host's `card {object}` passes the reader's context), exports forms() (the
 # actions its card offers, as data) and door() (its line in a directory), and takes
 # receive {text, post, slot} as the one message the town sends.
 # route reads a reply: a spell naming this object and one of its forms becomes
@@ -175,7 +174,7 @@ def valueNatural(value: Form.Value) -> Nat:
   match value:
     case natural(n): n.value
     case _: 0n
-# The context of a reader nobody is: what render(state) shows, and what a card shows a
+# The context of a reader nobody is: what a card shows a
 # stranger. Mine is "(yours)" when the principal is the reader.
 def stranger() -> Abi.Context:
   {world: "", object: "", principal: "", caller: "", intent: "", height: 0n, inputOrigin: {kind: "", object: "", command: "", program: "", immediatelyPrevious: false}}

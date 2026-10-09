@@ -1,4 +1,4 @@
-"""Render with a point of view (FOUNDATION section 13, row 3): renderFor(state, context) is the
+"""Render with a point of view (FOUNDATION section 13, row 3): render(state, context) is the
 card as the reader in the context sees it. A member sees more than a stranger; the planter sees
 "(yours)". The card a non-acting reply gets is the reader's, so these drive real world-turns
 with an empty reply by different principals, and through world-card, which renders for its reader.

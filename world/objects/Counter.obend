@@ -35,11 +35,9 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): bumped::<Card.Reply>(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "bump"}))
-    case _: Card.answer::<Edits, State, Nat>(routed, context, forms(), renderFor(state, context))
+    case _: Card.answer::<Edits, State, Nat>(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it: the count is everyone's.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
-  render(state)
-def render(state: State) -> Document.Document:
+def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat("Count: ", natText(state.count)))
 def card(state: State) -> String:
-  Document.plain(render(state))
+  Document.plain(render(state, Card.stranger()))

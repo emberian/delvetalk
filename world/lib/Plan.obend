@@ -112,7 +112,7 @@ record Grant:
   until: Nat
 # Listing and cards. `objects` answers one page (64) of the ids the principal may view,
 # starting with `prefix`, after `after` in byte order. `card` runs the target's pure
-# `render(state)` under the reader's read authority (`denied` otherwise), so an object
+# `render(state, context)` (the reader's context) under the reader's read authority (`denied` otherwise), so an object
 # shows one of another state type without viewing its state.
 record Publish:
   page: String

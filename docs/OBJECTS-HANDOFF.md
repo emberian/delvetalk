@@ -19,15 +19,12 @@ the library).
   `create` does NOT call `seeded`: it lays the seed (a record naming some State fields)
   over `initial()`. `world-create` takes a whole State.
 * **The card protocol** (`world/lib/Card.obend`). Every object, Counter included, has
-  `renderFor(state, context) -> Document` (the card as the reader in the context sees it),
-  `render(state) = renderFor(state, Card.stranger())`, `forms() -> Card.Forms`, `door()`,
-  and `receive(state, input: Card.Heard, context)` with `Heard = {text, post, slot}`.
-  The host's `card {object}` and `world-card` still run `render` on the state alone: a
-  two-argument `render` is refused there with clause `render`. When the host passes the
-  reader's Context, rename `renderFor` to `render` and drop the wrapper (one mechanical
-  commit). The usual receive is `Card.route(text, context, forms())`, `act` dispatched
+  `render(state, context) -> Document` (the card as the reader in the context sees it; the
+  host's `card {object}` and `world-card` pass the reader's Context; `Card.stranger()` is
+  nobody's), `forms() -> Card.Forms`, `door()`, and `receive(state, input: Card.Heard,
+  context)` with `Heard = {text, post, slot}`. The usual receive is `Card.route(text, context, forms())`, `act` dispatched
   by action, anything else `Card.answer::<Edits, S, R>(routed, context, forms(),
-  renderFor(state, context))`.
+  render(state, context))`.
 * **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal,
   context)` (" (yours)"), `Card.stranger()`. A member sees more: an Env's events, a Wake's
   triggers and an Avatar's notes and follows are their owner's; a Deal shows a party
@@ -67,7 +64,7 @@ the library).
 
 * The closure cap is gone; Counter with Card runs 200 HTTP turns in 0.50 s on hbox
   (0.39 s bare). The REPL's `MAX_BODY` refuses Counter's closure with Card (413).
-* Ticks: Bell card of 1,025 rains 75,997; spell parse of 64 fields 57,044; an Avatar send
+* Ticks: Bell card of 1,025 rains 75,985; spell parse of 64 fields 57,044; an Avatar send
   to 32 observers 5,213.
 * An await only proves that some turn with that identity was admitted. A turn suspended
   on an object resumes refused `staleRoot` if anything wrote that object meanwhile,
@@ -87,7 +84,6 @@ enter, choose, leave), Commons (places, paths, ways in, gates: open, members, ob
 
 ## 4. Open
 
-* Rename `renderFor` to `render` once the host passes the reader's Context to `card`.
 * Lenses for objects without an owner (Place, Thing, Workshop, Garden's confirm) need an
   owner or a law first; today anyone's kind-0 write is admitted there.
 * `receive "merge"` recording `pageCheckpoint`: Garden has no owner to judge it.
@@ -106,5 +102,5 @@ enter, choose, leave), Commons (places, paths, ways in, gates: open, members, ob
 * "Directory and Anthology admit anyone's add/remove/admit": owner laws now.
 * Policy's teaching card showed `delvetalk garden plant, seed: …`, which the grammar
   does not parse (the action would be `plant,`); it reads `plant seed: …` now.
-* The brief said the host passes the reader's Context for `card {object}`: it does not
-  yet (foundation d1d2021), hence `renderFor`.
+* The host passes the reader's Context to `card` since foundation 9c306a5 (host5); the
+  interim `renderFor` is renamed to `render(state, context)`.

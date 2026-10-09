@@ -89,8 +89,8 @@ def handOver(state: State, to: Plans.Reference, from: Plans.Reference, context: 
     case _: held(context, to, state.location)
 def holding(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else textConcat("Held by ", textConcat(Card.handle(state.holder.object), "."))
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat(state.name, textConcat("\n", textConcat(state.description, textConcat("\n", textConcat(holding(state, context), "\n"))))))
 def forms() -> Card.Forms:
   Card.Forms.cons({head: {card: "", action: "acquire", fields: Form.Fields.nil()}, tail: Card.Forms.cons({head: {card: "", action: "give", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})
@@ -102,7 +102,4 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match routed:
     case act(a): if a.action == "acquire" then acquire(state, context) else give(state, {to: {world: context.world, object: Card.text(a.fields, "to")}}, context)
-    case _: Card.answerAs::<Edits, Place.State, Place.Done, Place.Done>(routed, context, forms(), renderFor(state, context), Place.Done.refused({reason: Card.reason(routed)}))
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())
+    case _: Card.answerAs::<Edits, Place.State, Place.Done, Place.Done>(routed, context, forms(), render(state, context), Place.Done.refused({reason: Card.reason(routed)}))

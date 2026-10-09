@@ -135,7 +135,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): acted(state, a.action, Card.text(a.fields, "choice"), context)
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 # A refusal offers the reader's card with the reason ("Not done: notOffered: ...").
 def acted(state: State, action: String, choice: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   judged(state, verdictFor(state, action, choice, context), context)
@@ -143,7 +143,7 @@ def verdictFor(state: State, action: String, choice: String, context: Abi.Contex
   if action == "enter" then enterVerdict(state, context) else if action == "choose" then chooseVerdict(state, choice, context) else leaveVerdict(state, context)
 def judged(state: State, verdict: Verdict, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match verdict:
-    case no(n): Card.answer::<Edits, State, {}>(Card.Routed.refused({reason: n.reason}), context, forms(), renderFor(state, context))
+    case no(n): Card.answer::<Edits, State, {}>(Card.Routed.refused({reason: n.reason}), context, forms(), render(state, context))
     case _: done::<Card.Reply>(verdict, context, doneReply)
 def choiceLine(c: Choice) -> Document.Document:
   Document.text(textConcat("  * ", textConcat(c.label, "\n")))
@@ -162,9 +162,7 @@ def passageCard(state: State, ps: Passage) -> Document.Document:
   let vars = Card.clipped(Lists.map::<Var, Document.Document>(state.vars, varLine), 4n)
   Document.Document.sequence({items: Document.Documents.cons({head: passageHead(state, ps), tail: Lists.concat::<Document.Document>(choices, vars)})})
 # The card as the reader in the context sees it: a present reader sees their passage.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+def render(state: State, context: Abi.Context) -> Document.Document:
   match here(state, context):
     case some(p): reading(state, p.value, context)
     case none(_): stranger(state, context)
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())
