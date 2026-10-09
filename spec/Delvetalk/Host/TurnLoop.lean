@@ -14,6 +14,7 @@
    turn: `plan not supported: <label>`. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Turn
+import Delvetalk.Document
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -60,6 +61,8 @@ structure TurnState where
   sends : List (String × String × Data) := []
   ticks : Nat
   plans : Nat := 0
+  /-- Rendered `offer` documents in order; the receipt carries them, the journal their count. -/
+  offers : List String := []
   limits : Json
 
 abbrev M := ExceptT Abort (StateM TurnState)
@@ -245,6 +248,15 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
       let delivery := deliveryId s.principal s.intent s.sends.length
       set { s with sends := s.sends ++ [(id, method, argument)] }
       respond bounds responseType "delivery" [.record [("id", .label delivery)]]
+  | .variant "offer" (.record f) =>
+    let some document := f.lookup "document" | evaluation "malformed offer plan"
+    let text ← liftEval (Delvetalk.Document.render document)
+    let s ← get
+    if s.offers.length ≥ Delvetalk.Document.maxOffersPerTurn
+        || (s.offers.foldl (· + ·.utf8ByteSize) text.utf8ByteSize) > Delvetalk.Document.maxOutputBytes then
+      evaluation "turn exceeds the offer capacity"
+    set { s with offers := s.offers ++ [text] }
+    respond bounds responseType "offered" [emptyRecord]
   | .variant label _ => evaluation s!"plan not supported: {label}"
   | _ => evaluation "plan is not a variant"
 end
@@ -312,9 +324,13 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   | .error (.request message) => if how.delivery.isSome then return refuse message else throw message
   | .error (.evaluation reason) => return refuse reason
   | .ok value =>
-    let (w', r) := commit w proposal (base ++ [("result", dataJson value)]) none
+    let offered := if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]
+    let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
       (sendsJson w req.principal req.intent ledger used st.sends)
-    return (w', turnReply r)
+    let reply := turnReply r
+    -- The texts leave on the reply only; the journal keeps their count.
+    return (w', if st.offers.isEmpty then reply else reply.setObjVal! "offers"
+      (Json.arr (st.offers.toArray.map fun t => Json.mkObj [("principal", toJson req.principal), ("text", toJson t)])))
 
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   runTurnWith w req {}

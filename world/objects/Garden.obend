@@ -42,3 +42,8 @@ def render(state: State) -> Document.Document:
   Document.text(textConcat("The Night Garden: ", textConcat(natText(state.planted), " planted\n")))
 def card(state: State) -> String:
   Document.plain(render(state))
+# Offers the card to the principal: the host renders the Document to text.
+def present(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.offer({document: render(state)})):
+    case offered(_): state.planted
+    case _: 0n
