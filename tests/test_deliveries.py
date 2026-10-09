@@ -181,9 +181,7 @@ class Exhaustion(Deliveries):
     def measure_spin(self):
         """Ticks of one spin turn, measured in a scratch world so no queue is left here."""
         import os
-        from tests.test_turn_world import Host
-        scratch = Host()
-        self.addCleanup(scratch.close)
+        scratch = self.spawn()
         scratch.send(op="world-open", path=os.path.join(self.dir.name, "scratch.journal"))
         scratch.send(op="world-create", principal="ember", identity="mk", object="m", modules=package(),
                      entry="initial", seed=record(count=nat(0), lit={"tag": "boolean", "value": False}))
@@ -250,8 +248,7 @@ class Restart(Deliveries):
     def test_a_tampered_ledger_in_a_sending_entry_breaks_the_chain(self):
         self.make("loop")
         self.turn("loop", "spin", arg("loop"))
-        self.host.close()
-        self.hosts.remove(self.host)
+        self.release()
         with open(self.path) as f:
             lines = f.read().splitlines()
         lines[-1] = lines[-1].replace('"depth":99', '"depth":999')

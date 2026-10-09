@@ -25,7 +25,7 @@ type Response = Plans.Response<State, Nat>
 %s
 def initial() -> State:
   {seen: 5n}
-def receive(state: State, input: {text: String, who: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def receive(state: State, input: {text: String, who: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
 """
 OFFERING = """  match perform(Plan.offer({document: Document.text(textConcat("hello ", input.who))})):
@@ -158,7 +158,8 @@ class Bridging(BridgeCase):
 
     @unittest.expectedFailure
     def test_real_garden_receive_end_to_end(self):
-        # Until the objects lane adds Garden.receive the host answers status=error with its own message.
+        # Garden.receive exists; until the host lane lands Plan.create the turn is refused with
+        # outcome {'class': 'evaluation', 'reason': 'plan not supported: create'}.
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': record(planted=nat(0))})
         self.assertEqual(r['status'], 'created', r)

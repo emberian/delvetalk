@@ -8,13 +8,13 @@ binary (read-only, built elsewhere). Run from the repository root:
 import json
 import os
 import re
-import subprocess
 import unittest
+
+from tests import host
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 WORLD = os.path.join(ROOT, "world")
-BIN = os.environ.get("DELVETALK_OBEND", "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend")
 IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 DEF = re.compile(r"^def (\w+)(<[^>]*>)?\(.*\) -> (.*):$", re.M)
 
@@ -49,9 +49,7 @@ def closure(name, seen=None, out=None):
 
 
 def check(request):
-    done = subprocess.run([BIN], input=json.dumps(request) + "\n",
-                          capture_output=True, text=True, timeout=300)
-    return json.loads(done.stdout.strip().splitlines()[0])
+    return host.check(request)
 
 
 def compile_job(modules, entry):
