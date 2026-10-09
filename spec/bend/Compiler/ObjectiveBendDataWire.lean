@@ -11,8 +11,28 @@ open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
-/-- Typed data on the wire: typed-values-v1 plus `variant`. -/
-partial def dataJson : Data → Json
+/-- The elements of a proper list: a chain of `nil` / `cons {head, tail}` variants ending in
+`nil {}`. Anything else (a `cons` whose tail is not a list, extra fields) is not a list and
+stays a variant. Iterative: the chain may be long. -/
+partial def listItems? (data : Data) : Option (Array Data) :=
+  let rec go (d : Data) (acc : Array Data) : Option (Array Data) :=
+    match d with
+    | .variant "nil" (.record []) => some acc
+    | .variant "cons" (.record [("head", h), ("tail", t)])
+    | .variant "cons" (.record [("tail", t), ("head", h)]) => go t (acc.push h)
+    | _ => none
+  go data #[]
+
+/-- A list's elements as the `nil` / `cons` chain the machine and `Data.conforms` see. -/
+def listData (items : Array Data) : Data :=
+  items.foldr (fun h t => .variant "cons" (.record [("head", h), ("tail", t)])) (.variant "nil" (.record []))
+
+/-- Typed data on the wire: typed-values-v1 plus `variant`, and `list`: a proper list is
+`{"tag":"list","items":[...]}`, not a nested chain. The decoder still accepts the chain. -/
+partial def dataJson (data : Data) : Json :=
+  match listItems? data with
+  | some items => Json.mkObj [("tag",toJson "list"),("items",Json.arr (items.map dataJson))]
+  | none => match data with
   | .natural n => Json.mkObj [("tag",toJson "natural"),("value",toJson (toString n))]
   | .boolean b => Json.mkObj [("tag",toJson "boolean"),("value",toJson b)]
   | .label s => Json.mkObj [("tag",toJson "label"),("value",toJson s)]
@@ -23,7 +43,10 @@ partial def dataJson : Data → Json
 /-- Exact UTF-8 size of `dataJson value |>.compress`, without allocating its
 nested JSON wrapper tree or one whole encoded string. JSON quoting is delegated
 only for leaf strings, so escaping follows Lean's physical wire printer. -/
-partial def dataJsonBytes : Data → Nat
+partial def dataJsonBytes (data : Data) : Nat :=
+  match listItems? data with
+  | some items => 25 + items.foldl (fun total item => total + dataJsonBytes item) 0 + (items.size - 1)
+  | none => match data with
   | .natural n => 26 + (toJson (toString n)).compress.utf8ByteSize
   | .boolean b => if b then 30 else 31
   | .label s => 24 + (toJson s).compress.utf8ByteSize
@@ -49,6 +72,9 @@ def decodeData : Nat → Json → Except String Data
       let fields ← (← json.getObjVal? "fields").getArr?
       return .record (← fields.toList.mapM fun field => do
         return (← field.getObjValAs? String "name", ← decodeData fuel (← field.getObjVal? "value")))
+    else if tag == "list" then
+      let items ← (← json.getObjVal? "items").getArr?
+      return listData (← items.mapM (decodeData fuel))
     else if tag == "variant" then
       return .variant (← json.getObjValAs? String "label") (← decodeData fuel (← json.getObjVal? "payload"))
     else throw "unknown response data tag"

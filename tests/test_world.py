@@ -12,6 +12,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import binary
+from tests.wire import cid_of, relist
 BINARY = binary()
 
 COUNTER = """edition ObjectiveBend 1
@@ -62,7 +63,7 @@ class Host:
     def send(self, **request):
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
-        return json.loads(self.proc.stdout.readline())
+        return relist(json.loads(self.proc.stdout.readline()))
 
     def close(self):
         self.proc.stdin.close()
@@ -122,7 +123,7 @@ class CreateAndView(WorldCase):
         v = self.view()
         self.assertEqual((v["status"], v["version"]), ("viewed", 0))
         self.assertEqual(v["state"], seed(3))
-        self.assertEqual(len(v["pin"]), 64)
+        self.assertTrue(v["pin"].startswith("bafyrei"), v["pin"])  # a CID: 59 characters
         self.assertEqual(r["receipt"]["outcome"]["pin"], v["pin"])
 
     def test_view_of_unknown_object_is_a_named_silence(self):
@@ -405,9 +406,7 @@ class Tamper(WorldCase):
             entry = json.loads(line)
             entry["note"] = "forged"
             del entry["hash"]
-            from hashlib import sha256
-            body = json.dumps(entry, sort_keys=True, separators=(",", ":"))
-            entry["hash"] = sha256(body.encode()).hexdigest()
+            entry["hash"] = cid_of(entry)
             return json.dumps(entry, sort_keys=True, separators=(",", ":"))
         self.rewrite(1, forge)
         r = self.open_fresh()

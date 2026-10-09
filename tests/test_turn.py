@@ -4,11 +4,12 @@ Each test names what would refute it. One host process per test unless the test
 is about process boundaries.
 """
 import copy
-import hashlib
 import json
 import os
 import subprocess
 import unittest
+
+from tests.wire import cid_of, relist
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import binary
@@ -75,12 +76,11 @@ def variant(name, payload=None):
 
 
 def redigest(checkpoint):
-    """Recompute a checkpoint's digest after editing it (SHA-256 of the compact,
-    key-sorted JSON of its package, binding and tokens), so a test can get past the
+    """Recompute a checkpoint's digest after editing it (the CID of the canonical
+    DAG-CBOR of its package, binding and tokens), so a test can get past the
     digest to the decoder or to the binding checks."""
     body = {k: checkpoint[k] for k in ("packetSha256", "object", "principal", "intent", "rootsDigest", "tokens")}
-    text = json.dumps(body, separators=(",", ":"), ensure_ascii=False, sort_keys=True)
-    checkpoint["digest"] = hashlib.sha256(text.encode()).hexdigest()
+    checkpoint["digest"] = cid_of(body)
     return checkpoint
 
 
@@ -193,7 +193,7 @@ class Host:
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
         assert line, "host closed its output (crash)"
-        return json.loads(line)
+        return relist(json.loads(line))
 
     def compile(self, source, entry, library=()):
         reply = self.send({"op": "compile", "entry": entry,
