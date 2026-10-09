@@ -32,67 +32,90 @@ establish neither deployment nor a general proof.
 
 ## Remaining work
 
-**Architectural correction:** the [Bend implementation decision](docs/design/BEND.md)
-owns the replacement direction. Its shared prelude, text/collection support,
-reference semantics, removal of competing expression interpreters, source examples
-and scratch editing are design/build work, not completed capabilities. Existing
-workflow helpers must be replaced at their consumers. See also
+The [Bend implementation decision](docs/design/BEND.md) owns the replacement
+direction: behavior and interpretation live in source; host adapters supply
+physical custody and I/O. Shared source ABI, text primitives, recursive encounter
+lists, source factories and reusable scene execution now exist. Consumer cutovers
+and their composition still need qualification. See also
 [composition](docs/design/COMPOSITION.md) and [encounters](docs/design/ENCOUNTERS.md).
-The previous integration wave is checkpointed at `f2fb492`. Current ownership:
+Current ownership:
 
 | Work | Owner |
 | --- | --- |
-| Sealed shared source prelude; remove repeated ABI declarations at consumers | `bend_language` |
-| Hosted text primitives with explicit semantics, budget and source provenance | `bend_execution` |
-| Source preparation and Editor cutover; remove Python recipe interpretation | `backlog_archaeology` |
-| Reusable Bend scene runtime; remove Python control-flow generation | `spween_lowering` |
-| Recursive action-list view ABI with heterogeneous typed inputs | `portal_authored_affordance` |
-| Bend tickets/exhibitions and consumer cutover; remove behavioral generators | `world_design_critique` |
-| Collection-based consent/mailboxes with explicit capacities and epochs | `inhabit_builder` |
-| Measured 8–200 element source collection workloads; isolate actual limits | `authored_action_examples` |
-| Source pins, integration, repository cleanup and scoped checkpoints | Root |
+| Preparation retained-value ABI, source Editor and workshop joins | `backlog_archaeology` |
+| Shared binder ABI and native template integration | `bend_language`, `template_language` |
+| Atomic root capture and Portal/Town consumers | `receiving_review`, `portal_bridge` |
+| Source Candidate/Factory consumer cleanup and adoption cards | `world_design_critique` |
+| TownForge/stateful workshop source conversion | `town_conformance_room` |
+| Joined native generation, serial builds and exact closure evidence | `compiler_queue` |
+| Source conversation, typed documents and actual target interaction | `document_semantics` |
+| Source interpretation/prompt policy and physical model jobs | `model_encounters` |
+| Document presentation and authenticated studio | `delvetalk_js` |
+| Source membership, private heaps and authenticated HTTP joins | `world_foundations`, `protocol_workflow`, `portal_adversarial` |
+| Integration, browser acceptance, fresh deployment and scoped checkpoints | Root |
 
-Text-capable binaries are built in an isolated snapshot; preparation is integrating.
 At most two native compiler seats are used. Builds use
 independent writable package snapshots or explicit serial handoff; shared binary
 replacement waits for an announced freeze. Pure source lanes use stable binaries.
 
-Collection-based appointments now have 16 focused checks; source ticket/exhibition
-ports pass their receiving journeys and remove their behavioral generators. Shared
-prelude and action-list projection are checkpointed; other source replacements
-await combined receiver qualification. Factory/Candidate replacement is now owned
-by `card_affordance_pass`, coordinated with native preparation.
+Source Garden has 32 plantings, attribution, cuttings and paged history; ten joined
+tests pass. Authored Spween Scene modules add methods and message receivers through
+the generic binder. Source allocation and constrained law amendments have focused
+receiving evidence. These results still need the fresh shared-world seed.
 
-Further concrete work remains: physical time observation and a source-authored
+Further work without an active implementation owner: physical time observation and a source-authored
 appointment relationship; bounded message descendants and governed terminal
 settlement; contract workshop and commit/reveal ports; collapse remaining JSON
-expression/profile ladders; room-local intentions/reference clarification; scratch
-editing; physical repository moves. These are not silently assigned or completed
-by the current lanes. Shared source APIs should make these subsequent cuts smaller.
+expression/profile ladders; deeper scratch editing; physical repository moves.
+Shared source APIs should make these subsequent cuts smaller.
 
 ### Integration findings
 
-- Full-preimage requests duplicate retained code/state. The expanded native limit
-  is now 1 MiB in source; authored input remains 64 KiB. Qualify actual scene
-  adoption and 200-entry gallery after rebuilding. A root-reference transport
-  should ultimately remove repeated bodies rather than keep raising limits.
-- Preparation questions/refusals must remain source-authored no-effect outcomes
-  through Town and Portal. Preparation and portal lanes own this joint repair.
+- Root references retain exact preimages behind collision-checked locators.
+  Atomic capture now joins roots and references at one head; final source
+  preparation uses explicit inspected fields or opaque held values. Combined
+  native/consumer tests must qualify this generation before installation.
+- Preparation questions/refusals remain source-authored no-effect outcomes.
+  Their Portal/Town joins need rechecking against the final preparation ABI.
 - `World.readObject` currently ignores principal. Exact captured inputs are not
   read authorization; governed acquisition needs an explicit native policy and
   receiving-path tests before claiming private inspection.
-- Scene behavior is now authored in Bend, but the workshop still fixes the final
-  `start`/`choose` interface. An explicit authored final Scene module should let
-  inhabitants add methods while preserving sealed imports and generic binding.
-- Shared source continuation offers, domain-preserving paged collections, and
-  bounded emission framing should replace repeated consumer recipes. Old-program
-  durable events need an explicit governed settlement path, never silent deletion.
-- Source alias updates need investigation: domain constructors currently work
-  around rejected `extend(state, patch)` expressions. The language lane owns it.
+- Old-program durable events need a governed settlement path, never silent
+  deletion. Existing message admission is not that settlement mechanism.
+- Source alias/row conversion now uses the checker's existing type agreement
+  relation. Template lowering must preserve source locations and exact provenance.
 
 Opening requires a coherent fresh seed, installed game, named seats and agreed
 private move handoff. Capture actual cards before preparing publication bindings.
 Focused tests do not close these integration obligations.
+
+## Current access and top-level work
+
+Ember selected a [living conversational document](docs/design/TOPLEVEL.md) as
+DelveTalk's default top level: forms, prose, local notation and REPL participate
+in one source-authored encounter. Typed documents, native template lowering and
+source interpretation are being implemented together. Browser/Town renderers
+preserve offered meaning; neither defines another action grammar.
+
+- Verified Delve proof-of-control credentials: `clerk_enrollment`; physical token
+  custody and fixed-provider verification, no world grants.
+- Isolated private native heaps, source notebook/Desk and shared-law access:
+  `protocol_workflow`; independent isolation audit by `core_audit`.
+- GET/POST `/AGENTS.md` and small authenticated API: `portal_adversarial`;
+  browser studio/encounter integration: `delvetalk_js`.
+- Source-owned membership and constrained law amendments: `world_foundations`
+  and `card_affordance_pass`; no Python grant-policy interpreter.
+- Deployment candidate in dregg-infra: `live_clerk`; routing/unit checks pass,
+  activation awaits combined application/native and actual hosted acceptance.
+- Native atomic root-plus-reference capture: `receiving_review`; consumer join:
+  `portal_bridge`. Native preparation must preserve retained values without
+  repeatedly serializing typed state through an expanding generic Value wrapper.
+
+Qualified native snapshot 084835 has been installed locally after exact source
+and binary verification; later atomic-capture/amendment/preparation changes need
+a new joined generation. The public website still runs an older read-only garden.
+Fresh source garden, source-authored scenes and new account services must be
+qualified and seeded on the actual deployment, not inferred from local tests.
 
 ## Boundaries
 
