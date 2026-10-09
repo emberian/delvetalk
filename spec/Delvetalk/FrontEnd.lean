@@ -12,20 +12,18 @@ open ObjectiveBendFrontEnd
 set_option autoImplicit false
 
 structure Parsed where
-  ast : Json
+  ast : ObjectiveBendSurface.Module
   /-- Equivalent ordinary source for inspection, with the generated import
   made explicit. Package identity still uses the original source bytes. -/
   expandedSource : String
 
-def parseExpanded (name : String) (expanded : DocumentTemplate.Expansion) : Except Diagnostic Json := do
+def parseExpanded (name : String) (expanded : DocumentTemplate.Expansion) :
+    Except Diagnostic ObjectiveBendSurface.Module := do
   match ObjectiveBendParse.parseObjective expanded.source with
   | .ok ast => return expanded.remap ast
   | .error diagnostic =>
     let span := if expanded.origins.isEmpty then diagnostic.span else
-      diagnostic.span.map fun span =>
-        let start := expanded.position span.start
-        let stop := expanded.position span.stop
-        { span with start := start.byte, stop := stop.byte, line := start.line }
+      diagnostic.span.map expanded.span
     throw { stage := "objective-source-parse", message := diagnostic.message, span := span, sourceModule := some name }
 
 /-- The sealed package loader resolves this exact edge to an earlier supplied
@@ -36,18 +34,12 @@ def parse (name source : String) : Except Diagnostic Parsed := do
     { stage := "document-template", message, sourceModule := some name }
   let ast ← parseExpanded name expanded
   let some binding := expanded.binding | return ⟨ast, source⟩
-  let imports := ((ast.getObjVal? "imports").bind Json.getArr?).toOption.getD #[]
-  let some dependency := imports.find? (fun edge =>
-      (edge.getObjValAs? String "path").toOption == some "./Document.obend")
+  let some dependency := ast.imports.find? (·.path == "./Document.obend")
     | throw { stage := "document-template", sourceModule := some name, message := "doc literals require an explicit import of ./Document.obend (any alias is allowed); no document library is supplied implicitly" }
-  let edge := Json.mkObj [("path", toJson "./Document.obend"), ("alias", toJson binding),
-    ("span", (dependency.getObjVal? "span").toOption.getD Json.null)]
-  let fields := (ast.getObj?).toOption.map (·.toList) |>.getD []
-  let ast := Json.mkObj (fields.map fun (key, value) =>
-    (key, if key == "imports" then Json.arr (imports.push edge) else value))
-  return ⟨ast, "import ./Document.obend as " ++ binding ++ "\n" ++ expanded.source⟩
+  let edge : ObjectiveBendSurface.Import := ⟨"./Document.obend", binding, dependency.span⟩
+  return ⟨{ ast with imports := ast.imports ++ [edge] }, "import ./Document.obend as " ++ binding ++ "\n" ++ expanded.source⟩
 
-def parseSource (name source : String) : Except Diagnostic Json := do
+def parseSource (name source : String) : Except Diagnostic ObjectiveBendSurface.Module := do
   return (← parse name source).ast
 
 /-- A closure through elaboration, checked once (the normal typed frontend on hosted parsed
@@ -57,7 +49,7 @@ depend on the entry. Lowering an entry from it (`Prepared.lower`) selects the re
 builds the proposal and the packet, nothing more. -/
 structure Prepared where
   modules : List SourceModule
-  asts : List Json
+  asts : List ObjectiveBendSurface.Module
   decoded : List ObjectiveBendElaborate.Module
   elaborated : ObjectiveBendElaborate.Elaborated
   instances : Json
@@ -67,7 +59,8 @@ def instancesNote (instances : Json) (diagnostic : Diagnostic) : Diagnostic :=
     (if instances == Json.arr #[] then "" else "; selected generic instances: " ++ instances.compress) }
 
 /-- Specialize, elaborate and check a closure whose modules are already parsed. -/
-def prepareParsed (modules : List SourceModule) (asts : List Json) (limits : Json) : Except Diagnostic Prepared := do
+def prepareParsed (modules : List SourceModule) (asts : List ObjectiveBendSurface.Module) (limits : Json) :
+    Except Diagnostic Prepared := do
   if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
   let sources := (modules.zip asts).map fun (module, ast) => Generics.Source.mk module ast
   let specialized ← (Generics.run sources.toArray).mapError fun message =>

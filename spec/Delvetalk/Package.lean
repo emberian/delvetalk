@@ -47,14 +47,15 @@ private def lift {α : Type} (x : Except String α) : Except Diagnostic α := x.
 
 /-- A sealed in-memory package: imports name earlier modules explicitly supplied
 by the caller. The adapter never reads an import path from the filesystem. -/
-def modulesAndAsts (j : Json) : Except Diagnostic (List SourceModule × Json × List Json) := do
+def modulesAndAsts (j : Json) :
+    Except Diagnostic (List SourceModule × Json × List Minidregg.Compiler.ObjectiveBendSurface.Module) := do
   let raw ← match j.getObjVal? "modules" with
     | .ok value => lift value.getArr?
     | .error _ => pure #[Json.mkObj [("name", toJson "Package"), ("source", ← lift (j.getObjVal? "source"))]]
   if raw.isEmpty || raw.size > Bounds.maxModules then
     throw (requestRefusal s!"package requires 1..{Bounds.maxModules} modules")
   let mut modules : List SourceModule := []
-  let mut asts : List Json := []
+  let mut asts : List Minidregg.Compiler.ObjectiveBendSurface.Module := []
   for value in raw do
     let name ← lift (value.getObjValAs? String "name")
     let source ← lift (value.getObjValAs? String "source")
@@ -63,13 +64,11 @@ def modulesAndAsts (j : Json) : Except Diagnostic (List SourceModule × Json × 
     if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal "source exceeds 512 KiB")
     let ast ← FrontEnd.parseSource name source
     let mut imports : List LockedImport := []
-    for edge in (← lift ((← lift (ast.getObjVal? "imports")).getArr?)) do
-      let path ← lift (edge.getObjValAs? String "path")
-      let some target := modules.zipIdx.find? (fun (m,_) => path == "./" ++ m.name ++ ".obend")
+    for edge in ast.imports do
+      let some target := modules.zipIdx.find? (fun (m,_) => edge.path == "./" ++ m.name ++ ".obend")
         | throw { stage := "package-request", message := "import must name an earlier supplied module",
                   sourceModule := some name }
-      imports := imports ++ [⟨path, ← lift (edge.getObjValAs? String "alias"), ← lift (edge.getObjVal? "span"),
-        target.2, target.1.name, target.1.sha256⟩]
+      imports := imports ++ [⟨edge.path, edge.importAlias, edge.span, target.2, target.1.name, target.1.sha256⟩]
     let module : SourceModule := ⟨name,source,Minidregg.Compiler.Sha256.hexString source,imports⟩
     checkImports module ast
     modules := modules ++ [module]
@@ -103,15 +102,11 @@ def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
   else { d with hint := Delvetalk.Hints.hintFor (requestSources j) d.sourceModule (d.span.map (·.line)) }
 
 /-- A parsed module's function definitions with their parameters' declared type texts. -/
-def signaturesOf (ast : Json) : List (String × List String) :=
-  let declarations := ((ast.getObjVal? "declarations" >>= Json.getArr?).toOption.getD #[]).toList
-  declarations.filterMap fun d => do
-    guard ((d.getObjValAs? String "kind").toOption == some "function")
-    let signature ← (d.getObjVal? "signature").toOption
-    let fname ← (signature.getObjValAs? String "name").toOption
-    let parameters := ((signature.getObjVal? "parameters" >>= Json.getArr?).toOption.getD #[]).toList
-    let types := parameters.filterMap fun p => (p.getObjValAs? String "type").toOption
-    return (fname, types.map Minidregg.Compiler.ObjectiveBendElaborate.trimStr)
+def signaturesOf (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (String × List String) :=
+  ast.decls.filterMap fun
+    | .function signature _ _ _ =>
+      some (signature.name, signature.params.map fun p => Minidregg.Compiler.ObjectiveBendElaborate.trimStr p.type)
+    | _ => none
 
 def functionSignatures (name source : String) : Except Diagnostic (List (String × List String)) := do
   return signaturesOf (← FrontEnd.parseSource name source)
@@ -207,7 +202,7 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
   let accepted ← (accept lowered).mapError (FrontEnd.instancesNote prepared.instances)
   let packet := lowered.packet
   let entryModule := modules.getLast!
-  let signatures := signaturesOf (prepared.asts.getLastD .null)
+  let signatures := signaturesOf (prepared.asts.getLastD default)
   let globals := lowered.output.globalRow
   let law ← lawShape entryModule.name signatures globals lowered.output.sumBounds
   let pin := Delvetalk.Canonical.cidJson packet
@@ -232,17 +227,12 @@ def compileStructured (j : Json) : Except Diagnostic Compiled := do
   return (compiled.artifact, compiled.entry.type, compiled.laws)
 
 /-- The functions of a module with the span of each body, in source order. -/
-def functionBodies (ast : Json) : List (String × Minidregg.Compiler.ObjectiveBendParse.Span) :=
-  match ast.getObjVal? "declarations" >>= Json.getArr? with
-  | .error _ => []
-  | .ok declarations => declarations.toList.filterMap fun d => do
-      guard ((d.getObjValAs? String "kind").toOption == some "function")
-      let name ← (d.getObjVal? "signature" >>= (·.getObjValAs? String "name")).toOption
-      let span ← (d.getObjVal? "body" >>= (·.getObjVal? "span")).toOption
-      let start ← (span.getObjValAs? Nat "start").toOption
-      let stop ← (span.getObjValAs? Nat "end").toOption
-      let line ← (span.getObjValAs? Nat "line").toOption
-      return (name, ⟨start, stop, line⟩)
+def functionBodies (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) :
+    List (String × Minidregg.Compiler.ObjectiveBendSurface.Span) :=
+  ast.decls.filterMap fun
+    | .function signature _ body _ => some (signature.name, match body with
+      | .expr _ s | .cases _ _ s | .letB _ _ _ _ s => s)
+    | _ => none
 
 /-- The elaborator and the checker refuse without a position. For a refusal that has none,
 find the first function (in module, then source order) that on its own, with the modules
@@ -688,7 +678,8 @@ def job (j : Json) : Except String Json := do
       total := total + source.utf8ByteSize
       if total > Bounds.maxPackageSourceBytes then throw "source import request exceeds 1 MiB"
       let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
-      parsed := parsed.push (Json.mkObj [("name", toJson name), ("imports", ← ast.getObjVal? "imports")])
+      parsed := parsed.push (Json.mkObj [("name", toJson name),
+        ("imports", Json.arr (ast.imports.map (·.json)).toArray)])
     return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]
   | "template-expand" =>
     let source ← j.getObjValAs? String "source"

@@ -1,38 +1,31 @@
-/- Bounded rank-1 source specialization. Its output contains only the ordinary
-module AST consumed by the existing elaborator and proof-producing checker. -/
+/- Bounded rank-1 source specialization. It rewrites the parsed surface
+(`Compiler.ObjectiveBendSurface`) and hands the elaborator ordinary modules: every
+`f::<T>` becomes a reference to the instance `__generic_N` of a generated module,
+every `Data.of::<T>(v)` the `dataOf` node, and every type text names its instances. -/
 import Compiler.ObjectiveBendFrontEnd
 import Delvetalk.DocumentTemplate
 namespace Delvetalk.Generics
-open Lean
+open Lean (Json toJson)
 open Minidregg.Compiler
 open ObjectiveBendFrontEnd
+open ObjectiveBendSurface (Span Param Expr Body Signature Decl)
 set_option autoImplicit false
 
 def maxInstances : Nat := 256
+/-- Surface nodes visited, over all rewriting. -/
 def maxExpansionNodes : Nat := 262144
 def maxExpansionStringBytes : Nat := 8388608
 def maxNesting : Nat := 256
 
-def field (j : Json) (key : String) : Json := (j.getObjVal? key).toOption.getD .null
-def string (j : Json) (key : String) : String := (j.getObjValAs? String key).toOption.getD ""
-def array (j : Json) (key : String) : Array Json := ((j.getObjVal? key).bind Json.getArr?).toOption.getD #[]
-def setField (j : Json) (key : String) (value : Json) : Json :=
-  let entries := (j.getObj?).toOption.map (·.toList) |>.getD []
-  Json.mkObj ((entries.filter (fun p => p.1 != key)) ++ [(key, value)])
-def kind (j : Json) : String := string j "kind"
-def declName (j : Json) : String :=
-  if kind j == "function" then string (field j "signature") "name" else string j "name"
-def parameters (j : Json) : List String := (array j "typeParameters").toList.filterMap (·.getStr?.toOption)
-
 structure Source where
   module : SourceModule
-  ast : Json
+  ast : ObjectiveBendSurface.Module
   deriving Inhabited
 
 structure Declaration where
   origin : Nat
   name : String
-  ast : Json
+  ast : Decl
 
 inductive GType where
   | atom (name : String)
@@ -65,11 +58,10 @@ structure Instance where
   name : String
   origin : Nat
   arguments : List GType
-  ast : Json := .null
+  ast : Option Decl := none
 
 structure State where
   sources : Array Source
-  declarations : List Declaration
   sealedIdentities : Array String
   generatedModule : String
   generatedAlias : String
@@ -146,7 +138,8 @@ partial def render (target : String) : GType → M String
     return "{" ++ String.intercalate ", " fields ++ "}"
   | .overlay a b => do return (← render target a) ++ " with " ++ (← render target b)
 
-def ref (module name : String) (original : Json) : M Json := do
+/-- `Alias.name` for a declaration of `module`, at the span of the reference it replaces. -/
+def ref (module name : String) (span : Span) : M Expr := do
   let s ← get
   let alias ← if module == s.generatedModule then pure s.generatedAlias else
     match s.aliases.find? (·.2 == module) with
@@ -154,23 +147,31 @@ def ref (module name : String) (original : Json) : M Json := do
     | none => throw "generic reference module missing"
   spendString alias
   spendString name
-  return Json.mkObj [("kind", toJson "member"),
-    ("target", Json.mkObj [("kind", toJson "var"), ("name", toJson alias), ("span", field original "span")]),
-    ("name", toJson name), ("span", field original "span")]
+  return .member (.var alias span) name span
 
-def path (locals : List String) (j : Json) : Option String := do
-  if kind j == "var" then
-    let name := string j "name"
-    if locals.contains name then none else some name
-  else if kind j == "member" && kind (field j "target") == "var" then
-    let alias := string (field j "target") "name"
-    if locals.contains alias then none else some (alias ++ "." ++ string j "name")
-  else none
+/-- The declaration path an unshadowed `name` or `Alias.name` reference spells. -/
+def path (locals : List String) : Expr → Option String
+  | .var name _ => if locals.contains name then none else some name
+  | .member (.var alias _) name _ => if locals.contains alias then none else some (alias ++ "." ++ name)
+  | _ => none
 
 def trim := ObjectiveBendElaborate.trimStr
 def split := ObjectiveBendElaborate.splitTop
 def inner (s : String) : String := String.ofList (s.toList.drop 1 |>.dropLast)
 
+/-- Where a rewrite happens: the declaration's own module, the module its output lands in,
+the type-parameter bindings, and whether references to declarations are lifted to
+qualified ones (inside an instance, which lives in the generated module). -/
+structure Site where
+  origin : Nat
+  target : String
+  bindings : List (String × GType)
+  lifted : Bool
+
+/- Rewriting visits children in the order the AST JSON's sorted keys put them (`args`
+before `callee`, `inherited` before `specification`, a method's `body` before its
+signature, a spec's claims, methods, requirements, then target): instances are numbered
+in the order they are first met, and those numbers are in every packet. -/
 mutual
 def typeOf : Nat → Nat → List (String × GType) → String → M GType
   | 0, _, _, _ => throw "generic type nesting capacity"
@@ -212,22 +213,23 @@ def typeOf : Nat → Nat → List (String × GType) → String → M GType
       let args ← (split argsText ",").mapM (typeOf fuel origin bindings)
       if ["Prototype", "Extension", "Specification", "Activity"].contains name then return .applied name args
       let some declaration ← resolve origin name | throw ("unknown generic type " ++ name)
-      if kind declaration.ast != "sum" then throw ("generic type is not a sum: " ++ name)
+      let .sum .. := declaration.ast | throw ("generic type is not a sum: " ++ name)
       return ← instantiate fuel declaration args
     if ["Nat", "Bool", "String", "Data", "_", "", "Self", "Super", "SpecMeta", "SpecClaims"].contains text then
       return .atom text
     let some declaration ← resolve origin text | throw ("unknown source type in specialization: " ++ text)
-    if !(parameters declaration.ast).isEmpty then throw ("generic type needs explicit arguments: " ++ text)
-    if kind declaration.ast == "typeAlias" then
-      return ← typeOf fuel declaration.origin [] (string declaration.ast "type")
-    if kind declaration.ast != "sum" && kind declaration.ast != "record" then throw ("not a source type: " ++ text)
-    return .named (← originModule declaration.origin).name declaration.name (← declarationKey declaration)
+    if !declaration.ast.typeParameters.isEmpty then throw ("generic type needs explicit arguments: " ++ text)
+    match declaration.ast with
+    | .typeAlias _ type _ => return ← typeOf fuel declaration.origin [] type
+    | .sum .. | .record .. =>
+      return .named (← originModule declaration.origin).name declaration.name (← declarationKey declaration)
+    | _ => throw ("not a source type: " ++ text)
 
 def instantiate : Nat → Declaration → List GType → M GType
   | 0, _, _ => throw "generic instance nesting capacity"
   | fuel + 1, declaration, arguments => do
     spend
-    let binders := parameters declaration.ast
+    let binders := declaration.ast.typeParameters
     if binders.isEmpty then throw ("declaration is not generic: " ++ declaration.name)
     if binders.length != arguments.length then throw ("generic type arity: " ++ declaration.name)
     let declarationId ← declarationKey declaration
@@ -254,125 +256,297 @@ def instantiate : Nat → Declaration → List GType → M GType
         arguments := arguments }
       active := (declarationId, argumentId) :: s.active }
     let generated := (← get).generatedModule
-    let ast ← rewrite fuel declaration.origin generated (binders.zip arguments) [] true declaration.ast
-    let ast := if kind ast == "function" then
-        setField ast "signature" (setField (field ast "signature") "name" (toJson name))
-      else setField ast "name" (toJson name)
-    let ast := setField ast "typeParameters" (toJson ([] : List String))
-    modify fun s => { s with instances := s.instances.modify index (fun i => { i with ast := ast }), active := s.active.tail }
+    let site : Site := ⟨declaration.origin, generated, binders.zip arguments, true⟩
+    let ast ← match ← rewriteDecl fuel site [] declaration.ast with
+      | .function sig _ body span => pure (Decl.function { sig with name := name } (some []) body span)
+      | .sum _ cases _ span => pure (Decl.sum name cases [] span)
+      | _ => throw ("declaration is not generic: " ++ declaration.name)
+    modify fun s => { s with instances := s.instances.modify index (fun i => { i with ast := some ast }), active := s.active.tail }
     return .named generated name key
 
-def rewrite : Nat → Nat → String → List (String × GType) → List String → Bool → Json → M Json
-  | 0, _, _, _, _, _, _ => throw "generic AST nesting capacity"
-  | fuel + 1, origin, target, bindings, locals, lifted, j => do
+/-- A type text as the target module must spell it. -/
+def rewriteType : Nat → Site → String → M String
+  | 0, _, _ => throw "generic AST nesting capacity"
+  | fuel + 1, site, raw => do
+    if site.bindings.isEmpty then
+      if let some rendered := (← get).rendered[(site.origin, site.target, raw)]? then return rendered
+    let rendered ← render site.target (← typeOf fuel site.origin site.bindings raw)
+    spendString rendered
+    if site.bindings.isEmpty then
+      modify fun s => { s with rendered := s.rendered.insert (site.origin, site.target, raw) rendered }
+    return rendered
+
+def rewriteParam : Nat → Site → Param → M Param
+  | 0, _, _ => throw "generic AST nesting capacity"
+  | fuel + 1, site, p => do
     spend
-    let parameterNames := (array j "parameters").toList.map (fun parameter => string parameter "name")
-    if let .str text := j then spendString text
-    let implicitNames := if kind j == "spec" then ["self", "super"] else []
-    let recur := rewrite fuel origin target bindings (parameterNames ++ implicitNames ++ locals) lifted
-    let rewriteType := fun raw => do
-      if bindings.isEmpty then
-        if let some rendered := (← get).rendered[(origin, target, raw)]? then return rendered
-      let rendered ← render target (← typeOf fuel origin bindings raw)
-      spendString rendered
-      if bindings.isEmpty then
-        modify fun s => { s with rendered := s.rendered.insert (origin, target, raw) rendered }
-      return rendered
-    if kind j == "reexport" then
-      let name := string j "target"
-      if let some declaration ← resolve origin name then
-        if !(parameters declaration.ast).isEmpty then
-          throw ("unspecialized generic export is unsupported: " ++ name ++ " in " ++ (← originModule origin).name ++
-            " at " ++ (field j "span").compress ++ "; export an ordinary checked definition")
-    if kind j == "call" && kind (field j "callee") == "specialize" &&
-        path locals (field (field j "callee") "target") == some "Data.of" &&
-        (← resolve origin "Data").isNone then
-      let #[typeArgument] := array (field j "callee") "types" | throw "Data.of takes exactly one type argument"
-      let #[value] := array j "args" | throw "Data.of takes exactly one value"
-      let rendered ← rewriteType (← typeArgument.getStr?)
-      return Json.mkObj [("kind", "dataOf"), ("type", toJson rendered), ("value", ← recur value),
-        ("span", field j "span")]
-    if kind j == "specialize" then
-      let some name := path locals (field j "target") | throw "generic specialization requires an unshadowed declaration"
-      let some declaration ← resolve origin name | throw ("unknown generic declaration: " ++ name)
-      let args ← (array j "types").toList.mapM fun arg => do
-        let text ← arg.getStr?
-        typeOf fuel origin bindings text
+    spendString p.name
+    spendString p.quantity
+    return { p with type := ← rewriteType fuel site p.type }
+
+def rewriteSignature : Nat → Site → Signature → M Signature
+  | 0, _, _ => throw "generic AST nesting capacity"
+  | fuel + 1, site, s => do
+    spend
+    spendString s.name
+    return { s with params := ← s.params.mapM (rewriteParam fuel site), resultType := ← rewriteType fuel site s.resultType }
+
+def rewriteExpr : Nat → Site → List String → Expr → M Expr
+  | 0, _, _, _ => throw "generic AST nesting capacity"
+  | fuel + 1, site, locals, e => do
+    spend
+    let recur := rewriteExpr fuel site locals
+    let recurFields := fun (fs : List (String × Expr)) => fs.mapM fun (n, v) => do
+      spendString n
+      return (n, ← recur v)
+    if let .call (.specialize target types _) args span := e then
+      if path locals target == some "Data.of" && (← resolve site.origin "Data").isNone then
+        let [typeArgument] := types | throw "Data.of takes exactly one type argument"
+        let [value] := args | throw "Data.of takes exactly one value"
+        return .dataOf (← rewriteType fuel site typeArgument) (← recur value) span
+    if let .specialize target types span := e then
+      let some name := path locals target | throw "generic specialization requires an unshadowed declaration"
+      let some declaration ← resolve site.origin name | throw ("unknown generic declaration: " ++ name)
+      let args ← types.mapM (typeOf fuel site.origin site.bindings)
       let .named module name _ ← instantiate fuel declaration args | throw "generic instance has no declaration"
-      return ← ref module name j
-    if kind j == "var" || kind j == "member" then
-      if let some name := path locals j then
-        -- A bare import alias is not a declaration; member resolution handles it.
-        let imported := (← originModule origin).imports.any (·.importAlias == name)
-        if !imported then
-          if let some declaration ← resolve origin name then
-            if kind declaration.ast == "typeAlias" then
-              let .named module name _ ← typeOf fuel declaration.origin [] (string declaration.ast "type")
-                | throw "constructor alias must name a sum"
-              return ← ref module name j
-            if !(parameters declaration.ast).isEmpty then throw ("generic declaration needs explicit specialization: " ++ name)
-            if lifted then return ← ref (← originModule declaration.origin).name declaration.name j
-    if kind j == "lambda" || kind j == "extension-value" || kind j == "function" || kind j == "extension" then
-      let signature := if kind j == "function" then field j "signature" else j
-      let params := array signature "parameters"
-      let names := params.toList.map (fun p => string p "name")
-      let changed ← params.mapM recur
-      let resultKey := if kind j == "extension" || kind j == "extension-value" then "targetType" else "resultType"
-      let signature := setField (setField signature "parameters" (Json.arr changed)) resultKey
-        (toJson (← rewriteType (string signature resultKey)))
-      let body ← rewrite fuel origin target bindings (names ++ locals) lifted (field j "body")
-      if kind j == "function" then return setField (setField j "signature" signature) "body" body
-      return setField signature "body" body
-    if kind j == "let" then
-      let value ← recur (field j "value")
-      let body ← rewrite fuel origin target bindings (string j "name" :: locals) lifted (field j "body")
-      return setField (setField (setField j "value" value) "body" body) "type" (toJson (← rewriteType (string j "type")))
-    if kind j == "match" then
-      let scrutinee ← recur (field j "scrutinee")
-      let branches ← (array j "branches").mapM fun branch => do
-        let binder := string (field branch "pattern") "binder"
-        let body ← rewrite fuel origin target bindings (binder :: locals) lifted (field branch "body")
-        return setField branch "body" body
-      return setField (setField j "scrutinee" scrutinee) "branches" (Json.arr branches)
-    match j with
-    | .arr xs => return Json.arr (← xs.mapM recur)
-    | .obj fields =>
-      let fields ← fields.toList.mapM fun (name, value) => do
-        if ["type", "resultType", "targetType"].contains name then
-          if let .str raw := value then return (name, toJson (← rewriteType raw))
-        return (name, ← recur value)
-      return Json.mkObj fields
-    | _ => return j
+      return ← ref module name span
+    if let some name := path locals e then
+      -- A bare import alias is not a declaration; member resolution handles it.
+      let imported := (← originModule site.origin).imports.any (·.importAlias == name)
+      if !imported then
+        if let some declaration ← resolve site.origin name then
+          if let .typeAlias _ type _ := declaration.ast then
+            let .named module name _ ← typeOf fuel declaration.origin [] type
+              | throw "constructor alias must name a sum"
+            return ← ref module name e.span
+          if !declaration.ast.typeParameters.isEmpty then throw ("generic declaration needs explicit specialization: " ++ name)
+          if site.lifted then return ← ref (← originModule declaration.origin).name declaration.name e.span
+    match e with
+    | .var n s => do spendString n; return .var n s
+    | .nat v s => do spendString v; return .nat v s
+    | .bool v s => return .bool v s
+    | .str v s => do spendString v; return .str v s
+    | .unit s => return .unit s
+    | .record fs s => return .record (← recurFields fs) s
+    | .extend i fs s =>
+      let fs ← recurFields fs
+      return .extend (← recur i) fs s
+    | .member t n s => do spendString n; return .member (← recur t) n s
+    | .call c args s =>
+      let args ← args.mapM recur
+      return .call (← recur c) args s
+    | .compose specs s => return .compose (← specs.mapM recur) s
+    | .fix spec inherited s =>
+      let inherited ← recur inherited
+      return .fix (← recur spec) inherited s
+    | .lambda ps r b s =>
+      return .lambda (← ps.mapM (rewriteParam fuel site)) (← rewriteType fuel site r)
+        (← rewriteExpr fuel site (ps.map (·.name) ++ locals) b) s
+    | .extensionValue ps t b s =>
+      return .extensionValue (← ps.mapM (rewriteParam fuel site)) (← rewriteType fuel site t)
+        (← rewriteExpr fuel site (ps.map (·.name) ++ locals) b) s
+    | .binary op l r s => do spendString op; return .binary op (← recur l) (← recur r) s
+    | .ite c t f s =>
+      let c ← recur c
+      let f ← recur f
+      return .ite c (← recur t) f s
+    | .letE n t v b s =>
+      let value ← recur v
+      let body ← rewriteExpr fuel site (n :: locals) b
+      return .letE n (← rewriteType fuel site t) value body s
+    | .specialize .. | .dataOf .. => return e
+
+def rewriteBody : Nat → Site → List String → Body → M Body
+  | 0, _, _, _ => throw "generic AST nesting capacity"
+  | fuel + 1, site, locals, b => do
+    spend
+    match b with
+    | .expr e s => return .expr (← rewriteExpr fuel site locals e) s
+    | .cases scrutinee branches s =>
+      let scrutinee ← rewriteExpr fuel site locals scrutinee
+      let branches ← branches.mapM fun (pattern, body, span) => do
+        return (pattern, ← rewriteBody fuel site (pattern.binder :: locals) body, span)
+      return .cases scrutinee branches s
+    | .letB n t v rest s =>
+      let value ← rewriteExpr fuel site locals v
+      let rest ← rewriteBody fuel site (n :: locals) rest
+      return .letB n (← rewriteType fuel site t) value rest s
+
+def rewriteDecl : Nat → Site → List String → Decl → M Decl
+  | 0, _, _, _ => throw "generic AST nesting capacity"
+  | fuel + 1, site, locals, d => do
+    spend
+    spendString d.name
+    match d with
+    | .reexport name target span =>
+      if let some declaration ← resolve site.origin target then
+        if !declaration.ast.typeParameters.isEmpty then
+          throw ("unspecialized generic export is unsupported: " ++ target ++ " in " ++ (← originModule site.origin).name ++
+            " at " ++ span.json.compress ++ "; export an ordinary checked definition")
+      spendString target
+      return .reexport name target span
+    | .function sig typeParameters body span =>
+      let sig ← rewriteSignature fuel site sig
+      return .function sig typeParameters (← rewriteBody fuel site (sig.params.map (·.name) ++ locals) body) span
+    | .extension name ps t body binders span =>
+      let ps ← ps.mapM (rewriteParam fuel site)
+      let t ← rewriteType fuel site t
+      return .extension name ps t (← rewriteBody fuel site (ps.map (·.name) ++ locals) body) binders span
+    | .spec sp =>
+      let locals := ["self", "super"] ++ locals
+      let claims ← sp.claims.mapM fun c => do
+        let body ← rewriteExpr fuel site (c.params.map (·.name) ++ locals) c.body
+        return { c with body, params := ← c.params.mapM (rewriteParam fuel site) }
+      let methods ← sp.methods.mapM fun m => do
+        let body ← rewriteBody fuel site (m.signature.params.map (·.name) ++ locals) m.body
+        return { m with body, signature := ← rewriteSignature fuel site m.signature }
+      let requirements ← sp.requirements.mapM (rewriteSignature fuel site)
+      let targetType ← rewriteType fuel site sp.targetType
+      return .spec { sp with targetType, requirements, methods, claims }
+    | .record name methods fields span =>
+      let fields ← fields.mapM fun f => do return { f with type := ← rewriteType fuel site f.type }
+      let methods ← methods.mapM (rewriteSignature fuel site)
+      return .record name methods fields span
+    | .sum name cases typeParameters span =>
+      let cases ← cases.mapM fun c => do return { c with type := ← rewriteType fuel site c.type }
+      return .sum name cases typeParameters span
+    | .law .. | .typeAlias .. => return d
 end
 
 structure Output where
   modules : List ObjectiveBendElaborate.Module
   instances : Json
 
-def hasGenerics : Nat → Json → Bool
-  | 0, _ => false
-  | fuel + 1, .obj fields =>
-    let j := Json.obj fields
-    kind j == "specialize" || kind j == "typeAlias" || !(parameters j).isEmpty ||
-      fields.toList.any (fun p => hasGenerics fuel p.2)
-  | fuel + 1, .arr xs => xs.any (hasGenerics fuel)
-  | _, _ => false
+/-! ## Whether a module needs the pass at all -/
+
+mutual
+def exprGenerics : Expr → Bool
+  | .specialize .. => true
+  | .var .. | .nat .. | .bool .. | .str .. | .unit .. => false
+  | .record fs _ => fieldsHaveGenerics fs
+  | .extend i fs _ => (exprGenerics i) || fieldsHaveGenerics fs
+  | .member t _ _ => (exprGenerics t)
+  | .call c args _ => (exprGenerics c) || listHasGenerics args
+  | .compose specs _ => listHasGenerics specs
+  | .fix spec inherited _ => (exprGenerics spec) || (exprGenerics inherited)
+  | .lambda _ _ b _ | .extensionValue _ _ b _ => (exprGenerics b)
+  | .binary _ l r _ => (exprGenerics l) || (exprGenerics r)
+  | .ite c t f _ => (exprGenerics c) || (exprGenerics t) || (exprGenerics f)
+  | .letE _ _ v b _ => (exprGenerics v) || (exprGenerics b)
+  | .dataOf _ v _ => (exprGenerics v)
+def fieldsHaveGenerics : List (String × Expr) → Bool
+  | [] => false
+  | (_, v) :: rest => (exprGenerics v) || fieldsHaveGenerics rest
+def listHasGenerics : List Expr → Bool
+  | [] => false
+  | e :: rest => (exprGenerics e) || listHasGenerics rest
+end
+
+mutual
+def bodyGenerics : Body → Bool
+  | .expr e _ => (exprGenerics e)
+  | .cases sc branches _ => (exprGenerics sc) || branchesHaveGenerics branches
+  | .letB _ _ v b _ => (exprGenerics v) || (bodyGenerics b)
+def branchesHaveGenerics : List (ObjectiveBendSurface.Pattern × Body × Span) → Bool
+  | [] => false
+  | (_, b, _) :: rest => (bodyGenerics b) || branchesHaveGenerics rest
+end
+
+/-- A specialization anywhere, a type alias, or a declaration with type parameters. -/
+def declGenerics (d : Decl) : Bool :=
+  !d.typeParameters.isEmpty ||
+  match d with
+  | .typeAlias .. => true
+  | .function _ _ b _ | .extension _ _ _ b _ _ => (bodyGenerics b)
+  | .spec sp => sp.methods.any (fun m => bodyGenerics m.body) || sp.claims.any (fun c => exprGenerics c.body)
+  | _ => false
+
+/-! ## The names a fresh `__generic_N` must avoid
+
+Every identifier-shaped run of the module's strings as JSON prints them (so a run never
+crosses a string, and an escape's letters join the run they touch), restricted to the
+strings that could hold a `__generic_` run at all. -/
+
+def candidate (s : String) : Bool := (s.splitOn "__generic_").length > 1
+
+def addNames (names : Std.TreeSet String) (s : String) : Std.TreeSet String :=
+  if candidate s then
+    (DocumentTemplate.identifiers (toJson s).compress).foldl (fun acc n => acc.insert n) names
+  else names
+
+mutual
+def exprStrings : Expr → List String
+  | .var n _ | .nat n _ | .str n _ => [n]
+  | .bool .. | .unit .. => []
+  | .record fs _ => fieldStrings fs
+  | .extend i fs _ => (exprStrings i) ++ fieldStrings fs
+  | .member t n _ => n :: (exprStrings t)
+  | .call c args _ => (exprStrings c) ++ listStrings args
+  | .compose specs _ => listStrings specs
+  | .fix spec inherited _ => (exprStrings spec) ++ (exprStrings inherited)
+  | .lambda ps t b _ | .extensionValue ps t b _ => paramStrings ps ++ [t] ++ (exprStrings b)
+  | .binary op l r _ => op :: (exprStrings l) ++ (exprStrings r)
+  | .ite c t f _ => (exprStrings c) ++ (exprStrings t) ++ (exprStrings f)
+  | .letE n t v b _ => n :: t :: (exprStrings v) ++ (exprStrings b)
+  | .specialize t types _ => (exprStrings t) ++ types
+  | .dataOf t v _ => t :: (exprStrings v)
+def fieldStrings : List (String × Expr) → List String
+  | [] => []
+  | (n, v) :: rest => n :: (exprStrings v) ++ fieldStrings rest
+def listStrings : List Expr → List String
+  | [] => []
+  | e :: rest => (exprStrings e) ++ listStrings rest
+def paramStrings : List Param → List String
+  | [] => []
+  | p :: rest => p.name :: p.type :: p.quantity :: paramStrings rest
+end
+
+mutual
+def bodyStrings : Body → List String
+  | .expr e _ => (exprStrings e)
+  | .cases sc branches _ => (exprStrings sc) ++ branchStrings branches
+  | .letB n t v b _ => n :: t :: (exprStrings v) ++ (bodyStrings b)
+def branchStrings : List (ObjectiveBendSurface.Pattern × Body × Span) → List String
+  | [] => []
+  | (p, b, _) :: rest =>
+    (match p with | .ctor l binder => [l, binder] | .succ binder => [binder] | _ => []) ++
+      (bodyStrings b) ++ branchStrings rest
+end
+
+def signatureStrings (s : Signature) : List String := s.name :: s.resultType :: paramStrings s.params
+
+def declStrings : Decl → List String
+  | .reexport n t _ => [n, t]
+  | .spec sp => [sp.name, sp.targetType] ++ sp.parents ++ sp.binders.toList ++
+      sp.requirements.flatMap signatureStrings ++
+      sp.methods.flatMap (fun m => m.qualifier :: signatureStrings m.signature ++ bodyStrings m.body) ++
+      sp.claims.flatMap (fun c => c.name :: paramStrings c.params ++ exprStrings c.body)
+  | .extension n ps t b binders _ => n :: t :: paramStrings ps ++ binders.toList ++ (bodyStrings b)
+  | .typeAlias n t _ => [n, t]
+  | .sum n cases ps _ => n :: ps ++ cases.flatMap (fun c => [c.name, c.type])
+  | .record n methods fields _ => n :: methods.flatMap signatureStrings ++ fields.flatMap (fun f => [f.name, f.type])
+  | .law n source _ => [n, source]
+  | .function sig ps b _ => signatureStrings sig ++ ps.getD [] ++ (bodyStrings b)
+
+def moduleNames (m : ObjectiveBendSurface.Module) (names : Std.TreeSet String) : Std.TreeSet String :=
+  let names := m.imports.foldl (fun acc i => addNames (addNames acc i.path) i.importAlias) names
+  m.decls.foldl (fun acc d => (declStrings d).foldl addNames acc) names
+
+/-! ## The pass -/
 
 def run (sources : Array Source) : Except String Output := do
-  if !sources.any (fun s => hasGenerics maxNesting s.ast) then
+  if !sources.any (fun s => s.ast.decls.any declGenerics) then
     let modules ← sources.toList.mapM fun source =>
-      ObjectiveBendElaborate.decodeModule (Json.mkObj [("name", toJson source.module.name), ("ast", source.ast),
-        ("imports", toJson (source.module.imports.map fun i =>
-          Json.mkObj [("alias", toJson i.importAlias), ("moduleName", toJson i.moduleName)]))])
+      ObjectiveBendElaborate.ofSurface source.module.name source.module.aliases source.ast
     return ⟨modules, Json.arr #[]⟩
-  let mut declarations := []
+  let mut declarations : Array Declaration := #[]
   let mut names : Std.TreeSet String := {}
   for source in sources do
-    for name in (DocumentTemplate.identifiers source.ast.compress).toList do names := names.insert name
+    names := moduleNames source.ast names
     names := names.insert source.module.name
   for index in [:sources.size] do
-    for ast in array sources[index]!.ast "declarations" do
-      declarations := declarations ++ [⟨index, declName ast, ast⟩]
+    for d in sources[index]!.ast.decls do
+      declarations := declarations.push ⟨index, d.name, d⟩
   let mut sealedIdentities : Array String := #[]
   for source in sources do
     let imports ← source.module.imports.mapM fun edge => do
@@ -384,34 +558,33 @@ def run (sources : Array Source) : Except String Output := do
     match sources[d.origin]? with
     | some source => if map.contains (source.module.name, d.name) then map else map.insert (source.module.name, d.name) d
     | none => map) {}
-  let initial : State := { sources, declarations, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names, byName }
+  let initial : State := { sources, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names, byName }
   let action : M Output := do
     let moduleName ← fresh
     let moduleAlias ← fresh
     let mut aliases := []
     for source in sources do aliases := aliases ++ [(← fresh, source.module.name)]
     modify fun s => { s with generatedModule := moduleName, generatedAlias := moduleAlias, aliases }
-    let mut rewritten : List (String × Json) := []
+    let mut rewritten : List (String × ObjectiveBendSurface.Module) := []
     for index in [:sources.size] do
       let source := sources[index]!
-      let mut ordinary : Array Json := #[]
-      for ast in array source.ast "declarations" do
-        if kind ast == "typeAlias" || !(parameters ast).isEmpty then continue
-        ordinary := ordinary.push (← rewrite maxNesting index source.module.name [] [] false ast)
-      rewritten := rewritten ++ [(source.module.name, setField source.ast "declarations" (Json.arr ordinary))]
+      let site : Site := ⟨index, source.module.name, [], false⟩
+      let mut ordinary : Array Decl := #[]
+      for d in source.ast.decls do
+        if (d matches .typeAlias ..) || !d.typeParameters.isEmpty then continue
+        ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
+      rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
     let state ← get
-    let generated := Json.mkObj [("declarations", Json.arr (state.instances.map (·.ast)))]
+    let generated : ObjectiveBendSurface.Module := ⟨[], state.instances.toList.filterMap (·.ast)⟩
     rewritten := rewritten ++ [(moduleName, generated)]
     let mut decoded := []
     for (name, ast) in rewritten do
-      let own := (sources.find? (·.module.name == name)).map (·.module.imports) |>.getD []
-      let imports := own.map (fun i => (i.importAlias, i.moduleName)) ++ aliases ++ [(moduleAlias, moduleName)]
-      let module ← ObjectiveBendElaborate.decodeModule (Json.mkObj [("name", toJson name), ("ast", ast),
-        ("imports", toJson (imports.map fun (alias, target) => Json.mkObj [("alias", toJson alias), ("moduleName", toJson target)]))])
-      decoded := decoded ++ [module]
+      let own := (sources.find? (·.module.name == name)).map (·.module.aliases) |>.getD []
+      let imports := own ++ aliases ++ [(moduleAlias, moduleName)]
+      decoded := decoded ++ [← ObjectiveBendElaborate.ofSurface name imports ast]
     let instances := toJson (state.instances.toList.map fun i => Json.mkObj [
       ("declaration", toJson i.declaration), ("arguments", toJson (i.arguments.map GType.identity)),
-      ("name", toJson (moduleName ++ "." ++ i.name)), ("span", field i.ast "span")])
+      ("name", toJson (moduleName ++ "." ++ i.name)), ("span", (i.ast.map (·.span.json)).getD .null)])
     return ⟨decoded, instances⟩
   return (← action.run initial).1
 

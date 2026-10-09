@@ -1,7 +1,7 @@
 /- Objective Bend surface → Core4 elaboration: THE elaborator.
 
-Reads the `dregg.objective-bend.module.v1` AST that `Compiler.ObjectiveBendParse`
-produces and emits the Core4 term and its lambda/inject typing proposals. It was
+Reads the `Compiler.ObjectiveBendSurface` AST that `Compiler.ObjectiveBendParse`
+produces (`ofSurface`) and emits the Core4 term and its lambda/inject typing proposals. It was
 ported from the retired TypeScript elaborator and translation-validated against
 it until that elaborator was deleted (docs/OBJECTIVE-BEND-FRONTEND.md,
 "Provenance"). What is proved of its output once the checker accepts it is in
@@ -10,6 +10,7 @@ surface semantics, which does not exist. All recursion is fuel-bounded; running
 out of fuel is a refusal, never a guess. -/
 import Lean
 import Compiler.ObjectiveBendParse
+import Compiler.ObjectiveBendSurface
 import Compiler.ObjectiveBendLaw
 import Std.Data.HashMap
 import Std.Data.HashSet
@@ -34,11 +35,7 @@ def dropEndStr (s : String) (n : Nat) : String := String.ofList (s.toList.take (
 
 /-! ## Surface AST -/
 
-structure Param where
-  name : String
-  type : String
-  quantity : String
-  deriving Inhabited, Repr
+abbrev Param := ObjectiveBendSurface.Param
 
 inductive Expr where
   | var (name : String)
@@ -62,9 +59,7 @@ inductive Expr where
   | toData (type : String) (value : Expr)
   deriving Inhabited, Repr
 
-inductive Pattern where
-  | zero | succ (binder : String) | wildcard | bool (value : Bool) | ctor (label binder : String)
-  deriving Inhabited, Repr, BEq
+abbrev Pattern := ObjectiveBendSurface.Pattern
 
 inductive Body where
   | expr (e : Expr)
@@ -79,8 +74,8 @@ structure Method where
   resultType : String
   qualifier : String
   body : Body
-  /-- The authored signature (method JSON minus its body), for the interface label. -/
-  signature : Json
+  /-- The authored signature, for the interface label (`Surface.Method.signatureJson`). -/
+  authored : ObjectiveBendSurface.Signature
   deriving Inhabited
 
 structure Claim where
@@ -94,7 +89,7 @@ structure Spec where
   suffix : Bool
   parents : List String
   targetType : String
-  requirements : Json
+  requirements : List ObjectiveBendSurface.Signature
   methods : List Method
   claims : List Claim
   /-- `Self has {...}, Super has {...}` of an open spec (OB-LTUO LT2), "" for `spec S for T`. -/
@@ -129,131 +124,80 @@ structure Module where
   laws : List (String × ObjectiveBendLaw.LawExpr) := []
   deriving Inhabited
 
-/-! ## Decoding the TS parser's AST JSON -/
+/-! ## Reading the parsed surface -/
 
-def str (j : Json) (k : String) : Except String String := j.getObjValAs? String k
-def arr (j : Json) (k : String) : Except String (List Json) := do return (← (← j.getObjVal? k).getArr?).toList
+namespace Surface
+open ObjectiveBendSurface
 
-def decodeParam (j : Json) : Except String Param := do
-  return ⟨← str j "name", (← str j "type"), (j.getObjValAs? String "quantity").toOption.getD "default"⟩
-
-mutual
-def decodeExpr : Nat → Json → Except String Expr
+/-- A surface expression without its spans. `fuel` bounds the nesting read, as the AST
+decoder did ("AST nesting capacity"). -/
+def expr : Nat → ObjectiveBendSurface.Expr → Except String Expr
   | 0, _ => .error "AST nesting capacity"
-  | fuel + 1, j => do
-    let fields := fun (key : String) => do
-      (← arr j key).mapM fun f => do return (← str f "name", ← decodeExpr fuel (← f.getObjVal? "value"))
-    let sub := fun (key : String) => do decodeExpr fuel (← j.getObjVal? key)
-    match ← str j "kind" with
-    | "var" => return .var (← str j "name")
-    | "nat" => return .nat (← str j "value")
-    | "bool" => return .bool (← j.getObjValAs? Bool "value")
-    | "string" => return .str (← str j "value")
-    | "unit" => return .unit
-    | "record" => return .record (← fields "fields")
-    | "extend" => return .extend (← sub "inherited") (← fields "fields")
-    | "member" => return .member (← sub "target") (← str j "name")
-    | "call" => return .call (← sub "callee") (← (← arr j "args").mapM (decodeExpr fuel))
-    | "compose" => return .compose (← (← arr j "specifications").mapM (decodeExpr fuel))
-    | "fix" => return .fix (← sub "specification") (← sub "inherited")
-    | "extension-value" => return .closure (← (← arr j "parameters").mapM decodeParam) (← str j "targetType") (← sub "body")
-    | "lambda" => return .closure (← (← arr j "parameters").mapM decodeParam) (← str j "resultType") (← sub "body")
-    | "binary" => return .binary (← str j "op") (← sub "left") (← sub "right")
-    | "if" => return .ite (← sub "condition") (← sub "whenTrue") (← sub "whenFalse")
-    | "let" => return .letE (← str j "name") (← str j "type") (← sub "value") (← sub "body")
-    | "dataOf" => return .toData (← str j "type") (← sub "value")
-    | other => .error ("unknown AST expression " ++ other)
+  | fuel + 1, e => do
+    let fields := fun (fs : List (String × ObjectiveBendSurface.Expr)) =>
+      fs.mapM fun (n, v) => do return (n, ← expr fuel v)
+    match e with
+    | .var n _ => return .var n
+    | .nat v _ => return .nat v
+    | .bool v _ => return .bool v
+    | .str v _ => return .str v
+    | .unit _ => return .unit
+    | .record fs _ => return .record (← fields fs)
+    | .extend i fs _ => return .extend (← expr fuel i) (← fields fs)
+    | .member t n _ => return .member (← expr fuel t) n
+    | .call c args _ => return .call (← expr fuel c) (← args.mapM (expr fuel))
+    | .compose specs _ => return .compose (← specs.mapM (expr fuel))
+    | .fix spec inherited _ => return .fix (← expr fuel spec) (← expr fuel inherited)
+    | .extensionValue ps t b _ => return .closure ps t (← expr fuel b)
+    | .lambda ps r b _ => return .closure ps r (← expr fuel b)
+    | .binary op l r _ => return .binary op (← expr fuel l) (← expr fuel r)
+    | .ite c t f _ => return .ite (← expr fuel c) (← expr fuel t) (← expr fuel f)
+    | .letE n t v b _ => return .letE n t (← expr fuel v) (← expr fuel b)
+    | .dataOf t v _ => return .toData t (← expr fuel v)
+    | .specialize .. => .error "unknown AST expression specialize"
 
-def decodeBody : Nat → Json → Except String Body
+def body : Nat → ObjectiveBendSurface.Body → Except String Body
   | 0, _ => .error "AST nesting capacity"
-  | fuel + 1, j => do
-    match ← str j "kind" with
-    | "expression" => return .expr (← decodeExpr fuel (← j.getObjVal? "expression"))
-    | "match" =>
-      let branches ← (← arr j "branches").mapM fun b => do
-        let p ← b.getObjVal? "pattern"
-        let binder := (p.getObjValAs? String "binder").toOption.getD "_"
-        let pattern ← match ← str p "kind" with
-          | "zero" => pure Pattern.zero
-          | "succ" => pure (.succ binder)
-          | "wildcard" => pure .wildcard
-          | "bool" => pure (.bool (← p.getObjValAs? Bool "value"))
-          | "constructor" => pure (.ctor (← str p "label") binder)
-          | other => .error ("unknown pattern " ++ other)
-        return (pattern, ← decodeBody fuel (← b.getObjVal? "body"))
-      return .cases (← decodeExpr fuel (← j.getObjVal? "scrutinee")) branches
-    | "let" =>
-      let value ← decodeExpr fuel (← j.getObjVal? "value")
-      let rest ← decodeBody fuel (← j.getObjVal? "body")
-      return .letB (← str j "name") (← str j "type") value rest
-    | other => .error ("unknown AST body " ++ other)
-end
+  | fuel + 1, b => do
+    match b with
+    | .expr e _ => return .expr (← expr fuel e)
+    | .cases sc branches _ =>
+      let branches ← branches.mapM fun (p, b, _) => do return (p, ← body fuel b)
+      return .cases (← expr fuel sc) branches
+    | .letB n t v rest _ => return .letB n t (← expr fuel v) (← body fuel rest)
 
-def withoutKey (j : Json) (key : String) : Json :=
-  match j with
-  | .obj kvs => .obj (kvs.erase key)
-  | other => other
+def signature (s : ObjectiveBendSurface.Signature) : Signature := ⟨s.name, s.params, s.resultType⟩
 
-def decodeSignature (j : Json) : Except String Signature := do
-  return ⟨← str j "name", ← (← arr j "parameters").mapM decodeParam, ← str j "resultType"⟩
-
-def decodeDecl (j : Json) : Except String Decl := do
+def decl (d : ObjectiveBendSurface.Decl) : Except String Decl := do
   let fuel := 4096
-  match ← str j "kind" with
-  | "spec" =>
-    let methods ← (← arr j "methods").mapM fun m => do
-      let name ← str m "name"
-      let params ← (← arr m "parameters").mapM decodeParam
-      let resultType ← str m "resultType"
-      let qualifier := (m.getObjValAs? String "qualifier").toOption.getD "primary"
-      let body ← decodeBody fuel (← m.getObjVal? "body")
-      return (Method.mk name params resultType qualifier body (withoutKey m "body"))
-    let claims ← (← arr j "claims").mapM fun l => do
-      let name ← str l "name"
-      let params ← (← arr l "parameters").mapM decodeParam
-      let body ← decodeExpr fuel (← l.getObjVal? "body")
-      return (Claim.mk name params body)
-    let name ← str j "name"
-    let suffix := (j.getObjValAs? Bool "suffix").toOption.getD false
-    let parents ← (← arr j "parents").mapM (fun p => p.getStr?)
-    let targetType ← str j "targetType"
-    let requirements ← j.getObjVal? "requirements"
-    let binders := (j.getObjValAs? String "binders").toOption.getD ""
-    return .spec (Spec.mk name suffix parents targetType requirements methods claims binders)
-  | "extension" =>
-    let name ← str j "name"
-    let params ← (← arr j "parameters").mapM decodeParam
-    let targetType ← str j "targetType"
-    let body ← decodeBody fuel (← j.getObjVal? "body")
-    return .extension name params targetType body ((j.getObjValAs? String "binders").toOption.getD "")
-  | "function" =>
-    let s ← j.getObjVal? "signature"
-    let name ← str s "name"
-    let params ← (← arr s "parameters").mapM decodeParam
-    let resultType ← str s "resultType"
-    let body ← decodeBody fuel (← j.getObjVal? "body")
-    return .function name params resultType body
-  | "record" =>
-    let name ← str j "name"
-    let fields ← (← arr j "fields").mapM fun f => do return (← str f "name", ← str f "type")
-    let methods ← (← arr j "methods").mapM decodeSignature
-    return .record name fields methods
-  | "reexport" => return .reexport (← str j "name") (← str j "target")
-  | "sum" => return .sum (← str j "name") (← (← arr j "cases").mapM fun c => do return (← str c "label", ← str c "type"))
-  | other => .error ("unknown AST declaration " ++ other)
+  match d with
+  | .spec sp =>
+    let methods ← sp.methods.mapM fun m => do
+      return Method.mk m.signature.name m.signature.params m.signature.resultType m.qualifier
+        (← body fuel m.body) m.signature
+    let claims ← sp.claims.mapM fun c => do return Claim.mk c.name c.params (← expr fuel c.body)
+    return .spec (Spec.mk sp.name sp.suffix sp.parents sp.targetType sp.requirements methods claims (sp.binders.getD ""))
+  | .extension n ps t b binders _ => return .extension n ps t (← body fuel b) (binders.getD "")
+  | .function sig _ b _ => return .function sig.name sig.params sig.resultType (← body fuel b)
+  | .record n methods fields _ => return .record n (fields.map fun f => (f.name, f.type)) (methods.map signature)
+  | .reexport n t _ => return .reexport n t
+  | .sum n cases _ _ => return .sum n (cases.map fun c => (c.name, c.type))
+  | other => .error ("unknown AST declaration " ++ other.kind)
 
-/-- `{name, imports:[{alias, moduleName}], ast}` as the TS elaborator receives it. -/
-def decodeModule (j : Json) : Except String Module := do
-  let ast ← j.getObjVal? "ast"
+end Surface
+
+/-- A parsed module, its import aliases resolved to module names: what the elaborator reads.
+Top-level laws are parsed into their enforced form and set aside (`Module.laws`). -/
+def ofSurface (name : String) (imports : List (String × String)) (m : ObjectiveBendSurface.Module) :
+    Except String Module := do
   let mut decls : List Decl := []
   let mut laws : List (String × ObjectiveBendLaw.LawExpr) := []
-  for d in ← arr ast "declarations" do
-    if (str d "kind").toOption == some "law" then
-      laws := laws ++ [(← str d "name", ← ObjectiveBendLaw.parse (← str d "source"))]
-    else decls := decls ++ [← decodeDecl d]
+  for d in m.decls do
+    if let .law lawName source _ := d then
+      laws := laws ++ [(lawName, ← ObjectiveBendLaw.parse source)]
+    else decls := decls ++ [← Surface.decl d]
   ObjectiveBendLaw.checkNames laws
-  return ⟨← str j "name", ← (← arr j "imports").mapM (fun i => do return (← str i "alias", ← str i "moduleName")),
-    decls, laws⟩
+  return ⟨name, imports, decls, laws⟩
 
 /-! ## Proposal types (the `Ty` JSON wire of Theory.ObjectiveBendTyping.typeJson, plus `variant`) -/
 
@@ -547,16 +491,17 @@ def qualifiedName (s : String) : Option (String × String) :=
 def splitTop (text : String) (sep : String) : List String :=
   let chars := text.toList
   let sepChars := sep.toList
+  -- `current` and `parts` are accumulated reversed.
   let rec go : Nat → List Char → Option Char → Int → List Char → List String → List String
-    | 0, _, _, _, current, parts => (parts ++ [String.ofList current])
-    | _ + 1, [], _, _, current, parts => parts ++ [String.ofList current]
+    | 0, _, _, _, current, parts => String.ofList current.reverse :: parts
+    | _ + 1, [], _, _, current, parts => String.ofList current.reverse :: parts
     | fuel + 1, c :: rest, prev, depth, current, parts =>
-      if "<({".toList.contains c then go fuel rest (some c) (depth + 1) (current ++ [c]) parts
-      else if ">)}".toList.contains c && !(c == '>' && prev == some '-') then go fuel rest (some c) (depth - 1) (current ++ [c]) parts
-      else if depth == 0 && (c :: rest).take sepChars.length == sepChars then
-        go fuel ((c :: rest).drop sepChars.length) (sepChars.getLast?) depth [] (parts ++ [String.ofList current])
-      else go fuel rest (some c) depth (current ++ [c]) parts
-  (go (chars.length + 1) chars none 0 [] []).map trimStr
+      if "<({".toList.contains c then go fuel rest (some c) (depth + 1) (c :: current) parts
+      else if ">)}".toList.contains c && !(c == '>' && prev == some '-') then go fuel rest (some c) (depth - 1) (c :: current) parts
+      else if depth == 0 && sepChars.isPrefixOf (c :: rest) then
+        go fuel ((c :: rest).drop sepChars.length) (sepChars.getLast?) depth [] (String.ofList current.reverse :: parts)
+      else go fuel rest (some c) depth (c :: current) parts
+  (go (chars.length + 1) chars none 0 [] []).reverse.map trimStr
 
 /-- The one public metadata type of every specification (`Specification<T>` is
 `specification(SpecMeta, Extension<T>)`), declared in the built-in module as two
@@ -676,11 +621,7 @@ def isRowTy : PTy → Bool
   | _ => false
 
 def requirementsOf (s : Spec) : M (List Signature) :=
-  match s.requirements.getArr? with
-  | .ok a => a.toList.mapM fun j => match decodeSignature j with
-    | .ok r => pure r
-    | .error e => fail ("requirement of spec " ++ s.name ++ ": " ++ e)
-  | .error _ => pure []
+  pure (s.requirements.map Surface.signature)
 
 def signatureText (r : Signature) : String :=
   r.name ++ "(" ++ ", ".intercalate (r.params.map fun p => p.name ++ ": " ++ p.type) ++ ") -> " ++ r.resultType
@@ -1948,8 +1889,9 @@ def shiftRef (t : ATerm) (by_ : Nat) : M ATerm :=
 
 def interfaceLabel (s : Spec) (list : List String) : String :=
   (Json.mkObj ([("targetType", toJson s.targetType), ("suffix", toJson s.suffix), ("parents", toJson s.parents),
-    ("precedence", toJson list), ("requirements", s.requirements),
-    ("methods", Json.arr (s.methods.map (·.signature)).toArray)] ++
+    ("precedence", toJson list), ("requirements", Json.arr (s.requirements.map (·.json)).toArray),
+    ("methods", Json.arr (s.methods.map fun m => Json.mkObj (m.authored.fields ++
+      [("qualifier", toJson m.qualifier)])).toArray)] ++
     (if s.binders.isEmpty then [] else [("binders", toJson s.binders)]))).compress
 
 /-- Claims and the declared SpecMeta around a spec's extension. -/
@@ -2137,16 +2079,20 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
   return fields
 
 /-- The knot keys a term names: every global reference is `globalRef`, a `get` of the
-knot by key, so these are exactly the declarations the term can reach. -/
-partial def knotNames (json : Json) (acc : Array String) : Array String :=
-  match json with
-  | .obj kvs =>
-    let acc := match json.getObjValAs? String "tag", json.getObjValAs? String "name" with
-      | .ok "get", .ok name => acc.push name
-      | _, _ => acc
-    kvs.foldl (fun acc _ v => knotNames v acc) acc
-  | .arr items => items.foldl (fun acc v => knotNames v acc) acc
-  | _ => acc
+knot by key, so these are exactly the declarations the term can reach (every other
+`get` name is harmless: it names no knot field, or one that is reached anyway). -/
+partial def knotNames (t : ATerm) (acc : Array String) : Array String :=
+  match t with
+  | .get target name => knotNames target (acc.push name)
+  | .bound _ | .nat _ | .boolean _ | .label _ => acc
+  | .lam _ b | .reflect b | .metadata b | .project b | .unary _ b | .inject _ _ _ b | .perform _ _ b
+  | .done _ _ b | .toData _ b => knotNames b acc
+  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b =>
+    knotNames b (knotNames a acc)
+  | .ifZero a b c | .ifBool a b c => knotNames c (knotNames b (knotNames a acc))
+  | .extend i fs => fs.foldl (fun acc (_, v) => knotNames v acc) (knotNames i acc)
+  | .record fs => fs.foldl (fun acc (_, v) => knotNames v acc) acc
+  | .case s arms => arms.foldl (fun acc (_, v) => knotNames v acc) (knotNames s acc)
 
 /-- A whole closure elaborated once: every knot field with the knot keys it names, the
 field types, and the elaborator's final state. Selecting an entry (`Elaborated.select`)
@@ -2236,12 +2182,12 @@ def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : St
   return { term := selected, globalRow, knotRow, sumBounds := e.state.sumBounds, typeErrors := e.state.typeErrors,
            templates := e.state.templates.filter fun (key, _, _) => kept.contains key }
 
-/-- The built-in module: `builtinSource` through the parser and the AST decoder. -/
+/-- The built-in module: `builtinSource` through the parser. -/
 def builtinModule : Except String Module := do
   let ast ← match ObjectiveBendParse.parseObjective builtinSource with
     | .ok ast => pure ast
     | .error d => throw ("builtin: " ++ d.message)
-  decodeModule (Json.mkObj [("name", toJson builtinModuleName), ("imports", Json.arr #[]), ("ast", ast)])
+  ofSurface builtinModuleName [] ast
 
 /-- Build the context; duplicate declarations / types refuse as in the TS. The built-in
 module contributes types only (no declaration of it is emitted). -/
@@ -2290,7 +2236,7 @@ def elaboratePackage (modules : List Module) : Except String Elaborated := do
   let c ← context modules
   let ((fields, rowFields, unresolved), state) ← (elaboratePackageM c).run {}
   let references := fields.foldl (fun (map : Std.HashMap String (Array String)) (key, value) =>
-    map.insert key (knotNames value.json #[])) {}
+    map.insert key (knotNames value #[])) {}
   return ⟨c, fields, references, rowFields, unresolved, state⟩
 
 def elaborate (modules : List Module) (entryModule : Nat) (entryDefinition : String) (args : Json) (mode : String) :
@@ -2442,26 +2388,6 @@ def proposalJson (out : Output) : Except String Json := do
     ("annotations", Json.arr annotationJson.toArray),
     ("bounds", Json.arr boundJson.toArray),
     ("shareableVariables", toJson ("0" :: bounds.map (fun b => toString b.1)))]
-
-/-! ## Driver: a batch of jobs in, one result per job out -/
-
-def runJob (job : Json) : Json :=
-  let name := (job.getObjValAs? String "name").toOption.getD ""
-  let result : Except String Json := do
-    let modules ← (← (← job.getObjVal? "modules").getArr?).toList.mapM decodeModule
-    let entryModule ← job.getObjValAs? Nat "entryModule"
-    let out ← elaborate modules entryModule (← job.getObjValAs? String "entryDefinition")
-      (← job.getObjVal? "arguments") ((job.getObjValAs? String "mode").toOption.getD "application")
-    let typed := match proposalJson out with
-      | .ok j => j
-      | .error e => Json.mkObj [("unsupported", toJson e)]
-    let erased := match out.term.erase with
-      | .ok _ => Json.null
-      | .error e => toJson e
-    return Json.mkObj [("term", out.term.json), ("typed", typed), ("coreTermErasure", erased)]
-  match result with
-  | .ok j => Json.mkObj [("name", name), ("ok", toJson true), ("output", j)]
-  | .error e => Json.mkObj [("name", name), ("ok", toJson false), ("error", e)]
 
 end Minidregg.Compiler.ObjectiveBendElaborate
 

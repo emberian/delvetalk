@@ -15,6 +15,7 @@ refuses only a term nested deeper than the decoder's capacity. An `Accepted` val
 therefore carries a typing derivation for exactly the Core4 term the elaborator
 produced (`ObjectiveBendFrontEndAdequacy` states what that buys). -/
 import Compiler.ObjectiveBendParse
+import Compiler.ObjectiveBendSurface
 import Compiler.ObjectiveBendElaborate
 import Compiler.ObjectiveBendLaw
 import Compiler.ObjectiveBendTermWire
@@ -56,14 +57,14 @@ def elaborationRefusal (message : String) : Diagnostic := { stage := "objective-
 structure LockedImport where
   path : String
   importAlias : String
-  span : Json
+  span : ObjectiveBendSurface.Span
   target : Nat
   moduleName : String
   sha256 : String
   deriving Inhabited
 
 def LockedImport.json (i : LockedImport) : Json :=
-  Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span),
+  Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span.json),
     ("module", toJson (toString i.target)), ("moduleName", toJson i.moduleName), ("sha256", toJson i.sha256)]
 
 /-- One module of a captured package: its exact source text and fingerprint. -/
@@ -78,29 +79,27 @@ def SourceModule.binding (m : SourceModule) : Json :=
   Json.mkObj [("name", toJson m.name), ("sourceSha256", toJson m.sha256),
     ("imports", Json.arr (m.imports.map LockedImport.json).toArray)]
 
-def declarationName (d : Json) : String :=
-  match (d.getObjValAs? String "kind").toOption with
-  | some "function" => ((d.getObjVal? "signature").bind (·.getObjValAs? String "name")).toOption.getD ""
-  | _ => (d.getObjValAs? String "name").toOption.getD ""
+/-- The locked edge as the parser wrote it (path, alias, span). -/
+def LockedImport.parsed (i : LockedImport) : ObjectiveBendSurface.Import := ⟨i.path, i.importAlias, i.span⟩
 
 /-- A parsed module, checked: its locked import transcript is exactly the parsed one, and its
-AST decodes to the elaborator's module. -/
-def checkImports (m : SourceModule) (ast : Json) : Except Diagnostic Unit := do
-  let parsed := ((ast.getObjVal? "imports").bind Json.getArr?).toOption.getD #[]
-  let locked := m.imports.toArray.map fun i =>
-    Json.mkObj [("path", toJson i.path), ("alias", toJson i.importAlias), ("span", i.span)]
-  if (Json.arr parsed).compress != (Json.arr locked).compress then
+AST reads as the elaborator's module. -/
+def checkImports (m : SourceModule) (ast : ObjectiveBendSurface.Module) : Except Diagnostic Unit := do
+  if ast.imports != m.imports.map LockedImport.parsed then
     throw (elaborationRefusal "import transcript differs from parsed imports")
 
-def checkParsed (m : SourceModule) (ast : Json) : Except Diagnostic ObjectiveBendElaborate.Module := do
+/-- The (alias, module name) pairs of a module's locked imports. -/
+def SourceModule.aliases (m : SourceModule) : List (String × String) :=
+  m.imports.map fun i => (i.importAlias, i.moduleName)
+
+def checkParsed (m : SourceModule) (ast : ObjectiveBendSurface.Module) :
+    Except Diagnostic ObjectiveBendElaborate.Module := do
   checkImports m ast
-  match ObjectiveBendElaborate.decodeModule (Json.mkObj [("name", toJson m.name),
-      ("imports", Json.arr (m.imports.map fun i =>
-        Json.mkObj [("alias", toJson i.importAlias), ("moduleName", toJson i.moduleName)]).toArray), ("ast", ast)]) with
+  match ObjectiveBendElaborate.ofSurface m.name m.aliases ast with
   | .ok d => pure d
   | .error e => throw (elaborationRefusal e)
 
-def parseSource (name source : String) : Except Diagnostic Json :=
+def parseSource (name source : String) : Except Diagnostic ObjectiveBendSurface.Module :=
   match ObjectiveBendParse.parseObjective source with
   | .ok ast => pure ast
   | .error d => throw { stage := "objective-source-parse", message := d.message, span := d.span, sourceModule := some name }

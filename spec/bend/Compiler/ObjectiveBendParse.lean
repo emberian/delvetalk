@@ -1,7 +1,8 @@
 /- Objective Bend edition 1 source parser.
 
-Source text → the `dregg.objective-bend.module.v1` AST (JSON) that
-`Compiler.ObjectiveBendElaborate.decodeModule` reads. Ported from the retired
+Source text → the module's `Compiler.ObjectiveBendSurface` AST (whose `Module.json` is the
+`dregg.objective-bend.module.v1` AST JSON), which `Compiler.ObjectiveBendElaborate.ofSurface`
+reads. Ported from the retired
 TypeScript parser and translation-validated against it before that parser was
 deleted (docs/OBJECTIVE-BEND-FRONTEND.md, "Provenance"): same AST, same spans
 (UTF-8 byte offsets, 1-based lines), same refusals.
@@ -17,8 +18,10 @@ Every recursion is fuel-bounded with fuel proportional to the input; running
 out is a refusal ("capacity"), never a different parse. -/
 import Lean
 import Compiler.ObjectiveBendLaw
+import Compiler.ObjectiveBendSurface
 namespace Minidregg.Compiler.ObjectiveBendParse
-open Lean
+open Lean (Json toJson)
+open ObjectiveBendSurface (Param Expr Pattern Body Signature Method Claim Field Spec Decl Import Module)
 set_option autoImplicit false
 
 /-! ## ECMAScript character classes -/
@@ -158,14 +161,7 @@ def isIdent (s : List Char) : Bool :=
 
 /-! ## Spans and diagnostics -/
 
-structure Span where
-  start : Nat
-  stop : Nat
-  line : Nat
-  deriving Inhabited, Repr, BEq
-
-def Span.json (s : Span) : Json :=
-  Json.mkObj [("start", toJson s.start), ("end", toJson s.stop), ("line", toJson s.line)]
+abbrev Span := ObjectiveBendSurface.Span
 
 /-- A parse refusal: the TypeScript `compiler-diagnostic` (message and line span) or a bare
 `Error` (message only). -/
@@ -248,9 +244,6 @@ def parameterRe : Re := seqs [many space, opt (seqs [group 1 (alts [str "affine"
   group 2 (opt (.char (fun c => c == '+' || c == '-'))), group 3 ident, many space,
   opt (seqs [chr ':', many space, group 4 (lazy1 dot)]), many space, .done]
 
-def parameterJson (name type quantity : String) : Json :=
-  Json.mkObj [("name", toJson name), ("type", toJson type), ("quantity", toJson quantity)]
-
 /-- Top-level comma split of a parameter list. `( < [ {` open and `) > ] }` close, except the
 `>` of an arrow `->`, which is not a bracket: so a record type `{x: Nat, y: Nat}` and an
 arrow `(Nat, Nat) -> Nat` are each one parameter type (the elaborator's `splitTop` counts
@@ -267,7 +260,7 @@ def splitPieces (raw : List Char) : List (List Char) :=
   let (pieces, current, _, _) := raw.foldl step ([], [], 0, none)
   (current.reverse :: pieces).reverse
 
-def splitParameters (raw : List Char) : Except String (List Json) := do
+def splitParameters (raw : List Char) : Except String (List Param) := do
   if (jsTrim raw).isEmpty then return []
   (splitPieces raw).mapM fun piece => do
     let some (_, caps) ← anchored parameterRe piece | throw "Error: invalid parameter"
@@ -281,7 +274,7 @@ def splitParameters (raw : List Char) : Except String (List Json) := do
     let quantity := match keyword with
       | some k => String.ofList k
       | none => if marker == ['+'] then "copy" else if marker == ['-'] then "dead" else "default"
-    return parameterJson (String.ofList name) (String.ofList ((capture piece caps 4).getD ['_'])) quantity
+    return ⟨String.ofList name, String.ofList ((capture piece caps 4).getD ['_']), quantity⟩
 
 /-! ## Expressions -/
 
@@ -345,9 +338,6 @@ def take (env : ExprEnv) (wanted : Option String := none) : EP Token := do
   | some t => if wanted.all (· == tokenText t) then pure t else throw message
   | none => throw message
 
-def node (kind : String) (fields : List (String × Json)) (span : Span) : Json :=
-  Json.mkObj ([("kind", toJson kind)] ++ fields ++ [("span", span.json)])
-
 def isNumberToken (t : List Char) : Bool :=
   let digits := t.takeWhile asciiDigit
   !digits.isEmpty && (t.drop digits.length == [] || t.drop digits.length == ['n'])
@@ -358,11 +348,9 @@ def natValue (t : List Char) : String :=
   let stripped := digits.dropWhile (· == '0')
   String.ofList (if stripped.isEmpty then ['0'] else stripped)
 
-def kindOf (j : Json) : String := (j.getObjValAs? String "kind").toOption.getD ""
-
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
-def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
+def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
   | 0, _ => throw "Error: expression nesting capacity"
   | fuel + 1, minimum => do
     let first ← take env
@@ -386,7 +374,7 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
       discard <| take env (some "in")
       let (letBody, bodySpan) ← parseExpr env fuel 0
       let span := { env.location first.start first.stop with stop := bodySpan.stop }
-      return (node "let" [("name", toJson (tokenText name)), ("type", toJson type), ("value", value), ("body", letBody)] span, span)
+      return (.letE (tokenText name) type value letBody span, span)
     if firstText == "if" then
       let (condition, _) ← parseExpr env fuel 0
       discard <| take env (some "then")
@@ -394,8 +382,8 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
       discard <| take env (some "else")
       let (whenFalse, falseSpan) ← parseExpr env fuel 0
       let span := { env.location first.start first.stop with stop := falseSpan.stop }
-      return (node "if" [("condition", condition), ("whenTrue", whenTrue), ("whenFalse", whenFalse)] span, span)
-    let mut result : Json × Span := (Json.null, default)
+      return (.ite condition whenTrue whenFalse span, span)
+    let mut result : Expr × Span := (default, default)
     if (firstText == "fn" || firstText == "extension") && (← peek env) == some "(" then
       let opening ← take env (some "(")
       let mut depth := 1
@@ -418,46 +406,44 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
       let (closureBody, bodySpan) ← parseExpr env fuel 0
       let span := { env.location first.start first.stop with stop := bodySpan.stop }
       result := if firstText == "fn" then
-          (node "lambda" [("parameters", Json.arr parameters.toArray), ("resultType", toJson (String.ofList resultType)),
-            ("body", closureBody)] span, span)
+          (.lambda parameters (String.ofList resultType) closureBody span, span)
         else
-          (node "extension-value" [("parameters", Json.arr parameters.toArray),
-            ("targetType", toJson (String.ofList resultType)), ("body", closureBody)] span, span)
+          (.extensionValue parameters (String.ofList resultType) closureBody span, span)
     else if firstText == "{" then
-      let mut fields : Array Json := #[]
+      let mut fields : Array (String × Expr) := #[]
       if (← peek env) != some "}" then
         for _ in [0:env.tokens.size + 1] do
           let key ← take env
           let name ← StateT.lift (fieldName key.text)
           discard <| take env (some ":")
           let (value, _) ← parseExpr env fuel 0
-          fields := fields.push (Json.mkObj [("name", toJson name), ("value", value)])
+          fields := fields.push (name, value)
           if (← peek env) != some "," then break
           discard <| take env (some ",")
       let closing ← take env (some "}")
       let span := env.location first.start closing.stop
-      result := (node "record" [("fields", Json.arr fields)] span, span)
+      result := (.record fields.toList span, span)
     else if firstText == "(" then
       if (← peek env) == some ")" then
         let closing ← take env (some ")")
         let span := env.location first.start closing.stop
-        result := (node "unit" [] span, span)
+        result := (.unit span, span)
       else
         result ← parseExpr env fuel 0
         discard <| take env (some ")")
     else if firstText == "true" || firstText == "false" then
       let span := env.location first.start first.stop
-      result := (node "bool" [("value", toJson (firstText == "true"))] span, span)
+      result := (.bool (firstText == "true") span, span)
     else if isNumberToken first.text then
       let span := env.location first.start first.stop
-      result := (node "nat" [("value", toJson (natValue first.text))] span, span)
+      result := (.nat (natValue first.text) span, span)
     else if first.text.head? == some '"' then
       let span := env.location first.start first.stop
       let value ← StateT.lift (jsonStringLiteral first.text)
-      result := (node "string" [("value", toJson value)] span, span)
+      result := (.str value span, span)
     else if isIdent first.text then
       let span := env.location first.start first.stop
-      result := (node "var" [("name", toJson firstText)] span, span)
+      result := (.var firstText span, span)
     else throw "Error: expected expression atom"
     for _ in [0:env.tokens.size + 1] do
       let some next := (← peek env) | break
@@ -475,19 +461,18 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
         let types := (splitPieces ((env.text.drop opening.stop).take (closing.start - opening.stop))).map jsTrim
         if types.isEmpty || types.any List.isEmpty then throw "Error: specialization requires type arguments"
         let span := { result.2 with stop := (env.location closing.start closing.stop).stop }
-        result := (node "specialize" [("target", result.1),
-          ("types", toJson (types.map String.ofList))] span, span)
+        result := (.specialize result.1 (types.map String.ofList) span, span)
         continue
       if next == "." then
         discard <| take env (some ".")
         let field ← take env
         let name ← StateT.lift (fieldName field.text)
         let span := { result.2 with stop := (env.location field.start field.stop).stop }
-        result := (node "member" [("target", result.1), ("name", toJson name)] span, span)
+        result := (.member result.1 name span, span)
         continue
       if next == "(" then
         discard <| take env (some "(")
-        let mut args : Array Json := #[]
+        let mut args : Array Expr := #[]
         if (← peek env) != some ")" then
           for _ in [0:env.tokens.size + 1] do
             let (arg, _) ← parseExpr env fuel 0
@@ -496,40 +481,39 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Json × Span)
             discard <| take env (some ",")
         let closing ← take env (some ")")
         let span := { result.2 with stop := (env.location closing.start closing.stop).stop }
-        let calleeName := if kindOf result.1 == "var" then (result.1.getObjValAs? String "name").toOption else none
+        let calleeName := match result.1 with
+          | .var name _ => some name
+          | _ => none
         if calleeName == some "compose" then
-          result := (node "compose" [("specifications", Json.arr args)] span, span)
+          result := (.compose args.toList span, span)
         else if calleeName == some "fix" then
           let #[specification, inherited] := args | throw "Error: fix expects specification and inherited target"
-          result := (node "fix" [("specification", specification), ("inherited", inherited)] span, span)
+          result := (.fix specification inherited span, span)
         else if calleeName == some "extend" then
           match args with
-          | #[inherited, fields] =>
-            if kindOf fields != "record" then throw "Error: extend expects inherited target and record fields"
-            result := (node "extend" [("inherited", inherited),
-              ("fields", (fields.getObjVal? "fields").toOption.getD (Json.arr #[]))] span, span)
+          | #[inherited, .record fields _] => result := (.extend inherited fields span, span)
           | _ => throw "Error: extend expects inherited target and record fields"
         else
-          result := (node "call" [("callee", result.1), ("args", Json.arr args)] span, span)
+          result := (.call result.1 args.toList span, span)
         continue
       let some priority := precedence next | break
       if priority < minimum then break
       discard <| take env
       let (right, rightSpan) ← parseExpr env fuel (priority + 1)
       let span := { result.2 with stop := rightSpan.stop }
-      result := (node "binary" [("op", toJson next), ("left", result.1), ("right", right)] span, span)
+      result := (.binary next result.1 right span, span)
     return result
 
 /-- `expression(text, sourceSpan)`: the whole text is one expression. `start` is the absolute
 byte offset of the text's first character. -/
-def expression (text : List Char) (start line : Nat) : Except String Json := do
+def expression (text : List Char) (start line : Nat) : Except String Expr := do
   let tokens ← tokenize text
   let byteAt := (text.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
     (#[], start)) |> fun (acc, last) => acc.push last
   let env : ExprEnv := ⟨text, tokens, byteAt, line⟩
-  let ((json, _), cursor) ← (parseExpr env (tokens.size + 1) 0).run 0
+  let ((expr, _), cursor) ← (parseExpr env (tokens.size + 1) 0).run 0
   if cursor != tokens.size then throw "Error: unexpected trailing expression token"
-  return json
+  return expr
 
 /-! ## Lines and declarations -/
 
@@ -563,21 +547,18 @@ def lastIndexOf (hay needle : List Char) : Nat :=
 
 /-- `expr(text, line)`: an expression found at its last occurrence in the line; its errors
 become line diagnostics. -/
-def lineExpr (line : Line) (text : List Char) : PS Json :=
+def lineExpr (line : Line) (text : List Char) : PS Expr :=
   liftAt line (expression text (line.start + utf8Length (line.text.take (lastIndexOf line.text text))) line.number)
 
 /-- `^([A-Za-z_]\w*)\s*\((.*)\)(?:\s*->\s*(.+?))?\s*$` -/
 def signatureRe : Re := seqs [group 1 ident, many space, chr '(', group 2 (many dot), chr ')',
   opt (seqs [many space, str "->", many space, group 3 (lazy1 dot)]), many space, .done]
 
-def signature (raw : List Char) (line : Line) : PS (String × List Json × String × Span) := do
+def signature (raw : List Char) (line : Line) : PS Signature := do
   let some (_, caps) ← matchAt line signatureRe raw | fail line "expected method signature"
   let parameters ← liftAt line (splitParameters ((capture raw caps 2).getD []))
-  return (String.ofList ((capture raw caps 1).getD []), parameters,
-    String.ofList ((capture raw caps 3).getD ['_']), line.span)
-
-def signatureJson (s : String × List Json × String × Span) : List (String × Json) :=
-  [("name", toJson s.1), ("parameters", Json.arr s.2.1.toArray), ("resultType", toJson s.2.2.1), ("span", s.2.2.2.json)]
+  return ⟨String.ofList ((capture raw caps 1).getD []), parameters,
+    String.ofList ((capture raw caps 3).getD ['_']), line.span⟩
 
 /-- `^case\s+(0n?|1n?\+([A-Za-z_]\w*)|_|true|false|([A-Za-z_]\w*)\(\s*([A-Za-z_]\w*)?\s*\))\s*:\s*(.*)$` -/
 def caseRe : Re := seqs [str "case", many1 space,
@@ -593,7 +574,7 @@ def startsWith (s : List Char) (p : String) : Bool := p.toList.isPrefixOf s
 def endsWith (s : List Char) (p : String) : Bool := p.toList.reverse.isPrefixOf s.reverse
 
 /-- `body(indent)`: the indented method body after a header line. -/
-def body (lines : Array Line) : Nat → Nat → PS Json
+def body (lines : Array Line) : Nat → Nat → PS Body
   | 0, _ => bare "Error: body nesting capacity"
   | fuel + 1, indent => do
     let i ← get
@@ -602,7 +583,7 @@ def body (lines : Array Line) : Nat → Nat → PS Json
     set (i + 1)
     if startsWith line.text "match " && endsWith line.text ":" then
       let scrutinee ← lineExpr line ((line.text.drop 6).take (line.text.length - 7))
-      let mut branches : Array Json := #[]
+      let mut branches : Array (Pattern × Body × Span) := #[]
       for _ in [0:lines.size] do
         let j ← get
         let some branch := lines[j]? | break
@@ -611,25 +592,22 @@ def body (lines : Array Line) : Nat → Nat → PS Json
         let some (_, caps) ← matchAt branch caseRe branch.text
           | fail branch "expected zero/successor/true/false/label(binder)/wildcard case"
         let whole := (capture branch.text caps 1).getD []
-        let pattern : Json :=
-          if whole == ['_'] then Json.mkObj [("kind", toJson "wildcard")]
-          else if whole == "true".toList || whole == "false".toList then
-            Json.mkObj [("kind", toJson "bool"), ("value", toJson (whole == "true".toList))]
+        let pattern : Pattern :=
+          if whole == ['_'] then .wildcard
+          else if whole == "true".toList || whole == "false".toList then .bool (whole == "true".toList)
           else match capture branch.text caps 3 with
-            | some label => Json.mkObj [("kind", toJson "constructor"), ("label", toJson (String.ofList label)),
-                ("binder", toJson (String.ofList ((capture branch.text caps 4).getD ['_'])))]
+            | some label => .ctor (String.ofList label) (String.ofList ((capture branch.text caps 4).getD ['_']))
             | none => match capture branch.text caps 2 with
-              | some binder => Json.mkObj [("kind", toJson "succ"), ("binder", toJson (String.ofList binder))]
-              | none => Json.mkObj [("kind", toJson "zero")]
+              | some binder => .succ (String.ofList binder)
+              | none => .zero
         let inline := (capture branch.text caps 5).getD []
         let branchBody ← if inline.isEmpty then body lines fuel branch.indent
           else do
             let e ← lineExpr branch inline
-            pure (Json.mkObj [("kind", toJson "expression"), ("expression", e), ("span", branch.span.json)])
-        branches := branches.push (Json.mkObj [("pattern", pattern), ("body", branchBody), ("span", branch.span.json)])
+            pure (Body.expr e branch.span)
+        branches := branches.push (pattern, branchBody, branch.span)
       if branches.isEmpty then fail line "empty match"
-      return Json.mkObj [("kind", toJson "match"), ("scrutinee", scrutinee), ("branches", Json.arr branches),
-        ("span", line.span.json)]
+      return .cases scrutinee branches.toList line.span
     if let some (_, caps) ← matchAt line letRe line.text then
       let name := (capture line.text caps 1).getD []
       if name != "in".toList then
@@ -641,11 +619,10 @@ def body (lines : Array Line) : Nat → Nat → PS Json
           | some next => if next.indent != line.indent then fail line "a let must be followed by its body at the same indent"
           | none => fail line "a let must be followed by its body at the same indent"
           let rest ← body lines fuel (line.indent - 1)
-          return Json.mkObj [("kind", toJson "let"), ("name", toJson (String.ofList name)),
-            ("type", toJson (String.ofList ((capture line.text caps 2).getD ['_']))), ("value", value),
-            ("body", rest), ("span", line.span.json)]
+          return .letB (String.ofList name) (String.ofList ((capture line.text caps 2).getD ['_'])) value rest
+            line.span
     let text := if startsWith line.text "return " then line.text.drop 7 else line.text
-    return Json.mkObj [("kind", toJson "expression"), ("expression", ← lineExpr line text), ("span", line.span.json)]
+    return .expr (← lineExpr line text) line.span
 
 def namedImportRe : Re := seqs [str "import", many1 space, group 1 ident, many1 space, str "from", many1 space, chr '"',
   group 2 (seqs [str "./", many1 (.char (fun c => c != '"' && c != '\\')), str ".obend"]), chr '"', .done]
@@ -714,10 +691,10 @@ def sourceLines (source : String) : Except Diagnostic (Array Line) := do
     number := number + 1
   return lines
 
-def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
+def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
   let fuel := lines.size + 1
-  let mut imports : Array Json := #[]
-  let mut decls : Array Json := #[]
+  let mut imports : Array Import := #[]
+  let mut decls : Array Decl := #[]
   for _ in [0:lines.size] do
     let i ← get
     let some line := lines[i]? | break
@@ -725,21 +702,18 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
     if line.indent != 0 then fail line "unexpected indentation"
     if line.text == "edition ObjectiveBend 1".toList then continue
     if let some (_, caps) ← matchAt line namedImportRe line.text then
-      imports := imports.push (Json.mkObj [("path", toJson (cap line.text caps 2)), ("alias", toJson (cap line.text caps 1)),
-        ("span", line.span.json)])
+      imports := imports.push ⟨cap line.text caps 2, cap line.text caps 1, line.span⟩
       continue
     let imported ← matchAt line importRe line.text
     if (← matchAt line importLeadRe line.text).isSome && (← liftAt line (searches genOneRe line.text)) then
       fail line "Gen-1 ./NAME.bend imports are retired; Objective Bend imports ./NAME.obend"
     if let some (_, caps) := imported then
-      imports := imports.push (Json.mkObj [("path", toJson (cap line.text caps 1)), ("alias", toJson (cap line.text caps 2)),
-        ("span", line.span.json)])
+      imports := imports.push ⟨cap line.text caps 1, cap line.text caps 2, line.span⟩
       continue
     if let some (_, caps) ← matchAt line exportRe line.text then
       let target := cap line.text caps 1 ++ "." ++ cap line.text caps 2
       let name := (capture line.text caps 3).map String.ofList |>.getD (cap line.text caps 2)
-      decls := decls.push (Json.mkObj [("kind", toJson "reexport"), ("name", toJson name),
-        ("target", toJson target), ("span", line.span.json)])
+      decls := decls.push (.reexport name target line.span)
       continue
     if let some (_, caps) ← matchAt line specRe line.text then
       let parents := match capture line.text caps 3 with
@@ -748,16 +722,16 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
       for parent in parents do
         if (← matchAt line parentRe parent).isNone then fail line "spec parent must be a declaration name or Alias.Name"
       if parents.eraseDups.length != parents.length then fail line "duplicate spec parent"
-      let mut requirements : Array Json := #[]
-      let mut methods : Array Json := #[]
-      let mut claims : Array Json := #[]
+      let mut requirements : Array Signature := #[]
+      let mut methods : Array Method := #[]
+      let mut claims : Array Claim := #[]
       for _ in [0:lines.size] do
         let j ← get
         let some clause := lines[j]? | break
         if clause.indent == 0 then break
         set (j + 1)
         if startsWith clause.text "requires " then
-          requirements := requirements.push (Json.mkObj (signatureJson (← signature (clause.text.drop 9) clause)))
+          requirements := requirements.push (← signature (clause.text.drop 9) clause)
           continue
         if let some (_, q) ← matchAt clause qualifiedRe clause.text then
           let qualifier := match capture clause.text q 2 with
@@ -765,46 +739,37 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
             | none => let head := cap clause.text q 1; if head == "def" then "primary" else head
           let method ← signature ((capture clause.text q 3).getD []) clause
           let methodBody ← body lines fuel clause.indent
-          methods := methods.push (Json.mkObj (signatureJson method ++ [("qualifier", toJson qualifier), ("body", methodBody)]))
+          methods := methods.push ⟨method, qualifier, methodBody⟩
           continue
         if let some (_, l) ← matchAt clause claimRe clause.text then
           let parameters ← liftBare (splitParameters ((capture clause.text l 2).getD []))
           let claimBody ← lineExpr clause ((capture clause.text l 3).getD [])
-          claims := claims.push (Json.mkObj [("name", toJson (cap clause.text l 1)), ("parameters", Json.arr parameters.toArray),
-            ("body", claimBody), ("span", clause.span.json)])
+          claims := claims.push ⟨cap clause.text l 1, parameters, claimBody, clause.span⟩
           continue
         -- `law` names an ENFORCED predicate or an accepted proof obligation (GPT-6 row G); a spec
         -- property nothing checks is a `claim`. The old spelling refuses by name, never reinterprets.
         if startsWith clause.text "law " then
           fail clause "law means an enforced predicate; an unchecked property of a spec is a claim (write `claim name: expr`)"
         fail clause "expected requires, actual method body, or claim"
-      decls := decls.push (Json.mkObj ([("kind", toJson "spec"), ("name", toJson (cap line.text caps 2)),
-        ("suffix", toJson (capture line.text caps 1).isSome), ("parents", toJson (parents.map String.ofList)),
-        ("targetType", toJson (cap line.text caps 4)), ("requirements", Json.arr requirements), ("methods", Json.arr methods),
-        ("claims", Json.arr claims), ("span", line.span.json)] ++
-        (match capture line.text caps 5 with
-          | some b => [("binders", toJson (String.ofList b))]
-          | none => [])))
+      let spec : ObjectiveBendSurface.Spec := ⟨cap line.text caps 2, (capture line.text caps 1).isSome,
+        parents.map String.ofList, cap line.text caps 4, requirements.toList, methods.toList, claims.toList,
+        (capture line.text caps 5).map String.ofList, line.span⟩
+      decls := decls.push (.spec spec)
       continue
     if let some (_, caps) ← matchAt line extensionRe line.text then
       let parameters ← liftBare (splitParameters ((capture line.text caps 2).getD []))
       let extensionBody ← body lines fuel line.indent
-      decls := decls.push (Json.mkObj ([("kind", toJson "extension"), ("name", toJson (cap line.text caps 1)),
-        ("parameters", Json.arr parameters.toArray), ("targetType", toJson (cap line.text caps 3)),
-        ("body", extensionBody), ("span", line.span.json)] ++
-        (match capture line.text caps 4 with
-          | some b => [("binders", toJson (String.ofList b))]
-          | none => [])))
+      decls := decls.push (.extension (cap line.text caps 1) parameters (cap line.text caps 3) extensionBody
+        ((capture line.text caps 4).map String.ofList) line.span)
       continue
     if let some (_, caps) ← matchAt line typeAliasRe line.text then
-      decls := decls.push (Json.mkObj [("kind", toJson "typeAlias"), ("name", toJson (cap line.text caps 1)),
-        ("type", toJson (cap line.text caps 2)), ("span", line.span.json)])
+      decls := decls.push (.typeAlias (cap line.text caps 1) (cap line.text caps 2) line.span)
       continue
     if let some (_, caps) ← matchAt line sumRe line.text then
       let typeParameters ← match capture line.text caps 2 with
         | some raw => liftAt line (genericParameters raw)
         | none => pure []
-      let mut cases : Array Json := #[]
+      let mut cases : Array Field := #[]
       let mut labels : List String := []
       for _ in [0:lines.size] do
         let j ← get
@@ -812,17 +777,15 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
         if c.indent == 0 then break
         set (j + 1)
         let some (_, m) ← matchAt c sumCaseRe c.text | fail c "expected sum case label: Type"
-        cases := cases.push (Json.mkObj [("label", toJson (cap c.text m 1)), ("type", toJson (cap c.text m 2)),
-          ("span", c.span.json)])
+        cases := cases.push ⟨cap c.text m 1, cap c.text m 2, c.span⟩
         labels := labels ++ [cap c.text m 1]
       if cases.isEmpty then fail line "empty sum"
       if labels.eraseDups.length != labels.length then fail line "duplicate sum label"
-      decls := decls.push (Json.mkObj [("kind", toJson "sum"), ("name", toJson (cap line.text caps 1)),
-        ("cases", Json.arr cases), ("typeParameters", toJson typeParameters), ("span", line.span.json)])
+      decls := decls.push (.sum (cap line.text caps 1) cases.toList typeParameters line.span)
       continue
     if let some (_, caps) ← matchAt line recordRe line.text then
-      let mut methods : Array Json := #[]
-      let mut fields : Array Json := #[]
+      let mut methods : Array Signature := #[]
+      let mut fields : Array Field := #[]
       for _ in [0:lines.size] do
         let j ← get
         let some m := lines[j]? | break
@@ -830,11 +793,10 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
         set (j + 1)
         if let some (_, f) ← matchAt m fieldRe m.text then
           let name ← liftBare (fieldName ((capture m.text f 1).getD []))
-          fields := fields.push (Json.mkObj [("name", toJson name), ("type", toJson (cap m.text f 2)), ("span", m.span.json)])
+          fields := fields.push ⟨name, cap m.text f 2, m.span⟩
         else
-          methods := methods.push (Json.mkObj (signatureJson (← signature m.text m)))
-      decls := decls.push (Json.mkObj [("kind", toJson "record"), ("name", toJson (cap line.text caps 1)),
-        ("methods", Json.arr methods), ("fields", Json.arr fields), ("span", line.span.json)])
+          methods := methods.push (← signature m.text m)
+      decls := decls.push (.record (cap line.text caps 1) methods.toList fields.toList line.span)
       continue
     -- `law NAME: EXPR` is a law the kernel enforces on every object of the package; its text is
     -- parsed here (a refusal names the construct outside the fragment) and again by the
@@ -842,8 +804,7 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
     if let some (_, caps) ← matchAt line lawRe line.text then
       let text := cap line.text caps 2
       if let .error message := ObjectiveBendLaw.parse text then fail line message
-      decls := decls.push (Json.mkObj [("kind", toJson "law"), ("name", toJson (cap line.text caps 1)),
-        ("source", toJson text), ("span", line.span.json)])
+      decls := decls.push (.law (cap line.text caps 1) text line.span)
       continue
     if startsWith line.text "law " || line.text == "law".toList || startsWith line.text "law:" then
       fail line (ObjectiveBendLaw.refusalPrefix ++ "expected `law NAME: EXPR` (a top-level law has a name and no parameters)")
@@ -851,27 +812,21 @@ def declarations (lines : Array Line) : PS (Array Json × Array Json) := do
       let typeParameters ← liftAt line (genericParameters ((capture line.text caps 2).getD []))
       let sig ← signature ((capture line.text caps 1).getD [] ++ (capture line.text caps 3).getD []) line
       let functionBody ← body lines fuel line.indent
-      decls := decls.push (Json.mkObj [("kind", toJson "function"), ("signature", Json.mkObj (signatureJson sig)),
-        ("typeParameters", toJson typeParameters), ("body", functionBody), ("span", line.span.json)])
+      decls := decls.push (.function sig (some typeParameters) functionBody line.span)
       continue
     if startsWith line.text "def " && endsWith line.text ":" then
       let sig ← signature ((line.text.drop 4).take (line.text.length - 5)) line
       let functionBody ← body lines fuel line.indent
-      decls := decls.push (Json.mkObj [("kind", toJson "function"), ("signature", Json.mkObj (signatureJson sig)),
-        ("body", functionBody), ("span", line.span.json)])
+      decls := decls.push (.function sig none functionBody line.span)
       continue
     fail line "unsupported Objective Bend declaration"
   return (imports, decls)
 
-def moduleSchema : String := "dregg.objective-bend.module.v1"
-
 /-- Parse one module's source text. -/
-def parseObjective (source : String) : Except Diagnostic Json := do
+def parseObjective (source : String) : Except Diagnostic Module := do
   let lines ← sourceLines source
   let ((imports, decls), _) ← (declarations lines).run 0
-  return Json.mkObj [("schema", toJson moduleSchema), ("edition", toJson "objective-bend-1"),
-    ("imports", Json.arr imports), ("declarations", Json.arr decls),
-    ("theoremScope", toJson "new source AST; elaboration and reference semantics are Objective Core4")]
+  return ⟨imports.toList, decls.toList⟩
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a
 leading byte-order mark is consumed. -/
