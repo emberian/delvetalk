@@ -99,7 +99,10 @@ def requestSources (j : Json) : List (String × String) :=
 /-- A source refusal carries the dialect hint its source suggests, if any. -/
 def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
   if d.stage == "package-request" || d.hint.isSome then d
-  else { d with hint := Delvetalk.Hints.hintFor (requestSources j) d.sourceModule (d.span.map (·.line)) }
+  else
+    let modules := (requestSources j).map fun (name, source) =>
+      (name, source, (FrontEnd.parseSource name source).toOption)
+    { d with hint := Delvetalk.Hints.hintFor modules d.stage d.message d.sourceModule (d.span.map (·.line)) }
 
 /-- A parsed module's function definitions with their parameters' declared type texts. -/
 def signaturesOf (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (String × List String) :=

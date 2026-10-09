@@ -4,11 +4,19 @@ writing for DelveTalk bring forms from other languages (`fn(t) t.id != id`,
 `Maybe<T>`, `halt(reason)`, `Some(v)`, `match x: Pat -> body`, `record A: X | Y`,
 `law name: match ...`). The checker's messages are about the core, not the habit.
 
-A hint never changes what is accepted: it is computed only for a refusal, from
-the refused module's source text, and it rides beside the diagnostic's stage,
-message, module and span. The line the diagnostic names is examined first, then
-the rest of that module, then every module. -/
+A hint never changes what is accepted: it is computed only for a refusal and it
+rides beside the diagnostic's stage, message, module and span. It fires only when
+its trigger is present where the refusal points:
+
+- a parse refusal: the text of the one line it names (there is no parsed module);
+- an elaboration or type-proposal refusal: the parsed declaration that holds the
+  line it names; without a line, the declarations its message names by key
+  (`Module.name`), else any declaration, but then the trigger itself (`halt`,
+  `Some`, `Maybe<`) must appear in the message;
+- a refusal of the checker on the typed packet, or of the request: never. -/
+import Compiler.ObjectiveBendSurface
 namespace Delvetalk.Hints
+open Minidregg.Compiler.ObjectiveBendSurface (Expr Body Decl Param Span)
 
 def has (text pattern : String) : Bool := (text.splitOn pattern).length > 1
 
@@ -76,15 +84,124 @@ def lineHint (source line : String) : Option String :=
     some "match arms are `case label(x): body` (`case _: body` for the rest); there is no `Pattern -> body`"
   else none
 
-def firstHint (source : String) (lines : List String) : Option String :=
-  lines.findSome? (lineHint source)
+/-! ## Triggers in a parsed declaration -/
 
-/-- The hint for a refusal naming `module` and `line` (1-based) among `modules`. -/
-def hintFor (modules : List (String × String)) (module : Option String) (line : Option Nat) : Option String :=
+/-- What a declaration mentions that a hint can be about. -/
+structure Facts where
+  vars : List String := []
+  types : List String := []
+  untypedClosure : Bool := false
+
+def Facts.params (f : Facts) (ps : List Param) : Facts :=
+  { f with types := ps.map (·.type) ++ f.types }
+
+mutual
+def exprFacts : Facts → Expr → Facts
+  | f, .var n _ => { f with vars := n :: f.vars }
+  | f, .nat .. | f, .bool .. | f, .str .. | f, .unit .. => f
+  | f, .record fs _ => fieldFacts f fs
+  | f, .extend i fs _ => fieldFacts (exprFacts f i) fs
+  | f, .member t _ _ => exprFacts f t
+  | f, .call c args _ => listFacts (exprFacts f c) args
+  | f, .compose specs _ => listFacts f specs
+  | f, .fix a b _ | f, .binary _ a b _ => exprFacts (exprFacts f a) b
+  | f, .lambda ps r b _ | f, .extensionValue ps r b _ =>
+    let g := f.params ps
+    exprFacts { g with types := r :: g.types, untypedClosure := f.untypedClosure || ps.any (·.type == "_") } b
+  | f, .ite a b c _ => exprFacts (exprFacts (exprFacts f a) b) c
+  | f, .letE _ t v b _ => exprFacts (exprFacts { f with types := t :: f.types } v) b
+  | f, .specialize t types _ => exprFacts { f with types := types ++ f.types } t
+  | f, .dataOf t v _ => exprFacts { f with types := t :: f.types } v
+def fieldFacts : Facts → List (String × Expr) → Facts
+  | f, [] => f
+  | f, (_, v) :: rest => fieldFacts (exprFacts f v) rest
+def listFacts : Facts → List Expr → Facts
+  | f, [] => f
+  | f, e :: rest => listFacts (exprFacts f e) rest
+end
+
+mutual
+def bodyFacts : Facts → Body → Facts
+  | f, .expr e _ => exprFacts f e
+  | f, .cases sc branches _ => branchFacts (exprFacts f sc) branches
+  | f, .letB _ t v b _ => bodyFacts (exprFacts { f with types := t :: f.types } v) b
+def branchFacts : Facts → List (Minidregg.Compiler.ObjectiveBendSurface.Pattern × Body × Span) → Facts
+  | f, [] => f
+  | f, (_, b, _) :: rest => branchFacts (bodyFacts f b) rest
+end
+
+/-- The facts of a signature (its parameter and result types) and then of a body. -/
+def signedFacts (f : Facts) (ps : List Param) (result : String) (b : Body) : Facts :=
+  bodyFacts { (f.params ps) with types := result :: (f.params ps).types } b
+
+def declFacts : Decl → Facts
+  | .function sig _ b _ => signedFacts {} sig.params sig.resultType b
+  | .extension _ ps t b _ _ => signedFacts {} ps t b
+  | .spec sp => sp.methods.foldl (fun f m => signedFacts f m.signature.params m.signature.resultType m.body)
+      (sp.claims.foldl (fun f c => exprFacts (f.params c.params) c.body) {})
+  | .record _ methods fields _ =>
+    { types := fields.map (·.type) ++ methods.flatMap (fun m => m.resultType :: m.params.map (·.type)) }
+  | .sum _ cases _ _ => { types := cases.map (·.type) }
+  | .typeAlias _ t _ => { types := [t] }
+  | _ => {}
+
+/-- `name<` with nothing qualifying it (`Lists.Maybe<T>` is a declared sum, not a builtin). -/
+def bareGeneric (text name : String) : Bool :=
+  match text.splitOn (name ++ "<") with
+  | first :: rest => !rest.isEmpty && (first :: rest.dropLast).any fun before =>
+      match before.toList.getLast? with
+      | some c => !(isIdentChar c || c == '.')
+      | none => true
+  | [] => false
+
+def declares (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (name : String) : Bool :=
+  m.decls.any fun d => d.name == name && (d matches .sum ..)
+
+/-- The hint a parsed declaration's own triggers give, each with the word that names it. -/
+def declHint (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (d : Decl) : Option (String × String) :=
+  let f := declFacts d
+  let untypedDef := match d with
+    | .function sig _ _ _ => sig.resultType == "_" || sig.params.any (·.type == "_")
+    | _ => false
+  if untypedDef then
+    some (d.name, "definitions are `def name(x: T) -> U:`; parameter and result types are required")
+  else if f.untypedClosure then
+    some (d.name, "closures are `fn(x: T) -> U: body`; parameter and result types are required")
+  else if f.vars.contains "halt" then
+    some ("halt", "there is no halt; a refusal is a sum arm you return (declare it in your result sum and return `Result.refused({...})`)")
+  else if f.vars.contains "Some" || f.vars.contains "None" then
+    some ((if f.vars.contains "Some" then "Some" else "None"),
+      "there is no Some/None; a sum value is `Sum.label({fields})`, for example `Maybe.some({value: v})` with `sum Maybe<T>:` declared")
+  else
+    let builtin := fun (name : String) => !declares m name && f.types.any (bareGeneric · name)
+    if builtin "Maybe" || builtin "Option" then
+      some ((if builtin "Maybe" then "Maybe<" else "Option<"),
+        "there is no Maybe builtin; declare `sum Maybe<T>:` with arms `none: {}` and `some: {value: T}`")
+    else none
+
+/-- The declaration of `m` that holds `line`: the last one whose header is at or above it. -/
+def declAt (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (line : Nat) : Option Decl :=
+  (m.decls.filter fun d => d.span.line ≤ line).getLast?
+
+/-- A refused module as the hint sees it: its name, source text and, when it parsed, its surface. -/
+abbrev Refused := String × String × Option Minidregg.Compiler.ObjectiveBendSurface.Module
+
+/-- The hint for a refusal at `stage` naming `module` and `line` (1-based) with `message`. -/
+def hintFor (modules : List Refused) (stage message : String) (module : Option String) (line : Option Nat) :
+    Option String :=
   let named := module.bind fun m => modules.find? (·.1 == m)
-  let atLine := named.bind fun (_, source) => line.bind fun n =>
-    ((source.splitOn "\n")[n - 1]?).bind (lineHint source)
-  atLine <|> (named.bind fun (_, source) => firstHint source (source.splitOn "\n")) <|>
-    modules.reverse.findSome? fun (_, source) => firstHint source (source.splitOn "\n")
+  if stage == "objective-source-parse" then
+    named.bind fun (_, source, _) => line.bind fun n => ((source.splitOn "\n")[n - 1]?).bind (lineHint source)
+  else if stage == "objective-typed-check" || stage == "package-request" then none
+  else
+    match named, line with
+    | some (_, _, some ast), some n => ((declAt ast n).bind (declHint ast)).map (·.2)
+    | _, _ =>
+      let keyed := modules.findSome? fun (name, _, ast) => ast.bind fun ast =>
+        (ast.decls.filter fun d => has message (name ++ "." ++ d.name)).findSome? (declHint ast)
+      let anywhere := modules.reverse.findSome? fun (_, _, ast) => ast.bind fun ast =>
+        ast.decls.findSome? fun d => (declHint ast d).bind fun (trigger, hint) =>
+          if has message trigger then some hint else none
+      (keyed.map (·.2)) <|> anywhere
 
 end Delvetalk.Hints
