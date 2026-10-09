@@ -1,0 +1,63 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+sum Colour:
+  amber: {}
+  violet: {}
+  silver: {}
+record Rain:
+  author: String
+  text: String
+record State:
+  planter: String
+  colour: Colour
+  seed: String
+  rains: Lists.List<Rain>
+  rung: Bool
+# What the garden hands the host when it plants a bell.
+record Seed:
+  planter: String
+  colour: Colour
+  seed: String
+# A view returns this non-recursive summary, not the list-bearing state.
+record Summary:
+  rung: Bool
+  rains: Nat
+record Edits:
+  rains: Plans.Entries<Rain, {}>
+  rung: Plans.Edit<Bool, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<Summary, {}>
+def keep() -> Edits:
+  {rains: Plans.Entries::<Rain, {}>.keep({}), rung: Plans.Edit::<Bool, {}>.keep({})}
+def rain(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  let count = Lists.length::<Rain>(state.rains)
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries::<Rain, {}>.append({item: input})})})):
+    case written(_): count + 1n
+    case _: count
+# The strike waits for the admission receipt of the planting, then rings.
+def strike(state: State, input: {slot: Plans.Slot}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.await({slot: input.slot, patience: 8n})):
+    case reply(r): ring(state, r.receipt.outcome, context)
+    case _: state.rung
+def ring(state: State, outcome: Plans.Outcome, context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match outcome:
+    case admitted(_): rung(context)
+    case refused(_): state.rung
+def rung(context: Abi.Context) -> Activity<Plan, Response, Bool>:
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rung: Plans.Edit::<Bool, {}>.set({value: true})})})):
+    case written(_): true
+    case _: false
+def colourName(colour: Colour) -> String:
+  match colour:
+    case amber(_): "amber"
+    case violet(_): "violet"
+    case silver(_): "silver"
+def line(rain: Rain) -> Document.Document:
+  Document.text(textConcat(rain.author, textConcat(": ", textConcat(rain.text, "\n"))))
+def render(state: State) -> Document.Document:
+  Document.concat(Document.text(textConcat("A ", textConcat(colourName(state.colour), textConcat(" bell planted by ", textConcat(state.planter, textConcat(": ", textConcat(state.seed, if state.rung then " (rung)\n" else " (silent)\n"))))))), Document.Document.sequence({items: Lists.map::<Rain, Document.Document>(state.rains, line)}))
+def card(state: State) -> String:
+  Document.plain(render(state))
