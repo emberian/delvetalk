@@ -1,190 +1,113 @@
 # Objects handoff
 
-Written by the objects lane for its successor. Everything here was measured or hit
-against the real checker; nothing is from memory of the design documents. The
-checker is `delvetalk-obend` (never run `lake`; copy the binary into the worktree
-and set `DELVETALK_OBEND`).
+Written by the objects lane (lane/objects2) for its successor. Everything here was
+measured against the real checker and host; nothing is from memory of the design
+documents. Copy the binary into the worktree (`cp <foundation>/.lake/build/bin/delvetalk-obend .`),
+set `DELVETALK_OBEND=$PWD/delvetalk-obend`, never run `lake`.
 
-## 1. Conventions as they actually are
+## 1. Conventions as they are
 
-An object is one file under `world/objects/`, imports `./Name.obend` by basename
-(modules are flat; the name must be supplied earlier in the same job).
+An object is one file under `world/objects/`; it imports modules by basename (flat
+names; `world/lib`, `world/lib/prelude`, `world/lib/document`, `world/lib/game` are all
+the library).
 
-* **State, Seed, seeded.** `record State`, `record Seed` (or `type Seed = {}`),
-  `defaultSeed() -> Seed`, `seeded(seed: Seed) -> State`,
-  `initial() -> State = seeded(defaultSeed())`. A creator supplies a Seed; the
-  child's `seeded` makes its State. Tests still create with the full state under
-  entry `initial`; the host will move to `seeded`.
-* **render / card.** `render(state) -> Document` (pure) and
-  `card(state) -> String = Document.plain(render(state))`. A pure *method* must
-  return the state record in the host, so a card is shown by an activity
-  `describe` that performs `offer {to: "", document: render(state)}`.
-* **Method signature.** `(state, [input,] context: Abi.Context)`, in that order.
-  Input is a record. Activities return `Activity<Plan, Response, T>` with `T` a
-  typed sum or Bool/Nat; every refusal path is a typed sum, never a silent default.
-* **receive.** Cards that hear the town take `receive {text, who, post}`
-  (`record Heard`). `post` is the post uri: it is the intent of the planting slot a
-  Bell's strike later awaits, and a method cannot see its own turn identity. Garden,
-  Directory and Workshop all take the same three fields; the bridge must send all.
-* **One Edits record** per object, one field per state field you edit, each
-  `Plans.Edit<T, D>` (scalars) or `Plans.Entries<D, U>` (lists). Omitting fields is
-  fine. `keep()` helper builds all-keep; use `extend(keep(), {field: ...})`.
-* **Plan/Response.** `type Plan = Plans.Plan<Edits, A>`,
-  `type Response = Plans.Response<S, R>`. S is the state type of the object you
-  `view` (own state if you view nothing; Thing/Avatar use `Place.State`, Garden uses
-  `Policy.State`). R is the result type of what you `call` (all place/avatar calls
-  answer `Place.Done`). `A` is ONE type for every call, send and create the object
-  makes: all argument records must have the same shape, which is why Place.Handling
-  `{thing, by}` is shared by take/put/hold/release. A creator of several kinds
-  (Garden) makes `A` a sum `Child` with one constructor per package (lower case,
-  the host unwraps the one `package` names).
-* **amend replaces.** `Entries.amend {index, change}` stores `change` as the item,
-  so U equals the item type (Anthology.admit rewrites the whole proposal).
-* **Writes are staged**: `write` is always answered `written`; the law decides at
-  commit and a refusal ends the whole turn. No `case refused` after a write (dead
-  code). `create`, `call`, `view` can still answer refused/denied.
-* **References.** `Plans.self(context)`, `Plans.nobody()`, `Plans.same`,
-  `Plans.indexOf`. World `""` means the running world.
-* **Avatar id = principal** (the DID string). `Thing.give` compares the holder to
-  `{world: context.world, object: context.principal}`.
-* **`who` arguments are still there** (law reads `request.subject`); the successor
-  removes them now that Context carries `caller`/`intent`/`height`.
-* Nesting limit: a list in state is a cons chain; the host bounds data depth, the
-  248th item is refused `typeMismatch`, so **247 is the most any list field holds**
-  and `world-create` refuses seeds with ~64-deep lists (`response nesting
-  capacity`; stock by turns instead).
+* **State, Seed, seeded, initial.** `record State`, `record Seed` (or `type Seed = {}`),
+  `defaultSeed()`, `seeded(seed) -> State`, `initial() = seeded(defaultSeed())`. The host's
+  `create` does NOT call `seeded`: it lays the seed (a record naming some State fields)
+  over `initial()`. So a Seed's fields must be State fields of the same name, and a derived
+  field cannot be computed from a seed (Bell's planter is `planting.principal`, not a copy).
+  `world-create` takes a whole State.
+* **The card protocol** (`world/lib/Card.obend`). Every object (except Counter, the host
+  suites' timed reference activity) has a pure `render(state) -> Document` (the card),
+  `forms() -> Card.Forms` (its actions as data; a form's `card` is "", the spell names the
+  object id), `door() -> Card.Door {word, blurb}`, and `receive(state, input: Card.Heard,
+  context)` with `Heard = {text, post, slot}` (slot "" when the reply answers no awaiting
+  post; the bridge always sends all three; the host refuses an argument with a field the
+  method lacks). The usual receive is three lines: `Card.route(text, context, forms())`
+  gives `act {action, fields}` or not; `act` dispatches; anything else is
+  `Card.answer::<Edits, S, R>(routed, context, forms(), render(state))`, which offers the
+  card, why ("Not done: ..."), and every form as a copyable spell. An empty reply shows the
+  card; the HTTP front asks for it that way until `world-card` exists everywhere.
+  `Card.text/natural(fields, name)` read typed fields. Garden and Workshop keep their own
+  receive (policy fall-through, fenced blocks).
+* **Composition.** An activity composes only in tail position (no effect in let, argument,
+  field, payload or lambda). A method another activity reuses takes its finish as a pure
+  function: `def rained<T>(state, text, context, then: Nat -> T) -> Activity<Plan, Response, T>`,
+  then `rain = rained::<Nat>(..., fn(n: Nat) -> Nat: n)` and receive uses
+  `rained::<Card.Reply>(..., fn(n) -> Card.Reply: Card.Reply.done(...))`. Fan-out is explicit
+  recursion (`Card.broadcast`), never a send in a lambda.
+* **Payloads are Data.** `Plan<E>`; call/send/create/callVia/sendVia carry
+  `Data.of::<T>(value)`; `Plans.nothing()` is the empty payload. Data may not sit in a
+  State yet. `Response<S, R>`: S the state you `view`, R the result of what you `call` and
+  of an interpreted proposal (the proposal's argument is plain JSON: no variants, so a
+  colour is a name; Garden's `Planting {colour: String, seed}`).
+* **Principals.** No argument names one. `context.principal` is the actor, `context.caller`
+  the calling object ("" for a direct turn), `context.intent` the turn's identity. An
+  Avatar's id is its principal's DID. `Card.handle(did)` shows its last segment.
+* **Observers** replace hand wiring: `observers: Card.Observers` in State, `observe`/
+  `unobserve` methods that write `Card.observing/unobserving`'s one Entries edit (a generic
+  activity over the object's Edits nested past the packet capacity when imported, so the
+  object writes it), and `Card.broadcast::<Edits, S, R, T>(observers, Data, 0n, then)`.
+* **Cards fit 1,400 characters**: `Card.clipped(lines, 8n)` shows eight and "… and N more".
+* **Pages**: `page(state, context) -> Card.Page` (default `Card.defaultPage`), rendered by
+  `Card.pageText` and emitted with `publish` (Garden.publish).
+* **Laws in source** (`law NAME: EXPR`) are kept by the host, refused by the pure stateless
+  compile ("package laws require a host law adapter"; `tests/test_objects.compile_job`
+  strips them), and refused in any module a package imports ("a law belongs to the
+  package's entry module"), so a lawful object cannot be made by a creator that imports
+  it: tests make Policy, Env, Wake, Tide, Deal and Table with world-create. A law must admit
+  an amendment by the one who installs it ("law has no amendment clause"): Env and Wake
+  are made by their owner. `writeOnce` reads naturals only and passes a text field
+  unjudged (Deal uses a `closed: Nat`). `request.method` and `REF in new.F` exist.
+  Bend predicates `def law(old, new, request: Abi.Request) -> Abi.Verdict` (Tide, Wake) are
+  recorded in the artifact; the host does not run them on a turn yet.
 
-## 2. Library modules
+## 2. Hard limits found (measured)
 
-* `lib/Plan.obend`: `Reference`, `Edit`, `Entries` (keep/append/amend/remove),
-  `Slot`, `Outcome`, `Receipt`, `Interpret`, `Offering {to, document}`, `Plan<E,A>`
-  (view write call send create await interpret offer publish reprogram amend
-  inspect check), `Response<S,R>` (viewed denied written refused returned delivery
-  created reply unknown timedOut broken proposal unclear offered published
-  reprogrammed amended inspected checked), helpers above. Header documents the Seed
-  rule and staged writes.
-* `lib/Form.obend`: `Names`, `Kind` (text/natural/choice), `Field`, `Fields`,
-  `Form {card, action, fields}`. Split out of Spell so Plan can carry forms.
-* `lib/Spell.obend`: `parse(text) -> Parsed` (`spell | notASpell`), `fit(parsed,
-  form) -> Fit` (`proposal | unclear | refused`), `valueOf`, `joined`, `Entry/Value`.
-  Grammar: skips every line before the first `delvetalk` line; `# ` and blank lines
-  ignored; stops at `---`; fields `name: value`; one-line form
-  `delvetalk card action a: x, b: y` (a comma continues a value unless what follows
-  looks like `name:`). Field names are NOT validated at parse (78 ticks/scalar);
-  fit refuses them as unknown. Naturals are canonical decimals, at most 18 digits.
-* `lib/document/Document.obend`: `Document` sum, `text/concat/quote`, `plain`
-  (flatten once + pairwise join, ~n log n), `size` (linear), `lines` (split on
-  newline without growing accumulators), `Names`, `Documents`.
-* `lib/prelude/Abi.obend`: `Context {world, object, principal, ...}`; `List.obend`:
-  `List<T>` and traversals. Encounter*, examples: old, unused by objects.
+* **About 256 top-level declarations per closure.** The typed packet nests the whole
+  program's declarations as one row; `typeNestingCapacity` is 256, and a package whose
+  closure (every module listed, imported or not) holds more is refused with
+  `typed packet does not decode: type nesting capacity`. The library costs ~165 (Spell 52,
+  Card ~37, Document 22, List 26, Plan 21, Abi 8, Form 5). Garden's closure (Bell,
+  Cistern, Card, Spell) has 8 to spare: a creator test's Maker module (6) fits, a Spell
+  probe does not. Measure with an `n` dummy-def bisection (see git history,
+  `room.py`). The kernel should raise or restructure this before the queue below.
+* Each module in a closure costs every turn: Counter with Card took 20 s for 200 HTTP
+  turns (10 s before), so Counter stays outside the protocol.
+* Spell card names are `[a-z0-9-]+`: `env/<did>` cannot be named in a spell.
+* An await only proves that some turn with that identity was admitted; Seat reads the
+  rival seat after its await. A turn suspended on an object resumes refused `staleRoot`
+  if anything wrote that object meanwhile: keep waits on objects nobody else writes
+  (one Appointment per booking; one Seat per player).
+* `run` refuses variant arguments and recursive results: build in a probe module.
 
-Checker refusals that shaped them:
-* Generic **records** do not parse (`unsupported Objective Bend declaration`):
-  only generic sums. So Write/Call/Send/Create are inline sum payloads.
-* **Recursion in Plans/Responses** (List, Document) was refused with the bare
-  `the checker refused the front end's typed packet` (stage objective-typed-check)
-  until the kernel change; now admitted. Early files still carry its workarounds'
-  comments only in git history.
-* **Phantom type arguments** need explicit instantiation:
-  `Plans.Edit::<Bool, {}>.keep({})`, `Lists.List::<T>.nil()`.
-* `sum match needs a resolved variant type`: a `match` whose only arm is `case _`,
-  or `let x = if ... activity`. Put activities in `match perform(...)` arms or
-  tail `if`; an activity in an `if` *condition* gives the bare typed-packet refusal.
-* Named refusals (all asserted in `test_objects.Refusals`): effect-in-field,
-  effect-in-payload, effect-in-plan, effect-as-argument, effect-in-let,
-  perform-outside-activity, nullary-activity (needs a parameter).
-* Multi-line `if/else if` chains do not parse: keep them on one line or split into
-  helper defs. Deep `textConcat` nests easily lose a paren: use `let`s.
-* **8 KiB REPL module cap** (`transport/http.py` MAX_SOURCE): a library module over
-  8 KB makes any closure that includes it unusable through the REPL (`413`).
-  Spell is ~11.8 KB, so nothing small (Counter) may import it, which is why Plan
-  imports Form, not Spell. Keep Plan, Form, List, Abi small.
-* The run op refuses variant arguments and recursive results; see the probe trick.
+## 3. Objects
 
-## 3. Objects (one line each; open ends)
+Counter (reference), Garden (plant, cistern, receive with policy fall-through and
+yes/no, children, page/publish), Bell (rain, ring, strike, observers), Cistern, Anthology,
+Directory, Door, Lantern, Loop, Place, Thing, Avatar, Policy (owner, law, 16 examples),
+Workshop (check, inspect, propose = reprogram another object under its law), Env, Wake,
+Tide, Appointments/Appointment, Deal (Exhibition = a deal with three parties and a piece),
+Seat and Table (Automatafl on commit-reveal seats; game modules in `world/lib/game`).
 
-* **Counter**: `bump` adds one. (reference activity.)
-* **Garden**: `plant`/`sow` create a Bell; `cistern` creates a Cistern; `receive`
-  parses, fits `plantForm`, plants, else interprets via `policy`, always offers a
-  reply card. Open: `confirming` has no follow-up, a "yes" reply needs a pending
-  proposal in state; `plant` still takes `post`; Child sum vs "A = Bell.Seed".
-* **Bell**: rains (append), `ring` (write rung + send open to `door`), `strike`
-  awaits `state.planting` (Slot written from the seed by Garden). Open: `strike`
-  untested until the host's `await` merges; 1,025 rains cannot exist (247 cap).
-* **Cistern**: `retain {receipt}` appends a Receipt. **Anthology**: `submit`,
-  `admit` (rewrites the proposal). **Directory**: root menu, `add`/`remove`,
-  `receive`, `describe`. **Lantern/Door/Loop**: the send chain; Loop cycles until
-  the ledger's budgetExhausted.
-* **Place**: enter/leave/take/put on `present`/`things` with `remove`; `describe`.
-  **Thing**: acquire/drop/give via place and avatar calls; `inspect`.
-  **Avatar** (Mover folded in): `move` (view, leave, enter, write `at`), `arrive`,
-  `note`, `hold`/`release` (idempotent, never refuse), `describe`. Mover.holding is
-  gone: `Avatar.holding` is written by `hold`/`release`. The recipient of a `give`
-  learns through a note written by `hold` (a call, not a `send`: A has one shape).
-* **Policy**: the interpretation policy (teach/define/setModel/describe, pure
-  `prompt`). **Workshop**: `check`, `propose` (inspect, check, reprogram),
-  `receive` (fenced obend block + spell). Open: host-dependent paths below.
+## 4. Open
 
-## 4. Test harness
+* `render(state, context)`, lenses (`set` through `Form.Lens`), Entries by item: not done;
+  each adds declarations Garden's closure has no room for (section 2).
+* `receive "merge"` recording `pageCheckpoint`: Garden has no owner to judge it.
+* Workshop's diagnostics card would print the checker's `hint`, but the host's `check`
+  answers `"<module>:<line>: <stage>: <message>"` without it.
+* Directory and Anthology admit anyone's add/remove/admit under the default law.
+* An addressee `slot` reaches receive but no object reads it yet.
 
-* `tests/host.py`: shared host per test class (`HostCase`), fresh temp journal per
-  test; `check()` serves stateless compile/run with memoized compiles; the binary
-  is copied once per run. Set `DELVETALK_OBEND` to your own copy so rebuilds elsewhere
-  never race you. `python3 -W ignore -m tests.run [names]` runs everything in
-  parallel classes (`make check`); a single suite: `python3 -m unittest tests.x`.
-* Build worlds with `Chain` (tests/test_chain.py: `make`, `state`, `turn`).
-* **Probe-module trick**: `run` refuses variants as arguments and recursive results
-  (`variant arguments are not in the package execution profile`, `package result
-  must have first-order data type`). Compile your module list plus a final
-  `Probe` module that builds the list/sum in Bend and returns a String or Nat
-  (see `test_objects.BELL_PROBE`, `test_spell.PROBE`, `test_policy.PROBE`).
-  `run` has a 100,000-tick default; pass `limits={"ticks": "1000000"}` (the host's
-  turn budget) to measure larger costs.
-* **Expected failures waiting on the host**, with exact messages:
-  * `plan not supported: create` (test_replay steps 1 and 3; test_receive planted
-    card test),
-  * `plan not supported: await` (test_replay step 5, Bell.strike),
-  * `plan not supported: interpret` (test_policy fall-through x3),
-  * `plan not supported: check` and `plan not supported: inspect`
-    (test_workshop x5; check is the first plan of block checks, inspect of
-    target/propose paths).
-  Each flips to "unexpected success": delete the decorator then.
+## 5. What the previous handoff said that was wrong by now
 
-## 5. Tick costs and expensive idioms (measured)
-
-* Text tariff: `textBreak/Span` 2*(alphabet+2) per scalar examined; `textTake/Drop`
-  2*min(size, 4*n) (about 8 per scalar!); `textConcat` 1+2*bytes of both inputs;
-  `textLength` 1+bytes. So a field-line scalar costs about 21.6 ticks (break 6, take 8,
-  drop 8) plus ~400 ticks of fixed work per line.
-* **64-field parse**: a 4,096-byte reply with 64 fields and a `---` rule parses in
-  97,355 ticks (just under the 100,000 run default); all-field-lines 4,057 bytes
-  needs 113,942. Bytes after `---` cost nothing. Do not validate names at parse.
-* **Never walk characters** recursively over a whole text, and never fold
-  `textConcat` into a growing accumulator (quadratic): flatten leaves once and join
-  pairwise (`Document.joinAll`, ~n log n) or split with `Document.lines`.
-* `Document.plain` over 256 leaves: 72,085 ticks (was 555,890 with an accumulating
-  fold). Bell with 1,025 rains: `Document.size` 316,764; `plain` 848,680;
-  `lines` 617,660 (all moot given the 247 list cap). A Document of N lines should be
-  a sequence of one text leaf per line (built with `map`), not one concatenation.
-* Building a one-text-leaf-per-item card is ~300 ticks per item. Avatar with 247
-  notes: describe turn 42,363 ticks. Place with 64 things: 13,728.
-* Policy prompt with 64 examples: 208,606 ticks (includes making them). 32 KiB fenced
-  block extraction (break+take+drop ~22/scalar): 426,751.
-* `natText(n)` cost grows with n; use constant strings in large probes.
-
-## 6. What I would do next
-
-1. Drop `who`/`by` arguments where Context now carries the principal; keep `by` only
-   where the argument is a *reference to another object* (Place.take's holder).
-   Re-seed tests with the new Context fields.
-2. Garden "yes": add `pending: Entries<Pending {who, spell}>` to Garden's state;
-   `confirming` appends; `receive` of `yes` by the same `who` plants the stored
-   spell, anything else replaces it. Cap at one per `who`.
-3. Switch tests and the bridge to `seeded` seeds; delete full-state creates.
-4. When the host lands create/await/interpret/check/inspect, remove the expected-
-   failure decorators (section 4) and add the replay assertions that were blocked.
-5. Decide Garden's A: sum `Child` (host unwraps by package) vs splitting cistern
-   creation into its own creator so A is literally Bell's Seed.
-6. Port the remaining capabilities one at a time as objects with a `receive` and a
-   form (rooms, conversations, table); keep each module under 8 KB and each list
-   under the 247 cap (page long lists across objects).
+* "the host will move to `seeded`": it overlays seeds on `initial()` instead.
+* "247 is the most any list field holds": lists cross the wire as arrays; 248 notes are
+  admitted.
+* "8 KiB REPL module cap": 16 KiB.
+* "A is ONE type for every call, send and create": payloads are Data.
+* "`receive {text, who, post}`", `Plans.Position`, `describe`/`present`, Bell's
+  `door/configure/lastDelivery`, Door's `lantern/configure`, and the expected failures of
+  its section 4: all gone (create, await, interpret, check, inspect are the host's).
+* It did not know the declaration cap (section 2), which now bounds every object.
