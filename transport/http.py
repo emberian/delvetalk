@@ -20,113 +20,28 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
+from transport.hostproc import BINARY, HOST_TIMEOUT, POOL, Heaps, Host, HostClient, RemoteHeaps, add_host_args, connect  # noqa: F401
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
-BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
 MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
-RATE, OPEN_RATE, WINDOW, HOST_TIMEOUT, DELIVER_LIMIT, POOL = 32, 16, 60, 120, 16, 8
+RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
-
-
-class HostDied(Exception):
-    pass
-
-
-class Host:
-    """One host subprocess, one request at a time; respawned and reopened if it dies.
-    With journal=None it is a stateless compile/run process."""
-
-    def __init__(self, journal, binary=BINARY, clock=None):
-        self.journal, self.binary, self.proc, self.clock = journal, binary, None, clock
-        self.lock = threading.Lock()
-
-    def _spawn(self):
-        self.proc = subprocess.Popen([self.binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-        if self.journal:
-            reply = self._exchange({'op': 'world-open', 'path': self.journal, **({'clock': self.clock} if self.clock else {})})
-            if reply.get('status') != 'opened':
-                raise HostDied('world-open refused: ' + json.dumps(reply))
-
-    def _exchange(self, request):
-        watchdog = threading.Timer(HOST_TIMEOUT, self.proc.kill)
-        watchdog.start()
-        try:
-            self.proc.stdin.write(json.dumps(request) + '\n')
-            self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
-        except (BrokenPipeError, OSError, ValueError):
-            line = ''
-        finally:
-            watchdog.cancel()
-        if not line:
-            raise HostDied('host closed its output')
-        return json.loads(line)
-
-    def send(self, request):
-        """A turn is retried once after a restart: the host answers a repeated identity with the original receipt."""
-        with self.lock:
-            for attempt in (0, 1):
-                try:
-                    if self.proc is None or self.proc.poll() is not None:
-                        self.close()
-                        self._spawn()
-                    return self._exchange(request)
-                except (HostDied, ValueError):
-                    self.close()
-                    if attempt:
-                        return {'status': 'error', 'message': 'host unavailable'}
-
-    def close(self):
-        if self.proc is not None:
-            self.proc.kill()
-            self.proc.wait()
-            for s in (self.proc.stdin, self.proc.stdout):
-                s.close()
-            self.proc = None
-
-
-class Heaps:
-    """Per-principal journals, each in its own host process; least recently used evicted.
-    A heap is reopened by the host's replay, so eviction loses nothing."""
-
-    def __init__(self, directory, size=POOL, binary=BINARY):
-        self.dir, self.size, self.binary = Path(directory), size, binary
-        self.pool = collections.OrderedDict()
-
-    def journal(self, did):
-        return self.dir / f'{did}.journal'
-
-    def get(self, did, create=True):
-        if did in self.pool:
-            self.pool.move_to_end(did)
-            return self.pool[did]
-        if not create and not self.journal(did).exists():
-            return None
-        self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        while len(self.pool) >= self.size:
-            self.pool.popitem(last=False)[1].close()
-        self.pool[did] = Host(str(self.journal(did)), self.binary)
-        return self.pool[did]
-
-    def close(self):
-        for h in self.pool.values():
-            h.close()
-        self.pool.clear()
 
 
 class Front(HTTPServer):
     def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy = heaps, repl or Host(None), trust_proxy
+        self.heaps, self.repl, self.trust_proxy = heaps, repl or Host(None), trust_proxy  # tests pass a repl; main() gives a hostd client
         self.hits, self.cards, self.nonce = {}, {}, secrets.token_hex(4)
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
-        self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest()
+        self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
+                            else host.send({'op': 'hostd-info'}).get('hostSha256', 'unknown'))
 
     def used(self, credential):
         now = self.clock()
@@ -408,14 +323,19 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='http.py')
     ap.add_argument('--state', required=True)
-    ap.add_argument('--journal', required=True)
+    add_host_args(ap)
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
-    front = Front((a.bind, a.port), Host(a.journal), Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=Heaps(Path(a.state) / 'heaps'), trust_proxy=a.trust_proxy)
+    if a.standalone:
+        host, heaps, repl = Host(a.journal), Heaps(Path(a.state) / 'heaps'), None
+    else:
+        sock = a.host_socket or Path(a.state) / 'host.sock'
+        host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
+    front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
+                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy)
     try:
         front.serve_forever()
     finally:

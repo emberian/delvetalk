@@ -2,10 +2,10 @@
 """Create one object in a world journal from a module in world/ and its imports.
 
 Run as `python3 -m deploy.seed` from the repository root. Carries bytes: the operator names the object, the module, the creating principal
-and the typed seed; the host compiles, judges and journals. Run it as the only
-writer (inside `one-writer`, with the stack's writer stopped).
+and the typed seed; the host compiles, judges and journals. Normally through hostd's
+socket (--host-socket); --journal opens the journal in-process and needs the stack stopped.
 
-  python3 -m deploy.seed --journal /data/world.journal --principal did:plc:... \
+  python3 -m deploy.seed --host-socket /data/state/host.sock --principal did:plc:... \
       --object garden --module Garden --intent mk-garden \
       --seed '{"tag":"record","fields":[...]}'
 """
@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-from transport.http import Host
+from transport.hostproc import Host, HostClient
 
 ROOT = Path(__file__).resolve().parent.parent
 IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
@@ -39,7 +39,9 @@ def closure(name, found, seen=None, out=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='seed.py')
-    for flag in ('--journal', '--principal', '--object', '--module', '--intent', '--seed'):
+    ap.add_argument('--host-socket', help='hostd socket (the normal way)')
+    ap.add_argument('--journal', help='with no socket: open this journal in-process (stop the stack first)')
+    for flag in ('--principal', '--object', '--module', '--intent', '--seed'):
         ap.add_argument(flag, required=True)
     ap.add_argument('--law', help='law text; default: the host default law')
     a = ap.parse_args(argv)
@@ -47,7 +49,9 @@ def main(argv=None):
            'modules': closure(a.module, modules_on_disk()), 'entry': 'initial', 'seed': json.loads(a.seed)}
     if a.law:
         req['law'] = a.law
-    host = Host(a.journal)
+    if not (a.host_socket or a.journal):
+        ap.error('give --host-socket or --journal')
+    host = HostClient(a.host_socket) if a.host_socket else Host(a.journal)
     try:
         reply = host.send(req)
     finally:

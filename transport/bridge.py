@@ -18,12 +18,12 @@ import time
 from pathlib import Path
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.http import Host
-from transport.observe import Observer
+from transport.hostproc import add_host_args, connect
+from transport.observe import SCHEMA, Observer
 
 DELIVER_ROUNDS = 8
 KINDS = ('spell', 'summon')
-CLOCK = 'transport'  # the clock principal named at world-open
+CLOCK = 'transport'  # the clock principal named at world-open (hostd opens the world with it)
 
 
 def uri_hash(uri):
@@ -67,6 +67,7 @@ def draft_text(reply):
 
 def pending_observations(state):
     db = sqlite3.connect(Path(state) / 'observe.sqlite')
+    db.executescript(SCHEMA)  # fresh state has no table yet
     rows = [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
     db.close()
     return sorted((o for o in rows if o['kind'] in KINDS or o['replyTo']), key=lambda o: (o['createdAt'], o['uri']))
@@ -180,7 +181,7 @@ def main(argv=None, out=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
     r = sub.add_parser('run')
     r.add_argument('--state', required=True)
-    r.add_argument('--journal', required=True)
+    add_host_args(r)
     r.add_argument('--once', action='store_true')
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
     r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
@@ -198,7 +199,7 @@ def main(argv=None, out=None):
     else:
         if bool(a.once) == bool(a.poll):
             ap.error('give exactly one of --once and --poll SECONDS')
-        host = Host(a.journal, clock=CLOCK)
+        host = connect(a, CLOCK)
         try:
             poll = None
             if a.observe or a.poll or a.mock:

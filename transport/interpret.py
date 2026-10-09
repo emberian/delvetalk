@@ -18,7 +18,7 @@ from pathlib import Path
 from transport import model
 from transport.bridge import daemon
 from transport.delve import canonical
-from transport.http import Host
+from transport.hostproc import add_host_args, connect
 
 
 def receipt_path(state, request_id):
@@ -69,14 +69,14 @@ def main(argv=None, out=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
     r = sub.add_parser('run')
     r.add_argument('--state', required=True)
-    r.add_argument('--journal', required=True)
+    add_host_args(r)
     r.add_argument('--once', action='store_true')
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: settle pending requests every SECONDS')
     r.add_argument('--mock', metavar='DIR', help='answer from model fixtures instead of the network')
     a = ap.parse_args(argv)
     if bool(a.once) == bool(a.poll):
         ap.error('give exactly one of --once and --poll SECONDS')
-    host = Host(a.journal, clock='transport')
+    host = connect(a, 'transport')
     step = lambda: out.write(canonical(run(a.state, host, lambda req: model.ask(req, a.mock, state=a.state))) + '\n') and out.flush()
     try:
         step() if a.once else daemon(a.state, 'interpret', a.poll, step)

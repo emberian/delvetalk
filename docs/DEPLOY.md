@@ -10,30 +10,25 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/Dockerfile.transport` | python 3.13 slim + the binary + `transport/`, `world/`, the guide |
 | `deploy/build.sh` | builds both, prints the binary's SHA-256, writes `deploy/out/host.sha256` |
 | `deploy/compose.yml` | `delvetalk-http`; `delvetalk-bridge`, `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
-| `deploy/one-writer.sh` | every service's entrypoint: holds `/data/journal.lock` or exits 75 |
+| `deploy/one-writer.sh` | image entrypoint; skipped in compose (`ONE_WRITER=skip`) because `transport.hostd` holds the lock itself |
 | `deploy/seed.py` | `world-create` of one object from `world/` |
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
 
 ## One writer
 
-Each transport program starts its own host process, and each host holds the
-world in memory and appends to the journal. Two of them on one journal write
-two entries at the same height:
-
-    host A: world-open, world-advance 10   -> advanced
-    host B: world-open, world-advance 20   -> advanced
-    host C: world-open                      -> journal broken at height 2: height out of sequence
-
-So the compose file runs one writer. `delvetalk-http` holds the lock; the
-`town` profile (bridge and interpreter daemons) exits 75 while it does. Every
-writing operator command below either stops `delvetalk-http` first or is a
-read (`ONE_WRITER=skip`). The fix belongs to the host: refuse a second opener
-of a journal, and serve the other programs over one socket (FOUNDATION §2,
-"one Lean process per world"). When that lands, `town` joins the default set.
-The lock holds where one kernel sees the file: a local Linux filesystem
-(measured on ext4). Docker Desktop's file sharing on a Mac does not enforce it
-across containers (measured), so test the stack there on a named volume.
+Two host processes on one journal write two entries at the same height and break
+the chain ("journal broken at height N: height out of sequence"). So exactly one
+program, `delvetalk-hostd`, spawns the host and opens the journal. It holds
+`/data/journal.lock` for its life (exit 75 if taken), restarts the host on death
+by replaying the journal, and serves the front, the bridge, the interpreter,
+`post --record` and `deploy.seed` over `/data/state/host.sock` (mode 0600). Private
+heaps live in the same daemon, addressed by a `heap: <did>` field. Those programs
+are clients: stop, start or run them at any time without touching the world.
+`--standalone --journal J` still opens a journal in-process; use it only with the
+stack stopped. The lock holds where one kernel sees the file: a local Linux
+filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
+enforce it across containers (measured), so test the stack there on a named volume.
 
 ## Prerequisites on the workhorse
 
@@ -67,7 +62,8 @@ packages by snapshot, elan and the Lean tarball by SHA-256).
 
 On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` in `.env`:
 
-    docker compose run --rm delvetalk-ops python3 -m deploy.seed --journal /data/world.journal \
+    docker compose up -d --wait delvetalk-hostd
+    docker compose run --rm delvetalk-ops python3 -m deploy.seed --host-socket /data/state/host.sock \
       --principal <owner DID> --object garden --module Garden --intent genesis-garden \
       --seed '{"tag":"record","fields":[{"name":"planted","value":{"tag":"natural","value":"0"}},
               {"name":"policy","value":{"tag":"record","fields":[{"name":"world","value":{"tag":"label","value":""}},
@@ -90,35 +86,28 @@ and revoke the throwaway credential.
 Posting is a human command and is never in a container's `up`. The Delve
 account's credentials file is mounted for that one command only:
 
-    docker compose stop delvetalk-http
     docker compose run --rm -v /etc/delvetalk/delve-credentials.json:/run/delve.json:ro delvetalk-ops \
       python3 -m transport.post --state /data/state/post post --text-file /data/welcome.txt \
-      --intent welcome-1 --journal /data/world.journal --record directory --credentials /run/delve.json
-    docker compose start delvetalk-http
+      --intent welcome-1 --host-socket /data/state/host.sock --record directory --credentials /run/delve.json
 
 Without `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
-read it, then add the flag. `--record` asks the host for `world-posted`, which
-the host at foundation 1cc552a does not have ("unknown world operation"). Until
-it does, post without `--record` and `--journal`, with `ONE_WRITER=skip` and
-`delvetalk-http` running; the uri and cid stay in
-`/data/state/post/post-log.jsonl` to be recorded later.
+read it, then add the flag. `--record` asks the host for `world-posted`; if the
+host answers "unknown world operation", post without `--record` and record the uri
+and cid from `/data/state/post/post-log.jsonl` later.
 
 ## The daily loop
 
-Until the host owns its journal, drafts are made in a short window with the
-front stopped (each start replays the journal):
+The front keeps running. Run the town programs against hostd:
 
-    docker compose stop delvetalk-http
     docker compose run --rm delvetalk-bridge python3 -m transport.bridge run --once --observe \
-      --state /data/state --journal /data/world.journal
+      --state /data/state
     docker compose run --rm delvetalk-interpret python3 -m transport.interpret run --once \
-      --state /data/state --journal /data/world.journal
-    docker compose start delvetalk-http
-    docker compose run --rm -e ONE_WRITER=skip delvetalk-ops python3 -m transport.bridge outbox --state /data/state
+      --state /data/state
+    docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
 
 For each draft: read it, post it as a reply with `transport.post ... --reply-to
 <uri>` as above, then `python3 -m transport.bridge mark-posted <file>` (also
-`ONE_WRITER=skip`). Draft principals are observed, unverified DIDs.
+through `delvetalk-ops`). Draft principals are observed, unverified DIDs.
 
 ## Rotating the Anthropic key
 
@@ -191,6 +180,4 @@ stays red and the journal is untouched: set the old tag back and `up` again.
   `credentials.json`.
 - **DNS and TLS.** The anchor's Caddy and the DNS record are dregg-infra's.
 - **Genesis.** Which objects exist, under which DID and policy, is the owner's.
-- **The writer window.** Until the host owns its journal, the bridge and the
-  interpreter run by hand with the front stopped.
 - **Backup schedule and off-box copy.** The owner picks the timer and the target.
