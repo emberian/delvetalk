@@ -299,6 +299,18 @@ class PolicyObject(Chain):
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertNotEqual(resumed["result"]["label"], "planted", resumed)
 
+    def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
+        """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
+        self.policy()
+        self.garden("policy")
+        for i in range(64):
+            r = self.say("a fern, maybe %d" % i, identity="p%d" % i)
+            self.assertEqual(r["status"], "suspended", (i, r))
+        over = self.say("one more fern", identity="p64")
+        out = over["receipt"]["outcome"]
+        self.assertEqual((over["status"], out["class"], out["reason"]), ("refused", "capacity", "pendingInterpretationsPerObject"))
+        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 64)
+
 
 if __name__ == "__main__":
     unittest.main()

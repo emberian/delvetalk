@@ -565,17 +565,23 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
         mayWait depth self checkpoint
         throw (.suspend sp si patience checkpoint)
 
-/-- The capacities every suspension is held to; only the top of a turn may wait. -/
-partial def mayWait (depth : Nat) (self : String) (checkpoint : Delvetalk.Turn.Checkpoint) : M Unit := do
+/-- The capacities every suspension is held to; only the top of a turn may wait. Awaits and
+    interpretations waiting on one object are counted apart (`pendingActivitiesPerObject`,
+    `pendingInterpretationsPerObject`): every prose reply to a card waits for the model, and
+    a batch of replies must not exhaust the slots awaits need. A full count refuses the turn
+    `capacity`, naming the limit. -/
+partial def mayWait (depth : Nat) (self : String) (checkpoint : Delvetalk.Turn.Checkpoint)
+    (interpreting : Bool := false) : M Unit := do
   let s ← get
+  let waiting := s.world.suspended.filter fun e =>
+    let outcome := (e.getObjVal? "outcome").toOption
+    (outcome.bind (·.getObjVal? "activity" |>.toOption) |>.bind (·.getObjValAs? String "object" |>.toOption)) == some self &&
+      (outcome.bind (·.getObjVal? "interpretation" |>.toOption)).isSome == interpreting
+  let (cap, name) := if interpreting then (Limits.pendingInterpretationsPerObject, "pendingInterpretationsPerObject")
+    else (Limits.pendingActivitiesPerObject, "pendingActivitiesPerObject")
   if depth != 0 then evaluation "a wait inside a call is not supported"
-  else if (s.world.suspended.filter fun e =>
-      ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
-        |>.bind (·.getObjValAs? String "object" |>.toOption)) == some self).size
-      ≥ Limits.pendingActivitiesPerObject then
-    evaluation "pending activity capacity (pendingActivitiesPerObject) reached for the object"
-  else if s.world.suspended.size ≥ Limits.maxSuspended then
-    evaluation "pending activity capacity (maxSuspended) reached"
+  else if waiting.size ≥ cap then throw (.refused "capacity" name)
+  else if s.world.suspended.size ≥ Limits.maxSuspended then throw (.refused "capacity" "maxSuspended")
   else if (Delvetalk.Turn.tokensJson checkpoint.tokens).compress.utf8ByteSize > Limits.maxCheckpointBytes then
     evaluation "checkpoint exceeds its byte capacity"
 
@@ -597,7 +603,7 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       evaluation "offers exceed their byte capacity"
     else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
     else
-      mayWait depth self checkpoint
+      mayWait depth self checkpoint (interpreting := true)
       let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
       set { s with awaits := s.awaits + 1 }
       throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint

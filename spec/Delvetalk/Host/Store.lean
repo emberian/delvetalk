@@ -60,6 +60,8 @@ def maxSeedBytes : Nat := 262144
 def createsPerTurn : Nat := 8
 /-- Suspended activities waiting on one object, and in the whole world. -/
 def pendingActivitiesPerObject : Nat := 8
+/-- Interpretations waiting on one object, counted apart from its awaits. -/
+def pendingInterpretationsPerObject : Nat := 64
 def maxSuspended : Nat := 4096
 /-- Awaits one turn may perform, across its suspensions. -/
 def awaitsPerTurn : Nat := 8
