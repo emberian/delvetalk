@@ -80,8 +80,8 @@ def route(host, obs):
     """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
     card word applies only to posts with no journaled parent. TODO(Directory): drop the summon special
     case once Directory is reachable by replying to the journaled welcome post."""
-    if obs['replyTo']:
-        got = host.send({'op': 'world-addressee', 'parent': obs['replyTo']})
+    for ancestor in dict.fromkeys(u for u in (obs['replyTo'], obs.get('root')) if u):  # the parent, then the thread root
+        got = host.send({'op': 'world-addressee', 'parent': ancestor})
         if got.get('object'):
             return got['object'], got.get('slot')
     if obs['kind'] == 'spell':

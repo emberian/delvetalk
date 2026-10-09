@@ -222,6 +222,17 @@ class Routing(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), n)  # drafts and skips are remembered
 
+    def test_a_reply_deep_in_a_thread_routes_by_the_root_when_its_parent_has_no_address(self):
+        root = f'at://{DID}/town.delve.feed.post/root01'
+        mid = f'at://{DID}/town.delve.feed.post/mid001'
+        stub = Stub({root: {'status': 'addressee', 'object': 'garden-1'}})
+        deep = mk(1, 'silver, then', parent=mid)
+        deep['record']['reply']['root'] = {'uri': root, 'cid': 'x'}
+        self.observe([deep])
+        bridge.run(self.state, stub)
+        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
+        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])
+
     def test_card_word_still_routes_a_post_with_no_journaled_parent(self):
         stub = Stub()
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])

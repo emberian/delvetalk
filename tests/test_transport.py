@@ -83,7 +83,7 @@ class Classification(unittest.TestCase):
         self.assertEqual(obs['000004']['tags'], ['gsb'])
         self.assertEqual(obs['000005']['spell'], {'card': 'garden'})
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
-        self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo',
+        self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo', 'root',
                                               'mentions', 'tags', 'kind', 'wiki', 'spell'})
 
     def test_spell_is_a_delvetalk_line_and_only_the_card_is_extracted(self):
