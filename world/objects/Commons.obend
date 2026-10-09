@@ -131,7 +131,7 @@ def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   departed::<Done>(state, context, same)
 # The owner lets one more principal through a members gate.
 def allow(state: State, input: {from: String, to: String, principal: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.principal != state.owner then no(textConcat("Only the owner changes a gate; that is ", Card.handle(state.owner))) else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
+  if context.principal != state.owner then no(textConcat("Only the owner changes a gate; that is ", Card.name(state.owner, context))) else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
 def allowedOn(found: Lists.Maybe<Gate>, principal: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match found:
     case none(_): no("No gate on that path.")
@@ -181,7 +181,7 @@ def besides(p: Presence, place: String, who: String) -> Bool:
 def counted(n: Nat) -> String:
   if n == 0n then "" else textConcat(natText(n), " others here.\n")
 def outside(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("COMMONS of ", textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), textConcat(": ", textConcat(natText(Lists.length::<Place>(state.places)), textConcat(" places, ", textConcat(natText(Lists.length::<Presence>(state.presence)), textConcat(" here. Ways in: ", textConcat(textJoin(state.entries, ", "), "\n"))))))))))
+  Document.text(textConcat("COMMONS of ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), textConcat(": ", textConcat(natText(Lists.length::<Place>(state.places)), textConcat(" places, ", textConcat(natText(Lists.length::<Presence>(state.presence)), textConcat(" here. Ways in: ", textConcat(textJoin(state.entries, ", "), "\n"))))))))))
 # The card as the reader in the context sees it: someone here sees their place, who
 # else is there and every path out with whether its gate lets them through.
 def render(state: State, context: Abi.Context) -> Document.Document:

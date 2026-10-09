@@ -70,7 +70,7 @@ def statusName(status: Status) -> String:
     case proposed(_): "proposed"
     case admitted(_): "admitted"
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
-  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.handle(proposal.author), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
+  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.name(proposal.author, context), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry(context)), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry(context)), 8n)})})

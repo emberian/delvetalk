@@ -238,7 +238,7 @@ class Wakes(Chain):
         tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
         self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 notes sent.\n\nTIDE at tick 0"), tick["offers"])
         soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
-        self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at height "), soon["offers"])
+        self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
 
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
@@ -255,8 +255,11 @@ class Wakes(Chain):
         self.assertEqual(self.label_of(soon), "tooSoon")
         last = int(get(self.state("tide"), "last")["value"])
         self.assertEqual(get(soon["result"]["payload"], "next"), nat(last + 3))
-        while self.host.send(op="world-status")["height"] < last + 3:
+        # The gap is in clock units: turns do not move it, world-advance does.
+        for _ in range(4):
             self.turn("tide", "receive", heard(""), principal="did:plc:zero")
+        self.assertEqual(self.label_of(self.turn("tide", "tick", principal="did:plc:zero")), "tooSoon")
+        self.host.send(op="world-advance", height=last + 3)
         second = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((self.label_of(second), get(second["result"]["payload"], "sent")), ("ticked", nat(2)))
         self.deliver_all()
@@ -280,8 +283,8 @@ import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Tide.obend as Tide
 import ./Wake.obend as Wake
-def request(principal: String, height: Nat) -> Abi.Request:
-  {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: height, clock: 0n, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
+def request(principal: String, clock: Nat) -> Abi.Request:
+  {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: 0n, clock: clock, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
   match v:
     case admitted(_): "admitted"

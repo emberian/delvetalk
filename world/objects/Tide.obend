@@ -7,7 +7,7 @@ import ./Plan.obend as Plans
 import ./Card.obend as Card
 # kimik3's tide: programmable wakes as an object. Anyone subscribes themselves (the
 # subscriber is the turn's principal, never an argument); anyone may tick, but a tick
-# sooner than `gap` heights after the last is refused tooSoon, naming when the next may
+# sooner than `gap` clock units after the last is refused tooSoon, naming when the next may
 # come. A tick sends each due subscriber's Avatar (its id is the DID) a note.
 record Sub:
   who: String
@@ -32,12 +32,12 @@ type Response = Plans.Response<State, {}>
 # With request.method and the two-tier law:
 #   self: request.method == "tick" or request.subject == <the appended item's who>
 law clock: monotone(ticks)
-law height: monotone(last)
+law last: monotone(last)
 # The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): a tick
 # sooner than gap after the last is tooSoon; a subscription that changed must be the
 # requesting principal's own.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if new.ticks > old.ticks && old.ticks > 0n && request.context.height < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon"}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self"})
+  if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon"}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self"})
 def ownSubs(old: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
   match new:
     case nil(_): true
@@ -68,7 +68,7 @@ def doneLine(done: Done) -> String:
   match done:
     case subscribed(s): textConcat("Subscribed, from tick ", textConcat(natText(s.since), ".\n\n"))
     case ticked(t): textConcat("Tick ", textConcat(natText(t.tick), textConcat(": ", textConcat(natText(t.sent), " notes sent.\n\n"))))
-    case tooSoon(t): textConcat("Too soon: the next tick may come at height ", textConcat(natText(t.next), ".\n\n"))
+    case tooSoon(t): textConcat("Too soon: the next tick may come at clock ", textConcat(natText(t.next), ".\n\n"))
     case refused(r): textConcat("Not done: ", textConcat(r.reason, "\n\n"))
 def subscribed<T>(state: State, every: Nat, note: String, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   if every == 0n then told::<T>(Done.refused({reason: "every is at least 1."}), card, then) else subscribing::<T>(state, Lists.find::<Sub>(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks}, context, card, then)
@@ -89,9 +89,9 @@ def due(sub: Sub, tick: Nat) -> Bool:
   remainder(tick - sub.since, sub.every) == 0n
 # The first tick may come at once; after it, not before last + gap.
 def ticked<T>(state: State, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  if state.ticks > 0n && context.height < state.last + state.gap then told::<T>(Done.tooSoon({next: state.last + state.gap}), card, then) else tickWritten::<T>(state, context, card, then)
+  if state.ticks > 0n && context.clock < state.last + state.gap then told::<T>(Done.tooSoon({next: state.last + state.gap}), card, then) else tickWritten::<T>(state, context, card, then)
 def tickWritten<T>(state: State, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {ticks: Plans.Edit::<Nat, Nat>.add({delta: 1n}), last: Plans.Edit::<Nat, {}>.set({value: context.height})})})):
+  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {ticks: Plans.Edit::<Nat, Nat>.add({delta: 1n}), last: Plans.Edit::<Nat, {}>.set({value: context.clock})})})):
     case _: woken::<T>(state.subs, state.ticks + 1n, 0n, card, then)
 # Sends to each due subscriber in turn, by explicit recursion.
 def woken<T>(subs: Lists.List<Sub>, tick: Nat, sent: Nat, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
@@ -110,7 +110,7 @@ def door() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def doneReply(done: Done) -> Card.Reply:
   match done:
-    case tooSoon(t): Card.Reply.refused({reason: textConcat("tooSoon: the next tick may come at height ", natText(t.next))})
+    case tooSoon(t): Card.Reply.refused({reason: textConcat("tooSoon: the next tick may come at clock ", natText(t.next))})
     case refused(r): Card.Reply.refused({reason: r.reason})
     case subscribed(_): Card.Reply.done({action: "subscribe"})
     case ticked(_): Card.Reply.done({action: "tick"})
@@ -121,7 +121,7 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case act(a): if a.action == "tick" then ticked::<Card.Reply>(state, context, render(state, context), doneReply) else subscribed::<Card.Reply>(state, Card.natural(a.fields, "every"), Card.text(a.fields, "note"), context, render(state, context), doneReply)
     case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 def line(context: Abi.Context) -> Sub -> Document.Document:
-  fn(sub: Sub) -> Document.Document: Document.text(textConcat(Card.handle(sub.who), textConcat(Card.mine(sub.who, context), textConcat(" every ", textConcat(natText(sub.every), textConcat(" from tick ", textConcat(natText(sub.since), textConcat(": ", textConcat(sub.note, "\n")))))))))
+  fn(sub: Sub) -> Document.Document: Document.text(textConcat(Card.name(sub.who, context), textConcat(Card.mine(sub.who, context), textConcat(" every ", textConcat(natText(sub.every), textConcat(" from tick ", textConcat(natText(sub.since), textConcat(": ", textConcat(sub.note, "\n")))))))))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("TIDE at tick ", textConcat(natText(state.ticks), textConcat(", last at height ", textConcat(natText(state.last), textConcat("; the next no sooner than ", textConcat(natText(state.last + state.gap), "\n"))))))), tail: Card.clipped(Lists.map::<Sub, Document.Document>(state.subs, line(context)), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("TIDE at tick ", textConcat(natText(state.ticks), textConcat(", last at clock ", textConcat(natText(state.last), textConcat("; the next no sooner than ", textConcat(natText(state.last + state.gap), "\n"))))))), tail: Card.clipped(Lists.map::<Sub, Document.Document>(state.subs, line(context)), 8n)})})

@@ -25,8 +25,10 @@ the library).
   context)` with `Heard = {text, post, slot}`. The usual receive is `Card.route(text, context, forms())`, `act` dispatched
   by action, anything else `Card.answer::<Edits, S, R>(routed, context, forms(),
   render(state, context))`.
-* **Handles.** `Card.handle` never shows a raw DID: a long fragment is `…` and its last
-  eight, until the host puts the observed handle in the Context.
+* **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed
+  handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
+  never a raw DID, a long fragment is `…` and its last eight. Deadlines (Thing offers,
+  the Tide's gap) compare `context.clock`, which only world-advance moves.
 * **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal,
   context)` (" (yours)"), `Card.stranger()`. A member sees more: an Env's events, a Wake's
   triggers and an Avatar's notes and follows are their owner's; a Deal shows a party
@@ -80,7 +82,7 @@ the library).
 
 * The closure cap is gone; Counter with Card runs 200 HTTP turns in 0.50 s on hbox
   (0.39 s bare). The REPL's `MAX_BODY` refuses Counter's closure with Card (413).
-* Ticks: Bell card of 1,025 rains 75,701; spell parse of 64 fields 68,150 (dense 4,057 bytes 76,086); an Avatar send
+* Ticks: Bell card of 1,025 rains 75,748; spell parse of 64 fields 68,150 (dense 4,057 bytes 76,086); an Avatar send
   to 32 observers 5,213.
 * An await only proves that some turn with that identity was admitted. A turn suspended
   on an object resumes refused `staleRoot` if anything wrote that object meanwhile,

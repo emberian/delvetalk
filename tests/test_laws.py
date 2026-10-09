@@ -95,7 +95,7 @@ def tide_variant():
     with open("world/objects/Tide.obend") as handle:
         source = handle.read()
     source = source.replace("{who: context.principal, every: every,", '{who: "did:plc:someone-else", every: every,', 1)
-    source = source.replace("if state.ticks > 0n && context.height < state.last + state.gap then", "if false then", 1)
+    source = source.replace("if state.ticks > 0n && context.clock < state.last + state.gap then", "if false then", 1)
     return closure("Tide", override={"Tide": source})
 
 

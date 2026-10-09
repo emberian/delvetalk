@@ -86,7 +86,7 @@ def planting() -> Form.Form:
 # A reader with a proposal waiting is reminded of it, first.
 def waiting(state: State, context: Abi.Context) -> String:
   match heldBy(state.pending, context.principal, 0n):
-    case some(s): textConcat(Card.handle(context.principal), textConcat(", this waits for your yes:\n\n", textConcat(s.spell, "\n")))
+    case some(s): textConcat(Card.name(context.principal, context), textConcat(", this waits for your yes:\n\n", textConcat(s.spell, "\n")))
     case none(_): ""
 def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text(textConcat("- ", textConcat(reference.object, "\n")))
@@ -193,7 +193,7 @@ def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Pa
 def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "confirm", form: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "yes"), "no")}), put: fn(v: Form.Value) -> Edits: extend(keep(), {confirm: Plans.Edit::<Bool, {}>.set({value: Card.valueText(v) == "yes"})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})
 def guard(state: State, context: Abi.Context) -> String:
-  if context.principal == state.owner then "" else textConcat("Only the garden's owner sets it; that is ", Card.handle(state.owner))
+  if context.principal == state.owner then "" else textConcat("Only the garden's owner sets it; that is ", Card.name(state.owner, context))
 def fromCard(reply: Card.Reply) -> Reply:
   match reply:
     case done(_): Reply.changed({})
@@ -245,7 +245,7 @@ def quietly(context: Abi.Context, edit: Plans.Entries<Pending, Pending>) -> Acti
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text(textConcat("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: ", textConcat(Spell.joined(needs), ".\n")))
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
-  Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(Card.handle(context.principal), textConcat(", I understood this:\n\n", textConcat(spell(context.object, seed, colour), "\nReply yes or correct it.\n")))))
+  Document.text(textConcat("✾ THE NIGHT GARDEN\n\n", textConcat(Card.name(context.principal, context), textConcat(", I understood this:\n\n", textConcat(spell(context.object, seed, colour), "\nReply yes or correct it.\n")))))
 # Fit the spell (typed by the user, or proposed by the policy's model) to the plant
 # form. A proposed spell is only acted on when the garden does not ask first.
 def judged(state: State, context: Abi.Context, parsed: Spell.Parsed, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
@@ -278,7 +278,7 @@ def grow(state: State, context: Abi.Context, found: Held, colour: Bell.Colour, s
 # principal had waiting.
 def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit::<Nat, Nat>.add({delta: 1n}), pending: forget(found), children: Plans.Entries::<Plans.Reference, {}>.append({item: reference})})})):
-    case written(_): tell(Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.handle(context.principal), reference, colour, seed, state.planted + 1n))
+    case written(_): tell(Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
     case _: tell(Reply.refused({reason: "The garden could not count it."}), refusedCard("The garden could not count it."))
 def forget(found: Held) -> Plans.Entries<Pending, Pending>:
   match found:

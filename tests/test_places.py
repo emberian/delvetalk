@@ -136,7 +136,8 @@ class Floor(Chain):
         self.make("mallory", closure("Avatar"), avatar_seed("mallory", "porch"))
 
     def now(self):
-        return self.host.send(op="world-status")["height"]
+        """The world clock (context.clock), which only world-advance moves."""
+        return self.host.send(op="world-status")["clock"]
 
     def offer(self, to="kimik3", until=None, who="glm"):
         return self.turn("stone", "offer", record(to=reference(to), until=nat(until if until is not None else self.now() + 50)), principal=who)
@@ -160,7 +161,7 @@ class Floor(Chain):
         self.assertEqual(self.refusal_reason(self.accept("mallory")), "It is offered to kimik3")
         card = self.card("stone", principal="kimik3")
         print("\n--- stone, offered, read by kimik3 ---\n" + card)
-        self.assertIn("Offered to kimik3 (you): accept it from your avatar until height ", card)
+        self.assertIn("Offered to kimik3 (you): accept it from your avatar until clock ", card)
         self.assertEqual(self.result_label(self.accept()), "done")
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
         self.assertEqual((self.holding("glm"), self.holding("kimik3")), ([], ["stone"]))
@@ -174,16 +175,19 @@ class Floor(Chain):
         self.assertEqual(self.stone("offer")["label"], "none")
         self.assertEqual(self.refusal_reason(self.accept()), "Nothing is offered.")
         self.assertEqual(self.refusal_reason(self.turn("stone", "withdraw", principal="glm")), "Nothing is offered.")
-        self.assertTrue(self.refusal_reason(self.offer(until=self.now())).startswith("until must be after the current height"))
+        self.assertTrue(self.refusal_reason(self.offer(until=self.now())).startswith("until must be after the clock, now "))
 
-    def test_an_offer_past_its_height_answers_expired_and_stays(self):
+    def test_an_offer_past_its_clock_time_answers_expired_and_stays(self):
         self.holders()
         until = self.now() + 3
         self.assertEqual(self.result_label(self.offer(until=until)), "done")
-        for clock in range(10, 14):
-            self.host.send(op="world-advance", height=clock)
-        self.assertGreaterEqual(self.now(), until)
-        self.assertEqual(self.refusal_reason(self.accept()), "expired: the offer ran until height %d" % until)
+        # Turns do not move the clock: many turns later the offer still stands.
+        for _ in range(5):
+            self.card("stone")
+        self.host.send(op="world-advance", height=until - 1)
+        self.assertEqual(self.stone("offer")["label"], "open")
+        self.host.send(op="world-advance", height=until)
+        self.assertEqual(self.refusal_reason(self.accept()), "expired: the offer ran until clock %d" % until)
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
 
     def test_a_stale_transfer_leaves_the_offer_and_a_retry_takes_it(self):

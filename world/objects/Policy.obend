@@ -54,7 +54,7 @@ sum Taught:
 def exampleCap() -> Nat:
   16n
 def edited<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if context.principal != state.owner then then(Taught.refused({reason: textConcat("Only the policy's owner may teach it; that is ", Card.handle(state.owner))})) else written::<T>(state, edits, context, then)
+  if context.principal != state.owner then then(Taught.refused({reason: textConcat("Only the policy's owner may teach it; that is ", Card.name(state.owner, context))})) else written::<T>(state, edits, context, then)
 def written<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: edits})):
     case _: then(Taught.taught({count: Lists.length::<Example>(state.examples)}))
@@ -76,7 +76,7 @@ def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "model", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {model: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "escalate", form: Form.Kind.text({min: 0n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {escalate: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "system", form: Form.Kind.text({min: 1n, max: 1000n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {system: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})})
 # Who may set a lens: the owner; anyone else is refused by name before the law is asked.
 def guard(state: State, context: Abi.Context) -> String:
-  if context.principal == state.owner then "" else textConcat("Only the policy's owner may teach it; that is ", Card.handle(state.owner))
+  if context.principal == state.owner then "" else textConcat("Only the policy's owner may teach it; that is ", Card.name(state.owner, context))
 def forms() -> Card.Forms:
   Card.Forms.cons({head: {card: "", action: "teach", fields: Form.Fields.cons({head: {name: "utterance", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.cons({head: {name: "spell", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})})}, tail: Card.Forms.cons({head: {card: "", action: "define", fields: Form.Fields.cons({head: {name: "word", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.cons({head: {name: "meaning", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})})}, tail: Card.Forms.nil()})})
 def door() -> Card.Door:
@@ -124,7 +124,7 @@ def teaching() -> String:
 # The policy as a card, including how to teach it.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let head = Document.text(textConcat("✾ INTERPRETATION POLICY\n\nModel: ", textConcat(state.model, textConcat("\n", textConcat(stance(state), if Card.reads(state.owner, context) then teaching() else textConcat("\nOnly its owner, ", textConcat(Card.handle(state.owner), ", teaches it.\n\nWhat I know:\n")))))))
+  let head = Document.text(textConcat("✾ INTERPRETATION POLICY\n\nModel: ", textConcat(state.model, textConcat("\n", textConcat(stance(state), if Card.reads(state.owner, context) then teaching() else textConcat("\nOnly its owner, ", textConcat(Card.name(state.owner, context), ", teaches it.\n\nWhat I know:\n")))))))
   let terms = Lists.map::<Term, Document.Document>(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map::<Example, Document.Document>(state.examples, exampleCard)
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(terms, shown)})})
