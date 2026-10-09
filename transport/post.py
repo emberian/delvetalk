@@ -23,15 +23,29 @@ LIMIT, WINDOW = 16, 3600
 CREDENTIALS = '~/.config/delvetown/credentials.json'
 
 
-def build_request(text):
+def reply_ref(client, parent_uri):
+    """AT Protocol reply refs: parent is the post replied to; root is the parent's own root, or the parent."""
+    got = client.record(parent_uri)
+    parent = {'uri': got['uri'], 'cid': got['cid']}
+    root = (got.get('value') or {}).get('reply', {}).get('root') or parent
+    return {'root': {'uri': root['uri'], 'cid': root['cid']}, 'parent': parent}
+
+
+def wiki_text(kind, title, body):
+    return f'{kind}: {title}\n\n{body}'
+
+
+def build_request(text, reply=None):
     if not text.strip():
         raise Failure('empty_post')
     if len(text.encode()) > MAX_TEXT:
         raise Failure('post_body_too_large')
     now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    record = {'$type': COLLECTION, 'text': text, 'createdAt': now}
+    if reply:
+        record['reply'] = reply
     return {'method': 'POST', 'nsid': 'com.atproto.repo.createRecord',
-            'body': {'repo': '<session did>', 'collection': COLLECTION,
-                     'record': {'$type': COLLECTION, 'text': text, 'createdAt': now}}}
+            'body': {'repo': '<session did>', 'collection': COLLECTION, 'record': record}}
 
 
 def take_slot(state, now):
@@ -65,19 +79,32 @@ def send(request, intent, state, credentials, client=None):
     return result
 
 
-def main(argv=None, out=None):
+def main(argv=None, out=None, client=None):
     out = out or sys.stdout
     ap = argparse.ArgumentParser(prog='post.py')
     ap.add_argument('--state', required=True)
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('post')
-    p.add_argument('--text-file', required=True)
+    p.add_argument('--text-file')
+    p.add_argument('--wiki-page', metavar='TITLE')
+    p.add_argument('--wiki-edit', metavar='"TITLE > SECTION"')
+    p.add_argument('--body-file')
+    p.add_argument('--reply-to', metavar='AT_URI', help='thread under this post (its cid is read with getRecord)')
     p.add_argument('--intent', required=True)
     p.add_argument('--credentials', default=CREDENTIALS)
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
     a = ap.parse_args(argv)
     try:
-        request = build_request(Path(a.text_file).read_text())
+        if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) != 1 or (not a.text_file and not a.body_file):
+            raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
+        if a.wiki_edit and not a.reply_to:
+            raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
+        if a.text_file:
+            text = Path(a.text_file).read_text()
+        else:
+            text = wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
+        reply = reply_ref(client or Client(http_transport), a.reply_to) if a.reply_to else None
+        request = build_request(text, reply)
         if not a.authorized:
             out.write(canonical({'dry_run': True, 'intent': a.intent, 'request': request}) + '\n')
             return 2

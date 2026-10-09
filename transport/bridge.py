@@ -43,6 +43,9 @@ def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
 
+# TODO(host `publish`): when the host answers a turn with a `published` result ({page, section, body}),
+# turn it into a wiki-edit draft whose text is `edit: <page> › <section>\n\n<body>` and whose replyTo is
+# the page post, for post.py --wiki-edit. Until the host supports publish nothing produces one.
 def draft_text(reply):
     """The only text a draft carries. A refusal names its class and receipt, nothing of state."""
     receipt = reply['receipt']

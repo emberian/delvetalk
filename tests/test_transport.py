@@ -275,6 +275,62 @@ class Posting(unittest.TestCase):
             self.assertEqual(req['request']['body']['record']['text'], 'hello')
             self.assertEqual(list(Path(d).iterdir()), [Path(d) / 't.txt'])
 
+    def parent(self):
+        uri = f'at://{DID}/town.delve.feed.post/page01'
+        got = {'uri': uri, 'cid': 'bafyparent', 'value': {'text': 'wiki: T'}}
+        calls = []
+        t = Script(**{'com.atproto.repo.getRecord': lambda p: calls.append(p) or (200, got)})
+        return uri, delve.Client(t), t, calls
+
+    def dry(self, d, args, client):
+        out = io.StringIO()
+        code = post.main(['--state', d, 'post', '--intent', 't', *args], out, client)
+        return code, json.loads(out.getvalue())
+
+    def test_threaded_reply_record_shape_and_only_gets(self):
+        uri, client, t, calls = self.parent()
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'b.txt'
+            f.write_text('hi')
+            code, req = self.dry(d, ['--text-file', str(f), '--reply-to', uri], client)
+        rec = req['request']['body']['record']
+        self.assertEqual(code, 2)
+        self.assertEqual(rec['reply'], {'root': {'uri': uri, 'cid': 'bafyparent'}, 'parent': {'uri': uri, 'cid': 'bafyparent'}})
+        self.assertEqual(calls, [{'repo': DID, 'collection': 'town.delve.feed.post', 'rkey': 'page01'}])
+        self.assertEqual({m for m, _ in t.calls}, {'GET'})
+
+    def test_reply_to_a_reply_keeps_the_thread_root(self):
+        root = {'uri': f'at://{DID}/town.delve.feed.post/root01', 'cid': 'bafyroot'}
+        got = {'uri': f'at://{DID}/town.delve.feed.post/r2', 'cid': 'bafyr2', 'value': {'reply': {'root': root, 'parent': root}}}
+        client = delve.Client(Script(**{'com.atproto.repo.getRecord': lambda p: (200, got)}))
+        ref = post.reply_ref(client, got['uri'])
+        self.assertEqual(ref, {'root': root, 'parent': {'uri': got['uri'], 'cid': 'bafyr2'}})
+
+    def test_wiki_page_and_edit_texts(self):
+        uri, client, _, _ = self.parent()
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'b.txt'
+            f.write_text('Body line')
+            _, page = self.dry(d, ['--wiki-page', 'GSB Welcome', '--body-file', str(f)], client)
+            _, edit = self.dry(d, ['--wiki-edit', 'GSB Welcome \u203a Intro', '--body-file', str(f), '--reply-to', uri], client)
+        self.assertEqual(page['request']['body']['record']['text'], 'wiki: GSB Welcome\n\nBody line')
+        self.assertNotIn('reply', page['request']['body']['record'])
+        self.assertEqual(edit['request']['body']['record']['text'], 'edit: GSB Welcome \u203a Intro\n\nBody line')
+        self.assertIn('reply', edit['request']['body']['record'])
+        # the observer reads back what the writer writes
+        self.assertEqual(observe.classify(page['request']['body']['record']['text'], None, [], [])[0], 'wiki-page')
+        self.assertEqual(observe.classify(edit['request']['body']['record']['text'], uri, [], [])[0], 'wiki-edit')
+
+    def test_wiki_edit_needs_a_page_to_reply_to_and_flag_off_sends_nothing(self):
+        uri, client, t, _ = self.parent()
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'b.txt'
+            f.write_text('x')
+            with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
+                self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--wiki-edit', 'A \u203a B', '--body-file', str(f)], io.StringIO(), client), 1)
+                self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--reply-to', uri], io.StringIO(), client), 2)
+        self.assertNotIn('POST', {m for m, _ in t.calls})
+
     def test_rate_limit(self):
         with tempfile.TemporaryDirectory() as d:
             for _ in range(post.LIMIT):
