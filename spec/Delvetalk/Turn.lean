@@ -102,55 +102,96 @@ def tokensOfJson (json : Json) : Except String Tokens := do
         return Token.nat value
     | .error _ => return Token.text (← item.getObjValAs? String "s")
 
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- A suspended activity: its collected machine state as canonical tokens, bound
+to the exact packet it was produced by and to its own token stream. -/
+structure Checkpoint where
+  packetSha256 : String
+  tokens : Tokens
+  digest : String
+
+def packetDigest (packet : Json) : String := Minidregg.Compiler.Sha256.hexString packet.compress
+
+def tokensDigest (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : String :=
+  Minidregg.Compiler.Sha256.hexString (tokensJson tokens).compress
+
+def Checkpoint.make (packet : Json) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : Checkpoint :=
+  ⟨packetDigest packet, tokens, tokensDigest tokens⟩
+
+def Checkpoint.toJson (c : Checkpoint) : Json :=
+  Json.mkObj [("packetSha256", Lean.toJson c.packetSha256), ("tokens", tokensJson c.tokens),
+    ("digest", Lean.toJson c.digest)]
+
+def Checkpoint.fromJson (j : Json) : Except String Checkpoint := do
+  return ⟨← j.getObjValAs? String "packetSha256", ← tokensOfJson (← j.getObjVal? "tokens"),
+    ← j.getObjValAs? String "digest"⟩
+
+inductive Outcome where
+  | finished (value : Data) (result : Ty) (ticksUsed : Nat)
+  | yielded (plan : Data) (planType responseType : Ty) (checkpoint : Checkpoint) (ticksUsed : Nat)
+
+def Outcome.toJson : Outcome → Json
+  | .finished value result ticks => Json.mkObj [("status", Lean.toJson "finished"),
+      ("value", dataJson value), ("type", typeJson result), ("ticksUsed", Lean.toJson ticks)]
+  | .yielded plan planType responseType checkpoint ticks => Json.mkObj [("status", Lean.toJson "yielded"),
+      ("plan", dataJson plan), ("planType", typeJson planType), ("responseType", typeJson responseType),
+      ("checkpoint", checkpoint.toJson), ("ticksUsed", Lean.toJson ticks)]
+
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
-/-- Turn the outcome of a bounded run into the wire reply. -/
-def conclude (plan response result : Ty) (b : Budgets) (limits : Limits)
-    (outcome : Except (Failure × State × Budget) (Data × Budget)) : Except String Json :=
+/-- Turn the outcome of a bounded run into a typed outcome. -/
+def conclude (packet : Json) (plan response result : Ty) (b : Budgets) (limits : Limits)
+    (outcome : Except (Failure × State × Budget) (Data × Budget)) : Except String Delvetalk.Turn.Outcome :=
   match outcome with
   | .ok (value, remaining) =>
       if !value.conforms result then .error "turn refused: result does not conform to its type"
-      else .ok (Json.mkObj [("status", toJson "finished"), ("value", dataJson value),
-        ("type", typeJson result), ("ticksUsed", toJson (b.ticks - remaining.ticks))])
+      else .ok (.finished value result (b.ticks - remaining.ticks))
   | .error (.yielded, state, remaining) =>
       match yieldedPlan limits remaining state with
       | .error (failure, _, _) => .error ("turn refused: " ++ failureName failure)
       | .ok extracted =>
           if !extracted.value.conforms plan then .error "turn refused: Plan does not conform to its type"
-          else .ok (Json.mkObj [("status", toJson "yielded"), ("plan", dataJson extracted.value),
-            ("planType", typeJson plan), ("responseType", typeJson response),
-            ("checkpoint", tokensJson (encodeState (checkpoint extracted.state))),
-            ("ticksUsed", toJson (b.ticks - extracted.remaining.ticks))])
+          else .ok (.yielded extracted.value plan response
+            (Checkpoint.make packet (encodeState (checkpoint extracted.state)))
+            (b.ticks - extracted.remaining.ticks))
   | .error (failure, _, _) => .error ("turn refused: " ++ failureName failure)
 
 /-- `packet` belongs to an artifact the caller has already verified. -/
-def start (packet arguments limits : Json) : Except String Json := do
+def startActivity (packet : Json) (arguments : List Data) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
-  let values ← (← arguments.getArr?).toList.mapM (decodeData 256)
-  let source := values.foldl (fun s v => applyArgument s (dataTerm v)) decoded.source
+  let source := arguments.foldl (fun s v => applyArgument s (dataTerm v)) decoded.source
   let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
   let (plan, response, result) ← activityShape checked.type
-  let b ← budgets limits
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude plan response result b capacities outcome
+  conclude packet plan response result b capacities outcome
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
-def resumeTurn (packet checkpointJson responseJson limits : Json) : Except String Json := do
+def resumeActivity (packet : Json) (checkpoint : Checkpoint) (value : Data) (b : Budgets) :
+    Except String Delvetalk.Turn.Outcome := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
   let (plan, response, result) ← activityShape (peelArrows 64 entry.type)
-  let some state := decodeState (← tokensOfJson checkpointJson) | throw "checkpoint does not decode"
-  let value ← decodeData 256 responseJson
+  unless checkpoint.packetSha256 == packetDigest packet do throw "checkpoint belongs to another package"
+  unless checkpoint.digest == tokensDigest checkpoint.tokens do throw "checkpoint digest mismatch"
+  let some state := decodeState checkpoint.tokens | throw "checkpoint does not decode"
   unless value.conforms response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume (dataTerm value) state
     | throw "turn refused: checkpoint is not a yielded state"
-  let b ← budgets limits
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude plan response result b capacities outcome
+  conclude packet plan response result b capacities outcome
+
+def start (packet arguments limits : Json) : Except String Json := do
+  let values ← (← arguments.getArr?).toList.mapM (decodeData 256)
+  return (← startActivity packet values (← budgets limits)).toJson
+
+def resumeTurn (packet checkpointJson responseJson limits : Json) : Except String Json := do
+  let checkpoint ← Checkpoint.fromJson checkpointJson
+  let value ← decodeData 256 responseJson
+  return (← resumeActivity packet checkpoint value (← budgets limits)).toJson
 
 end Delvetalk.Turn

@@ -4,6 +4,7 @@ Each test names what would refute it. One host process per test unless the test
 is about process boundaries.
 """
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -66,6 +67,20 @@ def label(s):
 def variant(name, payload=None):
     return {"tag": "variant", "label": name,
             "payload": payload or {"tag": "record", "fields": []}}
+
+
+def redigest(checkpoint):
+    """Recompute a checkpoint's digest after editing its tokens (SHA-256 of the
+    compact token JSON), so a test can get past the digest to the decoder."""
+    text = json.dumps(checkpoint["tokens"], separators=(",", ":"), ensure_ascii=False)
+    checkpoint["digest"] = hashlib.sha256(text.encode()).hexdigest()
+    return checkpoint
+
+
+def with_tokens(checkpoint, tokens, fix_digest):
+    c = copy.deepcopy(checkpoint)
+    c["tokens"] = tokens
+    return redigest(c) if fix_digest else c
 
 
 def plan_field(plan, name):
@@ -168,18 +183,57 @@ class TurnTests(TurnCase):
         art = h.compile(PLANS, "bump")
         y = h.start(art, [nat(3)])
         cp = y["checkpoint"]
-        self.assertGreater(len(cp), 10)
-        tampered = []
-        edition = copy.deepcopy(cp); edition[0] = {"s": "other.edition"}; tampered.append(edition)
-        tampered.append(cp[:-1])
-        tampered.append(cp + [{"n": "0"}])
-        swapped = copy.deepcopy(cp); swapped[2] = {"s": "x"}; tampered.append(swapped)
-        tampered.append([{"n": "-1"}])
-        tampered.append([])
-        for t in tampered:
-            r = h.resume(art, t, variant("written"))
-            self.assertEqual(r["status"], "error", r)
-            self.assertEqual(r["message"], "checkpoint does not decode", r)
+        toks = cp["tokens"]
+        self.assertGreater(len(toks), 10)
+        edition = copy.deepcopy(toks); edition[0] = {"s": "other.edition"}
+        swapped = copy.deepcopy(toks); swapped[2] = {"s": "x"}
+        variants = [edition, toks[:-1], toks + [{"n": "0"}], swapped, []]
+        # stale digest: refused by digest, before any decoding
+        for t in variants:
+            r = h.resume(art, with_tokens(cp, t, False), variant("written"))
+            self.assertEqual((r["status"], r["message"]), ("error", "checkpoint digest mismatch"), r)
+        # a forged digest gets past the digest and is then refused by the decoder
+        for t in variants:
+            r = h.resume(art, with_tokens(cp, t, True), variant("written"))
+            self.assertEqual((r["status"], r["message"]), ("error", "checkpoint does not decode"), r)
+        # a token that is not a canonical natural never reaches the digest
+        r = h.resume(art, with_tokens(cp, [{"n": "-1"}], False), variant("written"))
+        self.assertEqual(r["message"], "checkpoint does not decode", r)
+        # missing or malformed envelope
+        for bad in ([], {"tokens": toks}, {**cp, "digest": 7}):
+            self.assertEqual(h.resume(art, bad, variant("written"))["status"], "error")
+
+    def test_token_edit_that_still_decodes_is_refused_by_the_digest(self):
+        h = self.host()
+        art = h.compile(PLANS, "bump")
+        y = h.start(art, [nat(3)])
+        cp = y["checkpoint"]
+        toks = cp["tokens"]
+        edited = None
+        for i in range(len(toks) - 1):
+            if toks[i] == {"n": "10"} and toks[i + 1] == {"n": "1"}:  # a literal `1n` term
+                t = copy.deepcopy(toks); t[i + 1] = {"n": "7"}
+                probe = h.resume(art, with_tokens(cp, t, True), variant("written"))
+                if probe["status"] == "finished" and probe["value"] != nat(4):
+                    edited, forged = t, probe
+                    break
+        self.assertIsNotNone(edited, "no decodable single-token edit found")
+        self.assertNotEqual(forged["value"], nat(4))  # the edit changes behaviour...
+        r = h.resume(art, with_tokens(cp, edited, False), variant("written"))
+        self.assertEqual((r["status"], r["message"]), ("error", "checkpoint digest mismatch"), r)
+        # ... and the untouched checkpoint still works
+        done = h.resume(art, cp, variant("written"))
+        self.assertEqual(done["value"], nat(4), done)
+
+    def test_checkpoint_from_package_a_is_refused_by_package_b(self):
+        h = self.host()
+        a = h.compile(PLANS, "bump")
+        b = h.compile(PLANS, "twice")  # same sources, different entry: different packet
+        self.assertNotEqual(a["packetSha256"], b["packetSha256"])
+        y = h.start(a, [nat(3)])
+        r = h.resume(b, y["checkpoint"], variant("written"))
+        self.assertEqual((r["status"], r["message"]), ("error", "checkpoint belongs to another package"), r)
+        self.assertEqual(h.resume(a, y["checkpoint"], variant("written"))["status"], "finished")
 
     def test_tick_exhaustion_on_resume_is_a_named_error_not_a_crash(self):
         h = self.host()
@@ -218,7 +272,9 @@ class TurnTests(TurnCase):
         r = h.start(art, [nat(1)])
         self.assertEqual(r["status"], "error", r)
         self.assertIn("entry is not an activity", r["message"])
-        r = h.resume(art, [], variant("written"))
+        other = h.compile(PLANS, "bump")
+        cp = h.start(other, [nat(1)])["checkpoint"]
+        r = h.resume(art, cp, variant("written"))
         self.assertEqual(r["status"], "error", r)
         self.assertIn("entry is not an activity", r["message"])
 
@@ -227,13 +283,15 @@ class TurnTests(TurnCase):
         art = h.compile(PLANS, "bump")
         y = h.start(art, [nat(3)])
         cp = copy.deepcopy(y["checkpoint"])
+        toks = cp["tokens"]
         # bump yields under one `case` frame: the control is [6 (yielded), plan address]
         # followed by the stack length 1 and the case frame tag 10.
-        spots = [i for i in range(len(cp) - 3)
-                 if [t.get("n") for t in cp[i:i + 4:1]][0] == "6"
-                 and cp[i + 2].get("n") == "1" and cp[i + 3].get("n") == "10"]
+        spots = [i for i in range(len(toks) - 3)
+                 if toks[i].get("n") == "6"
+                 and toks[i + 2].get("n") == "1" and toks[i + 3].get("n") == "10"]
         self.assertEqual(len(spots), 1, spots)
-        cp[spots[0]] = {"n": "1"}  # the same address as an `enter` control instead
+        toks[spots[0]] = {"n": "1"}
+        redigest(cp)  # the same address as an `enter` control instead
         r = h.resume(art, cp, variant("written"))
         self.assertEqual(r["status"], "error", r)
         self.assertIn("not a yielded state", r["message"])

@@ -404,16 +404,22 @@ def allocationDataTypes (j : Json) : Except String Json := do
   return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
     ("conversionNodes", toJson (work - remaining))]
 
-def turnStart (j : Json) : Except String Json := do
+def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
-  verifyArtifact artifact
   Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j)
 
-def turnResume (j : Json) : Except String Json := do
+def turnResumeVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
-  verifyArtifact artifact
   Delvetalk.Turn.resumeTurn (← artifact.getObjVal? "packet") (← j.getObjVal? "checkpoint")
     (← j.getObjVal? "response") (getLimits j)
+
+def turnStart (j : Json) : Except String Json := do
+  verifyArtifact (← j.getObjVal? "artifact")
+  turnStartVerified j
+
+def turnResume (j : Json) : Except String Json := do
+  verifyArtifact (← j.getObjVal? "artifact")
+  turnResumeVerified j
 
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with

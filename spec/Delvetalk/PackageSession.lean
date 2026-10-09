@@ -45,6 +45,8 @@ def step (cache : Cache) (request : Json) : Cache × Except String Json :=
         | .error _ => false
       if known && operation == "run" then (cache, Package.runVerified request)
       else if known && operation == "run-data-v1" then (cache, Package.runDataVerified request)
+      else if known && operation == "turn-start" then (cache, Package.turnStartVerified request)
+      else if known && operation == "turn-resume" then (cache, Package.turnResumeVerified request)
       else (cache, Package.job request)
   | .error _ => (cache, Package.job request)
 
