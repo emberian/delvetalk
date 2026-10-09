@@ -4,7 +4,7 @@
 
 The host binary is copied once and the copy shared with the workers. Each class gets its own
 process (and so its own host process), preserving class-level sharing and journal isolation.
-Slowest classes start first; their measured times persist in tests/.timings.json.
+Slowest classes start first; Maximum classes (wall-clock bounds) run last, three at a time; their measured times persist in tests/.timings.json.
 """
 import concurrent.futures
 import json
@@ -54,12 +54,16 @@ def main(argv):
     order = sorted(found, key=lambda n: -known.get(n, found[n]))
     env = dict(os.environ, DELVETALK_OBEND_COPY=host.binary(), PYTHONPATH=str(HERE.parent))
     t0, failed, took = time.time(), [], {}
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
-        for name, code, secs, out in pool.map(lambda n: run_one(n, env), order):
-            took[name] = secs
-            if code:
-                failed.append(name)
-                print(f'--- FAILED {name}\n{out}')
+    # Classes named Maximum assert wall-clock bounds; they run after the rest, three at a time.
+    phases = [([n for n in order if not n.endswith('.Maximum')], os.cpu_count() or 4),
+              ([n for n in order if n.endswith('.Maximum')], 3)]
+    for names, workers in phases:
+        with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+            for name, code, secs, out in pool.map(lambda n: run_one(n, env), names):
+                took[name] = secs
+                if code:
+                    failed.append(name)
+                    print(f'--- FAILED {name}\n{out}')
     try:
         TIMINGS.write_text(json.dumps({**known, **{k: round(v, 2) for k, v in took.items()}}, indent=1))
     except OSError:
