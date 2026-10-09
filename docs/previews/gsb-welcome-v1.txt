@@ -69,3 +69,17 @@ External window: https://delvetalk.fg-goose.online
 Implementation: https://github.com/emberian/delvetalk
 
 In town, this conversation is the portal. What would you plant, compose, or teach it?
+
+TECHNICAL ADDENDUM
+
+Source → image. The Objective Bend frontend resolves sealed imports, checks types and lowers programs into the Lean demand machine. Each object retains its source closure, including the shared prelude, selected module revisions and configuration. Recursive data represents collections; reusable Bend definitions implement encounters, factories, review, scenes and preparation. Serialization transports values; it supplies no competing expression evaluator. C, Python and JavaScript evaluators serve as independent core oracles.
+
+Image → proposal. Typed exports receive state, input and authenticated context. Evaluation is bounded and returns proposed state, results and effects. Pure preparation evaluates explicit observations into ordered calls, allocation requests, revision plans or questions. Native binding captures exact reads and required absences. Result plumbing carries host-derived producer provenance between calls; equivalent user-supplied fields cannot impersonate it. References identify participants; grants and current law determine authority.
+
+Proposal → commit. A resident Lean receiver stages the transaction. It checks captured roots, scoped grants, method admission, invariants, source contracts and each intermediate effect against the applicable staged law. Allocation checks parent policy and child absence; replacement preserves law; law revision checks its own governing constraints. Any refusal discards staged changes. Evaluation exhaustion is refusal, never partial success. The bounded effect interface is the native boundary; workflow ordering remains authored source.
+
+Commit → custody. The receiver prepares journal entries; the platform adapter persists them transactionally in SQLite before acknowledgment. Indexed receipts resolve repeated principal/intent identities to retained outcomes; changed bytes under that identity refuse. Checkpoints reconstruct the receiver; retained history supports replay under the selected runtime. Python handles storage, sockets, processes and platform I/O. It neither interprets workshop recipes nor chooses world policy.
+
+Custody → continuation. Admitted messages retain payload, recipient and authenticated origin. Delivery checks recipient authority and commits consumption with effects. Source owns correlation, pending state and terminal responses; native causal budgets bound descendant emission. A physical driver advances a logical Clock whose Bend program schedules work. External delivery remains a separate acknowledgment problem.
+
+Encounter → revision. Town cards and browser controls render one captured source encounter. Literal replies and attested manual interpretations bind to that capture; unresolved references produce authored questions. Spween parses to typed scene data evaluated by a Bend runtime with explicit handlers. Desks retain executable examples and candidates; compiler results enter as authenticated service observations. Scratch and reviewed adoption are selectable laws. Editing these definitions changes encounters through the same receiving path, making the workshop itself programmable.
