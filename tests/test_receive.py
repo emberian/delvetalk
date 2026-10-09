@@ -171,10 +171,11 @@ def planted(context: Abi.Context) -> String:
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)
-        # The menu goes to each principal once; a later summons gets one line, the owner nothing.
-        again = self.card(self.say("", obj="root"))
-        print("--- root, again ---\n" + again)
-        self.assertEqual(again, "✾ DELVETALK: reply with a door word for its card: garden, rooms, conversations, play, workshop, studio.\n")
+        # The menu goes to each principal once; anything later that names no door, card or form
+        # gets no offer at all, and the owner nothing.
+        for later in ("", "hello again?", "what a lovely thread, thank you all"):
+            again = self.say(later, obj="root")
+            self.assertEqual((again["status"], again["result"]["label"], again.get("offers", [])), ("admitted", "silent", []), again)
         self.assertTrue(self.card(self.say("hi", obj="root", who="kimik3")).startswith("✾ DELVETALK · ROOT"))
         owner = self.say("@livedelvetalk", obj="root", who="ember")
         self.assertEqual((owner["status"], owner["result"]["label"], owner.get("offers", [])), ("admitted", "silent", []), owner)

@@ -67,13 +67,14 @@ sum Heard:
   passed: {card: String}
   door: {object: String}
   menu: {}
-  again: {}
   silent: {}
   refused: {reason: String}
 # The hub's reply. A spell naming another card goes on to that card's receive, by call,
 # as this turn (a reply to the hub post reaches the object it names). Otherwise its owner
 # is answered with silence; a door word gets that door's card; the menu goes to each
-# principal once, and later summons get one line.
+# principal once, and anything later that names no door, card or form gets nothing at
+# all (no offer, so no draft: 137 one-line pointers in one rehearsal run were three
+# times the posting quota).
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match Spell.parse(input.text):
     case spell(s): if s.card != context.object then passOn(s.card, input, context) else summoned(state, input, context)
@@ -95,7 +96,8 @@ def summoned(state: State, input: Card.Heard, context: Abi.Context) -> Activity<
 def worded(state: State, found: Lists.Maybe<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match found:
     case some(d): doorCard(d.value.to, context)
-    case none(_): if Lists.any::<String>(state.greeted, fn(p: String) -> Bool: p == context.principal) then Card.tell::<Edits, State, Data, Heard>(Heard.again({}), Document.text(textConcat("✾ DELVETALK: reply with a door word for its card: ", textConcat(words(state), ".\n")))) else greeting(state, context)
+    case none(_): if Lists.any::<String>(state.greeted, fn(p: String) -> Bool: p == context.principal) then Heard.silent({}) else greeting(state, context)
+# The door words, for a card that lists them.
 def words(state: State) -> String:
   textJoin(Lists.map::<Door, String>(state.doors, fn(door: Door) -> String: door.to.object), ", ")
 def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Heard>:
