@@ -225,8 +225,9 @@ class Routing(BridgeCase):
         r = bridge.run(self.state, stub)
         turns = {t['identity'][-6:]: t for t in stub.ops if t['op'] == 'world-turn'}
         self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'directory', '000002': 'directory', '000004': 'directory'})
-        slot = {f['name']: f['value']['value'] for f in turns['000001']['argument']['fields']}['slot']
-        self.assertEqual(slot, 'welcome')
+        self.assertEqual([f['name'] for f in turns['000001']['argument']['fields']], ['text', 'post'])  # the host fills slot
+        self.assertEqual(turns['000001']['replyTo'], parent)
+        self.assertNotIn('replyTo', turns['000004'])  # a top-level summon answers no post
         self.assertEqual(len(r['turns']), 3)
         self.assertIn(orphan_reply['uri'], (self.state / 'skipped.txt').read_text())
         n = len([o for o in stub.ops if o['op'] == 'world-addressee'])
@@ -375,6 +376,26 @@ class Principals(BridgeCase):
         self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-principal')
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-principal']), 2)
+
+
+class RealAwaitPost(test_outbound.ReplyIsAddress):
+    def test_a_bridged_reply_settles_a_waiting_awaitPost_on_the_real_host(self):
+        waiting = self.turn("w", "waitFor", record(post=label(test_outbound.URI)), principal="ann", identity="wait-1")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        self.posted(test_outbound.URI, obj="card")
+        outer = self
+
+        class H:
+            def send(self, req):
+                return outer.host.send(**req)
+        reply = mk(1, "thanks", parent=test_outbound.URI)
+        t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': [reply]}),
+                      'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
+        with tempfile.TemporaryDirectory() as d:
+            observe.Observer(d, delve.Client(t)).poll()
+            result = bridge.run(d, H(), now=60)  # the clock stays inside the waiter's patience
+        self.assertEqual(result["turns"], [reply["uri"]], result)
+        self.assertTrue(self.note().startswith("answered by"), self.note())
 
 
 class Daemon(unittest.TestCase):
