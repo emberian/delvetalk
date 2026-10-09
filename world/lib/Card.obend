@@ -235,11 +235,16 @@ def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: 
   match perform(Plans.Plan::<E>.send({object: head.object, method: head.method, argument: argument})):
     case delivery(_): broadcast::<E, S, R, T>(tail, argument, sent + 1n, then)
     case _: broadcast::<E, S, R, T>(tail, argument, sent, then)
-# What a card shows for a principal: the last segment of the DID, until the host
-# supplies handles.
+# What a card shows for a principal, never the raw DID: the last segment of the DID,
+# and of a long one (a real did:plc is 24 characters) only its last eight after "…".
+# The host will put the observed handle in the Context; until then this is the name.
 def handle(did: String) -> String:
+  if textTake(did, 4n) == "did:" then shortened(segment(did)) else did
+def segment(did: String) -> String:
   let at = textBreak(did, ":")
-  if at == textLength(did) then did else handle(textDrop(did, at + 1n))
+  if at == textLength(did) then did else segment(textDrop(did, at + 1n))
+def shortened(fragment: String) -> String:
+  if textLength(fragment) > 8n then textConcat("…", textDrop(fragment, textLength(fragment) - 8n)) else fragment
 # The first `shown` lines, then "… and N more".
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
   let total = Lists.length::<Document.Document>(lines)
