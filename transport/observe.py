@@ -17,8 +17,6 @@ except ImportError:  # run as a script
 MAX_TEXT = 64 * 1024
 AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
 SUMMON_HANDLE, SUMMON_TAG = 'livedelvetalk.delve.town', 'gsb'
-SPELL = re.compile(r'delvetalk\s+(\S+)\s+(\S+)')
-FIELD = re.compile(r'([A-Za-z0-9_.-]+):[ \t]*(.*)')
 EDIT = re.compile(r'edit:\s*(.+?)\s*›\s*(.+)')
 DECISION = re.compile(r'(merge|reject)\b[:\s]*(.*)')
 MENTION = re.compile(r'(?<![\w.])@((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})', re.I)
@@ -30,18 +28,13 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 '''
 
 
-def spell_of(text):
-    lines = [ln.strip() for ln in text.split('\n')]
-    for i, line in enumerate(lines):
-        m = SPELL.fullmatch(line)
-        if m:
-            fields = []
-            for ln in lines[i + 1:]:
-                f = FIELD.fullmatch(ln)
-                if not f:
-                    break
-                fields.append({'name': f[1], 'value': f[2].strip()})
-            return {'card': m[1], 'action': m[2], 'fields': fields}
+def spell_card(text):
+    """The card named by the first line that begins `delvetalk `: its second word. Bend parses the rest."""
+    for line in text.split('\n'):
+        line = line.strip()
+        if line.startswith('delvetalk '):
+            words = line.split()
+            return words[1] if len(words) > 1 else None
     return None
 
 
@@ -56,10 +49,10 @@ def classify(text, reply_to, mentions, tags):
     m = DECISION.fullmatch(first)
     if m and reply_to:
         return 'wiki-merge', {'op': m[1], 'title': m[2].strip() or None, 'section': None}, None
-    sp = spell_of(text)
-    if sp:
-        return 'spell', None, sp
-    if SUMMON_HANDLE in [x['handle'] for x in mentions] and SUMMON_TAG in [t.lower() for t in tags]:
+    card = spell_card(text)
+    if card:
+        return 'spell', None, {'card': card}
+    if SUMMON_HANDLE in [x['handle'] for x in mentions] or SUMMON_TAG in [t.lower() for t in tags]:
         return 'summon', None, None
     return ('reply' if reply_to else 'post'), None, None
 

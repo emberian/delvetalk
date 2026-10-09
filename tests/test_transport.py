@@ -64,7 +64,7 @@ class Classification(unittest.TestCase):
     def test_each_kind(self):
         mention = [{'index': {'byteStart': 0, 'byteEnd': 25},
                     'features': [{'$type': 'town.delve.richtext.facet#mention', 'did': OTHER}]}]
-        spell = 'delvetalk garden plant\nseed: fern\n  place:  north bed \nnote: a: b\n\nnot: field'
+        spell = 'delvetalk garden plant\nseed: fern\n\nanything at all'
         obs, _ = self.kinds([
             mk(1, 'wiki: GSB Welcome Message (v2)\n\nbody'),
             mk(2, 'edit: Garden › Beds\nnew text'),
@@ -81,11 +81,24 @@ class Classification(unittest.TestCase):
         self.assertEqual(obs['000002']['wiki']['section'], 'Beds')
         self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])
         self.assertEqual(obs['000004']['tags'], ['gsb'])
-        self.assertEqual(obs['000005']['spell'], {'card': 'garden', 'action': 'plant', 'fields': [
-            {'name': 'seed', 'value': 'fern'}, {'name': 'place', 'value': 'north bed'}, {'name': 'note', 'value': 'a: b'}]})
+        self.assertEqual(obs['000005']['spell'], {'card': 'garden'})
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
         self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo',
                                               'mentions', 'tags', 'kind', 'wiki', 'spell'})
+
+    def test_spell_is_a_delvetalk_line_and_only_the_card_is_extracted(self):
+        obs, _ = self.kinds([mk(1, 'hi\n  delvetalk  bell-7 ring now\nx: y\ndelvetalk other card'),
+                             mk(2, 'delvetalk'), mk(3, 'delvetalk \nrest'), mk(4, 'not delvetalk garden plant'),
+                             mk(5, 'hello @livedelvetalk.delve.town'), mk(6, 'a #gsb post', parent=BASE['uri']),
+                             mk(7, '#gsb\ndelvetalk garden plant')])
+        got = {k: (v['kind'], v['spell']) for k, v in obs.items()}
+        self.assertEqual(got['000001'], ('spell', {'card': 'bell-7'}))
+        self.assertEqual(got['000002'][0], 'post')
+        self.assertEqual(got['000003'][0], 'post')
+        self.assertEqual(got['000004'][0], 'post')
+        self.assertEqual(got['000005'][0], 'summon')
+        self.assertEqual(got['000006'][0], 'summon')
+        self.assertEqual(got['000007'], ('spell', {'card': 'garden'}))
 
     def test_real_fixture_page(self):
         with tempfile.TemporaryDirectory() as d:
