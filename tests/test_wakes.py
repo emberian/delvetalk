@@ -41,8 +41,9 @@ class Wakes(Chain):
         return "env/" + OWNER
 
     def wake(self):
-        self.create("wake", "Wake", record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)), by=OWNER)
-        return "wake"
+        # A Wake lives at wake/<owner>; the bare id `wake` is reserved (each speaker's own).
+        self.create("wake/" + OWNER, "Wake", record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)), by=OWNER)
+        return "wake/" + OWNER
 
     def avatar(self, did):
         self.make(did, closure("Avatar"), avatar_seed(Card_handle(did), "porch"))
@@ -105,10 +106,55 @@ class Wakes(Chain):
         self.assertEqual(out["value"], label("env/" + OWNER), out)
         self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
 
+    def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
+        """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
+        self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")
+        seed = record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil())
+        create = lambda by, ident: self.host.send(op="world-create", principal=by, identity=ident, object="env/" + OWNER,
+                                                  modules=closure("Env"), entry="initial", seed=seed, owner=OWNER)
+        stranger = create("mallory", "mk-m")
+        self.assertEqual(stranger, {"status": "error", "message": "only the opener of the world may name an owner; that is ember"})
+        made = create("ember", "mk-env")
+        self.assertEqual(made["status"], "created", made)
+        self.assertEqual((made["receipt"]["identity"]["principal"], made["receipt"]["outcome"]["owner"]), ("ember", OWNER))
+        law = self.host.send(op="world-inspect", principal=OWNER, object="env/" + OWNER)["law"]
+        amend = lambda by, ident: self.host.send(op="world-amend", principal=by, identity=ident, object="env/" + OWNER,
+                                                 version=self.version("env/" + OWNER), law=law)
+        refused = amend(OTHER, "am-other")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "owner"), refused)
+        self.assertEqual(amend("ember", "am-ember")["status"], "refused")
+        self.assertEqual(amend(OWNER, "am-owner")["status"], "admitted")
+        # A seed that leaves `owner` out gets the named owner.
+        other = self.host.send(op="world-create", principal="ember", identity="mk-other", object="env/" + OTHER,
+                                modules=closure("Env"), entry="initial", seed=record(), owner=OTHER)
+        self.assertEqual(other["status"], "created", other)
+        self.assertEqual(get(self.state("env/" + OTHER), "owner"), label(OTHER))
+        self.reopen()
+        self.assertEqual(self.version("env/" + OWNER), 1)
+        self.assertEqual(self.host.send(op="world-open", path=self.path, opener="glm")["status"], "error")
+
+    def test_each_principal_creates_and_amends_their_own_env_and_wake(self):
+        """Rehearsal finding 10: Env and Wake belong to their principal from creation (GENESIS):
+        the owner creates them and may amend their laws; ember cannot seed them for another."""
+        env = self.env()
+        wake = self.wake()
+        for obj in (env, wake):
+            version = self.version(obj)
+            r = self.host.send(op="world-amend", principal=OWNER, identity="am-" + obj, object=obj, version=version,
+                               law="law owner: request.subject == new.owner")
+            self.assertEqual(r["status"], "admitted", (obj, r))
+            r = self.host.send(op="world-amend", principal=OTHER, identity="steal-" + obj, object=obj, version=version + 1,
+                               law="law open: request.kind == 0 or request.subject == \"%s\"" % OTHER)
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), (obj, r))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-w2", object="wake/x", modules=closure("Wake"), entry="initial",
+                           seed=record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
+        self.assertEqual(r["status"], "error", r)
+        self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: "), r)
+
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
                            entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))
-        self.assertEqual(r, {"status": "error", "message": "law has no amendment clause"})
+        self.assertEqual(r, {"status": "error", "message": "law does not admit an amendment by its proposer ember: owner: request.subject == new.owner"})
 
     def test_env_law_refuses_a_strangers_write_proposed_directly(self):
         env = self.env()
@@ -182,6 +228,25 @@ class Wakes(Chain):
     def tide(self, gap=3):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=nil()))
 
+    def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
+        """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
+        and subscribe, tick and a tick too soon each answer with what happened and the card."""
+        self.tide()
+        self.avatar(OTHER)
+        post = ("delvetalk garden plant / colour: amber / seed: an example\nmine:\n"
+                "delvetalk tide subscribe / every: 1 / note: WC-01, first light")
+        sub = self.turn("tide", "receive", heard(post), principal=OTHER)
+        self.assertEqual(self.label_of(sub), "done")
+        card = sub["offers"][0]["text"]
+        print("\n--- tide, subscribed ---\n" + card)
+        self.assertTrue(card.startswith("Subscribed, from tick 0.\n\nTIDE at tick 0"), card)
+        self.assertIn("kimik3 (yours) every 1 from tick 0: WC-01, first light\n", card)   # the card as the write leaves it
+        tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
+        print("--- tide, ticked ---\n" + tick["offers"][0]["text"])
+        self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 note sent.\n\nTIDE at tick 1, last at clock 0;"), tick["offers"])
+        soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
+        self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
+
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
         self.avatar(OTHER)
@@ -197,8 +262,11 @@ class Wakes(Chain):
         self.assertEqual(self.label_of(soon), "tooSoon")
         last = int(get(self.state("tide"), "last")["value"])
         self.assertEqual(get(soon["result"]["payload"], "next"), nat(last + 3))
-        while self.host.send(op="world-status")["height"] < last + 3:
+        # The gap is in clock units: turns do not move it, world-advance does.
+        for _ in range(4):
             self.turn("tide", "receive", heard(""), principal="did:plc:zero")
+        self.assertEqual(self.label_of(self.turn("tide", "tick", principal="did:plc:zero")), "tooSoon")
+        self.host.send(op="world-advance", height=last + 3)
         second = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((self.label_of(second), get(second["result"]["payload"], "sent")), ("ticked", nat(2)))
         self.deliver_all()
@@ -222,8 +290,8 @@ import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Tide.obend as Tide
 import ./Wake.obend as Wake
-def request(principal: String, height: Nat) -> Abi.Request:
-  {context: {world: "", object: "tide", principal: principal, caller: "", intent: "t", height: height, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
+def request(principal: String, clock: Nat) -> Abi.Request:
+  {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: 0n, clock: clock, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
   match v:
     case admitted(_): "admitted"

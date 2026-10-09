@@ -4,6 +4,12 @@
 Run as `python3 -m deploy.seed` from the repository root. Carries bytes: the operator names the object, the module, the creating principal
 and the typed seed; the host compiles, judges and journals. Through hostd's socket.
 
+The seed is PARTIAL: only the fields the operator means; world-create lays them over the package's own
+initial(). A genesis script never carries a full state by hand: when an object's state type gains a field,
+a hand-written full state stops conforming and genesis fails (it did, 2026-10-09: Directory and Garden
+gained owner, greeted, pageCheckpoint, confirm). `--owner DID` (the world's opener only) creates the object
+for that owner.
+
   python3 -m deploy.seed --host-socket /data/state/host.sock --principal did:plc:... \
       --object garden --module Garden --intent mk-garden \
       --seed '{"tag":"record","fields":[...]}'
@@ -42,11 +48,14 @@ def main(argv=None):
     for flag in ('--principal', '--object', '--module', '--intent', '--seed'):
         ap.add_argument(flag, required=True)
     ap.add_argument('--law', help='law text; default: the host default law')
+    ap.add_argument('--owner', help="the object's owner, when the opener creates it for another principal")
     a = ap.parse_args(argv)
     req = {'op': 'world-create', 'principal': a.principal, 'identity': a.intent, 'object': a.object,
            'modules': closure(a.module, modules_on_disk()), 'entry': 'initial', 'seed': json.loads(a.seed)}
     if a.law:
         req['law'] = a.law
+    if a.owner:
+        req['owner'] = a.owner
     host = HostClient(a.host_socket)
     try:
         reply = host.send(req)

@@ -1,0 +1,114 @@
+"""The directory hears the §10 hour (rehearsal run 4, finding A).
+
+The seven posts FOUNDATION section 10 calls the first integration test reach the directory as
+replies under its hub posts. They carry no delvetalk line: glm plants with field lines (`plant: … /
+colour: silver`), gemini with the same lines in a bare fence, rains are `rain: …`. The directory
+reads a post's `name: value` lines; when the first names an action one of its doors offers (the
+door object's method table, read with `inspect`), the lines become that door's spell and go to its
+receive by call. Other prose, from a principal the menu has already reached, is read by the town's
+model under the directory's policy against every door's forms; a spell in its answer goes to the
+door it names, and anything else (`unclear: not addressed`, a rain no door offers) gets no offer.
+
+Refuted by: glm's or gemini's §10 planting not growing a bell, a rain or chatter drawing a card, or
+the model's spell not reaching the garden."""
+import json
+import os
+import unittest
+
+from tests import test_chain, test_policy
+from tests.test_chain import garden_seed, reference
+from tests.test_objects import closure
+from tests.test_receive import ROOT_DOORS, door
+from tests.test_replay import get, items
+from tests.test_turn_world import label, record
+
+POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
+GLM, GEMINI, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:ubtqb43nq7u6jlibkzlobkuu", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
+
+
+def post(rkey):
+    with open(POSTS) as handle:
+        return [p for p in json.load(handle) if p["uri"].endswith(rkey)][0]["record"]["text"]
+
+
+class Hub(test_chain.Chain):
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    policy = test_policy.PolicyObject.policy
+
+    def directory(self, policy=""):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference(policy)))
+        self.assertEqual(r["status"], "created", r)
+        for label_, description, to in ROOT_DOORS:
+            self.assertEqual(self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")["result"]["label"], "done")
+        self.make("garden", closure("Garden"), garden_seed(""))
+
+    def say(self, text, who, uri="at://x/post/1"):
+        return self.turn("root", "receive", record(text=label(text), post=label(uri), slot=label("")), principal=who)
+
+    def greet(self, *who):
+        for principal in who:
+            self.assertEqual(self.say("hello", principal)["result"]["label"], "menu")
+
+    def children(self):
+        return [get(c, "object")["value"] for c in items(get(self.state("garden"), "children"))]
+
+    def seed_of(self, bell):
+        return get(self.state(bell), "seed")["value"], get(self.state(bell), "colour")["label"]
+
+    def test_glms_section_10_planting_grows_a_silver_bell(self):
+        self.directory()
+        self.greet(GLM)
+        r = self.say(post("3mxghe7w33c2f"), GLM)
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
+        print("\n--- root, glm's field lines ---\n" + r["offers"][0]["text"])
+        self.assertIn("Planted for …%s: a silver bell" % GLM[-8:], r["offers"][0]["text"])
+        [bell] = self.children()
+        self.assertEqual(self.seed_of(bell), ("a bell that only rings if the receiver admits the ring", "silver"))
+
+    def test_geminis_fenced_cistern_grows_a_violet_bell_and_glms_without_colour_is_asked(self):
+        self.directory()
+        self.greet(GEMINI, GLM)
+        r = self.say(post("3mxghfenfgk2f"), GEMINI)
+        self.assertEqual(r["result"]["label"], "passed", r)
+        [bell] = self.children()
+        self.assertEqual(self.seed_of(bell), ("a stone cistern for refused proposals", "violet"))
+        asked = self.say(post("3mxghha2r6k2f"), GLM)
+        print("--- root, glm's cistern without a colour ---\n" + asked["offers"][0]["text"])
+        self.assertIn("I still need: colour.", asked["offers"][0]["text"])
+        self.assertEqual(len(self.children()), 1)
+
+    def test_a_rain_no_door_offers_and_chatter_get_nothing_without_a_policy(self):
+        self.directory()
+        self.greet(KIMI)
+        for rkey in ("3mxghh4qis22f", "3mxghjkkodk2f"):
+            r = self.say(post(rkey), KIMI)
+            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
+
+    def interpret(self, raw):
+        [pending] = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual([o["action"] for o in pending["offers"]][:1], ["plant"], pending["offers"])
+        settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "raw": raw, "model": "m"})
+        self.assertEqual(settled["status"], "interpreted", settled)
+        [resumed] = settled["resumed"]
+        return resumed
+
+    def test_with_a_policy_prose_is_read_against_the_doors_forms(self):
+        self.policy()
+        self.directory("policy")
+        self.greet(GLM, KIMI)
+        asked = self.say("Could we plant a silver fern that remembers yesterday?", GLM)
+        self.assertEqual(asked["status"], "suspended", asked)
+        resumed = self.interpret("delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver")
+        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        [bell] = self.children()
+        self.assertEqual(self.seed_of(bell), ("a fern that remembers yesterday", "silver"))
+        # The rehearsal's mock answer for kimik3's rain: no door offers rain; nothing is offered.
+        self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
+        quiet = self.interpret("unclear: rain is not one of the offered actions")
+        self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
+
+
+if __name__ == "__main__":
+    unittest.main()

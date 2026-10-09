@@ -1,4 +1,4 @@
-"""Render with a point of view (FOUNDATION section 13, row 3): renderFor(state, context) is the
+"""Render with a point of view (FOUNDATION section 13, row 3): render(state, context) is the
 card as the reader in the context sees it. A member sees more than a stranger; the planter sees
 "(yours)". The card a non-acting reply gets is the reader's, so these drive real world-turns
 with an empty reply by different principals, and through world-card, which renders for its reader.
@@ -86,6 +86,49 @@ class Views(test_chain.Chain):
         self.assertTrue(theirs.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:\n\n    delvetalk garden plant\n"), theirs)
         # Showing the card drops nothing.
         self.assertEqual(len([f for f in self.state("garden")["fields"] if f["name"] == "pending"][0]["value"]["items"]), 1)
+
+
+class Handles(test_chain.Chain):
+    """Rehearsal finding 8: a card never shows a raw DID. A real did:plc (24 characters after the
+    method) shows as "…" and its last eight; a short test DID shows whole."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_a_real_did_is_shown_by_its_last_eight(self):
+        did = "did:plc:a5uoyxqts4y3iwo2dk74ygma"
+        r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
+                           entry="initial", seed=record(owner=label(did), buffer=nil(), seen=nat(0), subscribers=nil()))
+        self.assertEqual(r["status"], "created", r)
+        card = self.turn("env/" + did, "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
+        self.assertTrue(card.startswith("ENV of …dk74ygma: 0 new since #0\n"), card)
+        self.assertNotIn("a5uoyxqts4y3iwo2dk74ygma", card.split("Reply with a spell")[0])
+
+
+class ObservedHandles(test_chain.Chain):
+    """A card names its reader by the handle the host's registry holds (context.handle, filled by
+    the clock principal with world-principal); anyone else by "…" and the DID's last eight."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    DID = "did:plc:nmjdxe6fex23zslnnbwgruj3"
+
+    def test_the_reader_sees_their_handle_and_a_stranger_the_last_eight(self):
+        opened = self.host.send(op="world-open", path=self.path, clock="transport")
+        self.assertEqual(opened["status"], "opened", opened)
+        self.make("bell", closure("Bell"), record(colour=silver(), seed=label("moths"),
+                                                  planting=record(principal=label(self.DID), intent=label("p"))))
+        self.assertEqual(self.card("bell", self.DID).split("\n")[0], "A silver bell planted by …gbruj3 (yours): moths (silent)".replace("…gbruj3", "…" + self.DID[-8:]))
+        r = self.host.send(op="world-principal", principal="transport", did=self.DID, handle="glm.delve.town")
+        self.assertEqual(r["status"], "principal", r)
+        mine = self.card("bell", self.DID).split("\n")[0]
+        theirs = self.card("bell", KIM).split("\n")[0]
+        print("\n--- bell, its planter with a handle ---\n" + mine + "\n--- a stranger ---\n" + theirs)
+        self.assertEqual(mine, "A silver bell planted by glm.delve.town (yours): moths (silent)")
+        self.assertEqual(theirs, "A silver bell planted by …%s: moths (silent)" % self.DID[-8:])
+
+    def card(self, name, principal):
+        reply = self.turn(name, "receive", heard(), principal=principal)
+        self.assertEqual(reply["status"], "admitted", reply)
+        return reply["offers"][0]["text"]
 
 
 class PartyViews(test_chain.Chain):

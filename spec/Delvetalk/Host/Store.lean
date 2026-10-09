@@ -60,6 +60,10 @@ def maxSeedBytes : Nat := 262144
 def createsPerTurn : Nat := 8
 /-- Suspended activities waiting on one object, and in the whole world. -/
 def pendingActivitiesPerObject : Nat := 8
+/-- A principal's display handle in the registry (a DNS name is at most 253). -/
+def maxHandleBytes : Nat := 256
+/-- Interpretations waiting on one object, counted apart from its awaits. -/
+def pendingInterpretationsPerObject : Nat := 64
 def maxSuspended : Nat := 4096
 /-- Awaits one turn may perform, across its suspensions. -/
 def awaitsPerTurn : Nat := 8
@@ -168,9 +172,12 @@ structure Program where
   methods : Json := Json.arr #[]
   predicate : Bool := false
   predicateReads : Bool := false
+  /-- The compiled packet's digest, observed beside the source pin. -/
+  packet : String := ""
 
 structure Object where
-  /-- `packetSha256` of the compiled artifact the object was created from. -/
+  /-- The object's pin: the CID of its sealed source closure (the artifact's `sourcesSha256`, the
+      Canonical CID of its modules in order, library modules included). What the journal binds. -/
   pin : String
   law : Law
   /-- The law as text, the form it is amended in; `law` is its parse. -/
@@ -196,6 +203,12 @@ structure Object where
   /-- The object told `ended {receipt, how}` when an activity of this one ends `timedOut`,
       `broken` or `budget` ("" for none); fixed at creation. -/
   supervisor : String := ""
+  /-- The highest `n` among this object's children `<id>/<kind>/<n>`: a create with an empty
+      `requireAbsent` mints the next one. Derived from the creations the journal records. -/
+  minted : Nat := 0
+  /-- The `packetSha256` this host compiled the object's sources to: an audit observation
+      (journaled as `compiled.packet`), never compared on replay. -/
+  packet : String := ""
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/
@@ -296,7 +309,20 @@ structure World where
       hourly posting cap; both set by the `settings` entry of the first open that names them. -/
   clockPrincipal : String := ""
   postQuota : Nat := 16
+  /-- The principal that opened the world (`world-open {opener}`, in the settings entry; ""
+      when none was named): it alone may create an object for a named owner. -/
+  opener : String := ""
   settled : Bool := false
+  /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
+      entry's `replyTo`), which `awaitPost` settles on. -/
+  replies : Std.HashMap String (String × String) := {}
+  /-- Memory only: the pin of the running host binary (set at open), recorded in `compiled`. -/
+  binary : String := ""
+  /-- Memory only: entries this process replayed whose recorded packet digest differs from
+      the one its compiler produced from the same sources (`world-status`). -/
+  recompiledDifferently : Nat := 0
+  /-- The principal registry: display handle by principal, from `principal` entries. -/
+  handles : Std.HashMap String String := {}
   /-- Source modules by CID, from `module` entries: the journal carries each source once and
       compile inputs name it by `cid`. -/
   modules : Std.HashMap String String := {}

@@ -37,8 +37,8 @@ def many(n: Nat, context: Abi.Context) -> Nat:
 
 def context(card="garden-1"):
     text = lambda v: {"tag": "label", "value": v}
-    return record(world=text(""), object=text(card), principal=text("glm"), caller=text(""), intent=text("probe"),
-                  height={"tag": "natural", "value": "0"}, inputOrigin=record(
+    return record(world=text(""), object=text(card), principal=text("glm"), handle=text(""), caller=text(""), intent=text("probe"),
+                  height={"tag": "natural", "value": "0"}, clock={"tag": "natural", "value": "0"}, inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
         immediatelyPrevious=boolean(False)))
 
@@ -74,6 +74,9 @@ class Types(unittest.TestCase):
         response_row = row_names(computation(compile_job(closure("Policy"), "teach")["artifact"]["type"])["response"]["row"])
         for name in ("inspected", "checked", "proposal", "unclear"):
             self.assertIn(name, response_row)
+
+
+SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
 
 class PolicyObject(Chain):
@@ -249,7 +252,77 @@ class PolicyObject(Chain):
         self.say("plant something")
         unclear = self.interpret({"status": "failed", "reason": "rate", "detail": "429"})
         self.assertEqual(unclear["status"], "admitted", unclear)
-        self.assertIn("I did not quite get that. I still need: the model did not reply: rate", unclear["offers"][0]["text"])
+        self.assertIn("I did not quite get that. I still need: model: rate", unclear["offers"][0]["text"])
+
+    # --- The model's own text, fitted by the garden (rehearsal finding 2) -----------------
+
+    def test_the_request_carries_the_policys_rendered_prompt_as_its_system_text(self):
+        self.policy()
+        self.garden("policy")
+        self.say("Could we plant a silver fern that remembers?")
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        system = item["policy"]["system"]
+        print("\n--- system sent ---\n" + system)
+        self.assertTrue(system.startswith("S\n\nLexicon:\n"), system)
+        for needle in ("Offered forms (a spell is the delvetalk line, then one field: value line per field):",
+                       "delvetalk garden plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
+                       "Answer with one spell in exactly that grammar",
+                       "Participant: Could we plant a silver fern that remembers?"):
+            self.assertIn(needle, system)
+
+    def test_a_plain_spell_reply_resumes_replied_and_the_garden_plants_it(self):
+        self.policy()
+        self.garden("policy", confirm=False)
+        self.say("Could we plant a silver fern that remembers?")
+        pending = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=pending[0]["id"],
+                                 reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+        self.assertEqual(settled["receipt"]["outcome"]["verdict"], {"tag": "replied", "text": SPELL}, settled)
+        [resumed] = settled["resumed"]
+        self.assertEqual(resumed["status"], "admitted", resumed)
+        self.assertEqual(resumed["result"]["label"], "planted", resumed)
+        self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", resumed["receipt"]["offers"][0]["text"])
+        # The verdict replays: a fresh process reaches the same garden.
+        before = self.state("garden")
+        self.reopen()
+        self.assertEqual(self.state("garden"), before)
+
+    def test_a_reply_that_is_neither_a_spell_nor_json_is_the_gardens_to_answer(self):
+        self.policy()
+        self.garden("policy", confirm=False)
+        self.say("What makes you think anyone needs a portal?")
+        pending = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=pending[0]["id"],
+                                 reply={"status": "replied", "json": None, "raw": "unclear: not addressed", "model": "m"})
+        self.assertEqual(settled["receipt"]["outcome"]["verdict"]["tag"], "replied", settled)
+        [resumed] = settled["resumed"]
+        self.assertEqual(resumed["status"], "admitted", resumed)
+        self.assertNotEqual(resumed["result"]["label"], "planted", resumed)
+
+    def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
+        """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
+        self.policy()
+        self.garden("policy")
+        for i in range(64):
+            r = self.say("a fern, maybe %d" % i, identity="p%d" % i)
+            self.assertEqual(r["status"], "suspended", (i, r))
+        over = self.say("one more fern", identity="p64")
+        out = over["receipt"]["outcome"]
+        self.assertEqual((over["status"], out["class"], out["reason"]), ("refused", "capacity", "pendingInterpretationsPerObject"))
+        pending = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual(len(pending), 64)
+        # A capacity refusal is transient: once the interpretations settle, the same post
+        # (the same identity) is retried and runs.
+        for item in pending:
+            self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        retried = self.say("one more fern", identity="p64")
+        self.assertEqual(retried["status"], "suspended", retried)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+        [resumed] = settled["resumed"]
+        self.assertEqual((resumed["status"], resumed["receipt"]["identity"]["intent"]), ("admitted", "p64"), resumed)
+        self.assertEqual(self.host.send(op="world-receipt", principal="glm", identity="p64")["receipt"]["outcome"]["tag"], "admitted")
 
 
 if __name__ == "__main__":

@@ -38,9 +38,9 @@ record Edits:
 # Every send carries a line of text: a note's text, or what woke the trigger.
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
-# Only the owner changes its triggers. With request.method, sense could be opened to the
-# owner's env alone: owner: request.method == "sense" or request.subject == new.owner
-law owner: new.owner == request.subject
+# Only the owner changes its triggers, reprograms or amends it; as with Env, the creator
+# must be the owner, so each principal creates their own Wake (docs/GENESIS.md).
+law owner: request.subject == new.owner
 law ids: monotone(nextId)
 # The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): the
 # triggers change only by the owner's request.
@@ -143,7 +143,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "unwatch" then unwatched::<Card.Reply>(state, Card.natural(a.fields, "id"), context, doneReply) else watched::<Card.Reply>(state, spelled(a.action, a.fields), Action.notify({}), context, doneReply)
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 def spelled(action: String, fields: Card.Fields) -> On:
   if action == "mention" then On.mention({actor: Card.text(fields, "actor")}) else On.keyword({term: Card.text(fields, "term")})
 def onText(on: On) -> String:
@@ -159,9 +159,6 @@ def actionText(action: Action) -> String:
     case call(c): textConcat("call ", textConcat(c.card, textConcat(" ", c.method)))
 def line(trigger: Trigger) -> Document.Document:
   Document.text(textConcat("#", textConcat(natText(trigger.id), textConcat(" on ", textConcat(onText(trigger.event), textConcat(": ", textConcat(actionText(trigger.action), "\n")))))))
-# The card as the reader in the context sees it.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("WAKE of ", textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), textConcat(": ", textConcat(natText(Lists.length::<Trigger>(state.triggers)), " triggers\n")))))), tail: if Card.reads(state.owner, context) then Card.clipped(Lists.map::<Trigger, Document.Document>(state.triggers, line), 8n) else Document.Documents.nil()})})
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())
+# The card as the reader in the context sees it (the host's card {object} passes the reader).
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("WAKE of ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), textConcat(": ", textConcat(natText(Lists.length::<Trigger>(state.triggers)), " triggers\n")))))), tail: if Card.reads(state.owner, context) then Card.clipped(Lists.map::<Trigger, Document.Document>(state.triggers, line), 8n) else Document.Documents.nil()})})

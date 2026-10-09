@@ -131,7 +131,7 @@ def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   departed::<Done>(state, context, same)
 # The owner lets one more principal through a members gate.
 def allow(state: State, input: {from: String, to: String, principal: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.principal != state.owner then no(textConcat("Only the owner changes a gate; that is ", Card.handle(state.owner))) else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
+  if context.principal != state.owner then no(textConcat("Only the owner changes a gate; that is ", Card.name(state.owner, context))) else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
 def allowedOn(found: Lists.Maybe<Gate>, principal: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match found:
     case none(_): no("No gate on that path.")
@@ -158,7 +158,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "enter" then entered::<Card.Reply>(state, Card.text(a.fields, "place"), context, doneReply("enter")) else if a.action == "move" then walked::<Card.Reply>(state, Card.text(a.fields, "to"), context, doneReply("move")) else departed::<Card.Reply>(state, context, doneReply("leave"))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), renderFor(state, context))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
 def ruleText(rule: Rule, context: Abi.Context) -> String:
   match rule:
     case open(_): ""
@@ -181,13 +181,10 @@ def besides(p: Presence, place: String, who: String) -> Bool:
 def counted(n: Nat) -> String:
   if n == 0n then "" else textConcat(natText(n), " others here.\n")
 def outside(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("COMMONS of ", textConcat(Card.handle(state.owner), textConcat(Card.mine(state.owner, context), textConcat(": ", textConcat(natText(Lists.length::<Place>(state.places)), textConcat(" places, ", textConcat(natText(Lists.length::<Presence>(state.presence)), textConcat(" here. Ways in: ", textConcat(textJoin(state.entries, ", "), "\n"))))))))))
+  Document.text(textConcat("COMMONS of ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), textConcat(": ", textConcat(natText(Lists.length::<Place>(state.places)), textConcat(" places, ", textConcat(natText(Lists.length::<Presence>(state.presence)), textConcat(" here. Ways in: ", textConcat(textJoin(state.entries, ", "), "\n"))))))))))
 # The card as the reader in the context sees it: someone here sees their place, who
 # else is there and every path out with whether its gate lets them through.
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
+def render(state: State, context: Abi.Context) -> Document.Document:
   match here(state, context):
     case some(p): standing(state, p.value, context)
     case none(_): outside(state, context)
-# The card for the host's `card {object}` until the host passes the reader's context.
-def render(state: State) -> Document.Document:
-  renderFor(state, Card.stranger())

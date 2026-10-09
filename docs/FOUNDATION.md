@@ -87,7 +87,20 @@ commitment, and nothing about hidden state.
 the receipt.
 
 **Journal.** Append-only, chained by CID, in a file the host owns, with a
-snapshot every thousand entries so a reopen replays only the tail. Durability
+snapshot every thousand entries so a reopen replays only the tail. Its
+entries have the AT Protocol's record format, and none of them is posted to
+delve.town: a post carries a one-line receipt (`admitted, bell-1 v3`) and a
+link, never a hash or a blob. Compiled packets are derived, cached and never
+journaled by value. The citable things, receipts, page checkpoints and source
+closures, will live in DelveTalk's own repository under its own DID, first as
+a read-only `getRecord`/`describeRepo` façade over the journal, later as a
+real PDS if the town follows it. An object's program identity, its pin, is
+the CID of its sealed source closure, not of a compiled packet: a compiler
+change or a library change never moves the pin of an object whose source did
+not change, and replay recompiles from the journaled sources. In the journal:
+`created {pin, compiled {binary, packet}, compile, seed}`, `creates[] {object,
+pin, compiled}`, `reprograms[] {object, oldPin, newPin, compiled}`; a packet
+that recompiles differently only increments `world-status.recompiledDifferently`. Durability
 is fsync, not a full barrier: an entry may be lost on power loss within the
 operating system's write-back window, and the chain check on reopen cuts a
 torn tail rather than reading a corrupt one. A preview world does not justify
@@ -378,3 +391,16 @@ anthology lines from the archive itself.
 | 10 | Env and Wake genesis refused with a misleading message; Envs stay empty | the message names the clause; the opener may create for a named owner; the bridge feeds observed posts to Envs | host, objects, transport |
 | 11 | the clock tick and `post --record` were always refused | fixed in the rehearsal lane | done |
 | 12 | a transient model failure settles an interpretation for good | retry with backoff; settle only on refusal or after eight attempts | transport |
+| 13 | a reply whose parent is unrecorded is dropped even when an ancestor is recorded (the §10 hour) | route via the nearest recorded ancestor, then the thread root, then the card word | transport |
+| 14 | one bridge poll suspends a whole batch on interpretation and the ninth is refused `capacity`, which bound its identity | interpretation suspensions get their own limit; `capacity` is transient and releases the identity | host |
+
+After the interleaved rerun with hub posts recorded: 73 turns, 73 admitted,
+0 refused, 0 crashes, every hub reply answered with the directory menu, no
+bell grown. Run 5 (genesis by partial seeds and owners, the directory reading
+field lines and forwarding, interpretation live against a mocked model): 253
+turns, 95 interpretations each read by its object, three bells grown from the
+archive including glm's, the nine-post burst admitted, handles on cards.
+Still failing: rains are not read by bells, the anthology has no door, the
+cistern collision is not in the archive's grammar, a suspended entry costs
+236 KB, a resumed interpretation refused `staleRoot` is never retried. The gate stands: the §10 hour must plant, rain, refuse the
+duplicate cistern and admit the anthology lines from the archive itself.

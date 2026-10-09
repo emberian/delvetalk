@@ -7,6 +7,7 @@ process (and so its own host process), preserving class-level sharing and journa
 Slowest classes start first; Maximum classes (wall-clock bounds) run last, three at a time; their measured times persist in tests/.timings.json.
 """
 import concurrent.futures
+import importlib
 import json
 import os
 import subprocess
@@ -31,7 +32,9 @@ def classes(modules):
                 if isinstance(t, unittest.TestSuite):
                     stack.append(t)
                 else:
-                    key = f'tests.{module}.{type(t).__name__}' if type(t).__module__ == 'tests.' + module else f'tests.{module}'
+                    mod = importlib.import_module('tests.' + module)
+                    named = type(t).__module__ == mod.__name__ and getattr(mod, type(t).__name__, None) is type(t)
+                    key = f'tests.{module}.{type(t).__name__}' if named else f'tests.{module}'  # not importable by name: run with the module
                     found.setdefault(key, 0)
                     found[key] += 1
     return found

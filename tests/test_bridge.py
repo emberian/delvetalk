@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests import test_outbound
 from tests.test_chain import garden_state
 from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
@@ -129,7 +130,10 @@ class Bridging(BridgeCase):
         self.observe([spell_post(1, 'stern', '2026-10-09T10:00:00Z')])
         self.run_bridge()
         (d,) = self.drafts()
-        self.assertEqual(d['text'], f"proposal observed, not committed\nreason: lawRefused\nreceipt: {d['receipt']['hash']}\n")
+        self.assertTrue(d['text'].startswith("proposal observed, not committed\nreason: lawRefused\n"), d['text'])
+        import re
+        self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', d['text']), d['text'])
+        self.assertNotIn('seen', d['text'])  # no state field
 
     def test_unknown_card_yields_unknownObject_draft(self):
         self.observe([spell_post(1, 'nowhere', '2026-10-09T10:00:00Z')])
@@ -221,8 +225,9 @@ class Routing(BridgeCase):
         r = bridge.run(self.state, stub)
         turns = {t['identity'][-6:]: t for t in stub.ops if t['op'] == 'world-turn'}
         self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'directory', '000002': 'directory', '000004': 'directory'})
-        slot = {f['name']: f['value']['value'] for f in turns['000001']['argument']['fields']}['slot']
-        self.assertEqual(slot, 'welcome')
+        self.assertEqual([f['name'] for f in turns['000001']['argument']['fields']], ['text', 'post'])  # the host fills slot
+        self.assertEqual(turns['000001']['replyTo'], parent)
+        self.assertNotIn('replyTo', turns['000004'])  # a top-level summon answers no post
         self.assertEqual(len(r['turns']), 3)
         self.assertIn(orphan_reply['uri'], (self.state / 'skipped.txt').read_text())
         n = len([o for o in stub.ops if o['op'] == 'world-addressee'])
@@ -239,6 +244,32 @@ class Routing(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
         self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])
+
+    def test_a_deep_reply_routes_to_the_nearest_recorded_ancestor(self):
+        u = lambda n: f'at://{DID}/town.delve.feed.post/t{n}'
+        stub = Stub({u(2): {'status': 'addressee', 'object': 'garden-1'}, u(1): {'status': 'addressee', 'object': 'wrong'}})
+        posts = [mk(1, 'root post'), mk(2, 'recorded', parent=u(1)), mk(3, 'third', parent=u(2)), mk(4, 'fourth', parent=u(3))]
+        for i, (p, n) in enumerate(zip(posts, range(1, 5))):
+            p['uri'] = u(n)
+            p['record']['createdAt'] = f'2026-10-09T10:00:0{i}Z'
+        posts[3]['record']['reply']['root'] = {'uri': u(1), 'cid': 'x'}
+        self.observe(posts)
+        bridge.run(self.state, stub)
+        turns = {t['identity'][-2:]: t['object'] for t in stub.ops if t['op'] == 'world-turn'}
+        self.assertEqual(turns['t4'], 'garden-1')  # 4 -> 3 (unknown) -> 2 (recorded): nearest, not the root
+        asked = [o['parent'] for o in stub.ops if o['op'] == 'world-addressee']
+        self.assertEqual(turns['t2'], 'wrong')  # its own parent is the recorded post 1
+        self.assertEqual(asked.count(u(1)), 1)  # only t2 asked about the root; t3 and t4 stopped at post 2
+        self.assertEqual(turns['t3'], 'garden-1')
+
+    def test_the_walk_is_bounded_and_survives_a_cycle(self):
+        a, b = f'at://{DID}/town.delve.feed.post/ca', f'at://{DID}/town.delve.feed.post/cb'
+        stub = Stub()
+        x, y = mk(1, 'x', parent=b), mk(2, 'y', parent=a)
+        x['uri'], y['uri'] = a, b
+        self.observe([x, y])
+        bridge.run(self.state, stub)
+        self.assertLessEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), 4)
 
     def test_card_word_still_routes_a_post_with_no_journaled_parent(self):
         stub = Stub()
@@ -289,33 +320,82 @@ class Silence(BridgeCase):
         self.assertIn('=== reply to:', out.getvalue())
 
 
-def _real_offer_case():
-    from tests.test_outbound import Offers, label, record as rec
-
-    class Real(Offers):
-        def test_offer_drafts_match_the_hosts_real_identity_shape(self):
-            self.turn("teller", "tell", rec(to=label(""), text=label("hello")), principal="ann", identity="t-1")
-            self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
-            with tempfile.TemporaryDirectory() as d:
-                write = bridge.write_atomic
-                write(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
-                                                       "object": "teller", "slot": None, "height": 0})
-                self.assertEqual(bridge.offer_drafts(d, self.host_adapter()), ["t-1"])
-                (draft,) = list((Path(d) / "outbox").glob("*.json"))
-                self.assertEqual(json.loads(draft.read_text())["text"], "hello")
-                self.assertEqual(bridge.offer_drafts(d, self.host_adapter()), [])
-
-        def host_adapter(self):
+class RealOffers(test_outbound.Offers):
+    def test_offer_drafts_match_the_hosts_real_identity_shape(self):
+        self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+        self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
+        with tempfile.TemporaryDirectory() as d:
+            bridge.write_atomic(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
+                                                                 "object": "teller", "slot": None, "height": 0})
             outer = self
 
             class H:
                 def send(self, req):
                     return outer.host.send(**req)
-            return H()
-    return Real
+            self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
+            (draft,) = list((Path(d) / "outbox").glob("*.json"))
+            self.assertEqual(json.loads(draft.read_text())["text"], "hello")
+            self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
-RealOffers = _real_offer_case()
+class Projection(unittest.TestCase):
+    def test_a_refusal_draft_is_the_hosts_public_projection_verbatim_and_nothing_else(self):
+        reply = {'status': 'refused', 'receipt': {'hash': 'h', 'outcome': {'tag': 'refused', 'class': 'unknownObject', 'reason': 'SECRET state'}},
+                 'public': {'status': 'refused', 'class': 'unknownObject', 'root': {'object': 'nope'}, 'object': 'nope', 'hint': 'try garden'}}
+        text = bridge.draft_text(reply)
+        self.assertEqual(text, 'proposal observed, not committed\nreason: unknownObject\nroot: nope\nobject: nope\nhint: try garden\n')
+        self.assertNotIn('SECRET', text)
+        reply['public'] = {'status': 'refused', 'class': 'lawRefused', 'root': {'object': 'm', 'version': 2, 'cid': 'bafy' + 'a' * 50}}
+        self.assertEqual(bridge.draft_text(reply), 'proposal observed, not committed\nreason: lawRefused\nroot: m v2\n')
+        self.assertEqual(bridge.draft_text(reply, 'https://x.example/'),
+                         'proposal observed, not committed\nreason: lawRefused\nroot: m v2\nhttps://x.example/o/m#v2\n')
+
+    def test_no_draft_text_carries_a_hash_or_a_blob(self):
+        import re
+        h = 'bafyrei' + 'a' * 52
+        receipt = {'hash': h, 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
+        texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
+        self.assertIn('receipt: garden v3 at height 9\nhttps://x.example/o/garden#v3', texts[0])
+        for t in texts:
+            self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', t), t)
+
+
+class Principals(BridgeCase):
+    def test_each_author_is_registered_once_by_the_clock_principal_at_their_first_post(self):
+        stub = Stub()
+        a, b = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')
+        b['author'] = {'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}
+        self.observe([a, b, spell_post(3, 'garden-1', '2026-10-09T10:00:02Z')])
+        bridge.run(self.state, stub)
+        regs = [o for o in stub.ops if o['op'] == 'world-principal']
+        self.assertEqual(regs, [{'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'},
+                                {'op': 'world-principal', 'principal': 'transport', 'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}])
+        first_turn = next(i for i, o in enumerate(stub.ops) if o['op'] == 'world-turn')
+        self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-principal')
+        bridge.run(self.state, stub)
+        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-principal']), 2)
+
+
+class RealAwaitPost(test_outbound.ReplyIsAddress):
+    def test_a_bridged_reply_settles_a_waiting_awaitPost_on_the_real_host(self):
+        waiting = self.turn("w", "waitFor", record(post=label(test_outbound.URI)), principal="ann", identity="wait-1")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        self.posted(test_outbound.URI, obj="card")
+        outer = self
+
+        class H:
+            def send(self, req):
+                return outer.host.send(**req)
+        reply = mk(1, "thanks", parent=test_outbound.URI)
+        t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': [reply]}),
+                      'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
+        with tempfile.TemporaryDirectory() as d:
+            observe.Observer(d, delve.Client(t)).poll()
+            result = bridge.run(d, H(), now=60)  # the clock stays inside the waiter's patience
+        self.assertEqual(result["turns"], [reply["uri"]], result)
+        self.assertTrue(self.note().startswith("answered by"), self.note())
 
 
 class Daemon(unittest.TestCase):

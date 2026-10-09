@@ -92,13 +92,28 @@ class Classification(unittest.TestCase):
                              mk(5, 'hello @livedelvetalk.delve.town'), mk(6, 'a #gsb post', parent=BASE['uri']),
                              mk(7, '#gsb\ndelvetalk garden plant')])
         got = {k: (v['kind'], v['spell']) for k, v in obs.items()}
-        self.assertEqual(got['000001'], ('spell', {'card': 'bell-7'}))
+        self.assertEqual(got['000001'], ('spell', {'card': 'other'}))  # the last unquoted delvetalk line
         self.assertEqual(got['000002'][0], 'post')
         self.assertEqual(got['000003'][0], 'post')
         self.assertEqual(got['000004'][0], 'post')
         self.assertEqual(got['000005'][0], 'summon')
         self.assertEqual(got['000006'][0], 'summon')
         self.assertEqual(got['000007'], ('spell', {'card': 'garden'}))
+
+    def test_spell_card_follows_spell_obend_last_unquoted_line(self):
+        card = observe.spell_card
+        kimik3 = ("The wake seam reports.\n\ndelvetalk tide subscribe / every: 1 / note: WC-01, first light")
+        self.assertEqual(card(kimik3), 'tide')
+        self.assertEqual(card('delvetalk garden plant\nseed: a\n\ndelvetalk tide subscribe / every: 1'), 'tide')  # the last wins
+        self.assertEqual(card('delvetalk tide subscribe\n> delvetalk garden plant\n```\n'), 'tide')
+        self.assertEqual(card('delvetalk tide subscribe\n    delvetalk garden plant'), 'tide')  # indented is quotation
+        self.assertEqual(card('\tdelvetalk garden plant\ndelvetalk tide subscribe'), 'tide')
+        self.assertEqual(card('    delvetalk garden plant'), 'garden')  # quotation only when nothing else matches
+        self.assertEqual(card('> delvetalk garden plant'), None)
+        self.assertEqual(card('delvetalk garden'), None)  # no action: malformed
+        self.assertEqual(card('delvetalk !x plant'), None)
+        obs, _ = self.kinds([mk(1, kimik3)])
+        self.assertEqual((obs['000001']['kind'], obs['000001']['spell']), ('spell', {'card': 'tide'}))
 
     def test_real_fixture_page(self):
         with tempfile.TemporaryDirectory() as d:

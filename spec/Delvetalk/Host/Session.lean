@@ -150,17 +150,19 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       match ← openWorld path held verify with
       | .error e => return (session, .error e)
       | .ok o =>
-        let o := { o with sync }
+        -- The binary that compiles from here on is recorded beside each pin it makes.
+        let o := { o with sync, world := { o.world with binary := ← Snapshot.binaryPin } }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
               | .ok q => some <$> natOf q
               | .error _ => pure none
-            return ((request.getObjValAs? String "clock").toOption, quota) : Except String _) with
+            return ((request.getObjValAs? String "clock").toOption, quota,
+              (request.getObjValAs? String "opener").toOption) : Except String _) with
           | .error e => return (session, .error e)
-          | .ok (none, none) => pure o
-          | .ok (clock, quota) =>
-            let (s', r) ← durable o (fun w => settingsOp w clock quota)
+          | .ok (none, none, none) => pure o
+          | .ok (clock, quota, opener) =>
+            let (s', r) ← durable o (fun w => settingsOp w clock quota opener)
             match r, s' with
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)
@@ -221,7 +223,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
         | .error e => return (session, .error e)
         | .ok lib => durable s (fun w => libraryOp w principal intent lib none)
       | "world-inspect" => return (session, inspectOp s.world request)
-      | "world-interpretations" => return (session, .ok (interpretationsReply s.world))
+      | "world-interpretations" =>
+        let (w, r) := interpretationsReply s.world
+        return (some { s with world := w }, .ok r)
       | "world-interpretation" => durable s (fun w => interpretationOp w request)
       | "world-reprogram" => durable s (fun w => reprogramOp w request)
       | "world-amend" => durable s (fun w => amendOp w request)
@@ -234,8 +238,10 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name)]))
+          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name),
+          ("recompiledDifferently", toJson s.world.recompiledDifferently)]))
       | "world-posted" => durable s (fun w => postedOp w request)
+      | "world-principal" => durable s (fun w => principalOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

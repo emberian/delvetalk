@@ -4,11 +4,15 @@ the reader's authority, and the posts transport made for objects, so replies fin
 Each case is named by the defect that would make it fail.
 """
 import json
+import os
+import shutil
+import tempfile
 import unittest
 
 from tests.test_chain import field
-from tests.test_reflection import PACKAGE, Reflection, source_seed
+from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
 from tests.test_turn_world import label, nat, record
+from tests.wire import cid_of
 
 URI = "at://did:plc:world/town.delve.feed.post/3abc"
 SLOT = {"principal": "did:plc:kim", "intent": "strike-1"}
@@ -309,6 +313,26 @@ class Offers(Reflection):
         self.assertEqual(self.offers("kim"), ["woken"])
         self.assertEqual(self.offers("glm"), [])
 
+    def test_a_turn_that_offers_nothing_carries_no_offers_and_journals_like_any_other(self):
+        """Rehearsal finding 3: prose addressed to no card gets nothing back. A turn that performs
+        no `offer` answers without an `offers` field (not an empty one), its entry retains none,
+        and it is journaled, retried and replayed as any admitted turn, so transport drafts
+        exactly when `offers` is present."""
+        height = self.host.send(op="world-status")["height"]
+        quiet = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
+        self.assertEqual(quiet["status"], "admitted", quiet)
+        self.assertNotIn("offers", quiet)
+        self.assertNotIn("offers", quiet["receipt"])
+        self.assertEqual(quiet["receipt"]["height"], height + 1)
+        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
+        self.assertEqual(field(self.host.send(op="world-view", principal="ann", object="teller")["state"], "note"),
+                         label("noted"))
+        self.assertEqual(self.offers("ann"), [])
+        again = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
+        self.assertEqual(again, quiet)
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-receipt", principal="ann", identity="quiet")["receipt"], quiet["receipt"])
+        self.assertEqual(self.offers("ann"), [])
 
 class Publish(Reflection):
     """publish is retained like an addressed offer, for transport to post as the object's page."""
@@ -403,7 +427,41 @@ class Projection(Reflection):
                                roots=[{"object": "vault", "version": 7}], writes=[])
         self.assertEqual(stale["status"], "refused", stale)
         theirs = self.host.send(op="world-receipt", principal="cid", identity="stale", of="ann")
-        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": "vault"})
+        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7}})
+
+    def test_every_root_names_the_cid_of_the_state_the_turn_read_and_replay_checks_it(self):
+        """A card address is a versioned capability: a receipt's roots, and a public refusal's root,
+        name the exact state a turn was judged against."""
+        state = lambda name: self.host.send(op="world-view", principal="ann", object=name)["state"]
+        before = {name: cid_of(state(name)) for name in ("vault", "lamp")}
+        r = self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
+        self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0, "cid": before["vault"]},
+                                                 {"object": "lamp", "version": 0, "cid": before["lamp"]}])
+        # A refusal on a public object shows anyone the version and state it was judged against;
+        # on a private one, the version only.
+        for name in ("lamp", "vault"):
+            bad = self.turn(name, "stamp", record(wrong=label("x")), principal="ann", identity="bad-" + name)
+            self.assertEqual(bad["receipt"]["outcome"]["class"], "typeMismatch", bad)
+            self.assertEqual(bad["receipt"]["roots"], [{"object": name, "version": 1, "cid": cid_of(state(name))}])
+        lamp = self.host.send(op="world-receipt", principal="bob", identity="bad-lamp", of="ann")
+        self.assertEqual(lamp["root"], {"object": "lamp", "version": 1, "cid": cid_of(state("lamp"))})
+        vault = self.host.send(op="world-receipt", principal="bob", identity="bad-vault", of="ann")
+        self.assertEqual(vault["root"], {"object": "vault", "version": 1})
+        # Replay recomputes the state at each root's version: a resealed entry naming another state is refused.
+        self.release()
+        with open(self.path) as f:
+            lines = f.read().splitlines()
+        last = json.loads(lines[-1])
+        last["roots"][0]["cid"] = before["vault"]
+        del last["hash"]
+        last["hash"] = cid_of(last)
+        lines[-1] = json.dumps(last, separators=(",", ":"))
+        with open(self.path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual(opened["status"], "error", opened)
+        self.assertIn("root vault names a state at version 1 the journal does not hold", opened["message"])
 
     def test_history_is_denied_for_an_object_the_reader_cannot_view_and_elides_the_rest(self):
         self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
@@ -415,6 +473,335 @@ class Projection(Reflection):
         full = self.host.send(op="world-history", principal="ann", object="vault")
         self.assertIn("secret-xyz", json.dumps(full))
         self.assertEqual(self.host.send(op="world-history", object="lamp")["status"], "error")
+
+    def test_an_unknown_card_is_named_with_a_hint_in_public_and_to_its_author(self):
+        """Rehearsal finding 7: `delvetalk forge make` with no forge said only `unknownObject`."""
+        r = self.turn("forge", "make", principal="gemini", identity="forge-1")
+        public = {"status": "refused", "class": "unknownObject", "root": {"object": "forge"}, "object": "forge",
+                  "hint": "no card named forge; reply to the directory for the list"}
+        self.assertEqual((r["status"], r["public"]), ("refused", public), r)
+        self.assertEqual(self.host.send(op="world-receipt", principal="cid", identity="forge-1", of="gemini"), public)
+
+    def test_env_and_wake_are_the_speakers_own_and_cannot_be_taken(self):
+        self.make("env/ann", TELLER, record(note=label("")))
+        mine = self.turn("env", "stamp", record(text=label("seen")), principal="ann", identity="e-1")
+        self.assertEqual(mine["status"], "admitted", mine)
+        self.assertEqual([w["object"] for w in mine["receipt"]["outcome"]["writes"]], ["env/ann"])
+        theirs = self.turn("env", "stamp", record(text=label("seen")), principal="bob", identity="e-2")
+        self.assertEqual((theirs["status"], theirs["public"]["object"]), ("refused", "env/bob"), theirs)
+        self.assertEqual(theirs["public"]["hint"], "no card named env/bob; reply to the directory for the list")
+        wake = self.turn("wake", "stamp", record(text=label("x")), principal="ann", identity="w-1")
+        self.assertEqual(wake["public"]["object"], "wake/ann", wake)
+        self.assertEqual(self.host.send(op="world-card", principal="ann", object="env")["object"], "env/ann")
+        for reserved in ("env", "wake"):
+            taken = self.host.send(op="world-create", principal="ember", identity="mk-" + reserved, object=reserved,
+                                   source=TELLER, entry="initial", seed=record(note=label("")))
+            self.assertEqual(taken["status"], "error", taken)
+            self.assertIn("reserved", taken["message"])
+
+
+HANDLED = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./Document.obend as Document
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.handle})}})):
+    case _: context.handle
+def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
+    case _: natText(context.clock)
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(textConcat("seen by ", context.handle))
+"""
+GLM = "did:plc:nmjdxe6fex23zslnnbwgruj3"
+
+
+class Handles(Reflection):  # and the clock
+    """Rehearsal finding 8: cards showed DID fragments. The host keeps a principal registry the
+    clock principal fills (`world-principal`), and every Context carries the handle."""
+    def setUp(self):
+        super().setUp()
+        self.open_library(clock="transport")
+        self.make("mirror", HANDLED, record(note=label("")))
+
+    def record_handle(self, handle, principal="transport"):
+        return self.host.send(op="world-principal", principal=principal, did=GLM, handle=handle)
+
+    def who(self):
+        return self.turn("mirror", "who", principal=GLM)["result"]["value"]
+
+    def card(self):
+        return self.host.send(op="world-card", principal=GLM, object="mirror")["text"]
+
+    def test_the_registry_names_the_principal_in_turns_and_cards_and_survives_replay(self):
+        self.assertEqual((self.who(), self.card()), ("", "seen by "))
+        self.assertEqual(self.record_handle("glm.delve.town", principal="mallory")["status"], "error")
+        height = self.host.send(op="world-status")["height"]
+        first = self.record_handle("glm.delve.town")
+        self.assertEqual((first["status"], first["receipt"]["outcome"]),
+                         ("principal", {"tag": "principal", "did": GLM, "handle": "glm.delve.town"}), first)
+        self.assertEqual(first["receipt"]["identity"]["principal"], "transport")
+        again = self.record_handle("glm.delve.town")
+        self.assertNotIn("receipt", again)
+        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
+        self.assertEqual((self.who(), self.card()), ("glm.delve.town", "seen by glm.delve.town"))
+        self.reopen()
+        self.assertEqual((self.who(), self.card()), ("glm.delve.town", "seen by glm.delve.town"))
+        self.assertIn("receipt", self.record_handle("glm.town"))
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.reopen()
+        self.assertEqual(self.card(), "seen by glm.town")
+        self.assertEqual(self.host.send(op="world-principal", principal="transport", did=GLM, handle="two\nlines")["status"], "error")
+
+    def test_the_context_carries_the_world_clock_beside_the_height(self):
+        """`until` deadlines compare against the clock world-advance moves, not the journal height."""
+        when = lambda: self.turn("mirror", "when", principal=GLM)["result"]["value"]
+        self.assertEqual(when(), "0")
+        self.assertEqual(self.host.send(op="world-advance", principal="transport", height=1000)["status"], "advanced")
+        self.assertEqual(when(), "1000")
+        self.assertLess(self.host.send(op="world-status")["height"], 1000)
+
+
+POST_WAITER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def noted(text: String, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+    case _: text
+def waitFor(state: State, input: {post: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.awaitPost({post: input.post, patience: 5n})):
+    case reply(r): noted(textConcat("answered by ", r.receipt.slot.intent), context)
+    case timedOut(_): noted("timed out", context)
+    case _: noted("other", context)
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  noted(input.text, context)
+"""
+OLD_RECEIVE = POST_WAITER.replace("input: {text: String, post: String}", "input: {text: String, post: String, slot: String}").replace(
+    "noted(input.text, context)\n", "noted(input.slot, context)\n")
+
+
+class ReplyIsAddress(Reflection):
+    """awaitPost waits for the reply that answers a post: the first turn on the post's recorded
+    object whose `replyTo` names it. receive's slot is the host's."""
+    def setUp(self):
+        super().setUp()
+        self.open_library(clock="transport")
+        self.make("w", POST_WAITER, record(note=label("")))
+        self.make("card", POST_WAITER, record(note=label("")))
+
+    def posted(self, uri, obj="w", **extra):
+        r = self.host.send(op="world-posted", principal="transport", uri=uri, cid="c", object=obj, **extra)
+        self.assertEqual(r["status"], "posted", r)
+
+    def reply(self, uri, parent, obj="w", text="hi", **fields):
+        argument = record(text=label(text), post=label(uri), **fields)
+        return self.host.send(op="world-turn", principal="did:plc:bob", object=obj, method="receive",
+                              argument=argument, identity=uri, replyTo=parent)
+
+    def note(self, obj="w"):
+        return field(self.host.send(op="world-view", principal="ann", object=obj)["state"], "note")["value"]
+
+    def test_a_reply_to_the_awaited_post_resumes_the_waiter(self):
+        waiting = self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-1")
+        self.assertEqual((waiting["status"], waiting["receipt"]["outcome"]["post"]), ("suspended", URI), waiting)
+        self.posted(URI, obj="card")
+        # A reply to a post never recorded, or run on another object than the post's, answers nothing.
+        stray = self.reply(URI + "/r0", URI + "x", obj="card")
+        self.assertEqual(stray["status"], "admitted", stray)
+        self.assertNotIn("replyTo", stray["receipt"])
+        answer = self.reply(URI + "/r1", URI, obj="card")
+        self.assertEqual((answer["status"], answer["receipt"]["replyTo"]), ("admitted", URI), answer)
+        [resumed] = answer["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", label("answered by " + URI + "/r1")), resumed)
+        # (A reply run on the waiter itself would move its root; this one comes after.) Run on
+        # another object than the post's, a reply answers nothing.
+        elsewhere = self.reply(URI + "/r00", URI, obj="w")
+        self.assertNotIn("replyTo", elsewhere["receipt"])
+        # The index is rebuilt by replay: a later await on the answered post is answered at once.
+        self.reopen()
+        again = self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-2")
+        self.assertEqual((again["status"], again["result"]), ("admitted", label("answered by " + URI + "/r1")), again)
+
+    def test_an_unanswered_post_times_out_by_the_clock(self):
+        self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-1")
+        advanced = self.host.send(op="world-advance", principal="transport", height=10)
+        [resumed] = advanced["resumed"]
+        self.assertEqual(resumed["result"], label("timed out"), resumed)
+
+    def test_receive_takes_text_and_post_and_the_host_fills_or_drops_slot(self):
+        self.posted(URI, slot=SLOT)
+        # Sent with a slot for one release: an object declaring {text, post} gets it dropped.
+        legacy = self.reply(URI + "/r1", URI, text="with slot", slot=label("x"))
+        self.assertEqual((legacy["status"], self.note()), ("admitted", "with slot"), legacy)
+        # An object still declaring slot gets it from the recorded post.
+        self.make("old", OLD_RECEIVE, record(note=label("")))
+        self.posted(URI + "/old", obj="old", slot=SLOT)
+        r = self.reply(URI + "/r2", URI + "/old", obj="old")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(json.loads(self.note("old")), SLOT)
+
+
+MINTER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./Child.obend as Child
+record State:
+  made: Nat
+record Edits:
+  made: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {made: 0n}
+def made(target: Plans.Reference) -> Activity<Plan, Response, String>:
+  match perform(Plan.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: target})):
+    case created(c): c.object.object
+    case refused(r): r.clause
+    case _: "no answer"
+def spawn(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  made(Plans.nobody())
+def named(state: State, input: {id: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  made({world: "", object: input.id})
+def spawnThenWait(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: Plans.nobody()})):
+    case created(c): waited(c.object.object)
+    case _: "no answer"
+def waited(id: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: 5n})):
+    case _: id
+"""
+
+
+class MintedIds(Reflection):
+    """A create with an empty requireAbsent mints `<creator>/<package>/<n>` from a per-parent counter."""
+    def setUp(self):
+        super().setUp()
+        self.open_library(clock="transport")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-m", object="m", entry="initial",
+                           modules=[{"name": "Child", "source": PACKAGE}, {"name": "Minter", "source": MINTER}],
+                           seed=record(made=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+
+    def mint(self, method="spawn", argument=None):
+        r = self.turn("m", method, argument or record())
+        return r, r.get("result", {}).get("value")
+
+    def test_ids_are_minted_in_order_skip_named_children_and_never_race_a_waiting_creator(self):
+        self.assertEqual([self.mint()[1] for _ in range(2)], ["m/child/1", "m/child/2"])
+        self.assertEqual(self.mint("named", record(id=label("m/child/4")))[1], "m/child/4")
+        self.assertEqual(self.mint()[1], "m/child/5")
+        # A creator suspended after minting holds its id: the next mint passes it.
+        waiting, _ = self.mint("spawnThenWait")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        self.assertEqual(self.mint()[1], "m/child/7")
+        [resumed] = self.host.send(op="world-advance", principal="transport", height=9)["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", label("m/child/6")), resumed)
+        # A real collision is still refused: a named create of a minted id.
+        clash, _ = self.mint("named", record(id=label("m/child/1")))
+        self.assertEqual((clash["status"], clash["receipt"]["outcome"]["class"]), ("refused", "requiredAbsence"), clash)
+        self.reopen()
+        self.assertEqual(self.mint()[1], "m/child/8")
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="m/child/8")["status"], "viewed")
+
+
+WHO = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, String>
+def initial() -> State:
+  {note: ""}
+def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.principal})}})):
+    case _: context.principal
+def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
+    case _: natText(context.clock)
+"""
+
+
+class SourcePins(Reflection):
+    """An object's pin is the CID of its sealed source closure; the compiled packet is an
+    observation beside it (`compiled {binary, packet}`), counted but never compared on replay."""
+    def created(self, name):
+        r = self.make(name, TELLER, record(note=label("")))
+        return r["receipt"]["outcome"]
+
+    def tamper_last(self, change):
+        self.release()
+        with open(self.path) as f:
+            lines = f.read().splitlines()
+        last = json.loads(lines[-1])
+        change(last)
+        del last["hash"]
+        last["hash"] = cid_of(last)
+        lines[-1] = json.dumps(last, separators=(",", ":"))
+        with open(self.path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        self.host = self.spawn()
+        return self.host.send(op="world-open", path=self.path)
+
+    def test_the_pin_is_the_sources_and_a_different_packet_is_only_counted(self):
+        self.open_library()
+        a, b = self.created("a"), self.created("b")
+        self.assertEqual(a["pin"], b["pin"])
+        self.assertEqual(set(a["compiled"]), {"binary", "packet"})
+        self.assertNotEqual(a["pin"], a["compiled"]["packet"])
+        self.assertTrue(a["compiled"]["binary"].startswith("b"), a)
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["pin"], a["pin"])
+        def other_packet(entry):
+            entry["outcome"]["compiled"]["packet"] = a["pin"]
+        self.assertEqual(self.tamper_last(other_packet)["status"], "opened")
+        self.assertEqual(self.host.send(op="world-status")["recompiledDifferently"], 1)
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="b")["status"], "viewed")
+        def other_pin(entry):
+            entry["outcome"]["pin"] = cid_of("another source closure")
+        refused = self.tamper_last(other_pin)
+        self.assertEqual(refused["status"], "error", refused)
+        self.assertIn("is not the source closure its pin names", refused["message"])
+
+    def test_an_object_from_before_a_context_field_keeps_running_after_the_library_gains_it(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            lib = os.path.join(scratch, "lib")
+            shutil.copytree(LIBRARY, lib)
+            abi = os.path.join(lib, "prelude", "Abi.obend")
+            with open(abi) as f:
+                current = f.read()
+            with open(abi, "w") as f:
+                f.write(current.replace("  clock: Nat\n", "", 1))
+            self.open_library(lib, clock="transport")
+            self.make("old", WHO.replace("def when", "def unused").split("def unused")[0], record(note=label("")))
+            with open(abi, "w") as f:
+                f.write(current)
+            self.assertEqual(self.host.send(op="world-library", principal="ember", identity="lib-2")["status"], "library")
+            self.make("new", WHO, record(note=label("")))
+            self.host.send(op="world-advance", principal="transport", height=7)
+            old = self.turn("old", "who", principal="ann")
+            self.assertEqual((old["status"], old["result"]), ("admitted", label("ann")), old)
+            new = self.turn("new", "when", principal="ann")
+            self.assertEqual((new["status"], new["result"]), ("admitted", label("7")), new)
+            self.reopen()
+            self.assertEqual(self.turn("old", "who", principal="bob")["result"], label("bob"))
 
 
 class Transient(Reflection):

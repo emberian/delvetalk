@@ -86,6 +86,25 @@ class Hostd(unittest.TestCase):
         self.assertEqual(HostClient(self.sock).send({'op': 'world-status'})['objects'], 1)
         self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
 
+    def test_the_world_is_opened_with_the_configured_opener(self):
+        import tempfile as tf
+        with tf.TemporaryDirectory() as d2:
+            opened = []
+            from transport import hostproc
+            real = hostproc.Host._exchange
+
+            def spy(self, req):
+                opened.append(req)
+                return real(self, req)
+            from unittest import mock
+            with mock.patch.object(hostproc.Host, '_exchange', spy):
+                dd = start_hostd(d2, opener=DID)
+                try:
+                    dd.shared.send({'op': 'world-status'})
+                finally:
+                    stop_hostd(dd)
+        self.assertEqual([r.get('opener') for r in opened if r['op'] == 'world-open'][:1], [DID])
+
     def test_clients_report_a_missing_daemon_instead_of_raising(self):
         self.assertEqual(HostClient(self.state / 'nope.sock').send({'op': 'world-status'})['message'], 'hostd unavailable')
 

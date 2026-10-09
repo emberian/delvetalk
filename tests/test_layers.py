@@ -1,5 +1,5 @@
 """A layer over a real object (FOUNDATION section 13, row 3, `reprogram {mode: extend}`): Louder
-over Bell redefines render and renderFor and keeps everything else, rain and receive included.
+over Bell redefines render(state, context) and keeps everything else, rain and receive included.
 
 Refuted by: rain no longer appending after the layer, the card not changing, or the layer reaching
 the bell without its law's admission."""
@@ -16,10 +16,8 @@ import ./Document.obend as Document
 type State = Super.State
 type Plan = Super.Plan
 type Response = Super.Response
-def renderFor(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("LOUDER: ", textConcat(Document.plain(Super.renderFor(state, context)), "(and louder)\\n")))
-def render(state: State) -> Document.Document:
-  Document.text(textConcat("LOUDER: ", textConcat(Document.plain(Super.render(state)), "(and louder)\\n")))
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.text(textConcat("LOUDER: ", textConcat(Document.plain(Super.render(state, context)), "(and louder)\\n")))
 """
 
 

@@ -27,7 +27,7 @@ def receipt_path(state, request_id):
 
 
 def user_content(item):
-    return canonical({'examples': item['policy'].get('examples'), 'utterance': item['utterance'], 'offers': item['offers']})
+    return item['utterance']  # the host's policy.system carries the lexicon, examples and forms
 
 
 TRANSIENT, MAX_ATTEMPTS, BACKOFF = ('transport', 'rate'), 8, 60
