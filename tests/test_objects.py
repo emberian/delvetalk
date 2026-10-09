@@ -302,8 +302,8 @@ def bad(count: Nat) -> Activity<Plan, Response, Nat>:
     case refused(_): 0n
 """, "bad", "nullary-activity")
 
-    def test_recursive_plan_is_refused(self):
-        """Not a named refusal: recorded so a checker upgrade shows up here."""
+    def test_recursive_plan_is_admitted(self):
+        """A closed recursive sum in a Plan was once refused (bare typed-packet error)."""
         reply = compile_job([{"name": "Bad", "source": """edition ObjectiveBend 1
 sum L:
   nil: {}
@@ -316,8 +316,7 @@ def f(n: Nat) -> Activity<P, R, Nat>:
   match perform(P.a({l: L.nil({})})):
     case ok(_): n
 """}], "f")
-        self.assertEqual(reply["status"], "error")
-        self.assertIn("typed packet", reply["message"])
+        self.assertEqual(reply["status"], "compiled", reply)
 
 
 if __name__ == "__main__":
