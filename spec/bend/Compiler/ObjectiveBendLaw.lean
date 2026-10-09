@@ -13,13 +13,17 @@ The fragment, exactly (G1B-ENFORCED-LAW-DESIGN; anything else refuses
     ATOM  ::= REF == INT | REF <= INT | REF in [INT, …]
             | REF == REF | REF <= REF | REF <= REF + INT
             | monotone(FIELD) | writeOnce(FIELD)
+            | appendOnly(FIELD) | unchanged(FIELD)
     REF   ::= new.FIELD | request.subject | request.caller | request.height | request.turn
     INT   ::= -?[0-9]+
 
 `implies` binds loosest and associates to the right; `or` then `and` associate to the left;
 `not` applies to the atom (or parenthesised expression) after it. Edition 1 reads TOP-LEVEL
 fields only: `new.a.b` refuses by name. `old.` is readable only through `monotone` and
-`writeOnce` (all the kernel's predicate can say about the old state). -/
+`writeOnce`, `appendOnly` and `unchanged` (all the kernel's predicate can say about the old
+state). `appendOnly` holds when the new list is the old list with zero or more items appended;
+`unchanged` when the field is equal in old and new. `new.F == request.subject` compares a
+text field with the principal. -/
 import Theory.AssertCompiled
 import Pred.Core
 namespace Minidregg.Compiler.ObjectiveBendLaw
@@ -54,6 +58,10 @@ inductive LawExpr where
   | leROff (left right : LawRef) (offset : Int)
   | monotone (field : String)
   | writeOnce (field : String)
+  /-- The new list is the old list with items appended (host extension). -/
+  | appendOnly (field : String)
+  /-- The field is equal in old and new (host extension). -/
+  | unchanged (field : String)
   | not (body : LawExpr)
   | and (left right : LawExpr)
   | or (left right : LawExpr)
@@ -68,7 +76,7 @@ def LawRef.fields : LawRef → List String
 def LawExpr.fields : LawExpr → List String
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.fields
   | .eqR left right | .leR left right | .leROff left right _ => left.fields ++ right.fields
-  | .monotone field | .writeOnce field => [field]
+  | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => [field]
   | .not body => body.fields
   | .and left right | .or left right | .implies left right => left.fields ++ right.fields
 
@@ -87,7 +95,7 @@ def LawRef.plain : LawRef → Bool
 def LawExpr.fieldsPlain : LawExpr → Bool
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.plain
   | .eqR left right | .leR left right | .leROff left right _ => left.plain && right.plain
-  | .monotone field | .writeOnce field => plainName field
+  | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => plainName field
   | .not body => body.fieldsPlain
   | .and left right | .or left right | .implies left right => left.fieldsPlain && right.fieldsPlain
 
@@ -116,6 +124,8 @@ def compile : LawExpr → Pred
   | .leROff left right offset => .leSlotsOff left.slot right.slot offset
   | .monotone field => .monotone ("state/" ++ field)
   | .writeOnce field => .writeOnce ("state/" ++ field)
+  -- Lists and equality of whole fields are beyond the kernel predicate: host laws judge them.
+  | .appendOnly _ | .unchanged _ => Pred.any []
   | .not body => .not (compile body)
   | .and left right => Pred.all [compile left, compile right]
   | .or left right => Pred.any [compile left, compile right]
@@ -148,6 +158,8 @@ def LawExpr.render : LawExpr → String
   | .leROff left right offset => s!"{left.render} <= {right.render} + {offset}"
   | .monotone field => s!"monotone({field})"
   | .writeOnce field => s!"writeOnce({field})"
+  | .appendOnly field => s!"appendOnly({field})"
+  | .unchanged field => s!"unchanged({field})"
   | .not body => s!"not ({body.render})"
   | .and left right => s!"({left.render}) and ({right.render})"
   | .or left right => s!"({left.render}) or ({right.render})"
@@ -243,7 +255,7 @@ def parseRef : List Tok → Except String (LawRef × List Tok)
     | some ref => .ok (ref, rest)
     | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn, \
         request.pin and request.kind)")
-  | .ident "old" :: _ => refuse "old.FIELD outside monotone(FIELD) and writeOnce(FIELD)"
+  | .ident "old" :: _ => refuse "old.FIELD outside monotone, writeOnce, appendOnly and unchanged"
   | t :: _ => refuse (t.render ++ " where a reference new.FIELD or request.FACT was expected")
   | [] => refuse "a comparison missing its reference"
 
@@ -337,6 +349,10 @@ def parseUnary : Nat → List Tok → Except String (LawExpr × List Tok)
       return (inner, ← expectSym ")" after)
     | .ident "monotone" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.monotone field, after)
     | .ident "writeOnce" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.writeOnce field, after)
+    | .ident "appendOnly" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.appendOnly field, after)
+    | .ident "unchanged" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.unchanged field, after)
+    | .ident "appendOnly" :: _ => refuse "appendOnly takes one top-level field name: appendOnly(FIELD)"
+    | .ident "unchanged" :: _ => refuse "unchanged takes one top-level field name: unchanged(FIELD)"
     | .ident "monotone" :: _ => refuse "monotone takes one top-level field name: monotone(FIELD)"
     | .ident "writeOnce" :: _ => refuse "writeOnce takes one top-level field name: writeOnce(FIELD)"
     | _ => parseComparison fuel toks

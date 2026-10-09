@@ -4,10 +4,11 @@
 
    A method is `(state, [input,] context) -> Activity<Plan, Response, A>` or the
    same with a pure data result (the new state). `context` is
-   `Abi.Context {object, principal, inputOrigin}`.
+   `Abi.Context {world, object, principal, caller, intent, height, inputOrigin}`.
    Plans answered:
      view  {object: Reference}                     -> viewed {version, state} | denied {}
-     write {object: Reference, edits: Edits}       -> written {} | refused {clause}
+     write {object: Reference, edits: Edits}       -> written {} | refused {clause: notSelf}
+       (a write changes only the running object; the Reference must name it)
      call  {object: Reference, method, argument}   -> returned {result} | refused {clause}
    A Reference `{world, object}` names an object of this world when `world` is "".
    `viewed` carries the object's whole state. Every other Plan label refuses the
@@ -53,6 +54,9 @@ inductive Abort where
   | request (message : String)
   /-- The turn is refused by name; a refused entry is journaled. -/
   | evaluation (reason : String)
+  /-- A machine budget ran out (`ticks`, `heap`, `stack`, `nodes`, `bytes`): the named
+      silence, journaled as class `budget` with the resource as its reason. -/
+  | budget (resource : String)
   /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
   deriving Inhabited
@@ -60,7 +64,7 @@ inductive Abort where
 structure TurnState where
   world : World
   roots : List (String × Nat) := []
-  writes : List (String × List Step) := []
+  writes : List (String × List Written) := []
   principal : String
   intent : String
   /-- Sends in order: target object, method, argument. They leave with the commit. -/
@@ -154,32 +158,40 @@ def countPlan : M Unit := do
   if s.plans ≥ Limits.maxPlansPerTurn then evaluation "turn exceeds the plan capacity"
   set { s with plans := s.plans + 1 }
 
-def addWrite (id : String) (step : Step) : M Bool := do
+/-- Stage a write by the running object `id`, called by `caller`. The running object is
+    always the first root of its own activity, so no earlier view is needed. -/
+def addWrite (id caller : String) (step : Step) : M Unit := do
   let s ← get
-  unless s.roots.any (·.1 == id) do return false
+  unless s.roots.any (·.1 == id) do evaluation "a write names an object that is not a root"
   if step.length > Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
   let prior := (s.writes.lookup id).getD []
   if prior.length ≥ Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
-  let steps := prior ++ [step]
+  let steps := prior ++ [(⟨caller, 0, step⟩ : Written)]
   if !s.writes.any (·.1 == id) && s.writes.length ≥ Limits.maxWrites then
     evaluation "turn exceeds the write capacity"
   let writes := if s.writes.any (·.1 == id) then
       s.writes.map fun (k, es) => if k == id then (k, steps) else (k, es)
     else s.writes ++ [(id, steps)]
   set { s with writes }
-  return true
 
-/-- Make sure the turn's write set names `id` (a reprogram or amendment is a write). -/
-def ensureWrite (id : String) : M Bool := do
+/-- Record that the running object `id`, called by `caller`, reprograms (kind 1) or
+    amends (kind 2) itself. False when the write set is full. -/
+def ensureWrite (id caller : String) (kind : Nat) : M Bool := do
   let s ← get
-  if s.writes.any (·.1 == id) then return true
+  if s.writes.any (·.1 == id) then
+    set { s with writes := s.writes.map fun (k, ws) => if k == id then (k, ws ++ [(⟨caller, kind, []⟩ : Written)]) else (k, ws) }
+    return true
   if s.writes.length ≥ Limits.maxWrites then return false
-  set { s with writes := s.writes ++ [(id, [])] }
+  set { s with writes := s.writes ++ [(id, [(⟨caller, kind, []⟩ : Written)])] }
   return true
 
-def contextData (id principal kind origin command : String) : Data :=
+/-- What the host tells a running method about itself, built here and nowhere else.
+    `caller` is the calling object's id (empty for the turn's own method), `intent` the
+    turn's identity, `height` the journal height the turn read. None is chosen by the client. -/
+def contextData (id principal caller intent : String) (height : Nat) (kind command : String) : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
-    ("inputOrigin", .record [("kind", .label kind), ("object", .label origin), ("command", .label command),
+    ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
+    ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
 
 /-- The receipt a settled slot answers an await with. -/
@@ -246,17 +258,19 @@ def buildCreated (creator : Object) (package : String) (seed : Data) (lawArg pri
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
-    (fun e => (if e == noAmendmentClause then "law" else "typeMismatch", e))
+    (fun e => (if e == noAmendmentClause then "law"
+      else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return { object, sources, seed := dataJson state }
 
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
-partial def runMethod (depth : Nat) (id method : String) (argument : Data) (origin : String) : M Data := do
+partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String) : M Data := do
   let s ← get
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
-  let context := contextData id s.principal (if depth == 0 then "request" else "call") origin method
+  let context := contextData id s.principal caller s.intent s.world.height
+    (if depth == 0 then "request" else "call") method
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
     | .arrow _ _ _ (.arrow _ _ _ r) => pure ([obj.state, context], r)
@@ -266,7 +280,7 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (orig
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
     let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet arguments binding b)
-    drive depth id compiled binding started 0
+    drive depth id caller compiled binding started 0
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
@@ -279,26 +293,25 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (orig
     | .ok (.finished value _ _ usage) =>
       spend (usage.ticksUsed + usage.conversionNodes)
       let .record fields := value | evaluation "a pure method must return the state record"
-      let _ ← addWrite id (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
+      addWrite id caller (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 
-partial def drive (depth : Nat) (self : String) (compiled : Compiled) (binding : Delvetalk.Turn.Binding)
+partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (binding : Delvetalk.Turn.Binding)
     (outcome : Delvetalk.Turn.Outcome) (_n : Nat) : M Data := do
   match outcome with
   | .finished value _ used => spend used; return value
   | .exhausted resource used =>
     spend used
-    evaluation (if resource == "ticks" then "turn refused: tick budget exhausted"
-      else s!"turn refused: {resource} budget exhausted")
+    throw (.budget resource)
   | .yielded plan _ responseType checkpoint used =>
     spend used
     countPlan
     let response ← match plan with
       | .variant "await" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
-      | _ => answer depth self compiled.bounds plan responseType
+      | _ => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
-    drive depth self compiled binding next 0
+    drive depth self caller compiled binding next 0
 
 /-- `await {slot, patience}`: answered at once if the slot is settled or hopeless;
     otherwise the turn suspends (only at the top of a turn, never inside a call). -/
@@ -332,7 +345,7 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
         evaluation "checkpoint exceeds its byte capacity"
       else throw (.suspend sp si patience checkpoint)
 
-partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
+partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
   | .variant "view" (.record f) =>
     match (f.lookup "object").bind referenceId with
@@ -347,11 +360,14 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
   | .variant "write" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed write plan"
     let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
+    -- A write changes the running object and nothing else; other objects change when called.
     match referenceId target with
-    | none => refusedWith bounds responseType "unreadWrite"
     | some id =>
-      if (← addWrite id step) then respond bounds responseType "written" [emptyRecord]
-      else refusedWith bounds responseType "unreadWrite"
+      if id != self then refusedWith bounds responseType "notSelf"
+      else
+        addWrite self caller step
+        respond bounds responseType "written" [emptyRecord]
+    | none => refusedWith bounds responseType "notSelf"
   | .variant "call" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed call plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed call plan"
@@ -368,15 +384,15 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
     let some target := f.lookup "object" | evaluation "malformed reprogram plan"
     let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
     let some migration := (f.lookup "migration").bind labelOf | evaluation "malformed reprogram plan"
-    let some id := referenceId target | refusedWith bounds responseType "unreadWrite"
+    let some id := referenceId target | refusedWith bounds responseType "notSelf"
     let s ← get
-    let some o := s.world.objects[id]? | refusedWith bounds responseType "unreadWrite"
-    if !s.roots.any (·.1 == id) then refusedWith bounds responseType "unreadWrite"
+    let some o := s.world.objects[id]? | refusedWith bounds responseType "unknownObject"
+    if id != self then refusedWith bounds responseType "notSelf"
     else if s.programs.any (·.1 == id) then refusedWith bounds responseType "duplicate"
     else match programFor s.world o source migration with
       | .error (clause, _) => refusedWith bounds responseType clause
       | .ok prog =>
-        if !(← ensureWrite id) then refusedWith bounds responseType "writeCapacity"
+        if !(← ensureWrite id caller 1) then refusedWith bounds responseType "capacity"
         else
           modify fun s => { s with world := cacheProgram s.world o source migration prog,
                                    programs := s.programs ++ [(id, (source, migration))] }
@@ -384,14 +400,14 @@ partial def answer (depth : Nat) (self : String) (bounds : DataBounds) (plan : D
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"
-    let some id := referenceId target | refusedWith bounds responseType "unreadWrite"
+    let some id := referenceId target | refusedWith bounds responseType "notSelf"
     let s ← get
-    if !s.roots.any (·.1 == id) then refusedWith bounds responseType "unreadWrite"
+    if id != self then refusedWith bounds responseType "notSelf"
     else if s.laws.any (·.1 == id) then refusedWith bounds responseType "duplicate"
     else match parseLawText text with
       | .error _ => refusedWith bounds responseType "law syntax"
       | .ok _ =>
-        if !(← ensureWrite id) then refusedWith bounds responseType "writeCapacity"
+        if !(← ensureWrite id caller 2) then refusedWith bounds responseType "capacity"
         else
           modify fun s => { s with laws := s.laws ++ [(id, text)] }
           respond bounds responseType "amended" [emptyRecord]
@@ -533,12 +549,14 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
   match result with
   | .error (.request message) => if ctx.delivery.isSome || ctx.resumes.isSome then return refuse message else throw message
   | .error (.evaluation reason) => return refuse reason
+  | .error (.budget resource) =>
+    let (w', r) := commit w { proposal with writes := [], creates := [] } base
+      (some { cls := "budget", reason := some resource })
+    return (w', turnReply r)
   | .error (.suspend sp si patience checkpoint) =>
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
-      ("checkpoint", Json.mkObj [("packetSha256", toJson checkpoint.packetSha256),
-        ("tokens", Delvetalk.Turn.tokensJson checkpoint.tokens),
-        ("digest", toJson (Delvetalk.Turn.tokensDigest checkpoint.tokens))]),
+      ("checkpoint", checkpoint.toJson),
       ("roots", rootsJson st.roots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
@@ -653,7 +671,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
         absent := absent }
     let (w', r) := commit w stalled (entryBase ctx ctx.usedBefore) (some { cls := "staleRoot", object := some id })
     return (w', turnReply r)
-  let writes ← parseWrites (← act.getObjVal? "writes")
+  let writes ← parseRecordedWrites (← act.getObjVal? "writes")
   let sends ← ((← (← act.getObjVal? "sends").getArr?).toList.mapM fun s => do
     return (← s.getObjValAs? String "to", ← s.getObjValAs? String "method",
       ← decodeData Limits.dataDepth (← s.getObjVal? "argument")))
@@ -667,17 +685,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
   let laws ← ((← (← act.getObjVal? "laws").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", ← r.getObjValAs? String "law"))
-  let stored ← act.getObjVal? "checkpoint"
-  let tokens ← Delvetalk.Turn.tokensOfJson (← stored.getObjVal? "tokens")
-  let checkpoint : Delvetalk.Turn.Checkpoint :=
-    { packetSha256 := ← stored.getObjValAs? String "packetSha256", tokens := tokens, object := object,
-      principal := principal, intent := intent, rootsDigest := "", digest := "" }
-  -- The digest is the store's own, never the token's.
-  let binding := Delvetalk.Turn.Binding.make object principal intent roots
-  let digest := Delvetalk.Turn.checkpointDigest checkpoint.packetSha256 object principal intent binding.rootsDigest checkpoint.tokens
-  let checkpoint : Delvetalk.Turn.Checkpoint :=
-    { packetSha256 := checkpoint.packetSha256, tokens := checkpoint.tokens, object := object, principal := principal,
-      intent := intent, rootsDigest := binding.rootsDigest, digest := digest }
+  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← act.getObjVal? "checkpoint")
   let init : TurnState :=
     { world := w
       roots := roots
@@ -703,9 +711,12 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     let response ← match kind with
       | .reply e => respond compiled.bounds responseType "reply" [.record [("receipt", receiptData e)]]
       | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
+    -- The activity began with only its own object as a root, at the version still current.
+    let binding := Delvetalk.Turn.Binding.make object principal intent
+      (roots.filter (·.1 == object))
     let b ← budgetsNow
     let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
-    drive 0 object compiled binding next 0
+    drive 0 object "" compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st
 
@@ -792,14 +803,13 @@ def reprogramOp (w : World) (j : Json) : Except String (World × Json) := do
   let source ← j.getObjValAs? String "package"
   let migration := (j.getObjValAs? String "migration").toOption.getD ""
   let version ← natField j "version"
-  let turn := ((j.getObjVal? "turn").toOption.bind (natOf · |>.toOption)).getD 0
+  if (j.getObjVal? "turn").toOption.isSome then throw "turn is assigned by the host and cannot be supplied"
   let p : Proposal :=
     { principal := principal
       intent := intent
       roots := [(object, version)]
       writes := []
-      programs := [(object, (source, migration))]
-      turn := turn }
+      programs := [(object, (source, migration))] }
   if let some r := retained w principal intent p.digest then return (w, r)
   match w.objects[object]? with
   | none => return commit w p
@@ -814,14 +824,13 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
   let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
   let text ← j.getObjValAs? String "law"
   let version ← natField j "version"
-  let turn := ((j.getObjVal? "turn").toOption.bind (natOf · |>.toOption)).getD 0
+  if (j.getObjVal? "turn").toOption.isSome then throw "turn is assigned by the host and cannot be supplied"
   let p : Proposal :=
     { principal := principal
       intent := intent
       roots := [(object, version)]
       writes := []
-      laws := [(object, text)]
-      turn := turn }
+      laws := [(object, text)] }
   if let some r := retained w principal intent p.digest then return (w, r)
   match parseLawText text with
   | .error message => return withProgramRefusal w p "law syntax" message

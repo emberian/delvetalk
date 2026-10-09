@@ -214,9 +214,10 @@ class Commit(WorldCase):
         self.assertEqual(r["receipt"]["outcome"]["class"], "staleRoot")
         self.assertEqual(self.view("c1")["version"], 0)
 
-    def test_write_to_an_unread_object_is_refused(self):
+    def test_a_proposal_writing_an_object_it_never_named_as_a_root_is_a_request_error(self):
         r = self.propose("p1", [root("c1", 0)], [write("c2", add("count", 1))])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "unreadWrite")
+        self.assertEqual(r["status"], "error")
+        self.assertIn("not among the roots", r["message"])
         self.assertEqual(self.view("c2")["version"], 0)
 
     def test_unknown_object_in_roots_is_refused(self):
@@ -482,11 +483,11 @@ class Maximum(WorldCase):
         r = self.propose("many", [root(f"o{i}", 0) for i in range(65)], [])
         self.assertEqual(r["status"], "error")
 
-    def test_state_beyond_the_byte_capacity_is_a_type_mismatch(self):
+    def test_state_beyond_the_byte_capacity_is_capacity_not_a_type_mismatch(self):
         self.create()
         big = {"tag": "label", "value": "x" * 300000}
         r = self.propose("big", [root("c1", 0)], [write("c1", put("name", big))])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
+        self.assertEqual(r["receipt"]["outcome"]["class"], "capacity")
 
 
 if __name__ == "__main__":
