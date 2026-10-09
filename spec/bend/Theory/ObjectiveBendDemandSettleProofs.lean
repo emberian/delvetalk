@@ -21,9 +21,8 @@ every cached origin (`eraseState`) makes them equal.
   from the state it settled.
 
 Not ported: `typed_settle` (this edition has no state-typing judgment,
-Mini's ObjectiveBendDemandTyping), and the collector's renaming simulation
-(Mini's ObjectiveBendDemandCollectProofs), so `checkpoint = collect ∘ settle` is
-covered here for its `settle` half only. -/
+Mini's ObjectiveBendDemandTyping). The `collect` half of `checkpoint = collect ∘ settle`
+is `Theory.ObjectiveBendDemandCollectProofs` (`checkpoint_resume_segment`). -/
 import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandData
 namespace Minidregg.Theory.ObjectiveBendDemandCollect

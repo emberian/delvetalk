@@ -14,9 +14,11 @@ pushed once), ranking is one `Array.foldl`, compaction one `Array.zip`/`filterMa
 renaming touches each kept address once: linear in heap + edges, no list lookups over the
 heap.
 
-The behaviour theorem (a renaming simulation: lockstep `stepRaw`, `resume`, bounded runs,
-Plan/result extraction) and the typing transfer are in
-`Theory.ObjectiveBendDemandCollectProofs` (`ObjectiveProofs`). -/
+The behaviour theorem (a renaming simulation: lockstep `stepRaw`, `resume`, bounded and
+hosted runs, Plan/result extraction, `checkpoint_resume_segment`) is in
+`Theory.ObjectiveBendDemandCollectProofs`. A new frame, cell or control that holds
+addresses must be added to `frameAddresses`/`cellAddresses`/`controlAddresses` and the
+renamings, or `related_stepRaw` stops building. -/
 import Theory.ObjectiveBendDemandMachine
 import Theory.AxiomPin
 namespace Minidregg.Theory.ObjectiveBendDemandCollect
