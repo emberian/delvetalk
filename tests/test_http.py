@@ -9,6 +9,22 @@ from pathlib import Path
 
 from tests.test_chain import garden_state
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
+
+REPL_COUNTER = '''edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {count: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case _: state.count + 1n
+'''
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
 from tests.host import start_hostd, stop_hostd
@@ -207,7 +223,9 @@ class HttpFront(unittest.TestCase):
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
                              command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},
                              immediatelyPrevious={'tag': 'boolean', 'value': False}))
-        s, r = self.repl(tok, modules=closure('Counter'), entry='bump', turn=True, **self.BIND,
+        # The REPL takes at most MAX_BODY: Counter's closure with Card exceeds it, so the REPL
+        # runs the bare counter activity.
+        s, r = self.repl(tok, modules=closure('Plan') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
                          arguments=[record(count=nat(2)), context])
         self.assertEqual((s, r['status']), (200, 'yielded'), r)
 
