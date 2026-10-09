@@ -264,8 +264,8 @@ class Suspended(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-turn']), turns)  # not re-run while it waits
         self.assertEqual(self.drafts(), [])  # settled with no offer: still no draft
-        stub.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': p['uri'], 'text': 'Planted.'},
-                            {'height': 9, 'ordinal': 1, 'identity': 'someone-else', 'text': 'not mine'}]
+        stub.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': {'principal': DID, 'intent': p['uri']}, 'text': 'Planted.'},
+                            {'height': 9, 'ordinal': 1, 'identity': {'principal': DID, 'intent': 'someone-else'}, 'text': 'not mine'}]
         r = bridge.run(self.state, stub)
         self.assertEqual(r['offered'], [p['uri']])
         (d,) = self.drafts()
@@ -287,6 +287,35 @@ class Silence(BridgeCase):
         out = io.StringIO()
         bridge.main(['outbox', '--state', str(self.state), '--all'], out)
         self.assertIn('=== reply to:', out.getvalue())
+
+
+def _real_offer_case():
+    from tests.test_outbound import Offers, label, record as rec
+
+    class Real(Offers):
+        def test_offer_drafts_match_the_hosts_real_identity_shape(self):
+            self.turn("teller", "tell", rec(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+            self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
+            with tempfile.TemporaryDirectory() as d:
+                write = bridge.write_atomic
+                write(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
+                                                       "object": "teller", "slot": None, "height": 0})
+                self.assertEqual(bridge.offer_drafts(d, self.host_adapter()), ["t-1"])
+                (draft,) = list((Path(d) / "outbox").glob("*.json"))
+                self.assertEqual(json.loads(draft.read_text())["text"], "hello")
+                self.assertEqual(bridge.offer_drafts(d, self.host_adapter()), [])
+
+        def host_adapter(self):
+            outer = self
+
+            class H:
+                def send(self, req):
+                    return outer.host.send(**req)
+            return H()
+    return Real
+
+
+RealOffers = _real_offer_case()
 
 
 class Daemon(unittest.TestCase):
