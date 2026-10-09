@@ -324,11 +324,38 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
   pure-method path (`prepareNative`) has no such bound. Moving `startActivity` to native arguments
   (`initialDataArguments`) removes it, at the price of changed tick pins.
 - `forceHostedFrom`'s refund of a failed text preflight is the named `preflightRemaining`.
-- The package knot holds only what the entry reaches (`reachableKnot`, `Output.knotRow`;
-  `globalRow` stays whole for the method table and law shape). Closure size is unbounded; an
-  entry may reach 254 definitions (the type decoder charges row depth: `typeNestingCapacity`).
-  Unreached declarations are elaborated (elaboration errors still refuse) but no longer
-  type-checked as part of that entry's packet. Garden compiles in about half the time.
+- The package knot holds only what the entry reaches (`Elaborated.select`, `Output.knotRow`;
+  `globalRow` stays whole for the method table and law shape), and the whole closure is checked
+  once per package (`ObjectiveBendFrontEnd.checkClosure`: every template and the knot of every
+  declaration as one term), so pruning skips no checking. The type decoder charges a row's tail to
+  row width (`typeRowCapacity`), not nesting, so an entry may reach any number of definitions
+  (3,000 measured; before, 254).
+- Compile is split: `FrontEnd.Prepared` (parse once, generics, `elaboratePackage`, closure check:
+  entry-independent) and `Prepared.lower` per entry. Speedups: `sourceType` memo (`St.typeMemo`),
+  generics index and rewrite memo, proposal/packet built once (`Lowering.make`), annotations
+  indexed by path in `decodePacket`, `PTy.intern` subtree memo.
+- Held entries, for the host: `Delvetalk.CheckedEntry {pin, source, checked, fuel}`
+  (`Delvetalk/Entry.lean`; `.type`, `.ofPacket packet`, `.apply term annotations`). API:
+  `Package.prepareRequest j : Except Diagnostic PreparedRequest` (cache it per package, keyed by
+  modules and limits), `Package.compileEntryFrom request entry : Except Diagnostic EntryCompiled`
+  (`{artifact, entry : CheckedEntry, laws}`), `Package.compileEntry j`,
+  `Package.executeDataEntry entry (args : Array Data) limits : Except String DataExecution`,
+  `Package.executeEntry entry argsJson limits`, `Turn.startEntry entry args binding budgets`,
+  `Turn.resumeEntry entry checkpoint binding value budgets`. None decodes the packet or re-checks
+  the package; arguments are checked alone and composed (`Checked.apply`). The artifact and pin
+  are unchanged (`packetSha256` = CID of the entry packet JSON), so journals and checkpoints are
+  unaffected.
+- Wire session: prepared-closure cache (bounded by `Bounds.frontCacheSourceBytes` of source) and
+  held-entry cache indexed by `packetSha256` (bounded by `Bounds.entryCacheBytes` of artifact).
+  `run`, `run-data-v1`, `turn-start`, `turn-resume` take `artifact` as the whole artifact (held if
+  equal to the one this process compiled under that pin, else recompiled and compared) or as
+  `{"packetSha256": pin}` alone (held entries only; "unknown packetSha256: ..." otherwise).
+  `{"op":"packet-cache-status"}` answers `{fronts, frontSourceBytes, maxFrontSourceBytes, entries,
+  entryBytes, maxEntryBytes, hits, misses}`.
+- Measured on hbox at 5b07855 (Garden, 11 modules): first compile 285 ms, further entries 7-47 ms;
+  `run initial` held 4.6 ms with the whole artifact, under 0.1 ms by pin; a fresh process's first
+  run of a known artifact 195 ms; `tests.run test_await test_turn_world test_http` 32.5 s; objects
+  suite 8.9 s; whole suite 581 tests, 47.7 s wall.
 - Wrong in this file before lane 3: §1 "collect half tested, not proved"; §3 "`decodeData` accepts
   the legacy chain" and the `relist` note; §8 "`PackageData` schema certificates do not support
   `.data`" and "Turn arguments at Data are injected at their own shape" (now type-directed at every
