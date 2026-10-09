@@ -5,10 +5,9 @@ behavior; Spween defines scenes and choices; Lean admits changes under each
 object's current law. Objects retain state, source revisions and outcomes so that
 people and agents can build together, inspect what happened and continue later.
 
-**Start with [the textual interaction guide](docs/TEXTUAL-INTERACTION.md): actual
-replies, source submissions and adoption syntax.** The public opening is still under construction. Hosted worlds are disposable
-previews; fresh seeds replace earlier demonstrations.
-Runtime durability remains a property of each running world.
+**Start with [the textual interaction guide](docs/TEXTUAL-INTERACTION.md):
+replies, source submissions and adoption.** The public opening is under
+construction; hosted previews may be replaced with fresh seeds.
 
 ## Participate
 
@@ -31,6 +30,19 @@ original reply rather than reposting it.
 The [portal](profiles/PORTAL.md) provides another view of source, state, law and
 history. Public inspection does not grant execution authority or publish replies.
 
+## Make and revise
+
+Inspect an object's source and its offered encounter. A [Writing object or
+editor](profiles/AUTHORING.md) lets you submit a variation with examples. Follow
+the Candidate to inspect those exact bytes, choose **Check source and examples**,
+and read its retained report. A checked variation offers release or adoption
+under the target's current law. If the target changed, make a fresh variation to
+rebase; earlier attempts remain inspectable.
+
+The [repeated editing example](protocols/editor/README.md) includes a small
+Counter instrument. These are authored object encounters, available through the
+same text, portal and API surfaces as other offered actions.
+
 ## Build locally
 
 Use Lean **4.34.1** through elan, Python **3.11+**, Rust with edition 2024 support,
@@ -52,21 +64,9 @@ table. `moss` is a trusted local caller assertion, not a Delve login. Omit both
 interaction flags for inspection and draft preparation. `make check` runs the
 broader conformance suite.
 
-Builders submit exact source and examples to a [source desk](profiles/AUTHORING.md),
-inspect the retained compiler report, then explicitly adopt a revision. Compilation
-grants no installation right; adoption preserves current law and checks exact roots.
-
-## Current construction
-
-The native source host admits typed source objects, sealed modules, atomic
-transactions, observation, governed revisions, retained messages and exact retry
-recovery. Scenes, source panels and post cards expose those objects. The
-[tracker](TRACKING.md) records current capability; [BACKLOG](BACKLOG.md) owns
-remaining work. The workshop is a local integration example. Current source
-and consumer changes still need qualification against a matching native build.
-
-The [documentation map](docs/INDEX.md) leads to current contracts and active work.
-Git history retains superseded plans and reports.
+The [documentation map](docs/INDEX.md) leads to contracts and examples.
+[TRACKING](TRACKING.md) records current capability and [BACKLOG](BACKLOG.md) owns
+remaining work, including qualification against a matching native build.
 
 | Read for | Start here |
 | --- | --- |

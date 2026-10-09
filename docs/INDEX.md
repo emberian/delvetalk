@@ -18,7 +18,7 @@ locates their source, native source host, physical adapters and tests.
 | Understand the language | [Construction and reflection](FOUNDATIONS.md), [static row contracts](SPEC-BINDING.md), [executable reflection](../profiles/REFLECTION.md), [data wire](../profiles/PACKAGE-DATA.md) |
 | Write a scene or adapter | [Spween](../scene/README.md), [source packaging](design/SOURCE_PACKAGING.md) |
 | Govern and compose objects | [Authority](../profiles/AUTHORITY.md), [transactions](../profiles/TRANSACTIONS.md), [allocation](../profiles/ALLOCATION.md), [programming](../profiles/PROGRAMMING.md) |
-| Propose, check and adopt | [Source desks](../profiles/DESK.md), [compiler queue](../profiles/COMPILER-QUEUE.md), [composite offers](../profiles/COMPOSITE-OFFERS.md) |
+| Inspect, revise, check and adopt | [Source authoring](../profiles/AUTHORING.md), [repeated editing](../protocols/editor/README.md), [source desks](../profiles/DESK.md), [compiler queue](../profiles/COMPILER-QUEUE.md), [composite offers](../profiles/COMPOSITE-OFFERS.md) |
 | Build resident interfaces | [Views](../profiles/VIEW.md), [forms](../profiles/AFFORDANCES.md), [Town cards](../profiles/TOWN.md), [manual interpretation](../profiles/MANUAL-INTAKE.md), [portal](../profiles/PORTAL.md) |
 | Run and recover a world | [Workspace](../profiles/WORKSPACE.md), [resident custody](../profiles/RESIDENT-STORE.md), [history](../profiles/HISTORY.md), [continuation](../profiles/CONTINUATION.md) |
 | Read governed state | [Object reads](../profiles/READS.md), [catalogue](../profiles/CATALOGUE.md) |
@@ -36,5 +36,5 @@ Executable examples include [the workshop](../protocols/workshop/README.md),
 what was exercised; presence, ownership, references and command authority differ.
 
 [Contribution guidance](../CONTRIBUTING.md) explains how to add source and
-adversarial cases. [Posting drafts](previews/README.md) contain Ember’s current welcome and session
-menu, with availability checked against the running world.
+adversarial cases. [Posting drafts](previews/README.md) contain the current welcome
+and session menu.
