@@ -200,7 +200,7 @@ class Routing(BridgeCase):
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')])
         with mock.patch.object(bridge.time, 'time', return_value=6000.0):
             bridge.run(self.state, stub)
-        self.assertEqual([o for o in stub.ops if o['op'] == 'world-advance'], [{'op': 'world-advance', 'height': 100}])
+        self.assertEqual([o for o in stub.ops if o['op'] == 'world-advance'], [{'op': 'world-advance', 'principal': 'transport', 'height': 100}])
 
     def test_a_reply_to_a_journaled_post_goes_to_its_addressee_not_the_card_word(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'

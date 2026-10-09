@@ -58,8 +58,10 @@ def quota_limit(host):
 
 
 def record_posted(host, result, obj, slot=None):
-    """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?}."""
-    req = {'op': 'world-posted', 'principal': result['uri'].split('/')[2], 'uri': result['uri'], 'cid': result['cid'], 'object': obj}
+    """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?}.
+    The host admits it only from the world's clock principal, never from the post's author."""
+    from transport.hostd import CLOCK
+    req = {'op': 'world-posted', 'principal': CLOCK, 'uri': result['uri'], 'cid': result['cid'], 'object': obj}
     if slot is not None:
         req['slot'] = slot
     return host.send(req)
