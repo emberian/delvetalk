@@ -36,6 +36,7 @@ inductive EditKind where
   | add (delta : Nat)
   | append (item : Data)
   | amend (index : Nat) (change : Data)
+  | remove (index : Nat)
 
 structure Edit where
   field : String
@@ -51,6 +52,7 @@ def EditKind.data : EditKind → Data
   | .add n => .variant "add" (.record [("delta", .natural n)])
   | .append v => .variant "append" (.record [("item", v)])
   | .amend i v => .variant "amend" (.record [("index", .natural i), ("change", v)])
+  | .remove i => .variant "remove" (.record [("index", .natural i)])
 
 def Step.data (s : Step) : Data := .record (s.map fun e => (e.field, e.kind.data))
 
@@ -61,6 +63,9 @@ def parseKind : Data → Option EditKind
       | some (.natural n) => some (.add n)
       | _ => none
   | .variant "append" (.record f) => (f.lookup "item").map .append
+  | .variant "remove" (.record f) => match f.lookup "index" with
+      | some (.natural i) => some (.remove i)
+      | _ => none
   | .variant "amend" (.record f) => match f.lookup "index", f.lookup "change" with
       | some (.natural i), some c => some (.amend i c)
       | _, _ => none
@@ -182,6 +187,15 @@ partial def amendItem (index : Nat) (change : Data) : Data → Option Data
     else some (.variant "cons" (.record [("head", head), ("tail", ← amendItem (index - 1) change tail)]))
   | _ => none
 
+/-- Delete the element at `index`; none past the end. -/
+partial def removeItem (index : Nat) : Data → Option Data
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    let tail ← f.lookup "tail"
+    if index == 0 then some tail
+    else some (.variant "cons" (.record [("head", head), ("tail", ← removeItem (index - 1) tail)]))
+  | _ => none
+
 /-- All edits of a step read the state before the step. -/
 def applyStep (fields : List (String × Data)) (step : Step) : Option (List (String × Data)) :=
   step.foldlM (init := fields) fun acc e =>
@@ -197,6 +211,7 @@ def applyStep (fields : List (String × Data)) (step : Step) : Option (List (Str
           | _ => none
       | .append item => (appendItem item old).bind put
       | .amend i c => (amendItem i c old).bind put
+      | .remove i => (removeItem i old).bind put
 
 def applyEdits : Data → List Step → Option Data
   | .record fields, steps => (steps.foldlM applyStep fields).map .record
@@ -254,7 +269,7 @@ def parseLawText (text : String) : Except String Law := do
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
     amendment (the state unchanged) by the principal who proposes it. -/
 def amendable (law : Law) (principal : String) (height turn : Nat) (pin : String) (state : Data) : Bool :=
-  (Law.refusedBy law ⟨principal, principal, height, turn, pin⟩ (some state) state).isNone
+  (Law.refusedBy law ⟨principal, principal, height, turn, pin, 2⟩ (some state) state).isNone
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
   match inputs.getObjVal? "modules" with
@@ -351,9 +366,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         ("newPin", toJson prog.pin), ("source", toJson source), ("migration", toJson migration),
         ("result", dataJson state)]]
     -- The current law judges the whole write, under the pin the object will run.
-    let facts : Law.Facts := ⟨p.principal, p.principal, height, p.turn, next.pin⟩
-    if let some clause := Law.refusedBy o.law facts (some o.state) state then
-      throw { cls := "lawRefused", clause, object := id }
+    -- Each kind of change the object undergoes must be admitted on its own.
+    let kinds := (if p.programs.any (·.1 == id) then [1] else []) ++ (if p.laws.any (·.1 == id) then [2] else [])
+    for kind in (if kinds.isEmpty then [0] else kinds) do
+      let facts : Law.Facts := ⟨p.principal, p.principal, height, p.turn, next.pin, kind⟩
+      if let some clause := Law.refusedBy o.law facts (some o.state) state then
+        throw { cls := "lawRefused", clause, object := id }
     if let some text := p.laws.lookup id then
       let refuse := fun (clause : String) => Refusal.mk "lawRefused" (some clause) (some id) none
       let law ← match parseLawText text with
@@ -484,6 +502,13 @@ def parseChain (j : Option Json) : Except String Ledger :=
       throw "a chain ledger may be lowered at creation, never raised above the host limits"
     pure l
 
+def defaultLaw (creator : String) : Except String Law := do
+  if creator.any (fun c => c == '"' || c == '\\' || c.toNat < 32) then
+    throw "the creator handle cannot be named in the default law"
+  let clause ← Minidregg.Compiler.ObjectiveBendLaw.parse
+    s!"request.kind == 0 or request.subject == \"{creator}\""
+  return [("owner", clause)]
+
 def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
     (creator : String := "") (height : Nat := 1) : Except String (Object × String) := do
   let (artifact, ty, laws) ← Package.compileKeepingLaws inputs
@@ -497,6 +522,8 @@ def buildObject (inputs seed : Json) (read : Option Json := none) (chain : Optio
   if (dataJson state).compress.utf8ByteSize > Limits.maxStateBytes then throw "seed exceeds state byte capacity"
   let pin ← artifact.getObjValAs? String "packetSha256"
   let sources ← artifact.getObjValAs? String "sourcesSha256"
+  -- No law declared: the creator owns reprogramming and amendment, anyone may write.
+  let laws ← if laws.isEmpty then defaultLaw creator else pure laws
   unless amendable laws creator height 0 pin state do throw noAmendmentClause
   let inputsKey := inputsKeyOf inputs
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := ty, bounds := assumptions.bounds,

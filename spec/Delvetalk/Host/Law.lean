@@ -18,6 +18,8 @@ structure Facts where
   turn : Nat
   /-- Pin of the package the object runs after this write. -/
   pin : String := ""
+  /-- 0 write, 1 reprogram, 2 amend. -/
+  kind : Nat := 0
 
 inductive Reading where
   | num (n : Int)
@@ -54,6 +56,7 @@ def read (facts : Facts) (new : Data) : LawRef → Option Reading
   | .height => some (.num facts.height)
   | .turn => some (.num facts.turn)
   | .pin => some (.text facts.pin)
+  | .kind => some (.num facts.kind)
 
 def number (reading : Option Reading) : Option Int :=
   match reading with
@@ -109,7 +112,7 @@ private def parsed (text : String) : LawExpr :=
   | .error _ => .or (.eqC .height 0) (.not (.eqC .height 0))
 
 private def rec1 (n : Nat) : Data := .record [("count", .natural n), ("open", .boolean true)]
-private def facts : Facts := ⟨"7", "7", 3, 0, ""⟩
+private def facts : Facts := ⟨"7", "7", 3, 0, "", 0⟩
 
 #guard denote facts (some (rec1 3)) (rec1 4) (parsed "monotone(count)")
 #guard !denote facts (some (rec1 3)) (rec1 2) (parsed "monotone(count)")
@@ -121,14 +124,16 @@ private def facts : Facts := ⟨"7", "7", 3, 0, ""⟩
 #guard !denote facts none (rec1 3) (parsed "new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count in [1, 3]")
 #guard denote facts none (rec1 3) (parsed "request.subject == request.caller")
-#guard !denote ⟨"a", "b", 1, 0, ""⟩ none (rec1 3) (parsed "request.subject == request.caller")
+#guard !denote ⟨"a", "b", 1, 0, "", 0⟩ none (rec1 3) (parsed "request.subject == request.caller")
 #guard denote facts none (rec1 3) (parsed "request.height == 3")
+#guard denote ⟨"a", "a", 1, 0, "", 2⟩ none (rec1 3) (parsed "request.kind == 2")
+#guard !denote facts none (rec1 3) (parsed "request.kind == 1")
 #guard denote facts none (rec1 3) (parsed "request.subject == \"7\"")
-#guard denote ⟨"ember", "ember", 1, 0, "abc"⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
-#guard !denote ⟨"kim", "kim", 1, 0, "abc"⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
+#guard denote ⟨"ember", "ember", 1, 0, "abc", 0⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
+#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard !denote facts none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard denote facts none (rec1 3) (parsed "request.subject == 7")
-#guard !denote ⟨"ember", "ember", 1, 0, ""⟩ none (rec1 3) (parsed "request.subject == 7")
+#guard !denote ⟨"ember", "ember", 1, 0, "", 0⟩ none (rec1 3) (parsed "request.subject == 7")
 #guard denote facts none (rec1 3) (parsed "new.open == 1 and not new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count <= 2 implies new.open == 0")
 #guard !denote facts none (rec1 3) (parsed "new.missing == 0")

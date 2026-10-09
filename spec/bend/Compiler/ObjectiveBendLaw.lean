@@ -38,6 +38,8 @@ inductive LawRef where
   | turn
   /-- The pin of the package the object runs after the write (host extension). -/
   | pin
+  /-- 0 for a write of state, 1 for a reprogram, 2 for an amendment (host extension). -/
+  | kind
   deriving DecidableEq, Repr, Inhabited
 
 /-- The enforced fragment. `old.` appears only through `monotone` and `writeOnce`. -/
@@ -99,6 +101,7 @@ def LawRef.slot : LawRef → Slot
   | .height => "request/height"
   | .turn => "request/turn"
   | .pin => "request/pin"
+  | .kind => "request/kind"
 
 /-- The predicate the kernel installs for a law (`Kernel.ObjectLaw.compile_sound`: it evaluates
 to the law's meaning on every view the kernel judges). -/
@@ -133,6 +136,7 @@ def LawRef.render : LawRef → String
   | .height => "request.height"
   | .turn => "request.turn"
   | .pin => "request.pin"
+  | .kind => "request.kind"
 
 def LawExpr.render : LawExpr → String
   | .eqC ref value => s!"{ref.render} == {value}"
@@ -225,6 +229,7 @@ def requestFact : String → Option LawRef
   | "height" => some .height
   | "turn" => some .turn
   | "pin" => some .pin
+  | "kind" => some .kind
   | _ => none
 
 def parseRef : List Tok → Except String (LawRef × List Tok)
@@ -236,8 +241,8 @@ def parseRef : List Tok → Except String (LawRef × List Tok)
   | .ident "request" :: .sym "." :: .ident fact :: rest =>
     match requestFact fact with
     | some ref => .ok (ref, rest)
-    | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn \
-        and request.pin)")
+    | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn, \
+        request.pin and request.kind)")
   | .ident "old" :: _ => refuse "old.FIELD outside monotone(FIELD) and writeOnce(FIELD)"
   | t :: _ => refuse (t.render ++ " where a reference new.FIELD or request.FACT was expected")
   | [] => refuse "a comparison missing its reference"

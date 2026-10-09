@@ -264,6 +264,15 @@ class CounterTurns(TurnWorld):
         self.assertEqual(self.count("c1"), (0, "0"))
 
 
+class Ticks(TurnWorld):
+    def test_the_default_turn_budget_is_the_kernel_cap_and_a_request_cannot_exceed_it(self):
+        self.create("c1", counter_modules(), 0)
+        self.assertEqual(self.turn("c1", "bump")["status"], "admitted")
+        r = self.turn("c1", "bump", ticks="1000001")
+        self.assertEqual(r["status"], "error")
+        self.assertEqual(self.turn("c1", "bump", ticks="1000000")["status"], "admitted")
+
+
 class Laws(TurnWorld):
     def test_monotone_law_refuses_the_decrement_and_leaves_state_unchanged(self):
         self.create("m", MONOTONE, 5)
@@ -349,6 +358,10 @@ def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<P
   match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.append({item: input.text})}})):
     case written(_): 1n
     case _: 0n
+def drop(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.remove({index: input.index})}})):
+    case written(_): 1n
+    case _: 0n
 def fix(state: State, input: {index: Nat, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.amend({index: input.index, change: input.text})}})):
     case written(_): 1n
@@ -390,6 +403,26 @@ class ListEdits(TurnWorld):
         self.assertEqual(r["status"], "admitted", r)
         view = lambda: self.host.send(op="world-view", principal="e", object="n")["state"]
         self.assertEqual(list_items(view()), ["one", "TWO", "three"])
+        before = view()
+        self.reopen()
+        self.assertEqual(view(), before)
+
+    def test_remove_deletes_the_element_at_the_index_refuses_past_the_end_and_replays(self):
+        empty = {"tag": "record", "fields": []}
+        self.host.send(op="world-create", principal="ember", identity="mk", object="n",
+                       modules=names_modules(), entry="initial",
+                       seed=record(names={"tag": "variant", "label": "nil", "payload": empty}))
+        for text in ("one", "two", "three"):
+            self.turn("n", "add", record(text=label(text)))
+        view = lambda: self.host.send(op="world-view", principal="e", object="n")
+        self.assertEqual(self.turn("n", "drop", record(index=nat(1)))["status"], "admitted")
+        self.assertEqual(list_items(view()["state"]), ["one", "three"])
+        self.assertEqual(self.turn("n", "drop", record(index=nat(0)))["status"], "admitted")
+        self.assertEqual(list_items(view()["state"]), ["three"])
+        version = view()["version"]
+        r = self.turn("n", "drop", record(index=nat(1)))
+        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
+        self.assertEqual(view()["version"], version)
         before = view()
         self.reopen()
         self.assertEqual(view(), before)

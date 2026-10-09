@@ -48,6 +48,8 @@ def deliveriesPerCall : Nat := 16
 def sendsPerTurn : Nat := 32
 /-- Undelivered sends held by the world. -/
 def maxPending : Nat := 4096
+/-- Ticks of one turn: the default and the ceiling a request may ask for (the kernel's own cap). -/
+def maxTurnTicks : Nat := 1000000
 /-- Source text of a package offered to `reprogram`. -/
 def maxPackageBytes : Nat := 32768
 /-- Law text of an `amend`, and the clauses in it. -/

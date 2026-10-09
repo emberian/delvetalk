@@ -179,6 +179,49 @@ class Law(Reprogram):
         self.assertEqual(self.turn("c1", "bump")["status"], "admitted")   # runs under the pin the law names
 
 
+class DefaultLaw(Reprogram):
+    def test_a_lawless_object_gets_the_owner_law_and_writes_stay_open(self):
+        r = self.make()
+        self.assertEqual(r["status"], "created")
+        stranger = self.turn("c1", "bump", principal="mallory")
+        self.assertEqual(stranger["status"], "admitted", stranger)     # kind 0 admits anyone
+
+    def test_the_default_law_refuses_a_strangers_reprogram_and_amend_naming_owner(self):
+        self.make()
+        for r in (self.reprogram(ADDS_TWO, who="mallory"), self.amend(BOTH.replace("counter", "owner"), who="mallory")):
+            out = r["receipt"]["outcome"]
+            self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "lawRefused", "owner"))
+
+    def test_the_creator_reprograms_and_a_principal_the_creator_adds_can_too(self):
+        self.make()
+        self.assertEqual(self.reprogram(ADDS_TWO)["status"], "admitted")
+        law = 'law owner: request.kind == 0 or request.subject == "ember" or request.subject == "kimik3"'
+        self.assertEqual(self.amend(law)["status"], "admitted")
+        self.assertEqual(self.reprogram(COUNTER, who="kimik3")["status"], "admitted")
+        self.assertEqual(self.reprogram(COUNTER, who="mallory")["receipt"]["outcome"]["clause"], "owner")
+
+    def test_the_default_law_is_journaled_so_replay_sees_it(self):
+        self.make()
+        self.reopen()
+        self.assertEqual(self.reprogram(ADDS_TWO, who="mallory")["receipt"]["outcome"]["clause"], "owner")
+        self.assertEqual(self.turn("c1", "bump", principal="mallory")["status"], "admitted")
+
+    def test_a_creator_handle_that_cannot_be_written_in_a_law_cannot_create_a_lawless_object(self):
+        r = self.make(principal='bad"name')
+        self.assertEqual(r["status"], "error")
+
+    def test_an_explicit_law_still_goes_through_the_amendment_clause_rule(self):
+        r = self.make(source=with_law(COUNTER, 'law sealed: request.kind == 0 and request.subject == "nobody"'))
+        self.assertEqual(r["status"], "error")
+        self.assertIn("amendment clause", r["message"])
+
+    def test_the_law_can_tell_an_amend_from_a_reprogram(self):
+        law = 'law split: request.kind == 0 or request.kind == 2'
+        self.make(source=with_law(COUNTER, law))
+        self.assertEqual(self.reprogram(ADDS_TWO)["receipt"]["outcome"]["clause"], "split")
+        self.assertEqual(self.amend(law)["status"], "admitted")
+
+
 class Restart(Reprogram):
     def test_restart_replays_code_state_and_law(self):
         self.make(source=with_law(COUNTER, EMBER_ONLY))

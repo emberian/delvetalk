@@ -40,8 +40,7 @@ sum Edit<T, D>:
   set: {value: T}
   add: {delta: D}
 # A list-valued field: append an item, change the item at an index, or remove
-# the item at an index (later items shift down by one). The host must implement
-# remove; it is the one edit that is neither an append nor an amend.
+# the item at an index (later items shift down by one).
 sum Entries<D, U>:
   keep: {}
   append: {item: D}
