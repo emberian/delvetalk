@@ -50,7 +50,7 @@ def lawful_defaults():
         "Garden": [("owner", label("ember")), ("planted", {"tag": "natural", "value": "0"}), ("policy", reference("")),
                    ("confirm", boolean(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label(""))],
         "Thing": [("owner", label("ember")), ("name", label("")), ("description", label("")), ("holder", reference("")),
-                  ("location", reference(""))],
+                  ("location", reference("")), ("offer", {"tag": "variant", "label": "none", "payload": record()})],
     }
 
 
