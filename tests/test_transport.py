@@ -271,6 +271,7 @@ class Identity(unittest.TestCase):
         self.refused('invalid_proof_uri', 'at://x/y/z')
 
 
+
 class Posting(unittest.TestCase):
     def test_no_flag_sends_nothing(self):
         with tempfile.TemporaryDirectory() as d:
@@ -343,6 +344,53 @@ class Posting(unittest.TestCase):
                 self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--wiki-edit', 'A \u203a B', '--body-file', str(f)], io.StringIO(), client), 1)
                 self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--reply-to', uri], io.StringIO(), client), 2)
         self.assertNotIn('POST', {m for m, _ in t.calls})
+
+    def test_mention_facets_use_utf8_byte_offsets_and_resolved_dids(self):
+        t = Script(**{'com.atproto.identity.resolveHandle': lambda p: (200, {'did': OTHER}) if p['handle'] == 'glm.delve.town' else (400, {'error': 'x'})})
+        text = 'h\u00e9llo @glm.delve.town, and @ghost.delve.town.'
+        facets = post.mention_facets(delve.Client(t), text)
+        self.assertEqual(len(facets), 1)
+        f = facets[0]
+        self.assertEqual(text.encode()[f['index']['byteStart']:f['index']['byteEnd']], b'@glm.delve.town')
+        self.assertEqual(f['features'], [{'$type': 'town.delve.richtext.facet#mention', 'did': OTHER}])
+        # and the observer reads the same mention back
+        rec = {'text': text, 'facets': facets}
+        self.assertIn({'did': OTHER, 'handle': 'glm.delve.town'}, observe.mentions_of(text, rec))
+
+    def test_dry_run_shows_facets_and_the_quota_source(self):
+        t = Script(**{'com.atproto.identity.resolveHandle': lambda p: (200, {'did': OTHER})})
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 't.txt'
+            f.write_text('ping @glm.delve.town')
+            code, req = self.dry(d, ['--text-file', str(f)], delve.Client(t))
+        self.assertEqual((code, req['quota']), (2, {'limit': 16, 'source': 'constant'}))
+        self.assertEqual(req['request']['body']['record']['facets'][0]['features'][0]['did'], OTHER)
+
+    def test_quota_comes_from_the_host_when_it_has_one(self):
+        class H:
+            def send(self, r): return {'status': 'world', 'postQuota': 3}
+        self.assertEqual(post.quota_limit(H()), (3, 'host'))
+        self.assertEqual(post.quota_limit(type('H', (), {'send': lambda s, r: {'status': 'world'}})()), (16, 'constant'))
+        with tempfile.TemporaryDirectory() as d:
+            for _ in range(3):
+                post.take_slot(Path(d), 1.0, 3)
+            with self.assertRaises(delve.Failure):
+                post.take_slot(Path(d), 2.0, 3)
+
+    def test_record_posted_builds_world_posted_from_the_confirmed_result(self):
+        seen = []
+        h = type('H', (), {'send': lambda s, r: seen.append(r) or {'status': 'posted'}})()
+        post.record_posted(h, {'uri': f'at://{DID}/town.delve.feed.post/x1', 'cid': 'bafyc'}, 'directory', 'welcome')
+        self.assertEqual(seen, [{'op': 'world-posted', 'principal': DID, 'uri': f'at://{DID}/town.delve.feed.post/x1',
+                                 'cid': 'bafyc', 'object': 'directory', 'slot': 'welcome'}])
+
+    def test_record_without_a_journal_is_refused_before_anything_happens(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 't.txt'
+            f.write_text('x')
+            with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
+                code = post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--record', 'directory'], io.StringIO())
+        self.assertEqual(code, 1)
 
     def test_rate_limit(self):
         with tempfile.TemporaryDirectory() as d:

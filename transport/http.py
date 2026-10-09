@@ -40,14 +40,14 @@ class Host:
     """One host subprocess, one request at a time; respawned and reopened if it dies.
     With journal=None it is a stateless compile/run process."""
 
-    def __init__(self, journal, binary=BINARY):
-        self.journal, self.binary, self.proc = journal, binary, None
+    def __init__(self, journal, binary=BINARY, clock=None):
+        self.journal, self.binary, self.proc, self.clock = journal, binary, None, clock
         self.lock = threading.Lock()
 
     def _spawn(self):
         self.proc = subprocess.Popen([self.binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         if self.journal:
-            reply = self._exchange({'op': 'world-open', 'path': self.journal})
+            reply = self._exchange({'op': 'world-open', 'path': self.journal, **({'clock': self.clock} if self.clock else {})})
             if reply.get('status') != 'opened':
                 raise HostDied('world-open refused: ' + json.dumps(reply))
 
@@ -358,11 +358,17 @@ class Handler(BaseHTTPRequestHandler):
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, principal, name, view['version']) if principal else None
+        card = self.card(host, principal, name, view['version'])
         self.html(200, pages.obj(name, handle, view, card, self.history(host, name), result))
 
     def card(self, host, principal, name, version):
-        """The object's own card: an offer from present/describe, cached because a retried identity returns no offers."""
+        """The object's card from the host's world-card (no journaled turn)."""
+        r = host.send({'op': 'world-card', 'principal': principal or 'anonymous', 'object': name})
+        if r.get('status') != 'error':
+            return r.get('text')
+        # TODO(host world-card): delete this fallback once the op exists everywhere.
+        if 'unknown world operation' not in r.get('message', ''):
+            return None
         key = (principal, name, version)
         if key not in self.server.cards:
             text = None
@@ -377,17 +383,23 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.cards[key]
 
     def history(self, host, name):
-        entries, after = [], None
-        for _ in range(50):
-            req = {'op': 'world-history', 'object': name, 'limit': 100}
-            if after is not None:
-                req['after'] = after
-            page = host.send(req)
-            entries += page.get('entries') or []
-            if not page.get('more') or not page.get('entries'):
-                break
-            after = page['entries'][-1]['height']
-        return entries[-20:][::-1]
+        """The newest 20 entries touching the object, newest first, read from the tail of the journal."""
+        height = host.send({'op': 'world-status'}).get('height') or 0
+        window = 20
+        while True:
+            after, entries = max(0, height - window), []
+            for _ in range(50):
+                req = {'op': 'world-history', 'object': name, 'limit': 100}
+                if after:
+                    req['after'] = after
+                page = host.send(req)
+                entries += page.get('entries') or []
+                if not page.get('more') or not page.get('entries'):
+                    break
+                after = page['entries'][-1]['height']
+            if len(entries) >= 20 or window >= height:
+                return entries[-20:][::-1]
+            window *= 4
 
 
 def main(argv=None):

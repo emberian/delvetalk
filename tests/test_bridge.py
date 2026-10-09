@@ -173,5 +173,89 @@ class Bridging(BridgeCase):
         self.assertEqual(len(self.drafts()), 200)
 
 
+class Stub:
+    """A host that speaks the new ops from canned data and records everything it is sent."""
+    def __init__(self, addressee=None):
+        self.ops, self.addressee = [], addressee or {}
+
+    def send(self, req):
+        self.ops.append(req)
+        op = req['op']
+        if op == 'world-addressee':
+            return self.addressee.get(req['parent'], {'status': 'unknown'})
+        if op == 'world-turn':
+            return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
+                    'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]}
+        if op == 'world-pending':
+            return {'status': 'pending', 'count': 0}
+        return {'status': 'ok'}
+
+
+class Routing(BridgeCase):
+    def test_clock_ticks_once_per_run_and_only_in_unix_minutes(self):
+        stub = Stub()
+        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')])
+        with mock.patch.object(bridge.time, 'time', return_value=6000.0):
+            bridge.run(self.state, stub)
+        self.assertEqual([o for o in stub.ops if o['op'] == 'world-advance'], [{'op': 'world-advance', 'height': 100}])
+
+    def test_a_reply_to_a_journaled_post_goes_to_its_addressee_not_the_card_word(self):
+        parent = f'at://{DID}/town.delve.feed.post/welcome'
+        stub = Stub({parent: {'status': 'addressee', 'object': 'directory', 'slot': 'welcome'}})
+        plain = mk(1, 'just replying', parent=parent)
+        spelled = mk(2, 'delvetalk garden-1 plant', parent=parent)
+        orphan_reply = mk(3, 'replying elsewhere', parent=f'at://{DID}/town.delve.feed.post/other')
+        self.observe([plain, spelled, orphan_reply, summon_post(4, '2026-10-09T10:00:09Z')])
+        r = bridge.run(self.state, stub)
+        turns = {t['identity'][-6:]: t for t in stub.ops if t['op'] == 'world-turn'}
+        self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'directory', '000002': 'directory', '000004': 'directory'})
+        slot = {f['name']: f['value']['value'] for f in turns['000001']['argument']['fields']}['slot']
+        self.assertEqual(slot, 'welcome')
+        self.assertEqual(len(r['turns']), 3)
+        self.assertIn(orphan_reply['uri'], (self.state / 'skipped.txt').read_text())
+        n = len([o for o in stub.ops if o['op'] == 'world-addressee'])
+        bridge.run(self.state, stub)
+        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), n)  # drafts and skips are remembered
+
+    def test_card_word_still_routes_a_post_with_no_journaled_parent(self):
+        stub = Stub()
+        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
+        bridge.run(self.state, stub)
+        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
+
+    @unittest.expectedFailure
+    def test_end_to_end_clock_and_addressee_against_the_real_host(self):
+        # Until the host lands world-addressee: {'message': 'unknown world operation world-addressee'}
+        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': 'at://x/y/z'}).get('status'), 'addressee')
+
+
+class Daemon(unittest.TestCase):
+    def test_loops_until_stopped_writes_and_removes_the_pid_file(self):
+        import os
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            stop, steps = threading.Event(), []
+
+            def step():
+                steps.append(1)
+                self.assertEqual(Path(d, 'bridge.pid').read_text(), str(os.getpid()))
+                if len(steps) == 3:
+                    stop.set()
+            bridge.daemon(d, 'bridge', 0, step, stop)
+            self.assertEqual(len(steps), 3)
+            self.assertFalse(Path(d, 'bridge.pid').exists())
+
+    def test_a_live_pid_file_blocks_a_second_daemon(self):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, 'bridge.pid').write_text(str(os.getpid()))
+            with self.assertRaises(SystemExit):
+                bridge.daemon(d, 'bridge', 0, lambda: None)
+            Path(d, 'bridge.pid').write_text('999999')  # stale
+            import threading
+            stop = threading.Event()
+            bridge.daemon(d, 'bridge', 0, stop.set, stop)
+
+
 if __name__ == '__main__':
     unittest.main()

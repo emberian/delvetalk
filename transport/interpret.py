@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from transport import model
+from transport.bridge import daemon
 from transport.delve import canonical
 from transport.http import Host
 
@@ -69,12 +70,16 @@ def main(argv=None, out=None):
     r = sub.add_parser('run')
     r.add_argument('--state', required=True)
     r.add_argument('--journal', required=True)
-    r.add_argument('--once', action='store_true', required=True)
+    r.add_argument('--once', action='store_true')
+    r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: settle pending requests every SECONDS')
     r.add_argument('--mock', metavar='DIR', help='answer from model fixtures instead of the network')
     a = ap.parse_args(argv)
-    host = Host(a.journal)
+    if bool(a.once) == bool(a.poll):
+        ap.error('give exactly one of --once and --poll SECONDS')
+    host = Host(a.journal, clock='transport')
+    step = lambda: out.write(canonical(run(a.state, host, lambda req: model.ask(req, a.mock))) + '\n') and out.flush()
     try:
-        out.write(canonical(run(a.state, host, lambda req: model.ask(req, a.mock))) + '\n')
+        step() if a.once else daemon(a.state, 'interpret', a.poll, step)
     finally:
         host.close()
     return 0
