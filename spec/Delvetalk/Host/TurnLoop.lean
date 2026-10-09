@@ -39,7 +39,11 @@ def parseTurn (j : Json) : Except String TurnRequest := do
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
   unless Minidregg.Compiler.ObjectiveBendParse.isIdent method.toList do throw "invalid method name"
   let argument ← decodeData Limits.dataDepth (← j.getObjVal? "argument")
-  let limits := (j.getObjVal? "limits").toOption.getD (Json.mkObj [])
+  let given := (j.getObjVal? "limits").toOption.getD (Json.mkObj [])
+  let limits := if (given.getObjVal? "ticks").toOption.isSome then given
+    else given.setObjVal! "ticks" (toJson (toString Limits.maxTurnTicks))
+  if let .ok asked := (given.getObjVal? "ticks").bind natOf then
+    if asked > Limits.maxTurnTicks then throw "ticks exceeds the turn ceiling"
   let digest := Journal.bodyHash (Json.mkObj [("principal", toJson principal), ("object", toJson object),
     ("method", toJson method), ("argument", dataJson argument), ("limits", limits)])
   return ⟨principal, object, method, argument, intent, limits, digest⟩
@@ -400,7 +404,7 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
         method := method
         argument := argument
         intent := id
-        limits := Json.mkObj []
+        limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))]
         digest := Journal.bodyHash d }
     runTurnWith w req how
 

@@ -39,11 +39,12 @@ sum Edit<T, D>:
   keep: {}
   set: {value: T}
   add: {delta: D}
-# A list-valued field: append an item, or change the item at an index.
+# A list-valued field: append an item, change the item at an index, or remove it.
 sum Entries<D, U>:
   keep: {}
   append: {item: D}
   amend: {index: Nat, change: U}
+  remove: {index: Nat}
 # The identity of a turn, (principal, intent): what an await names.
 record Slot:
   principal: String
