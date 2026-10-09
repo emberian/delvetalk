@@ -264,8 +264,9 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (orig
   match r with
   | .computation .. =>
     let b ← budgetsNow
-    let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet arguments b)
-    drive depth id compiled started 0
+    let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
+    let started ← liftEval (Delvetalk.Turn.startActivity compiled.packet arguments binding b)
+    drive depth id compiled binding started 0
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
@@ -281,10 +282,14 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (orig
       let _ ← addWrite id (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 
-partial def drive (depth : Nat) (self : String) (compiled : Compiled)
+partial def drive (depth : Nat) (self : String) (compiled : Compiled) (binding : Delvetalk.Turn.Binding)
     (outcome : Delvetalk.Turn.Outcome) (_n : Nat) : M Data := do
   match outcome with
   | .finished value _ used => spend used; return value
+  | .exhausted resource used =>
+    spend used
+    evaluation (if resource == "ticks" then "turn refused: tick budget exhausted"
+      else s!"turn refused: {resource} budget exhausted")
   | .yielded plan _ responseType checkpoint used =>
     spend used
     countPlan
@@ -292,8 +297,8 @@ partial def drive (depth : Nat) (self : String) (compiled : Compiled)
       | .variant "await" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
       | _ => answer depth self compiled.bounds plan responseType
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint response b)
-    drive depth self compiled next 0
+    let next ← liftEval (Delvetalk.Turn.resumeActivity compiled.packet checkpoint binding response b)
+    drive depth self compiled binding next 0
 
 /-- `await {slot, patience}`: answered at once if the slot is settled or hopeless;
     otherwise the turn suspends (only at the top of a turn, never inside a call). -/

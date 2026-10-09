@@ -13,6 +13,7 @@ open Minidregg.Compiler.ObjectiveBendLaw (LawExpr)
 /- Every capacity of the host's world kernel, in one place. A request beyond
     any of them is refused as a request error and journals nothing. -/
 namespace Limits
+-- Shared kernel bounds (ticks, heap, stack, nodes, bytes, data depth, documents, offers) live in Delvetalk/Limits.lean; this host will read them from there.
 def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 def maxPrincipalBytes : Nat := 128
