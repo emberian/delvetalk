@@ -63,6 +63,43 @@ def draft_text(reply):
     return f"turn committed; no reply card offered\nreceipt: {receipt['hash']}\n"
 
 
+def awaiting_path(state, uri):
+    return Path(state) / 'awaiting' / f'{uri_hash(uri)}.json'
+
+
+def offer_drafts(state, host):
+    """Draft what resumed turns offered. A suspended turn leaves an `awaiting` record; once its interpretation
+    settles the resumed entry's offer is in the host's outbox for the author, under the turn's identity (the
+    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft."""
+    outbox = Path(state) / 'outbox'
+    waiting = [json.loads(p.read_text()) for p in sorted((Path(state) / 'awaiting').glob('*.json'))]
+    drafted = []
+    for principal in dict.fromkeys(w['principal'] for w in waiting):
+        mine = {w['uri']: w for w in waiting if w['principal'] == principal}
+        after, grouped = min(w['height'] for w in mine.values()) - 1, {}
+        while True:
+            got = host.send({'op': 'world-offers', 'principal': principal, 'after': max(0, after)})
+            if got.get('status') != 'offers':
+                break
+            for o in got['offers']:
+                if o['identity'] in mine:
+                    grouped.setdefault(o['identity'], []).append(o)
+            if not got.get('more') or not got['offers']:
+                break
+            after = got['offers'][-1]['height']
+        for uri, offers in grouped.items():
+            key = hashlib.sha256(f'{principal}\0{uri}'.encode()).hexdigest()[:16]
+            if any(outbox.glob(f'*-off-{key}.json')):
+                continue
+            w = mine[uri]
+            write_atomic(outbox / f"{offers[-1]['height']}-off-{key}.json", {
+                'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                'offer': {'height': offers[-1]['height'], 'identity': uri},
+                'text': '\n'.join(o['text'] for o in offers), 'posted': False})
+            drafted.append(uri)
+    return drafted
+
+
 def pending_observations(state):
     db = sqlite3.connect(Path(state) / 'observe.sqlite')
     db.executescript(SCHEMA)  # fresh state has no table yet
@@ -147,7 +184,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
     tick(host, now)
     done, failed, skip = [], [], skipped(state)
     for obs in pending_observations(state):
-        if obs['uri'] in skip or draft_exists(outbox, obs['uri']):
+        if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
         target = route(host, obs)
         if target is None:
@@ -166,6 +203,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
+        if reply.get('status') == 'suspended' or reply['receipt'].get('outcome', {}).get('tag') == 'suspended':
+            # Nothing was committed and nothing is offered yet: no draft until the interpretation settles.
+            write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle,
+                                                           'height': reply['receipt']['height']})
+            continue
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'receipt': reply['receipt'], 'text': draft_text(reply), 'posted': False})
@@ -174,10 +216,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None):
         if not host.send({'op': 'world-pending'}).get('count'):
             break
         host.send({'op': 'world-deliver', 'limit': 16})
+    offered = offer_drafts(state, host)
     published, problem = publication_drafts(state, host)
     if problem:
         failed.append({'publications': problem})
-    return {'turns': done, 'failed': failed, **({'published': published} if published else {})}
+    return {'turns': done, 'failed': failed, **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
 def daemon(state, name, interval, step, stop=None, sleep=None):
