@@ -121,7 +121,7 @@ class Bridging(BridgeCase):
         self.assertEqual(d['receipt']['hash'], before['hash'])
         self.assertEqual(self.host.send({'op': 'world-status'})['height'], before['height'])  # no second turn
         self.assertEqual(d['receipt']['height'], before['height'])
-        self.assertIn('not retained', d['text'])  # offers are not journaled: the retry has the receipt, not the card
+        self.assertNotIn('not retained', d['text'])  # the journal retains offers: the retry has the card
 
     def test_refused_spell_yields_a_refusal_draft_with_class_and_no_state(self):
         self.make('stern', REFUSING, 'law seen: monotone(seen)\n')

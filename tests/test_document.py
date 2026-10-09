@@ -219,7 +219,7 @@ class RenderTests(unittest.TestCase):
 
 
 class OfferTests(HostCase):
-    def test_an_offer_turn_on_garden_returns_the_card_and_journals_only_the_count(self):
+    def test_an_offer_turn_on_garden_returns_the_card_and_the_journal_retains_it(self):
         made = self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
                               modules=closure("Garden"), entry="initial", seed=record(planted=nat(2), policy=record(world=label(""), object=label(""))))
         self.assertEqual(made["status"], "created", made)
@@ -227,22 +227,18 @@ class OfferTests(HostCase):
                               argument=record(), identity="look-1")
         self.assertEqual(turn["status"], "admitted", turn)
         self.assertEqual(turn["offers"], [{"principal": "glm", "text": "The Night Garden: 2 planted\n"}])
-        self.assertEqual(turn["receipt"]["offers"], 1)
-        self.assertNotIn("2 planted", json.dumps(turn["receipt"]))
-        # the journal file holds the count and no text
-        with open(self.path) as handle:
-            raw = handle.read()
-        self.assertNotIn("2 planted", raw)
-        # restart: replay reproduces the same offers count on the same receipt
+        self.assertEqual(turn["receipt"]["offers"], [{"to": "glm", "text": "The Night Garden: 2 planted\n"}])
+        # restart: replay reproduces the same offers on the same receipt
         self.reopen()
         again = self.host.send(op="world-receipt", principal="glm", identity="look-1")
         self.assertEqual(again["status"], "receipt", again)
-        self.assertEqual(again["receipt"]["offers"], 1)
+        self.assertEqual(again["receipt"]["offers"], turn["receipt"]["offers"])
         self.assertEqual(again["receipt"]["outcome"]["tag"], "admitted")
         # a retry of the same identity returns the same receipt
         retry = self.host.send(op="world-turn", principal="glm", object="garden", method="present",
                                argument=record(), identity="look-1")
         self.assertEqual(retry["receipt"], again["receipt"])
+        self.assertEqual(retry["offers"], turn["offers"])
 
     def test_a_turn_without_an_offer_carries_no_offers_field(self):
         self.host.send(op="world-create", principal="ember", identity="mk", object="garden",

@@ -1,12 +1,11 @@
 """The workshop: a model takes the reins from a post.
 
-The host does not implement `check`, `inspect` or the reprogram path of these
-turns yet; a turn that performs them is refused as
-
-    {'class': 'evaluation', 'reason': 'plan not supported: check'}
-    {'class': 'evaluation', 'reason': 'plan not supported: inspect'}
-
-so the paths that reach the host are expected failures and flip when it lands.
+The host answers `check`, `inspect` and a `reprogram` of another object (judged by
+the target's own law with request.caller = the workshop). The propose case stays an
+expected failure for a reason in the fixture, not the host: its BLOCK has no `initial`
+or `keep`, so the replacement cannot compile as a Counter (programRefused compile),
+and this Chain world has no sealed library, so a block that imported the Plan library
+would not check clean. tests/test_reflection.py ReprogramAnother covers the host path.
 """
 import unittest
 
@@ -113,7 +112,6 @@ class Workshop(Chain):
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
 
-    @unittest.expectedFailure
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check\n```obend\n%s```\n" % BLOCK)

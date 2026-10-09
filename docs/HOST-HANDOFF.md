@@ -1,11 +1,14 @@
-# Host handoff (lane/host2, after the authority model and program reflection)
+# Host handoff (lane/host3, after grants, the outbound channel, time, and journal weight)
 
 For the lane that continues the host. The authority model (FOUNDATION section 11 rows 1 to 3) and
 program reflection (row 5: inspect, check, the sealed library, interpret) are built; section 5 says how.
 Everything is in `spec/Delvetalk/Host/`. Line numbers drift; grep the names.
 Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 `test_deliveries.py`, `test_reprogram.py`, `test_await.py`, `test_replay.py`, `test_authority.py`,
-`test_reflection.py`.
+`test_reflection.py`, `test_grants.py`, `test_outbound.py`, `test_journal.py`, `test_workshop.py`.
+`make check` runs everything in parallel (~2 min); `make smoke` the fast pair. Two wall-clock bounds
+(`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
+loaded box; alone they take 3.3 s and pass.
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
@@ -14,22 +17,22 @@ Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes 
 Import order: Store, Journal, Law, Ops, TurnLoop, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
-- **Store.lean** (172): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
+- **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
   `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey`. Pure data.
 - **Journal.lean** (33): `bodyHash (body : Json) : String` (SHA-256 of `body.compress`; Lean orders
   object keys so bytes are canonical), `sealEntry (height previous) (fields) : Json` (adds `hash`),
   `verify (height : Nat) (previous : String) (entry : Json) : Except String Unit` (hash, height, chain).
-- **Law.lean** (142): `Facts`, `Reading`, `denote`, `admits`, `refusedBy`. The evaluator of the law
+- **Law.lean** (213): `Facts`, `Reading`, `denote`, `admits`, `refusedBy`. The evaluator of the law
   fragment; tests are `#guard`s at the bottom. The fragment syntax itself is
   `spec/bend/Compiler/ObjectiveBendLaw.lean` (host extensions there: `request.pin`, `request.kind`,
   text constants `REF == "text"` for subject/caller/pin).
-- **Ops.lean** (807): the pure world kernel. Edits, `Proposal`, `judge`, `commit`, `record`, `push`,
+- **Ops.lean** (1464): the pure world kernel. Edits, `Proposal`, `judge`, `commit`, `record`, `push`,
   creation (`compileObject`, `makeObject`, `buildObject`, `create`), program preparation, `replayEntry`,
   `replay`, `advance`, reads (`view`, `receipt`, `history`).
-- **TurnLoop.lean** (817): `world-turn` and everything that runs activities: the `M` monad,
+- **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
-- **Session.lean** (100): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
+- **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
 
 Signatures a newcomer calls (all pure unless noted):
@@ -62,13 +65,22 @@ abbrev M := ExceptT Abort (StateM TurnState)
 
 Session ops (`stepWorld`): `world-open {path, library?, principal?, libraryLaw?}` (replay; with `library` it seals
 that directory, journals it on first open or refuses by name if the bytes differ from the journal's pin), `world-create`, `world-turn`, `world-propose`,
-`world-view {principal, object}`, `world-receipt {principal, identity}`, `world-history`, `world-status`,
+`world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
+`world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
 `world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
+`world-open` may also carry `clock` (the one principal that may `world-advance` and `world-posted`; transport
+uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `world-status`): the first open naming
+either journals a `settings` entry, and a later open with other values is refused by name.
+`world-posted {principal, uri, cid, object, slot?}` journals a `posted` entry (identity `posted:<uri>`) and indexes
+`world.posts`; `world-addressee {parent}` answers `{status: "addressee", object, slot?}` or `{status: "unknown"}`.
 `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
-Every journaling op goes through `durable`: step, then `settle` (resume what the step released),
-then append ALL new entries, one fsync. A reply exists only after the bytes are durable.
+Every journaling op goes through `durable`: step, then `settleAll` (resume what the step released, then run
+pending deliveries oldest first, each followed by another resume pass, up to `deliveriesPerSettle` 64; the reply
+carries `resumed` and `delivered`), then append ALL new entries, one fsync. Nobody needs to call `world-deliver`;
+it runs what a capped pass left. `world-open` itself never settles. `await` accepts `until` (absolute clock
+height) instead of `patience`, and Plan `awaitUntil {slot, until}` carries it. A reply exists only after the bytes are durable.
 Request errors (`Except.error`) journal nothing; refusals are receipts.
 
 ## 2. Journal entries
@@ -76,13 +88,23 @@ Request errors (`Except.error`) journal nothing; refusals are receipts.
 One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`,
 `roots [{object, version}]`, `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
 compressed entry without `hash`. Genesis `previous` is 64 zeros. `identityKey` = compressed
-`[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except a suspension is
-replaced by the identity's final entry).
+`[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except that a suspension or a
+transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`: staleRoot,
+budget, evaluation) are journaled but do not bind: `retained`/`retainedTurn` let a retry with the same identity run
+and be judged again (whatever its request); admitted outcomes and every other refusal bind.
 
+Sources by CID: compile inputs in `created.compile`, `creates[].compile` and suspended activities name each
+module as `{name, cid}` (`sourceCid` for a bare source); the first entry that needs a source carries it in a
+top-level `sources [{cid, source}]` field (checked against its CID on replay; `world.modules`). Objects keep
+full inputs in memory (`expandInputs` on replay). Compiled packages are cached in memory by the digest of their
+inputs (`world.builds`, `buildKey`, `maxBuilds` 1024), so creation and replay compile each distinct package once:
+500 library Bells went from create 135 s / reopen 133 s / 3.14 MB to 4.3 s / 0.5 s / 0.82 MB. (The
+coordinator asked for separate `module` entries; a field on the introducing entry keeps every height and
+turn number unchanged and needs no ordering against judging.) Reprogram `source` fields are still verbatim.
 Optional top-level fields, all inside the hash: `absent [id]` (objects required absent), `turnRequest`
 (digest of the original turn request), `ticksUsed`, `ledger {depth, work, storage}`, `result` (Data wire),
 `sends [{id,to,method,argument,ledger}]`, `delivery {id, from}`, `resumes` (hash of the suspension it
-continues), `offers` (count).
+continues), `offers [{to, text}]` (the rendered offers, retained; see 5.10).
 
 Outcomes:
 
@@ -140,7 +162,7 @@ Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes` in Ops):
   `sendsPerTurn`, `maxPending` checked when the Plan is answered.
 - `creates : (id, CreateRec)` : built in-turn by `buildCreated` (compile, evaluate `initial()`, overlay the
   partial seed with `mergeSeed`, `makeObject`), installed by `commit` via `Judged.creations`.
-- `offers : List String` : rendered `offer` documents; the reply carries texts, the journal a count.
+- `offers : List (to, text)` : rendered `offer` documents with their addressees; the journal retains them.
 - `ticks` : remaining machine ticks (`spend`); `plans`, `awaited`, `awaits` : counters.
 - Ledger : `Ctx.ledger` (object `chain` at start, or the delivery's inherited one). A send's ledger is
   `{depth-1, work - used, storage - bytes added}` (saturating), computed in `sendsJson` only for an
@@ -170,10 +192,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 ## 5. The authority model and reflection, as built
 
 1. **Write is self-only.** `answer` case `write` applies only to `self`; a Reference to another object is answered
-   `refused {clause: notSelf}` in-turn (same for `reprogram` and `amend`). Cross-object change is a `call`: the callee
+   `refused {clause: notSelf}` in-turn. `reprogram` and `amend` of ANOTHER object are allowed: the proposer reads the
+   target (a root) and the change is recorded with `callers = [proposing object]`, kind 1 or 2, so the target's own law
+   judges it (a Forge/Workshop names itself in the target's law: `request.caller == "forge"`). Cross-object change is a `call`: the callee
    runs as its own `self`, so its writes are its own, judged by its own law. `judge` has no `unreadWrite`; a
    `world-propose` that writes an object it does not name as a root is a request error.
-2. **Law facts.** `Facts {subject = principal, caller, height, turn, pin, kind}`. `caller` is the object whose method
+2. **Law facts.** `Facts {subject = principal, caller, height, turn, pin, kind, method}`; `method` is the method whose
+   run made the change ("" for ops; journaled per change as `methods`). `request.subject in new.F` / `request.caller in
+   new.F` is membership in a `List<String>` field (`LawExpr.member`, parsed in `spec/bend/Compiler/ObjectiveBendLaw.lean`,
+   which the kernel lane owns: the host extensions there are `pin`, `kind`, `method`, text constants, `member`). `caller` is the object whose method
    wrote ("" for the turn's own method and for client proposals; for a delivered turn, the sending object).
    `judge` judges every distinct (caller, kind) of an object's changes, so a bundled reprogram does not skip kind 0.
    `new.F == request.subject` compares a text field; `appendOnly(F)` (new list = old list plus appended items, by canonical
@@ -200,6 +227,52 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    type and the object's Response can carry the proposal; a failed reply is `unclear`. Deadline is `interpretationPatience`
    (64 clock units) from the clock, resuming `timedOut`.
 
+8. **Grants (delegation).** Plan `grant {to, object, method, until}` -> `granted {id}` (id = hash of
+   `["grant", principal, intent, ordinal]`), `revoke {id}` -> `revoked {}`, and `callVia` / `sendVia`
+   (`call`/`send` plus `via: String`; records have no optional fields, so they are their own constructors;
+   the host also honours a `via` field on `call`/`send`). Only a direct turn's top frame may grant
+   (`notDirect` for a callee, a delivered turn, or a frame already under a grant); the grantor is the
+   turn's principal, the holder the running object. The grantee `to` is a principal or an object id and
+   must be the frame's subject or the calling object at use. A grant stands while not revoked, the clock
+   is `<= until`, and object and method match (`grantStands`). Under a grant the callee's frame runs with
+   subject = grantor (context.principal, read authority, law `request.subject`) and caller = the calling
+   object; its changes record `vias` and `methods` (parallel to `edits`, emitted only when non-empty) and
+   `judge` re-checks the grant (`lawRefused noGrant` if it no longer stands). A `sendVia` journals
+   `via` and `principal` (the grantor) on the send; the delivery runs as the grantor, carries
+   `delivery.via`, and is refused `noGrant` (consumed) if the grant fell between send and delivery; a
+   suspended turn whose staged sendVia lost its grant is refused at commit. Revocation: the holder object,
+   or the grantor in an undelegated frame (`notGrantor` otherwise; `judge` requires the grantor's principal
+   or the holder among the roots). Grants and revokes are outcome fields of an admitted entry
+   (`grants [{id, grantor, holder, to, object, method, until}]`, `revokes [id]`), installed by
+   `applyGrants`; `world.grants` holds them all (`maxGrants` 4096, `grantsPerTurn` 8). The frame lives in
+   `TurnState.subject/method/via`, set and restored by `runMethod`; `principal` stays the identity's and
+   derives send and grant ids. Tests: `tests/test_grants.py`.
+9. **Listing and cards.** Plan `objects {prefix, after}` -> `listed {ids, more}` (`listIds`: ids the frame's subject
+   may view, prefix match, strictly after `after` in byte order, sorted, `listPage` 64) and op
+   `world-objects {principal, prefix?, after?}` -> `{status: "listed", ids, more}`. Plan `card {object}` ->
+   `carded {document}`: `renderCard` compiles the target's `render` and runs it on its committed state under the
+   turn's ticks (records the target as a root; `denied` without read authority, `noCard` without `render`,
+   `refused {clause: render}` if it fails). Op `world-card {principal, object}` -> `{status: "card", text, document}`
+   (text by `Document.render`), journals nothing.
+10. **The outbound channel.** `offer {to, document}`: `to` "" is the frame's subject. An admitted entry retains
+   `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`), and `world-offers {principal, after?}`
+   answers `{status: "offers", offers [{height, ordinal, identity, text}], more}` (after = journal height,
+   exclusive). A turn's reply carries only the offers addressed to its own principal (`turnReply`, derived from
+   the entry, so a retry returns them identically); receipts in `delivered`, `resumed` and `world-deliver`'s
+   `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
+   {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
+   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root}`, exactly)
+   and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
+   view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
+   ("" = anonymous, public objects only), is `denied` for an object the reader cannot view, and projects each entry.
+11. **publish.** `publish {page, section, body}` -> `published {post}` (post = hash of `["publish", principal,
+   intent, ordinal]`; at most `publishesPerTurn` 4; a title or section with a line break or over 256 bytes is
+   `refused {clause: title}`). The page is the object's: `page` "" means the object id. The admitted entry
+   retains `publishes [{id, object, page, section, text}]` with the agentwiki text (`wiki: Title\n\nbody`, or
+   `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
+   adds `publications`. Transport posts the text, confirms with `world-posted {uri, cid, object}`, and routes a
+   reply (`merge` from the page's owner) by `world-addressee` to the object's `receive` (bridge work).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -207,7 +280,12 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   the entry's arrow domain and the packet bounds. If you add a new argument that is a sum, it goes
   through this too. Responses resumed via `resumeActivity` are not re-annotated (checked by
   `conformsUnder`).
-- **relevantBounds** (Ops): a package's `bounds` table includes entries for its own method row, so
+- **No silent defaults** (§11 row 11): optional request fields go through `optText`/`optNat`, which refuse a
+  present but malformed value by name (turn `limits` and `limits.ticks`, `world-deliver.limit` 1..16,
+  `world-history` `after`/`limit` 1..100, `world-offers.after`, `world-objects` `prefix`/`after`,
+  `world-reprogram.migration`, the clock principal of `world-advance`).
+- **relevantBounds** (Ops): closes the variables a type reaches to a fixpoint (at most `bounds.length + 1`
+  rounds; "type too deep to compare" if not reached; it used to stop after eight rounds and answer "same"). a package's `bounds` table includes entries for its own method row, so
   comparing whole tables says two identical state types differ as soon as any def is added. Compare
   `ty` plus only the bounds that `ty` transitively uses (`relevantBounds`). Reprogram depends on it.
 - **conformsUnder bounds**: every conformance and `isDataUnder` call needs the packet's bounds
@@ -233,17 +311,65 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   write. A resumed turn that re-suspends gets a new entry with `resumes` = the old hash.
 - **Deliveries and work**: work is charged after the fact (a turn may overshoot the chain's `work` by at
   most one turn); `budgetExhausted` requires a ledger field to be exactly zero.
-- **Replay recompile cost**: `world-open` recompiles each created object and each reprogram/creation
-  record, and re-runs `judge`; a Bell/Garden chain costs ~0.2 to 1 s per object. Method packets are
+- **Replay recompile cost**: `world-open` compiles each distinct package once (`world.builds`) and each
+  reprogram record, and re-runs `judge`. Method packets are
   compiled lazily and cached in memory only. 1000 plain proposals replay in ~0.08 s.
 - **fsync**: `Handle.flush` is not durable. `spec/native/sync.c` does `fflush` + `fcntl(F_FULLFSYNC)`
   (macOS) / `fsync`; this made 1000 proposals cost 5 to 7 s (was 0.1 s) and 200 bumps ~3 s. One sync per
   `durable` call (not per entry). The build needs `lakefile.lean` (the TOML cannot declare `extern_lib`).
+- **Journal lock**: `openWorld` takes an exclusive `flock` on the journal handle (`IO.FS.Handle.tryLock`, the
+  runtime's flock; no second C extern was needed) and refuses "journal is open in another process"; the lock lives
+  as long as the session's handle, so opening another path releases it. Re-opening the same path in the same
+  process reuses the held handle. `world-status` reports `locked: true`.
 - **1Password**: `git commit` can fail with "1Password: failed to fill whole buffer"; make the commit
   unsigned (`git -c commit.gpgsign=false commit ...`), which the owner's notes allow for unattended work.
 - **Tests**: never run an unfiltered package suite on a loop; `tests.test_replay` and `test_await` each
   take ~12 to 40 s because every `world-create` compiles. `python3 -W error` turns leaked subprocess
   warnings into failures; close hosts in `tearDown`.
-- **Not done**: `publish` and `offer` to a real transport are out of the kernel (`offer` renders
-  text on the reply only); history/receipt reads do not apply `ReadPolicy`; `world-reprogram`/`amend`
-  are gated only by the object's law; foreign worlds (`Reference.world != ""`) are always refused.
+- **Not done**: `world-reprogram`/`amend` are gated only by the object's law;
+  foreign worlds (`Reference.world != ""`) are always refused.
+
+## 7. Where lane/host3 stopped, and the queue
+
+lane/host3 is based on foundation e7faa87; foundation has since moved (kernel batch e0b46f3, transport 40d3ee0,
+FOUNDATION section 13 in c6e5586). The root merges. Done here, each with tests: the merge fix, grants, reprogram and
+amend of another object, posted/addressee/settings, listing and cards, deliveries in the settling pass and
+`awaitUntil`, `request.method` and list membership, sources by CID and the build cache, the journal lock, the
+outbound channel and projections, transient refusals, no silent defaults, publish. Test files of this lane:
+`tests/test_grants.py`, `tests/test_outbound.py`, `tests/test_journal.py`.
+
+Queued, in the coordinator's order (none started):
+
+1. **Snapshots.** Every `Limits.snapshotEvery` (1,000) entries write `<journal>.snapshot.<height>.cbor`: the
+   canonical store (objects with state, pins, laws, read policies; suspended; pending; grants; posts; outbox;
+   modules) and the chain head, plus the binary pin (new checkpoint tags in the kernel batch mean an older binary
+   cannot resume a newer snapshot). `world-open` verifies the hash walk from genesis (cheap), loads the newest valid
+   snapshot, replays only later entries; a snapshot that disagrees with replay at its height is refused by name and
+   the previous one used. `Object` holds `Ty`/`DataBounds`, so a snapshot either serializes those or recompiles by
+   pin from `world.builds` (the build cache already makes that one compile per distinct package). Test: 500 creates,
+   snapshot, reopen under 1 s.
+2. **FOUNDATION section 13**, in order: (1) commutative edits commit against moved roots (`add`/`append`-only roots
+   are checked present, steps re-applied on the current state, law re-judged; `Entries.amend/remove` by item
+   equality; test: two agents rain on one bell in one settle pass, both admit). (2) grants completed: attenuation
+   (fixed argument fields merged, conflict refused), `uses` decremented per admitted use, revocation as a write to a
+   grant object (today a grant is a record in `world.grants`, see 5.8). (3) `reprogram {mode: extend}`.
+   (4) `inspected.methods` from the artifact's `methods` table (the kernel now emits
+   `methods: [{name, input, result, activity}]`). (5) supervisors (`create {supervisor?}`, `ended {receipt}`
+   delivery on timedOut, broken, budget). (6) two-tier law (`def law(old, new, request)` under `Limits.lawTicks`,
+   reads from `lawReads()` recorded as roots; the artifact's `law: {present, reads}`). (7) `run` and `judge` Plans.
+3. **Kernel batch integration** (after the root merges e0b46f3): map "turn refused: argument does not conform to its
+   type" from `startActivity` to the journaled class `typeMismatch`; pass `profile: true` through `world-turn`;
+   when the objects lane moves `call`/`send`/`create` payloads to `Data`, delete the one-variant unwrap in
+   `mergeSeed`; a State with a `Data` field is refused by the PackageData certificate path until the kernel extends
+   it (note, do not work around).
+4. **Transport asks.** `receive {text, post, slot?}` must tolerate a missing or empty `slot`: that is the objects'
+   method signature (a record argument with a field the method's input lacks does not conform); either the objects
+   take `slot: String` always and the bridge sends "", or the host learns to drop fields an input type lacks (a
+   silent default; not done). The bridge still formats the refusal text itself from class and hash; the host's
+   `publicRefusal` is what `world-receipt {of}` returns.
+
+What was wrong in the previous version of this file: the module map line counts; section 5.1 said `reprogram` and
+`amend` of another object were `notSelf` (now judged by the target's law); section 6 said offers live on the reply
+only and history/receipt ignore read policy (both changed here); the test list omitted `test_workshop`, whose
+propose case is still an expected failure for its fixture (see its docstring); `check` refused any module without
+`initial` ("missing selected entry"), fixed in the merge commit.
