@@ -72,8 +72,11 @@ either journals a `settings` entry, and a later open with other values is refuse
 `world-posted {principal, uri, cid, object, slot?}` journals a `posted` entry (identity `posted:<uri>`) and indexes
 `world.posts`; `world-addressee {parent}` answers `{status: "addressee", object, slot?}` or `{status: "unknown"}`.
 `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
-Every journaling op goes through `durable`: step, then `settle` (resume what the step released),
-then append ALL new entries, one fsync. A reply exists only after the bytes are durable.
+Every journaling op goes through `durable`: step, then `settleAll` (resume what the step released, then run
+pending deliveries oldest first, each followed by another resume pass, up to `deliveriesPerSettle` 64; the reply
+carries `resumed` and `delivered`), then append ALL new entries, one fsync. Nobody needs to call `world-deliver`;
+it runs what a capped pass left. `world-open` itself never settles. `await` accepts `until` (absolute clock
+height) instead of `patience`, and Plan `awaitUntil {slot, until}` carries it. A reply exists only after the bytes are durable.
 Request errors (`Except.error`) journal nothing; refusals are receipts.
 
 ## 2. Journal entries

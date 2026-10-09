@@ -443,9 +443,8 @@ class CallerAcrossSend(Reflection):
         self.assertEqual((direct["status"], direct["receipt"]["outcome"]["clause"]), ("refused", "only"))
         sent = self.turn("garden", "fire", record(target=label("bell")))
         self.assertEqual(sent["status"], "admitted", sent)
-        self.assertEqual(self.host.send(op="world-pending")["count"], 1)
-        delivered = self.host.send(op="world-deliver", limit=4)
-        [receipt] = delivered["receipts"]
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
+        [receipt] = sent["delivered"]
         self.assertEqual(receipt["status"], "admitted", receipt)
         self.assertEqual(receipt["receipt"]["outcome"]["writes"][0]["callers"], ["garden"])
         self.assertEqual(field(self.state("bell"), "count"), nat(1))

@@ -1,13 +1,9 @@
 """The message chains: bell rings, door opens, lantern lights; and a cycle.
 
-Both tests drive the host's `send` machinery (`world-turn` answers a send with a
-delivery id; `world-deliver {limit}` runs the queued deliveries; `world-pending`
-lists them). The host lane has not landed it, so both are expected failures.
-Against the foundation binary today the first turn that sends is refused:
-
-    receipt outcome {'class': 'evaluation', 'reason': 'plan not supported: send'}
-
-When the host merges, the unexpected success flips these to ordinary passes.
+Both tests drive the host's `send` machinery: `world-turn` answers a send with a
+delivery id, and the settling pass after every durable op runs pending deliveries
+(up to 64 per op; the reply carries them as `delivered`). `world-deliver {limit}`
+runs any that remain; `world-pending` lists them.
 """
 import json
 import unittest
@@ -71,8 +67,9 @@ class Chain(TurnWorld):
         self.assertEqual(ring["status"], "admitted", ring)
         self.assertEqual(field(self.state("bell"), "rung"), boolean(True))
         self.assertNotEqual(field(self.state("bell"), "lastDelivery"), label(""))
-        self.assertEqual(field(self.state("lantern"), "lit"), boolean(False))
-        self.deliver_all()
+        # Deliveries run in the settling pass of the same durable op: the ring's reply carries them.
+        self.assertEqual([d["status"] for d in ring["delivered"]], ["admitted", "admitted"], ring)
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
         self.assertEqual(field(self.state("door"), "open"), boolean(True))
         self.assertEqual(field(self.state("door"), "openedBy"), label("gemini"))
         self.assertEqual(field(self.state("lantern"), "lit"), boolean(True))

@@ -46,6 +46,8 @@ def chainWork : Nat := 10000000
 /-- Bytes of state a chain may add. -/
 def chainStorage : Nat := 1048576
 def deliveriesPerCall : Nat := 16
+/-- Deliveries the settling pass after one durable op runs; the rest wait for the next op. -/
+def deliveriesPerSettle : Nat := 64
 def sendsPerTurn : Nat := 32
 /-- Undelivered sends held by the world. -/
 def maxPending : Nat := 4096

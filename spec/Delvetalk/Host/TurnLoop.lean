@@ -367,7 +367,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     spend used
     countPlan
     let response ← match plan with
-      | .variant "await" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
+      | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
       | _ => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
@@ -381,8 +381,12 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
   let some (.record slot) := f.lookup "slot" | evaluation "malformed await plan"
   let some sp := (slot.lookup "principal").bind labelOf | evaluation "malformed await plan"
   let some si := (slot.lookup "intent").bind labelOf | evaluation "malformed await plan"
-  let some (.natural patience) := f.lookup "patience" | evaluation "malformed await plan"
   let s ← get
+  -- `until` is an absolute clock height; `patience` is relative to the clock now.
+  let patience ← match f.lookup "until", f.lookup "patience" with
+    | some (.natural height), _ => pure (height - s.world.clock)
+    | none, some (.natural patience) => pure patience
+    | _, _ => evaluation "malformed await plan"
   let key := identityKey sp si
   if (sp == s.principal && si == s.intent) || s.awaited.contains key then
     respond bounds responseType "broken" [emptyRecord]
@@ -1021,6 +1025,22 @@ def deliver (w : World) (limit : Nat) : Except String (World × Json) := do
     receipts := receipts.push r
   return (w, Json.mkObj [("status", toJson "delivered"), ("receipts", Json.arr receipts),
     ("pending", toJson w.pending.size)])
+
+/-- The settling pass after a durable op: resume what can go on, then run pending deliveries
+    oldest first (each may release more), up to `deliveriesPerSettle`. Nobody calls deliver. -/
+def settleAll (w : World) : Except String (World × Array Json × Array Json) := do
+  let (w, resumed) ← settle w
+  let mut w := w
+  let mut resumed := resumed
+  let mut delivered : Array Json := #[]
+  for _ in [0:Limits.deliveriesPerSettle] do
+    let some d := w.pending[0]? | break
+    let (w', r) ← deliverOne w d
+    let (w'', more) ← settle w'
+    w := w''
+    delivered := delivered.push r
+    resumed := resumed ++ more
+  return (w, resumed, delivered)
 
 def pendingReply (w : World) : Json :=
   Json.mkObj [("status", toJson "pending"), ("count", toJson w.pending.size),

@@ -57,15 +57,16 @@ def openWorld (path : String) : IO (Except String Open) := do
 /-- Run a pure world step and make its entry durable before the reply exists. -/
 def durable (s : Open) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
   -- A step, then whatever it let go on: resumptions follow in the same durable write.
-  let settled := fun (w : World) => w.suspended.isEmpty
+  let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
   match (do
       let (w', r) ← step s.world
-      if settled w' then return (w', r, #[])
-      let (w'', resumed) ← settle w'
-      return (w'', r, resumed) : Except String (World × Json × Array Json)) with
+      if settled w' then return (w', r, #[], #[])
+      let (w'', resumed, delivered) ← settleAll w'
+      return (w'', r, resumed, delivered) : Except String (World × Json × Array Json × Array Json)) with
   | .error e => return (some s, .error e)
-  | .ok (w', r0, resumed) =>
+  | .ok (w', r0, resumed, delivered) =>
     let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr resumed)
+    let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr delivered)
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
     let fresh := w'.entries.extract s.world.height w'.height
     if fresh.any (·.compress.utf8ByteSize > Limits.maxEntryBytes) then
@@ -96,6 +97,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
               | .error _ => pure none
             return ((request.getObjValAs? String "clock").toOption, quota) : Except String _) with
           | .error e => return (session, .error e)
+          | .ok (none, none) => pure o
           | .ok (clock, quota) =>
             let (s', r) ← durable o (fun w => settingsOp w clock quota)
             match r, s' with

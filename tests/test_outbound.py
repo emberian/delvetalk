@@ -147,6 +147,48 @@ class Cards(Catalogue):
         self.assertEqual(self.host.send(op="world-status")["height"], height)
 
 
+WAITER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  note: String
+record Edits:
+  note: Plans.Edit<String, {}>
+type Plan = Plans.Plan<Edits, {}>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {note: ""}
+def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
+  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+    case _: text
+def wait(state: State, input: {until: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: input.until})):
+    case timedOut(_): said(context, "timedOut")
+    case _: said(context, "other")
+"""
+
+
+class Time(Reflection):
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("waiter", WAITER, record(note=label("")))
+
+    def test_await_until_is_an_absolute_clock_height_not_a_patience(self):
+        self.host.send(op="world-advance", height=5)
+        r = self.turn("waiter", "wait", record(until=nat(7)))
+        self.assertEqual(r["status"], "suspended", r)
+        self.assertEqual(r["deadline"], 7)
+        self.assertNotIn("resumed", self.host.send(op="world-advance", height=7))
+        [resumed] = self.host.send(op="world-advance", height=8)["resumed"]
+        self.assertEqual(resumed["result"], label("timedOut"))
+
+    def test_an_until_already_past_answers_timedOut_without_suspending(self):
+        self.host.send(op="world-advance", height=5)
+        r = self.turn("waiter", "wait", record(until=nat(3)))
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("timedOut")), r)
+
+
 class Settings(Reflection):
     def test_a_named_clock_alone_moves_the_clock_and_confirms_posts(self):
         r = self.host.send(op="world-open", path=self.path, library=self.library(), principal="ember", clock="transport")

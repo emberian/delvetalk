@@ -113,6 +113,7 @@ sum Plan<E, A>:
   send: {object: Reference, method: String, argument: A}
   create: {package: String, seed: A, law: String, requireAbsent: Reference}
   await: Await
+  awaitUntil: {slot: Slot, until: Nat}
   interpret: Interpret
   offer: Offering
   publish: Publish

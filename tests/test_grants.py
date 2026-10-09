@@ -43,6 +43,15 @@ def fire(state: State, input: {target: String, via: String}, context: Abi.Contex
     case delivery(_): said(context, "sent")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
+def fireThenWait(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: {n: 1n}, via: input.via})):
+    case delivery(_): waited(context)
+    case refused(r): said(context, r.clause)
+    case _: said(context, "other")
+def waited(context: Abi.Context) -> Activity<Plan, Response, String>:
+  match perform(Plan.await({slot: {principal: "nobody", intent: "never"}, patience: 10n})):
+    case timedOut(_): said(context, "waited")
+    case _: said(context, "other")
 def poke(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.callVia({object: {world: "", object: input.target}, method: "ring", argument: {n: 1n}, via: input.via})):
     case returned(r): said(context, r.result)
@@ -100,10 +109,12 @@ class Grants(Reflection):
     def fire(self, via, obj="scheduler", principal="wake"):
         r = self.turn(obj, "fire", record(target=label("bell"), via=label(via)), principal=principal)
         self.assertEqual(r["status"], "admitted", r)
+        self.fired = r.get("delivered", [])
         return r["result"]["value"]
 
     def deliver(self):
-        [receipt] = self.host.send(op="world-deliver", limit=4)["receipts"]
+        """The delivery the last fire's settling pass ran."""
+        [receipt] = self.fired
         return receipt
 
     def bell(self):
@@ -141,16 +152,22 @@ class Grants(Reflection):
         grant = self.authorize(until=5)
         self.host.send(op="world-advance", height=5)
         self.assertEqual(self.fire(grant), "sent")
-        self.deliver()
+        self.assertEqual(self.deliver()["status"], "admitted")
         self.host.send(op="world-advance", height=6)
         self.assertEqual(self.fire(grant), "noGrant")
 
-    def test_a_grant_revoked_between_send_and_delivery_refuses_the_delivery(self):
+    def test_a_suspended_turn_whose_grant_was_revoked_is_refused_at_its_commit(self):
         grant = self.authorize()
-        self.assertEqual(self.fire(grant), "sent")
-        self.turn("scheduler", "cancel", record(id=label(grant)), principal="registrar")
-        delivered = self.deliver()
-        self.assertEqual((delivered["status"], delivered["receipt"]["outcome"]["clause"]), ("refused", "noGrant"))
+        r = self.turn("scheduler", "fireThenWait", record(target=label("bell"), via=label(grant)), principal="wake")
+        self.assertEqual(r["status"], "suspended", r)
+        # The grantor revokes from another object, so the scheduler's root stays current.
+        self.make("other", SCHEDULER, record(note=label("")))
+        revoked = self.turn("other", "cancel", record(id=label(grant)), principal="registrar")
+        self.assertEqual(revoked["result"], label("revoked"), revoked)
+        advanced = self.host.send(op="world-advance", height=20)
+        [resumed] = advanced["resumed"]
+        self.assertEqual(resumed["status"], "refused", resumed)
+        self.assertEqual(resumed["receipt"]["outcome"].get("clause"), "noGrant", resumed)
         self.assertEqual(self.host.send(op="world-pending")["count"], 0)
         self.assertEqual(self.bell(), ("0", "", ""))
 
@@ -191,7 +208,6 @@ class Grants(Reflection):
         kept = self.authorize()
         self.turn("scheduler", "cancel", record(id=label(grant)), principal="registrar")
         self.assertEqual(self.fire(kept), "sent")
-        self.deliver()
         before = self.host.send(op="world-view", principal="ember", object="bell")
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="bell"), before)
