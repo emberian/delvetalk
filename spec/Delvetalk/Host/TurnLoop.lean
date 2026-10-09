@@ -1012,7 +1012,15 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       ticksStart := ticks
       caller := (act.getObjValAs? String "caller").toOption.getD ""
       via }
-  let stale? := (roots.find? fun (id, v) => (w.objects[id]?).map (·.version) != some v).map (·.1)
+  -- A moved root whose staged changes so far all commute may still commit (`judge` decides at the
+  -- end); one already changed otherwise cannot, and the turn is refused now.
+  let staged ← parseRecordedWrites (← act.getObjVal? "writes")
+  let movable := fun (id : String) => match staged.lookup id with
+    | some changes => changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
+    | none => true
+  let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
+      | some now => now != v && !(v < now && movable id)
+      | none => true).map (·.1)
     <|> absent.find? fun id => w.objects.contains id
   if let some id := stale? then
     let stalled : Proposal :=

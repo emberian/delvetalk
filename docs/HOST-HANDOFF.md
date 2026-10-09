@@ -317,6 +317,18 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    the snapshot, 0.21 s by full replay (the build cache already makes that cheap; the snapshot pays off with
    many packages, reprograms and judged turns), snapshot ~4 KB per object type plus ~1 KB per object.
 
+14. **Commutative edits (host4, FOUNDATION 13 row 1).** `judge` accepts a root `(id, seen)` whose object has moved
+   (`seen < version now`; a future version stays stale) when every change of `id` in the proposal is a kind-0 write
+   made only of `keep`, `add`, `append` (`EditKind.commutes`, `commutesAt`): `applyEdits` already runs on the
+   current state, and the law judges old = now. The entry keeps the roots as read, so `writes[].version` is past
+   `seen + 1`; replay applies the same rule. A moved root that is only read, or changed by anything else
+   (set, amend, remove, reprogram, amend-law), is `staleRoot`. `resumeOne` refuses at resume only a moved root
+   whose staged changes already include a non-commuting one; anything else resumes and `judge` decides at the
+   end (so a strike that awaits and then adds commits after rains moved its bell). List items by bytes:
+   `Entries.amendItem {item, change}` and `removeItem {item}` (Plan.obend; `amend`/`remove` with an `item`
+   payload are accepted too) address the first item whose canonical DAG-CBOR equals `item`'s; none is the new
+   refusal class `absentItem`. The index forms stay for one release (`world/objects` still use them).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

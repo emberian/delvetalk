@@ -52,6 +52,11 @@ inductive EditKind where
   | append (item : Data)
   | amend (index : Nat) (change : Data)
   | remove (index : Nat)
+  /-- The first item whose canonical bytes are `item`'s, replaced by `change` or removed. The
+      label is the constructor the object used (`amendItem`/`removeItem` in Plan.obend, or
+      `amend`/`remove` with an `item` payload), kept so the journal records what was written. -/
+  | amendBy (label : String) (item change : Data)
+  | removeBy (label : String) (item : Data)
 
 structure Edit where
   field : String
@@ -68,6 +73,14 @@ def EditKind.data : EditKind → Data
   | .append v => .variant "append" (.record [("item", v)])
   | .amend i v => .variant "amend" (.record [("index", .natural i), ("change", v)])
   | .remove i => .variant "remove" (.record [("index", .natural i)])
+  | .amendBy l item c => .variant l (.record [("item", item), ("change", c)])
+  | .removeBy l item => .variant l (.record [("item", item)])
+
+/-- Edits that commute with any other change of the same kinds: `keep`, `add`, `append`. A root
+    whose every change in a proposal is made of them commits against the root as it is now. -/
+def EditKind.commutes : EditKind → Bool
+  | .keep | .add _ | .append _ => true
+  | _ => false
 
 def Step.data (s : Step) : Data := .record (s.map fun e => (e.field, e.kind.data))
 
@@ -78,11 +91,17 @@ def parseKind : Data → Option EditKind
       | some (.natural n) => some (.add n)
       | _ => none
   | .variant "append" (.record f) => (f.lookup "item").map .append
-  | .variant "remove" (.record f) => match f.lookup "index" with
-      | some (.natural i) => some (.remove i)
-      | _ => none
-  | .variant "amend" (.record f) => match f.lookup "index", f.lookup "change" with
-      | some (.natural i), some c => some (.amend i c)
+  | .variant "remove" (.record f) => match f.lookup "index", f.lookup "item" with
+      | some (.natural i), none => some (.remove i)
+      | none, some item => some (.removeBy "remove" item)
+      | _, _ => none
+  | .variant "amend" (.record f) => match f.lookup "index", f.lookup "item", f.lookup "change" with
+      | some (.natural i), none, some c => some (.amend i c)
+      | none, some item, some c => some (.amendBy "amend" item c)
+      | _, _, _ => none
+  | .variant "removeItem" (.record f) => (f.lookup "item").map (.removeBy "removeItem")
+  | .variant "amendItem" (.record f) => match f.lookup "item", f.lookup "change" with
+      | some item, some c => some (.amendBy "amendItem" item c)
       | _, _ => none
   | _ => none
 
@@ -245,8 +264,8 @@ def Proposal.digest (p : Proposal) : String :=
 
 /-- The closed set of refusal classes. -/
 def refusalClasses : List String :=
-  ["staleRoot", "typeMismatch", "capacity", "outOfRange", "lawRefused", "unknownObject", "duplicateIdentity",
-   "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence"]
+  ["staleRoot", "typeMismatch", "capacity", "outOfRange", "absentItem", "lawRefused", "unknownObject",
+   "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence"]
 
 structure Refusal where
   cls : String
@@ -290,6 +309,20 @@ partial def removeItem (index : Nat) : Data → EditResult Data
     else pure (.variant "cons" (.record [("head", head), ("tail", ← removeItem (index - 1) tail)]))
   | _ => throw "typeMismatch"
 
+/-- Replace (`some change`) or remove (`none`) the first item whose canonical bytes are `item`'s;
+    `absentItem` when no item is. -/
+partial def editByItem (item : Data) (change : Option Data) : Data → EditResult Data
+  | .variant "nil" _ => throw "absentItem"
+  | .variant "cons" (.record f) => do
+    let some head := f.lookup "head" | throw "typeMismatch"
+    let some tail := f.lookup "tail" | throw "typeMismatch"
+    if Delvetalk.Canonical.encode head == Delvetalk.Canonical.encode item then
+      match change with
+      | some c => pure (.variant "cons" (.record [("head", c), ("tail", tail)]))
+      | none => pure tail
+    else pure (.variant "cons" (.record [("head", head), ("tail", ← editByItem item change tail)]))
+  | _ => throw "typeMismatch"
+
 /-- All edits of a step read the state before the step. -/
 def applyStep (fields : List (String × Data)) (step : Step) : EditResult (List (String × Data)) :=
   step.foldlM (init := fields) fun acc e => do
@@ -304,6 +337,8 @@ def applyStep (fields : List (String × Data)) (step : Step) : EditResult (List 
     | .append item => put (← appendItem item old)
     | .amend i c => put (← amendItem i c old)
     | .remove i => put (← removeItem i old)
+    | .amendBy _ item c => put (← editByItem item (some c) old)
+    | .removeBy _ item => put (← editByItem item none old)
 
 def applyEdits : Data → List Step → EditResult Data
   | .record fields, steps => (steps.foldlM applyStep fields).map .record
@@ -649,15 +684,24 @@ def applyGrants (w : World) (grants : List Grant) (revokes : List String) : Worl
     | some g => { w with grants := w.grants.insert id { g with revoked := true } }
     | none => w) w
 
+/-- Every change of `id` in the writes is an ordinary write made only of commuting edits. -/
+def commutesAt (writes : List (String × List Written)) (id : String) : Bool :=
+  match writes.lookup id with
+  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
+  | none => false
+
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
 def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
   let writes := p.allWrites
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless w.objects.contains id do throw { cls := "unknownObject", object := id }
+  -- A root the turn only changes by `add`/`append` (FOUNDATION section 13, row 1) need only be a
+  -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
     if let some o := w.objects[id]? then
-      if o.version != seen then throw { cls := "staleRoot", object := id }
+      if o.version != seen && !(seen < o.version && commutesAt writes id) then
+        throw { cls := "staleRoot", object := id }
   -- A write to the running object needs no view; its version is the first root. A
   -- proposal that writes what it never named as a root is malformed.
   for (id, _) in writes do
