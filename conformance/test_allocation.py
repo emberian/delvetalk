@@ -1,63 +1,67 @@
 #!/usr/bin/env python3
-"""Governed allocation through built Lean admission and durable file custody."""
+"""Current source factories exercise the allocator's distinct custody boundaries."""
 import copy
-import importlib.util
+from functools import lru_cache
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('allocation_transport', ROOT / 'scripts/world.py')
-world = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(world)
-PROFILES = ('world', 'transactions', 'compiled')
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'scripts'))
+import source_object
+import world
 
 
+def law(command='make', actors=('alice',), managers=('manager',)):
+    return {'profile': 'delvetalk-scoped-law', 'invoke': {command: list(actors)},
+            'reprogram': list(managers), 'law': list(managers),
+            'read': ['alice', 'reader', 'manager', 'bootstrap', 'stranger']}
+
+
+@lru_cache(maxsize=1)
 def child_protocol():
-    return {'profile': 'delvetalk-local-v1', 'initial': {'text': 'new'}, 'commands': {
-        'write': {'require': [], 'set': {'text': ['input', 'text']},
-                  'result': ['state', 'text'], 'outbox': []}}}
+    files = [('List', 'world/lib/prelude/List.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
+             ('Encounter', 'world/lib/prelude/Encounter.obend'),
+             ('Counter', 'conformance/fixtures/allocation/Counter.obend')]
+    return source_object.load([{'name': name, 'source': (ROOT / path).read_text()} for name, path in files],
+                              syntax='objective-bend-object')
 
 
-def factory_protocol(limit=2, child=None, child_law=None):
-    return {'profile': 'delvetalk-local-v1', 'initial': {'last': 'none'},
-            'allocation': {'limit': limit}, 'commands': {
-        'make': {'require': [], 'set': {'last': ['input', 'name']},
-                 'result': ['record', {'name': ['input', 'name'], 'by': ['principal']}],
-                 'outbox': [['literal', 'created']], 'allocate': [{
-                     'name': ['input', 'name'],
-                     'protocol': ['literal', child if child is not None else child_protocol()],
-                     'law': ['array', [['principal']]] if child_law is None else ['literal', child_law]}]}}}
-
-
-def factory_law():
-    return {'profile': 'delvetalk-scoped-law-v1', 'invoke': {'make': ['alice']},
-            'reprogram': ['manager'], 'law': ['manager']}
+def factory_protocol(limit=2, child=None, child_law=None, *, previous=False):
+    files = [('List', 'world/lib/prelude/List.obend'), ('Abi', 'world/lib/prelude/Abi.obend'),
+             ('Preparation', 'world/lib/prelude/Preparation.obend'),
+             ('Encounter', 'world/lib/prelude/Encounter.obend'), ('Allocation', 'world/lib/prelude/Allocation.obend'),
+             ('GateFactory', 'conformance/fixtures/allocation/GateFactory.obend')]
+    config = source_object.record({'child': source_object.value(child_protocol() if child is None else child),
+        'law': source_object.value(law('report') if child_law is None else child_law),
+        'previous': source_object.data(previous)})
+    result = source_object.load([{'name': name, 'source': (ROOT / path).read_text()} for name, path in files],
+        syntax='objective-bend-object', constructor='initial', arguments=[config])
+    result['allocation']['limit'] = limit
+    return result
 
 
 class AllocationTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        self.home = Path(home.name)
         self.serial = 0
-        for profile in PROFILES:
-            self.assertTrue((ROOT / '.lake/build/bin' / world.PROFILES[profile][0]).exists(),
-                            'Build Lean receivers first; allocation tests do not spawn compilers')
-
-    def seed(self, profile='world', protocol=None):
-        self.serial += 1
-        self.profile = profile
-        self.db = Path(self.tmp.name) / f'{profile}-{self.serial}.json'
-        self.root = self.create('factory', protocol if protocol is not None else factory_protocol(),
-                                factory_law())['data']['root']
 
     def call(self, request):
-        return world.exchange(self.db, request, profile=self.profile)
+        return world.exchange(self.db, request, profile='compiled')
 
-    def create(self, name, protocol, law):
+    def seed(self, program=None):
+        self.serial += 1
+        self.db = self.home / ('world-' + str(self.serial) + '.json')
+        self.root = self.create('factory', factory_protocol() if program is None else program, law())['data']['root']
+
+    def create(self, name, protocol, authority):
         return self.call({'op': 'create', 'object': name, 'principal': 'bootstrap',
-                          'intent': 'create-' + name, 'protocol': protocol, 'law': law})
+                          'intent': 'create-' + name, 'protocol': protocol, 'law': authority})
 
     def inspect(self, name='factory'):
         return self.call({'op': 'inspect', 'object': name, 'principal': 'reader'})
@@ -65,248 +69,192 @@ class AllocationTests(unittest.TestCase):
     def objects(self):
         return world.wire_loads(self.db.read_text())['objects']
 
-    def make(self, name='one', intent='make', **changes):
+    def make(self, name='one', intent='make', *, second='', **changes):
         return {'op': 'invoke', 'object': 'factory', 'principal': 'alice', 'intent': intent,
-                'expected': self.root, 'command': 'make', 'input': {'name': name},
-                'absent': ['factory/' + name], **changes}
+                'expected': self.root, 'command': 'make', 'input': {'name': name, 'second': second},
+                'absent': ['factory/' + name] + (['factory/' + second] if second else []), **changes}
 
-    def transaction(self, **changes):
-        return {'op': 'transaction', 'principal': 'alice', 'intent': 'compose',
-                'reads': {'factory': self.root, 'factory/one': None, 'factory/unused': None},
-                'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'one'}},
-                          {'object': 'factory/one', 'command': 'write', 'input': {'text': 'inhabited'}}],
-                **changes}
-
-    def test_factory_creates_child_atomically_under_explicit_child_law(self):
-        for profile in PROFILES:
-            with self.subTest(profile=profile):
-                self.seed(profile)
-                receipt = self.call(self.make())
-                self.assertEqual(receipt['kind'], 'committed')
-                child = self.inspect('factory/one')
-                self.assertEqual(receipt['data']['allocated'], {'factory/one': child})
-                self.assertEqual(child, {'protocol': child_protocol(), 'state': {'text': 'new'},
-                                         'law': ['alice'], 'version': 0})
-                self.assertEqual(receipt['data']['root'], self.inspect())
-                self.assertEqual(self.inspect()['state'], {'last': 'one'})
-                self.assertEqual(receipt['data']['result'], {'name': 'one', 'by': 'alice'})
-                self.assertEqual(receipt['data']['outbox'], ['created'])
-                write = {'op': 'invoke', 'object': 'factory/one', 'principal': 'alice',
-                         'intent': 'write', 'expected': child, 'command': 'write', 'input': {'text': 'hello'}}
-                self.assertEqual(self.call(write)['kind'], 'committed')
-                self.assertNotIn('allocated', self.call(write)['data'])
-
-    def test_current_factory_law_and_predicate_have_no_creator_bypass(self):
-        for profile in PROFILES:
-            with self.subTest(profile=profile):
-                self.seed(profile)
-                for principal in ['bootstrap', 'manager', 'mallory']:
-                    self.assertEqual(self.call(self.make(intent=principal, principal=principal))['data'],
-                                     'unauthorized')
-                law = factory_law()
-                law['predicate'] = ['lam', ['boolean', False]]
-                self.root = self.call({'op': 'law', 'object': 'factory', 'principal': 'manager',
-                    'intent': 'deny-predicate', 'expected': self.root, 'law': law})['data']['root']
-                self.assertEqual(self.call(self.make(intent='predicate'))['data'], 'authority predicate refused')
-                self.assertEqual(set(self.objects()), {'factory'})
-
-    def test_explicit_empty_child_law_has_no_creator_or_factory_manager_bypass(self):
-        self.seed(protocol=factory_protocol(child_law=[]))
-        receipt = self.call(self.make())
-        child = receipt['data']['allocated']['factory/one']
-        self.assertEqual(child['law'], [])
-        for principal in ['alice', 'manager', 'bootstrap']:
-            write = {'op': 'invoke', 'object': 'factory/one', 'principal': principal,
-                     'intent': 'write-' + principal, 'expected': child,
-                     'command': 'write', 'input': {'text': 'forbidden'}}
-            self.assertEqual(self.call(write)['data'], 'unauthorized')
-        self.assertEqual(self.inspect('factory/one'), child)
-
-    def test_missing_or_stale_absence_and_stale_parent_refuse_without_allocation(self):
-        for profile in PROFILES:
-            with self.subTest(profile=profile):
-                self.seed(profile)
-                missing = self.make(intent='missing')
-                del missing['absent']
-                self.assertEqual(self.call(missing)['data'], 'allocation target missing absence root')
-                receipt = self.call(self.make())
-                self.root = receipt['data']['root']
-                before = self.objects()
-                self.assertEqual(self.call(self.make(intent='collision'))['data'], 'stale absence root')
-                old = copy.deepcopy(self.root)
-                old['state']['last'] = 'none'
-                self.assertEqual(self.call(self.make('two', 'stale-parent', expected=old))['data'], 'stale read root')
-                self.assertEqual(self.objects(), before)
-
-    def test_namespace_cannot_escape_or_smuggle_paths(self):
+    def test_stale_parent_and_missing_or_false_absence_refuse_before_allocation(self):
         self.seed()
-        for index, name in enumerate(['', '..', '../escape', 'one/two', '/other', '.', 'é', 'a' * 65]):
-            with self.subTest(name=name):
-                receipt = self.call(self.make(name, 'bad-' + str(index)))
-                self.assertEqual(receipt['data'], 'invalid child name')
-                self.assertEqual(self.objects(), {'factory': self.root})
-        self.assertEqual(self.call(self.make('A-z_09', 'valid'))['kind'], 'committed')
+        missing = self.make(intent='missing')
+        missing.pop('absent')
+        self.assertEqual(self.call(missing)['data'], 'allocation target missing absence root')
+        self.root = self.call(self.make('one', 'first'))['data']['root']
+        stale = copy.deepcopy(self.root)
+        stale['version'] = 0
+        self.assertEqual(self.call(self.make('two', 'stale-parent', expected=stale))['data'], 'stale read root')
+        self.assertEqual(self.call(self.make('one', 'false-absence'))['data'], 'stale absence root')
+        self.assertEqual(set(self.objects()), {'factory', 'factory/one'})
 
-    def test_direct_child_quota_is_shared_across_callers_and_counts_bootstrap_children(self):
-        self.seed(protocol=factory_protocol(limit=1))
-        self.create('factory/operator-child', child_protocol(), [])
-        self.assertEqual(self.call(self.make())['data'], 'factory child quota exhausted')
-        self.assertEqual(self.inspect(), self.root)
-        self.seed(protocol=factory_protocol(limit=1))
-        # A deeper namespace is not a direct child or an aggregate-footprint claim.
-        self.create('factory/scope/nested', child_protocol(), [])
-        first = self.call(self.make())
-        self.assertEqual(first['kind'], 'committed')
-        self.root = first['data']['root']
-        self.assertEqual(self.call(self.make('two', 'over-quota'))['data'], 'factory child quota exhausted')
-
-    def test_quota_reprogramming_uses_current_policy_and_no_hidden_reset(self):
-        self.seed(protocol=factory_protocol(limit=1))
-        self.root = self.call(self.make())['data']['root']
-        self.root = self.call({'op': 'reprogram', 'object': 'factory', 'principal': 'manager',
-            'intent': 'increase', 'expected': self.root, 'protocol': factory_protocol(limit=2),
-            'state': self.root['state']})['data']['root']
-        self.root = self.call(self.make('two', 'second'))['data']['root']
-        self.assertEqual(self.call(self.make('three', 'third'))['data'], 'factory child quota exhausted')
-
-    def test_bad_late_child_or_duplicate_rolls_back_entire_allocation_batch(self):
-        for duplicate in [False, True]:
-            with self.subTest(duplicate=duplicate):
-                protocol = factory_protocol(limit=3)
-                second = copy.deepcopy(protocol['commands']['make']['allocate'][0])
-                if not duplicate:
-                    second['name'] = ['literal', 'two']
-                    second['law'] = ['literal', {'profile': 'unknown'}]
-                protocol['commands']['make']['allocate'].append(second)
-                self.seed(protocol=protocol)
-                refusal = self.call(self.make(absent=['factory/one', 'factory/two']))
+    def test_unused_malformed_allocation_policy_is_refused_at_installation(self):
+        program = factory_protocol()
+        for index, metadata in enumerate(({'limit': -1}, {'limit': 1, 'unknown': True},
+                         {'limit': 1, 'owner': 'alice'}, {'limit': '1'})):
+            with self.subTest(metadata=metadata):
+                broken = copy.deepcopy(program)
+                broken['allocation'] = metadata
+                self.db = self.home / ('malformed-policy-' + str(index) + '.json')
+                refusal = self.create('unused', broken, law())
                 self.assertEqual(refusal['kind'], 'refused')
-                self.assertEqual(self.objects(), {'factory': self.root})
-                self.assertEqual(self.call(self.make(absent=['factory/one', 'factory/two'])), refusal)
+                expected = 'Natural number expected' if index in (0, 3) else 'unsupported allocation policy field'
+                self.assertEqual(refusal['data'], expected)
+                self.assertNotIn('unused', self.objects())
+        self.db = self.home / 'valid-unused-policy.json'
+        self.assertEqual(self.create('unused', program, law())['kind'], 'committed')
 
-    def test_quota_is_checked_against_staged_children_in_one_batch(self):
-        protocol = factory_protocol(limit=1)
-        second = copy.deepcopy(protocol['commands']['make']['allocate'][0])
-        second['name'] = ['literal', 'two']
-        protocol['commands']['make']['allocate'].append(second)
-        self.seed(protocol=protocol)
-        refusal = self.call(self.make(absent=['factory/one', 'factory/two']))
+    def test_unused_descriptor_requires_law_and_cannot_contain_effectful_function(self):
+        from conformance.test_typed_allocation import modules
+        for field, value in (('', ''), (', law: (Nat) -> Nat', ', law: fn(x: Nat) -> Nat: x')):
+            with self.subTest(field=field):
+                sources = modules()
+                sources[-1]['source'] = sources[-1]['source'].replace(
+                    '  copy: {name: String, protocol: P.Value, law: P.Value}',
+                    '  copy: {name: String, protocol: P.Value' + field + '}').replace(
+                    'Child.copy({name: input.name, protocol: config.counter, law: config.law})',
+                    'Child.copy({name: input.name, protocol: config.counter' + value + '})')
+                message = 'allocation requires name, protocol, law' if not field else 'type is not serializable package data'
+                with self.assertRaisesRegex(ValueError, message):
+                    source_object.load(sources, syntax='objective-bend-object')
+
+    def test_direct_quota_ignores_grandchildren_and_128_unrelated_roots(self):
+        self.seed(factory_protocol(limit=1))
+        self.assertEqual(self.create('factory/scope/nested', child_protocol(), law('report'))['kind'], 'committed')
+        for index in range(128):
+            self.assertEqual(self.create('unrelated-' + str(index), child_protocol(), law('report'))['kind'], 'committed')
+        receipt = self.call(self.make())
+        self.assertEqual(receipt['kind'], 'committed', receipt.get('data'))
+        self.root = receipt['data']['root']
+        self.assertEqual(self.call(self.make('two', 'quota'))['data'], 'factory child quota exhausted')
+        self.assertEqual(self.inspect(), self.root)
+        self.seed(factory_protocol(limit=1))
+        self.create('factory/operator-child', child_protocol(), law('report'))
+        self.assertEqual(self.call(self.make())['data'], 'factory child quota exhausted')
+
+    def test_collision_precedes_quota_and_late_bad_batch_retains_atomic_refusal(self):
+        self.seed(factory_protocol(limit=1))
+        receipt = self.call(self.make())
+        self.root = receipt['data']['root']
+        # In one checked absence batch both descriptors refer to the staged child;
+        # its collision must win before the already-exhausted quota check.
+        self.seed(factory_protocol(limit=1))
+        request = self.make(second='one')
+        refusal = self.call(request)
+        self.assertEqual(refusal['data'], 'object exists')
+        self.assertEqual(self.objects(), {'factory': self.root})
+        self.assertEqual(self.call(request), refusal)
+        self.seed(factory_protocol(limit=3))
+        request = self.make(second='bad/name')
+        refusal = self.call(request)
+        self.assertEqual(refusal['data'], 'invalid child name')
+        self.assertEqual(self.objects(), {'factory': self.root})
+        self.assertEqual(self.call(request), refusal)
+
+    def test_second_call_counts_staged_children_and_rolls_back_both_steps(self):
+        self.seed(factory_protocol(limit=1))
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'staged-quota',
+            'reads': {'factory': self.root, 'factory/one': None, 'factory/two': None},
+            'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'one', 'second': ''}},
+                      {'object': 'factory', 'command': 'make', 'input': {'name': 'two', 'second': ''}}]}
+        refusal = self.call(request)
         self.assertEqual(refusal['data'], 'factory child quota exhausted')
         self.assertEqual(self.objects(), {'factory': self.root})
+        self.assertEqual(self.call(request), refusal)
 
-    def test_allocation_expressions_use_parent_prestate_and_share_failure_boundary(self):
-        protocol = factory_protocol()
-        protocol['commands']['make']['allocate'][0]['name'] = ['state', 'last']
-        self.seed(protocol=protocol)
-        self.assertEqual(self.call(self.make(absent=['factory/none']))['kind'], 'committed')
+    def test_namespace_prestate_and_current_quota_revision(self):
+        self.seed(factory_protocol(previous=True))
+        receipt = self.call(self.make(absent=['factory/none']))
+        self.assertEqual(receipt['kind'], 'committed', receipt.get('data'))
         self.assertIn('factory/none', self.objects())
-        protocol = factory_protocol()
-        protocol['commands']['make']['allocate'][0]['law'] = ['bend', ['perform', ['label', 'forbidden']], []]
-        self.seed(protocol=protocol)
-        refusal = self.call(self.make())
-        self.assertIn('effects are forbidden', refusal['data'])
-        self.assertEqual(self.objects(), {'factory': self.root})
+        self.seed(factory_protocol(limit=1))
+        for index, name in enumerate(('', '..', '../escape', 'one/two', '/other', '.', 'é', 'a' * 65)):
+            refusal = self.call(self.make(name, 'bad-' + str(index)))
+            self.assertEqual(refusal['data'], 'invalid child name')
+            self.assertEqual(self.objects(), {'factory': self.root})
+        self.root = self.call(self.make('A-z_09', 'valid'))['data']['root']
+        revised = copy.deepcopy(self.root['protocol'])
+        revised['allocation']['limit'] = 2
+        self.root = self.call({'op': 'reprogram', 'object': 'factory', 'principal': 'manager',
+            'intent': 'revise-quota', 'expected': self.root, 'protocol': revised, 'state': self.root['state']})['data']['root']
+        self.root = self.call(self.make('two', 'after-revision'))['data']['root']
+        self.assertEqual(self.call(self.make('three', 'full-again'))['data'], 'factory child quota exhausted')
 
-    def test_installation_rejects_malformed_unused_allocation_descriptors(self):
+    def test_child_lockout_and_management_do_not_bypass_current_invocation_grant(self):
+        self.seed(factory_protocol(child_law=law('report', actors=(), managers=())))
+        receipt = self.call(self.make())
+        child = receipt['data']['allocated']['factory/one']
+        for principal in ('alice', 'manager', 'bootstrap'):
+            reply = self.call({'op': 'invoke', 'object': 'factory/one', 'principal': principal,
+                'intent': 'locked-' + principal, 'expected': child, 'command': 'report', 'input': {}})
+            self.assertEqual(reply['data'], 'unauthorized')
+        for principal in ('bootstrap', 'manager', 'stranger'):
+            self.assertEqual(self.call(self.make('two', principal, principal=principal))['data'], 'unauthorized')
+
+    def test_created_child_is_invoked_under_its_law_and_late_failure_rolls_back(self):
         self.seed()
-        bad = []
-        p = factory_protocol(); del p['allocation']; bad.append(p)
-        p = factory_protocol(); p['allocation']['limit'] = -1; bad.append(p)
-        p = factory_protocol(); p['allocation']['aggregate'] = True; bad.append(p)
-        p = factory_protocol(); p['commands']['make']['allocate'][0]['owner'] = ['principal']; bad.append(p)
-        p = factory_protocol(); del p['commands']['make']['allocate'][0]['law']; bad.append(p)
-        p = factory_protocol(); p['commands']['make']['allocate'][0]['name'] = ['unknown']; bad.append(p)
-        for index, protocol in enumerate(bad):
-            with self.subTest(index=index):
-                self.assertEqual(self.create('bad-' + str(index), protocol, [])['kind'], 'refused')
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'create-use',
+            'reads': {'factory': self.root, 'factory/one': None},
+            'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'one', 'second': ''}},
+                      {'object': 'factory/one', 'command': 'report', 'input': {}}]}
+        receipt = self.call(request)
+        self.assertEqual(receipt['kind'], 'committed', receipt.get('data'))
+        self.assertEqual(receipt['data']['allocated']['factory/one']['version'], 0)
+        self.assertEqual(receipt['data']['roots']['factory/one']['version'], 1)
+        self.seed(factory_protocol(child_law=law('report', actors=('other',))))
+        request['reads']['factory'] = self.root
+        refusal = self.call(request)
+        self.assertEqual(refusal['data'], 'unauthorized')
         self.assertEqual(self.objects(), {'factory': self.root})
 
-    def test_transaction_creates_then_invokes_child_under_child_current_law(self):
-        for profile in ['transactions', 'compiled']:
-            with self.subTest(profile=profile):
-                self.seed(profile)
-                receipt = self.call(self.transaction())
-                self.assertEqual(receipt['kind'], 'committed')
-                self.assertEqual(receipt['data']['roots']['factory/one'], self.inspect('factory/one'))
-                self.assertEqual(receipt['data']['roots']['factory/one']['version'], 1)
-                self.assertEqual(receipt['data']['roots']['factory/one']['state'], {'text': 'inhabited'})
-                self.assertIsNone(receipt['data']['roots']['factory/unused'])
-                self.assertEqual(receipt['data']['outbox'], [{'object': 'factory', 'step': 0, 'payload': 'created'}])
-                self.assertEqual(len(world.wire_loads(self.db.read_text())['receipts']), 2)
-
-    def test_transaction_retains_creation_root_before_later_reprogramming(self):
-        for profile in ['transactions', 'compiled']:
-            with self.subTest(profile=profile):
-                original = child_protocol()
-                original['roomArtifact'] = {'source': 'original-room-source'}
-                self.seed(profile, factory_protocol(child=original))
-                replacement = child_protocol()
-                replacement['initial'] = {'text': 'replacement-initial'}
-                request = self.transaction()
-                request['calls'][1] = {'op': 'reprogram', 'object': 'factory/one',
-                                       'protocol': replacement, 'state': {'text': 'migrated'}}
-                receipt = self.call(request)
-                self.assertEqual(receipt['kind'], 'committed')
-                self.assertEqual(receipt['data']['allocated'], {'factory/one': {
-                    'protocol': original, 'law': ['alice'], 'version': 0,
-                    'state': {'text': 'new'}}})
-                final = receipt['data']['roots']['factory/one']
-                self.assertEqual(final, self.inspect('factory/one'))
-                self.assertEqual(final['protocol'], replacement)
-                self.assertEqual(final['state'], {'text': 'migrated'})
-                self.assertEqual(final['version'], 1)
-                self.assertEqual(self.call(request), receipt)
-                ordinary = {'op': 'transaction', 'principal': 'alice', 'intent': 'ordinary',
-                            'reads': {'factory/one': final}, 'calls': [{
-                                'object': 'factory/one', 'command': 'write', 'input': {'text': 'next'}}]}
-                self.assertNotIn('allocated', self.call(ordinary)['data'])
-
-    def test_nested_factory_allocates_under_its_own_direct_quota(self):
-        self.seed('transactions', factory_protocol(limit=1, child=factory_protocol(limit=1)))
+    def test_nested_factories_have_independent_direct_quotas(self):
+        self.seed(factory_protocol(limit=1))
+        inner = self.create('factory/scope', factory_protocol(limit=1),
+                            law('make', managers=('alice',)))['data']['root']
         request = {'op': 'transaction', 'principal': 'alice', 'intent': 'nested',
-                   'reads': {'factory': self.root, 'factory/scope': None,
-                             'factory/scope/leaf': None},
-                   'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'scope'}},
-                             {'object': 'factory/scope', 'command': 'make', 'input': {'name': 'leaf'}}]}
+            'reads': {'factory/scope': inner, 'factory/scope/leaf': None},
+            'calls': [{'object': 'factory/scope', 'command': 'make',
+                       'input': {'name': 'leaf', 'second': ''}}]}
         receipt = self.call(request)
-        self.assertEqual(receipt['kind'], 'committed')
-        self.assertEqual(set(receipt['data']['roots']),
-                         {'factory', 'factory/scope', 'factory/scope/leaf'})
-        self.assertEqual(self.inspect('factory/scope/leaf')['law'], ['alice'])
-        self.assertEqual(self.inspect('factory/scope')['version'], 1)
-        self.assertEqual(set(receipt['data']['allocated']), {'factory/scope', 'factory/scope/leaf'})
-        self.assertEqual(receipt['data']['allocated']['factory/scope']['version'], 0)
+        self.assertEqual(receipt['kind'], 'committed', receipt.get('data'))
+        self.assertEqual(set(receipt['data']['allocated']), {'factory/scope/leaf'})
+        self.assertEqual(receipt['data']['allocated']['factory/scope/leaf']['version'], 0)
+        self.assertEqual(receipt['data']['roots']['factory/scope']['version'], 1)
+        self.assertEqual(self.call(self.make('second', 'outer-full'))['data'],
+                         'factory child quota exhausted')
 
-    def test_later_transaction_failure_discards_created_children_and_parent_change(self):
-        for profile in ['transactions', 'compiled']:
-            for blocked in ['authority', 'missing-absence', 'quota']:
-                with self.subTest(profile=profile, blocked=blocked):
-                    self.seed(profile, factory_protocol(limit=0 if blocked == 'quota' else 2,
-                                                       child_law=['bob'] if blocked == 'authority' else None))
-                    request = self.transaction()
-                    if blocked == 'missing-absence':
-                        del request['reads']['factory/one']
-                    self.assertEqual(self.call(request)['kind'], 'refused')
-                    self.assertEqual(self.objects(), {'factory': self.root})
-
-    def test_transaction_absence_checked_before_calls_and_exact_replay_survives_revocation(self):
-        self.seed('transactions')
-        request = self.transaction()
+    def test_creation_receipt_retains_initial_root_before_later_child_revision(self):
+        self.seed()
+        replacement = copy.deepcopy(child_protocol())
+        replacement['name'] = 'Revised counter'
+        request = {'op': 'transaction', 'principal': 'alice', 'intent': 'create-revise',
+            'reads': {'factory': self.root, 'factory/one': None},
+            'calls': [{'object': 'factory', 'command': 'make', 'input': {'name': 'one', 'second': ''}},
+                      {'op': 'reprogram', 'object': 'factory/one', 'protocol': replacement,
+                       'state': copy.deepcopy(child_protocol()['initial'])}]}
+        # Source-selected child management is separate from the parent's grant.
+        self.seed(factory_protocol(child_law=law('report', managers=('alice',))))
+        request['reads']['factory'] = self.root
         receipt = self.call(request)
-        before = self.objects()
-        other = copy.deepcopy(request)
-        other['intent'] = 'occupied'
-        other['reads']['factory'] = self.inspect()
-        other['calls'][0]['command'] = 'missing'
-        self.assertEqual(self.call(other)['data'], 'stale absence root')
-        self.assertEqual(self.objects(), before)
-        self.call({'op': 'law', 'object': 'factory', 'principal': 'manager', 'intent': 'lock',
-                   'expected': self.inspect(), 'law': []})
+        self.assertEqual(receipt['kind'], 'committed', receipt.get('data'))
+        self.assertEqual(receipt['data']['allocated']['factory/one']['protocol']['name'], 'Counter prototype')
+        self.assertEqual(receipt['data']['allocated']['factory/one']['version'], 0)
+        self.assertEqual(receipt['data']['roots']['factory/one']['protocol']['name'], 'Revised counter')
+        self.assertEqual(receipt['data']['roots']['factory/one']['version'], 1)
         self.assertEqual(self.call(request), receipt)
-        changed = copy.deepcopy(request); changed['calls'][0]['input']['name'] = 'different'
-        self.assertEqual(self.call(changed)['data'], 'intent reused for different request')
 
-    def test_lost_commit_reply_replays_without_second_child_or_parent_advance(self):
+    def test_current_source_predicate_restricts_an_existing_factory_grant(self):
+        from conformance.test_current_boundary import policy
+        self.seed()
+        authority = law()
+        authority['predicate'] = policy('refuse', 'unused')
+        revised = self.call({'op': 'law', 'object': 'factory', 'principal': 'manager',
+            'intent': 'source-predicate', 'expected': self.root, 'law': authority})
+        self.assertEqual(revised['kind'], 'committed', revised.get('data'))
+        self.root = revised['data']['root']
+        refusal = self.call(self.make())
+        self.assertEqual(refusal['kind'], 'refused', refusal.get('data'))
+        self.assertEqual(self.objects(), {'factory': self.root})
+
+    def test_lost_commit_reply_replays_without_another_child_or_parent_advance(self):
         self.seed()
         request = self.make()
         real_fsync = world.os.fsync
