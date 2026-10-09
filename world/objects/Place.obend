@@ -28,7 +28,7 @@ record Edits:
   present: Plans.Entries<Plans.Reference, {}>
   things: Plans.Entries<Plans.Reference, {}>
 # No call carries an argument: who is acting is the context's business.
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {name: "", description: "", exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
@@ -96,6 +96,6 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, {}, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
 def card(state: State) -> String:
   Document.plain(render(state))

@@ -16,10 +16,7 @@ type Seed = {}
 record Edits:
   booked: Plans.Edit<Nat, Nat>
   children: Plans.Entries<Plans.Reference, {}>
-# One A for create and send: the create's seed, wrapped; keep takes nothing.
-sum Child:
-  appointment: Appointment.Seed
-type Plan = Plans.Plan<Edits, Child>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
@@ -33,7 +30,7 @@ sum Done:
 def booking<T>(state: State, topic: String, to: String, after: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   if after == 0n then then(Done.refused({reason: "after is at least 1."})) else creating::<T>(state, {owner: context.principal, topic: topic, to: {world: context.world, object: to}, after: after}, context, then)
 def creating<T>(state: State, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.create({package: "Appointment", seed: Child.appointment(seed), law: "", requireAbsent: {world: "", object: textConcat(context.object, textConcat("/", natText(state.booked + 1n)))}})):
+  match perform(Plan.create({package: "Appointment", seed: Data.of::<Appointment.Seed>(seed), law: "", requireAbsent: {world: "", object: textConcat(context.object, textConcat("/", natText(state.booked + 1n)))}})):
     case created(c): counted::<T>(c.object, seed, context, then)
     case refused(r): then(Done.refused({reason: r.clause}))
     case _: then(Done.refused({reason: "The book could not make it."}))
@@ -41,7 +38,7 @@ def counted<T>(object: Plans.Reference, seed: Appointment.Seed, context: Abi.Con
   match perform(Plan.write({object: Plans.self(context), edits: {booked: Plans.Edit::<Nat, Nat>.add({delta: 1n}), children: Plans.Entries::<Plans.Reference, {}>.append({item: object})}})):
     case _: kept::<T>(object, seed, then)
 def kept<T>(object: Plans.Reference, seed: Appointment.Seed, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.send({object: object, method: "keep", argument: Child.appointment(seed)})):
+  match perform(Plan.send({object: object, method: "keep", argument: Plans.nothing()})):
     case _: then(Done.booked({object: object}))
 def book(state: State, input: {topic: String, to: String, after: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
   booking::<Done>(state, input.topic, input.to, input.after, context, fn(done: Done) -> Done: done)
@@ -58,7 +55,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): booking::<Card.Reply>(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)
-    case _: Card.answer::<Edits, Child, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text(textConcat("- ", textConcat(reference.object, "\n")))
 def render(state: State) -> Document.Document:

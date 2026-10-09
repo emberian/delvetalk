@@ -25,7 +25,7 @@ record Edits:
   holding: Plans.Entries<Plans.Reference, {}>
   inbox: Plans.Entries<Note, {}>
 # Its calls into places carry nothing: the place reads the mover from its caller.
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<Place.State, Place.Done>
 sum Moved:
   moved: {to: Plans.Reference}
@@ -105,7 +105,7 @@ def through<T>(state: State, label: String, context: Abi.Context, found: Found, 
     case none(_): then(Moved.refused({reason: textConcat("There is no exit named ", label)}))
     case some(s): leaving::<T>(state, s.exit.to, context, then)
 def leaving<T>(state: State, to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.call({object: state.at, method: "leave", argument: {}})):
+  match perform(Plan.call({object: state.at, method: "leave", argument: Plans.nothing()})):
     case returned(r): left::<T>(r.result, to, context, then)
     case _: then(Moved.refused({reason: "The place did not answer."}))
 def left<T>(result: Place.Done, to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
@@ -113,7 +113,7 @@ def left<T>(result: Place.Done, to: Plans.Reference, context: Abi.Context, then:
     case done(_): entering::<T>(to, context, then)
     case refused(r): then(Moved.refused({reason: r.reason}))
 def entering<T>(to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.call({object: to, method: "enter", argument: {}})):
+  match perform(Plan.call({object: to, method: "enter", argument: Plans.nothing()})):
     case returned(r): entered::<T>(r.result, to, context, then)
     case _: then(Moved.refused({reason: "The place did not answer."}))
 def entered<T>(result: Place.Done, to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
@@ -136,7 +136,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "move" then walk::<Card.Reply>(state, Card.text(a.fields, "exit"), context, movedReply) else noted::<Card.Reply>(Card.text(a.fields, "text"), context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: "note"}))
-    case _: Card.answer::<Edits, {}, Place.State, Place.Done>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, Place.State, Place.Done>(routed, context, forms(), render(state))
 def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text(textConcat("Holding: ", textConcat(item.object, "\n")))
 def noteLine(item: Note) -> Document.Document:

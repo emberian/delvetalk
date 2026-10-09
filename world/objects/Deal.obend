@@ -27,7 +27,7 @@ record Edits:
   signatures: Plans.Entries<Signature, {}>
   withdrawn: Plans.Edit<String, {}>
   closed: Plans.Edit<Nat, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 # What the law says today: the parties, terms and piece never change, a signature is
 # only ever appended, a withdrawal is final (closed goes 0 to 1 once: writeOnce reads
@@ -88,7 +88,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "withdraw" then withdrew::<Card.Reply>(state, context, doneReply) else countersigned::<Card.Reply>(state, post, context, doneReply)
-    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def signatureLine(signature: Signature) -> Document.Document:
   Document.text(textConcat("signed: ", textConcat(Card.handle(signature.principal), textConcat(" at ", textConcat(signature.post, "\n")))))
 def waitingLine(state: State) -> Document.Document:

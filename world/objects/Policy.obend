@@ -32,7 +32,7 @@ record Edits:
   escalate: Plans.Edit<String, {}>
   lexicon: Plans.Entries<Term, {}>
   examples: Plans.Entries<Example, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: ""}
@@ -85,7 +85,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "teach" then taught::<Card.Reply>(state, {utterance: Card.text(a.fields, "utterance"), spell: Card.text(a.fields, "spell")}, context, taughtReply) else defined::<Card.Reply>(state, {word: Card.text(a.fields, "word"), meaning: Card.text(a.fields, "meaning")}, context, taughtReply)
-    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def kindText(kind: Form.Kind) -> String:
   match kind:
     case text(t): textConcat("text of ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters"))))

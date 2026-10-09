@@ -14,7 +14,7 @@ record State:
 type Seed = {}
 record Edits:
   doors: Plans.Entries<Door, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 sum Answer:
   done: {}
@@ -53,4 +53,4 @@ def door() -> Card.Door:
   {word: "directory", blurb: "The doors of DelveTalk."}
 # A summon: whatever was said, the menu is the answer.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  Card.tell::<Edits, {}, State, {}, Nat>(Lists.length::<Door>(state.doors), render(state))
+  Card.tell::<Edits, State, {}, Nat>(Lists.length::<Door>(state.doors), render(state))

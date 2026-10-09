@@ -102,13 +102,13 @@ def replyOf(routed: Routed) -> Reply:
     case usage(_): Reply.usage({})
 def answered(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why(routed)), tail: Document.Documents.cons({head: usage(context.object, forms), tail: Document.Documents.nil()})})})})
-def answer<E, A, S, R>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E, A>, Plans.Response<S, R>, Reply>:
-  match perform(Plans.Plan::<E, A>.offer({to: "", document: answered(routed, context, forms, card)})):
+def answer<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
+  match perform(Plans.Plan::<E>.offer({to: "", document: answered(routed, context, forms, card)})):
     case _: replyOf(routed)
 # The same answer for an object whose receive finishes with its methods' own result
 # type: `result` is what a non-acting reply finishes with.
-def answerAs<E, A, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E, A>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E, A>.offer({to: "", document: answered(routed, context, forms, card)})):
+def answerAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match perform(Plans.Plan::<E>.offer({to: "", document: answered(routed, context, forms, card)})):
     case _: result
 def reason(routed: Routed) -> String:
   match routed:
@@ -117,8 +117,8 @@ def reason(routed: Routed) -> String:
     case unclear(u): textConcat("I still need: ", textConcat(Spell.joined(u.needs), "."))
     case refused(r): r.reason
 # Offers a document and finishes with the given result.
-def tell<E, A, S, R, T>(result: T, document: Document.Document) -> Activity<Plans.Plan<E, A>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E, A>.offer({to: "", document: document})):
+def tell<E, S, R, T>(result: T, document: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match perform(Plans.Plan::<E>.offer({to: "", document: document})):
     case _: result
 # Observers: the objects told when something happens here, each by the method it
 # names. An object keeps `observers: Observers` in state and exposes observe and
@@ -149,14 +149,14 @@ def unobserving(observers: Observers, input: Observer) -> Change:
     case some(s): Change.edit({entries: Plans.Entries::<Observer, {}>.remove({index: s.value}), count: Lists.length::<Observer>(observers) - 1n})
 # broadcast sends the argument to every observer by its method, then finishes with `then` of
 # how many sends the host accepted (an activity composes only in tail position).
-def broadcast<E, A, S, R, T>(observers: Observers, argument: A, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E, A>, Plans.Response<S, R>, T>:
+def broadcast<E, S, R, T>(observers: Observers, argument: Data, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match observers:
     case nil(_): then(sent)
-    case cons(c): notified::<E, A, S, R, T>(c.head, c.tail, argument, sent, then)
-def notified<E, A, S, R, T>(head: Observer, tail: Observers, argument: A, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E, A>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E, A>.send({object: head.object, method: head.method, argument: argument})):
-    case delivery(_): broadcast::<E, A, S, R, T>(tail, argument, sent + 1n, then)
-    case _: broadcast::<E, A, S, R, T>(tail, argument, sent, then)
+    case cons(c): notified::<E, S, R, T>(c.head, c.tail, argument, sent, then)
+def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match perform(Plans.Plan::<E>.send({object: head.object, method: head.method, argument: argument})):
+    case delivery(_): broadcast::<E, S, R, T>(tail, argument, sent + 1n, then)
+    case _: broadcast::<E, S, R, T>(tail, argument, sent, then)
 # What a card shows for a principal: the last segment of the DID, until the host
 # supplies handles.
 def handle(did: String) -> String:

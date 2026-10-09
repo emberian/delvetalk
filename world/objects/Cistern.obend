@@ -10,7 +10,7 @@ record State:
 type Seed = {}
 record Edits:
   entries: Plans.Entries<Plans.Receipt, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
@@ -28,7 +28,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "cistern", blurb: "Keeps receipts, refusals first."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, {}, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
 def outcomeName(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"

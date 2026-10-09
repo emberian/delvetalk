@@ -31,7 +31,7 @@ record Edits:
   rung: Plans.Edit<Bool, {}>
   observers: Plans.Entries<Card.Observer, {}>
 # Bell sends carry nothing: the acting principal is the context's.
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {colour: Colour.amber({}), seed: "", planting: {principal: "", intent: ""}}
@@ -60,7 +60,7 @@ def ringOn(state: State, outcome: Plans.Outcome, context: Abi.Context) -> Activi
 # Rings: marks the bell rung, then tells every observer (a door opens).
 def rang<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rung: Plans.Edit::<Bool, {}>.set({value: true})})})):
-    case _: Card.broadcast::<Edits, {}, State, {}, T>(state.observers, {}, 0n, then)
+    case _: Card.broadcast::<Edits, State, {}, T>(state.observers, Plans.nothing(), 0n, then)
 def ring(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   rang::<Nat>(state, context, fn(sent: Nat) -> Nat: sent)
 def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
@@ -83,7 +83,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "rain" then rained::<Card.Reply>(state, Card.text(a.fields, "text"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "rain"})) else rang::<Card.Reply>(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))
-    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def colourName(colour: Colour) -> String:
   match colour:
     case amber(_): "amber"

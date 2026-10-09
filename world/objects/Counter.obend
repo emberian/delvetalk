@@ -10,7 +10,7 @@ record State:
 type Seed = {}
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def defaultSeed() -> Seed:
   {}

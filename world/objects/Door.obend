@@ -17,7 +17,7 @@ record Edits:
   openedBy: Plans.Edit<String, {}>
   knocks: Plans.Entries<String, {}>
   observers: Plans.Entries<Card.Observer, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
@@ -35,11 +35,11 @@ def latch(state: State, context: Abi.Context) -> Edits:
 # The method a bell's observer entry names: open the door and tell its observers.
 def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: unlatched(context)})):
-    case _: Card.broadcast::<Edits, {}, State, {}, Bool>(state.observers, {}, 0n, fn(sent: Nat) -> Bool: true)
+    case _: Card.broadcast::<Edits, State, {}, Bool>(state.observers, Plans.nothing(), 0n, fn(sent: Nat) -> Bool: true)
 # A knock is retained; a knock on a closed door opens it.
 def knocked<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context), {knocks: Plans.Entries::<String, {}>.append({item: context.principal})})})):
-    case _: if state.open then then(true) else Card.broadcast::<Edits, {}, State, {}, T>(state.observers, {}, 0n, fn(sent: Nat) -> T: then(true))
+    case _: if state.open then then(true) else Card.broadcast::<Edits, State, {}, T>(state.observers, Plans.nothing(), 0n, fn(sent: Nat) -> T: then(true))
 def knock(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   knocked::<Bool>(state, context, fn(opened: Bool) -> Bool: opened)
 def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
@@ -62,7 +62,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): knocked::<Card.Reply>(state, context, fn(opened: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def knockLine(who: String) -> Document.Document:
   Document.text(textConcat("knock: ", textConcat(Card.handle(who), "\n")))
 def render(state: State) -> Document.Document:

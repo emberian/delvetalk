@@ -36,7 +36,7 @@ record Edits:
   triggers: Plans.Entries<Trigger, {}>
   nextId: Plans.Edit<Nat, Nat>
 # Every send carries a line of text: a note's text, or what woke the trigger.
-type Plan = Plans.Plan<Edits, {text: String}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 # Only the owner changes its triggers. With request.method, sense could be opened to the
 # owner's env alone: owner: request.method == "sense" or request.subject == new.owner
@@ -107,10 +107,10 @@ def fire(state: State, triggers: Lists.List<Trigger>, event: Events.Event, count
     case nil(_): Done.fired({count: count})
     case cons(c): if matches(c.head.event, event) then acted(state, c.head.action, c.tail, event, count) else fire(state, c.tail, event, count)
 def acted(state: State, action: Action, rest: Lists.List<Trigger>, event: Events.Event, count: Nat) -> Activity<Plan, Response, Done>:
-  match perform(Plan.send({object: target(state, action), method: method(action), argument: {text: woke(event)}})):
+  match perform(Plan.send({object: target(state, action), method: method(action), argument: Data.of::<{text: String}>({text: woke(event)})})):
     case _: fire(state, rest, event, count + 1n)
 def act(state: State, action: Action, text: String, count: Nat) -> Activity<Plan, Response, Done>:
-  match perform(Plan.send({object: target(state, action), method: method(action), argument: {text: text}})):
+  match perform(Plan.send({object: target(state, action), method: method(action), argument: Data.of::<{text: String}>({text: text})})):
     case _: Done.fired({count: count + 1n})
 def target(state: State, action: Action) -> Plans.Reference:
   match action:
@@ -139,7 +139,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "unwatch" then unwatched::<Card.Reply>(state, Card.natural(a.fields, "id"), context, doneReply) else watched::<Card.Reply>(state, spelled(a.action, a.fields), Action.notify({}), context, doneReply)
-    case _: Card.answer::<Edits, {text: String}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def spelled(action: String, fields: Card.Fields) -> On:
   if action == "mention" then On.mention({actor: Card.text(fields, "actor")}) else On.keyword({term: Card.text(fields, "term")})
 def onText(on: On) -> String:

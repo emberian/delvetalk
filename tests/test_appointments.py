@@ -35,9 +35,9 @@ class Appointments(Chain):
         return get(self.state(name), "status")["label"]
 
     def test_a_booking_waits_for_its_time_then_notes_the_recipient(self):
-        self.book()
-        replies = self.deliver_all()
-        self.assertIn("suspended", str(replies))
+        booked = self.book()
+        # keep is delivered in the booking's own settling pass, and suspends there.
+        self.assertEqual([d["status"] for d in booked["delivered"]], ["suspended"], booked)
         self.assertEqual(self.status("book/1"), "booked")
         self.host.send(op="world-advance", height=3)
         self.assertEqual(self.inbox(), [])

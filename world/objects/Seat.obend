@@ -21,7 +21,7 @@ record Edits:
   opened: Plans.Edit<Bool, {}>
   source: Plans.Edit<Nat, {}>
   target: Plans.Edit<Nat, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody()}
@@ -79,6 +79,6 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, {}, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state))
 def render(state: State) -> Document.Document:
   Document.text(textConcat(Card.handle(state.owner), textConcat("'s seat, round ", textConcat(natText(state.round), textConcat(": ", textConcat(if state.opened then textConcat("opened ", textConcat(natText(state.source), textConcat(" to ", natText(state.target)))) else if state.digest != "" then "sealed" else "choosing", "\n"))))))

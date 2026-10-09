@@ -13,7 +13,7 @@ record Seed:
   title: String
 record Edits:
   title: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 # What the workshop did, as data: nothing is a silent default.
 sum Verdict:

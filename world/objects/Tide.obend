@@ -25,7 +25,7 @@ record Edits:
   ticks: Plans.Edit<Nat, Nat>
   last: Plans.Edit<Nat, {}>
   subs: Plans.Entries<Sub, Sub>
-type Plan = Plans.Plan<Edits, {text: String}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 # What the law can say today. "Subscribe only yourself" is an item of a list and
 # "tooSoon" compares old and new: neither is in today's fragment, so Bend refuses them.
@@ -76,7 +76,7 @@ def woken<T>(subs: Lists.List<Sub>, tick: Nat, sent: Nat, then: Done -> T) -> Ac
     case nil(_): then(Done.ticked({tick: tick, sent: sent}))
     case cons(c): if due(c.head, tick) then noted::<T>(c.head, c.tail, tick, sent, then) else woken::<T>(c.tail, tick, sent, then)
 def noted<T>(sub: Sub, rest: Lists.List<Sub>, tick: Nat, sent: Nat, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.send({object: {world: "", object: sub.who}, method: "note", argument: {text: textConcat("tide ", textConcat(natText(tick), textConcat(": ", sub.note)))}})):
+  match perform(Plan.send({object: {world: "", object: sub.who}, method: "note", argument: Data.of::<{text: String}>({text: textConcat("tide ", textConcat(natText(tick), textConcat(": ", sub.note)))})})):
     case delivery(_): woken::<T>(rest, tick, sent + 1n, then)
     case _: woken::<T>(rest, tick, sent, then)
 def tick(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
@@ -96,7 +96,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "tick" then ticked::<Card.Reply>(state, context, doneReply) else subscribed::<Card.Reply>(state, Card.natural(a.fields, "every"), Card.text(a.fields, "note"), context, doneReply)
-    case _: Card.answer::<Edits, {text: String}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def line(sub: Sub) -> Document.Document:
   Document.text(textConcat(Card.handle(sub.who), textConcat(" every ", textConcat(natText(sub.every), textConcat(" from tick ", textConcat(natText(sub.since), textConcat(": ", textConcat(sub.note, "\n"))))))))
 def render(state: State) -> Document.Document:

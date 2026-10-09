@@ -18,7 +18,7 @@ record State:
 type Seed = {}
 record Edits:
   proposals: Plans.Entries<Proposal, Proposal>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
@@ -58,7 +58,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): submitted::<Card.Reply>(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def statusName(status: Status) -> String:
   match status:
     case proposed(_): "proposed"

@@ -10,7 +10,7 @@ record State:
 type Seed = {}
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
@@ -23,7 +23,7 @@ def ticked<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Pl
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case _: again::<T>(state, context, then)
 def again<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.send({object: Plans.self(context), method: "tick", argument: {}})):
+  match perform(Plan.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()})):
     case _: then(state.count + 1n)
 def tick(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   ticked::<Nat>(state, context, fn(count: Nat) -> Nat: count)
@@ -36,7 +36,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): ticked::<Card.Reply>(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, {}, State, {}>(routed, context, forms(), render(state))
+    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state))
 def render(state: State) -> Document.Document:
   Document.text(textConcat("Ticks: ", textConcat(natText(state.count), "\n")))
 def card(state: State) -> String:

@@ -22,7 +22,7 @@ record State:
   seen: Nat
 record Edits:
   seen: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 %s
 def initial() -> State:

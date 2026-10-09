@@ -14,9 +14,8 @@ from tests.test_reflection import ROOT, Reflection
 from tests.test_turn_world import label, record
 
 BELL = open(os.path.join(ROOT, "world", "objects", "Bell.obend")).read()
-SEED = record(planter=label("glm"), colour={"tag": "variant", "label": "silver", "payload": empty()}, seed=label("s"),
-              rains=nil(), rung=boolean(False), door=reference("none"), lastDelivery=label(""),
-              planting=record(principal=label(""), intent=label("")))
+SEED = record(colour={"tag": "variant", "label": "silver", "payload": empty()}, seed=label("s"),
+              rains=nil(), rung=boolean(False), planting=record(principal=label("glm"), intent=label("")), observers=nil())
 
 
 class Sources(Reflection):

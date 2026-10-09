@@ -24,7 +24,7 @@ record Seed:
 record Edits:
   round: Plans.Edit<Nat, Nat>
   game: Plans.Edit<Game.Result, {}>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<Seats.State, Seats.Done>
 law rounds: monotone(round)
 def defaultSeed() -> Seed:
@@ -54,17 +54,17 @@ def played(state: State, result: Game.Result, context: Abi.Context) -> Activity<
   match perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit::<Nat, Nat>.add({delta: 1n}), game: Plans.Edit::<Game.Result, {}>.set({value: result})}})):
     case _: advanced(state, result)
 def advanced(state: State, result: Game.Result) -> Activity<Plan, Response, Done>:
-  match perform(Plan.call({object: state.north, method: "next", argument: {}})):
+  match perform(Plan.call({object: state.north, method: "next", argument: Plans.nothing()})):
     case _: advancedSouth(state, result)
 def advancedSouth(state: State, result: Game.Result) -> Activity<Plan, Response, Done>:
-  match perform(Plan.call({object: state.south, method: "next", argument: {}})):
+  match perform(Plan.call({object: state.south, method: "next", argument: Plans.nothing()})):
     case _: Done.resolved({round: state.round + 1n, status: result.status, winner: result.winner})
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, {}, Seats.State, Seats.Done>(Card.route(input.text, context, forms()), context, forms(), render(state))
+  Card.answer::<Edits, Seats.State, Seats.Done>(Card.route(input.text, context, forms()), context, forms(), render(state))
 def glyph(cell: Nat) -> String:
   if cell == 1n then "+" else if cell == 2n then "-" else if cell == 3n then "@" else "."
 def row(board: Nat, at: Nat, left: Nat) -> String:

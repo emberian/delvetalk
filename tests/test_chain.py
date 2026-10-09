@@ -58,12 +58,12 @@ record State:
   made: Nat
 record Edits:
   made: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, Child.Seed>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
   {made: 0n}
 def make(state: State, input: {id: String, seed: Child.Seed}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "PACKAGE", seed: input.seed, law: "", requireAbsent: {world: "", object: input.id}})):
+  match perform(Plan.create({package: "PACKAGE", seed: Data.of::<Child.Seed>(input.seed), law: "", requireAbsent: {world: "", object: input.id}})):
     case created(_): "created"
     case refused(r): r.clause
     case _: "no answer"

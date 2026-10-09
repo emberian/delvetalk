@@ -168,6 +168,8 @@ class PolicyObject(Chain):
         settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply=reply)
         self.assertEqual(settled["status"], "interpreted", settled)
         [resumed] = settled["resumed"]
+        # A resumed turn's offers are retained on its receipt as {to, text}.
+        resumed.setdefault("offers", [{"principal": o["to"], "text": o["text"]} for o in resumed["receipt"].get("offers", [])])
         return resumed
 
     def planting(self, colour="silver", seed="a fern that remembers"):

@@ -60,7 +60,7 @@ record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {count: 5n}
@@ -101,7 +101,7 @@ def other(target: String, seen: Nat) -> Activity<Plan, Response, Nat>:
     case written(_): seen
     case _: 998n
 def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: {}})):
+  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()})):
     case returned(r): finish(context, r.result)
     case _: 997n
 def finish(context: Abi.Context, result: Nat) -> Activity<Plan, Response, Nat>:
@@ -311,7 +311,7 @@ record State:
   names: Lists.List<String>
 record Edits:
   names: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits, {}>
+type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def initial() -> State:
   {names: Lists.List::<String>.nil()}

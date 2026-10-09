@@ -7,8 +7,8 @@ target's own law with request.caller = the workshop. A block must be a package w
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_objects import check, closure, compile_job, computation, row_names
-from tests.test_turn_world import label, nat, record
+from tests.test_objects import MODULES, check, closure, compile_job, computation, row_names
+from tests.test_turn_world import closure as world_closure, label, nat, record
 
 PROBE = """edition ObjectiveBend 1
 import ./Workshop.obend as Workshop
@@ -123,15 +123,38 @@ class Workshop(Chain):
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertIn(self.verdict(reply), ("clean", "flawed"))
 
-    def test_a_clean_proposal_to_another_object_is_refused_notSelf(self):
-        """Reprogram, like write, applies only to the running object: the workshop checks the
-        block, then the host answers its reprogram of bell-1 `refused {clause: notSelf}`."""
+    def counter(self, owner="glm"):
+        """A Counter whose law names its proposer: glm creates it, so the law admits glm's
+        amendment and reprogram, and anyone's ordinary writes."""
+        law = 'law owner: request.kind == 0 or request.subject == "%s"\n' % owner
+        source = open(MODULES["Counter"]).read().replace("record State:", law + "record State:", 1)
+        modules = world_closure("Counter", override={"Counter": source})
+        r = self.host.send(op="world-create", principal=owner, identity="mk-bell-1", object="bell-1", modules=modules,
+                           entry="initial", seed=record(count=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+        return self.host.send(op="world-view", principal=owner, object="bell-1")["pin"]
+
+    def test_a_clean_proposal_reprograms_another_object_under_its_law(self):
         self.make_workshop()
-        self.make("bell-1", closure("Counter"), record())
-        reply = self.say("delvetalk workshop propose\ntarget: bell-1\nmigration: keep\n```obend\n%s```\n" % BLOCK)
+        before = self.counter()
+        reply = self.say("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK)
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
-        self.assertEqual(self.verdict(reply), "refused")
-        self.assertEqual(self.card(reply), "Not done: notSelf\n")
+        self.assertEqual(self.verdict(reply), "reprogrammed")
+        after = self.host.send(op="world-view", principal="glm", object="bell-1")["pin"]
+        self.assertNotEqual(after, before)
+        print("\n--- reprogrammed card ---\n" + self.card(reply))
+        self.assertIn("Reprogrammed bell-1.", self.card(reply))
+        writes = {w["object"]: w for w in reply["receipt"]["outcome"]["writes"]}
+        self.assertEqual((writes["bell-1"]["callers"], writes["bell-1"]["kinds"]), (["workshop"], [1]))
+
+    def test_a_strangers_proposal_is_refused_by_the_targets_law(self):
+        self.make_workshop()
+        before = self.counter()
+        reply = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
+                                                         post=label("at://kim/p/1"), slot=label("")), principal="kimik3")
+        self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], reply["receipt"]["outcome"]["clause"]),
+                         ("refused", "lawRefused", "owner"), reply)
+        self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
 
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):
         self.make_workshop()
