@@ -10,10 +10,14 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'delvetalk-bend-view-v1'
+SOURCE_PROFILE = 'delvetalk-obend-view-v1'
 FORMAT = 'delvetalk-projection-view-v1'
 _spec = importlib.util.spec_from_file_location('projection_world', ROOT / 'scripts/world.py')
 world = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(world)
+_spec = importlib.util.spec_from_file_location('projection_runtime', ROOT / 'scripts/runtime_profile.py')
+runtime_profile = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(runtime_profile)
 
 
 class ProjectionError(ValueError):
@@ -41,26 +45,70 @@ def _validate(data, root):
     return data
 
 
-def project(root, object_id, panel='main'):
+def _assert_source_runtime(observed, binary_digest, expected_runtime):
+    if (not isinstance(expected_runtime, dict) or expected_runtime.get('name') != 'compiled'
+            or not isinstance(expected_runtime.get('files'), dict)
+            or not isinstance(observed, dict) or observed.get('profile') != 'compiled'
+            or observed.get('files') != expected_runtime['files']
+            or not isinstance(binary_digest, str)
+            or binary_digest != expected_runtime['files'].get('.lake/build/bin/delvetalk-compiled')):
+        raise ProjectionError('source view runtime does not match expected compiled runtime')
+
+
+def assert_runtime(view, expected_runtime):
+    """Bind a retained source-view observation to its custodian's retained pins.
+
+    No current files are read: historical observations keep their original runtime.
+    Legacy core views retain their existing contract. This check authenticates no
+    caller and grants no authority; it prevents silently relabeling observations.
+    """
+    program = view.get('root', {}).get('protocol', {}).get('viewProgram', {})
+    source = view.get('source', {})
+    if ((isinstance(program, dict) and program.get('profile') == SOURCE_PROFILE)
+            or (isinstance(source, dict) and source.get('profile') == SOURCE_PROFILE)):
+        _assert_source_runtime(view.get('runtimeProfile'), view.get('runtimeSha256'), expected_runtime)
+
+
+def project(root, object_id, panel='main', *, expected_runtime=None):
     """Evaluate the exact installed view term against this committed snapshot.
 
     The isolated Lean job has no writes/outbox and never touches a world file.
     Lean performs reduction, materialization, purity rejection and one shared
-    10,000-tick budget. Python only checks the display schema and binds identity.
+    tick budget (10,000 for core views; the compiled host's 100,000 for source
+    views). Python only checks framing/display schema and binds identity. This
+    isolated observation does not establish termination or constancy of a program.
+    World-bound callers supply their retained runtime ({} if absent); None permits
+    a standalone observation under the explicitly returned current runtime pins.
     """
     if not isinstance(object_id, str) or not object_id or not isinstance(panel, str):
         raise ProjectionError('object identity and panel must be strings')
     snapshot = copy.deepcopy(root)
     try:
         program = snapshot['protocol']['viewProgram']
-        if not isinstance(program, dict) or set(program) != {'profile', 'term'} or program['profile'] != PROFILE:
+        if not isinstance(program, dict):
+            raise ProjectionError('unsupported view program')
+        source_view = program.get('profile') == SOURCE_PROFILE
+        if source_view:
+            if set(program) != {'profile', 'package'}:
+                raise ProjectionError('unsupported source view program')
+            package = program['package']
+            if (not isinstance(package, dict) or set(package) != {'modules', 'entry'}
+                    or not isinstance(package['entry'], str)
+                    or not isinstance(package['modules'], list)
+                    or not 1 <= len(package['modules']) <= 64
+                    or any(not isinstance(module, dict) or set(module) != {'name', 'source'}
+                           or not all(isinstance(module[key], str) for key in ('name', 'source'))
+                           for module in package['modules'])):
+                raise ProjectionError('source view requires source-only modules and entry')
+        elif set(program) != {'profile', 'term'} or program['profile'] != PROFILE:
             raise ProjectionError('unsupported view program')
         state = snapshot['state']
         if not isinstance(state, dict): raise ProjectionError('committed state must be a record')
         # Reuse the actual Lean materializer, without making a request against
         # the live object, acquiring authority, or persisting a synthetic world.
+        expression = ['package', program['package']] if source_view else ['bend', program['term']]
         command = {'require': [], 'set': {}, 'outbox': [],
-                   'result': ['bend', program['term'], [['literal', state], ['literal', panel]]]}
+                   'result': expression + [[['literal', state], ['literal', panel]]]}
         protocol = {'profile': 'delvetalk-local-v1', 'initial': {}, 'commands': {'project': command}}
         local = {'protocol': protocol, 'law': ['projection'], 'version': 0, 'state': {}}
         job = {'world': {'objects': {'projection': local}, 'receipts': []},
@@ -68,23 +116,33 @@ def project(root, object_id, panel='main'):
                            'intent': 'projection', 'expected': local, 'command': 'project', 'input': {}}}
         wire = world.wire_dumps(job)
         if len(wire.encode('utf-8')) > 65536: raise ProjectionError('view input exceeds 64 KiB')
-        executable = ROOT / '.lake/build/bin/delvetalk-world'
-        if not executable.is_file(): raise ProjectionError('build delvetalk-world before projecting')
+        host = 'compiled' if source_view else 'world'
+        binary = runtime_profile.PROFILES[host][0]
+        executable = ROOT / '.lake/build/bin' / binary
+        if not executable.is_file(): raise ProjectionError('build ' + binary + ' before projecting')
+        pins = runtime_profile.file_hashes(host, root=ROOT) if source_view else None
         runtime = hashlib.sha256(executable.read_bytes()).hexdigest()
+        if source_view and expected_runtime is not None:
+            _assert_source_runtime({'profile': host, 'files': pins}, runtime, expected_runtime)
         result = subprocess.run([str(executable)], input=wire + '\n', text=True,
                                 capture_output=True, timeout=10, cwd=ROOT)
         if result.returncode: raise ProjectionError('Lean view evaluation failed')
         if len(result.stdout.encode('utf-8')) > 1048576: raise ProjectionError('view output exceeds 1 MiB')
         if hashlib.sha256(executable.read_bytes()).hexdigest() != runtime:
             raise ProjectionError('view runtime changed during evaluation')
+        if source_view and runtime_profile.file_hashes(host, root=ROOT) != pins:
+            raise ProjectionError('view runtime dependencies changed during evaluation')
         response = world.wire_loads(result.stdout)
         if 'error' in response: raise ProjectionError(str(response['error']))
         receipt = response['reply']
         if receipt['kind'] != 'committed': raise ProjectionError('view refused: ' + str(receipt['data']))
         data = _validate(receipt['data']['result'], snapshot)
-        return {'format': FORMAT, 'mode': 'projection', 'object': object_id, 'root': snapshot,
+        view = {'format': FORMAT, 'mode': 'projection', 'object': object_id, 'root': snapshot,
                 'panel': panel, 'source': copy.deepcopy(program), 'programSha256': _digest(program),
                 'runtimeSha256': runtime, 'data': data, 'actions': copy.deepcopy(data['actions'])}
+        if source_view:
+            view['runtimeProfile'] = {'profile': host, 'files': pins}
+        return view
     except ProjectionError:
         raise
     except subprocess.TimeoutExpired as error:

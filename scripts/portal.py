@@ -254,7 +254,8 @@ class Portal:
                 artifact = candidate
             if artifact is None:
                 raise ValueError('Exact bound room artifact is unavailable')
-        return bootstrap.room.inspect_object(root, object_id, artifact, panel=panel)
+        return bootstrap.room.inspect_object(root, object_id, artifact, panel=panel,
+                                             expected_runtime=self.runtime)
 
     def object(self, object_id=None, panel='main'):
         if not isinstance(panel, str) or len(panel) > 128:

@@ -15,6 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affordances
 import world
 import references
+import adoption
+
+_projection_spec = importlib.util.spec_from_file_location('town_projection',
+    Path(__file__).resolve().parents[1] / 'scene/projection.py')
+projection = importlib.util.module_from_spec(_projection_spec)
+_projection_spec.loader.exec_module(projection)
 
 FORMAT = 'delvetalk-town-cardbook-v1'
 FEED = 'town.delve.feed.post'
@@ -76,30 +82,124 @@ def publication_source(source, issuer=None):
     return {'uri': uri, 'cid': cid}
 
 
+WORD = re.compile(r'[A-Za-z_][A-Za-z0-9_-]{0,127}\Z')
+DELIMITER = re.compile(r'<<([A-Za-z][A-Za-z0-9_-]{0,31})\Z')
+
+
 def parse_reply(text):
-    """Shape/typed-JSON syntax only; never look up a card or infer an action."""
+    """Parse literal syntax; action and field meanings require a captured card."""
     if not isinstance(text, str) or len(text.encode('utf-8')) > MAX_REPLY_BYTES:
         raise ValueError('town reply text exceeds 64 KiB')
-    match = re.fullmatch(r'delvetalk ([a-z][a-z0-9-]{0,47}) (a[1-9][0-9]{0,5}) (\{.*\})', text.strip(), re.S)
-    if not match:
-        raise ValueError('reply must be exactly: delvetalk CARD ACTION {JSON fields}')
-    fields = loads(match[3])
-    if not isinstance(fields, dict):
-        raise ValueError('town reply fields must be a JSON object')
-    return {'card': match[1], 'action': match[2], 'fields': fields}
+    legacy = re.fullmatch(r'delvetalk ([a-z][a-z0-9-]{0,47}) (a[1-9][0-9]{0,5}) (\{.*\})', text.strip(), re.S)
+    if legacy:
+        return {'card': legacy[1], 'action': legacy[2], 'fields': loads(legacy[3])}
+    # Strip only blank framing lines. Never strip a field value or normalize Unicode.
+    lines = text.split('\n')
+    start, end = 0, len(lines)
+    while start < end and not lines[start].strip():
+        start += 1
+    while start < end and not lines[end - 1].strip():
+        end -= 1
+    lines = lines[start:end]
+    header = re.fullmatch(r'delvetalk ([a-z][a-z0-9-]{0,47}) ([A-Za-z_][A-Za-z0-9_-]{0,127})',
+                          lines[0].strip() if lines else '')
+    if not header:
+        raise ValueError('reply must start with exactly: delvetalk CARD OFFERED-WORD')
+    fields, index = {}, 1
+    while index < len(lines):
+        field = re.fullmatch(r'([A-Za-z_][A-Za-z0-9_-]{0,127}):(?: (.*))?', lines[index])
+        if not field or field[1] in fields:
+            raise ValueError('expected unique offered field: literal value lines')
+        key, value = field[1], field[2] or ''
+        index += 1
+        if value.startswith('<<'):
+            marker = DELIMITER.fullmatch(value)
+            if not marker:
+                raise ValueError('literal block requires <<DELIMITER and an exact closing line')
+            start = index
+            while index < len(lines) and lines[index] != marker[1]:
+                index += 1
+            if index == len(lines):
+                raise ValueError('literal block has no exact closing delimiter')
+            value = '\n'.join(lines[start:index])
+            index += 1
+        fields[key] = value
+    return {'card': header[1], 'action': header[2], 'fields': fields, 'syntax': 'delvetalk-town-spell-v1'}
 
 
-def _field(field):
+def action_word(action, actions):
+    """Only a unique actual method, never a label, gets a readable selector."""
+    command = action.get('command', '')
+    if (WORD.fullmatch(command) and not ACTION.fullmatch(command)
+            and sum(item.get('command') == command for item in actions) == 1):
+        return command
+    return action['id']
+
+
+def field_words(action):
+    fields = action['fields']
+    # Alias the entire schema if necessary: actual 'f1' cannot collide with alias f1.
+    if all(WORD.fullmatch(field['name']) for field in fields):
+        return {field['name']: field['name'] for field in fields}
+    return {'f' + str(i + 1): field['name'] for i, field in enumerate(fields)}
+
+
+def spell(alias, action, fields, *, selector=None):
+    """Render a complete literal reply; its caller supplies the captured action."""
+    alias_name(alias)
+    values = affordances.validate_fields(action, fields)
+    selector = action['id'] if selector is None else selector
+    if not WORD.fullmatch(selector):
+        raise ValueError('invalid offered word')
+    lines = ['delvetalk ' + alias + ' ' + selector]
+    for token, name in field_words(action).items():
+        value = values[name]
+        value = ('true' if value else 'false') if type(value) is bool else str(value)
+        if '\n' in value or value.startswith('<<'):
+            delimiter, serial = 'END', 0
+            while delimiter in value.split('\n'):
+                serial += 1
+                delimiter = 'END' + str(serial)
+            lines.extend([token + ': <<' + delimiter, value, delimiter])
+        else:
+            lines.append(token + ': ' + value)
+    return '\n'.join(lines)
+
+
+def _spell_fields(action, supplied):
+    names = field_words(action)
+    if set(supplied) != set(names):
+        raise ValueError('supply exactly the offered field words')
+    schema = {field['name']: field for field in action['fields']}
+    values = {}
+    for token, name in names.items():
+        value, kind = supplied[token], schema[name]['type']
+        if kind == 'nat':
+            if not re.fullmatch(r'0|[1-9][0-9]*', value):
+                raise ValueError('natural number requires ASCII decimal digits')
+            # Schema naturals are bounded; avoid unbounded integer parsing.
+            if len(value) > len(str(affordances.MAX_SAFE_NAT)):
+                raise ValueError('natural number exceeds supported bounds')
+            value = int(value)
+        elif kind == 'bool':
+            if value not in ('true', 'false'):
+                raise ValueError('Boolean requires true or false')
+            value = value == 'true'
+        values[name] = value
+    return affordances.validate_fields(action, values)
+
+
+def _field(field, token=None):
     kind = field['type']
     if kind == 'string':
         bounds = str(field['minLength']) + '..' + str(field['maxLength']) + ' chars'
     elif kind == 'nat':
         bounds = str(field['minimum']) + '..' + str(field['maximum'])
     elif kind == 'enum':
-        bounds = canonical(field['options'])
+        bounds = ' | '.join(canonical(option) for option in field['options'])
     else:
         bounds = 'true|false'
-    return canonical(field['name']) + ': ' + kind + ' ' + bounds
+    return (token or field['name']) + (' (' + canonical(field['name']) + ')' if token and token != field['name'] else '') + ': ' + kind + ' ' + bounds
 
 
 def _example(action):
@@ -121,7 +221,7 @@ def _example(action):
     return values
 
 
-def _panels(view):
+def _panels(view, expected_runtime):
     declared = view['root']['protocol'].get('viewPanels', [])
     if not isinstance(declared, list) or len(declared) > 8:
         raise ValueError('viewPanels must be an array of at most eight panels')
@@ -137,7 +237,8 @@ def _panels(view):
         spec = importlib.util.spec_from_file_location('town_room', Path(__file__).resolve().parents[1] / 'scene/room.py')
         room = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(room)
-        panel = room.inspect_object(view['root'], view['object'], panel=entry['id'])
+        panel = room.inspect_object(view['root'], view['object'], panel=entry['id'],
+                                    expected_runtime=expected_runtime)
         if (panel.get('mode') != 'projection' or panel.get('object') != view['object']
                 or canonical(panel.get('root')) != canonical(view['root'])):
             raise ValueError('declared panel did not produce a pure view of the captured root')
@@ -161,19 +262,21 @@ def render_card(alias, card, view, panels=(), display_names=None):
         lines.append(prose(data['prose']))
     if view['mode'] == 'raw':
         lines.append('State: ' + canonical(view['root']['state']))
-    lines.append('Reply to THIS post with one complete command. Edit example values to your choice.')
+    lines.append('For direct execution, reply to THIS post with one offered spell. Edit its values; other wording needs interpretation.')
     for action in card['actions']:
-        lines.append(action['id'] + ': ' + canonical(action['label']))
+        word = action_word(action, card['actions'])
+        lines.append(word + ': ' + canonical(action['label']))
         if not action.get('available') or action.get('inspectOnly'):
             lines.append('Inspection only; no executable reply form.')
             continue
-        lines.extend('  ' + _field(f) for f in action['fields'])
+        tokens = {name: token for token, name in field_words(action).items()}
+        lines.extend('  ' + _field(f, tokens[f['name']]) for f in action['fields'])
         if action.get('children'):
             lines.append('Requires absent children: ' + ', '.join(
                 canonical(child.get('value', '<' + child['field'] + '>')) for child in action['children']))
         if action.get('observedAvailable') is False:
             lines.append('The captured view reports this guard unavailable; admission may refuse.')
-        lines.append('delvetalk ' + alias + ' ' + action['id'] + ' ' + canonical(_example(action)))
+        lines.append(spell(alias, action, _example(action), selector=word))
     if not card['actions']:
         lines.append('No typed actions are available on this card.')
     lines.extend(['Someone may act first; an old card can be refused. Use the next card after a refusal.',
@@ -264,13 +367,66 @@ class CardBook:
 
     def capture(self, view, alias=None):
         """Retain a captured view; never read a world or publish a post."""
-        if alias is not None:
-            alias_name(alias)
         metadata = self.metadata()
         view = copy.deepcopy(view)
+        projection.assert_runtime(view, metadata['runtime'])
         card = affordances.card(view)
-        panels = _panels(view)
+        panels = _panels(view, metadata['runtime'])
         object_ref = references.object_reference(metadata['worldId'], view['object'])
+        def build(name):
+            body = render_card(name, card, view, panels, metadata['displayNames'])
+            return {'format': 'delvetalk-town-card-v1', 'alias': name, 'view': view,
+                    'card': card, 'runtime': metadata['runtime'],
+                    'objectRef': object_ref, 'panels': panels,
+                    'body': body, 'textSha256': sha(body)}
+        return self._capture(alias, build)
+
+    def capture_adoption(self, candidate_id, expected_candidate, target_id, expected_target, *, alias=None):
+        """Capture one fixed adoption, not authority to supply arbitrary transactions."""
+        metadata = self.metadata()
+        candidate, target = copy.deepcopy(expected_candidate), copy.deepcopy(expected_target)
+        if (not isinstance(candidate, dict) or not isinstance(target, dict)
+                or set(candidate) != {'law', 'protocol', 'state', 'version'}
+                or set(target) != {'law', 'protocol', 'state', 'version'}):
+            raise ValueError('adoption requires exact candidate and target roots')
+        state = candidate.get('state')
+        if (not isinstance(state, dict) or state.get('status') != 'ready'
+                or state.get('target') != target_id or not isinstance(state.get('migration'), dict)
+                or not isinstance(state.get('protocol'), dict)):
+            raise ValueError('adoption requires a ready candidate with its explicit target and migration')
+        # Reuse the constructor for its same-object exact-root check as well.
+        adoption.request(candidate_id, target_id, '', '', candidate, target)
+        object_ref = references.object_reference(metadata['worldId'], target_id)
+        candidate_ref = references.object_reference(metadata['worldId'], candidate_id)
+        def build(name):
+            lines = ['[[delvetalk-card ' + name + ']]', 'Adopt a proposed revision',
+                     'Candidate ' + canonical(candidate_id) + ' · captured version ' + str(candidate['version']),
+                     'Target ' + canonical(target_id) + ' · captured version ' + str(target['version']),
+                     'Proposed program: ' + canonical(state['protocol'].get('name', state['protocol'].get('title', 'Untitled'))),
+                     'Runs the captured candidate’s adoption program, then replaces the target with the program and state it releases.',
+                     'Replacement covers the target’s ENTIRE state.',
+                     'Candidate-recorded migration: ' + canonical(state['migration']),
+                     'Target permissions stay in place. Passing checks does not grant permission to install.',
+                     'adopt: Adopt this captured candidate and migration together.',
+                     'For direct execution, reply to THIS post with this offered spell; no input fields:',
+                     'delvetalk ' + name + ' adopt',
+                     'Someone may act first; an old card can be refused. Use the next card after a refusal.',
+                     'If no result appears, ask us to check your original reply. Do not repost the command.',
+                     '[[/delvetalk-card ' + name + ']]']
+            body = '\n'.join(lines)
+            if len(body.encode('utf-8')) > MAX_CARD_BYTES:
+                raise ValueError('town adoption card exceeds 12000 bytes; migration must be reviewable inline')
+            _block(body, name)
+            return {'format': 'delvetalk-town-adoption-card-v1', 'alias': name,
+                    'candidate': candidate_id, 'target': target_id,
+                    'expectedCandidate': candidate, 'expectedTarget': target,
+                    'runtime': metadata['runtime'], 'objectRef': object_ref, 'candidateRef': candidate_ref,
+                    'body': body, 'textSha256': sha(body)}
+        return self._capture(alias, build)
+
+    def _capture(self, alias, build):
+        if alias is not None:
+            alias_name(alias)
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
             if alias is None:
@@ -279,11 +435,7 @@ class CardBook:
                 while db.execute('SELECT 1 FROM cards WHERE alias=?', ('card-' + str(serial),)).fetchone():
                     serial += 1
                 alias = 'card-' + str(serial)
-            body = render_card(alias, card, view, panels, metadata['displayNames'])
-            value = {'format': 'delvetalk-town-card-v1', 'alias': alias, 'view': view,
-                     'card': card, 'runtime': metadata['runtime'],
-                     'objectRef': object_ref, 'panels': panels,
-                     'body': body, 'textSha256': sha(body)}
+            value = build(alias)
             encoded = canonical(value)
             existing = db.execute('SELECT value FROM cards WHERE alias=?', (alias,)).fetchone()
             if existing:
@@ -356,11 +508,30 @@ class CardBook:
         verified = self._verified(alias, bound['source'], fetch_record)
         if canonical(verified) != canonical(bound):
             raise ValueError('bound publication changed since capture')
-        request = affordances.request(captured['view'], parsed['action'], author,
-                                      'delve:' + source['uri'], parsed['fields'])
-        if len(canonical(request).encode('utf-8')) > MAX_REPLY_BYTES:
-            raise ValueError('derived card request exceeds 64 KiB')
+        if captured['format'] == 'delvetalk-town-card-v1':
+            if parsed.get('syntax') == 'delvetalk-town-spell-v1':
+                actions = captured['card']['actions']
+                chosen = next((action for action in actions if parsed['action'] in
+                               (action['id'], action_word(action, actions))), None)
+                if chosen is None:
+                    raise ValueError('word is not offered by this captured card')
+                parsed = {**parsed, 'offeredWord': parsed['action'], 'action': chosen['id'],
+                          'fields': _spell_fields(chosen, parsed['fields'])}
+            request = affordances.request(captured['view'], parsed['action'], author,
+                                          'delve:' + source['uri'], parsed['fields'])
+        elif captured['format'] == 'delvetalk-town-adoption-card-v1':
+            if parsed['action'] not in ('a1', 'adopt') or parsed['fields']:
+                raise ValueError('adoption permits only a1 with empty fields {}')
+            request = adoption.request(captured['candidate'], captured['target'], author,
+                                       'delve:' + source['uri'], captured['expectedCandidate'], captured['expectedTarget'])
+        else:
+            raise ValueError('unknown captured card format')
         wire = {key: value for key, value in request.items() if key not in ('principal', 'intent')}
+        if wire['op'] == 'transaction':
+            # Clerk's transport resolves explicit descriptors before Lean admission.
+            wire['reads'] = {key: {'expected': value} for key, value in wire['reads'].items()}
+        if len(canonical(wire).encode('utf-8')) > MAX_REPLY_BYTES:
+            raise ValueError('derived card request exceeds 64 KiB')
         evidence = {'format': 'delvetalk-town-resolution-v1', 'metadata': metadata,
                     'card': captured, 'publication': bound, 'replySource': copy.deepcopy(source),
                     'parsed': parsed, 'wireSha256': sha(canonical(wire))}
@@ -380,6 +551,14 @@ class CardBook:
             body = label + ': refused. ' + canonical(receipt.get('data')) + '\nNo application changes committed.'
         else:
             body = label + ': committed.'
+            data = receipt.get('data')
+            if isinstance(data, dict) and 'result' in data:
+                result = data['result']
+                shown = result if isinstance(result, str) else canonical(result)
+                if len(shown.encode('utf-8')) <= 2048:
+                    body += '\nResult:\n' + '\n'.join('| ' + line for line in shown.split('\n'))
+                else:
+                    body += '\nResult exceeds the inline display limit; ask the operator for the retained result.'
             children = affordances.allocated_refs(receipt)
             if children:
                 body += '\nCreated: ' + ', '.join(canonical(child['object']) for child in children)

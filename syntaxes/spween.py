@@ -41,11 +41,21 @@ def source_shape(document):
 
 
 def lower(source):
+    """Historical @1 adapter: preserve v1 lowering semantics explicitly."""
+    return _lower(source, 'spween-scene-i64-v1')
+
+
+def lower_v2(source):
+    """@2 derives ordering from exact stored text in the generated Bend program."""
+    return _lower(source, 'spween-scene-i64-v2')
+
+
+def _lower(source, profile):
     parsed = parse(source)
     spec = importlib.util.spec_from_file_location('delvetalk_spween_lowering', ROOT / 'scene/lower.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    result = module.lower_document(parsed)
+    result = module.lower_document(parsed, profile=profile)
     if result.get('source') != source or result.get('ast') != parsed['ast']:
         raise ValueError('Spween lowering must retain exact source and full parsed AST')
     result['bridge_binary_sha256'] = parsed['bridge_binary_sha256']
@@ -53,8 +63,8 @@ def lower(source):
 
 
 def protocol_shape(document):
-    if not isinstance(document, dict) or document.get('profile') != 'spween-scene-i64-v1':
-        raise ValueError('expected spween-scene-i64-v1 lowered bundle')
+    if not isinstance(document, dict) or document.get('profile') not in ('spween-scene-i64-v1', 'spween-scene-i64-v2'):
+        raise ValueError('expected a named supported Spween lowered bundle')
     if document.get('upstream') != UPSTREAM or not isinstance(document.get('source'), str) or not isinstance(document.get('ast'), dict):
         raise ValueError('lowered bundle must preserve pinned upstream, source and AST')
     if not isinstance(document.get('provenance'), dict):
@@ -63,4 +73,6 @@ def protocol_shape(document):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.protocol_shape(document.get('protocol'))
+    if document['protocol'].get('sceneProfile') != document['profile']:
+        raise ValueError('Spween bundle and protocol profiles differ')
     return document

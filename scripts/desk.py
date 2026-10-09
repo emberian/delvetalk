@@ -28,17 +28,32 @@ world = module('desk_world', 'scripts/world.py')
 runtime_profile = module('desk_runtime_profile', 'scripts/runtime_profile.py')
 source_store = module('desk_source_store', 'scripts/source_store.py')
 history = module('desk_history', 'scripts/history.py')
+adoption = module('desk_adoption', 'scripts/adoption.py')
 canonical, loads = translate.canonical, translate.load_json
+SOURCE_DESK_PROTOCOL_PATHS = (
+    'protocols/source-desk/protocol.json',
+    'protocols/town-forge/source-desk.json',
+)
 
 
 def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
+def is_source_desk_protocol(protocol):
+    """Recognize only reviewed complete bodies; this selection grants no authority."""
+    expected = canonical(protocol)
+    return any(expected == canonical(loads((ROOT / path).read_bytes()))
+               for path in SOURCE_DESK_PROTOCOL_PATHS)
+
+
 def execution_profile(profile='transactions'):
     return {'profile': profile, 'files': {
         **runtime_profile.file_hashes(profile),
+        **{path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+           for path in SOURCE_DESK_PROTOCOL_PATHS},
         'scripts/desk.py': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        'scripts/adoption.py': hashlib.sha256((ROOT / 'scripts/adoption.py').read_bytes()).hexdigest(),
         'scripts/history.py': hashlib.sha256((ROOT / 'scripts/history.py').read_bytes()).hexdigest(),
         'scripts/source_store.py': hashlib.sha256((ROOT / 'scripts/source_store.py').read_bytes()).hexdigest()}}
 
@@ -329,12 +344,8 @@ class Desk:
         return self.exchange(entry['request'])
 
     def adopt(self, object_id, target, principal, intent, expected_candidate, expected_target):
-        if object_id == target and canonical(expected_candidate) != canonical(expected_target):
-            raise ValueError('one object cannot have two different read roots')
-        return self.exchange({'op': 'transaction', 'principal': principal, 'intent': intent,
-                              'reads': {object_id: expected_candidate, target: expected_target}, 'calls': [
-                                  {'object': object_id, 'command': 'adopt', 'input': {'target': target}},
-                                  {'op': 'reprogram', 'object': target, 'inputFrom': 0}]})
+        return self.exchange(adoption.request(object_id, target, principal, intent,
+                                              expected_candidate, expected_target))
 
 
 def main():

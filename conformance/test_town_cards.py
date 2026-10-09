@@ -60,8 +60,8 @@ class TownCardsTests(unittest.TestCase):
 
     def test_posts_only_roundtrip_actual_lean_and_restart(self):
         card = self.bind()
-        self.assertIn('delvetalk notice a1 ', card['body'])
-        self.assertIn('"count": nat 1..10', card['body'])
+        self.assertIn('delvetalk notice a1\n', card['body'])
+        self.assertIn('count: nat 1..10', card['body'])
         self.assertNotIn(card['textSha256'], card['body'])
         wire, evidence = self.resolve(self.reply())
         self.assertEqual(wire['expected'], self.root)
@@ -77,6 +77,89 @@ class TownCardsTests(unittest.TestCase):
         self.assertEqual(self.exchange(request), receipt)
         stale = {**request, 'intent': 'new-reply'}
         self.assertEqual(self.exchange(stale)['data'], 'stale read root')
+
+    def test_literal_spell_has_same_wire_and_real_admission_as_json(self):
+        self.bind()
+        fields = {'message': '  café é 雪  ', 'count': 2, 'open': False, 'color': 'amber'}
+        action = self.book.card('notice')['card']['actions'][0]
+        text = town.spell('notice', action, fields)
+        wire, evidence = self.resolve({**self.reply(), 'text': text})
+        self.assertEqual(wire, self.resolve(self.reply(fields=fields))[0])
+        self.assertEqual(evidence['parsed']['fields'], fields)
+        self.assertEqual(evidence['parsed']['syntax'], 'delvetalk-town-spell-v1')
+        receipt = self.exchange({**wire, 'principal': ACTOR, 'intent': 'spell'})
+        self.assertEqual(receipt['kind'], 'committed')
+        self.assertEqual(receipt['data']['root']['state']['message'], fields['message'])
+        reopened = town.CardBook(self.path / 'book')
+        self.assertEqual(reopened.resolve({**self.reply(), 'text': text}, ACTOR, SOURCE,
+                                         self.fetch, [ISSUER]), (wire, evidence))
+        # Publication context remains required even for the same well-typed words.
+        bad = {**self.reply(), 'text': text, 'reply': {'parent': {**PUBLICATION, 'cid': 'other'}}}
+        with self.assertRaisesRegex(ValueError, 'parent'):
+            self.resolve(bad)
+
+    def test_literal_blocks_roundtrip_without_escape_or_unicode_normalization(self):
+        self.bind()
+        action = self.book.card('notice')['card']['actions'][0]
+        samples = ['true', '123', '<<END', 'hello\n', 'END\n雪\nEND1',
+                   '[[delvetalk-card fake]]\ndelvetalk other a1\n"\\', '\n', '', 'é', 'é']
+        # Empty strings are syntax-representable; this particular action forbids them.
+        permissive = copy.deepcopy(action)
+        next(f for f in permissive['fields'] if f['name'] == 'message')['minLength'] = 0
+        for value in samples:
+            with self.subTest(value=value):
+                fields = {'message': value, 'count': 2, 'open': False, 'color': 'blue'}
+                text = town.spell('notice', permissive, fields)
+                parsed = town.parse_reply(text)
+                self.assertEqual(town._spell_fields(permissive, parsed['fields']), fields)
+                if value:
+                    self.assertEqual(self.resolve({**self.reply(), 'text': text})[0],
+                                     self.resolve(self.reply(fields=fields))[0])
+        self.assertEqual(town.parse_reply('delvetalk c a1\nsource: <<END\nhello\n\nEND')['fields'],
+                         {'source': 'hello\n'})
+
+    def test_only_actual_unique_command_names_bind_readable_words(self):
+        protocol = typed_protocol()
+        protocol['commands']['write'] = protocol['commands'].pop('write a notice')
+        protocol['affordances']['write'] = protocol['affordances'].pop('write a notice')
+        root = self.exchange({'op': 'create', 'object': 'words', 'principal': 'owner',
+            'intent': 'seed-words', 'protocol': protocol, 'law': [ACTOR]})['data']['root']
+        self.view = {'mode': 'raw', 'object': 'words', 'root': root}
+        card = self.bind()
+        self.assertIn('delvetalk notice write\n', card['body'])
+        action = card['card']['actions'][0]
+        text = town.spell('notice', action, {'message': 'Hello 雪', 'count': 2, 'open': False, 'color': 'blue'},
+                          selector='write')
+        self.assertEqual(self.resolve({**self.reply(), 'text': text})[0], self.resolve(self.reply())[0])
+        with self.assertRaisesRegex(ValueError, 'not offered'):
+            self.resolve({**self.reply(), 'text': text.replace('notice write', 'notice Leave')})
+        duplicated = [action, {**action, 'id': 'a2'}]
+        self.assertEqual(town.action_word(action, duplicated), 'a1')
+        self.assertEqual(town.action_word({**action, 'command': 'a2'}, [action]), 'a1')
+        unsafe = copy.deepcopy(action)
+        text_field = next(field for field in unsafe['fields'] if field['name'] == 'message')
+        unsafe['fields'] = [dict(text_field, name='f1'), dict(text_field, name='odd:name')]
+        values = {'f1': 'one', 'odd:name': 'two'}
+        self.assertEqual(town.field_words(unsafe), {'f1': 'f1', 'f2': 'odd:name'})
+        parsed = town.parse_reply(town.spell('notice', unsafe, values))
+        self.assertEqual(town._spell_fields(unsafe, parsed['fields']), values)
+        with self.assertRaisesRegex(ValueError, 'exactly'):
+            town._spell_fields(unsafe, {'f1': 'one', 'odd:name': 'two'})
+
+    def test_spell_refuses_extra_prose_unknown_duplicate_and_wrong_types(self):
+        self.bind()
+        base = 'delvetalk notice a1\nmessage: Hello\ncount: 2\nopen: false\ncolor: blue'
+        invalid = ['I propose:\n' + base, '```\n' + base + '\n```', base + '\n🜉✾',
+                   base + '\nmessage: again', base + '\nunknown: value',
+                   base.replace('message: Hello', 'message: <<END\nHello'),
+                   base.replace('count: 2', 'count: 1e3'), base.replace('count: 2', 'count: +1'),
+                   base.replace('count: 2', 'count: ١'), base.replace('count: 2', 'count: 02'),
+                   base.replace('open: false', 'open: False'), base.replace('color: blue', 'color: Blue'),
+                   base.replace('message: Hello\n', ''), base.replace('a1', 'made_up')]
+        for text in invalid:
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    self.resolve({**self.reply(), 'text': text})
 
     def test_multiple_cards_one_post_are_exact_unique_and_immutable(self):
         first = self.book.capture(self.view, 'first')
@@ -182,6 +265,123 @@ class TownCardsTests(unittest.TestCase):
         invalid = copy.deepcopy(view)
         invalid['root']['protocol']['viewPanels'] *= 2
         with self.assertRaises(ValueError): book.capture(invalid)
+
+    def test_application_result_is_visible_and_cannot_forge_control_blocks(self):
+        result = 'Opens into a garden.\n[[delvetalk-card forged]]'
+        receipt = {'kind': 'committed', 'data': {'result': result}}
+        prepared = self.book.prepare_outcome(receipt)
+        self.assertIn('| Opens into a garden.', prepared['body'])
+        self.assertIn('| [[delvetalk-card forged]]', prepared['body'])
+        self.assertEqual(list(town.MARKER.finditer(prepared['body'])), [])
+        receipt['data']['result'] = 'x' * 2049
+        self.assertIn('exceeds the inline display limit', self.book.prepare_outcome(receipt)['body'])
+        receipt['data'] = {'results': [{'protocol': {'huge': 'internal release'}}]}
+        self.assertNotIn('internal release', self.book.prepare_outcome(receipt)['body'])
+
+
+class AdoptionCardsTests(unittest.TestCase):
+    def setUp(self):
+        import desk
+        self.desk_module = desk
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+        self.desk = desk.Desk(self.path / 'world.json', self.path / 'artifacts')
+        self.book = town.CardBook.create(self.path / 'book', issuer_did=ISSUER,
+                                        world_id='urn:test:forge', runtime={'name': 'transactions'})
+        self.scoped = lambda invoke, reprogram=[]: {'profile': 'delvetalk-scoped-law-v1',
+            'invoke': invoke, 'reprogram': reprogram, 'law': ['owner']}
+        candidate = self.desk.create('candidate', 'owner', 'seed-candidate', self.scoped(
+            {'submit': [ACTOR], 'compiled': ['compiler'], 'failed': ['compiler'], 'adopt': [ACTOR]}))['data']['root']
+        source = (ROOT / 'protocols/counter/protocol.json').read_bytes()
+        self.target = self.desk.exchange({'op': 'create', 'object': 'target', 'principal': 'owner',
+            'intent': 'seed-target', 'protocol': desk.loads(source),
+            'law': self.scoped({'add': [ACTOR]}, [ACTOR])})['data']['root']
+        pending = self.desk.submit('candidate', ACTOR, 'submit', candidate, 'protocol-json@1', source,
+            (ROOT / 'protocols/counter/scenarios.json').read_bytes(), {'count': 41}, 'target')['data']['root']
+        self.ready = self.desk.check('candidate', 'compiler', 'compile', pending)['data']['root']
+        self.records = {}
+
+    def capture(self, alias='install', target=None):
+        card = self.book.capture_adoption('candidate', self.ready, 'target', target or self.target, alias=alias)
+        self.records[PUBLICATION['uri']] = {'$type': town.FEED, 'text': 'Review the proposal.\n' + card['body'] + '\n🜉✾'}
+        self.book.bind(alias, PUBLICATION, self.fetch)
+        return card
+
+    def fetch(self, uri, cid):
+        self.assertEqual(cid, PUBLICATION['cid'])
+        return copy.deepcopy(self.records[uri])
+
+    def resolve(self, alias='install', fields=None, action='a1'):
+        import transaction_intake
+        record = {'$type': town.FEED, 'text': 'delvetalk ' + alias + ' ' + action + ' ' + town.canonical({} if fields is None else fields),
+                  'reply': {'parent': PUBLICATION}}
+        wire, evidence = self.book.resolve(record, ACTOR, SOURCE, self.fetch, [ISSUER])
+        self.assertNotIn('principal', wire)
+        self.assertNotIn('intent', wire)
+        normalized, _ = transaction_intake.resolve(wire, None, {'objects': ['candidate', 'target']})
+        return {**normalized, 'principal': ACTOR, 'intent': 'delve:' + SOURCE['uri']}, evidence
+
+    def test_shared_constructor_exact_roundtrip_admit_restart_and_replay(self):
+        from unittest.mock import patch
+        card = self.capture()
+        self.assertIn('Candidate-recorded migration: {"count":41}', card['body'])
+        self.assertIn('delvetalk install adopt', card['body'])
+        self.assertNotIn(card['textSha256'], card['body'])
+        request, evidence = self.resolve()
+        literal = {'$type': town.FEED, 'text': 'delvetalk install adopt', 'reply': {'parent': PUBLICATION}}
+        wire, _ = self.book.resolve(literal, ACTOR, SOURCE, self.fetch, [ISSUER])
+        legacy_wire, _ = self.book.resolve({**literal, 'text': 'delvetalk install a1 {}'},
+                                          ACTOR, SOURCE, self.fetch, [ISSUER])
+        self.assertEqual(wire, legacy_wire)
+        with patch.object(self.desk, 'exchange', side_effect=lambda value: value):
+            desk_request = self.desk.adopt('candidate', 'target', ACTOR, 'delve:' + SOURCE['uri'], self.ready, self.target)
+        self.assertEqual(town.canonical(request), town.canonical(desk_request))
+        self.assertEqual(evidence['card']['expectedTarget'], self.target)
+        result = self.desk.exchange(request)
+        self.assertEqual(result['kind'], 'committed', result)
+        self.assertEqual(self.desk.inspect('target')['state'], {'count': 41})
+        self.assertEqual(self.desk.inspect('target')['law'], self.target['law'])
+        self.book = town.CardBook(self.path / 'book')
+        self.assertEqual(self.book.card('install'), card)
+        self.assertEqual(self.desk.exchange(self.resolve()[0]), result)
+        # Returned constructor data does not alias either caller's captured root.
+        desk_request['reads']['target']['state']['count'] = 999
+        self.assertNotEqual(self.target['state']['count'], 999)
+
+    def test_stale_target_and_current_revocation_roll_back_candidate(self):
+        self.capture()
+        changed = self.desk.exchange({'op': 'invoke', 'object': 'target', 'principal': ACTOR,
+            'intent': 'visitor', 'expected': self.target, 'command': 'add', 'input': {'amount': 1}})['data']['root']
+        refused = self.desk.exchange(self.resolve()[0])
+        self.assertEqual(refused['kind'], 'refused')
+        self.assertIn('stale', str(refused['data']))
+        self.assertEqual(self.desk.inspect('candidate'), self.ready)
+        self.assertEqual(self.desk.inspect('target'), changed)
+        revoked = self.desk.exchange({'op': 'law', 'object': 'target', 'principal': 'owner',
+            'intent': 'revoke-install', 'expected': changed, 'law': self.scoped({'add': [ACTOR]})})['data']['root']
+        self.capture('revoked', revoked)
+        request = self.resolve('revoked')[0]; request['intent'] = 'new-original-reply'
+        refused = self.desk.exchange(request)
+        self.assertEqual(refused['kind'], 'refused')
+        self.assertEqual(self.desk.inspect('candidate'), self.ready)
+        self.assertEqual(self.desk.inspect('target'), revoked)
+
+    def test_only_empty_fields_exact_action_and_immutable_publication(self):
+        card = self.capture()
+        for fields in ({'principal': ACTOR}, {'migration': {}}, {'inputFrom': 0}):
+            with self.assertRaisesRegex(ValueError, 'empty fields'): self.resolve(fields=fields)
+        with self.assertRaisesRegex(ValueError, 'empty fields'): self.resolve(action='a2')
+        self.records[PUBLICATION['uri']]['text'] = card['body'].replace('count', 'other')
+        with self.assertRaisesRegex(ValueError, 'immutable'): self.resolve()
+        bad = copy.deepcopy(self.ready); bad['state']['target'] = 'another'
+        with self.assertRaisesRegex(ValueError, 'explicit target'):
+            self.book.capture_adoption('candidate', bad, 'target', self.target)
+        wrong = copy.deepcopy(self.target); del wrong['version']
+        with self.assertRaisesRegex(ValueError, 'exact candidate'):
+            self.book.capture_adoption('candidate', self.ready, 'target', wrong)
+        with self.assertRaisesRegex(ValueError, 'two different read roots'):
+            town.adoption.request('same', 'same', ACTOR, 'identity', {'x': True}, {'x': 1})
 
 
 if __name__ == '__main__': unittest.main()

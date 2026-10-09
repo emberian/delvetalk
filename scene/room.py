@@ -72,13 +72,13 @@ def wrap_bundle(bundle, pins=None):
     return artifact
 
 
-def compile_artifact(source, initial_vars=None, has=None):
+def compile_artifact(source, initial_vars=None, has=None, *, profile=lower.CURRENT_PROFILE):
     executable = ROOT / "scene/spween-bridge/target/debug/delvetalk-spween"
     binary_pin = hashlib.sha256(executable.read_bytes()).hexdigest()
     document = lower.bridge({"op": "parse", "source": source})
     if hashlib.sha256(executable.read_bytes()).hexdigest() != binary_pin:
         raise ArtifactError("Spween bridge executable changed during parsing")
-    bundle = lower.lower_document(document, initial_vars, has)
+    bundle = lower.lower_document(document, initial_vars, has, profile=profile)
     bundle["bridge_binary_sha256"] = binary_pin
     return wrap_bundle(bundle)
 
@@ -102,7 +102,7 @@ def validate_artifact(artifact):
             raise ArtifactError("source and AST must be retained")
         if not isinstance(content["initialVars"], dict) or not isinstance(content["has"], dict):
             raise ArtifactError("handler configuration must be objects")
-        if content["profile"] != lower.PROFILE or content["upstream"] != lower.UPSTREAM:
+        if content["profile"] not in lower.SUPPORTED_PROFILES or content["upstream"] != lower.UPSTREAM:
             raise ArtifactError("unsupported scene profile or upstream revision")
         pins = content["pins"]
         if not isinstance(pins, dict) or set(pins) != set(PIN_PATHS) or any(
@@ -280,7 +280,7 @@ def start_request(view, principal, intent):
     return _request(view, "start", principal, intent)
 
 
-def inspect_object(root, object_id, artifact=None, panel="main"):
+def inspect_object(root, object_id, artifact=None, panel="main", *, expected_runtime=None):
     """Join source-bound scenes and optional admitted pure view projections.
 
     A panel is presentation input, never a participant identity or cloned state.
@@ -291,7 +291,7 @@ def inspect_object(root, object_id, artifact=None, panel="main"):
     if "viewProgram" in protocol:
         try:
             projection = module("room_projection", "scene/projection.py")
-            return projection.project(root, object_id, panel)
+            return projection.project(root, object_id, panel, expected_runtime=expected_runtime)
         except Exception as error:
             return _raw(root, object_id, "Pure view projection unavailable: " + str(error))
     return _raw(root, object_id, "No supported source-bound room or pure view program")

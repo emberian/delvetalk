@@ -60,6 +60,34 @@
         "scene/lower.py"
       ],
       "lowering_profile": "spween-scene-i64-v1"
+    },
+    "objective-bend-spell@1": {
+      "reviewed": true,
+      "module": "syntaxes/obend_spell.py",
+      "entry": "lower",
+      "target": "local-protocol-v1",
+      "closure": [
+        "syntaxes/obend_spell.py"
+      ]
+    },
+    "spween-scene-i64@2": {
+      "reviewed": true,
+      "module": "syntaxes/spween.py",
+      "entry": "lower_v2",
+      "target": "spween-protocol-bundle-v1",
+      "upstream": {
+        "repository": "https://github.com/spwplace/spween",
+        "revision": "95980f7d1e109138496849a444f28c4b9076a4e2"
+      },
+      "closure": [
+        "syntaxes/spween.py",
+        "scene/spween-bridge/src/main.rs",
+        "scene/spween-bridge/Cargo.toml",
+        "scene/spween-bridge/Cargo.lock",
+        "scene/UPSTREAM.md",
+        "scene/lower.py"
+      ],
+      "lowering_profile": "spween-scene-i64-v2"
     }
   },
   "targets": {

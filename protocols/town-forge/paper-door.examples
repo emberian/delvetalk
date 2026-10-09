@@ -1,0 +1,26 @@
+examples DelveTalk 1
+
+case visitors open the paper door
+law maker visitor
+as visitor
+at initial
+send knock
+  word: please
+expect result: The paper door swings open onto a tiny lantern-lit room.
+
+as visitor
+at initial
+send knock
+  word: please
+expect refusal: stale read root
+
+as visitor
+send knock
+  word: wrong
+expect refusal: precondition failed
+
+as outsider
+send knock
+  word: please
+  principal: maker
+expect refusal: unauthorized

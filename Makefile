@@ -59,6 +59,7 @@ world:
 	python3 conformance/test_commons.py
 	python3 conformance/test_work_ticket.py
 	python3 conformance/test_town_garden.py
+	python3 conformance/test_town_forge.py
 	python3 conformance/test_exhibition_journey.py
 wiki:
 	python3 conformance/test_wiki.py
@@ -79,6 +80,14 @@ delve:
 	python3 conformance/test_town_receiving.py
 	python3 conformance/test_town_journey.py
 	python3 conformance/test_town_operator.py
+	python3 conformance/test_town_authoring.py
+	python3 conformance/test_town_forge_journey.py
+	python3 conformance/test_town_forge_custody.py
+	python3 conformance/test_manual_intake.py
+	python3 conformance/test_obend_spell.py
+	python3 conformance/test_obend_view.py
+	python3 conformance/test_spell_examples.py
+	python3 conformance/test_spween_migration.py
 	python3 conformance/test_service.py
 	python3 conformance/test_receipts.py
 	python3 conformance/test_live_path.py

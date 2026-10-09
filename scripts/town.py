@@ -49,7 +49,7 @@ class Town:
             raise ValueError('cardbook already belongs to another operator custody directory')
         return config, book
 
-    def _views(self, object_ids):
+    def _views(self, object_ids, expected_runtime):
         with _lock(Path(str(self.clerk.database) + '.lock')):
             snapshot = loads(self.clerk.database.read_bytes())
         views = []
@@ -58,7 +58,8 @@ class Town:
             if root is None:
                 raise ValueError('object absent from current world: ' + object_id)
             artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
-            views.append(bootstrap.room.inspect_object(root, object_id, artifact))
+            views.append(bootstrap.room.inspect_object(root, object_id, artifact,
+                                                       expected_runtime=expected_runtime))
         return views
 
     def capture(self, object_id, *, alias=None):
@@ -66,7 +67,7 @@ class Town:
             config, book = self._configuration()
             if object_id not in config['objects']:
                 raise ValueError('object is not enrolled in this clerk')
-            captured = book.capture(self._views([object_id])[0], alias=alias)
+            captured = book.capture(self._views([object_id], book.metadata()['runtime'])[0], alias=alias)
             return {'status': 'prepared', **captured}
 
     def bind(self, alias, uri, cid):
@@ -81,7 +82,12 @@ class Town:
                 return self.clerk.fetch_record(source_uri, source_cid, (clerk.FEED,))
             return book.bind(alias, {'uri': uri, 'cid': cid}, verified)
 
-    def receive(self, uri, cid):
+    def receive(self, uri, cid, *, interpretation=None):
+        if interpretation is not None:
+            interpretation = clerk.manual_intake.validate(interpretation)
+            if interpretation['status'] != 'act':
+                review = self.clerk.receive_interpreted(uri, cid, interpretation)
+                return {**review, 'body': interpretation['message'], 'publication': 'paused'}
         source = town_cards.publication_source({'uri': uri, 'cid': cid})
         path = self.state / 'requests' / (worker.key(uri) + '.json')
         with self.lock():
@@ -89,6 +95,10 @@ class Town:
             if entry is not None:
                 if entry['source'] != source:
                     raise ValueError('original reply URI is already retained with a different CID')
+                if interpretation is not None and 'receipt' in entry:
+                    retained = entry['receipt'].get('interpretation', {}).get('decision')
+                    if canonical(retained) != canonical(interpretation):
+                        raise ValueError('town response already binds a different interpretation')
                 if 'response' in entry:
                     return entry['response']  # No book, network, rendering, or changed pins needed.
             config, book = self._configuration()
@@ -103,7 +113,8 @@ class Town:
                 raise ValueError('pending town response belongs to a different configured runtime/cardbook')
             if 'receipt' not in entry:
                 try:
-                    receipt = self.clerk.receive(uri, cid)
+                    receipt = (self.clerk.receive_interpreted(uri, cid, interpretation)
+                               if interpretation is not None else self.clerk.receive(uri, cid))
                     if receipt.get('format') != 'delvetalk-clerk-receipt-v1' or any(receipt['source'][k] != source[k] for k in source):
                         raise ValueError('clerk receipt differs from the selected original reply')
                     entry['receipt'] = receipt
@@ -131,7 +142,8 @@ class Town:
                         continue
                     try:
                         artifact = bootstrap.bound_room_artifact(self.clerk.database.parent, root)
-                        entry['views'].append(bootstrap.room.inspect_object(root, target, artifact))
+                        entry['views'].append(bootstrap.room.inspect_object(root, target, artifact,
+                                                    expected_runtime=book.metadata()['runtime']))
                     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as error:
                         entry['notices'].append({'object': target, 'reason': 'view-unavailable', 'detail': str(error)[:2000]})
                 entry['aliases'] = ['reply-' + str(entry['sequence']) + '-' + str(n + 1) for n in range(len(entry['views']))]
@@ -149,6 +161,9 @@ class Town:
             key = uri.rsplit('/', 1)[1]
             link = 'https://delve.town/profile/' + quote(author, safe=':') + '/post/' + quote(key, safe='')
             body = 'For ' + town_cards.canonical(name) + ' · [original reply](' + link + ')\n' + prepared['body']
+            if 'interpretation' in receipt:
+                decision = receipt['interpretation']['decision']
+                body += '\nOperator interpretation (' + town_cards.canonical(decision['interpreter']) + '): ' + town_cards.canonical(decision['basis'])
             for notice in notices:
                 body += '\nNo next card for ' + town_cards.canonical(notice['object']) + (': object is currently absent.' if notice['reason'] == 'absent' else ': its view could not be prepared; ask the operator to inspect it.')
             if cards:
@@ -188,6 +203,7 @@ def main():
     receive = commands.add_parser('receive')
     receive.add_argument('uri')
     receive.add_argument('--cid', required=True)
+    receive.add_argument('--interpretation', type=Path, help='explicit local interpretation of the original post')
     args = parser.parse_args()
     try:
         operator = Town(args.clerk_state, state=args.state)
@@ -196,7 +212,7 @@ def main():
         elif args.operation == 'bind':
             result = operator.bind(args.card, args.uri, args.cid)
         else:
-            result = operator.receive(args.uri, args.cid)
+            result = operator.receive(args.uri, args.cid, interpretation=loads(args.interpretation.read_bytes()) if args.interpretation else None)
         print(result['body'] if args.text and 'body' in result else clerk.world.wire_dumps(result))
     except (ValueError, KeyError, TypeError, OSError, RuntimeError, clerk.delve.Failure) as error:
         print(str(error), file=sys.stderr)

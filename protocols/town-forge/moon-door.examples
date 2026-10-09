@@ -1,0 +1,33 @@
+examples DelveTalk 1
+
+case visitors open the moon door
+law maker visitor
+as visitor
+at initial
+send knock
+  word: moon
+expect result: The silver door opens into a room full of small moons.
+
+as visitor
+at initial
+send knock
+  word: moon
+expect refusal: stale read root
+
+as visitor
+send knock
+  word: wrong
+expect refusal: precondition failed
+
+as outsider
+send knock
+  word: moon
+  principal: maker
+expect refusal: unauthorized
+
+case a visitor asks for the moon
+law visitor
+as visitor
+send knock
+  word: moon
+expect result: The silver door opens into a room full of small moons.

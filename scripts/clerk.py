@@ -24,14 +24,15 @@ def module(name, path):
 world = module('clerk_world', 'scripts/world.py')
 delve = module('clerk_delve', 'scripts/delve.py')
 transaction_intake = module('clerk_transaction_intake', 'scripts/transaction_intake.py')
+manual_intake = module('clerk_manual_intake', 'scripts/manual_intake.py')
 runtime_profiles = module('clerk_runtime_profiles', 'scripts/runtime_profile.py')
 PDS = 'https://pds.delve.town'
 COLLECTION = 'org.delvetalk.request'
 FEED = 'town.delve.feed.post'
 ROOT_COLLECTION = 'org.delvetalk.root'
 PROFILE = 'delvetalk-pds-clerk-v1'
-TRANSPORT_PIN_PATHS = ['scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py',
-                       'scripts/town_cards.py', 'scripts/affordances.py', 'scripts/references.py',
+TRANSPORT_PIN_PATHS = ['scripts/manual_intake.py', 'scripts/delve.py', 'scripts/clerk.py', 'scripts/transaction_intake.py',
+                       'scripts/town_cards.py', 'scripts/adoption.py', 'scripts/translate.py', 'scripts/affordances.py', 'scripts/references.py',
                        'scene/room.py', 'scene/lower.py', 'scene/projection.py']
 UNCHANGED = object()
 RUNTIME_CHOICES = tuple(world.PROFILES)
@@ -415,6 +416,12 @@ class Clerk:
         if not isinstance(raw, str) or len(raw.encode('utf-8')) > 64 * 1024:
             raise ValueError('requestJson must be a string of at most 64 KiB')
         payload = loads(raw)
+        entry = self.normalize_payload(payload, author, uri, cid, value, config)
+        if inline_card is not None:
+            entry['inlineCard'] = inline_card
+        return entry
+
+    def normalize_payload(self, payload, author, uri, cid, value, config):
         expected_key = 'expectedRootRef' if isinstance(payload, dict) and 'expectedRootRef' in payload else 'expected'
         operation = payload.get('op', 'invoke') if isinstance(payload, dict) else None
         resolved_transaction = None
@@ -452,8 +459,6 @@ class Clerk:
         entry = {'source': {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS},
                  'record': value, 'request': request, 'profile': config['profile'],
                  'admissionProfile': self.execution_profile(request, config)}
-        if inline_card is not None:
-            entry['inlineCard'] = inline_card
         if resolved is not None:
             entry['resolvedRoot'] = resolved
         if resolved_transaction is not None:
@@ -468,6 +473,8 @@ class Clerk:
             reply = world.exchange(self.database, entry['request'], profile=selected)
             receipt = {'format': 'delvetalk-clerk-receipt-v1', 'source': entry['source'],
                        'request': entry['request'], 'reply': reply, 'profile': entry['profile']}
+            if 'interpretation' in entry:
+                receipt['interpretation'] = entry['interpretation']
             if reply['kind'] == 'committed':
                 request, data = entry['request'], reply['data']
                 if request['op'] == 'transaction':
@@ -486,8 +493,15 @@ class Clerk:
             save(path, entry)
         return entry['receipt']
 
-    def receive(self, uri, cid):
-        parse_uri(uri)
+    def receive_interpreted(self, uri, cid, decision):
+        return self.receive(uri, cid, interpretation=manual_intake.validate(decision))
+
+    def receive(self, uri, cid, *, interpretation=None):
+        parse_uri(uri, (FEED,) if interpretation is not None else (COLLECTION, FEED))
+        if interpretation is not None:
+            interpretation = manual_intake.validate(interpretation)
+            if len(canonical(interpretation)) > 70000:
+                raise ValueError('interpretation exceeds custody envelope')
         with delve.locked(self.state / 'clerk.lock'):
             config = self.config()
             path = self.state / 'requests' / (hashlib.sha256(uri.encode()).hexdigest() + '.json')
@@ -495,10 +509,37 @@ class Clerk:
                 entry = loads(path.read_text())
                 if entry['source']['uri'] != uri or entry['source']['cid'] != cid:
                     raise ValueError('request URI was already bound to a different CID; use a new rkey')
+                if interpretation is not None:
+                    retained = entry.get('interpretation', {}).get('decision')
+                    if canonical(retained) != canonical(interpretation):
+                        raise ValueError('request URI already bound to a different interpretation or machine request')
                 if 'receipt' in entry:
                     return entry['receipt']
             else:
-                entry = self.observe(uri, cid, config)
+                if interpretation is None:
+                    entry = self.observe(uri, cid, config)
+                else:
+                    author, _, _ = parse_uri(uri, (FEED,))
+                    if author not in config['repositories']:
+                        raise ValueError('repository is not configured for this clerk')
+                    self.verify_repository(author)
+                    record = self.fetch_record(uri, cid, (FEED,))
+                    if (not isinstance(record, dict) or record.get('$type') != FEED
+                            or not isinstance(record.get('text'), str)
+                            or len(canonical(record)) > 1024 * 1024):
+                        raise ValueError('interpretation requires an exact bounded public post record')
+                    source = {'uri': uri, 'cid': cid, 'author': author, 'pds': PDS}
+                    evidence = manual_intake.attestation(interpretation, source, digest(record))
+                    if interpretation['status'] != 'act':
+                        result = {'format': 'delvetalk-manual-review-v1', 'status': interpretation['status'],
+                                  'source': source, 'record': record, 'interpretation': evidence,
+                                  'message': interpretation['message'], 'publication': 'paused'}
+                        result['id'] = digest(result)
+                        # No semantic intent or pending admission is reserved.
+                        save(self.state / 'interpretations' / (result['id'] + '.json'), result)
+                        return result
+                    entry = self.normalize_payload(interpretation['request'], author, uri, cid, record, config)
+                    entry['interpretation'] = evidence
                 # Binding is durable before Lean admission, not after its reply.
                 if config['profile']['pins'] != pins(config.get('runtimeProfile', 'world')):
                     raise ValueError('clerk implementation pins changed; use the pinned checkout')
@@ -602,6 +643,7 @@ def main():
     receive = commands.add_parser('receive')
     receive.add_argument('uri')
     receive.add_argument('--cid', required=True)
+    receive.add_argument('--interpretation', type=Path, help='explicit local operator decision JSON; no automatic prose interpretation')
     snapshot = commands.add_parser('snapshot')
     snapshot.add_argument('object')
     commands.add_parser('profile')
@@ -623,7 +665,8 @@ def main():
                                   expected_genesis=args.genesis, expected_seed_head=args.seed_head,
                                   runtime_profile=args.runtime_profile)
         elif args.op == 'receive':
-            result = clerk.receive(args.uri, args.cid)
+            result = (clerk.receive_interpreted(args.uri, args.cid, loads(args.interpretation.read_bytes()))
+                      if args.interpretation else clerk.receive(args.uri, args.cid))
         elif args.op == 'profile':
             result = clerk.profile()
         elif args.op == 'upgrade':

@@ -11,22 +11,33 @@ installed a Spween room through the portal, used it and reviewed the work.
    to authenticated replies. The operator retains receipts and next-card drafts
    across interruption. A two-voice garden and an installed view revision pass
    under both world and compiled hosts. Two blind participants played from text.
-2. **Receiving deployment:** enroll the garden in the existing hosted world under
-   a new explicit clerk/cardbook epoch. The timer remains disabled; no automatic
+2. **Receiving deployment:** the garden is enrolled in the existing hosted world
+   under an explicit clerk/cardbook epoch. The timer remains disabled; no automatic
    discovery or public receipt delivery is established.
 3. **Welcome v1:** revise the private draft around a playable shared experience,
    with the confirmed invitation list. Ember publishes. No Delve/PDS/account
    message writes are authorized now.
-4. **Inhabited forge:** build objects and revise their behavior/interface through
-   posts. Inline source desks, compiler follow-ups and explicit atomic adoption
-   cards are the next slice. Natural language can later bind to these same actions.
+4. **Inhabited forge implemented locally:** make objects, submit actual Bend source/examples in posts,
+   inspect retained compiler results, and explicitly adopt a revision. Another
+   participant sees and uses the changed spell. Service discovery and continuation
+   restore preserve exact source/build custody. Optional literal spells avoid JSON;
+   manual interpretation retains prose and its operator-attested meaning separately.
+   The two factories await deployment. Autonomous interobject
+   delivery remains a [proposal](docs/RESIDENT-ACTIVITY.md).
+5. **Semantic consolidation:** the [repo review](docs/SEMANTIC-INTEGRATION.md)
+   distinguishes real receiving paths from second behavior languages, form-only
+   restrictions and narrative-only effects. Spween v2 fixes comparison migration
+   through an explicitly versioned lowering; source views now check their receiving
+   workspace's pinned runtime.
 
 Completed this pass: factories, generic seed restoration, source custody, public
 preview isolation, and independent reconstruction of the 36-admission participant
-rehearsal. Joined checks cover 76 groups/594 methods (one Linux-only skip), plus
-core/JS/Rust/package checks. A standalone-test import failure was repaired; all
-remaining Make targets passed. Previous checkpoint Linux CI passed. The town
-receiver's deployment acceptance is separate.
+rehearsal. Joined checks cover 85 groups/650 methods (one Linux-only skip), plus
+core/JS/Rust/package checks. Two older test fixtures were updated for the new
+spell presentation and pinned-view context; repaired groups and remaining Make
+targets passed. The deployed garden checkpoint's Linux CI passed. Forge deployment
+acceptance is separate. Mini's frontend/checker/demand machine are reused;
+its object/activity kernel is not imported by this local host.
 
 ## Boundaries
 

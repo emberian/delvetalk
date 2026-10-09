@@ -34,7 +34,7 @@ def epoch(profile, clerk_profile):
     for name in ('service', 'bootstrap', 'history', 'continuation', 'watch', 'desk', 'source_store'):
         path = 'scripts/' + name + '.py'
         files[path] = history.file_hash(ROOT / path)
-    for path in ('protocols/source-desk/protocol.json', 'scene/room.py'):
+    for path in (*desk.SOURCE_DESK_PROTOCOL_PATHS, 'scene/room.py'):
         files[path] = history.file_hash(ROOT / path)
     return {'profile': profile, 'python': list(sys.version_info[:3]),
             'platform': [platform.system(), platform.machine()], 'files': files}
@@ -289,10 +289,10 @@ class Service:
                 queue = self.compiler(config, memory_mib)
                 def enqueue_compilers():
                     snapshot = self._snapshot(config, deadline)
-                    protocol = loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes())
                     jobs, errors, examined = [], [], 0
                     candidates = [(name, root) for name, root in sorted(snapshot['objects'].items())
-                                  if canonical(root['protocol']) == canonical(protocol) and root['state'].get('status') == 'pending']
+                                  if root['state'].get('status') == 'pending'
+                                  and desk.is_source_desk_protocol(root['protocol'])]
                     cursor = progress.get('compilerCursor', '')
                     candidates = [item for item in candidates if item[0] > cursor] + [item for item in candidates if item[0] <= cursor]
                     for name, root in candidates:

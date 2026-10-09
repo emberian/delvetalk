@@ -40,7 +40,7 @@ PY
 current passage, whole root and law must match. Exact retries recover receipts;
 new choices need fresh intents. Principals are local assertions.
 
-## Executable profile: `spween-scene-i64-v1`
+## Executable profile: `spween-scene-i64-v2`
 
 Supported values are Null, Boolean, signed i64 and String. The profile supports
 ordered effects, comparisons, membership, guarded navigation and termination.
@@ -48,6 +48,13 @@ Entry effects run once per passage per session. Requirements are reported, not
 initialization gates. Spween equality includes `true == 1` and `false == 0`.
 Membership is fixed; metadata creates no scheduler. Unknown targets and duplicate
 passage names refuse before installation.
+
+V2 derives string ordering from stored text inside Bend, ignoring old cached ranks.
+An unknown migrated string outside the source's closed string domain refuses
+ordering; equality still compares exact text. New room compilation and the CLI
+use v2. Request `spween-scene-i64@2` through the syntax registry. Historical `@1`
+and explicit v1 lowering remain available for reproduction; their ranks are not
+portable between source revisions. Existing admitted objects are not rewritten.
 
 Overflow refuses, even before a later overwrite. Executable Float values refuse;
 unevaluated metadata survives. Calls become ordered `spween-call-batch` outbox

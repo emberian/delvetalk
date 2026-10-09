@@ -141,6 +141,7 @@ def execution_pin(profile='world'):
     if profile not in world.PROFILES:
         raise ValueError('unknown local host profile: ' + str(profile))
     files = {**runtime_profile.file_hashes(profile),
+             'syntaxes/spell_examples.py': digest((ROOT / 'syntaxes/spell_examples.py').read_bytes()),
              'scripts/propose.py': digest(Path(__file__).read_bytes())}
     identity = {'profile': 'delvetalk-local-v1', 'admissionProfile': profile, 'files': files,
                 'python': list(sys.version_info[:3])}
@@ -159,7 +160,8 @@ def propose(syntax, source, scenario_source, *, profile='world'):
         protocol, selection = artifact['lowered']['protocol'], 'lowered.protocol'
     else:
         raise ValueError('proposal syntax must target local-protocol-v1 or spween-protocol-bundle-v1')
-    scenarios = translation.load_json(scenario_source.decode('utf-8'))
+    examples = module('proposal_spell_examples', 'syntaxes/spell_examples.py')
+    scenarios = examples.load(scenario_source.decode('utf-8'), translation.load_json)
     validate_scenarios(scenarios)
     candidate = {'format': 'delvetalk-proposal-v1', 'artifact': artifact,
                  'host': {'target': 'local-protocol-v1', 'selection': selection, 'admissionProfile': profile,

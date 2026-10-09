@@ -41,6 +41,7 @@ class PortalArtifactTests(unittest.TestCase):
         self.root = {'protocol': self.artifact['protocol'], 'state': state, 'version': 0, 'law': []}
         self.app = object.__new__(portal.Portal)
         self.app.directory = self.directory
+        self.app.runtime = {}  # Retained-room rendering only; source views require real pins.
 
     def view(self): return self.app._view(self.root, 'room', 'main')
 

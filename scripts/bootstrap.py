@@ -149,7 +149,7 @@ def run_bootstrap(directory, *, profile='transactions'):
     # This migration is a participant-authored artifact, never an inferred reset.
     migration = loads((EXAMPLES / 'migration.json').read_bytes())
     pending = record('Iris proposes opening a window', desk.submit(
-        CANDIDATE, 'iris', 'propose-window', inspect(CANDIDATE), 'spween-scene-i64@1',
+        CANDIDATE, 'iris', 'propose-window', inspect(CANDIDATE), 'spween-scene-i64@2',
         (EXAMPLES / 'cafe-improved.scene').read_bytes(),
         (EXAMPLES / 'improvement-scenarios.json').read_bytes(), migration, CAFE))['data']['root']
     compiled = record('The compiler checks the proposal without adopting it',
@@ -294,7 +294,8 @@ def inspect_view(directory, object_id=None, panel='main'):
                            profile=metadata.get('runtime', {}).get('name', 'transactions'))
     root = desk.inspect(object_id)
     artifact = bound_room_artifact(directory, root)
-    return room.inspect_object(root, object_id, artifact, panel=panel)
+    return room.inspect_object(root, object_id, artifact, panel=panel,
+                               expected_runtime=metadata.get('runtime', {}))
 
 
 def artifact_envelopes(value):
@@ -438,9 +439,8 @@ def export_bootstrap(directory, bundle, *, extra_attachments=None):
                 paths.append(path)
                 for sha in history.declared_files(value).values():
                     paths.append(history.read_blob(directory / 'artifacts/pins', sha))
-        source_desk_protocol = loads((ROOT / 'protocols/source-desk/protocol.json').read_bytes())
         if (request.get('op') == 'invoke' and request.get('command') in ('compiled', 'failed')
-                and canonical(request.get('expected', {}).get('protocol')) == canonical(source_desk_protocol)):
+                and desk_module.is_source_desk_protocol(request.get('expected', {}).get('protocol'))):
             identity = request.get('input', {}).get('artifact')
             if identity:
                 artifact = desk_module.load_artifact(directory / 'artifacts', identity)

@@ -15,9 +15,11 @@ python3 scripts/translate.py --syntax protocol-markdown@1 syntaxes/examples/conv
 | `core-json@1` | One strict [core AST](../conformance/AST.md); duplicate JSON members and nonfinite numbers refuse. |
 | `core-sexpr@1` | Parenthesized arrays; symbols are strings, `#t/#f` booleans, unsigned decimals indices; Nat payloads are quoted: `(nat "123")`. Semicolons start comments. |
 | `protocol-json@1` | One local protocol object. |
+| `objective-bend-spell@1` | Actual Objective Bend source: `allowed`, `knock`, and `view` exports; the compiled Lean host owns parsing, typing and execution. First binding is stateless. |
 | `protocol-markdown@1` | Exactly one closed `delvetalk-protocol` fence containing strict JSON; surrounding prose is opaque. |
 | `spween-source@1` | Pinned parser's complete AST and source; no execution. |
-| `spween-scene-i64@1` | Supported [scene profile](../scene/README.md), lowered to a bundle containing `protocol`; unsupported constructs refuse. |
+| `spween-scene-i64@2` | Current [scene profile](../scene/README.md); string ordering derives from stored text, independent of migrated rank caches. |
+| `spween-scene-i64@1` | Historical lowering; retained for compatibility. Do not reuse its cached string ranks across source revisions. |
 
 Spween adapters require `cargo build --locked --manifest-path
 scene/spween-bridge/Cargo.toml`. Their source pin identifies build inputs; the
@@ -28,6 +30,12 @@ Core validation checks shape, not typing or progress. Protocol translation check
 outer shapes; Lean installation validates expressions and invocation checks
 current authority. For execution, use `artifact.lowered` as the core job's `term`
 or creation's `protocol`; scene bundles use `artifact.lowered.protocol`.
+
+Spell authors use [Bend source](examples/paper-door.obend) and optional
+[readable examples](../protocols/town-forge/paper-door.examples), without writing
+the transport envelope. `examples DelveTalk 1` opts into literal fixture notation;
+legacy JSON fixtures still work. Examples are observations, not proofs. Operators
+can also interpret ordinary prose into explicit source, examples or actions.
 
 ## Artifacts and pins
 

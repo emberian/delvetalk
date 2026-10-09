@@ -1,0 +1,27 @@
+edition ObjectiveBend 1
+record Action:
+  text: String
+  command: String
+  input: {}
+record Actions:
+  knock: Action
+record View:
+  title: String
+  prose: String
+  actions: Actions
+record Door:
+  password: String
+  opening: String
+  allowed: String -> Bool
+  knock: String -> String
+  inscription: String
+extension Paper(self: Door, super: {}) -> Door:
+  {password: "please", opening: "The paper door swings open onto a tiny lantern-lit room.", allowed: fn(word: String) -> Bool: word == self.password, knock: fn(word: String) -> String: self.opening, inscription: "A paper door with a brass knocker. Whisper please."}
+extension Moon(self: Door, super: Door) -> Door:
+  {password: "moon", opening: "The silver door opens into a room full of small moons.", allowed: super.allowed, knock: super.knock, inscription: "A silver door with a crescent knocker. Whisper moon."}
+def allowed(word: String) -> Bool:
+  fix(compose(Paper, Moon), {}).allowed(word)
+def knock(word: String) -> String:
+  fix(compose(Paper, Moon), {}).knock(word)
+def view(state: {}, panel: String) -> View:
+  {title: "The moon door", prose: fix(compose(Paper, Moon), {}).inscription, actions: {knock: {text: "Whisper to the door", command: "knock", input: {}}}}

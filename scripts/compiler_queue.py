@@ -24,7 +24,7 @@ def compiler_pins(profile, expected):
     adapter = registry['syntaxes'].get(expected['state']['proposal']['syntax'], {})
     validator = registry['targets'].get(adapter.get('target'), {})
     paths = {'scripts/compiler_queue.py', 'scripts/worker.py', 'scripts/clerk.py',
-             'scripts/propose.py', 'scripts/translate.py', 'syntaxes/registry.json',
+             'scripts/propose.py', 'scripts/translate.py', 'syntaxes/registry.json', 'syntaxes/spell_examples.py',
              *registry['closure'], *adapter.get('closure', []), *validator.get('closure', [])}
     if adapter.get('module') == 'syntaxes/spween.py':
         paths.add('scene/spween-bridge/target/debug/delvetalk-spween')

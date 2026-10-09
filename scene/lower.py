@@ -14,6 +14,8 @@ import sys
 
 UPSTREAM = "95980f7d1e109138496849a444f28c4b9076a4e2"
 PROFILE = "spween-scene-i64-v1"
+CURRENT_PROFILE = "spween-scene-i64-v2"
+SUPPORTED_PROFILES = (PROFILE, CURRENT_PROFILE)
 BIAS = 1 << 63
 MAX = (1 << 64) - 1
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +80,10 @@ def tagged_values(x):
 
 
 class Compiler:
-    def __init__(self, document, initial_vars, has):
+    def __init__(self, document, initial_vars, has, profile=PROFILE):
+        if profile not in SUPPORTED_PROFILES:
+            raise LoweringError("unsupported Spween executable profile")
+        self.profile = profile
         if document.get("ok") is not True or document.get("upstream") != UPSTREAM:
             raise LoweringError("requires a successful parse from the pinned Spween revision")
         self.doc = document
@@ -162,6 +167,16 @@ class Compiler:
             return label(x)
         return core(self.encode(value))
 
+    def rank_from_text(self, text):
+        # The persisted rank is only a v1 representation cache. A migration can
+        # retain text while a different source changes the closed string domain.
+        # Derive v2 ordering from that text in Bend; unknown strings refuse rather
+        # than acquire a guessed rank. Equality already compares exact text.
+        result = get(record({}), "spween-string-outside-source-domain")
+        for value, rank in reversed(list(self.ranks.items())):
+            result = iff(binary("labelEqual", text, label(value)), n(rank), result)
+        return result
+
     def condition(self, condition, variables):
         if condition is None: return b(True)
         def expr(e):
@@ -194,6 +209,8 @@ class Compiler:
             if kind not in ("int", "string"): return b(False)
             number = BIAS + int(right[1]) if kind == "int" else self.ranks[right[1]]
             a, z = get(left, "value"), n(number)
+            if kind == "string" and self.profile == CURRENT_PROFILE:
+                a = self.rank_from_text(get(left, "text"))
             if op == "lt": result = binary("less", a, z)
             elif op == "le": result = binary("lessEqual", a, z)
             elif op == "gt": result = binary("less", z, a)
@@ -296,16 +313,17 @@ class Compiler:
         provenance = {"upstream": UPSTREAM, "sourceSha256": hashlib.sha256(source.encode()).hexdigest(),
                       "compilerSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
         protocol = {"profile": "delvetalk-local-v1", "name": "spween:" + self.ast["meta"]["id"],
-                    "sceneProfile": PROFILE, "provenance": provenance,
+                    "sceneProfile": self.profile, "provenance": provenance,
                     "initial": {"session": {"vars": initial, "visited": {str(i): False for i in range(len(self.passages))},
                                 "passage": 0, "started": False, "ended": not self.passages,
                                 "choices": {"length": 0, "items": {}}, "requirements": False}},
                     "commands": commands}
-        return {"profile": PROFILE, "source": source, "ast": self.ast, "upstream": UPSTREAM,
+        return {"profile": self.profile, "source": source, "ast": self.ast, "upstream": UPSTREAM,
                 "provenance": provenance, "initialVars": self.initial_vars, "has": self.has, "protocol": protocol}
 
 
-def lower_document(document, initial_vars=None, has=None):
+def lower_document(document, initial_vars=None, has=None, *, profile=PROFILE):
+    """Keep existing API callers on explicit historical v1; opt into v2 by name."""
     if initial_vars is None:
         initial_vars = {}
     if has is None:
@@ -314,7 +332,7 @@ def lower_document(document, initial_vars=None, has=None):
         raise LoweringError("initial_vars must be an object mapping names to tagged values")
     if not isinstance(has, dict):
         raise LoweringError("has must be an object mapping categories to string arrays")
-    return Compiler(document, initial_vars, has).build()
+    return Compiler(document, initial_vars, has, profile).build()
 
 
 def bridge(request):
@@ -345,10 +363,12 @@ def main():
     parser.add_argument("source", type=Path)
     parser.add_argument("--state", type=Path, help='JSON {"vars": tagged values, "has": category lists}')
     parser.add_argument("--protocol-only", action="store_true")
+    parser.add_argument("--profile", choices=SUPPORTED_PROFILES, default=CURRENT_PROFILE,
+                        help="executable profile (default: spween-scene-i64-v2; v1 is historical)")
     args = parser.parse_args()
     state = json.loads(args.state.read_text()) if args.state else {}
     document = bridge({"op": "parse", "source": args.source.read_bytes().decode("utf-8"), "filename": str(args.source)})
-    bundle = lower_document(document, state.get("vars", {}), state.get("has", {}))
+    bundle = lower_document(document, state.get("vars", {}), state.get("has", {}), profile=args.profile)
     print(json.dumps(bundle["protocol"] if args.protocol_only else bundle, ensure_ascii=False, separators=(",", ":")))
 
 

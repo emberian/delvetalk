@@ -71,8 +71,10 @@ class TownJourneyTests(unittest.TestCase):
     def act(self, author, key, card, parent, command, fields):
         action = next(item for item in card['card']['actions'] if item['command'] == command)
         self.assertTrue(action['available'])
-        text = f'delvetalk {card["alias"]} {action["id"]} ' + town_cards.canonical(fields)
-        self.assertIn(f'delvetalk {card["alias"]} {action["id"]} ', card['body'])
+        selector = town_cards.action_word(action, card['card']['actions'])
+        text = town_cards.spell(card['alias'], action, fields, selector=selector)
+        self.assertIn(f'delvetalk {card["alias"]} {selector}\n', card['body'])
+        self.assertEqual(town_cards.parse_reply(text)['syntax'], 'delvetalk-town-spell-v1')
         source = self.feed(author, key, text, parent)
         receipt = self.clerk.receive(source['uri'], source['cid'])
         self.assertEqual(self.clerk.execution_profile(receipt['request']), self.runtime_profile)

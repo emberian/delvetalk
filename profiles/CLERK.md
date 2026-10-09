@@ -119,3 +119,14 @@ Bootstrap or quiescent upgrade accepts `--runtime-profile transactions` or `comp
 Publication remains separate and paused; see [receipts](RECEIPTS.md). An outbox intent is not delivery.
 
 [Implementation](../scripts/clerk.py), [runtime closure](../scripts/runtime_profile.py), [Lean/mock-PDS tests](../conformance/test_clerk.py), [compiled tests](../conformance/test_clerk_compiled.py).
+
+## Operator interpretation of ordinary posts
+
+Participants may speak naturally. The local service operator can supply a named,
+explicit interpretation through `receive --interpretation FILE`, retaining the
+GET-verified original post separately from the exact derived request. This shares
+the existing URI/CID binding and Lean admission path; it does not auto-parse prose
+or grant interpreter authority. Clarification creates no semantic attempt, while
+an uncertain attempted action retains its identity. See
+[MANUAL-INTAKE.md](MANUAL-INTAKE.md) for the internal tool input, provenance and
+Town response integration. Participants are not asked to author these JSON files.
