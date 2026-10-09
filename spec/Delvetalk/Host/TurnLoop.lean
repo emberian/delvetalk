@@ -62,14 +62,33 @@ inductive Abort where
       (interpretation : Option Json := none)
   deriving Inhabited
 
+/-- A `send` staged by a turn: it leaves with the commit. `sender` is the sending object (the
+    delivered turn's caller); `via` the grant it is sent under, whose grantor the delivery runs as. -/
+structure Send where
+  to : String
+  method : String
+  argument : Data
+  sender : String
+  via : String := ""
+  grantor : String := ""
+
 structure TurnState where
   world : World
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
+  /-- The turn's identity principal: it names the entry and derives send and grant ids. -/
   principal : String
   intent : String
-  /-- Sends in order: target, method, argument and the sending object. They leave with the commit. -/
-  sends : List (String × String × Data × String) := []
+  /-- The running frame: whose authority it acts with (the principal, or a grant's grantor),
+      the method it runs, and the grant it runs under. -/
+  subject : String
+  method : String := ""
+  via : String := ""
+  /-- A turn a principal asked for directly (not a delivery): only such a turn may grant. -/
+  direct : Bool := true
+  grants : List Grant := []
+  revokes : List String := []
+  sends : List Send := []
   programs : List (String × (String × String)) := []
   laws : List (String × String) := []
   ticks : Nat
@@ -175,7 +194,7 @@ def addWrite (id caller : String) (step : Step) : M Unit := do
   if step.length > Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
   let prior := (s.writes.lookup id).getD []
   if prior.length ≥ Limits.maxEditsPerWrite then evaluation "turn exceeds the edit capacity"
-  let steps := prior ++ [(⟨caller, 0, step⟩ : Written)]
+  let steps := prior ++ [({ caller, edits := step, method := s.method, via := s.via } : Written)]
   if !s.writes.any (·.1 == id) && s.writes.length ≥ Limits.maxWrites then
     evaluation "turn exceeds the write capacity"
   let writes := if s.writes.any (·.1 == id) then
@@ -187,11 +206,12 @@ def addWrite (id caller : String) (step : Step) : M Unit := do
     amends (kind 2) itself. False when the write set is full. -/
 def ensureWrite (id caller : String) (kind : Nat) : M Bool := do
   let s ← get
+  let change : Written := { caller, kind, edits := [], method := s.method, via := s.via }
   if s.writes.any (·.1 == id) then
-    set { s with writes := s.writes.map fun (k, ws) => if k == id then (k, ws ++ [(⟨caller, kind, []⟩ : Written)]) else (k, ws) }
+    set { s with writes := s.writes.map fun (k, ws) => if k == id then (k, ws ++ [change]) else (k, ws) }
     return true
   if s.writes.length ≥ Limits.maxWrites then return false
-  set { s with writes := s.writes ++ [(id, [(⟨caller, kind, []⟩ : Written)])] }
+  set { s with writes := s.writes ++ [(id, [change])] }
   return true
 
 /-- What the host tells a running method about itself, built here and nowhere else.
@@ -272,14 +292,33 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return { object, sources, seed := dataJson state }
 
+/-- The subject a call or send of `method` on `callee` by the running object `self` acts
+    with: the running frame's own when `via` is empty, else the grantor of grant `via` if it
+    stands for that callee and method and names the frame's subject or `self` as grantee. -/
+def usableGrant (via self callee method : String) : M (Option String) := do
+  let s ← get
+  if via.isEmpty then return some s.subject
+  match grantStands s.world via callee method with
+  | some g => return if (g.to == s.subject || g.to == self) && !s.revokes.contains via then some g.grantor else none
+  | none => return none
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
-partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String) : M Data := do
+partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
+    (subject : String) (via : String := "") : M Data := do
+  let outer ← get
+  set { outer with subject, method, via }
+  let result ← runFrame depth id method argument caller
+  modify fun s => { s with subject := outer.subject, method := outer.method, via := outer.via }
+  return result
+
+/-- The body of `runMethod`, inside the frame it set. -/
+partial def runFrame (depth : Nat) (id method : String) (argument : Data) (caller : String) : M Data := do
   let s ← get
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
-  let context := contextData id s.principal caller s.intent s.world.height
+  let context := contextData id s.subject caller s.intent s.world.height
     (if depth == 0 then "request" else "call") method
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ r)) => pure ([obj.state, argument, context], r)
@@ -374,7 +413,7 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
   match s.world.objects[policy]? with
   | none => respond bounds responseType "denied" [emptyRecord]
   | some o =>
-    if !o.read.permits s.principal then respond bounds responseType "denied" [emptyRecord]
+    if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord]
     else if utterance.utf8ByteSize > Limits.maxUtteranceBytes then evaluation "utterance exceeds its byte capacity"
     else if (dataJson offers).compress.utf8ByteSize > Limits.maxOffersBytes then
       evaluation "offers exceed their byte capacity"
@@ -396,7 +435,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       match (← get).world.objects[id]? with
       | none => respond bounds responseType "denied" [emptyRecord]
       | some o =>
-        if !o.read.permits (← get).principal then respond bounds responseType "denied" [emptyRecord] else
+        if !o.read.permits (← get).subject then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
         respond bounds responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
   | .variant "write" (.record f) =>
@@ -410,18 +449,21 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         addWrite self caller step
         respond bounds responseType "written" [emptyRecord]
     | none => refusedWith bounds responseType "notSelf"
-  | .variant "call" (.record f) =>
+  | .variant "call" (.record f) | .variant "callVia" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed call plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed call plan"
     let some argument := f.lookup "argument" | evaluation "malformed call plan"
+    let via := ((f.lookup "via").bind labelOf).getD ""
     match referenceId target with
     | none => refusedWith bounds responseType "unknownObject"
     | some id =>
       if !(← get).world.objects.contains id then refusedWith bounds responseType "unknownObject"
       else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
-      else
-        let result ← runMethod (depth + 1) id method argument self
-        respond bounds responseType "returned" [.record [("result", result)]]
+      else match ← usableGrant via self id method with
+        | none => refusedWith bounds responseType "noGrant"
+        | some subject =>
+          let result ← runMethod (depth + 1) id method argument self subject via
+          respond bounds responseType "returned" [.record [("result", result)]]
   | .variant "reprogram" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed reprogram plan"
     let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
@@ -458,7 +500,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?) with
     | none => respond bounds responseType "denied" [emptyRecord]
     | some o =>
-      if !o.read.permits s.principal then respond bounds responseType "denied" [emptyRecord]
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord]
       else respond bounds responseType "inspected" [.record [("pin", .label o.pin),
         ("law", .label o.lawText), ("source", .label (entrySource o))]]
   | .variant "check" (.record f) =>
@@ -491,20 +533,54 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | .ok rec =>
         set { note s with creates := s.creates ++ [(id, rec)] }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
-  | .variant "send" (.record f) =>
+  | .variant "send" (.record f) | .variant "sendVia" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed send plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed send plan"
     let some argument := f.lookup "argument" | evaluation "malformed send plan"
+    let via := ((f.lookup "via").bind labelOf).getD ""
     match referenceId target with
     | none => refusedWith bounds responseType "foreignWorld"
     | some id =>
+      match ← usableGrant via self id method with
+      | none => refusedWith bounds responseType "noGrant"
+      | some subject =>
       let s ← get
       if s.sends.length ≥ Limits.sendsPerTurn then evaluation "turn exceeds the send capacity"
       if s.world.pending.size + s.sends.length ≥ Limits.maxPending then
         evaluation "world exceeds the pending delivery capacity"
       let delivery := deliveryId s.principal s.intent s.sends.length
-      set { s with sends := s.sends ++ [(id, method, argument, self)] }
+      let staged : Send := { to := id, method, argument, sender := self, via, grantor := if via.isEmpty then "" else subject }
+      set { s with sends := s.sends ++ [staged] }
       respond bounds responseType "delivery" [.record [("id", .label delivery)]]
+  | .variant "grant" (.record f) =>
+    let some to := (f.lookup "to").bind labelOf | evaluation "malformed grant plan"
+    let some method := (f.lookup "method").bind labelOf | evaluation "malformed grant plan"
+    let some (.natural expires) := f.lookup "until" | evaluation "malformed grant plan"
+    let s ← get
+    -- Only the object a principal asked directly may speak for that principal: not a callee,
+    -- not a delivered turn, not a frame already running under a grant.
+    if depth != 0 || !s.direct || !s.via.isEmpty then refusedWith bounds responseType "notDirect"
+    else match (f.lookup "object").bind referenceId with
+    | none => refusedWith bounds responseType "unknownObject"
+    | some object =>
+      if !s.world.objects.contains object then refusedWith bounds responseType "unknownObject"
+      else if to.isEmpty || to.utf8ByteSize > Limits.maxPrincipalBytes then refusedWith bounds responseType "grantee"
+      else if s.grants.length ≥ Limits.grantsPerTurn then refusedWith bounds responseType "capacity"
+      else
+        let id := grantId s.principal s.intent s.grants.length
+        set { s with grants := s.grants ++ [({ id, grantor := s.principal, holder := self, to, object, method, expires } : Grant)] }
+        respond bounds responseType "granted" [.record [("id", .label id)]]
+  | .variant "revoke" (.record f) =>
+    let some id := (f.lookup "id").bind labelOf | evaluation "malformed revoke plan"
+    let s ← get
+    match s.world.grants[id]? with
+    | none => refusedWith bounds responseType "unknownGrant"
+    | some g =>
+      if !(g.holder == self || (g.grantor == s.subject && s.via.isEmpty)) then refusedWith bounds responseType "notGrantor"
+      else if g.revoked || s.revokes.contains id then respond bounds responseType "revoked" [emptyRecord]
+      else
+        modify fun s => { s with revokes := s.revokes ++ [id] }
+        respond bounds responseType "revoked" [emptyRecord]
   | .variant "offer" (.record f) =>
     let some document := f.lookup "document" | evaluation "malformed offer plan"
     let text ← liftEval (Delvetalk.Document.render document)
@@ -542,6 +618,8 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
 structure TurnMeta where
   /-- The object whose send this turn delivers; the delivered method's `caller`. -/
   caller : String := ""
+  /-- The grant a delivered send was made under. -/
+  via : String := ""
   ledger : Option Ledger := none
   delivery : Option (String × Json) := none
 
@@ -550,15 +628,16 @@ def ledgerJson (l : Ledger) : Json := l.json
 /-- The sends of an admitted turn, each with the ledger it inherits: depth - 1,
     work - the ticks this turn used, storage - the bytes its writes added. -/
 def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)
-    (sends : List (String × String × Data × String)) (updates : List (String × Object)) : List (String × Json) :=
+    (sends : List Send) (updates : List (String × Object)) : List (String × Json) :=
   if sends.isEmpty then [] else
   let added := updates.foldl (fun n (id, o) =>
     let before := ((w.objects[id]?).map fun p => (dataJson p.state).compress.utf8ByteSize).getD 0
     n + ((dataJson o.state).compress.utf8ByteSize - before)) 0
   let child : Ledger := ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
-  [("sends", Json.arr (sends.zipIdx.toArray.map fun ((to, method, argument, sender), i) => Json.mkObj
-    [("id", toJson (deliveryId principal intent i)), ("to", toJson to), ("method", toJson method),
-     ("argument", dataJson argument), ("sender", toJson sender), ("ledger", child.json)]))]
+  [("sends", Json.arr (sends.zipIdx.toArray.map fun (x, i) => Json.mkObj
+    ([("id", toJson (deliveryId principal intent i)), ("to", toJson x.to), ("method", toJson x.method),
+     ("argument", dataJson x.argument), ("sender", toJson x.sender), ("ledger", child.json)] ++
+     (if x.via.isEmpty then [] else [("via", toJson x.via), ("principal", toJson x.grantor)]))))]
 
 /-- What a turn segment carries into its end: who it is, how it began, what it has spent. -/
 structure Ctx where
@@ -577,14 +656,26 @@ structure Ctx where
   ticksStart : Nat
   /-- The calling object of the activity's top method (empty for a direct turn). -/
   caller : String := ""
+  /-- The grant a delivered send was made under ("" for none). -/
+  via : String := ""
 
 
-def sendJson (s : String × String × Data × String) : Json :=
-  Json.mkObj [("to", toJson s.1), ("method", toJson s.2.1), ("argument", dataJson s.2.2.1), ("sender", toJson s.2.2.2)]
+def sendJson (s : Send) : Json :=
+  Json.mkObj ([("to", toJson s.to), ("method", toJson s.method), ("argument", dataJson s.argument),
+    ("sender", toJson s.sender)] ++
+    (if s.via.isEmpty then [] else [("via", toJson s.via), ("grantor", toJson s.grantor)]))
+
+def sendOfJson (j : Json) : Except String Send := do
+  return { to := ← j.getObjValAs? String "to", method := ← j.getObjValAs? String "method",
+           argument := ← decodeData Limits.dataDepth (← j.getObjVal? "argument"),
+           sender := ← j.getObjValAs? String "sender",
+           via := (j.getObjValAs? String "via").toOption.getD "",
+           grantor := (j.getObjValAs? String "grantor").toOption.getD "" }
 
 def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
   [("turnRequest", toJson ctx.digest), ("ticksUsed", toJson used), ("ledger", ctx.ledger.json)] ++
-    (ctx.delivery.map fun (id, sender) => [("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]).getD [] ++
+    (ctx.delivery.map fun (id, sender) => [("delivery", Json.mkObj ([("id", toJson id), ("from", sender)] ++
+      (if ctx.via.isEmpty then [] else [("via", toJson ctx.via)])))]).getD [] ++
     (ctx.resumes.map fun h => [("resumes", toJson h)]).getD []
 
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
@@ -601,7 +692,9 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       programs := st.programs
       laws := st.laws
       absent := st.absent
-      creates := st.creates }
+      creates := st.creates
+      grants := st.grants
+      revokes := st.revokes }
   let base := entryBase ctx used
   let refuse := fun (reason : String) =>
     let cls := if st.roots.isEmpty && !w.objects.contains ctx.object then "unknownObject" else "evaluation"
@@ -626,7 +719,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
       ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
       ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
-      ("offers", toJson st.offers), ("caller", toJson ctx.caller), ("checks", toJson st.checks)] ++
+      ("offers", toJson st.offers), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
+      ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes)] ++
       (if st.violation.isSome then [("violation", toJson st.violation)] else []))
     let outcome := Json.mkObj <| [("tag", toJson "suspended"),
       ("slot", Json.mkObj [("principal", toJson sp), ("intent", toJson si)]),
@@ -641,6 +735,13 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     | some id =>
       let (w', r) := commit w { proposal with writes := [], creates := [] } base
         (some { cls := "requiredAbsence", object := some id })
+      return (w', turnReply r)
+    | none =>
+    -- A send under a grant leaves only if the grant still stands (a suspension may have outlived it).
+    match st.sends.find? fun x => !x.via.isEmpty && (grantStands w x.via x.to x.method).isNone with
+    | some x =>
+      let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [] } base
+        (some { cls := "lawRefused", clause := some "noGrant", object := some x.to })
       return (w', turnReply r)
     | none =>
     let offered := (if st.offers.isEmpty then [] else [("offers", toJson st.offers.length)]) ++
@@ -660,8 +761,9 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let ticks ← match Delvetalk.Turn.budgets req.limits with
     | .ok b => pure b.ticks
     | .error e => throw e
-  let init : TurnState := { world := w, principal := req.principal, intent := req.intent, ticks, limits := req.limits }
-  let (result, st) := (runMethod 0 req.object req.method req.argument how.caller |>.run).run init
+  let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
+                            direct := how.delivery.isNone, ticks, limits := req.limits }
+  let (result, st) := (runMethod 0 req.object req.method req.argument how.caller req.principal how.via |>.run).run init
   let ctx : Ctx :=
     { principal := req.principal
       intent := req.intent
@@ -672,7 +774,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
       ledger := ledger
       delivery := how.delivery
       ticksStart := ticks
-      caller := how.caller }
+      caller := how.caller
+      via := how.via }
   finishTurn w ctx result st
 
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
@@ -726,6 +829,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
   let delivery ← match sus.getObjVal? "delivery" with
     | .ok d => pure (some (← d.getObjValAs? String "id", ← d.getObjVal? "from"))
     | .error _ => pure none
+  let via := ((sus.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "via").toOption).getD ""
   let ctx : Ctx :=
     { principal := principal
       intent := intent
@@ -738,7 +842,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       resumes := some hash
       usedBefore := ← natField sus "ticksUsed"
       ticksStart := ticks
-      caller := (act.getObjValAs? String "caller").toOption.getD "" }
+      caller := (act.getObjValAs? String "caller").toOption.getD ""
+      via }
   let stale? := (roots.find? fun (id, v) => (w.objects[id]?).map (·.version) != some v).map (·.1)
     <|> absent.find? fun id => w.objects.contains id
   if let some id := stale? then
@@ -752,9 +857,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     let (w', r) := commit w stalled (entryBase ctx ctx.usedBefore) (some { cls := "staleRoot", object := some id })
     return (w', turnReply r)
   let writes ← parseRecordedWrites (← act.getObjVal? "writes")
-  let sends ← ((← (← act.getObjVal? "sends").getArr?).toList.mapM fun s => do
-    return (← s.getObjValAs? String "to", ← s.getObjValAs? String "method",
-      ← decodeData Limits.dataDepth (← s.getObjVal? "argument"), ← s.getObjValAs? String "sender"))
+  let sends ← (← (← act.getObjVal? "sends").getArr?).toList.mapM sendOfJson
+  let grants ← (((act.getObjVal? "grants").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Grant.ofJson
   let creates ← ((← (← act.getObjVal? "creates").getArr?).toList.mapM fun r => do
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
@@ -772,6 +876,12 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       writes := writes
       principal := principal
       intent := intent
+      subject := principal
+      method := method
+      via := via
+      direct := delivery.isNone
+      grants := grants
+      revokes := strings (act.getObjVal? "revokes").toOption
       sends := sends
       programs := programs
       laws := laws
@@ -834,15 +944,24 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   let principal ← d.getObjValAs? String "principal"
   let sender ← d.getObjVal? "from"
   let ledger ← ledgerOf (← d.getObjVal? "ledger")
+  let via := (d.getObjValAs? String "via").toOption.getD ""
   let how : TurnMeta :=
     { caller := (d.getObjValAs? String "sender").toOption.getD ""
+      via
       ledger := some ledger
       delivery := some (id, sender) }
+  let to ← d.getObjValAs? String "to"
+  let method ← d.getObjValAs? String "method"
+  let deliveryFields := [("ledger", ledger.json), ("delivery", Json.mkObj ([("id", toJson id), ("from", sender)] ++
+    (if via.isEmpty then [] else [("via", toJson via)])))]
+  -- A send under a grant that no longer stands (revoked, or the clock past it) is consumed, refused.
+  if !via.isEmpty && (grantStands w via to method).isNone then
+    let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
+    return commit w p deliveryFields (some { cls := "lawRefused", clause := some "noGrant", object := some to })
   match ledger.exhausted with
   | some field =>
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
-    let (w', r) := commit w p
-      [("ledger", ledger.json), ("delivery", Json.mkObj [("id", toJson id), ("from", sender)])]
+    let (w', r) := commit w p deliveryFields
       (some { cls := "budgetExhausted", reason := some field })
     return (w', r)
   | none =>
@@ -986,7 +1105,7 @@ def interpretationsReply (w : World) : Json :=
   Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)]
 
 def scratchState (w : World) : TurnState :=
-  { world := w, principal := "", intent := "", ticks := 0, limits := Json.mkObj [] }
+  { world := w, principal := "", intent := "", subject := "", ticks := 0, limits := Json.mkObj [] }
 
 def abortText : Abort → String
   | .request m | .evaluation m => m

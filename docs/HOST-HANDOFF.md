@@ -200,6 +200,27 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    type and the object's Response can carry the proposal; a failed reply is `unclear`. Deadline is `interpretationPatience`
    (64 clock units) from the clock, resuming `timedOut`.
 
+8. **Grants (delegation).** Plan `grant {to, object, method, until}` -> `granted {id}` (id = hash of
+   `["grant", principal, intent, ordinal]`), `revoke {id}` -> `revoked {}`, and `callVia` / `sendVia`
+   (`call`/`send` plus `via: String`; records have no optional fields, so they are their own constructors;
+   the host also honours a `via` field on `call`/`send`). Only a direct turn's top frame may grant
+   (`notDirect` for a callee, a delivered turn, or a frame already under a grant); the grantor is the
+   turn's principal, the holder the running object. The grantee `to` is a principal or an object id and
+   must be the frame's subject or the calling object at use. A grant stands while not revoked, the clock
+   is `<= until`, and object and method match (`grantStands`). Under a grant the callee's frame runs with
+   subject = grantor (context.principal, read authority, law `request.subject`) and caller = the calling
+   object; its changes record `vias` and `methods` (parallel to `edits`, emitted only when non-empty) and
+   `judge` re-checks the grant (`lawRefused noGrant` if it no longer stands). A `sendVia` journals
+   `via` and `principal` (the grantor) on the send; the delivery runs as the grantor, carries
+   `delivery.via`, and is refused `noGrant` (consumed) if the grant fell between send and delivery; a
+   suspended turn whose staged sendVia lost its grant is refused at commit. Revocation: the holder object,
+   or the grantor in an undelegated frame (`notGrantor` otherwise; `judge` requires the grantor's principal
+   or the holder among the roots). Grants and revokes are outcome fields of an admitted entry
+   (`grants [{id, grantor, holder, to, object, method, until}]`, `revokes [id]`), installed by
+   `applyGrants`; `world.grants` holds them all (`maxGrants` 4096, `grantsPerTurn` 8). The frame lives in
+   `TurnState.subject/method/via`, set and restored by `runMethod`; `principal` stays the identity's and
+   derives send and grant ids. Tests: `tests/test_grants.py`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

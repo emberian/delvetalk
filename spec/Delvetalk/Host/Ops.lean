@@ -106,6 +106,10 @@ structure Written where
   caller : String
   kind : Nat := 0
   edits : Step
+  /-- The method whose run made the change ("" for an op), the law's `request.method`. -/
+  method : String := ""
+  /-- The grant the change was made under ("" for none): its grantor is the law's subject. -/
+  via : String := ""
 
 structure Proposal where
   principal : String
@@ -121,6 +125,9 @@ structure Proposal where
   /-- Objects the turn required absent, and objects it creates (a subset). -/
   absent : List String := []
   creates : List (String × CreateRec) := []
+  /-- Grants the turn makes and grant ids it revokes; they take effect with the commit. -/
+  grants : List Grant := []
+  revokes : List String := []
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
     amendment that no write of the proposal already names. -/
@@ -130,8 +137,8 @@ def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
     let have_ := ((acc.lookup id).getD []).any (·.kind == kind)
     if have_ then acc
     else if acc.any (·.1 == id) then
-      acc.map fun (i, ws) => if i == id then (i, ws ++ [⟨"", kind, []⟩]) else (i, ws)
-    else acc ++ [(id, [⟨"", kind, []⟩])]) p.writes
+      acc.map fun (i, ws) => if i == id then (i, ws ++ [{ caller := "", kind, edits := [] }]) else (i, ws)
+    else acc ++ [(id, [{ caller := "", kind, edits := [] }])]) p.writes
 
 def rootsJson (roots : List (String × Nat)) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
@@ -139,7 +146,9 @@ def rootsJson (roots : List (String × Nat)) : Json :=
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
   [("edits", stepsJson (ws.map (·.edits))), ("callers", toJson (ws.map (·.caller))),
-   ("kinds", toJson (ws.map (·.kind)))]
+   ("kinds", toJson (ws.map (·.kind)))] ++
+  (if ws.all (·.method.isEmpty) then [] else [("methods", toJson (ws.map (·.method)))]) ++
+  (if ws.all (·.via.isEmpty) then [] else [("vias", toJson (ws.map (·.via)))])
 
 def writesJson (writes : List (String × List Written)) : Json :=
   Json.arr (writes.toArray.map fun (o, ws) => Json.mkObj (("object", toJson o) :: writtenFields ws))
@@ -163,7 +172,7 @@ def parseWrites (j : Json) : Except String (List (String × List Written)) := do
   for w in raw do
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← w.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate write"
-    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step => ⟨"", 0, step⟩)]
+    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step => { caller := "", edits := step })]
   return out
 
 /-- Writes as the journal records them: steps with their callers and kinds. -/
@@ -177,9 +186,17 @@ def parseRecordedWrites (j : Json) : Except String (List (String × List Written
     let steps ← parseSteps (← w.getObjVal? "edits")
     let callers ← (← (← w.getObjVal? "callers").getArr?).toList.mapM (·.getStr?)
     let kinds ← (← (← w.getObjVal? "kinds").getArr?).toList.mapM natOf
-    unless callers.length == steps.length && kinds.length == steps.length do
-      throw "a write's callers and kinds must match its edits"
-    out := out ++ [(object, (steps.zip (callers.zip kinds)).map fun (step, caller, kind) => ⟨caller, kind, step⟩)]
+    let optional := fun (key : String) => do
+      match w.getObjVal? key with
+      | .ok a => (← a.getArr?).toList.mapM (·.getStr?)
+      | .error _ => pure (steps.map fun _ => "")
+    let methods ← optional "methods"
+    let vias ← optional "vias"
+    unless callers.length == steps.length && kinds.length == steps.length && methods.length == steps.length &&
+        vias.length == steps.length do
+      throw "a write's callers, kinds, methods and vias must match its edits"
+    out := out ++ [(object, (steps.zip (callers.zip (kinds.zip (methods.zip vias)))).map
+      fun (step, caller, kind, method, via) => { caller, kind, edits := step, method, via })]
   return out
 
 /-- A direct proposal. A write must name an object among its roots; `turn` is the
@@ -205,7 +222,9 @@ def Proposal.digest (p : Proposal) : String :=
     (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++
     (if p.creates.isEmpty then [] else [("creates", Json.arr (p.creates.toArray.map fun (id, c) => Json.mkObj
       [("object", toJson id), ("pin", toJson c.object.pin), ("seed", toJson (Journal.bodyHash c.seed.compress)),
-       ("law", toJson c.object.lawText)]))])))
+       ("law", toJson c.object.lawText)]))]) ++
+    (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
+    (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)])))
 
 /-! ## Judging -/
 
@@ -516,6 +535,24 @@ structure Judged where
   creations : List (String × Object) := []
   creates : List Json := []
 
+/-- The id of the `ordinal`th grant of the turn with this identity. -/
+def grantId (principal intent : String) (ordinal : Nat) : String :=
+  Journal.bodyHash (Json.arr #[toJson "grant", toJson principal, toJson intent, toJson ordinal])
+
+/-- The grant `id`, if it can stand behind running `method` of `object` now: made, not
+    revoked, the clock not past its `until`, and naming that object and method. -/
+def grantStands (w : World) (id object method : String) : Option Grant :=
+  match w.grants[id]? with
+  | some g => if !g.revoked && w.clock ≤ g.expires && g.object == object && g.method == method then some g else none
+  | none => none
+
+/-- Install a commit's grants and mark its revocations. -/
+def applyGrants (w : World) (grants : List Grant) (revokes : List String) : World :=
+  let w := grants.foldl (fun w g => { w with grants := w.grants.insert g.id g }) w
+  revokes.foldl (fun w id => match w.grants[id]? with
+    | some g => { w with grants := w.grants.insert id { g with revoked := true } }
+    | none => w) w
+
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
 def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
@@ -535,6 +572,16 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
   if w.objects.size + p.creates.length > Limits.maxObjects then
     throw { cls := "evaluation", reason := some "object capacity reached" }
+  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
+  for g in p.grants do
+    if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
+  -- A revocation needs the grantor's turn, or a turn that read the object holding the grant.
+  for id in p.revokes do
+    match w.grants[id]? with
+    | some g =>
+      unless g.grantor == p.principal || p.roots.any (·.1 == g.holder) do
+        throw { cls := "lawRefused", clause := some "notGrantor", object := some g.holder }
+    | none => throw { cls := "evaluation", reason := some "a revocation names an unknown grant" }
   let mut out : List (String × Object) := []
   let mut reprograms : List Json := []
   let mut amendments : List Json := []
@@ -570,9 +617,15 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- kind of change the object undergoes in this turn is judged, once for each object
     -- that called the running one to make it: the subject is the principal, the caller
     -- is the object whose call it was (empty when the turn's own method wrote).
-    let judgments := (changes.map fun c => (c.caller, c.kind)).eraseDups
-    for (caller, kind) in (if judgments.isEmpty then [("", 0)] else judgments) do
-      let facts : Law.Facts := ⟨p.principal, caller, height, p.turn, next.pin, kind⟩
+    -- A change made under a grant is judged with the grantor as its subject, if the grant
+    -- still stands for this object and method; otherwise the turn is refused `noGrant`.
+    let judgments := (changes.map fun c => (c.caller, c.kind, c.method, c.via)).eraseDups
+    for (caller, kind, method, via) in (if judgments.isEmpty then [("", 0, "", "")] else judgments) do
+      let subject ← if via.isEmpty then pure p.principal else
+        match grantStands w via id method with
+        | some g => pure g.grantor
+        | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
+      let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind⟩
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id }
     if let some text := p.laws.lookup id then
@@ -610,9 +663,12 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let sent := match (entry.getObjVal? "outcome").toOption.bind (fun o => (o.getObjValAs? String "tag").toOption),
       (entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) with
-    | some "admitted", some sends => sends.map fun s => Json.mkObj
-        ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
-          (s.getObj?.toOption.map (·.toList) |>.getD []))
+    | some "admitted", some sends => sends.map fun s =>
+        -- A send under a grant is delivered as its grantor (the send's own `principal`).
+        let fields := s.getObj?.toOption.map (·.toList) |>.getD []
+        Json.mkObj ([("from", identity)] ++
+          (if fields.any (·.1 == "principal") then [] else
+            [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
   { w with
     pending := (match delivered with
@@ -687,15 +743,19 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := applyGrants w p.grants p.revokes
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) ::
           writtenFields ((p.allWrites.lookup id).getD [])))
       let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
         (if judged.reprograms.isEmpty then [] else [("reprograms", Json.arr judged.reprograms.toArray)]) ++
         (if judged.amendments.isEmpty then [] else [("amendments", Json.arr judged.amendments.toArray)]) ++
-        (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]))
+        (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]) ++
+        (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
+        (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]))
+      let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates)
-        (updates.map (·.1) ++ judged.creations.map (·.1))
+        (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
       (w', reply entry)
 
 /-! ## Creation -/
@@ -876,6 +936,8 @@ def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcom
   unless (p.getObjValAs? String "principal").toOption == some principal && intent == id do
     throw "delivery runs under another principal than its sender's"
   unless (d.getObjVal? "from").toOption == (p.getObjVal? "from").toOption do throw "delivery names another sender"
+  unless (d.getObjValAs? String "via").toOption == (p.getObjValAs? String "via").toOption do
+    throw "delivery names another grant than its send"
   if (outcome.getObjValAs? String "class").toOption == some "budgetExhausted" then
     let ledger ← ledgerOf (← p.getObjVal? "ledger")
     unless ledger.exhausted == (outcome.getObjValAs? String "reason").toOption do
@@ -883,10 +945,15 @@ def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcom
   else if (← ledgerOf (← p.getObjVal? "ledger")).exhausted.isSome then
     throw "a delivery with an exhausted ledger ran"
 
-def checkSends (entry : Json) (principal intent : String) : Except String Unit := do
+def checkSends (w : World) (entry : Json) (principal intent : String) : Except String Unit := do
   let some sends := (entry.getObjVal? "sends").toOption | return ()
   let mut ordinal := 0
   for s in ← sends.getArr? do
+    if let .ok via := s.getObjValAs? String "via" then
+      let some g := grantStands w via (← s.getObjValAs? String "to") (← s.getObjValAs? String "method")
+        | throw "a send names a grant that does not stand"
+      unless (s.getObjValAs? String "principal").toOption == some g.grantor do
+        throw "a send under a grant is not delivered as its grantor"
     unless (s.getObjValAs? String "id").toOption == some (deliveryId principal intent ordinal) do
       throw "send id does not match its ordinal"
     discard <| s.getObjValAs? String "to"
@@ -912,7 +979,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   let key := identityKey principal intent
   let outcome ← entry.getObjVal? "outcome"
   checkDelivery w entry principal intent outcome
-  checkSends entry principal intent
+  checkSends w entry principal intent
   checkResumes w entry principal intent
   match ← outcome.getObjValAs? String "tag" with
   | "advanced" =>
@@ -984,7 +1051,12 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       return (id, ({ object := o, sources, seed } : CreateRec))
     let absent := ((entry.getObjVal? "absent").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
       fun a => a.getStr?.toOption
-    let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws, absent, creates }
+    let grants ← ((outcome.getObjVal? "grants").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Grant.ofJson
+    let revokes ← ((outcome.getObjVal? "revokes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM (·.getStr?)
+    for (g, i) in grants.zipIdx do
+      unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
+    let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws,
+                          absent, creates, grants, revokes }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     match judge w (w.height + 1) p with
@@ -1000,7 +1072,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1))
+      let w := applyGrants w grants revokes
+      let holders := (grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
+      return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
   | other => throw s!"unknown outcome {other}"
 
 def replay (content : String) : Except String World := do

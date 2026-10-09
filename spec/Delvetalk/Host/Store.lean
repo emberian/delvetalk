@@ -87,6 +87,9 @@ def maxOffersBytes : Nat := 65536
 def maxReplyBytes : Nat := 262144
 /-- Nesting of the plain JSON argument of a proposal. -/
 def plainDepth : Nat := 64
+/-- Grants one turn may make, and grants (live or revoked) a world holds. -/
+def grantsPerTurn : Nat := 8
+def maxGrants : Nat := 4096
 def genesis : String := "".pushn '0' 64
 end Limits
 
@@ -165,6 +168,30 @@ structure Library where
   pin : String
   modules : List (String × String)
 
+/-- A delegation: `grantor` (the principal of the direct turn that made it) lets `to` (a
+    principal or an object id) run `method` of `object` as the grantor, while the clock is at
+    most `expires` (the Plan's `until`). `holder` is the object whose method granted it; it and the grantor may revoke. -/
+structure Grant where
+  id : String
+  grantor : String
+  holder : String
+  to : String
+  object : String
+  method : String
+  expires : Nat
+  revoked : Bool := false
+  deriving BEq
+
+def Grant.json (g : Grant) : Json :=
+  Json.mkObj [("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
+    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)]
+
+def Grant.ofJson (j : Json) : Except String Grant := do
+  return { id := ← j.getObjValAs? String "id", grantor := ← j.getObjValAs? String "grantor",
+           holder := ← j.getObjValAs? String "holder", to := ← j.getObjValAs? String "to",
+           object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
+           expires := ← j.getObjValAs? Nat "until" }
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -191,6 +218,8 @@ structure World where
   clock : Nat := 0
   /-- Suspension entries still waiting, in journal order. -/
   suspended : Array Json := #[]
+  /-- Every grant an admitted turn made, by id; a revocation marks it. -/
+  grants : Std.HashMap String Grant := {}
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress

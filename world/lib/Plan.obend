@@ -87,6 +87,17 @@ record Interpret:
 record Offering:
   to: String
   document: Document.Document
+# Delegation. `to` (a principal, or an object id) may run `method` of `object` as the
+# principal of the direct turn that grants it, while the clock is at most `until`. The
+# grant is used by naming its id as `via` in callVia or sendVia: the callee then runs with
+# request.subject = the grantor and request.caller = the calling object. Without a grant
+# that stands the Plan is answered refused {clause: "noGrant"}. (Records have no optional
+# fields, so a call or send under a grant is its own constructor.)
+record Grant:
+  to: String
+  object: Reference
+  method: String
+  until: Nat
 record Publish:
   page: String
   section: String
@@ -105,6 +116,10 @@ sum Plan<E, A>:
   amend: {object: Reference, law: String}
   inspect: {object: Reference}
   check: {package: String}
+  grant: Grant
+  revoke: {id: String}
+  callVia: {object: Reference, method: String, argument: A, via: String}
+  sendVia: {object: Reference, method: String, argument: A, via: String}
 sum Response<S, R>:
   viewed: {version: Nat, state: S}
   denied: {}
@@ -125,6 +140,8 @@ sum Response<S, R>:
   amended: {}
   inspected: {pin: String, law: String, source: String}
   checked: {diagnostics: Document.Names}
+  granted: {id: String}
+  revoked: {}
 # The reference of the running object, in the world the context carries (the
 # empty world is the world the turn runs in).
 def self(context: Abi.Context) -> Reference:
