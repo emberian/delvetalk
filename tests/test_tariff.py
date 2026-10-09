@@ -66,9 +66,9 @@ class TariffTests(unittest.TestCase):
 
     def test_spell_parse_of_64_fields(self):
         out = test_spell.run("fieldCount", test_spell.text(test_spell.Maximum().reply(44)))
-        print("\n  spell, 64 fields: %d ticks (was 97,355)" % out["ticksUsed"])
+        print("\n  spell, 64 fields: %d ticks (56,957 before card names took :/.; 97,355 before that)" % out["ticksUsed"])
         self.assertEqual(out["value"]["value"], "64")
-        self.assertEqual(out["ticksUsed"], 56957)
+        self.assertEqual(out["ticksUsed"], 57044)
 
     def test_plain_of_1025_leaves(self):
         flat = run_pure("Document", "flat", nat(1025), probe=DOCUMENT, limits=BIG)
@@ -82,7 +82,7 @@ class TariffTests(unittest.TestCase):
 
     def test_bell_card_of_1025_rains(self):
         out = run_pure("Bell", "many", nat(1025), probe=BELL_PROBE, limits=BIG)
-        print("\n  Bell card, 1,025 rains: %d ticks (75,830 before the planter saw "(yours)"; 848,680; 333,209 before the card showed eight)" % out["ticksUsed"])
+        print("\n  Bell card, 1,025 rains: %d ticks (75,830 before the planter saw (yours); 848,680; 333,209 before the card showed eight)" % out["ticksUsed"])
         self.assertEqual(out["status"], "finished", out)
         self.assertEqual(out["ticksUsed"], 75997)
 

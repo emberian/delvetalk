@@ -49,7 +49,7 @@ def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
 def defaultSeed() -> Seed:
   {owner: "", env: Plans.nobody()}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, env: seed.env, triggers: Lists.List::<Trigger>.nil(), nextId: 1n}
+  {owner: seed.owner, env: if Plans.isNobody(seed.env) then {world: "", object: Events.envOf(seed.owner)} else seed.env, triggers: Lists.List::<Trigger>.nil(), nextId: 1n}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:

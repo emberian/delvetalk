@@ -41,7 +41,6 @@ class Wakes(Chain):
         return "env/" + OWNER
 
     def wake(self):
-        """Named plainly: a spell's card name is [a-z0-9-]+, so env/<did> cannot be named in one."""
         self.create("wake", "Wake", record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)), by=OWNER)
         return "wake"
 
@@ -84,6 +83,27 @@ class Wakes(Chain):
         self.assertEqual(self.turn(env, "observe", principal=OTHER)["result"], nat(1))
         back = self.turn(env, "seen", record(at=nat(0)), principal=OWNER)
         self.assertEqual(self.label_of(back), "refused")
+
+    def test_an_env_is_named_by_its_did_in_a_spell_and_lives_at_env_slash_did(self):
+        env = self.env()
+        self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
+        at = int(get(items(get(self.state(env), "buffer"))[0], "at")["value"])
+        r = self.turn(env, "receive", heard("delvetalk env/%s seen\nat: %d" % (OWNER, at)), principal=OWNER)
+        self.assertEqual(self.label_of(r), "done")
+        self.assertEqual(get(self.state(env), "seen"), nat(at))
+        self.assertIn("    delvetalk env/did:plc:inkling seen\n", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
+        # An env made at any other id takes nothing in.
+        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()), by=OWNER)
+        r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
+        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("An env lives at env/did:plc:inkling"))
+        self.assertEqual(self.version("env/elsewhere"), 0)
+
+    def test_a_wake_seeded_without_an_env_watches_env_slash_its_owner(self):
+        from tests.test_objects import PROBE_HEAD, run_pure
+        probe = PROBE_HEAD % "Wake" + "def home(owner: String, env: String) -> String:\n  O.seeded({owner: owner, env: {world: \"\", object: env}}).env.object\n"
+        out = run_pure("Wake", "home", label(OWNER), label(""), probe=probe)
+        self.assertEqual(out["value"], label("env/" + OWNER), out)
+        self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
 
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),

@@ -8,7 +8,9 @@ import ./Form.obend as Form
 #   ...
 #
 # Blank lines and lines starting with # are ignored, and everything after a line
-# that is exactly --- is ignored. Card, action and field names are [a-z0-9-]+. A
+# that is exactly --- is ignored. A card name is [a-z0-9:/.-]+, at most 160 bytes
+# (so `env/did:plc:…` can be named); action and field names are [a-z0-9-]+, and the
+# action `?` asks for the card's usage. A
 # value is the rest of its line, trimmed. Every line before the first delvetalk
 # line is skipped (a reply quotes the invitation it answers); a reply with no
 # delvetalk line is not a spell: prose needs interpretation, not parsing. The
@@ -45,6 +47,13 @@ sum Fit:
   refused: {reason: String}
 def identifier() -> String:
   "abcdefghijklmnopqrstuvwxyz0123456789-"
+def cardAlphabet() -> String:
+  "abcdefghijklmnopqrstuvwxyz0123456789-:/."
+def isCardName(value: String) -> Bool:
+  let size = textLength(value)
+  size > 0n && size <= 160n && textSpan(value, cardAlphabet()) == size
+def isAction(value: String) -> Bool:
+  value == "?" || isIdentifier(value)
 def blanks() -> String:
   " \t\r"
 def trimStart(value: String) -> String:
@@ -73,7 +82,7 @@ def header(line: String, rest: String) -> Parsed:
   let afterCard = trimStart(textDrop(afterBlanks, cardEnd))
   let actionEnd = textBreak(afterCard, " \t")
   let action = textTake(afterCard, actionEnd)
-  if isIdentifier(card) == false || isIdentifier(action) == false then skip(rest) else spelled(card, action, both(inline(trimStart(textDrop(afterCard, actionEnd))), fieldLines(rest)))
+  if isCardName(card) == false || isAction(action) == false then skip(rest) else spelled(card, action, both(inline(trimStart(textDrop(afterCard, actionEnd))), fieldLines(rest)))
 # The one-line form: fields follow the action, separated by commas. A comma
 # continues the current value unless what follows it looks like `name:`.
 def inline(tail: String) -> Fields2:
