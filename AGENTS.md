@@ -14,6 +14,9 @@ can be reproduced.
 - Commit useful increments regularly; qualification and convergence are separate
   from checkpoints. Do not hold completed work hostage to the entire suite.
   Root owns named-path commits in this shared checkout; inspect concurrent edits.
+- Review includes adjacent design and efficiency problems, not only the assigned
+  checklist. Propose improvements and own coordinated fixes. Frozen snapshots
+  preserve test evidence; they do not freeze development or suppress findings.
 
 - Lean owns the pinned source relation and local host admission. Python, JS and
   C are independent core evaluators. Python world code handles custody of a

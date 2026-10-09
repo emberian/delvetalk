@@ -43,8 +43,8 @@ Current ownership:
 | Work | Owner |
 | --- | --- |
 | Preparation retained-value ABI, source Editor and workshop joins | `backlog_archaeology` |
-| Shared binder ABI and native template integration | `bend_language`, `template_language` |
-| Atomic root capture and Portal/Town consumers | `receiving_review`, `portal_bridge` |
+| Checker row-order conversions, including match results | `bend_language` |
+| Bounded native catalogue and Portal/account consumers | `receiving_review`, `core_audit` |
 | Source Candidate/Factory consumer cleanup and adoption cards | `world_design_critique` |
 | TownForge/stateful workshop source conversion | `town_conformance_room` |
 | Joined native generation, serial builds and exact closure evidence | `compiler_queue` |
@@ -53,6 +53,10 @@ Current ownership:
 | Document presentation and authenticated studio | `delvetalk_js` |
 | Source membership, private heaps and authenticated HTTP joins | `world_foundations`, `protocol_workflow`, `portal_adversarial` |
 | Integration, browser acceptance, fresh deployment and scoped checkpoints | Root |
+| Source ContractWorkshop replacing Python law/adoption recipes | `welcome_semantics_review` |
+| Session factory, verified-post intake and scoped membership continuation | `inhabit_builder`, `town_spells` |
+| Bounded native process launch and Linux resource qualification | `authored_action_examples`, `live_clerk` |
+| SessionFactory reprogram representation and budget review | `bend_execution` |
 
 At most two native compiler seats are used. Builds use
 independent writable package snapshots or explicit serial handoff; shared binary
@@ -65,7 +69,7 @@ receiving evidence. These results still need the fresh shared-world seed.
 
 Further work without an active implementation owner: physical time observation and a source-authored
 appointment relationship; bounded message descendants and governed terminal
-settlement; contract workshop and commit/reveal ports; collapse remaining JSON
+settlement; commit/reveal ports; collapse remaining JSON
 expression/profile ladders; deeper scratch editing; physical repository moves.
 Shared source APIs should make these subsequent cuts smaller.
 
@@ -111,11 +115,19 @@ preserve offered meaning; neither defines another action grammar.
   `portal_bridge`. Native preparation must preserve retained values without
   repeatedly serializing typed state through an expanding generic Value wrapper.
 
-Qualified native snapshot 084835 has been installed locally after exact source
-and binary verification; later atomic-capture/amendment/preparation changes need
-a new joined generation. The public website still runs an older read-only garden.
+Qualified native snapshot 092407 is installed locally after exact source
+and binary verification. Direct native Data preparation, bounded catalogue and
+checker corrections await the next joined generation. The public website still
+runs an older preview.
 Fresh source garden, source-authored scenes and new account services must be
 qualified and seeded on the actual deployment, not inferred from local tests.
+
+Review remains open across lane boundaries. Current integration repairs include
+separating literal-form validation from source-produced interpretation values,
+recovering committed outcomes without a second encounter-custody write, and
+retaining account bootstrap descriptors before first admission so restarts retry
+the original request even after templates change. Snapshot freezes preserve
+reproducible evidence; they do not close design review.
 
 ## Boundaries
 
