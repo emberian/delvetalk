@@ -65,19 +65,48 @@ def Ty.isComputation : Ty → Bool
   | .computation _ _ _ => true
   | _ => false
 
+/-- Declared bounds are defined below `Ty.lookup`; data admission needs them to
+unfold a closed recursive sum, which the elaborator represents as a rigid-free
+variable whose bound is the sum's unfolding (`List<T>` is `variable i` with
+`bounds i = variant (nil: {}, cons: {head: T, tail: variable i})`). -/
+abbrev DataBounds := List (Nat × Ty)
+
 /-- First-order data: what a Plan, a response and a checkpointed reply can be.
-No closures, specifications, prototypes, custody, rigid variables (so no
-recursive sums yet) and no activities. -/
-def Ty.isData : Ty → Bool
-  | .natural | .label | .boolean | .emptyRow => true
-  | .field _ member tail => member.isData && tail.isData
-  | .variant row => row.isData
+No closures, specifications, prototypes, custody and no activities. A variable is
+data when it is not rigid and its bound is data under the assumption that the
+variable itself (and every variable already being unfolded, `seen`) is data: a
+closed recursive sum is a greatest fixed point. `fuel` only bounds the walk. -/
+def Ty.isDataUnder (bounds : DataBounds) (rigid : List Nat) : Nat → List Nat → Ty → Bool
+  | 0, _, _ => false
+  | _ + 1, _, .natural | _ + 1, _, .boolean | _ + 1, _, .label | _ + 1, _, .emptyRow => true
+  | fuel + 1, seen, .field _ member tail =>
+      member.isDataUnder bounds rigid fuel seen && tail.isDataUnder bounds rigid fuel seen
+  | fuel + 1, seen, .variant row => row.isDataUnder bounds rigid fuel seen
+  | fuel + 1, seen, .variable index =>
+      if rigid.contains index then false
+      else if seen.contains index then true
+      else match bounds.lookup index with
+        | some bound => bound.isDataUnder bounds rigid fuel (index :: seen)
+        | none => false
+  | _, _, _ => false
+
+def Ty.dataFuel : Nat := 4096
+
+/-- No bounds: the closed, non-recursive first-order types. -/
+def Ty.isData (type : Ty) : Bool := type.isDataUnder [] [] Ty.dataFuel []
+
+/-- A Plan is a sum of typed actions over first-order data; a recursive sum
+may itself be a Plan. -/
+def Ty.isPlanUnder (bounds : DataBounds) (rigid : List Nat) : Ty → Bool
+  | .variant row => row.isDataUnder bounds rigid Ty.dataFuel []
+  | .variable index =>
+      !rigid.contains index &&
+      match bounds.lookup index with
+      | some (.variant row) => row.isDataUnder bounds rigid Ty.dataFuel [index]
+      | _ => false
   | _ => false
 
-/-- A Plan is a sum of typed actions over first-order data. -/
-def Ty.isPlan : Ty → Bool
-  | .variant row => row.isData
-  | _ => false
+def Ty.isPlan : Ty → Bool := Ty.isPlanUnder [] []
 
 theorem Ty.shareable_not_computation (type : Ty) (shareable : type.shareable = true) :
     type.isComputation = false := by

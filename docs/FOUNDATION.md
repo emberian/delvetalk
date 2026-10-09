@@ -154,9 +154,8 @@ guards or transitions is a bug.
 
 ## 7. Language work carried into the rebuild
 
-- `textDrop` charges `1 + B + Q` on the whole input; it should charge the
-  dropped prefix, as `textTake` already charges the taken one. Character walks
-  over long text are quadratic until this lands.
+- `textDrop` charges the dropped prefix, as `textTake` charges the taken one (done:
+  `textStepCost` in `Theory/ObjectiveBendDemandData.lean`).
 - One `Context` record in the prelude. The previous tree had three.
 - `case _` exists in the parser; the library uses it.
 - Document literal lowering binds the import alias instead of emitting a fixed

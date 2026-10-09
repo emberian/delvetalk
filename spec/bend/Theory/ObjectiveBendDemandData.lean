@@ -76,7 +76,10 @@ def textPrefixCost (text alphabet : String) (member : Bool) (ticks : Nat) : Nat 
 /-- Hosted text work and conservative result allocation bound, checked before
 `stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.
 Unicode operations traverse scalar sequences; their UTF-8 size bounds both the
-scalar traversal and copied bytes. Decimal conversion uses a conservative
+scalar traversal and copied bytes. `textTake` and `textDrop` are charged by the
+prefix they traverse (the taken, respectively the dropped, scalars: at most four
+bytes each), not by the whole input; `textDrop` still reserves the whole input's
+size as its allocation bound. Decimal conversion uses a conservative
 quadratic bit-work allowance and bit-count allocation bound. -/
 def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   match state.control,state.stack with
@@ -91,7 +94,8 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
            (1 + 2 * bytes, bytes)
   | .returned (.natural n), .binaryRight .textDrop (.label text) :: _ =>
       if n == 0 || n >= text.utf8ByteSize then (1, 0)
-      else (1 + text.utf8ByteSize + min text.utf8ByteSize (4 * n), text.utf8ByteSize)
+      else let dropped := min text.utf8ByteSize (4 * n)
+           (1 + 2 * dropped, text.utf8ByteSize)
   | .returned (.label text), .unary .textLength :: _ => (1 + text.utf8ByteSize, 0)
   | .returned (.label text), .unary .sha256Text :: _ =>
       let bytes := text.utf8ByteSize
@@ -285,24 +289,52 @@ open Minidregg.Theory.ObjectiveBendTypes in
 mutual
 /-- Exact first-order conformance of data to a data type: every record field
 is declared once and every declared field is present; a variant's label is one
-of the sum's labels and its payload conforms. -/
-def Data.conforms : Data → Ty → Bool
-  | .natural _, .natural | .boolean _, .boolean | .label _, .label => true
-  | .record fields, row =>
+of the sum's labels and its payload conforms. A variable (a closed recursive
+sum) conforms as its bound: one unfolding per constructor it is matched
+against. `fuel` only bounds the walk; `Data.conforms` supplies enough for the
+data's own size and the number of bounds. -/
+def Data.conformsFuel (bounds : DataBounds) : Nat → Data → Ty → Bool
+  | 0, _, _ => false
+  | fuel + 1, .natural _, .natural | fuel + 1, .boolean _, .boolean
+  | fuel + 1, .label _, .label => true
+  | fuel + 1, data, .variable index => match bounds.lookup index with
+      | some bound => Data.conformsFuel bounds fuel data bound
+      | none => false
+  | fuel + 1, .record fields, row =>
       (match row with | .field .. | .emptyRow => true | _ => false) &&
       fields.length == (rowNames row).length &&
-      (fields.map Prod.fst).eraseDups.length == fields.length && fieldsConform fields row
-  | .variant label payload, .variant row => match rowMember row label with
-      | some member => payload.conforms member
+      (fields.map Prod.fst).eraseDups.length == fields.length && Data.fieldsConformFuel bounds fuel fields row
+  | fuel + 1, .variant tag payload, .variant row => match rowMember row tag with
+      | some member => Data.conformsFuel bounds fuel payload member
       | none => false
-  | _, _ => false
-def fieldsConform : List (String × Data) → Ty → Bool
-  | [], _ => true
-  | (name,value) :: rest, row =>
+  | _, _, _ => false
+def Data.fieldsConformFuel (bounds : DataBounds) : Nat → List (String × Data) → Ty → Bool
+  | 0, _, _ => false
+  | _ + 1, [], _ => true
+  | fuel + 1, (name,value) :: rest, row =>
       (match rowMember row name with
-        | some member => value.conforms member
-        | none => false) && fieldsConform rest row
+        | some member => Data.conformsFuel bounds fuel value member
+        | none => false) && Data.fieldsConformFuel bounds fuel rest row
 end
+
+mutual
+def Data.size : Data → Nat
+  | .natural _ | .boolean _ | .label _ => 1
+  | .record fields => 1 + Data.fieldsSize fields
+  | .variant _ payload => 1 + payload.size
+def Data.fieldsSize : List (String × Data) → Nat
+  | [] => 0
+  | (_, value) :: rest => value.size + Data.fieldsSize rest
+end
+
+open Minidregg.Theory.ObjectiveBendTypes in
+/-- Conformance under the declared bounds of a checked packet. The walk is
+bounded by the data's size times the bounds that one node may unfold through. -/
+def Data.conformsUnder (bounds : DataBounds) (data : Data) (type : Ty) : Bool :=
+  Data.conformsFuel bounds ((data.size + 1) * (bounds.length + 3) + 2) data type
+
+open Minidregg.Theory.ObjectiveBendTypes in
+def Data.conforms (data : Data) (type : Ty) : Bool := data.conformsUnder [] type
 
 /-- Extract the Plan of a yielded state through the same budgeted
 materialization as every other Data: enter its cell with an empty stack. -/

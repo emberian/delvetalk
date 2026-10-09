@@ -83,6 +83,92 @@ def with_tokens(checkpoint, tokens, fix_digest):
     return redigest(c) if fix_digest else c
 
 
+LISTS = """edition ObjectiveBend 1
+sum List<T>:
+  nil: {}
+  cons: {head: T, tail: List<T>}
+sum Plan:
+  put: List<Nat>
+sum Reply:
+  names: List<String>
+  none: {}
+def range(n: Nat) -> List<Nat>:
+  match n:
+    case 0n: List::<Nat>.nil({})
+    case 1n+p: List::<Nat>.cons({head: n, tail: range(p)})
+def count(items: List<String>) -> Nat:
+  match items:
+    case nil(_): 0n
+    case cons(c): 1n + count(c.tail)
+def collect(n: Nat) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.put(range(n))):
+    case names(items): count(items)
+    case none(_): 0n
+"""
+
+DOCUMENTS = """edition ObjectiveBend 1
+import ./Document.obend as Doc
+sum Plan:
+  offer: Doc.Document
+sum Reply:
+  back: Doc.Document
+def show(label: String) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.offer(Doc.concat(Doc.text(label), Doc.quote("a", Doc.text("b"))))):
+    case back(d): Doc.size(d)
+"""
+
+WORLD_LIB = os.path.join(ROOT, "world", "lib")
+
+
+def library_modules(*names):
+    """Library modules (imports first) read from world/lib, as supplied modules."""
+    found = {}
+    for directory, _, files in os.walk(WORLD_LIB):
+        for f in files:
+            if f.endswith(".obend"):
+                found[f[:-6]] = os.path.join(directory, f)
+    out, seen = [], set()
+
+    def visit(name):
+        if name in seen:
+            return
+        seen.add(name)
+        with open(found[name]) as handle:
+            source = handle.read()
+        for line in source.splitlines():
+            if line.startswith("import ./"):
+                visit(line.split("/")[1].split(".obend")[0])
+        out.append({"name": name, "source": source})
+    for n in names:
+        visit(n)
+    return out
+
+
+def nil():
+    return variant("nil")
+
+
+def cons(head, tail):
+    return variant("cons", {"tag": "record", "fields": [
+        {"name": "head", "value": head}, {"name": "tail", "value": tail}]})
+
+
+def from_list(items):
+    out = nil()
+    for item in reversed(items):
+        out = cons(item, out)
+    return out
+
+
+def to_list(data):
+    out = []
+    while data["label"] == "cons":
+        fields = {f["name"]: f["value"] for f in data["payload"]["fields"]}
+        out.append(fields["head"])
+        data = fields["tail"]
+    return out
+
+
 def plan_field(plan, name):
     for f in plan["fields"]:
         if f["name"] == name:
@@ -102,9 +188,9 @@ class Host:
         assert line, "host closed its output (crash)"
         return json.loads(line)
 
-    def compile(self, source, entry):
+    def compile(self, source, entry, library=()):
         reply = self.send({"op": "compile", "entry": entry,
-                           "modules": [{"name": "Package", "source": source}]})
+                           "modules": library_modules(*library) + [{"name": "Package", "source": source}]})
         assert reply["status"] == "compiled", reply
         return reply["artifact"]
 
@@ -125,6 +211,14 @@ class Host:
         self.proc.stdin.close()
         self.proc.stdout.close()
         self.proc.wait(timeout=30)
+
+
+WALK = """edition ObjectiveBend 1
+def walk(text: String, n: Nat) -> Nat:
+  match n:
+    case 0n: 0n
+    case 1n+p: textLength(textTake(text, 1n)) + walk(textDrop(text, 1n), p)
+"""
 
 
 class TurnCase(unittest.TestCase):
@@ -296,6 +390,55 @@ class TurnTests(TurnCase):
         self.assertEqual(r["status"], "error", r)
         self.assertIn("not a yielded state", r["message"])
 
+    def test_recursive_list_in_a_plan_with_100_elements_yields_and_resumes(self):
+        h = self.host()
+        art = h.compile(LISTS, "collect")
+        y = h.start(art, [nat(100)])
+        self.assertEqual(y["status"], "yielded", y)
+        self.assertEqual(y["plan"]["label"], "put")
+        self.assertEqual([x["value"] for x in to_list(y["plan"]["payload"])],
+                         [str(n) for n in range(100, 0, -1)])
+        done = h.resume(art, y["checkpoint"], variant("none"))
+        self.assertEqual((done["status"], done["value"]), ("finished", nat(0)), done)
+
+    def test_recursive_list_response_conforms_and_a_malformed_cons_is_refused(self):
+        h = self.host()
+        art = h.compile(LISTS, "collect")
+        y = h.start(art, [nat(2)])
+        good = variant("names", from_list([label("a"), label("b"), label("c")]))
+        done = h.resume(art, y["checkpoint"], good)
+        self.assertEqual((done["status"], done["value"]), ("finished", nat(3)), done)
+        missing_tail = variant("names", variant("cons", {"tag": "record", "fields": [
+            {"name": "head", "value": label("a")}]}))
+        wrong_head = variant("names", from_list([label("a"), nat(7)]))
+        extra_field = variant("names", variant("cons", {"tag": "record", "fields": [
+            {"name": "head", "value": label("a")}, {"name": "tail", "value": nil()},
+            {"name": "more", "value": nat(1)}]}))
+        wrong_tail = variant("names", variant("cons", {"tag": "record", "fields": [
+            {"name": "head", "value": label("a")}, {"name": "tail", "value": nat(0)}]}))
+        for bad in (missing_tail, wrong_head, extra_field, wrong_tail):
+            r = h.resume(art, y["checkpoint"], bad)
+            self.assertEqual(r["status"], "error", r)
+            self.assertIn("does not conform", r["message"])
+        # the checkpoint is still usable
+        self.assertEqual(h.resume(art, y["checkpoint"], good)["status"], "finished")
+
+    def test_document_in_a_plan_round_trips_through_the_response(self):
+        h = self.host()
+        art = h.compile(DOCUMENTS, "show", library=("Document",))
+        y = h.start(art, [label("hello")])
+        self.assertEqual(y["status"], "yielded", y)
+        self.assertEqual(y["plan"]["label"], "offer")
+        document = y["plan"]["payload"]
+        self.assertEqual(document["label"], "sequence")
+        done = h.resume(art, y["checkpoint"], variant("back", document))
+        # size = len("hello") + len("a") + len("b")
+        self.assertEqual((done["status"], done["value"]), ("finished", nat(7)), done)
+        broken = copy.deepcopy(document)
+        broken["label"] = "no-such-document-form"
+        r = h.resume(art, y["checkpoint"], variant("back", broken))
+        self.assertEqual(r["status"], "error", r)
+
     def test_maximum_plan_record_and_long_label_round_trip(self):
         h = self.host()
         art = h.compile(wide_source(), "wide")
@@ -310,6 +453,27 @@ class TurnTests(TurnCase):
         self.assertEqual(plan_field(y["plan"]["payload"], "f62"), nat(62))
         done = h.resume(art, y["checkpoint"], variant("ok"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(1)), done)
+
+
+class TextTariffTests(TurnCase):
+    def walk(self, h, art, steps, ticks=None):
+        request = {"op": "run", "artifact": art, "arguments": [label("a" * 4096), nat(steps)]}
+        if ticks:
+            request["limits"] = {"ticks": str(ticks)}
+        return h.send(request)
+
+    def test_character_walk_cost_is_linear_not_quadratic_in_the_input(self):
+        h = self.host()
+        art = h.compile(WALK, "walk")
+        # 1024 one-character steps over a 4096-byte string fit the DEFAULT budget
+        small = self.walk(h, art, 1024)
+        self.assertEqual((small["status"], small["value"]), ("finished", nat(1024)), small)
+        self.assertLess(small["ticksUsed"], 100000)
+        # the whole 4096-byte string, one character at a time, under 300,000 ticks
+        whole = self.walk(h, art, 4096, 300000)
+        self.assertEqual((whole["status"], whole["value"]), ("finished", nat(4096)), whole)
+        # 4x the steps costs about 4x the ticks (a whole-input charge would be 4x per step too)
+        self.assertLess(whole["ticksUsed"], 4.5 * small["ticksUsed"])
 
 
 if __name__ == "__main__":
