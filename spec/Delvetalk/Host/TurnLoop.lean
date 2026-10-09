@@ -307,6 +307,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
     | .ok (.finished v _ _ _) => pure v
     | _ => throw ("compile", "initial() did not evaluate")
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
+  let state := withOwner state seed principal
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
     (fun e => (if isAmendmentRefusal e then "law"

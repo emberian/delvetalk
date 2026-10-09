@@ -496,6 +496,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   object whose Response sum lacks the label gets "response type cannot carry <label>". Text is `.label`.
 - **world-create seeds** are laid over `initial()` like the create Plan's (`mergeSeed`, Ops): a record of some fields,
   `{}` for `initial()` itself; a field the state lacks is `typeMismatch: …`. The created entry journals the whole state.
+  A seed that does not set a text `owner` field gets the named `owner`, else the creating principal (`withOwner`; the
+  create Plan too), before the law's dry run.
 - **create semantics**: `package` is a module NAME in the creator's sealed chain (Garden says "Bell"), or
   source starting `edition`; `law` is only used if it starts `law `; the seed is a PARTIAL record
   overlaid on `initial()` (a variant wrapper is unwrapped). Full-conforming seeds pass as is.

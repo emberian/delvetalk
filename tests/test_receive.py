@@ -139,10 +139,20 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(field(state, "doors"), doors)
         self.assertEqual(field(state, "greeted"), {"tag": "list", "items": []})
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
-        # {doors} alone is a well-typed seed: initial()'s owner "" is what the metarule then refuses.
+        # {doors} alone: a seed that does not set `owner` gets the creating principal, so the
+        # creator owns what it makes and the law's dry run admits it.
         alone = create("d2", record(doors=doors))
-        self.assertEqual(alone["status"], "error", alone)
-        self.assertTrue(alone["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), alone)
+        self.assertEqual(alone["status"], "created", alone)
+        mine = self.host.send(op="world-view", principal="ember", object="d2")["state"]
+        self.assertEqual((field(mine, "owner"), field(mine, "doors")), (label("ember"), doors))
+        theirs = self.host.send(op="world-create", principal="kimik3", identity="d4", object="d4",
+                                modules=closure("Directory"), entry="initial", seed=record())
+        self.assertEqual(theirs["status"], "created", theirs)
+        self.assertEqual(field(self.host.send(op="world-view", principal="ember", object="d4")["state"], "owner"), label("kimik3"))
+        # A seed that names its owner keeps it (and the metarule judges that owner's law).
+        named = create("d5", record(owner=label("glm"), doors=doors))
+        self.assertEqual(named["status"], "error", named)
+        self.assertTrue(named["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), named)
         stray = create("d3", record(owner=label("ember"), colour=label("amber")))
         self.assertEqual(stray, {"status": "error", "message": "typeMismatch: the seed names a field the state does not have"})
         self.reopen()

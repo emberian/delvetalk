@@ -124,6 +124,11 @@ class Wakes(Chain):
         self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "owner"), refused)
         self.assertEqual(amend("ember", "am-ember")["status"], "refused")
         self.assertEqual(amend(OWNER, "am-owner")["status"], "admitted")
+        # A seed that leaves `owner` out gets the named owner.
+        other = self.host.send(op="world-create", principal="ember", identity="mk-other", object="env/" + OTHER,
+                                modules=closure("Env"), entry="initial", seed=record(), owner=OTHER)
+        self.assertEqual(other["status"], "created", other)
+        self.assertEqual(get(self.state("env/" + OTHER), "owner"), label(OTHER))
         self.reopen()
         self.assertEqual(self.version("env/" + OWNER), 1)
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="glm")["status"], "error")
