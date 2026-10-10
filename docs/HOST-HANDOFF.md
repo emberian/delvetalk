@@ -771,6 +771,11 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    failure stays `lawRefused`, clause `lawReads`. Test: `tests/test_law.py`
    `test_an_exhausted_law_reads_is_transient_budget`.
 
+101. **A resumed spell stays a spell (host12; codex host 15).** `resumeSegment` restores `origin` and
+   `command` beside `post` from the journaled activity, so an activity that suspends again journals
+   them again and its stale re-run (`resumeOne`) runs with `inputOrigin.kind = "spell"`. Test:
+   `tests/test_input_post.py` `test_a_second_suspension_keeps_the_spells_origin`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

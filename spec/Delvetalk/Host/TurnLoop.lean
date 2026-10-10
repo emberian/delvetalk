@@ -2122,6 +2122,10 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList
       checks := ← activityNat act "checks"
       post := (act.getObjValAs? String "post").toOption.getD ""
+      -- A spell's origin and command go on with it, so a second suspension journals them and a
+      -- stale re-run of that one runs as the spell it was (codex host 15).
+      origin := (act.getObjValAs? String "origin").toOption.getD "request"
+      command := (act.getObjValAs? String "command").toOption.getD ""
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do
     let s ← get
