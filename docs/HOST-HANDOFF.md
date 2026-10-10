@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host13 through `serve`, items 5.118 to 5.125 on top of host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host14 through ROOT and MODERATION, items 5.126 and 5.127 on top of host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1241,84 +1241,62 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host13, in the order the root set (each with what closes it). Closed since host12
-and dropped: reach (5.118), FLEX host 2 to 4 (5.119 to 5.121), the rewrite lane's three (5.122,
-5.123), the journal bound at append (5.124), `serve` (5.125), `world-posted` without `intent`
-(host12 `2b54d11`), the receipt by intent (transport4's intent route).
+The queue after host14, in order (each with what closes it). Closed since host13 and dropped: ROOT layer 1
+and MODERATION in edition 3 with `unposted` (5.126; `expire` waits on 4), the objects lane's minting, receipt
+hash and handed-on reach (5.127).
 
-1. **ROOT, layer 1 and MODERATION in one edition (docs/ROOT.md §1 to §3, read whole).** `world-root
-   {principal, reason, act}` on the root socket only (5.125 already refuses it on the public one), the
-   nine acts (`set` any field of any object, unjudged; `delete`; `as` a turn under any principal,
-   judged; `settings` including the clock either way; `library` unjudged; `ignore`/`unignore`; `card`
-   text override; the moderation acts unjudged); the entry `{root: true, reason}` inside the hash and
-   `outcome {tag: root, kind, object?, field?, before, after}`, whole and public in `projectEntry`;
-   the replay rule (`before` checked against the store, `after` applied verbatim, indexes rebuilt as
-   `record` does; `ignore N` treats N as refused and later entries that no longer hold are *shadowed*,
-   skipped and listed in `world-status.shadowed` and `verify`; snapshots before an ignore refused).
-   With it, MODERATION: the widened metarule (a law must admit an amendment by its proposer and by
-   the world's opener; the default law gains the opener clause), `quiet {who, hours, reading}` (a new
-   transient class with `next`), `retire`/`unretire`, `hide`/`show`, `expire` (a scratch, once 4 is
-   in), `revoke` widened to the opener, `world-settings` (quotas without a genesis, with
-   `modelQuota` per world per day, the opener not exempt), `world-status.hour {turns, refused,
-   interpretations, attempts}`. One bump: `replayEdition` 3 (§6's rule). Then the offline
-   `delvetalk-obend root-edit` (`truncate`, `drop`, `rewrite`, `splice`, `delete-world` over a closed
-   journal into a new file, the old kept, `rootEdit {command, reason, oldHead, at}` inside the first
-   re-chained entry). Closed by a test of each act's `before`/`after`, a replay with an ignored entry
-   and a shadowed one, and a root-edit round trip through `verify`. The hand's root console is the
-   transport lane's after it.
-2. **`unposted`** (host; the hand's `unpost`): `world-posted {uri, cid, object, intent, unposted: true,
-   reason}` after our own post is deleted on Delve or Zulip journals the fact that it left the town
-   (the reservation stays settled; the receipt's `posted` projection says `unposted` with the reason);
-   a uri never posted is refused. Closed by a test in `tests/test_post_reserve.py`.
-3. **The journal as a block store, and a streaming open (owner: "why so eager and parsy").** Design
-   here before building, the replay edition stated. Every entry a canonical DAG-CBOR record under
-   its CID in a block store (the checkpoint block scheme, 5.70, extended to entries); the
-   newline-JSON file kept only as the append-ordered chain of CIDs and the fields the chain check
-   needs; the live state and every index `record` rebuilds today (receipts by slug and by intent,
-   roots and keys touched, subscriptions, reservations, pending interpretations, each relation's keys)
-   persisted with the snapshot as their own records. Open: read the snapshot's index records, verify
-   the chain of CIDs after it, decode an entry only when asked (a receipt read, a replay check, a
-   root compare); replay from height 0 stays as the slow path that proves the fast one (a test
-   compares both). Keep the kernel's lazy cells (lane/kernel11) in view: a forced cell reads from the
-   same store. Measured before (5.124: an 18 MB journal of 20,000 turns opens in 7.7 s at 250 MB
-   peak, about 10.4 bytes resident per journal byte plus 60 MB) and after; target an open from a
-   snapshot under a second at a peak near the live state. Then `maxJournalBytes` to 4 GiB and the
-   snapshot cadence a `world-open` setting (every N entries, default 1,000), and a test opening 20,000
-   entries past a snapshot within the memory bound.
-4. **FEDERATION's scratch worlds (§3, §7 row 2).** `world-scratch {principal, name, from?}` over
-   `forkWorld` into `DIR/scratch/<principal>/<name>.journal`, `lastTurn` per scratch on the home
-   world's clock, the sweep inside the home world's `world-advance` (expired at lastTurn + 360, the
-   file deleted), 2 per principal, 16 MiB, 1,000 objects; the exits `make` with `madeFrom {world:
-   "scratch/<n>", …}`, `world-cite` (entry bytes copied, at most 1 MiB, a `cited` entry), a shelved
-   page; the REPL and `check` run there; `world-status.scratches`. Heaps (`heap: <did>` in `serve`) go
-   with it.
-5. **References `<world>:<object>` (FEDERATION §2, §7 row 5).** `resolveCard` and the spell reader
-   split by the first segment when it is a served world; foreign `view`/`viewField`/`card`/`inspect`
-   run in the target store under the global principal, journaled as `cites [{world, object, version,
-   stateCid, head}]`, never roots; `foreignWorld` narrows to "not served here". Then cross-world
-   `call`/`send` (§7 row 6) as a suspension resumed by the target's receipt, judged there as kind 0 or 3,
-   the ledger crossing; grants, subscriptions, closures, fixed fields and laws never cross.
-6. **Principals `zulip:<realm>:<id>`** (FEDERATION §1): the host takes the realm-qualified form
-   wherever it reads a principal (the transport lane already sends it, transport4 `32e7ce3`); a test
-   that two realms' same user id are two principals.
-7. **Rows as roots** (WHOLENESS §3a): when lane/kernel11 names its lazy-cell entry points, record
-   `{object, field, key}` for each forced cell and judge it with `keysChangedSince`; the per-cell byte
-   bound replaces 5.108's per-object one.
-8. Smaller, standing:
+1. **The offline `delvetalk-obend root-edit` (docs/ROOT.md §1.5).** `--journal J --out J2 --reason R` with
+   `truncate --height N`, `drop --height N`, `rewrite --height N --entry FILE`, `splice --at N --entries FILE`,
+   `delete-world --name W`; a new file, the old kept; `rootEdit {command, reason, oldHead, at}` inside the first
+   re-chained entry; the old-to-new hash table and the count of slugs changed printed. What re-chaining must
+   carry, found reading replay: every `previous`/`hash` from the edit on (`Journal.sealEntry`, entry 1 keeps
+   `replay`); after a `drop` or `splice` every later height and `turn` (replay requires an admitted entry's
+   `turn` to be its height); a `resumes` names a suspension by its entry hash and an `ended` id hashes the
+   height (`endedId`), so both are rewritten through the table; send and delivery ids hash the identity and
+   ordinal, not the entry, and stay; a fork's genesis `previous` is the forked world's CID and stays;
+   snapshots past the edit are not copied. Closed by a round trip of each command through `world-open
+   {verify: true}` and a test that the marker names the old head.
+2. **The stored path (KERNEL-HANDOFF §15, §16 item 14).** Switch the turn runner's call sites to
+   `startEntryStored`, `resumeSuspendedStored`, `resumeEntryStepStored`, `Package.executeDataEntryStored`
+   with a `Store` built from the object's state at its read height (`storeOfState`, relations from the
+   artifact's `[{field, key}]`), kept for the turn's resumed segments; record each `Read` as a root `{object,
+   field, key}` and each span as a key range, judged by `keysChangedSince` and the span rule; the bound per
+   cell (`cellOverBound`, `Bounds.maxCellBytes`, Ops' `stateBytes` sites and the seed's) and the write charge
+   per changed cell (`changedCellBytes`); then delete the quoted path and move `test_tariff`'s pins in the
+   same commit. Measure a 2,048-row relation read for one row through a real turn before and after.
+3. **The journal as a block store and a streaming open** (unchanged from host13's item 3: every entry a
+   canonical record under its CID in the checkpoint block store, the text file the ordered chain, every index
+   `record` derives persisted with the snapshot, open verifying the chain after it, replay from 0 the slow path
+   proved equal by a test; measured on an 18 MB journal before and after; then `maxJournalBytes` 4 GiB and the
+   snapshot cadence a `world-open` setting). Edition 3's indexes join the list: `cards`, `quiets`, `hidden`,
+   `ignored`, `rootActs`, `hourCounts`, `modelDay`; `shadowed` is already in the snapshot body. An `ignore`
+   re-derives the store by full replay (`Snapshot.replayAll`): with a block store, from the newest snapshot
+   before the ignored height.
+4. **FEDERATION** in its order: scratch worlds (§3; with them the `expire` power and root act, now a request
+   error), `<world>:<object>` references (§2), `zulip:<realm>:<id>` principals (§1).
+5. **The objects lane's atomic make:** its `typeMismatch` on a grafted body's method did not reproduce on
+   foundation fixtures (5.127); take its failing input as a test and fix what it shows.
+6. Smaller, standing:
+   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks` (ROOT §1.2; today the entry bound refuses
+     it); a retry of a root act is a new `root:<n>` (no identity of its own); `set pin` stores the pin alone
+     and the turns still run the sources' closure (ROOT wants `programRefused: no sources for pin`); `as` runs
+     the method as named (no spell reading). hob's lines for the powers (ROOT §2.2's table) are not written:
+     the refusal and the receipt carry the reading.
+   - The widened metarule is the host's (`openerAmends`), not a clause checked in each law: ROOT §2.1 should
+     say so (docs lane).
+   - Deploy: edition 3 needs a new genesis for every world (as 2 did).
    - `readerActions` compiles `actions` per read: warm it as `warmLaws` warms `law` if it shows in
      `DELVETALK_TIMING`.
-   - `methodAdmits` judges on the state as it stands, so an owner-on-first-use method is hidden from
-     the speaker it would admit (none in the town; a card with one says so in `actions()`).
+   - `methodAdmits` judges on the state as it stands, so an owner-on-first-use method is hidden from the
+     speaker it would admit.
    - hob's tail line names `page: spells` always; a lens or law hint could name `object` or `laws`.
-   - `world-reprogram`/`amend` are gated only by the object's law (and 5.92's fixed fields); the
-     widened metarule of 1 is the opener's way in.
-   - Suspension size (5.72): the host's remaining share is about 0.5 KB.
-   - A delivery's post (5.71): add only when an object needs it.
-   - A `call` or `write` to an object created in the same turn is still `unknownObject` (5.122 covers
-     `extend`); judge and replay would need the uncommitted object.
-   - The bridge must state `reach` (5.118) and, on Zulip, pass the recorded ancestor as `replyTo`;
-     until it does, town prose is "not addressed" (transport lane).
+   - Suspension size (5.72): the host's remaining share is about 0.5 KB. A delivery's post (5.71): add only
+     when an object needs it.
+   - A `call` or `write` to an object created in the same turn is still `unknownObject` (5.122 covers `extend`).
+   - The bridge must state `reach` (5.118; 5.127 makes a handed-on reply keep it) and, on Zulip, pass the
+     recorded ancestor as `replyTo`; the hand's root console and moderation verbs (ROOT §1.6, §2.3) are the
+     transport lane's over `world-root`, `world-settings`, `world-turn` on `world`, and `world-status.hour`.
    - Objects lane: World.obend's `interpret` gains `held` and `misfit` (5.117), Card's `receive` takes
-     `misfit` (5.121), Library's laws page reads `i.laws` with `source: false` and Card's usage
-     `i.offered` (5.123), Kind's graft becomes create-then-extend (5.122), Spell.obend's inline reader
-     is not case-folded (5.119).
+     `misfit` (5.121), Library's laws page reads `i.laws` with `source: false` and Card's usage `i.offered`
+     (5.123), Kind's graft becomes create-then-extend (5.122) and names `c.object.object` under a minted
+     prefix (5.127), Spell.obend's inline reader is not case-folded (5.119).
