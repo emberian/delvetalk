@@ -327,63 +327,68 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `tests/test_bridge.py` `test_end_to_end_clock_and_addressee_against_the_real_host` is still `@unittest.expectedFailure` with a comment that `world-addressee` is missing; the op exists (`Session.lean`). Remove the decorator and run it.
 - `world-reprogram`/`amend` are gated only by the object's law.
 
-### Queue for the next host lane, in order (from lane/host7, which stopped at 2073cd0)
+### Queue for the next host lane, in order (from lane/host8, which stopped at its context ceiling)
 
-Build and test on hbox in your own directory; `swarm-build`; narrow suites, then the full `tests.run` once. Contracts:
-docs/RELATIONAL.md (§2, §3, §5, §9 day plan, §11 scale) and docs/WHOLENESS.md (§1 `answer` dispatch, §2, §3, §3a, §4 wire names).
+host8 landed, one commit each (5.46 to 5.51 and the commits on lane/host8): compile caches kept across
+turns and card reads; a migration made canonical (test); the relational law atoms denoted; relations read
+once per build from the entry module only; relations day 2 (inserts commute, keyed row rebase,
+`movedRootAdmits`); state bytes counted without printing; the per-object write index (`World.touches`);
+`viewDerived`; `viewAt`; the world object (message dispatch, `world` reserved); `viewField`; Host/Spell.lean
+and `spell-parse`; spells read by the host for message-dialect cards (`badSpell`); subscriptions and
+`changed`; field roots. Build and test on hbox in your own directory with `swarm-build`; narrow suites, then
+the full `tests.run` once (1011 tests green at lane/host8's last commit).
 
-1. **Rehearsal timing, remaining.** Done: `DELVETALK_TIMING=1` per-op stderr lines (5.43); arrival 190 -> 20 ms
-   (`libraryClosure`), directory prose turn 310 -> 180 ms (held checkpoint dictionary) (5.44). Measured run-9 wall on
-   hbox at load 13 to 30: 64 to 73 s (base binary 72 to 101 s); host time 31 to 36 s, of which directory `receive` 11 to
-   16 s, env `receive` 4.4 to 5.9 s, garden `receive` 4.5 to 5.2 s, `world-arrive` 2.3 s, `world-interpretation` 1.5 to
-   1.9 s. The rest of the wall (~30 s) is the Python transport's subprocesses, not the host. Next: a directory turn
-   still costs ~110 ms CPU at 64k ticks; profile its plans (each `inspect` answers a whole source; each yield encodes a
-   v2 checkpoint), and measure on a quiet box before claiming the 50 s target.
-2. **Relations day 1, rest.** Done (5.45): edits, nine cells, canonical form, keys checked, `limit`/`dropOldest`. Not
-   done: a test of a migration result made canonical; `Relation.obend`/Plan.obend constructors are the objects lane's
-   (host tests declare their own sums).
-3. **Relations day 2.** `EditKind.commutes` gains `insert`; `keysChangedSince w id seen field : Option (List Data)` beside
-   `fieldsChangedSince`, read from `writes[].edits` (insert/upsert rows' keys, retract keys); `judge`'s moved-root rule
-   accepts an upsert or retract whose key no admitted write since `seen` touched, for any root (the `rebaseOwn` own-object
-   restriction dropped for relations); a concurrent retract of a changed key is `staleRoot` (transient). Write beside the
-   nine-cell table: when that `staleRoot` re-runs the turn (`TurnMeta.rerun`, 5.26), the re-run reads the current rows, so
-   the retract is a no-op (key gone) or the turn meets `keyTaken` (row changed); one test shows it end to end (two
-   agents, one retracts while the other upserts the same key). Each commutation pair as two turns against a moved root;
-   two inserts of one key with different rests (second `keyTaken`).
-4. **Law atoms.** `Law.lean` denotes `insertOnly(F)`, `count(new.F) <= n`, `count(new.F) <= count(old.F) + n`, `REF in
-   new.F.COL`, with `#guard`s. Blocked on the kernel lane: `LawExpr`/`LawRef` in `spec/bend/Compiler/ObjectiveBendLaw.lean`
-   have no constructors for them yet (checked at foundation 5eac2a6). Denote once they parse.
-5. **Scale (§11).** (a) done with item 2. (b) Trust own state: stored state is not re-checked with `conformsUnder` per
-   turn; the per-turn check of the state argument is in the kernel's `Turn.prepareStartEntry` (every argument), so the
-   host needs an optional "trusted" flag there (as the dictionary parameter was added, 5.44) and the judge's check of the
-   written state can be limited to the fields a step changed; measure a 2,000-row Bell rain turn before and after.
-   (c) A per-object index height -> keys touched (rebuilt by `record`, so replay and snapshots get it) so
-   `keysChangedSince` is constant rather than a scan.
-6. **`viewDerived {object, view}` -> `derived {version, value: Data}`**: run the target package's pure def named `view`
-   (taking the state and the reader's Context, returning first-order data) under read authority and the turn's remaining
-   ticks, exactly as `renderCard` runs `render`; record the root; refuse an unknown view by name; views are declared by
-   `def views() -> List<String>`, read as `lawReads()` is; mark them in the method table. Plan.obend shapes appended at
-   the end of Plan and Response (5.40 shows why: `test_objects` pins the first constructors' order).
-7. **`viewAt {object, version}` -> `viewed {version, state}`** for a past version, built as `world-object {version}` builds
-   it (`pinAndLawAt` for code; the state at a version is not stored: reconstruct by undoing later writes from
-   `writes[].edits` backwards, or replay the object's touched entries forward from its created seed); read authority;
-   root recorded at the CURRENT version.
-8. **Wholeness host days** (WHOLENESS.md): (1) the `world` object: `answer` dispatches on `Message.method` when the
-   activity's dialect is "message" (on constructor for the old dialect until the objects finish), with the world's own
-   law and read policy saying who may call which method (`write` self-only; `create` under the opener's rules;
-   `subscribe` by anyone with read authority on the target); (2) `Host/Spell.lean`: the spell grammar (`delvetalk <card>
-   <action>` line with ` / ` or newline fields, `name: value`, `<<DELIM` blocks, fences skipped, last unquoted line,
-   bare field lines) parsed against the target's method-table forms (`methodForms`), the typed argument built, the
-   method run; `world-turn {spell: text}`; refusals `badSpell {clause, reason, hint}` with the usage card; `?` answered by
-   the host; bare field lines passed as `Heard.fields`; tested against the Bend Spell fixtures until Spell.obend's parser
-   goes; (3) subscriptions: `subscribe {object, field}`/`unsubscribe` journaled, `changes` deliveries beside `sends` after
-   every admitted write with `{object, field, version, inserted, retracted}` re-derived from `writes[].edits` on replay,
-   64 subscribers per object, `unserved` journaled past the per-turn bound; (4) rows as roots (§3a): `recordRoot`
-   records `{object, field, key}` for rows read, the commit check uses the keys-touched index (item 5c), receipts cite
-   rows beside versions, replay re-derives; the insert-commutes rule becomes a special case.
+1. **Text word for a sum of empty constructors at the boundary** (coordinator, ahead of the rest: Garden's
+   colour becomes a sum). Where the host decodes an argument from outside (`world-turn`, `world-interpretation`'s
+   proposal argument, `jsonData`/`decodeData` at the op boundary), a label where the method's input type has a
+   closed sum of empty-payload cases is taken as the case of that name; no case of that name is refused by
+   name (`typeMismatch`, `expected` naming the cases). Resolve the input type through the packet's bounds
+   (`variantCases`, Ops). Tests: a JSON proposal and a `receive` (spell path: `spellArgument` already builds
+   the variant).
+2. **Spells, the rest of WHOLENESS §2.** The interpretation verdict fitted as spell text against the offered
+   forms (`interpretVerdict`); lenses' `set` (`delvetalk <card> set` with one `field: value`, judged against the
+   lens kind, calling `set(state, {field, value}, context)`); `bridge.draft_text` reading `hint` is transport's.
+3. **Hypermedia reads** (docs/AGENTS-API.md "host ops wanted"): `world-inspect` lists per method `admits:
+   true | {clause, reading?}`, the text law's kind-0 verdict for the asking principal on the unchanged state;
+   `world-objects {methods: true}` answers `methods: {<id>: [names]}`; `world-inspect {source: false}` omits the
+   module text. One commit each.
+4. **Compile cache per process.** `World.compiled/requests/builds` are per world, so a fresh world recompiles
+   every package (Place 0.11 s first, 0.02 s cached). Keys are content addresses (inputs digest with the
+   library pin), so a process-wide cache is sound: keep it in the session (`PackageSession.Session.cache` sits
+   beside the world already) and inject it into each world it opens. Heaps (`hostd` `heaps/<did>.journal`) are
+   separate processes, so they gain only from an on-disk cache keyed the same way; measure a heap's first
+   compile before and after.
+5. **`world-open {interpretQuota: n}`** (default 48): interpretations one principal may start per clock hour,
+   counted from the journal (suspended entries with `interpretation`, by principal and clock); the next is a
+   journaled transient refusal, class `quota`, whose public projection carries `next: <clock>` and the message
+   "interpretations: N an hour; next at clock M"; `world-status {principal}` reports the cap and the caller's
+   remaining count; the opener and the clock principal are exempt. Test: the 49th prose turn in an hour
+   refused, the first after the hour admitted.
+6. **Deletion pass** (no deployed journal exists): the boolean `sync`; the `slot` tolerance in `receive`
+   (`receiveArgument`); the `import … as Super` layer form (`stackForm`); `utteranceBlock` and pre-v3 block
+   shapes; the ignored `compiled`/`binary` fields (`withoutCompiled`); the relative-address refusal; the index
+   edit forms `amend {index}`/`remove {index}` (objects6 deleted them from Plan.obend); `via` beside
+   `callVia` if both remain. Tests converted, replay of the test journals green, the "accepted for one
+   release" sentences gone from this file. One commit.
+7. **Rows as roots, the rest** (WHOLENESS §3a): per-row roots need the kernel's lazy cells (KERNEL-HANDOFF
+   §15); when `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`.
+8. **Rehearsal wall.** foundation at 6fe2740 runs the rehearsal in 32 to 36 s wall on hbox at load 14 to 50
+   (host CPU 16 to 18 s); the 50 s target holds. Measure on a quiet box before quoting a number.
+9. Older open items (above): forms for sum inputs held as bounds variables, handlers over nested frames,
+   foreign worlds, `tests/test_bridge.py`'s stale `expectedFailure` (check it is still there).
 
-Learned against the contracts: canonical order is the key's DAG-CBOR bytes, which put shorter map keys first (so
-"sorted by author, at" is really by `at`, then `author`); the host cannot see type names, so `Relation<T>` is recognised
-by declaration plus the `rows {items}` shape, not by its library type; `relations()` has to be compiled per package
-until the kernel lists it in the artifact (RELATIONAL day 2, kernel), which costs a compile at each creation of a
-package that declares it (cached by the prepared request); a refused write still journals the method's result.
+Requests to other lanes (not the host's files):
+- Kernel: (a) in-turn yields encode, hash and decode the whole checkpoint for every Plan the host answers at
+  once (`Turn.conclude` -> `Checkpoint.makeFor` -> `checkpointDigest`, then `prepareResumeEntry` re-hashes and
+  decodes): ~45% of host CPU in the rehearsal profile. A yielded outcome that carries the machine state and a
+  lazily built checkpoint, plus a resume from that state, would remove it for every non-suspending Plan.
+  (b) `CheckedEntry.apply` (Entry.lean) re-infers the quoted state argument with `ObjectiveBendTyping.infer`,
+  quadratic in rows through `inferFields`' list append: ~75% of a 1000-row relation insert turn (57 ms). A
+  typing derivation from `conformsUnder` (or a linear `inferFields`) would make the per-turn cost the edit's.
+  (c) `Package.compileEntryFrom` compiles and runs `relations()` on every method compile; the artifact's
+  `relations` lacks `limit`/`retain`, so the host compiles it once per build itself (`Built.relations`).
+- Objects: World.obend's protocol may now declare `spell`, `subscribe`/`unsubscribe` (with a `Subscribed`
+  sum: `subscribed {} | denied {} | refused {clause}`), `viewDerived`, `viewAt`: the host answers them
+  (tests append these lines to a library copy until then).
+- Measured limit: a 2,000-row relation cannot be seeded: `maxStateBytes` (262,144) counts wire JSON, about
+  150 bytes a row. Decide whether the bound should count canonical CBOR (about 25 bytes a row) instead.
