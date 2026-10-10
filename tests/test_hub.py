@@ -109,13 +109,12 @@ class Hub(test_chain.Chain):
         second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
         out = second["receipt"]["outcome"]
         self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern"), second)
-        # The refusal commits to the root it was judged against: the creating garden, as the turn read it.
+        # The refusal names the root it was judged against: the creating garden, at the version the turn read.
         garden = self.host.send(op="world-view", principal="ember", object="garden")
         self.assertEqual(out["root"], "garden", out)
         public = second["public"]
         self.assertEqual((public["object"], public["root"]["object"], public["root"]["version"]),
                          ("garden/cistern", "garden", garden["version"]), public)
-        self.assertIn("cid", public["root"])
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)["offers"][0]["text"]
         self.assertIn("    delvetalk garden cistern\n    name: <text, 0 to 120 characters>\n", usage)
 
@@ -280,6 +279,11 @@ class HandedToTheDirectory(test_chain.Chain):
             card = resumed["receipt"]["offers"][-1]
             self.assertEqual(card["to"], who)
             self.assertIn(lines[who], card["text"])
+            # Rehearsal run 7, finding 1: the offer names the post the author replied to, through the hand-off.
+            asked = r["receipt"]["identity"]["intent"]
+            [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if lines[who] in o["text"]]
+            self.assertNotEqual(offer["identity"]["intent"], asked)
+            self.assertEqual(offer["from"], {"post": asked, "principal": who, "intent": asked}, offer)
         submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in items(get(self.state("anthology"), "proposals"))]
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
 

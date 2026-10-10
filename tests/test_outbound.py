@@ -429,25 +429,26 @@ class Projection(Reflection):
         theirs = self.host.send(op="world-receipt", principal="cid", identity="stale", of="ann")
         self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7}})
 
-    def test_every_root_names_the_cid_of_the_state_the_turn_read_and_replay_checks_it(self):
+    def test_roots_cite_versions_and_the_state_cid_is_read_from_the_write_that_made_it(self):
         """A card address is a versioned capability: a receipt's roots, and a public refusal's root,
-        name the exact state a turn was judged against."""
+        name the version a turn was judged against; the state at that version is named once, by the
+        entry that wrote it (`writes[].cid`), and read with world-state-cid by a reader who may view it."""
         state = lambda name: self.host.send(op="world-view", principal="ann", object=name)["state"]
+        cid_at = lambda who, name, v: self.host.send(op="world-state-cid", principal=who, object=name, version=v)
         before = {name: cid_of(state(name)) for name in ("vault", "lamp")}
         r = self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
-        self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0, "cid": before["vault"]},
-                                                 {"object": "lamp", "version": 0, "cid": before["lamp"]}])
-        # A refusal on a public object shows anyone the version and state it was judged against;
-        # on a private one, the version only.
+        self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0}, {"object": "lamp", "version": 0}])
+        writes = {w["object"]: w for w in r["receipt"]["outcome"]["writes"]}
+        self.assertEqual(writes["lamp"]["cid"], cid_of(state("lamp")))
         for name in ("lamp", "vault"):
-            bad = self.turn(name, "stamp", record(wrong=label("x")), principal="ann", identity="bad-" + name)
-            self.assertEqual(bad["receipt"]["outcome"]["class"], "typeMismatch", bad)
-            self.assertEqual(bad["receipt"]["roots"], [{"object": name, "version": 1, "cid": cid_of(state(name))}])
+            self.assertEqual(cid_at("ann", name, 0)["cid"], before[name])
+        bad = self.turn("lamp", "stamp", record(wrong=label("x")), principal="ann", identity="bad-lamp")
+        self.assertEqual(bad["receipt"]["roots"], [{"object": "lamp", "version": 1}])
         lamp = self.host.send(op="world-receipt", principal="bob", identity="bad-lamp", of="ann")
-        self.assertEqual(lamp["root"], {"object": "lamp", "version": 1, "cid": cid_of(state("lamp"))})
-        vault = self.host.send(op="world-receipt", principal="bob", identity="bad-vault", of="ann")
-        self.assertEqual(vault["root"], {"object": "vault", "version": 1})
-        # Replay recomputes the state at each root's version: a resealed entry naming another state is refused.
+        self.assertEqual(lamp["root"], {"object": "lamp", "version": 1})
+        self.assertEqual(cid_at("bob", "lamp", 1), {"status": "stateCid", "object": "lamp", "version": 1, "cid": cid_of(state("lamp"))})
+        self.assertEqual(cid_at("bob", "vault", 0)["status"], "denied")
+        # An entry from before carrying a root `cid` replays: the field is ignored.
         self.release()
         with open(self.path) as f:
             lines = f.read().splitlines()
@@ -459,9 +460,7 @@ class Projection(Reflection):
         with open(self.path, "w") as f:
             f.write("\n".join(lines) + "\n")
         self.host = self.spawn()
-        opened = self.host.send(op="world-open", path=self.path)
-        self.assertEqual(opened["status"], "error", opened)
-        self.assertIn("root vault names a state at version 1 the journal does not hold", opened["message"])
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
 
     def test_history_is_denied_for_an_object_the_reader_cannot_view_and_elides_the_rest(self):
         self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
@@ -741,8 +740,8 @@ def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>
 
 
 class SourcePins(Reflection):
-    """An object's pin is the CID of its sealed source closure; the compiled packet is an
-    observation beside it (`compiled {binary, packet}`), counted but never compared on replay."""
+    """An object's pin is the CID of its sealed source closure; the compiled packet is never journaled.
+    A rebuild whose packet differs from the one a resumed snapshot cached is only counted."""
     def created(self, name):
         r = self.make(name, TELLER, record(note=label("")))
         return r["receipt"]["outcome"]
@@ -762,18 +761,28 @@ class SourcePins(Reflection):
         return self.host.send(op="world-open", path=self.path)
 
     def test_the_pin_is_the_sources_and_a_different_packet_is_only_counted(self):
+        from tests.test_snapshot import read_snapshot, write_snapshot
         self.open_library()
-        a, b = self.created("a"), self.created("b")
+        a = self.created("a")
+        self.assertNotIn("compiled", a)
+        height = self.host.send(op="world-snapshot")["height"]
+        b = self.created("b")
         self.assertEqual(a["pin"], b["pin"])
-        self.assertEqual(set(a["compiled"]), {"binary", "packet"})
-        self.assertNotEqual(a["pin"], a["compiled"]["packet"])
-        self.assertTrue(a["compiled"]["binary"].startswith("b"), a)
         self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["pin"], a["pin"])
-        def other_packet(entry):
-            entry["outcome"]["compiled"]["packet"] = a["pin"]
-        self.assertEqual(self.tamper_last(other_packet)["status"], "opened")
+        path = self.path + f".snapshot.{height}.cbor"
+        body = read_snapshot(path)
+        [obj] = [o for o in body["objects"] if o["id"] == "a"]
+        obj["packet"] = a["pin"]
+        write_snapshot(path, body)
+        self.release()
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual(opened["snapshot"]["resumed"], height, opened)
         self.assertEqual(self.host.send(op="world-status")["recompiledDifferently"], 1)
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="b")["status"], "viewed")
+        def old_field(entry):
+            entry["outcome"]["compiled"] = {"binary": "b", "packet": "p"}
+        self.assertEqual(self.tamper_last(old_field)["status"], "opened")
         def other_pin(entry):
             entry["outcome"]["pin"] = cid_of("another source closure")
         refused = self.tamper_last(other_pin)

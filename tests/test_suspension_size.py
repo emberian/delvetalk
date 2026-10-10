@@ -1,9 +1,9 @@
 """A directory suspension journals only what changed (rehearsal run 6, finding 5; HOST-HANDOFF 5.34):
 nine prose replies under the hub each suspend on the model's reading. The program's own checkpoint
-tokens, the inspected sources and the offered forms are shared blocks, so a suspension after the
-first adds only the cells its turn changed. Refuted by a median of 12 KB or more for one speaker, or
-of 32 KB or more when every reply is a new speaker's first (each moves the heap: the reading walks
-the greeted list to the speaker). Before host7 both medians were about 64 KB.
+tokens and the offered forms are shared blocks, so a suspension after the first adds only what its
+turn changed. Refuted by a median of 12 KB or more for one speaker, or of 32 KB or more when every
+reply is a new speaker's first. Before host7 both medians were about 64 KB; v2 without the blocks
+is about 48 KB.
 
     python3 -W error -m unittest tests.test_suspension_size -v
 """
@@ -59,8 +59,7 @@ class SuspensionSize(test_hub.Hub):
         self.assertLess(self.suspensions([WHO[0]] * 9), 12 * 1024)
 
     def test_nine_speakers_suspensions_stay_bounded(self):
-        # Each speaker sits at another place in the directory's greeted list, which the reading has
-        # walked that far: the heap cells after it move, which relative addresses halve (5.34).
+        # Each speaker sits at another place in the directory's greeted list, which the reading walks.
         self.assertLess(self.suspensions(WHO), 32 * 1024)
 
 

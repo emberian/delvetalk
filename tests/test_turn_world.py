@@ -174,8 +174,9 @@ class CounterTurns(TurnWorld):
         self.create("c1", counter_modules(), 4)
         read = cid_of(self.host.send(op="world-view", principal="ember", object="c1")["state"])
         r = self.turn("c1", "bump")
-        # The root names the exact state the turn read: object, version and the state's CID.
-        self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0, "cid": read}])
+        # The root names the version the turn read; that state's CID is read from the journal.
+        self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0}])
+        self.assertEqual(self.host.send(op="world-state-cid", principal="ember", object="c1", version=0)["cid"], read)
         self.assertEqual(r["result"], nat(5))
         self.assertGreater(r["ticksUsed"], 0)
         self.assertEqual(r["receipt"]["outcome"]["writes"][0]["version"], 1)

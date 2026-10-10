@@ -322,10 +322,11 @@ structure World where
   /-- Checkpoint blocks by CID, from entries' `blocks`: a suspension journals each block of its
       checkpoint's tokens once, and names the rest (`tokenTree`). Derived by `record`. -/
   blocks : Std.HashMap String (Array Json) := {}
-  /-- Memory only: the pin of the running host binary (set at open), recorded in `compiled`. -/
-  binary : String := ""
-  /-- Memory only: entries this process replayed whose recorded packet digest differs from
-      the one its compiler produced from the same sources (`world-status`). -/
+  /-- Memory only: the packet digest a resumed snapshot cached for each compile inputs key; a
+      rebuild by this binary that differs is counted in `recompiledDifferently`. -/
+  cachedPackets : Std.HashMap String String := {}
+  /-- Memory only: objects this process rebuilt whose packet digest differs from the one a resumed
+      snapshot cached for the same inputs (`world-status`; informational). -/
   recompiledDifferently : Nat := 0
   /-- The principal registry: display handle by principal, from `principal` entries. -/
   handles : Std.HashMap String String := {}

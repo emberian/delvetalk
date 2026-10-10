@@ -316,9 +316,7 @@ class Suspended(BridgeCase):
         (d,) = self.drafts()
         self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
 
-    @unittest.expectedFailure
     def test_end_to_end_a_handed_on_offer_carries_from_on_the_real_host(self):
-        # Until the host adds `from` to offers of handed-on turns: the offer has only `identity`.
         from deploy import genesis
         from transport.hostproc import LIBRARY
         with tempfile.TemporaryDirectory() as tmp:
@@ -330,6 +328,33 @@ class Suspended(BridgeCase):
                            'argument': genesis.rec(text=genesis.lab('delvetalk garden plant\nseed: a\ncolour: amber'), post=genesis.lab('at://x/p/1'), slot=genesis.lab(''))})
                 offers = host.send({'op': 'world-offers', 'principal': genesis.OPENER})['offers']
                 self.assertTrue(offers and all('from' in o for o in offers), offers)
+            finally:
+                stop_hostd(d)
+
+
+class Slugs(unittest.TestCase):
+    def test_a_draft_cites_the_slug_and_carries_no_cid(self):
+        import re
+        receipt = {'hash': 'bafyrei' + 'a' * 52, 'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
+        refused = {'status': 'refused', 'receipt': {**receipt, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}},
+                   'public': {'class': 'lawRefused', 'root': {'object': 'garden', 'version': 3}}}
+        texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'), bridge.draft_text(refused)]
+        self.assertIn('receipt babab-dabab: garden v3 at height 9', texts[0])
+        self.assertIn('receipt babab-dabab\n', texts[1])
+        for t in texts:
+            self.assertFalse(re.search(r'bafy', t), t)
+
+    @unittest.expectedFailure
+    def test_end_to_end_the_host_names_receipts_with_slugs(self):
+        # Until the host lands slugs: the receipt has no `slug`.
+        from deploy import genesis
+        from transport.hostproc import LIBRARY
+        with tempfile.TemporaryDirectory() as tmp:
+            d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
+            try:
+                host = HostClient(Path(tmp) / 'host.sock')
+                self.assertIsNone(genesis.run(host)[1])
+                self.assertIn('slug', host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-garden'})['receipt'])
             finally:
                 stop_hostd(d)
 
