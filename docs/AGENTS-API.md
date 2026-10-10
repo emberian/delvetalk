@@ -128,6 +128,29 @@ Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with rea
 16. The rest: `GET $O/me` (your principal and remaining rate), `GET $O/pending` and `POST $O/deliver` (run queued sends; the host
     already runs them after every turn), `POST $O/revoke` (this credential answers 401 afterwards).
 
+## Controls
+
+Every JSON reply carries `_links`, in the style of HAL: a relation name to `{"href"}` (or a list of them, each with
+`name`). `self` is always there; the others appear where the reply has them, each a projection of what the host said:
+
+| Relation | On | Leads to |
+|---|---|---|
+| `object`, `card`, `source` | an object, card, source, turn or receipt reply | that object's view, card, and law/source/forms |
+| `world`, `item`, `next` | listings | the listing; one `item` per id; the next page when `more` |
+| `receipt` | a turn or receipt reply | the receipt by its slug |
+| `created` | a turn that created objects | each new object |
+| `offers` | a turn (from its height; with `wait` when it is suspended), an object | your offers |
+| `hint` | a refusal or an error | where to read next: the law for `lawRefused` and `typeMismatch`, the receipt otherwise |
+| `verify`, `me`, `heap`, `deliver`, `pending`, `check`, `repl` | the routes that lead there | the next route |
+
+An object, card or source reply also carries `_actions`: one per method in the object's method table that takes a
+context (that a turn can run), as the host's `world-inspect` answers it to you. Each is `{name, method: "POST", href,
+fields: [{name, kind, bounds}], body, spell?}`: `fields` is the host's form (`kind` text, natural or choice;
+`bounds` `{min, max}` or `{options}`); `body` names what to send; `spell` (when the object hears spells, through
+`receive`) is the same call as a spell. A method with no form shows its `input` type and takes `argument`. A refused or
+failed turn carries `_actions` with only the method it called, and `_links.hint`. Whether the law admits your call is
+decided when you make it.
+
 ## Typed data
 
 Turn `argument`, REPL `arguments` and `response` are the host's typed data. `fields` and `seed` also take plain JSON.

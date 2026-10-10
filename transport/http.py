@@ -113,6 +113,89 @@ def compact_offers(reply):
     return {'status': reply['status'], 'offers': [o['text'] for o in offers], **({'height': offers[-1]['height']} if offers else {})}
 
 
+# Refusal classes (a refused turn's receipt) and the link relation an agent reads next for each.
+REFUSALS = {'staleRoot': (True, 'self', 'something the turn read moved before it committed'),
+            'budget': (True, 'receipt', 'the turn ran out of ticks, heap or bytes; `reason` names which'),
+            'evaluation': (True, 'source', 'the program refused or a Plan was malformed; `reason` says which'),
+            'capacity': (True, 'receipt', 'a host limit is full; `reason` or `object` names it'),
+            'typeMismatch': (False, 'source', "the argument does not fit the method's input; `expected` shows the form"),
+            'lawRefused': (False, 'source', "the object's law refused the change; `clause` names the law line"),
+            'unknownObject': (False, 'world', 'no such object, or not yours to see'),
+            'programRefused': (False, 'source', "a reprogram's package: `clause` is packageBytes, compile, stateType, migration or law syntax"),
+            'outOfRange': (False, 'receipt', 'a list edit named an index past the end'),
+            'absentItem': (False, 'receipt', 'a list edit named an item not there'),
+            'requiredAbsence': (False, 'receipt', 'a `create` found the object already there; `root` names where'),
+            'budgetExhausted': (False, 'receipt', 'a chain of sends spent its ledger (`depth`, `work` or `storage`)'),
+            'duplicateIdentity': (False, 'receipt', 'the same intent with a different request: not a receipt; `original` is the first')}
+
+
+def link(href, **more):
+    return {'href': href, **more}
+
+
+def oid(obj):
+    """An object id as a path: slashes stay, unless the last segment would read as /card or /source."""
+    return urllib.parse.quote(obj, safe=':' if obj.rpartition('/')[2] in ('card', 'source') else '/:')
+
+
+def shown(kind):
+    """A form field's kind as a spell line shows it."""
+    if kind.get('tag') == 'choice':
+        return ' | '.join(kind.get('options') or [])
+    return f"{kind.get('tag')} {kind.get('min')}..{kind.get('max')}"
+
+
+def actions(base, obj, inspected, only=None):
+    """One action per method in the host's method table that takes a context (a turn can run it), from world-inspect:
+    the form's fields when the host has a form for it, else the method's input type; a spell when the object hears spells."""
+    forms = {f['action']: f for f in plain(inspected.get('forms') or {'tag': 'list', 'items': []})}
+    out = []
+    for m in inspected.get('methods') or []:
+        if not m.get('context') or (only and m['name'] != only):
+            continue
+        act = {'name': m['name'], 'method': 'POST', 'href': f"{base}/world/{oid(obj)}/{urllib.parse.quote(m['name'], safe='')}"}
+        form = forms.get(m['name'])
+        if form is None:
+            out.append({**act, 'input': m.get('input'), 'body': {'intent': 'text', 'argument': 'typed data of type `input`'}})
+            continue
+        fields = [{'name': f['name'], 'kind': f['kind']['tag'], 'bounds': {k: v for k, v in f['kind'].items() if k != 'tag'}}
+                  for f in form['fields']]
+        if m['name'] == 'receive':
+            out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'spell': "text: any action's spell, or prose"}})
+            continue
+        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: <{shown(f['kind'])}>\n" for f in form['fields'])
+        out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
+                    **({'spell': spell} if 'receive' in forms else {})})
+    return out
+
+
+def receipt_links(base, reply, intent=None):
+    """Where a turn's or receipt's reply leads: the receipt by slug, the object it read or made, the offers it left,
+    and for a refusal the relation its class names (REFUSALS)."""
+    rc, out = reply.get('receipt') or {}, {}
+    outcome = rc.get('outcome') or {}
+    if rc.get('slug'):
+        out['receipt'] = link(f"{base}/receipt/{rc['slug']}")
+    elif intent and reply.get('class') == 'duplicateIdentity':
+        out['receipt'] = link(f'{base}/receipt/{urllib.parse.quote(str(intent), safe="")}')
+    roots = rc.get('roots') or []
+    if roots or outcome.get('object'):
+        o = outcome.get('object') if outcome.get('tag') == 'created' else roots[0].get('object')
+        out.update({'object': link(f'{base}/world/{oid(o)}'), 'source': link(f'{base}/world/{oid(o)}/source')})
+    made = [c['object'] for c in outcome.get('creates') or [] if c.get('object')]
+    if made:
+        out['created'] = [link(f'{base}/world/{oid(o)}', name=o) for o in made]
+    if rc.get('height'):
+        h = rc['height']
+        out['offers'] = link(f'{base}/offers?after={h}&wait={WAIT_MAX}' if reply.get('status') == 'suspended' else f'{base}/offers?after={h - 1}')
+    refusal = outcome.get('class') if outcome.get('tag') == 'refused' else reply.get('class')
+    if refusal in REFUSALS and REFUSALS[refusal][1] in out:
+        out['hint'] = out[REFUSALS[refusal][1]]
+    elif refusal == 'unknownObject':
+        out['hint'] = link(base + '/world')
+    return out
+
+
 class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
@@ -197,9 +280,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail(400, 'body is not valid JSON')
         return data if isinstance(data, dict) else self.fail(400, 'body must be a JSON object')
 
-    def answer(self, reply, keep=()):
-        """The host's reply, rendered: a diagnostic carried as JSON text in `message` is lifted, its `hint` with it,
-        and a checkpoint's tokens are counted, not shown (?full=1 shows them)."""
+    def answer(self, reply, keep=(), links=None, acts=None):
+        """The host's reply, rendered, with its controls: a diagnostic carried as JSON text in `message` is lifted, its `hint`
+        with it, and a checkpoint's tokens are counted, not shown (?full=1 shows them)."""
         status = reply.get('status')
         try:
             inner = json.loads(reply['message']) if status == 'error' else None
@@ -209,7 +292,9 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(reply.get('diagnostic'), dict) and 'hint' in reply['diagnostic']:
             reply = {**reply, 'hint': reply['diagnostic']['hint']}
         full = 'full' in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply if full else brief(terse(reply, keep))))
+        body = reply if full else brief(terse(reply, keep))
+        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200,
+                   canonical({**body, '_links': {'self': link(self.path), **(links or {})}, **({'_actions': acts} if acts else {})}))
 
     def cookie(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
@@ -286,33 +371,47 @@ class Handler(BaseHTTPRequestHandler):
             return self.me(credential, who)
         if kind == 'revoke':
             self.server.identity.revoke(credential)
-            return self.reply(200, canonical({'status': 'revoked'}), headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
+            return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
+                              headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
         if kind in ('repl', 'check'):
             return self.run_repl(who['did'], kind)
         host = self.server.heaps.get(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
-        send = lambda req: self.answer(host.send(req))
+        base = PREFIX + ('/heap' if heap else '')
+        at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
+                        'source': link(f'{base}/world/{oid(o)}/source')}
+        send = lambda req, links=None: self.answer(host.send(req), links=links)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
         after = {'after': int(q['after']) if q['after'].isdigit() else q['after']} if 'after' in q else {}
         if kind == 'objects':
-            return send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
-        if kind == 'view':
-            return send({'op': 'world-view', 'principal': principal, 'object': obj})
-        if kind in ('card', 'source'):
-            r = host.send({'op': 'world-card' if kind == 'card' else 'world-inspect', 'principal': principal, 'object': obj})
-            if 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
+            reply = host.send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
+            ids = reply.get('ids') or []
+            nxt = urllib.parse.urlencode({**({'prefix': q['prefix']} if 'prefix' in q else {}), 'after': ids[-1]}) if ids and reply.get('more') else ''
+            return self.answer(reply, links={'item': [link(f'{base}/world/{oid(i)}', name=i) for i in ids],
+                                             **({'next': link(f'{base}/world?{nxt}')} if nxt else {}), 'offers': link(base + '/offers')})
+        if kind in ('view', 'card', 'source'):
+            op = {'view': 'world-view', 'card': 'world-card', 'source': 'world-inspect'}[kind]
+            r = host.send({'op': op, 'principal': principal, 'object': obj})
+            seen = r if kind == 'source' else host.send({'op': 'world-inspect', 'principal': principal, 'object': obj}) \
+                if r.get('status') in ('viewed', 'card') else {}
+            acts = actions(base, obj, seen) if seen.get('status') == 'inspected' else None
+            if kind != 'view' and 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
                 r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
-            return self.answer(r, keep=('pin',))  # the program's name there
+            links = {**at(obj), 'world': link(base + '/world'), 'offers': link(base + '/offers')}
+            return self.answer(r, keep=('pin',) if kind == 'source' else (), links=links if r.get('status') != 'unknown' else
+                               {'world': link(base + '/world')}, acts=acts)  # `pin`: the program's name, in source
         if kind == 'receipt':
             if SLUG.fullmatch(obj):  # a proquint slug names a receipt; any other text is the intent
                 found = host.send({'op': 'world-resolve', 'principal': principal, 'slug': obj})
                 if 'receipt' in found:
-                    return self.answer({'status': 'receipt', 'receipt': found['receipt']})
+                    return self.answer({'status': 'receipt', 'receipt': found['receipt']}, links=receipt_links(base, found))
                 if found.get('identity'):
-                    return send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
+                    r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
+                    return self.answer(r, links=receipt_links(base, r))
                 if 'unknown' not in str(found.get('message')):
                     return self.answer(found)
-            return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
+            r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
+            return self.answer(r, links=receipt_links(base, r))
         if kind == 'offers':
             wait = min(int(q['wait']), WAIT_MAX) if q.get('wait', '').isdigit() else 0
             for waited in range(0, wait + 1, WAIT_STEP):
@@ -320,20 +419,28 @@ class Handler(BaseHTTPRequestHandler):
                 if reply.get('status') != 'offers' or reply.get('offers') or waited + WAIT_STEP > wait:
                     break
                 self.server.sleep(WAIT_STEP)
-            return self.answer(compact_offers(reply) if q.get('compact') == '1' and reply.get('status') == 'offers' else reply)
+            newest = (reply.get('offers') or [{}])[-1].get('height', after.get('after', ''))
+            links = {'next': link(f'{base}/offers?after={newest}&wait={WAIT_MAX}'), 'world': link(base + '/world')}
+            return self.answer(compact_offers(reply) if q.get('compact') == '1' and reply.get('status') == 'offers' else reply, links=links)
         if kind == 'pending':
-            return send({'op': 'world-pending'})
+            return send({'op': 'world-pending'}, {'deliver': link(base + '/deliver')})
         data = self.body()
         if data is None:
             return
         if kind == 'deliver':
-            return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT})
+            return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT}, {'pending': link(base + '/pending')})
         if kind == 'create':
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
-            return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
+            reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
+            return self.answer(reply, links=receipt_links(base, reply))
         reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
                            'argument': argument(data), 'identity': data.get('intent')})
-        self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply)
+        links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
+        if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
+            seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
+            acts = actions(base, obj, seen, only=tail) if seen.get('status') == 'inspected' else None
+            links.setdefault('hint', links['source'])
+        self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply, links=links, acts=acts)
 
     def xrpc(self, method, nsid):
         """The read-only repository (transport/repo.py): no credential reads as the public reader, a bearer as its principal."""
@@ -361,22 +468,26 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return
         try:
+            text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
-                out = self.server.identity.challenge(data.get('handle'))
-                return self.reply(200, canonical(out), headers=self.login_cookie(out['credential']))
-            out = self.server.identity.verify(data.get('handle'), data.get('uri'))
+                out = self.server.identity.challenge(text('handle'))
+                return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
+                                  headers=self.login_cookie(out['credential']))
+            out = self.server.identity.verify(text('handle'), text('uri'))
         except IdentityError as err:
             return self.fail(400, err.code)
         self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
-        self.reply(200, canonical(out), headers=self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ())
+        links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
+        self.reply(200, canonical({**out, '_links': links}), headers=self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ())
 
     def me(self, credential, who):
         heap = self.server.heaps.get(who['did'], create=False)
         count = heap.send({'op': 'world-status'}).get('objects') if heap else 0
         self.reply(200, canonical({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'],
                                    'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))},
-                                   'heapObjects': count}))
+                                   'heapObjects': count, '_links': {'self': link(self.path), 'world': link(PREFIX + '/world'),
+                                   'heap': link(PREFIX + '/heap/world'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')}}))
 
     def run_repl(self, principal, kind='repl'):
         data = self.body()
@@ -390,7 +501,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
         if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
             checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
-            return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
+            return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'},
+                               links={'repl': link(PREFIX + '/repl')})
         repl = self.server.repl
         for retry in (False, True):  # once per request: an unknown pin means hostd restarted with another library
             self.server.sync_library(force=retry)
@@ -399,7 +511,7 @@ class Handler(BaseHTTPRequestHandler):
             if retry or 'unknown library pin' not in str(compiled.get('message')):
                 break
         if compiled.get('status') != 'compiled':
-            return self.answer(compiled)
+            return self.answer(compiled, links={'check': link(PREFIX + '/check')})
         ty = compiled['artifact'].get('type') or {}
         while ty.get('tag') == 'arrow':
             ty = ty.get('codomain') or {}
@@ -412,7 +524,9 @@ class Handler(BaseHTTPRequestHandler):
         else:
             req = {'op': 'turn-start' if activity else 'run', 'arguments': data.get('arguments', []), **extra}
         reply = repl.send({**req, 'artifact': compiled['artifact']})
-        return self.answer(reply) if reply.get('status') == 'error' else self.reply(200, canonical(reply))  # a checkpoint goes back whole
+        if reply.get('status') == 'error':
+            return self.answer(reply, links={'check': link(PREFIX + '/check')})
+        self.reply(200, canonical({**reply, '_links': {'self': link(self.path)}}))  # a checkpoint goes back whole
 
     # ---- humans
 
