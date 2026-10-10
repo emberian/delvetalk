@@ -99,10 +99,13 @@ def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Ans
 # State is a method any turn may run.
 def nextPlace(state: State) -> Nat:
   Lists.fold(Relations.rows(state.doors), 0n, fn(l: Listed) -> Nat -> Nat: fn(most: Nat) -> Nat: if l.place + 1n > most then l.place + 1n else most)
-def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Answer>:
-  match position(input.label, state):
-    case none(_): Answer.refused({reason: "There is no door called {input.label}"})
-    case some(_): edited(extend(keep(), {doors: Plans.Entries.retract({key: {label: input.label}})}))
+# remove {door: {label}}, as add takes {door}: neither is a form, so a reply's bare field lines
+# are never the directory's own spell; they reach receive, which tries the doors' forms (a
+# stranger's `label: moth` is prose to it, never refused by the owner's law).
+def remove(state: State, input: {door: {label: String}}, context: Abi.Context) -> Activity<Answer>:
+  match position(input.door.label, state):
+    case none(_): Answer.refused({reason: "There is no door called {input.door.label}"})
+    case some(_): edited(extend(keep(), {doors: Plans.Entries.retract({key: {label: input.door.label}})}))
 def doorLine(door: Door) -> Document.Document:
   Document.text("{door.label}\n{door.description}\n\n")
 # Affordances first, since readers clip near 1,400 characters; then the doors.

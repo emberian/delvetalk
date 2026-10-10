@@ -69,9 +69,9 @@ class Laws(LawWorld):
         self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
         self.assertEqual(self.turn("dir", "add", record(door=door("garden")), principal=OWNER)["status"], "admitted")
         self.assertEqual(self.clause(self.turn("dir", "add", record(door=door("bazaar")), principal=OTHER)), "lawRefused/owner")
-        self.assertEqual(self.clause(self.turn("dir", "remove", record(label=label("garden")), principal=OTHER)), "lawRefused/owner")
+        self.assertEqual(self.clause(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.version("dir"), 1)
-        self.assertEqual(self.turn("dir", "remove", record(label=label("garden")), principal=OWNER)["status"], "admitted")
+        self.assertEqual(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OWNER)["status"], "admitted")
         self.assertEqual(rows(get(self.state("dir"), "doors")), [])
 
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):

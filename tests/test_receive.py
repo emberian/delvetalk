@@ -268,10 +268,10 @@ def planted(context: Abi.Context) -> String:
         self.directory()
         again = self.turn("root", "add", record(door=door("GARDEN", "again", "garden")), principal="ember")
         self.assertEqual(again["result"]["label"], "refused")
-        gone = self.turn("root", "remove", record(label=label("ROOMS")), principal="ember")
+        gone = self.turn("root", "remove", record(door=record(label=label("ROOMS"))), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
         self.assertNotIn("ROOMS\n", self.card(self.say("", obj="root", who="kimik3")))
-        missing = self.turn("root", "remove", record(label=label("ROOMS")), principal="ember")
+        missing = self.turn("root", "remove", record(door=record(label=label("ROOMS"))), principal="ember")
         self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called ROOMS")
 
 

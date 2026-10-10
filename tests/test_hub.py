@@ -339,6 +339,9 @@ class LinkDoors(test_chain.Chain):
         self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md\n")
         planted = say("plant: a lamp for moths\ncolour: amber")
         self.assertEqual(planted["result"]["label"], "passed", planted)
+        # A field line naming only the owner's `remove` is prose to the directory, never its spell.
+        label_line = say("label: moth")
+        self.assertEqual((label_line["status"], label_line["result"]["label"], label_line.get("offers", [])), ("admitted", "silent", []), label_line)
 
 
 class SpellsPassedOn(test_chain.Chain):
