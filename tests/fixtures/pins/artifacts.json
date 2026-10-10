@@ -3009,6 +3009,71 @@
   },
   "pin": "bafyreibta7botgi2k64jxgjclaeahy3jrrul5ndqmi5apcli4m5hhafzli"
  },
+ "Relation": {
+  "entries": {
+   "against": {
+    "packet": "bafyreibbxygj2nj7sr5gjklaexx3i4hmhntcvdgw5527ydozocucokhhai",
+    "status": "compiled"
+   },
+   "cellThen": {
+    "packet": "bafyreib76yggwhlqtpcm4bwbnhzkiraqaibpcnndxrpdave4f2y23hv7ia",
+    "status": "compiled"
+   },
+   "compare": {
+    "packet": "bafyreibql2ylekgqwakbqukbgjuc7y5rtp4eqxga7n65tzjnel4zyfouti",
+    "status": "compiled"
+   },
+   "compareBytes": {
+    "packet": "bafyreidwa7rhfiyv6goa56jsgyqm2ic2ii3sv6pxhreh6jnlddruhe55sq",
+    "status": "compiled"
+   },
+   "compareNat": {
+    "packet": "bafyreiaxj3bo7gpe3a6kqyywkwz35kbjigwokjgvzd3zen56b3zqinvtvm",
+    "status": "compiled"
+   },
+   "compareText": {
+    "packet": "bafyreig6mxwaqnk7bo3afzmjobcw44iwsm54mfv5hndoz2banlnvnshqca",
+    "status": "compiled"
+   },
+   "ended": {
+    "packet": "bafyreihivfay5xes7lbmluzofeaum3nq3rfz5asumvwscvrbb2skbo23lq",
+    "status": "compiled"
+   },
+   "firstScalar": {
+    "packet": "bafyreih5aekmsec7zilksj3pqw7dxu37bhs35mnqmvdhvuxogwx2b6sedi",
+    "status": "compiled"
+   },
+   "lengthThenBytes": {
+    "packet": "bafyreifzquzwzyfbekce3nvdts5oalorkzqt3ehm63272nhqdtzobeetau",
+    "status": "compiled"
+   },
+   "nat": {
+    "packet": "bafyreiehnplzyclsuhc74tfmembtllh2u7zzavglf6lpvvmgoolmvyhzti",
+    "status": "compiled"
+   },
+   "natThen": {
+    "packet": "bafyreih5mweffkztedwz3z5gcjuwm3gwzx66yokjf6muhl4mzmfom6is6m",
+    "status": "compiled"
+   },
+   "rank": {
+    "packet": "bafyreiaxc4b56cjnuxo32bec5blvtc3swk3gx26vv2sqlyz2iy47ugokzi",
+    "status": "compiled"
+   },
+   "ranks": {
+    "packet": "bafyreifagclocnhxmlfe65fhkbcxqy5gm42heqvgrf7jeh3t7l6yxrucze",
+    "status": "compiled"
+   },
+   "text": {
+    "packet": "bafyreifa5owt6q4psjesvnrjophhv6n2mvpcz7cn7dwweivq57vmzr5bs4",
+    "status": "compiled"
+   },
+   "textThen": {
+    "packet": "bafyreifjimj6xuzdw2ud6y6qusiizcxbctrn74emki54a6xhqpk5arhp74",
+    "status": "compiled"
+   }
+  },
+  "pin": "bafyreidvnbu4mni7o6u22e5elhy7hzoi2hwtldz7gxl34afgdug2a7jb7q"
+ },
  "Scene": {
   "entries": {
    "acted": {

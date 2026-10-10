@@ -1,6 +1,6 @@
 # Objects handoff
 
-Written by the objects lanes (lane/objects4, then lane/objects5) for their successor. Everything here was
+Written by the objects lanes (lane/objects4, lane/objects5, then lane/objects6) for their successor. Everything here was
 measured against the real checker and host; nothing is from memory of the design
 documents. Run suites on hbox (`~/scratch/dt-foundation` keeps a built Linux binary):
 rsync the worktree to `hbox:~/scratch/<lane>/` and run
@@ -250,6 +250,33 @@ the library).
   `layer over ./Bell.obend` by the extend Plan, and a rain reply's card starts LOUDER.
 * **Layers.** `world-reprogram {mode: extend}` with a module `type State = Super.State`
   overrides what it defines; `tests/test_layers.py` (Louder over Bell) keeps rain.
+
+## 1a. Relational (objects6; docs/RELATIONAL.md is the contract)
+
+* **The library** (`world/lib/Relation.obend`, imported `as Relations`). `sum Relation<T>:
+  rows: {items: List<T>}`; `record Decl {field, key: List<String>}`; an object declares its
+  relation fields with `def relations() -> Relations.Decls`. Pure queries: `rows`, `empty`,
+  `where`, `project` (a List), `count`, `exists`, `lookup(rel, key, keyOf)` (stops past the
+  key), `order(rel, by)` and `group(rel, by)` (a stable merge sort; `Group<T>.group {key,
+  rows}`), `joinOn(left, right, leftKey, rightKey)` (one merge; both sides must already be
+  in the order of their join keys, i.e. the relation's key or its leading canonical
+  columns; `Joined<A, B>.pair {left, right}`), `fromList(items, keyOf)` (sort; of a key the
+  first row kept), and `insert`/`upsert`/`retract`, the host's table applied in Bend so a
+  card can show what its own write leaves.
+* **Keys in Bend.** No `canonicalCompare` builtin yet, so a key is `Relations.Key`, a list of
+  `Cell` (`Relations.nat(n)`, `Relations.text(s)`) in DAG-CBOR column order (shorter column
+  names first, then by bytes: `{author, at, n}` is `n, at, author`), and `compare` orders
+  cells as canonical bytes do: a natural before a text, naturals by value, texts by length
+  and then by bytes (a scalar's byte rank is its place in `ranks()`: ASCII, Latin-1 and
+  U+2010..U+2027; two scalars outside it compare equal). So Bend's order is the host's for
+  such keys. TODO(canonicalCompare): when the builtin lands, a key is the key projection as
+  Data and Cell goes; every object's `keyOf` changes then, nothing else.
+* **Costs** (hbox, `tests/test_relation_lib.py`): a compare of two equal two-cell keys about
+  450 ticks, one deciding on its first cell about 200 (about 30 ticks a call, which is the
+  machine's); `joinOn` of two stored 200-row relations 278,301 ticks with building them
+  (about 590 a row: linear, but RELATIONAL §4's "a few thousand ticks" for two hundred-row
+  relations is wrong by two orders); `fromList` of 64 reversed rows 90,496. So a card joins
+  at most a few dozen rows per turn, and sorting belongs to the host.
 
 ## 2. Limits found (measured)
 

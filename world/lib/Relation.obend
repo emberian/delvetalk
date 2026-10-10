@@ -1,0 +1,207 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+# Relations (docs/RELATIONAL.md sections 2 and 4). A relation is a set of rows, closed
+# records of first-order data, with a declared key: an object names its relation fields and
+# their key columns in `relations()`, and the host keeps every such field canonical (rows
+# sorted by the canonical bytes of the key projection, no two rows sharing a key) and edits
+# it by `insert {row}`, `upsert {row}` and `retract {key}` (Plans.Entries). Generic records
+# do not parse, so the relation is the one constructor of a generic sum.
+sum Relation<T>:
+  rows: {items: Lists.List<T>}
+# One relation field and its key columns, as `relations()` declares them.
+record Decl:
+  field: String
+  key: Lists.List<String>
+type Decls = Lists.List<Decl>
+# A key as Bend compares it: the key columns' values in the canonical column order (the
+# order DAG-CBOR writes a map's keys: shorter names first, then by bytes; {author, at, n}
+# is n, at, author), each a natural or a text. Compared cell by cell as the host compares
+# canonical bytes: a natural before any text, naturals by value, texts by length and then
+# by bytes. Such a key sorts rows exactly as the host stores them, for keys of naturals and
+# of texts in the scalars `ranks` knows.
+# TODO(canonicalCompare): when the kernel's canonicalCompare(a, b) -> Nat lands, a key is
+# the key projection as Data and `compare` is that builtin; Cell and the rank alphabet go.
+sum Cell:
+  natural: {value: Nat}
+  text: {value: String}
+type Key = Lists.List<Cell>
+def nat(value: Nat) -> Cell:
+  Cell.natural({value: value})
+def text(value: String) -> Cell:
+  Cell.text({value: value})
+# Comparisons answer 0 (less), 1 (equal) or 2 (greater), as canonicalCompare will.
+def compare(left: Key, right: Key) -> Nat:
+  match left:
+    case nil(_): ended(right)
+    case cons(l): against(l.head, l.tail, right)
+def ended(right: Key) -> Nat:
+  match right:
+    case nil(_): 1n
+    case cons(_): 0n
+def against(head: Cell, tail: Key, right: Key) -> Nat:
+  match right:
+    case nil(_): 2n
+    case cons(r): cellThen(head, r.head, tail, r.tail)
+def cellThen(left: Cell, right: Cell, leftTail: Key, rightTail: Key) -> Nat:
+  match left:
+    case natural(l): natThen(l.value, right, leftTail, rightTail)
+    case text(l): textThen(l.value, right, leftTail, rightTail)
+def natThen(value: Nat, right: Cell, leftTail: Key, rightTail: Key) -> Nat:
+  match right:
+    case natural(r): if value < r.value then 0n else if value == r.value then compare(leftTail, rightTail) else 2n
+    case text(_): 0n
+def textThen(value: String, right: Cell, leftTail: Key, rightTail: Key) -> Nat:
+  match right:
+    case natural(_): 2n
+    case text(r): if value == r.value then compare(leftTail, rightTail) else compareText(value, r.value)
+def compareNat(left: Nat, right: Nat) -> Nat:
+  if left < right then 0n else if left == right then 1n else 2n
+# A canonical text is its length, then its bytes: a shorter text sorts first.
+def compareText(left: String, right: String) -> Nat:
+  if left == right then 1n else lengthThenBytes(compareNat(textLength(left), textLength(right)), left, right)
+def lengthThenBytes(byLength: Nat, left: String, right: String) -> Nat:
+  if byLength == 1n then compareBytes(left, right) else byLength
+# Two different texts of one length: the first scalar where they differ decides, by rank.
+def compareBytes(left: String, right: String) -> Nat:
+  if left == "" then 1n else firstScalar(textTake(left, 1n), textTake(right, 1n), left, right)
+def firstScalar(l: String, r: String, left: String, right: String) -> Nat:
+  if l == r then compareBytes(textDrop(left, 1n), textDrop(right, 1n)) else compareNat(rank(l), rank(r))
+# A scalar's place in UTF-8 byte order (which is code point order) among the scalars of
+# `ranks`; any other scalar ranks after all of them, and two such compare equal here.
+def rank(scalar: String) -> Nat:
+  textBreak(ranks(), scalar)
+def ranks() -> String:
+  "\t\n\r !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{{|}}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ‐‑‒–—―‖‗‘’‚‛“”„‟†‡•‣․‥…‧"
+# The rows, in key order.
+def rows<T>(relation: Relation<T>) -> Lists.List<T>:
+  match relation:
+    case rows(r): r.items
+def empty<T>() -> Relation<T>:
+  Relation.rows({items: Lists.List.nil({})})
+# A relation from rows in any order: sorted by key, and of rows sharing a key only the
+# first kept (the host refuses duplicateKey instead; this is for building in Bend).
+def fromList<T>(items: Lists.List<T>, keyOf: T -> Key) -> Relation<T>:
+  Relation.rows({items: deduped(sorted(items, keyOf), keyOf)})
+def deduped<T>(items: Lists.List<T>, keyOf: T -> Key) -> Lists.List<T>:
+  match items:
+    case nil(_): items
+    case cons(c): Lists.List.cons({head: c.head, tail: deduped(dropKey(c.tail, keyOf(c.head), keyOf), keyOf)})
+def dropKey<T>(items: Lists.List<T>, key: Key, keyOf: T -> Key) -> Lists.List<T>:
+  match items:
+    case nil(_): items
+    case cons(c): if compare(keyOf(c.head), key) == 1n then dropKey(c.tail, key, keyOf) else items
+# Queries. Each is pure and walks the rows once, except order (a merge sort) and joinOn
+# (one merge of two relations in key order).
+def where<T>(relation: Relation<T>, predicate: T -> Bool) -> Relation<T>:
+  Relation.rows({items: Lists.filter(rows(relation), predicate)})
+def project<T, U>(relation: Relation<T>, column: T -> U) -> Lists.List<U>:
+  Lists.map(rows(relation), column)
+def count<T>(relation: Relation<T>) -> Nat:
+  Lists.length(rows(relation))
+def exists<T>(relation: Relation<T>, predicate: T -> Bool) -> Bool:
+  Lists.any(rows(relation), predicate)
+# The row with this key, stopping at the first row past it.
+def lookup<T>(relation: Relation<T>, key: Key, keyOf: T -> Key) -> Lists.Maybe<T>:
+  lookupIn(rows(relation), key, keyOf)
+def lookupIn<T>(items: Lists.List<T>, key: Key, keyOf: T -> Key) -> Lists.Maybe<T>:
+  match items:
+    case nil(_): Lists.Maybe.none({})
+    case cons(c): foundAt(compare(keyOf(c.head), key), c.head, c.tail, key, keyOf)
+def foundAt<T>(order: Nat, row: T, rest: Lists.List<T>, key: Key, keyOf: T -> Key) -> Lists.Maybe<T>:
+  if order == 1n then Lists.Maybe.some({value: row}) else if order == 2n then Lists.Maybe.none({}) else lookupIn(rest, key, keyOf)
+# The rows sorted by another key (stable: rows `by` ties keep their key order).
+def order<T>(relation: Relation<T>, by: T -> Key) -> Lists.List<T>:
+  sorted(rows(relation), by)
+def sorted<T>(items: Lists.List<T>, by: T -> Key) -> Lists.List<T>:
+  mergeAll(Lists.map(items, fn(item: T) -> Lists.List<T>: Lists.List.cons({head: item, tail: Lists.List.nil({})})), by)
+def mergeAll<T>(runs: Lists.List<Lists.List<T>>, by: T -> Key) -> Lists.List<T>:
+  match runs:
+    case nil(_): Lists.List.nil({})
+    case cons(c): if Lists.length(c.tail) == 0n then c.head else mergeAll(pairs(runs, by), by)
+def pairs<T>(runs: Lists.List<Lists.List<T>>, by: T -> Key) -> Lists.List<Lists.List<T>>:
+  match runs:
+    case nil(_): runs
+    case cons(c): pairWith(c.head, c.tail, by)
+def pairWith<T>(first: Lists.List<T>, rest: Lists.List<Lists.List<T>>, by: T -> Key) -> Lists.List<Lists.List<T>>:
+  match rest:
+    case nil(_): Lists.List.cons({head: first, tail: Lists.List.nil({})})
+    case cons(c): Lists.List.cons({head: merged(first, c.head, by), tail: pairs(c.tail, by)})
+def merged<T>(left: Lists.List<T>, right: Lists.List<T>, by: T -> Key) -> Lists.List<T>:
+  match left:
+    case nil(_): right
+    case cons(l): mergedInto(l.head, l.tail, right, by)
+def mergedInto<T>(head: T, tail: Lists.List<T>, right: Lists.List<T>, by: T -> Key) -> Lists.List<T>:
+  match right:
+    case nil(_): Lists.List.cons({head: head, tail: tail})
+    case cons(r): if compare(by(r.head), by(head)) == 0n then Lists.List.cons({head: r.head, tail: mergedInto(head, tail, r.tail, by)}) else Lists.List.cons({head: head, tail: merged(tail, right, by)})
+# Rows grouped by another key: one group per value of it, in that key's order.
+sum Group<T>:
+  group: {key: Key, rows: Lists.List<T>}
+def group<T>(relation: Relation<T>, by: T -> Key) -> Lists.List<Group<T>>:
+  runs(sorted(rows(relation), by), by)
+def runs<T>(items: Lists.List<T>, by: T -> Key) -> Lists.List<Group<T>>:
+  match items:
+    case nil(_): Lists.List.nil({})
+    case cons(c): runFrom(by(c.head), Lists.List.cons({head: c.head, tail: Lists.List.nil({})}), c.tail, by)
+def runFrom<T>(key: Key, run: Lists.List<T>, rest: Lists.List<T>, by: T -> Key) -> Lists.List<Group<T>>:
+  match rest:
+    case nil(_): Lists.List.cons({head: Group.group({key: key, rows: Lists.reverse(run)}), tail: Lists.List.nil({})})
+    case cons(c): if compare(by(c.head), key) == 1n then runFrom(key, Lists.List.cons({head: c.head, tail: run}), c.tail, by) else Lists.List.cons({head: Group.group({key: key, rows: Lists.reverse(run)}), tail: runs(rest, by)})
+def groupKey<T>(g: Group<T>) -> Key:
+  match g:
+    case group(x): x.key
+def groupRows<T>(g: Group<T>) -> Lists.List<T>:
+  match g:
+    case group(x): x.rows
+# The pairs of rows whose join keys are equal, in that key's order: one merge over two
+# relations already in the order of their join keys (each relation's own key, or a
+# leading part of it), so n + m comparisons and not n * m. Rows of one join key on both
+# sides give every pair of them.
+sum Joined<A, B>:
+  pair: {left: A, right: B}
+def joinOn<A, B>(left: Relation<A>, right: Relation<B>, leftKey: A -> Key, rightKey: B -> Key) -> Lists.List<Joined<A, B>>:
+  joinFrom(keyed(rows(left), leftKey), keyed(rows(right), rightKey))
+# Each row's key is made once.
+sum Keyed<T>:
+  keyed: {key: Key, row: T}
+def keyed<T>(items: Lists.List<T>, keyOf: T -> Key) -> Lists.List<Keyed<T>>:
+  Lists.map(items, fn(item: T) -> Keyed<T>: Keyed.keyed({key: keyOf(item), row: item}))
+def keyOfKeyed<T>(k: Keyed<T>) -> Key:
+  match k:
+    case keyed(x): x.key
+def rowOfKeyed<T>(k: Keyed<T>) -> T:
+  match k:
+    case keyed(x): x.row
+def joinFrom<A, B>(left: Lists.List<Keyed<A>>, right: Lists.List<Keyed<B>>) -> Lists.List<Joined<A, B>>:
+  match left:
+    case nil(_): Lists.List.nil({})
+    case cons(l): joinRow(l.head, l.tail, right)
+def joinRow<A, B>(row: Keyed<A>, left: Lists.List<Keyed<A>>, right: Lists.List<Keyed<B>>) -> Lists.List<Joined<A, B>>:
+  match right:
+    case nil(_): Lists.List.nil({})
+    case cons(r): joinStep(compare(keyOfKeyed(row), keyOfKeyed(r.head)), row, left, right, r.head, r.tail)
+# A left row before the right one is passed; a right row before the left one is dropped; on
+# equal keys the left row pairs with the run of right rows of its key, and the next left row
+# starts from the same right row (rows of one key on both sides give every pair).
+def joinStep<A, B>(order: Nat, row: Keyed<A>, left: Lists.List<Keyed<A>>, right: Lists.List<Keyed<B>>, first: Keyed<B>, after: Lists.List<Keyed<B>>) -> Lists.List<Joined<A, B>>:
+  if order == 0n then joinFrom(left, right) else if order == 2n then joinRow(row, left, after) else Lists.List.cons({head: Joined.pair({left: rowOfKeyed(row), right: rowOfKeyed(first)}), tail: paired(rowOfKeyed(row), keyOfKeyed(row), after, joinFrom(left, right))})
+def paired<A, B>(row: A, key: Key, right: Lists.List<Keyed<B>>, rest: Lists.List<Joined<A, B>>) -> Lists.List<Joined<A, B>>:
+  match right:
+    case nil(_): rest
+    case cons(r): if compare(keyOfKeyed(r.head), key) == 1n then Lists.List.cons({head: Joined.pair({left: row, right: rowOfKeyed(r.head)}), tail: paired(row, key, r.tail, rest)}) else rest
+# The host's edits, applied in Bend to show what a write leaves (a card answering with the
+# state after its own write): insert adds a row whose key is absent and leaves a present
+# key as it is (the host refuses keyTaken when the rows differ), upsert adds or replaces,
+# retract removes the row with the key if there is one.
+def insert<T>(relation: Relation<T>, row: T, keyOf: T -> Key) -> Relation<T>:
+  Relation.rows({items: placed(rows(relation), row, keyOf(row), keyOf, false)})
+def upsert<T>(relation: Relation<T>, row: T, keyOf: T -> Key) -> Relation<T>:
+  Relation.rows({items: placed(rows(relation), row, keyOf(row), keyOf, true)})
+def placed<T>(items: Lists.List<T>, row: T, key: Key, keyOf: T -> Key, replace: Bool) -> Lists.List<T>:
+  match items:
+    case nil(_): Lists.List.cons({head: row, tail: items})
+    case cons(c): placedAt(compare(keyOf(c.head), key), c.head, c.tail, row, key, keyOf, replace)
+def placedAt<T>(order: Nat, head: T, tail: Lists.List<T>, row: T, key: Key, keyOf: T -> Key, replace: Bool) -> Lists.List<T>:
+  if order == 0n then Lists.List.cons({head: head, tail: placed(tail, row, key, keyOf, replace)}) else if order == 2n then Lists.List.cons({head: row, tail: Lists.List.cons({head: head, tail: tail})}) else if replace then Lists.List.cons({head: row, tail: tail}) else Lists.List.cons({head: head, tail: tail})
+def retract<T>(relation: Relation<T>, key: Key, keyOf: T -> Key) -> Relation<T>:
+  Relation.rows({items: Lists.removeWhere(rows(relation), fn(row: T) -> Bool: compare(keyOf(row), key) == 1n)})
