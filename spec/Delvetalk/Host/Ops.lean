@@ -231,6 +231,21 @@ def noteMinted (w : World) (id : String) : World :=
     | some p => if p.minted ≥ n then w else { w with objects := w.objects.insert parent { p with minted := n } }
     | none => w
 
+/-- `j.compress.utf8ByteSize`, counted without printing: the state byte bound reads it on every
+    write, and printing a large state to measure it was most of a write's cost. -/
+partial def compressedSize : Json → Nat
+  | .null => 4
+  | .bool b => if b then 4 else 5
+  | .num n => n.toString.utf8ByteSize
+  | .str s => (Json.renderString s "").utf8ByteSize
+  | .arr a => 2 + a.foldl (fun n x => n + compressedSize x) 0 + (a.size - 1)
+  | .obj kvs =>
+    let (n, count) := kvs.foldl (fun (n, c) k v => (n + (Json.renderString k "").utf8ByteSize + 1 + compressedSize v, c + 1)) (0, 0)
+    2 + n + (count - 1)
+
+/-- The bytes of a state as the bound counts them: its wire JSON, compressed. -/
+def stateBytes (state : Data) : Nat := compressedSize (dataJson state)
+
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/
 def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
@@ -1588,7 +1603,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       | .ok d => pure d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
-    unless (dataJson written).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+    unless stateBytes written ≤ Limits.maxStateBytes do
       throw { cls := "capacity", object := id }
     -- A reprogram replaces code and, through its migration, the state's type.
     let mut next := o
@@ -1607,7 +1622,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok (.finished value _ _ _) => state := value
         | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
         | .error e => throw (refuse "migration" e)
-      unless state.conformsUnder prog.bounds prog.stateType && (dataJson state).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+      unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
@@ -1947,7 +1962,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     (chain : Option Json := none) (creator : String := "") (height : Nat := 1)
     (lawText : Option String := none) : Except String (Object × String) := do
   unless state.conformsUnder b.assumptions.bounds b.ty do throw "seed does not conform to the package state type"
-  if (dataJson state).compress.utf8ByteSize > Limits.maxSeedBytes then throw "seed exceeds state byte capacity"
+  if stateBytes state > Limits.maxSeedBytes then throw "seed exceeds state byte capacity"
   -- The pin is the source closure's CID; the compiled packet is only observed beside it.
   let packet ← b.artifact.getObjValAs? String "packetSha256"
   let sources ← b.artifact.getObjValAs? String "sourcesSha256"
@@ -3026,4 +3041,11 @@ def publicationsOp (w : World) (j : Json) : Except String Json := do
   let (shown, more) ← pageByHeight j items
   return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr shown), ("more", toJson more)]
 
+end Delvetalk.Host
+
+namespace Delvetalk.Host
+open Lean in
+#guard [Json.null, .bool true, .bool false, toJson (5 : Nat), toJson (-3 : Int), .str "a\"b\\c\n\u0001é", .arr #[],
+  .arr #[toJson (1 : Nat), .str "x"], Json.mkObj [],
+  Json.mkObj [("k", toJson (1 : Nat)), ("q\"", .arr #[Json.mkObj [("z", .null)]])]].all fun j => compressedSize j == j.compress.utf8ByteSize
 end Delvetalk.Host
