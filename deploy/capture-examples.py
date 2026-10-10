@@ -168,7 +168,7 @@ def planter(cap):
     cap.interpret('delvetalk garden plant\nseed: a bell for the owls\ncolour: violet')
     cap.say("(The town's interpreter answered with a spell; the turn resumed and the garden planted it at once. The card is in your offers.)")
     cap.step('GET', f'/offers?after={waiting["receipt"]["height"] - 1}')
-    cap.step('GET', '/receipt/plant-1')
+    cap.step('GET', '/receipt?intent=plant-1')
     cap.step('GET', '/world/garden/bell/1/card')
 
 
@@ -208,7 +208,7 @@ def forger(cap):
     cap.step('GET', '/world/garden/bell/4/card')
     cap.say('The same change proposed for someone else\'s bell:')
     cap.step('POST', '/world/workshop/receive', {'intent': 'propose-2', 'spell': spell('garden/bell/1')})
-    cap.step('GET', '/receipt/propose-2')
+    cap.step('GET', '/receipt?intent=propose-2')
     cap.say("The host dry-ran the change against the bell's law before the workshop answered. The bell carries the default law\n"
             '(`owner: request.kind == 0 or request.subject == "<its planter>"`: anyone writes, only the planter reprograms), so the dry\n'
             'run was refused `owner`; the workshop held the proposal for the owner to adopt. The offer says `refused owner: held as #1 …`,\n'

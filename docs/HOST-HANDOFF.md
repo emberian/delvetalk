@@ -196,7 +196,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 `world-arrive {principal, did, handle}` (clock principal only; the world must name an opener and have a library) records the handle as `world-principal` does, then creates each absent one of `<did>` from library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`, as `create` by the opener with identity `arrive:<id>`, `owner: did`. Idempotent: a repeat answers `{status: "arrived", did, handle, created: []}` with no entry. Reply: `created [{object, height}]` and `principal`. A missing library module is a request error naming it. `transport/hostproc.py` `ARRIVAL` lists the packages the sealed library must hold (`Avatar`, `Env`, `Wake`; the Avatar imports `Places.obend` from the library). `docs/GENESIS.md` says when transport calls it. Test: `test_arrive`.
 
-Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
+Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
 
 43. **Per-op timing (host7).** With `DELVETALK_TIMING=1` in its environment, the host binary writes one stderr line per
    op after the reply: `timing<TAB>op<TAB>ms<TAB>object=…<TAB>method=…<TAB>principal=…<TAB>resumed=n<TAB>delivered=n`
@@ -964,6 +964,32 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    revoked. `?` lists `lend` where the speaker may run some offered method. Test: `tests/test_extend.py`
    `test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender`.
 
+116. **Prose with a colon ends the fields (host12; docs/FLEX.md §4 host 1).** `Spell.binding` takes a
+   line as a field only when it `looksLikeField` (`name: value`, the name an identifier), as `bareT`
+   does; any other line ends the fields as prose. The playtest's 68673 and 68675 (a clean, indented
+   planting with a sentence like "First-pass read while I'm at it: …" after it, refused `unknownField`
+   twice) are parse fixtures and plant. A misspelt or capitalised name (`Seed:`, `see d:`) is now prose
+   too, so the spell is `unclear` naming what it lacks instead of `unknownField` (FLEX host 2 folds case).
+   `world/lib/Spell.obend` has no field-line reader to mirror (deleted with its parser, lane/objects9);
+   its inline reader already checks `looksLikeField`. Five fixture rows re-recorded, two added. Tests:
+   `tests/test_spell.py` `test_a_prose_line_with_a_colon_after_the_fields_ends_them`,
+   `test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields`.
+
+117. **What the model sees, and hob's answers (host12; docs/FLEX.md §4 host 5, 6).** The `interpret`
+   Plan may name `held` (what the card holds for this speaker: a pending question, a held proposal)
+   and `misfit` (a misfit spell's clause and reason), both journaled on the interpretation (a World
+   line for the objects lane: `interpret<R>({utterance, offers, policy, model, held, misfit})`).
+   `world-interpretations` lists, beside the utterance and offers, `card` (the asking card as the
+   speaker reads it now, `cardText`, at most `Limits.cardShownChars` 1,400 characters), `held` and
+   `misfit`, and the policy's `lexicon`; a Policy whose `prompt` takes `(state, asked)` gets `asked =
+   {utterance, offers, card, held, misfit}` fitted to its type (the old `(state, offers, utterance)`
+   still runs). `interpretVerdict` reads hob's three non-spell answers before the spells: `none` is
+   `unclear {needs: ["not addressed"]}`, `card` is `replied {text: "card"}` (`unclear ["card"]` where
+   the Response has no `replied`), `ask: <one line>` is `unclear {needs: [<question>]}`; spells and
+   `proposals` as before. Tests: `tests/test_interpret_object.py` `test_hobs_three_answers_that_are_no_spell`,
+   `test_the_request_carries_the_card_as_the_speaker_reads_it`, `tests/test_policy.py`
+   `test_the_interpretation_shows_the_model_the_card_as_the_speaker_reads_it`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -995,6 +1021,18 @@ dropped from this list: `proposed` by name (`4f8af5c`), Deal under kind 3 (`7017
 `proposals` arm and Bell's `actions` (`65c477f`), the Bell's limits under 5.108 (`8ddd2c4`), the
 transport on reservations, retries and cursors (`d99d691`, `e1f3359`, `e8cf553`).
 
+- **Reach (host, next; docs/FLEX.md §2, the root's third FLEX item).** A `receive` reaches the model only
+  when its post is a direct reply (the turn's `replyTo` names a recorded post: host-verified), a
+  mention with a door word (the transport's `mention: true` on `world-turn`, a fact of the post, plus a
+  door word of the offered forms in the utterance: host-checked), or carries a spell line; otherwise
+  `interpret` answers `unclear {needs: ["not addressed"]}` at once, unsuspended, spending no quota, and
+  the interpretation journals `reach` (`reply`, `mention`, `spell`, `delivery`). Design: `TurnState.reach`
+  from `runTurnWith`'s request; the gate in `interpretPlan`. Cost: every prose test that interprets
+  without `replyTo` (test_policy, test_hub, test_interpret_text, test_spell_turns `Interpreted`,
+  test_reflection `Interpret`, test_interpret_object, test_fork, test_world_object) passes
+  `mention: true` or a recorded `replyTo`. Closed by a test per reach and one unreached prose.
+- **FLEX §4 host 2 to 4** (host, queued): case-folded names and the addressee-aware `parse`, bare
+  values bound by type, misfits of a direct turn to the card's `receive` with `misfit`.
 - **`world-posted` without `intent`** (host): the transport now reserves every post, so `postedOp`
   can refuse a `posted` naming no intent (one line). Closed by a test in `tests/test_post_reserve.py`.
 - **A receipt by intent apart from by slug** (transport; review docs 6): `/receipt/<x>` resolves a

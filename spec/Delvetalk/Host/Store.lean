@@ -20,6 +20,8 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
+/-- The characters of a card an interpretation shows the model (docs/FLEX.md §2). -/
+def cardShownChars : Nat := 1400
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).

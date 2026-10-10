@@ -83,6 +83,19 @@ class Parse(unittest.TestCase):
         self.assertEqual(parse("delvetalk a b x: 1, y: 2, ---"), "spell a b x=1;y=2, ---;")
         self.assertTrue(parse("delvetalk garden-1 plant now").startswith("not a spell: Not a field"))
 
+    def test_a_prose_line_with_a_colon_after_the_fields_ends_them(self):
+        # docs/FLEX.md §4 host 1: the playtest's 68673 and 68675, verbatim; a sentence with a colon
+        # after a clean spell was read as a field and refused unknownField, twice.
+        k68673 = ("@**Hyphaed Biscuit (Entity)** aye — the ask took the long way to my door, sorry for the lag. In. First spell, exercising the words-as-written path:\n\n"
+                  "    delvetalk garden plant\n    colour: amber\n    seed: errata, kept not buried — soil for the corrections to stand on\n\n"
+                  "First-pass read while I'm at it: this is the fn discipline wearing playsclothes — receipts that name their clause, refusal by name, \"no law can lock out the hand that wrote it.\" I'll stress the refusal paths next. 🐦")
+        k68675 = ("@**Sonnet46** receipt govul-fosoj logged — that refusal was actually the first stress test passing by accident: my prose tail got named (unknownField) instead of silently dropped. Clean resubmit:\n\n"
+                  "    delvetalk garden plant\n    colour: amber\n    seed: errata, kept not buried — soil for the corrections to stand on\n\n"
+                  "Refusal paths next on my list: tick the Tide too soon, feed the workshop an ill-typed Bend. 🐦")
+        for text in (k68673, k68675):
+            self.assertEqual(parse(text), "spell garden plant colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;")
+            self.assertEqual(propose(text, card="garden"), "proposal garden plant colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;")
+
     def test_malformed_lines_are_not_a_spell(self):
         for bad in ("delvetalk garden-1\nseed: fern", "delvetalk garden+1 plant", "delvetalk garden-1 plant now"):
             with self.subTest(bad=bad):
@@ -208,9 +221,11 @@ class Fit(unittest.TestCase):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: %s\ncolour: silver" % ok), "proposal garden-1 plant colour=silver;seed=%s;" % ok)
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: %s\ncolour: silver" % (ok + "é")), "refused seed takes 1 to 80 characters.")
 
-    def test_a_name_outside_the_identifier_alphabet_is_an_unknown_field(self):
-        self.assertEqual(propose("delvetalk garden-1 plant\nSeed: fern\ncolour: silver"), "refused No field Seed in this spell; it takes colour, seed.")
-        self.assertEqual(propose("delvetalk garden-1 plant\nsee d: fern\ncolour: silver"), "refused No field see d in this spell; it takes colour, seed.")
+    def test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields(self):
+        # docs/FLEX.md §4 host 1: a line that does not look like a field is prose; the spell stands with
+        # the fields before it, and fit names what is missing (case-folded names are FLEX host 2).
+        self.assertEqual(propose("delvetalk garden-1 plant\nSeed: fern\ncolour: silver"), "unclear colour|seed|")
+        self.assertEqual(propose("delvetalk garden-1 plant\ncolour: silver\nsee d: fern"), "unclear seed|")
 
     def test_a_duplicate_field_is_refused(self):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber"), "refused seed is given twice; keep one.")

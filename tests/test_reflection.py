@@ -409,11 +409,11 @@ class Interpret(Reflection):
         r = self.ask()
         self.assertEqual(r["status"], "suspended", r)
         [item] = self.pending()
-        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "attempts", "next"})
+        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "card", "held", "misfit", "attempts", "next"})
         self.assertEqual((item["attempts"], item["next"]), (0, None))
         self.assertEqual(item["object"], "probe")
         self.assertEqual(item["utterance"], "ring it three times")
-        self.assertEqual(item["policy"], {"model": "claude-test", "system": "Be literal.", "examples": "one example"})
+        self.assertEqual(item["policy"], {"model": "claude-test", "system": "Be literal.", "examples": "one example", "lexicon": None})
         self.assertEqual(item["offers"], [{"card": "probe", "action": "bump2", "fields": []}])
         self.assertEqual(self.seen("probe"), "")
 

@@ -117,14 +117,14 @@ class Pages(FrontCase):
         picker = self.page('/o/picker', 'class="action"')
         self.assertIn('<select name="c:colour"><option>amber</option><option>violet</option></select>', picker)
         done = self.page('/play/picker', method='POST', form={'method': 'pick', 'c:colour': 'violet'})
-        self.assertRegex(done, r'admitted picker v1 at height')
+        self.assertRegex(done, r'admitted picker v1, entry')
         self.page('/o/directory', 'class="door"', '<span class="kind" data-id="garden"></span>GARDEN')
         self.assertEqual(self.page('/AGENTS.md/world/garden'), text)  # the agent route, for a browser, is the same page
         self.page('/AGENTS.md/world/garden/source', 'class="action"')
 
     def test_an_action_form_runs_the_turn_the_play_page_runs_and_its_receipt_is_a_page(self):
         text = self.page('/play/garden', 'class="slip admitted', '<span class="stamp">●</span><span class="line">admitted garden', method='POST', form={'method': 'plant', 'colour': 'violet', 'seed': 'a form-grown fern'})
-        slug = re.search(r'admitted garden v\d+ at height \d+, receipt ([a-z-]+)', text)[1]
+        slug = re.search(r'admitted garden v\d+, entry \d+, receipt ([a-z-]+)', text)[1]
         receipt = self.page(f'/AGENTS.md/receipt/{slug}', 'class="slip admitted"', '<span class="stamp">● admitted</span>', f'<span class="name">{slug}</span>', '<dl>')
         self.assertIn('href="/o/garden"', receipt)  # the roots as shelf marks
         self.page('/o/garden', f'<span class="name">{slug}</span>')  # and in the object's ledger
@@ -191,7 +191,7 @@ class Pages(FrontCase):
                 self.assertIn(html.unescape(stamp), text, path)
             if form and 'seed' in form:
                 slug = re.search(r'receipt ([a-z]+(?:-[a-z]+)+)', page)[1]
-                self.assertRegex(text, r'● +admitted garden v\d+ at height \d+, receipt ')
+                self.assertRegex(text, r'● +admitted garden v\d+, entry \d+, receipt ')
         tok = self.cookie.split('=', 1)[1]
         s, h, body = self.request('GET', '/o/garden', headers={'Accept': 'text/plain', 'Cookie': self.cookie})
         self.assertEqual(dict(h)['Content-Type'], 'text/plain; charset=utf-8')

@@ -4,7 +4,7 @@ import collections
 import json
 import sys
 
-BRIDGED = ('spell', 'summon')
+BRIDGED = ('summon',)
 
 
 def fence(text):
@@ -23,7 +23,7 @@ def main(path):
     routed_recorded = [u for u in considered if obs[u]['replyTo'] in recorded]
     routed_root = [u for u in considered if obs[u]['replyTo'] not in recorded and obs[u].get('root') in recorded]
     w('\n| Measure | Count |\n| --- | --- |')
-    for k in ('spell', 'summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge'):
+    for k in ('summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge'):
         w(f'| observed as `{k}` | {kinds.get(k, 0)} |')
     w(f"| considered by the bridge (spell, summon, or any reply) | {len(considered)} |")
     w(f"| ... routed by reply address (parent recorded as posted) | {len(routed_recorded)} |")

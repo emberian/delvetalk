@@ -573,7 +573,7 @@
    ]
   },
   "expected": "refused This card answers env/x plant.",
-  "parsed": "spell env/x seen a.b=1;"
+  "parsed": "spell env/x seen "
  },
  {
   "text": "delvetalk garden-1 plant / colour: amber / seed: a fern",
@@ -1116,8 +1116,8 @@
     }
    ]
   },
-  "expected": "refused No field Seed in this spell; it takes colour, seed.",
-  "parsed": "spell garden-1 plant Seed=fern;colour=silver;"
+  "expected": "unclear colour|seed|",
+  "parsed": "spell garden-1 plant "
  },
  {
   "text": "delvetalk garden-1 plant\nsee d: fern\ncolour: silver",
@@ -1148,8 +1148,8 @@
     }
    ]
   },
-  "expected": "refused No field see d in this spell; it takes colour, seed.",
-  "parsed": "spell garden-1 plant see d=fern;colour=silver;"
+  "expected": "unclear colour|seed|",
+  "parsed": "spell garden-1 plant "
  },
  {
   "text": "delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber",

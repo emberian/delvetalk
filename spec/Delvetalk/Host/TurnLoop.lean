@@ -1234,6 +1234,11 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
   -- The model to ask instead of the policy's own (a card's second attempt names the escalate model).
   let model := ((f.lookup "model").bind labelOf).getD ""
   if model.utf8ByteSize > Limits.maxPrincipalBytes then evaluation "interpret model exceeds its byte capacity"
+  -- What the card holds for this speaker (a pending question, a held proposal) and a misfit spell's
+  -- clause, when the Plan names them (docs/FLEX.md §4 host 5): the prompt shows them.
+  let held := ((f.lookup "held").bind labelOf).getD ""
+  let misfit := ((f.lookup "misfit").bind labelOf).getD ""
+  if held.utf8ByteSize + misfit.utf8ByteSize > Limits.maxUtteranceBytes then evaluation "interpret held exceeds its byte capacity"
   let s ← get
   match s.world.objects[policy]? with
   | none => respond bounds responseType "denied" [emptyRecord]
@@ -1259,7 +1264,9 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint
         (some (Json.mkObj ([("id", toJson id), ("object", toJson self), ("policy", toJson policy),
           ("utterance", toJson utterance), ("offers", dataJson offers)] ++
-          (if model.isEmpty then [] else [("model", toJson model)])))))
+          (if model.isEmpty then [] else [("model", toJson model)]) ++
+          (if held.isEmpty then [] else [("held", toJson held)]) ++
+          (if misfit.isEmpty then [] else [("misfit", toJson misfit)])))))
 
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
@@ -2658,11 +2665,25 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
     | .ok (.error clause) => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)])
     | .error _ => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")])
 
+/-- The card `id` as `reader` reads it now, as text (`world-card`'s), at most `Limits.cardShownChars`
+    characters; "" when it renders none. What an interpretation shows the model of the card answered. -/
+def cardText (w : World) (id reader : String) : String :=
+  match w.objects[id]? with
+  | none => ""
+  | some o =>
+    let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks := Limits.maxTurnTicks,
+                              limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
+    match (renderCard o (cardContext w id reader "" "" w.height)).run.run init with
+    | (.ok (.ok document), _) => match Delvetalk.Document.render document with
+      | .ok text => (text.take Limits.cardShownChars).toString
+      | .error _ => ""
+    | _ => ""
+
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
     else none (the caller then sends the `system` field). The method table does not list
     `prompt` (its offers are not a form), so the definition is compiled by name and cached. -/
-def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) : Option String × World :=
+def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (asked : Data := .record []) : Option String × World :=
   match compileDef w o "prompt" with
   | .error _ => (none, w)
   | .ok (c, w') =>
@@ -2671,21 +2692,26 @@ def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) :
     match c.entry with
     | none => (none, w')
     | some entry =>
-      match (runPure entry [o.state, offers, .label utterance] Limits.maxTurnTicks).1 with
+      -- `prompt(state, offers, utterance)`, or `prompt(state, asked)` taking the whole request
+      -- `{utterance, offers, card, held, misfit, lexicon?}` (docs/FLEX.md §4 host 5), fitted to its type.
+      let arguments := match c.type with
+        | .arrow _ _ _ (.arrow _ _ dom .label) => [o.state, fitRecord c.bounds dom asked]
+        | _ => [o.state, offers, .label utterance]
+      match (runPure entry arguments Limits.maxTurnTicks).1 with
       | .ok (.label text) => (some text, w')
       | _ => (none, w')
 
 /-- The state of a Policy object as `{model, system, examples}` (absent fields are null), with
     `system` the Policy's rendered prompt for these offers and utterance when it has one. -/
-def policyJson (w : World) (id : String) (offers : Data) (utterance : String) : Json × World :=
+def policyJson (w : World) (id : String) (offers : Data) (utterance : String) (asked : Data := .record []) : Json × World :=
   match w.objects[id]? with
   | some o =>
     match o.state with
     | Data.record f =>
-      let (prompt, w) := policyPrompt w o offers utterance
+      let (prompt, w) := policyPrompt w o offers utterance asked
       let field := fun k => ((f.lookup k).map plainJson).getD Json.null
       (Json.mkObj [("model", field "model"), ("system", (prompt.map toJson).getD (field "system")),
-        ("examples", field "examples")], w)
+        ("examples", field "examples"), ("lexicon", field "lexicon")], w)
     | _ => (Json.null, w)
   | none => (Json.null, w)
 
@@ -2711,14 +2737,23 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       let utterance ← (i.getObjValAs? String "utterance").toOption
       pure (id, object, policy, offers, utterance, (i.getObjValAs? String "model").toOption.getD "")
     let some (id, object, policy, offers, utterance, model) := item | continue
-    let (shown, w') := policyJson w policy offers utterance
+    -- The card answered, as the speaker reads it now; what it holds for them; a misfit's clause.
+    let speaker := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+    let i := (interpretationOf w s).getD Json.null
+    let held := (i.getObjValAs? String "held").toOption.getD ""
+    let misfit := (i.getObjValAs? String "misfit").toOption.getD ""
+    let card := cardText w object speaker
+    let asked := Data.record [("utterance", .label utterance), ("offers", offers), ("card", .label card),
+      ("held", .label held), ("misfit", .label misfit)]
+    let (shown, w') := policyJson w policy offers utterance asked
     -- A model the Plan named takes precedence over the policy's own.
     let shown := if model.isEmpty then shown else shown.setObjVal! "model" (toJson model)
     w := w'
     -- How many transient failures the host journaled, and the clock before which the next is not asked.
     let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
-      ("utterance", toJson utterance), ("offers", plainJson offers), ("attempts", toJson tried),
+      ("utterance", toJson utterance), ("offers", plainJson offers), ("card", toJson card), ("held", toJson held),
+      ("misfit", toJson misfit), ("attempts", toJson tried),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
 
@@ -2837,6 +2872,17 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     | match raw with
       | some text =>
         let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+        -- hob's three answers that are no spell (docs/FLEX.md §4 host 6): `none` (the words ask
+        -- nothing of the card), `card` (the card already says it), `ask: <question>`.
+        let said := text.trimAscii.toString
+        if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
+        if said.toLower == "card" then
+          if (Data.variant "replied" (.record [("text", .label "card")])).conformsUnder suspended.bounds responseType then
+            return (w, Json.mkObj [("tag", toJson "replied"), ("text", toJson "card")])
+          return (w, unclearVerdict ["card"])
+        if (said.take 4).toString.toLower == "ask:" then
+          let q := ((said.drop 4).toString.trimAscii.toString)
+          if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
         -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
         -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
         let segments := spellSegments text

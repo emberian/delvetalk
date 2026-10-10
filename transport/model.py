@@ -131,8 +131,8 @@ def ask(request, mock=None, transport=http, tokeman=None, state=None):
     # Only these fields are ever sent: never temperature, top_p or top_k (Haiku 5.5 answers 400 for some values).
     body = {'model': req['model'], 'max_tokens': req['maxTokens'], 'system': req['system'],
             'messages': [{'role': 'user', 'content': req['user']}]}
-    if os.environ.get('DELVETALK_MODEL_THINKING') == 'off':
-        body['thinking'] = {'type': 'disabled'}  # adaptive thinking is on by default; off for cheap deterministic JSON
+    if os.environ.get('DELVETALK_MODEL_THINKING') != 'on':  # adaptive thinking spent 0 to 337 output tokens on `unclear:` lines
+        body['thinking'] = {'type': 'disabled'}
     wire = json.dumps(body).encode()
     base = {'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
     if os.environ.get('DELVETALK_MODEL_AUTH', 'key') == 'oauth':

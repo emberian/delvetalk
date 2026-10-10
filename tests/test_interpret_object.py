@@ -93,6 +93,22 @@ class ProposalForAnotherCard(Chain):
         state = {f["name"]: f["value"] for f in self.state("g")["fields"]}
         self.assertEqual((state["planted"]["value"], state["last"]["value"]), ("1", "a fern"))
 
+    def test_hobs_three_answers_that_are_no_spell(self):
+        # docs/FLEX.md §4 host 6: `none`, `card`, `ask: <question>` beside the spells.
+        for said, verdict in (("none", {"tag": "unclear", "needs": ["not addressed"]}),
+                              ("  None\n", {"tag": "unclear", "needs": ["not addressed"]}),
+                              ("card", {"tag": "replied", "text": "card"}),
+                              ("ask: which seed, 1 to 140 characters?", {"tag": "unclear", "needs": ["which seed, 1 to 140 characters?"]})):
+            settled, _ = self.ask(said)
+            self.assertEqual(settled["receipt"]["outcome"]["verdict"], verdict, said)
+
+    def test_the_request_carries_the_card_as_the_speaker_reads_it(self):
+        self.turn("hub", "ask", record(text=label("plant a fern"), card=label("g"), action=label("plant")), principal="glm")
+        [pending] = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual((pending["held"], pending["misfit"]), ("", ""))
+        self.assertIn("card", pending)
+        self.assertIn("lexicon", pending["policy"])
+
     def test_a_form_naming_a_method_its_card_does_not_offer_is_unclear(self):
         settled, resumed = self.ask("delvetalk g tend\nseed: a fern", action="tend")
         verdict = settled["receipt"]["outcome"]["verdict"]
