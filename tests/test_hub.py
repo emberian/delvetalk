@@ -392,6 +392,24 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
         self.assertEqual(self.say("anthology: a line about the merchant's hat", "c2"), 1)
 
+    def test_helpers_and_protocol_methods_are_not_words(self):
+        """Rehearsal run 10, finding 2: `reading` (Scene), `played` (Table) and `publishPage` with
+        its `page` field were learned as words, and seven readings came of them. Only a door's
+        forms count; `choose` (a Scene form) still does."""
+        r = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"),
+                           entry="initial", seed=record(title=label("The Moss Gate")))
+        self.assertEqual(r["status"], "created", r)
+        self.make("table", closure("Table"), record())
+        self.add("ROOMS", "rooms")
+        self.add("PLAY", "table")
+        self.assertEqual(self.say("the reading was lovely", "r1"), 0)
+        self.assertEqual(self.say("the match was played well", "r2"), 0)
+        self.assertEqual(self.say("page: the second one", "r3"), 0)
+        self.assertEqual(self.say("I would choose the moss path", "r4"), 1)
+        # Not a method: `played` took the State first, so a turn naming it wrote any result it
+        # liked; now the object's own state is its first argument and does not fit a Result.
+        self.assertEqual(self.turn("table", "played", record(), principal=KIMI, identity="forge")["status"], "refused")
+
     def test_glms_long_reply_under_a_bell_is_cheap_to_hand_on_and_to_judge(self):
         """Run 8: glm's 1,788-character `3mxgtb2dklk2f` under a bell burned 999,861 ticks (a walk
         of the text for every town word) and was refused budget. The bell's turn now parses the

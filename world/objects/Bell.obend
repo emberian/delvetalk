@@ -131,8 +131,10 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
 def rainedCard(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   let rain = fallen(state, text, context)
   let written(_) = perform(write {rains: insert rain})
-  rainOffered(state, rain, context)
-def rainOffered(state: State, rain: Rain, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  rainOffered(rain, state, context)
+# A helper takes its State second: a definition whose first parameter is the State is a
+# method anyone may call (the host's method table), and this one must not be.
+def rainOffered(rain: Rain, state: State, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match perform(Plan.offer({to: context.principal, document: render(extend(state, {rains: Relations.insert(state.rains, rain, rainKey)}), context)})):
     case _: Card.notifyRows(state.observers, "rains", rainRows(rain), fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "rain"}))
 def colourName(colour: Colour) -> String:

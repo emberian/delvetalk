@@ -247,9 +247,11 @@ def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.Li
 # Learning: a door's word and object id, and its forms' actions and fields, by inspect.
 def doorWords(door: Door) -> String:
   "{door.label} {door.to.object} "
-# Only what a door offers counts: the method table also lists helpers that take the state
-# and a context (here, guard, reading, admitted), so a method counts when it takes fields,
-# as an offered form does. (A form without fields, such as ring, is not a word here.)
+# Only what a door offers counts. Inspect lists the method table, which holds the forms,
+# the protocol's own methods (excluded by name) and nothing else when every helper takes its
+# State after another parameter (rehearsal run 10: Scene's `reading` and Table's `played`
+# were methods, and seven readings came of their words). A form without fields, such as
+# ring, is not a word here.
 def offeredForm(form: Form.Form) -> Bool:
   offered(form) && Lists.length(form.fields) > 0n
 def formWords(forms: Lists.List<Form.Form>) -> String:
@@ -309,7 +311,10 @@ def gathered(state: State, input: Card.Heard, to: Plans.Reference, rest: Lists.L
     case _: gathering(state, input, rest, forms, policy, context)
 # A door's methods minus the protocol's own (receive, render and the observers').
 def offered(form: Form.Form) -> Bool:
-  form.action != "receive" && form.action != "render" && form.action != "observe" && form.action != "unobserve"
+  Lists.any(protocolMethods(), fn(m: String) -> Bool: m == form.action) == false
+# Methods every card has by the protocol, which no reader names as an action.
+def protocolMethods() -> Lists.List<String>:
+  Card.wordList("receive render observe unobserve publishPage")
 def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Card.asking(input.text, forms, state.policy, policy, attempt, needs)):
     case replied(r): readBack(state, input, forms, policy, attempt, r.text, Card.fitting(r.text, forms), context)

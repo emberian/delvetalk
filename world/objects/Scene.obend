@@ -235,7 +235,7 @@ def varLine(v: Var) -> Document.Document:
 def stranger(state: State, context: Abi.Context) -> Document.Document:
   let card = if context.object == "" then "<scene>" else context.object
   Document.text("SCENE {state.title}: {natText(Lists.length(state.presence))} here. Reply delvetalk {card} enter to join.\n")
-def reading(state: State, me: Presence, context: Abi.Context) -> Document.Document:
+def reading(me: Presence, state: State, context: Abi.Context) -> Document.Document:
   match passageAt(state, me.at):
     case none(_): stranger(state, context)
     case some(ps): passageCard(state, ps.value)
@@ -249,5 +249,5 @@ def passageCard(state: State, ps: Passage) -> Document.Document:
 # The card as the reader in the context sees it: a present reader sees their passage.
 def render(state: State, context: Abi.Context) -> Document.Document:
   match here(state, context):
-    case some(p): reading(state, p.value, context)
+    case some(p): reading(p.value, state, context)
     case none(_): stranger(state, context)

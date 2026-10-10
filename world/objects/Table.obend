@@ -47,13 +47,16 @@ def resolve(state: State, context: Abi.Context) -> Activity<Plan, Response, Done
   if state.game.winner != 0n then Done.refused({reason: "The match is finished."}) else north(state, context)
 def north(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match perform(Plan.view({object: state.north})):
-    case viewed(v): if ready(v.state, state.round) then south(state, v.state, context) else Done.refused({reason: "North has not opened this round."})
+    case viewed(v): if ready(v.state, state.round) then south(v.state, state, context) else Done.refused({reason: "North has not opened this round."})
     case _: Done.refused({reason: "North's seat did not answer."})
-def south(state: State, n: Seats.State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+# south and played take the State second, so they are not methods: a turn naming `played`
+# would write any result it liked (the method table lists every definition whose first
+# parameter is the State).
+def south(n: Seats.State, state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match perform(Plan.view({object: state.south})):
-    case viewed(v): if ready(v.state, state.round) then played(state, Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), context) else Done.refused({reason: "South has not opened this round."})
+    case viewed(v): if ready(v.state, state.round) then played(Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), state, context) else Done.refused({reason: "South has not opened this round."})
     case _: Done.refused({reason: "South's seat did not answer."})
-def played(state: State, result: Game.Result, context: Abi.Context) -> Activity<Plan, Response, Done>:
+def played(result: Game.Result, state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit.add({delta: 1n}), game: Plans.Edit.set({value: result})}}))
   advanced(state, result)
 def advanced(state: State, result: Game.Result) -> Activity<Plan, Response, Done>:
