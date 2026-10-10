@@ -59,6 +59,7 @@ class Client:
         except KeyError:
             raise Failure('zuliprc_malformed', 'needs [api] email, key and site') from None
         self.transport = transport
+        self.realm = urllib.parse.urlsplit(self.site).hostname or self.site  # the realm a principal names: zulip:<realm>:<user id>
 
     def call(self, method, path, params=None):
         import base64
@@ -107,6 +108,12 @@ class Client:
         return next((m['id'] for m in got.get('messages') or [] if m['content'].strip() == content.strip()), None)
 
 
+def principal(realm, user_id):
+    """A Zulip user as a principal: `zulip:<realm host>:<user id>`, so two realms' users never share a name
+    (docs/FEDERATION.md section 1)."""
+    return f'zulip:{realm}:{user_id}'
+
+
 def created_at(message):
     """Zulip stamps seconds; the message id fills the microseconds so that order within a second is the stream's order."""
     when = datetime.fromtimestamp(message['timestamp'], tz=timezone.utc)
@@ -132,7 +139,7 @@ class ZulipObserver(Observer):
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
         kind, wiki = classify(text, parent, mentions, tags, summon=bot)
-        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + str(m['sender_id']), 'handle': m['sender_full_name']},
+        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': principal(self.client.realm, m['sender_id']), 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
                 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
 
