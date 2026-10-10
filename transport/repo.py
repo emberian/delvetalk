@@ -15,6 +15,8 @@ COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication
 PUBLIC = 'anonymous'  # the reader an unauthenticated request is; the front's object page reads as it too
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
+RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}')  # record-key syntax
+NEW_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
 SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]-(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]')
 # Collections a host op pages by journal height: (op, the reply's list, the item's record key, the item's cid).
 PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('world-sources', 'sources', 'cid', 'cid'),
@@ -53,6 +55,13 @@ def car(cid, block):
     link = b'\xd8\x2a\x58' + bytes([len(raw) + 1]) + b'\x00' + raw  # tag 42: a byte string, 0x00 then the binary CID
     header = b'\xa2\x65roots\x81' + link + b'\x67version\x01'
     return varint(len(header)) + header + varint(len(raw) + len(block)) + raw + block
+
+
+def object_key(oid, tail):
+    """`<object with / as ~>.<tail>`; None for an id the mapping cannot carry back (one holding `~`, or a
+    character record keys forbid)."""
+    key = f"{oid.replace('/', '~')}.{tail}"
+    return key if '~' not in oid and RKEY.fullmatch(key) else None
 
 
 class Repo:
@@ -133,14 +142,17 @@ class Repo:
         listed = host.send({'op': 'world-objects', 'principal': who, **({'after': cursor} if cursor else {})})
         if listed.get('status') != 'listed':
             raise refused(listed)
-        records = []
+        records, unkeyable = [], [oid for oid in listed['ids'] if object_key(oid, 0) is None]
         for oid in listed['ids']:
+            if oid in unkeyable:  # no record key names it; the response says so rather than inventing one
+                continue
             item = self.object(host, oid, None, who)
             if collection == 'object':
-                records.append(self.record('object', f"{oid}/{item['version']}", item.get('stateCid'), item))
+                records.append(self.record('object', object_key(oid, item['version']), item.get('stateCid'), item))
             else:
-                records += [self.record('law', f"{oid}/{law['name']}", None, law) for law in item.get('laws') or []]
-        return {'records': records, **({'cursor': listed['ids'][-1]} if listed.get('more') and listed['ids'] else {})}
+                records += [self.record('law', object_key(oid, law['name']), None, law) for law in item.get('laws') or []]
+        return {'records': records, **({'unkeyable': unkeyable} if unkeyable else {}),
+                **({'cursor': listed['ids'][-1]} if listed.get('more') and listed['ids'] else {})}
 
     def get_record(self, host, q, who):
         self.repo(q)
@@ -149,11 +161,12 @@ class Repo:
             item = self.entry(host, rkey, who)['receipt']
             cid = item.get('hash')
         elif collection == 'object':
-            oid, _, version = rkey.rpartition('/')
+            new = None if '/' in rkey else NEW_KEY.fullmatch(rkey)
+            oid, _, version = (new[1].replace('~', '/'), '', new[2]) if new else rkey.rpartition('/')  # <object>/<version>: one release
             if not oid or not version.isdigit():
-                raise Refusal(400, 'InvalidRequest', 'an object record key is <object>/<version>')
+                raise Refusal(400, 'InvalidRequest', 'an object record key is <object with / as ~>.<version>')
             item = self.object(host, oid, int(version), who)
-            cid = item.get('stateCid')
+            cid, rkey = item.get('stateCid'), object_key(oid, version) or rkey
         elif collection == 'source':
             reply = host.send({'op': 'world-source', 'principal': who, 'cid': rkey})
             if reply.get('status') != 'source':

@@ -6,7 +6,7 @@
     "main": {
       "type": "record",
       "key": "any",
-      "description": "Record key: `<object>/<version>`. The record's cid is `stateCid`, the CID of the state at that version as the journal names it (a write's `writes[].cid`, or a created seed).",
+      "description": "Record key: the object id with each `/` as `~`, a dot, the version (`garden~bell~1.2`). The record's cid is `stateCid`, the CID of the state at that version as the journal names it (a write's `writes[].cid`, or a created seed).",
       "record": {
         "type": "object",
         "required": [

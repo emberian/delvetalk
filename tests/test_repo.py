@@ -211,8 +211,10 @@ class Repository(unittest.TestCase):
             send({'op': 'world-turn', 'principal': DID, 'object': 'nope', 'method': 'receive', 'argument': record(), 'identity': 'miss'}),
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publish', 'argument': record(), 'identity': 'pub-1'}),
             send({'op': 'world-create', 'principal': DID, 'identity': 'mk-d', 'object': 'diary', 'modules': counter_modules(),
-                  'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})]
-        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created'], seeded
+                  'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}}),
+            send({'op': 'world-create', 'principal': DID, 'identity': 'mk-t', 'object': 'odd~one', 'modules': counter_modules(),
+                  'entry': 'initial', 'seed': record(count=nat(0))})]
+        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created', 'created'], seeded
         cls.receipts = {r['receipt']['identity']['intent']: r['receipt'] for r in seeded}
 
     @classmethod
@@ -344,21 +346,27 @@ class Repository(unittest.TestCase):
 
     def test_a_private_objects_record_is_refused_to_the_public_and_served_to_its_owner(self):
         tok = self.login()
-        s, e = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='diary/0')
+        s, e = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='diary.0')
         self.assertEqual((s, e['error']), (403, 'Denied'), e)
-        s, r = self.xrpc('com.atproto.repo.getRecord', tok, repo=REPO, collection=NS + 'object', rkey='diary/0')
+        s, r = self.xrpc('com.atproto.repo.getRecord', tok, repo=REPO, collection=NS + 'object', rkey='diary.0')
         self.assertEqual(s, 200, r)
+        self.assertEqual(self.xrpc('com.atproto.repo.getRecord', tok, repo=REPO, collection=NS + 'object', rkey='diary/0'), (s, r))  # the old form, one release
         cid = self.host.send({'op': 'world-state-cid', 'principal': DID, 'object': 'diary', 'version': 0})['cid']
         pin = self.host.send({'op': 'world-inspect', 'principal': DID, 'object': 'diary'})['pin']
-        self.assertEqual((r['uri'], r['cid'], r['value']['stateCid'], r['value']['pin']), (f'at://{REPO}/{NS}object/diary/0', cid, cid, pin))
+        self.assertEqual((r['uri'], r['cid'], r['value']['stateCid'], r['value']['pin']), (f'at://{REPO}/{NS}object/diary.0', cid, cid, pin))
         listed = lambda token=None: [x['value']['object'] for x in self.xrpc('com.atproto.repo.listRecords', token, repo=REPO, collection=NS + 'object')[1]['records']]
         self.assertNotIn('diary', listed())
         self.assertIn('diary', listed(tok))
         self.assertIn('garden/bell/1', listed())
-        s, garden = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/1')
+        s, garden = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden.1')
         self.assertEqual((s, garden['value']['object'], garden['value']['version']), (200, 'garden', 1), garden)
+        s, bell = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden~bell~1.0')
+        self.assertEqual((s, bell['uri'], bell['value']['object']), (200, f'at://{REPO}/{NS}object/garden~bell~1.0', 'garden/bell/1'), bell)
+        self.assertEqual(self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/bell/1/0'), (s, bell))
+        listing = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'object')[1]
+        self.assertEqual(listing['unkeyable'], ['odd~one'])  # `~` in an id cannot be carried back
         laws = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'law')[1]['records']
-        self.assertIn(f'at://{REPO}/{NS}law/garden/bell/1/owner', [x['uri'] for x in laws])
+        self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
 
     def test_sources_publications_and_grants(self):
@@ -374,6 +382,17 @@ class Repository(unittest.TestCase):
         self.assertEqual(self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'grant'), (200, {'records': []}))
         s, e = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'grant', rkey='x')
         self.assertEqual((s, e['error']), (400, 'InvalidRequest'))
+
+    def test_every_listed_record_key_is_in_record_key_syntax(self):
+        tok = self.login()
+        for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
+            for token in (None, tok):
+                s, page = self.xrpc('com.atproto.repo.listRecords', token, repo=REPO, collection=NS + c, limit=100)
+                self.assertEqual(s, 200, page)
+                for r in page['records']:
+                    key = r['uri'].split(f'{NS}{c}/', 1)[1]
+                    self.assertRegex(key, r'\A[A-Za-z0-9._~:-]{1,512}\Z')
+                    self.assertNotIn(key, ('.', '..'))
 
     def test_a_bad_bearer_is_401_not_the_public_reader(self):
         s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
