@@ -10,6 +10,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
@@ -141,10 +142,17 @@ class HostClient:
             except OSError:
                 pass
             self.close()
-        s = socket.socket(socket.AF_UNIX)
+        s, deadline = socket.socket(socket.AF_UNIX), time.monotonic() + self.timeout
         try:
             s.settimeout(self.timeout)
-            s.connect(self.path)
+            while True:  # a full accept backlog answers EAGAIN at once; nothing was sent, so any op may wait and connect again
+                try:
+                    s.connect(self.path)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.01)
             self.local.conn = (s, s.makefile('rb'), os.stat(self.path).st_ino)
         except OSError:
             s.close()
