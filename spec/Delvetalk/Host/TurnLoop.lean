@@ -121,6 +121,8 @@ structure TurnState where
   absent : List String := []
   /-- An object a `create` found already there: the turn will be refused naming it. -/
   violation : Option String := none
+  /-- The object whose `create` found the violation: the root the refusal names. -/
+  violator : String := ""
   /-- Slots this turn already awaited, as identity keys, and how many awaits it has made. -/
   awaited : List String := []
   awaits : Nat := 0
@@ -891,7 +893,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       refusedWith bounds responseType "objectId"
     else if s.world.objects.contains id || s.creates.any (·.1 == id) then
       -- The reply says so now; the turn will be refused at its commit, naming the root.
-      set { note s with violation := s.violation.orElse fun _ => some id }
+      set { note s with violation := s.violation.orElse (fun _ => some id),
+                        violator := if s.violation.isSome then s.violator else self }
       refusedWith bounds responseType "requiredAbsence"
     else if s.creates.length ≥ Limits.createsPerTurn || s.absent.length ≥ Limits.maxRoots then
       refusedWith bounds responseType "capacity"
@@ -1168,7 +1171,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("offers", offersJson st.offers), ("publishes", Json.arr st.publishes.toArray), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes),
       ("spent", spentJson st.spent)] ++
-      (if st.violation.isSome then [("violation", toJson st.violation)] else []))
+      (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else []))
     -- A post await names the post; the slot it settles on is whichever reply answers it.
     let waitsOn := match post with
       | some p => ("post", toJson p)
@@ -1185,7 +1188,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     match st.violation with
     | some id =>
       let (w', r) := commit w { proposal with writes := [], creates := [] } base
-        (some { cls := "requiredAbsence", object := some id }) (onEnd := endedIfLate)
+        (some { cls := "requiredAbsence", object := some id,
+                root := some (if st.violator.isEmpty then ctx.object else st.violator) }) (onEnd := endedIfLate)
       return (w', turnReply w' r)
     | none =>
     -- A send under a grant leaves only if the grant still stands (a suspension may have outlived it).
@@ -1390,6 +1394,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       creates := creates
       absent := absent
       violation := (act.getObjValAs? String "violation").toOption
+      violator := (act.getObjValAs? String "violator").toOption.getD ""
       awaited := strings (act.getObjVal? "awaited").toOption
       awaits := ← natField act "awaits"
       publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList

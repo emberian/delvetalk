@@ -157,7 +157,7 @@ Outcomes:
   checks `request == p.digest`, re-runs `judge`, and requires that `judged.reprograms`,
   `amendments`, `creates` equal the recorded JSON exactly and that each recorded write version equals
   the replayed new version. So admitted entries are re-judged, not trusted.
-- **refused**: `{tag, class, clause?, object?, reason?, expected?}` (`expected`: 5.29). Classes (`refusalClasses`): staleRoot,
+- **refused**: `{tag, class, clause?, object?, reason?, expected?, root?}` (`expected`: 5.29, `root`: 5.33). Classes (`refusalClasses`): staleRoot,
   typeMismatch (conformance), capacity (byte or count limit), outOfRange (index past the end), lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation,
   budget (reason = the exhausted machine resource: ticks, heap, stack, nodes, bytes),
   budgetExhausted (reason = exhausted ledger field), programRefused (clause = packageBytes, compile,
@@ -575,6 +575,13 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    turn reply's `public` and other readers' projections say it. Bend-law (`law(old, new, request)`) clauses and the
    metarule have no readings. Tests: `test_law.Readings`.
 
+33. **A requiredAbsence names its root (host7, rehearsal run 6 finding 1).** The object whose `create` found the id taken
+   (`TurnState.violator`, kept through suspensions as the activity's `violator`) is journaled as the refused outcome's
+   `root` beside `object` (the taken id); `Refusal.root`. `publicRefusal` builds its `root {object, version, cid?}` from
+   `outcome.root` when present (the creator at the version the turn read it) and adds `object` (the taken id): a second
+   cistern reads `{class: requiredAbsence, root: {object: garden, version, cid}, object: garden/cistern}`. Tests:
+   `test_hub` (the cistern pair).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -681,7 +688,8 @@ quotes the old metarule message.
 
 lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
 `world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
-another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31); law readings in refusals (5.32).
+another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31); law readings in refusals (5.32);
+from rehearsal run 6: a `requiredAbsence` names its root (5.33).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

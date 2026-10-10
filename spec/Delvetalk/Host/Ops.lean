@@ -352,6 +352,9 @@ structure Refusal where
   reason : Option String := none
   /-- For `typeMismatch` of a turn's argument: what the method takes (`{type, form?}`). -/
   expected : Option Json := none
+  /-- The root the refusal was judged against when it is not `object`: for `requiredAbsence`, the
+      object whose create found `object` already there. -/
+  root : Option String := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -1544,7 +1547,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
         (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
-        (r.expected.map fun e => [("expected", e)]).getD [])
+        (r.expected.map fun e => [("expected", e)]).getD [] ++
+        (r.root.map fun x => [("root", toJson x)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
@@ -2270,7 +2274,10 @@ def viewable (w : World) (reader id : String) : Bool :=
     id the author wrote (as resolved, so `env` reads `env/<did>`) and where the list of cards is. -/
 def publicRefusal (w : World) (reader : String) (entry : Json) : Json :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-  let id := (outcome.getObjValAs? String "object").toOption.getD ""
+  let named := (outcome.getObjValAs? String "object").toOption.getD ""
+  -- A refusal judged against another root than the id it names (`requiredAbsence`: the creating
+  -- object, read at a version, beside the id it found taken) commits to that root.
+  let id := (outcome.getObjValAs? String "root").toOption.getD named
   let cls := (outcome.getObjValAs? String "class").toOption.getD "unknown"
   let roots := (entry.getObjVal? "roots").toOption.getD (Json.arr #[])
   let version := ((parseRoots roots).toOption.getD []).lookup id
@@ -2283,7 +2290,7 @@ def publicRefusal (w : World) (reader : String) (entry : Json) : Json :=
     (reading.map fun r => [("reason", toJson r)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
-    else []))
+    else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else
     sees a refusal only as its public projection, and any other entry as its chain fields,
