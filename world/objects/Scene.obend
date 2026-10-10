@@ -5,162 +5,244 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./Card.obend as Card
-# A scene: passages and choices as data, who is where, and the variables a choice sets.
-# The reader is always the turn's principal; no method takes one as an argument.
-# Passages and their choices are the creator's seed (sixteen passages of eight choices
-# are what a card can show); presence holds sixteen readers and variables sixteen names.
-# A choice with a non-empty `key` sets that variable to `value` when it is taken.
-record Choice:
-  label: String
-  to: String
-  key: String
-  value: String
-record Passage:
-  id: String
-  text: String
-  choices: Lists.List<Choice>
+import ./Scenes.obend as Scenes
+import ./Spween.obend as Spween
+# A scene: passages and choices as data (world/lib/Scenes.obend), who is where, the
+# variables its choices change, and when each reader last left. The reader is always the
+# turn's principal; no method takes one as an argument. Passages are the creator's seed
+# (sixteen passages of eight choices are what a card can show), or a ```spween block a
+# reader posts here, which makes a new scene at <this scene>/<its id> (world/lib/
+# Spween.obend). Presence holds sixteen readers and variables sixteen names.
+#
+# A choice offers itself only when its guard holds over the variables; taking it applies
+# its effects in order and moves the reader to its target, or out of the scene at END.
+# Entering needs the scene's `requires` to hold and, when the scene has a cooldown, that
+# the reader left at least `cooldown` clock units ago: refused by name in Bend first, and
+# by the law below for the same write proposed any other way.
+type Choice = Scenes.Choice
+type Passage = Scenes.Passage
+type Var = Scenes.Var
 record Presence:
   who: String
   at: String
-record Var:
-  name: String
-  value: String
+record Left:
+  who: String
+  at: Nat
+# owner: who may reprogram or amend the scene (the host fills it with the creating
+# principal: ember for genesis's rooms, the poster for a scene made from spween).
 record State:
+  owner: String
   title: String
   start: String
   passages: Lists.List<Passage>
   presence: Lists.List<Presence>
   vars: Lists.List<Var>
-record Seed:
-  title: String
-  start: String
-  passages: Lists.List<Passage>
+  cooldown: Nat
+  requires: Scenes.Guard
+  left: Lists.List<Left>
+type Seed = Scenes.Seed
 record Edits:
   presence: Plans.Entries<Presence, Presence>
   vars: Plans.Entries<Var, Var>
+  left: Plans.Entries<Left, Left>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {title: "", start: "", passages: Lists.List::<Passage>.nil()}
+  {title: "", start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil()}
 def seeded(seed: Seed) -> State:
-  {title: seed.title, start: seed.start, passages: seed.passages, presence: Lists.List::<Presence>.nil(), vars: Lists.List::<Var>.nil()}
+  {owner: "", title: seed.title, start: seed.start, passages: seed.passages, presence: Lists.List.nil(), vars: Lists.List.nil(), cooldown: seed.cooldown, requires: seed.requires, left: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {presence: Plans.Entries::<Presence, Presence>.keep({}), vars: Plans.Entries::<Var, Var>.keep({})}
+  {presence: Plans.Entries.keep({}), vars: Plans.Entries.keep({}), left: Plans.Entries.keep({})}
+law owner "only the owner reprograms or amends it; anyone enters, chooses and leaves": request.kind == 0 or request.subject == new.owner
+# The cooldown, as the second tier of the law: a reader who appears in presence must have
+# left at least `cooldown` clock units before the turn's clock.
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(old, new.presence, request.context.clock)
+def arrivals(old: State, presence: Lists.List<Presence>, clock: Nat) -> Abi.Verdict:
+  if Lists.any(presence, fn(p: Presence) -> Bool: Lists.any(old.presence, fn(q: Presence) -> Bool: q.who == p.who) == false && cooling(old, p.who, clock)) then Abi.Verdict.refused({clause: "cooldown"}) else Abi.Verdict.admitted({})
+def cooling(state: State, who: String, clock: Nat) -> Bool:
+  match Lists.find(state.left, fn(l: Left) -> Bool: l.who == who):
+    case some(l): clock < l.value.at + state.cooldown
+    case none(_): false
 sum Done:
   entered: {at: String}
   moved: {to: String}
   left: {}
-  refused: {reason: String}
+  refused: Card.Refusal
 def same(done: Done) -> Done:
   done
 def here(state: State, context: Abi.Context) -> Lists.Maybe<Presence>:
-  Lists.find::<Presence>(state.presence, fn(p: Presence) -> Bool: p.who == context.principal)
+  Lists.find(state.presence, fn(p: Presence) -> Bool: p.who == context.principal)
 def passageAt(state: State, id: String) -> Lists.Maybe<Passage>:
-  Lists.find::<Passage>(state.passages, fn(p: Passage) -> Bool: p.id == id)
+  Lists.find(state.passages, fn(p: Passage) -> Bool: p.id == id)
 # What an activity may do, judged purely before anything is written: a refusal names
-# itself and writes nothing, so the card can show it.
+# itself and writes nothing, so the card can show it. A move carries the edits of its
+# effects, one write each, in order.
 sum Verdict:
   enter: {at: String}
-  move: {me: Presence, choice: Choice, vars: Plans.Entries<Var, Var>}
-  leave: {me: Presence}
-  no: {reason: String}
-def refuse(reason: String) -> Verdict:
-  Verdict.no({reason: reason})
+  move: {me: Presence, choice: Choice, vars: Lists.List<Plans.Entries<Var, Var>>}
+  leave: {me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>}
+  no: Card.Refusal
+def no(clause: String, reading: String) -> Verdict:
+  Verdict.no({clause: clause, reading: reading})
 def enterVerdict(state: State, context: Abi.Context) -> Verdict:
   match here(state, context):
-    case some(_): refuse("alreadyHere: you are already in this scene.")
-    case none(_): if Lists.length::<Presence>(state.presence) >= 16n then refuse("sceneFull: sixteen readers are already here.") else if Lists.any::<Passage>(state.passages, fn(p: Passage) -> Bool: p.id == state.start) then Verdict.enter({at: state.start}) else refuse("noStart: this scene has no start passage.")
+    case some(_): no("alreadyHere", "You are already in this scene.")
+    case none(_): if Lists.length(state.presence) >= 16n then no("sceneFull", "Sixteen readers are already here.") else if Lists.any(state.passages, fn(p: Passage) -> Bool: p.id == state.start) == false then no("noStart", "This scene has no start passage.") else admitted(state, context)
+def admitted(state: State, context: Abi.Context) -> Verdict:
+  match Scenes.failing(state.requires, state.vars):
+    case some(c): no("unmet", "The scene requires {Scenes.clauseText(c.value)}.")
+    case none(_): if cooling(state, context.principal, context.clock) then no("cooldown", "You left at clock {natText(leftAt(state, context.principal))}; enter again from clock {natText(leftAt(state, context.principal) + state.cooldown)}.") else Verdict.enter({at: state.start})
+def leftAt(state: State, who: String) -> Nat:
+  match Lists.find(state.left, fn(l: Left) -> Bool: l.who == who):
+    case some(l): l.value.at
+    case none(_): 0n
 def leaveVerdict(state: State, context: Abi.Context) -> Verdict:
   match here(state, context):
-    case none(_): refuse("notHere: you are not in this scene.")
-    case some(p): Verdict.leave({me: p.value})
+    case none(_): no("notHere", "You are not in this scene.")
+    case some(p): Verdict.leave({me: p.value, vars: Lists.List.nil()})
 def chooseVerdict(state: State, choice: String, context: Abi.Context) -> Verdict:
   match here(state, context):
-    case none(_): refuse("notHere: enter the scene first.")
+    case none(_): no("notHere", "Enter the scene first.")
     case some(p): standing(state, p.value, choice)
 def standing(state: State, me: Presence, choice: String) -> Verdict:
   match passageAt(state, me.at):
-    case none(_): refuse("noPassage: your passage is gone.")
-    case some(ps): offered(state, me, Lists.find::<Choice>(ps.value.choices, fn(c: Choice) -> Bool: c.label == choice), choice)
+    case none(_): no("noPassage", "Your passage is gone.")
+    case some(ps): offered(state, me, Lists.find(ps.value.choices, fn(c: Choice) -> Bool: c.label == choice), choice)
 def offered(state: State, me: Presence, found: Lists.Maybe<Choice>, choice: String) -> Verdict:
   match found:
-    case none(_): refuse(textConcat("notOffered: ", textConcat(me.at, textConcat(" does not offer ", choice))))
-    case some(c): arriving(state, me, c.value)
+    case none(_): no("notOffered", "{me.at} does not offer {choice}")
+    case some(c): guarded(state, me, c.value, Scenes.failing(c.value.guard, state.vars))
+def guarded(state: State, me: Presence, c: Choice, failed: Lists.Maybe<Scenes.Clause>) -> Verdict:
+  match failed:
+    case some(f): no("guarded", "{c.label} needs {Scenes.clauseText(f.value)}.")
+    case none(_): arriving(state, me, c)
 def arriving(state: State, me: Presence, c: Choice) -> Verdict:
+  if c.to == Scenes.ending() then effected(me, c, effects(c.effects, state.vars, Lists.List.nil()), true) else reached(state, me, c)
+def reached(state: State, me: Presence, c: Choice) -> Verdict:
   match passageAt(state, c.to):
-    case none(_): refuse(textConcat("noPassage: ", textConcat(c.to, " is not in this scene")))
-    case some(_): varied(state, me, c)
-def varied(state: State, me: Presence, c: Choice) -> Verdict:
-  if c.key == "" then Verdict.move({me: me, choice: c, vars: Plans.Entries::<Var, Var>.keep({})}) else setting(me, c, Lists.find::<Var>(state.vars, fn(v: Var) -> Bool: v.name == c.key), Lists.length::<Var>(state.vars))
-def setting(me: Presence, c: Choice, found: Lists.Maybe<Var>, count: Nat) -> Verdict:
+    case none(_): no("noPassage", "{c.to} is not in this scene")
+    case some(_): effected(me, c, effects(c.effects, state.vars, Lists.List.nil()), false)
+def effected(me: Presence, c: Choice, edits: Effects, ends: Bool) -> Verdict:
+  match edits:
+    case full(_): no("varsFull", "Sixteen variables are already set.")
+    case edits(e): if ends then Verdict.leave({me: me, vars: e.edits}) else Verdict.move({me: me, choice: c, vars: e.edits})
+# The edits a choice's effects make, in order, each against the variables as the ones
+# before it leave them.
+sum Effects:
+  edits: {edits: Lists.List<Plans.Entries<Var, Var>>}
+  full: {}
+def effects(list: Lists.List<Scenes.Effect>, vars: Lists.List<Var>, edits: Lists.List<Plans.Entries<Var, Var>>) -> Effects:
+  match list:
+    case nil(_): Effects.edits({edits: edits})
+    case cons(c): effectOn(c.head, c.tail, vars, edits, Lists.find(vars, fn(v: Var) -> Bool: v.name == c.head.key))
+def effectOn(effect: Scenes.Effect, rest: Lists.List<Scenes.Effect>, vars: Lists.List<Var>, edits: Lists.List<Plans.Entries<Var, Var>>, found: Lists.Maybe<Var>) -> Effects:
   match found:
-    case some(v): Verdict.move({me: me, choice: c, vars: Plans.Entries::<Var, Var>.amendItem({item: v.value, change: {name: c.key, value: c.value}})})
-    case none(_): if count >= 16n then refuse("varsFull: sixteen variables are already set.") else Verdict.move({me: me, choice: c, vars: Plans.Entries::<Var, Var>.append({item: {name: c.key, value: c.value}})})
+    case some(v): effects(rest, Lists.map(vars, fn(w: Var) -> Var: if w.name == effect.key then {name: w.name, value: Scenes.applied(effect, w.value)} else w), Lists.append(edits, Plans.Entries.amendItem({item: v.value, change: {name: effect.key, value: Scenes.applied(effect, v.value.value)}})))
+    case none(_): if Lists.length(vars) >= 16n then Effects.full({}) else effects(rest, Lists.append(vars, {name: effect.key, value: Scenes.applied(effect, "")}), Lists.append(edits, Plans.Entries.append({item: {name: effect.key, value: Scenes.applied(effect, "")}})))
 # Performs a verdict (writing only when it admits) and finishes with `then` of the outcome.
-def done<T>(verdict: Verdict, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+def done<T>(state: State, verdict: Verdict, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match verdict:
-    case no(n): then(Done.refused({reason: n.reason}))
-    case enter(e): entering::<T>(e.at, context, then)
-    case move(m): moving::<T>(m.me, m.choice, m.vars, context, then)
-    case leave(l): departing::<T>(l.me, context, then)
+    case no(n): then(Done.refused(n))
+    case enter(e): entering(e.at, context, then)
+    case move(m): moving(m.me, m.choice, m.vars, context, then)
+    case leave(l): departing(state, l.me, l.vars, context, then)
 def entering<T>(at: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries::<Presence, Presence>.append({item: {who: context.principal, at: at}})})})):
-    case _: then(Done.entered({at: at}))
-def moving<T>(me: Presence, c: Choice, vars: Plans.Entries<Var, Var>, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries::<Presence, Presence>.amendItem({item: me, change: {who: me.who, at: c.to}}), vars: vars})})):
-    case _: then(Done.moved({to: c.to}))
-def departing<T>(me: Presence, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries::<Presence, Presence>.removeItem({item: me})})})):
-    case _: then(Done.left({}))
+  let written(_) = perform(write {presence: append {who: context.principal, at: at}})
+  then(Done.entered({at: at}))
+def moving<T>(me: Presence, c: Choice, vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries.amendItem({item: me, change: {who: me.who, at: c.to}})})}))
+  varied(vars, Done.moved({to: c.to}), context, then)
+def varied<T>(vars: Lists.List<Plans.Entries<Var, Var>>, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match vars:
+    case nil(_): then(done)
+    case cons(c): wroteVar(c.head, c.tail, done, context, then)
+def wroteVar<T>(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, Var>>, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {vars: edit})}))
+  varied(rest, done, context, then)
+# Leaving (or reaching END) records when, for the cooldown: the reader's own entry is
+# amended; a new one is added, the oldest dropped past sixty-four.
+def departing<T>(state: State, me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries.removeItem({item: me}), left: leaving(state, context)})}))
+  trimmed(state, vars, context, then)
+def leaving(state: State, context: Abi.Context) -> Plans.Entries<Left, Left>:
+  match Lists.find(state.left, fn(l: Left) -> Bool: l.who == context.principal):
+    case some(l): Plans.Entries.amendItem({item: l.value, change: {who: context.principal, at: context.clock}})
+    case none(_): Plans.Entries.append({item: {who: context.principal, at: context.clock}})
+def trimmed<T>(state: State, vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match state.left:
+    case cons(c): if Lists.length(state.left) >= 64n && Lists.any(state.left, fn(l: Left) -> Bool: l.who == context.principal) == false then dropped(c.head, vars, context, then) else varied(vars, Done.left({}), context, then)
+    case nil(_): varied(vars, Done.left({}), context, then)
+def dropped<T>(oldest: Left, vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  let written(_) = perform(write {left: removeItem oldest})
+  varied(vars, Done.left({}), context, then)
 def enter(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  done::<Done>(enterVerdict(state, context), context, same)
+  done(state, enterVerdict(state, context), context, same)
 def choose(state: State, input: {choice: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  done::<Done>(chooseVerdict(state, input.choice, context), context, same)
+  done(state, chooseVerdict(state, input.choice, context), context, same)
 def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  done::<Done>(leaveVerdict(state, context), context, same)
+  done(state, leaveVerdict(state, context), context, same)
+form enter:
+form choose:
+  choice: text 1..64
+form leave:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "enter", fields: Form.Fields.nil()}, tail: Card.Forms.cons({head: {card: "", action: "choose", fields: Form.Fields.cons({head: {name: "choice", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "leave", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})})})
+  Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: chooseForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
 def door() -> Card.Door:
-  {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave."}
+  {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave; post a ```spween block to make one."}
 def doneReply(done: Done) -> Card.Reply:
   match done:
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
     case entered(_): Card.Reply.done({action: "enter"})
     case moved(_): Card.Reply.done({action: "choose"})
     case left(_): Card.Reply.done({action: "leave"})
+# A ```spween block makes a new scene beside this one; anything else is a spell.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  match Spween.block(input.text):
+    case some(b): authored(state, Spween.parse(b.value), context)
+    case none(_): heard(state, Card.routeHeard(input, context, forms()), context)
+def authored(state: State, parsed: Spween.Parsed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match parsed:
+    case refused(r): Card.answer(Card.Routed.refused({clause: "spween", reading: r.reason}), context, forms(), render(state, context))
+    case parsed(p): creating(p.seed, "{context.object}/{p.id}", context)
+def creating(seed: Seed, id: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.create({package: "Scene", seed: seed, law: "", requireAbsent: {world: "", object: id}})):
+    case created(c): Card.tell(Card.Reply.done({action: "create"}), Document.text("SCENE {seed.title} is at {c.object.object}: {natText(Lists.length(seed.passages))} passages. Reply delvetalk {c.object.object} enter to begin.\n"))
+    case refused(r): Card.tell(Card.Reply.refused({clause: r.clause, reading: "The world refused it ({r.clause})."}), Document.text("Not made, refused {r.clause}: {id}\n"))
+    case _: Card.tell(Card.Reply.refused({clause: "noCreation", reading: "The scene could not be made."}), Document.text("Not made: the scene could not be made.\n"))
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): acted(state, a.action, Card.text(a.fields, "choice"), context)
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
-# A refusal offers the reader's card with the reason ("Not done: notOffered: ...").
+    case _: Card.answer(routed, context, forms(), render(state, context))
+# A refusal offers the reader's card with its clause ("refused notOffered: ...").
 def acted(state: State, action: String, choice: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   judged(state, verdictFor(state, action, choice, context), context)
 def verdictFor(state: State, action: String, choice: String, context: Abi.Context) -> Verdict:
   if action == "enter" then enterVerdict(state, context) else if action == "choose" then chooseVerdict(state, choice, context) else leaveVerdict(state, context)
 def judged(state: State, verdict: Verdict, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match verdict:
-    case no(n): Card.answer::<Edits, State, {}>(Card.Routed.refused({reason: n.reason}), context, forms(), render(state, context))
-    case _: done::<Card.Reply>(verdict, context, doneReply)
+    case no(n): Card.answer(Card.Routed.refused(n), context, forms(), render(state, context))
+    case _: done(state, verdict, context, doneReply)
 def choiceLine(c: Choice) -> Document.Document:
-  Document.text(textConcat("  * ", textConcat(c.label, "\n")))
+  Document.text("  * {c.label}\n")
 def varLine(v: Var) -> Document.Document:
-  Document.text(textConcat(v.name, textConcat(" = ", textConcat(v.value, "\n"))))
+  Document.text("{v.name} = {v.value}\n")
 def stranger(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("SCENE ", textConcat(state.title, textConcat(": ", textConcat(natText(Lists.length::<Presence>(state.presence)), textConcat(" here. Reply delvetalk ", textConcat(if context.object == "" then "<scene>" else context.object, " enter to join.\n")))))))
+  let card = if context.object == "" then "<scene>" else context.object
+  Document.text("SCENE {state.title}: {natText(Lists.length(state.presence))} here. Reply delvetalk {card} enter to join.\n")
 def reading(state: State, me: Presence, context: Abi.Context) -> Document.Document:
   match passageAt(state, me.at):
     case none(_): stranger(state, context)
     case some(ps): passageCard(state, ps.value)
 def passageHead(state: State, ps: Passage) -> Document.Document:
-  Document.text(textConcat("SCENE ", textConcat(state.title, textConcat(" (", textConcat(natText(Lists.length::<Presence>(state.presence)), textConcat(" here), you are at ", textConcat(ps.id, textConcat(":\n", textConcat(ps.text, "\nChoices:\n")))))))))
+  Document.text("SCENE {state.title} ({natText(Lists.length(state.presence))} here), you are at {ps.id}:\n{ps.text}\nChoices:\n")
+# The choices whose guards hold now; the others are not shown.
 def passageCard(state: State, ps: Passage) -> Document.Document:
-  let choices = Card.clipped(Lists.map::<Choice, Document.Document>(ps.choices, choiceLine), 8n)
-  let vars = Card.clipped(Lists.map::<Var, Document.Document>(state.vars, varLine), 4n)
-  Document.Document.sequence({items: Document.Documents.cons({head: passageHead(state, ps), tail: Lists.concat::<Document.Document>(choices, vars)})})
+  let choices = Card.clipped(Lists.map(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), choiceLine), 8n)
+  let vars = Card.clipped(Lists.map(state.vars, varLine), 4n)
+  Document.Document.sequence({items: Document.Documents.cons({head: passageHead(state, ps), tail: Lists.concat(choices, vars)})})
 # The card as the reader in the context sees it: a present reader sees their passage.
 def render(state: State, context: Abi.Context) -> Document.Document:
   match here(state, context):

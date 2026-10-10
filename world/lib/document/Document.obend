@@ -68,7 +68,7 @@ def size(document: Document) -> Nat:
     case result(r): size(r.body)
     case continuation(c): textLength(c.label)
 def sizeItems(items: Documents) -> Nat:
-  Lists.fold::<Document, Nat>(items, 0n, fn(document: Document) -> Nat -> Nat: fn(rest: Nat) -> Nat: size(document) + rest)
+  Lists.fold(items, 0n, fn(document: Document) -> Nat -> Nat: fn(rest: Nat) -> Nat: size(document) + rest)
 # One string per rendered line, without the newline; a final empty line (text
 # ending in a newline) is dropped. Leaves are split where they stand and a
 # leaf's last fragment is glued only to the first line of what lies to its
@@ -96,7 +96,7 @@ def splitOnto(value: String, rest: Names) -> Names:
 def glue(value: String, rest: Names) -> Names:
   match rest:
     case nil(_): Names.cons({head: value, tail: Names.nil()})
-    case cons(c): Names.cons({head: textConcat(value, c.head), tail: c.tail})
+    case cons(c): Names.cons({head: "{value}{c.head}", tail: c.tail})
 def withoutTrailingEmpty(items: Names) -> Names:
   match items:
     case nil(_): items

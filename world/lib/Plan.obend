@@ -21,10 +21,10 @@ import ./Form.obend as Form
 # generic sums do, so payloads are inline records.
 #
 # Payloads are Data. What a call, send or create carries (an argument, a message, a
-# child's Seed) is `Data.of::<T>(value)`: first-order data that Bend never takes apart
-# and the host checks against the callee's input or the child's state. One object
-# may call and send any shapes. A Data field in a State is not admitted yet (schema
-# certificates); keep Data to Plan payloads.
+# child's Seed) is the value itself where Data is expected (the compiler injects it, as
+# `Data.of::<T>(value)` would): first-order data that Bend never takes apart and the host
+# checks against the callee's input or the child's state. One object may call and send
+# any shapes.
 #
 # The Seed rule. A creator supplies a Seed; the child's `seeded` makes its State.
 # Every object exports `Seed`, `defaultSeed()`, `seeded(seed: Seed) -> State` and
@@ -47,8 +47,9 @@ import ./Form.obend as Form
 # checker refused it with "the checker refused the front end's typed packet",
 # the current one admits it. List fields are still edited by Entries (append,
 # amend or remove one item by index; remove is a variant the host must implement), never replaced whole, so the host judges one item.
-# Generic records are replaced by inline sum payloads, and the phantom type
-# parameters of keep/append need explicit instantiation: Plans.Edit::<T, D>.keep({}).
+# Generic records are replaced by inline sum payloads. The type arguments of keep and
+# append are inferred from the field's declared Edit or Entries type (`Plans.Edit.keep({})`
+# in a keep() record); `write {field: op value, ...}` builds a self-write from them.
 record Reference:
   world: String
   object: String
@@ -85,12 +86,15 @@ record View:
 record Await:
   slot: Slot
   patience: Nat
-# The forms an interpretation may answer with, in the spell grammar.
+# The forms an interpretation may answer with, in the spell grammar. `model` names the
+# model to ask instead of the policy's own ("" for the policy's): a card's second attempt
+# names the policy's `escalate` model (Card.asking).
 type Forms = Lists.List<Form.Form>
 record Interpret:
   utterance: String
   offers: Forms
   policy: Reference
+  model: String
 # `to` is a principal; "" is the acting principal.
 record Offering:
   to: String
@@ -101,7 +105,7 @@ record Offering:
 # request.subject = the grantor and request.caller = the calling object. Without a grant
 # that stands the Plan is answered refused {clause: "noGrant"}. (Records have no optional
 # fields, so a call or send under a grant is its own constructor.) grantWith attenuates:
-# `fixed` (Data.of a record of some of the callee's input fields) is merged into every
+# `fixed` (a record of some of the callee's input fields, as Data) is merged into every
 # use's argument (a use giving such a field otherwise is refused grantConflict), and the
 # grant serves `uses` (at least 1) admitted calls or sends, then grantSpent. The grantor
 # may also revoke with the op world-revoke, outside any object.
@@ -181,7 +185,7 @@ sum Handled<R>:
 # empty world is the world the turn runs in).
 # The empty payload, for a method that takes no input.
 def nothing() -> Data:
-  Data.of::<{}>({})
+  {}
 def self(context: Abi.Context) -> Reference:
   {world: context.world, object: context.object}
 # References compare by world and object. The empty reference (object "") names
@@ -194,4 +198,4 @@ def isNobody(reference: Reference) -> Bool:
   reference.object == ""
 # The index of a reference in a list, by world and object; none when absent.
 def indexOf(items: Lists.List<Reference>, target: Reference) -> Lists.Maybe<Nat>:
-  Lists.indexWhere::<Reference>(items, fn(item: Reference) -> Bool: same(item, target))
+  Lists.indexWhere(items, fn(item: Reference) -> Bool: same(item, target))

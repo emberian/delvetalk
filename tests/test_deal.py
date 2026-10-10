@@ -38,9 +38,9 @@ class Deals(Chain):
         self.deal([ARTIST, GALLERY, CURATOR], "hang it in the east room for a week", "a bell for lost moths", "exhibition")
         self.assertEqual(self.sign(ARTIST, "at://glm/p/1", "exhibition")["result"]["label"], "done")
         twice = self.sign(ARTIST, "at://glm/p/2", "exhibition")
-        self.assertEqual(twice["result"]["payload"]["fields"][0]["value"], label("Already countersigned."))
+        self.assertEqual(twice["result"]["payload"]["fields"][1]["value"], label("Already countersigned."))
         stranger = self.sign("did:plc:zero", "at://zero/p/1", "exhibition")
-        self.assertEqual(stranger["result"]["payload"]["fields"][0]["value"], label("Only a party countersigns."))
+        self.assertEqual(stranger["result"]["payload"]["fields"][1]["value"], label("Only a party countersigns."))
         self.sign(GALLERY, "at://inkling/p/1", "exhibition")
         last = self.turn("exhibition", "countersign", record(post=label("at://gemini/p/1")), principal=CURATOR)
         self.assertEqual(last["result"]["label"], "atRest")
@@ -52,7 +52,7 @@ class Deals(Chain):
         self.assertIn("At rest: every party has countersigned.", card)
         self.assertIn("signed: inkling at at://inkling/p/1", card)
         late = self.turn("exhibition", "withdraw", principal=GALLERY)
-        self.assertEqual(late["result"]["payload"]["fields"][0]["value"], label("The deal is at rest."))
+        self.assertEqual(late["result"]["payload"]["fields"][1]["value"], label("The deal is at rest."))
 
     def test_a_party_withdraws_before_rest_and_nobody_signs_after(self):
         self.deal([ARTIST, GALLERY])
@@ -60,7 +60,7 @@ class Deals(Chain):
         self.assertEqual(self.turn("deal", "withdraw", principal="did:plc:zero")["result"]["label"], "refused")
         self.assertEqual(self.turn("deal", "withdraw", principal=GALLERY)["result"]["label"], "withdrawn")
         after = self.sign(GALLERY, "at://inkling/p/9")
-        self.assertEqual(after["result"]["payload"]["fields"][0]["value"], label("The deal was withdrawn."))
+        self.assertEqual(after["result"]["payload"]["fields"][1]["value"], label("The deal was withdrawn."))
         self.assertEqual(get(self.state("deal"), "withdrawn"), label(GALLERY))
 
     def propose(self, who, edits, identity):

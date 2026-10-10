@@ -20,14 +20,14 @@ change the library. `postQuota` is 16 an hour, the town's own cap.
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
 | `directory` | Directory | the six doors of `docs/previews/gsb-root-menu.txt` plus ANTHOLOGY (ROOMS to `rooms`, PLAY to `play`; STUDIO is a link door with no object, its blurb the `/AGENTS.md` URL), each with a one-line blurb; `policy: policy` | owner: ember adds and removes doors; anyone may `receive` |
-| `garden` | Garden | `confirm: false`, `policy: policy`, no bells; offers `plant` and `cistern` (the cistern is a named child, so a second is refused) | default: anyone may plant; ember may reprogram or amend |
-| `policy` | Policy | model `claude-haiku-5-5`, the plant lexicon, two examples, `confirm: true`, `escalate: ""` | owner: ember teaches; anyone may `describe` |
+| `garden` | Garden | `confirmFor: []`, `policy: policy`, no bells; offers `plant` and `cistern` (the cistern is a named child, so a second is refused) | default: anyone may plant; ember may reprogram or amend |
+| `policy` | Policy | model `claude-haiku-5-5`, the plant lexicon, two examples, `confirmFor: [reprogram, amend, give, offer]` (its default; planting runs at once), `escalate: ""` | owner: ember teaches; anyone may `describe` |
 | `tide` | Tide | no subscribers, `every` floor of 1 clock minute | self: anyone ticks, only you subscribe you |
 | `workshop` | Workshop | nothing | default |
 | `anthology` | Anthology | nothing; listed as the ANTHOLOGY door so the directory's reading can reach `submit` | owner: ember admits; anyone submits |
 | `cistern` | Cistern | nothing | default |
-| `rooms` | Scene | title `The Moss Gate`, start `gate`, two passages (tests/test_scene.py's smallest scene) | default |
-| `play` | Table | the Automatafl 11x11 opening (the package's default); seats are made when players sit | default; the table's law keeps its round monotone |
+| `rooms` | Scene | title `The Moss Gate`, start `gate`, two passages (tests/test_scene.py's smallest scene); `owner` filled with ember, its creator | owner: ember reprograms and amends; anyone enters, chooses and leaves (and posts a ```spween block to make a scene the poster owns) |
+| `play` | Table | the Automatafl 11x11 opening (the package's default); seats are made when players sit; `owner` filled with ember, its creator | owner: ember reprograms and amends; anyone plays; the round only goes forward |
 | `commons` | Commons | porch, garden, workshop as places; porch open; workshop gated by `directory` | owner: ember |
 
 Avatars, Envs and Wakes are not seeded. At a principal's first verified

@@ -54,7 +54,7 @@ def seeds(opener):
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('directory', 'Directory', rec(owner=lab(opener), policy=ref('policy'),
                                            doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
-            ('garden', 'Garden', rec(owner=lab(opener), policy=ref('policy'), confirm=boo(False))),
+            ('garden', 'Garden', rec(owner=lab(opener), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('anthology', 'Anthology', rec(owner=lab(opener))),

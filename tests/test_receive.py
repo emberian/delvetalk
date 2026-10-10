@@ -46,15 +46,20 @@ class Cards(Chain):
         forged = self.turn("garden", "receive", record(text=label("x"), post=label("p"), slot=label(""), principal=label("ember")),
                            principal="glm", identity="forged")
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), forged)
-        self.assertEqual(self.version("garden"), 0)
+        # The unclear spell is held for glm to complete (one write); the forged turn wrote nothing.
+        self.assertEqual(self.version("garden"), 1)
 
     def test_an_unclear_spell_gets_a_card_naming_the_needs_and_the_template_filled_in(self):
         self.garden()
         text = self.card(self.say("delvetalk garden plant\nseed: a fern that remembers yesterday"))
         print("\n--- unclear ---\n" + text)
-        self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nAlmost. I still need: colour.\nReply with the spell, filled in:\n\n"
+        self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nAlmost. I still need: colour.\nReply with just the missing lines, or the spell filled in:\n\n"
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: <amber, violet or silver>\n")
-        self.assertEqual(self.version("garden"), 0)
+        # The spell is held for glm, and the missing line alone completes it.
+        self.assertEqual(self.version("garden"), 1)
+        planted = self.say("colour: silver")
+        self.assertEqual(planted["result"]["label"], "planted", planted)
+        self.assertIn("a silver bell, “a fern that remembers yesterday”", self.card(planted))
 
     def test_nothing_known_repeats_the_whole_template(self):
         self.garden()
@@ -65,9 +70,9 @@ class Cards(Chain):
     def test_refusals_are_one_line_cards_and_write_nothing(self):
         self.garden()
         cases = {
-            "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted: colour is one of: amber, violet, silver\n",
-            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted: Unknown field smell\n",
-            "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted: This card offers garden plant\n",
+            "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted, refused badSpell: colour is one of: amber, violet, silver\n",
+            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted, refused badSpell: Unknown field smell\n",
+            "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted, refused badSpell: This card offers garden plant\n",
         }
         for spell, expected in cases.items():
             with self.subTest(spell=spell[:40]):
@@ -117,7 +122,7 @@ def planted(context: Abi.Context) -> String:
         self.assertTrue(4000 <= len(reply.encode()) <= 4096, len(reply.encode()))
         out = self.say(reply)
         print("\n  dense %d-byte reply through Garden.receive: %s ticks" % (len(reply.encode()), out["ticksUsed"]))
-        self.assertEqual(self.card(out), "Not planted: Unknown field f00\n")
+        self.assertEqual(self.card(out), "Not planted, refused badSpell: Unknown field f00\n")
         self.assertLess(out["ticksUsed"], 1000000)
 
     def version(self, name):

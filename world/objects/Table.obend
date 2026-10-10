@@ -11,7 +11,9 @@ import ./Validated.obend as Checked
 # seats seal, both open (each opening waits for the other's seal), and then anyone
 # resolves: the table views both seats, plays the qualified game, and moves both seats
 # to the next round.
+# owner: who may reprogram or amend the table (the host fills it with the creating principal).
 record State:
+  owner: String
   north: Plans.Reference
   south: Plans.Reference
   round: Nat
@@ -26,13 +28,14 @@ record Edits:
   game: Plans.Edit<Game.Result, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<Seats.State, Seats.Done>
-law rounds: monotone(round)
+law rounds "rounds only go forward": monotone(round)
+law owner "only the owner reprograms or amends it; anyone plays": request.kind == 0 or request.subject == new.owner
 def defaultSeed() -> Seed:
   {north: Plans.nobody(), south: Plans.nobody()}
 def opening() -> Game.Result:
   {board: 3544482323287199997214430076569557050131592232587036428018782212697626882n, automaton: 60n, marks: 0n, status: 0n, winner: 0n}
 def seeded(seed: Seed) -> State:
-  {north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
+  {owner: "", north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
 def initial() -> State:
   seeded(defaultSeed())
 sum Done:
@@ -51,8 +54,8 @@ def south(state: State, n: Seats.State, context: Abi.Context) -> Activity<Plan, 
     case viewed(v): if ready(v.state, state.round) then played(state, Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), context) else Done.refused({reason: "South has not opened this round."})
     case _: Done.refused({reason: "South's seat did not answer."})
 def played(state: State, result: Game.Result, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit::<Nat, Nat>.add({delta: 1n}), game: Plans.Edit::<Game.Result, {}>.set({value: result})}})):
-    case _: advanced(state, result)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit.add({delta: 1n}), game: Plans.Edit.set({value: result})}}))
+  advanced(state, result)
 def advanced(state: State, result: Game.Result) -> Activity<Plan, Response, Done>:
   match perform(Plan.call({object: state.north, method: "next", argument: Plans.nothing()})):
     case _: advancedSouth(state, result)
@@ -64,15 +67,15 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, Seats.State, Seats.Done>(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
 def glyph(cell: Nat) -> String:
   if cell == 1n then "+" else if cell == 2n then "-" else if cell == 3n then "@" else "."
 def row(board: Nat, at: Nat, left: Nat) -> String:
-  if left == 0n then "\n" else textConcat(glyph(Game.cell(board, at)), row(board, at + 1n, left - 1n))
+  if left == 0n then "\n" else "{glyph(Game.cell(board, at))}{row(board, at + 1n, left - 1n)}"
 def rows(state: State, y: Nat) -> Document.Documents:
   if y == state.height then Document.Documents.nil() else Document.Documents.cons({head: Document.text(row(state.game.board, y * state.width, state.width)), tail: rows(state, y + 1n)})
 def outcome(game: Game.Result) -> String:
   if game.winner == 1n then "North wins." else if game.winner == 2n then "South wins." else if game.status == 1n then "The last pair conflicted; the board stayed." else if game.status == 2n then "The last pair was invalid; the board stayed." else "Seal, open, resolve."
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("AUTOMATAFL, round ", textConcat(natText(state.round), textConcat(": ", textConcat(outcome(state.game), "\n\n"))))), tail: rows(state, 0n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("AUTOMATAFL, round {natText(state.round)}: {outcome(state.game)}\n\n"), tail: rows(state, 0n)})})

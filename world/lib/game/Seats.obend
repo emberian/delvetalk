@@ -22,4 +22,4 @@ sum Done:
   refused: {reason: String}
 # The intent a seat's commitment turn carries, so the opponent can name its slot.
 def commitIntent(table: String, round: Nat) -> String:
-  textConcat(table, textConcat("/", textConcat(natText(round), "/commit")))
+  "{table}/{natText(round)}/commit"

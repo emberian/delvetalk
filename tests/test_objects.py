@@ -116,7 +116,7 @@ def bells(n: Nat) -> Lists.List<Plans.Reference>:
     case 0: Lists.List::<Plans.Reference>.nil()
     case 1+p: Lists.append::<Plans.Reference>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n))})
 def shown(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirm: true, pending: Lists.List::<O.Pending>.nil(), children: bells(n), pageCheckpoint: ""}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Lists.List::<O.Pending>.nil(), children: bells(n), pageCheckpoint: ""}, Card.stranger()))
 """
 
 DOC_PROBE = """edition ObjectiveBend 1
@@ -230,7 +230,7 @@ class Objects(unittest.TestCase):
             found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
             self.assertIsNotNone(found, (name, entry))
             body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue("perform(Plan.%s(" % plan in body or "perform(Plans.Plan::<E>.%s(" % plan in body, (name, entry))
+            self.assertTrue(any(form % plan in body for form in ("perform(Plan.%s(", "perform(Plans.Plan.%s(", "perform(%s {")), (name, entry))
 
     def test_render_cards(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))

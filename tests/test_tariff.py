@@ -82,9 +82,9 @@ class TariffTests(unittest.TestCase):
 
     def test_bell_card_of_1025_rains(self):
         out = run_pure("Bell", "many", nat(1025), probe=BELL_PROBE, limits=BIG)
-        print("\n  Bell card, 1,025 rains: %d ticks (75,740 before rains kept handles; 75,748 before the planter was a field of its own; 75,701 before the reader's handle; 75,985 before handles were shortened; 75,997 through the one-argument wrapper; 75,830 before the planter saw (yours); 848,680; 333,209 before the card showed eight)" % out["ticksUsed"])
+        print("\n  Bell card, 1,025 rains: %d ticks (76,476 before its head was one interpolated string; 75,740 before rains kept handles; 75,748 before the planter was a field of its own; 75,701 before the reader's handle; 75,985 before handles were shortened; 75,997 through the one-argument wrapper; 75,830 before the planter saw (yours); 848,680; 333,209 before the card showed eight)" % out["ticksUsed"])
         self.assertEqual(out["status"], "finished", out)
-        self.assertEqual(out["ticksUsed"], 76476)
+        self.assertEqual(out["ticksUsed"], 76106)
 
     def test_text_join_is_linear_in_its_output(self):
         # Refuted if a join re-reads its accumulator: doubling the elements would

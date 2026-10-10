@@ -1,0 +1,78 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Spell.obend as Spell
+# A scene as data: passages, choices with their effects and guards, the scene's own
+# requirements and cooldown. world/objects/Scene.obend keeps one; world/lib/Spween.obend
+# lowers spween's text to its Seed.
+#
+# An effect sets a variable (`set`), adds to it or subtracts from it (`add`, `sub`, on
+# naturals; a missing or non-numeric value counts 0, a subtraction stops at 0). A clause
+# compares a variable with a value (>=, >, <=, < on naturals; == and != on the text) or
+# asks whether it is truthy or falsy ("", "0" and "false" are falsy, as is a variable
+# never set). A guard holds when every clause does.
+record Effect:
+  key: String
+  op: String
+  value: String
+record Clause:
+  key: String
+  op: String
+  value: String
+type Guard = Lists.List<Clause>
+record Choice:
+  label: String
+  to: String
+  effects: Lists.List<Effect>
+  guard: Guard
+record Passage:
+  id: String
+  text: String
+  choices: Lists.List<Choice>
+# cooldown: the clock units a reader waits after leaving (or reaching END) before entering
+# again (0 for none). requires: what the scene's variables must hold for anyone to enter.
+record Seed:
+  title: String
+  start: String
+  passages: Lists.List<Passage>
+  cooldown: Nat
+  requires: Guard
+record Var:
+  name: String
+  value: String
+type Vars = Lists.List<Var>
+# A choice whose target is END ends the reader's visit.
+def ending() -> String:
+  "END"
+def valueOf(vars: Vars, key: String) -> String:
+  match Lists.find(vars, fn(v: Var) -> Bool: v.name == key):
+    case some(v): v.value.value
+    case none(_): ""
+def truthy(value: String) -> Bool:
+  value != "" && value != "0" && value != "false"
+def natural(value: String) -> Nat:
+  match Spell.number(value):
+    case yes(y): y.value
+    case no(_): 0n
+def isNatural(value: String) -> Bool:
+  match Spell.number(value):
+    case yes(_): true
+    case no(_): false
+def holdsClause(clause: Clause, vars: Vars) -> Bool:
+  let have = valueOf(vars, clause.key)
+  if clause.op == "truthy" then truthy(have) else if clause.op == "falsy" then truthy(have) == false else if clause.op == "==" then have == clause.value else if clause.op == "!=" then have != clause.value else ordered(clause.op, have, clause.value)
+def ordered(op: String, have: String, want: String) -> Bool:
+  if isNatural(have) == false || isNatural(want) == false then false else compared(op, natural(have), natural(want))
+def compared(op: String, have: Nat, want: Nat) -> Bool:
+  if op == ">=" then have >= want else if op == ">" then have > want else if op == "<=" then have <= want else have < want
+# The first clause of a guard that does not hold, if any.
+def failing(guard: Guard, vars: Vars) -> Lists.Maybe<Clause>:
+  Lists.find(guard, fn(c: Clause) -> Bool: holdsClause(c, vars) == false)
+def holds(guard: Guard, vars: Vars) -> Bool:
+  Lists.any(guard, fn(c: Clause) -> Bool: holdsClause(c, vars) == false) == false
+def clauseText(clause: Clause) -> String:
+  if clause.op == "truthy" then clause.key else if clause.op == "falsy" then "!{clause.key}" else "{clause.key} {clause.op} {clause.value}"
+# A variable's value after an effect.
+def applied(effect: Effect, old: String) -> String:
+  if effect.op == "add" then natText(natural(old) + natural(effect.value)) else if effect.op == "sub" then natText(less(natural(old), natural(effect.value))) else effect.value
+def less(have: Nat, by: Nat) -> Nat:
+  if have > by then have - by else 0n

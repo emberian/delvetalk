@@ -24,7 +24,9 @@ def listing(items):
 
 
 def choice(text, to, key="", value=""):
-    return record(label=label(text), to=label(to), key=label(key), value=label(value))
+    """A choice; a key sets that variable to value when it is taken (one `set` effect)."""
+    effects = [record(key=label(key), op=label("set"), value=label(value))] if key else []
+    return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]))
 
 
 def passage(pid, text, choices):
@@ -32,8 +34,9 @@ def passage(pid, text, choices):
 
 
 def scene_state(passages, start="gate", title="The Moss Gate"):
-    return record(title=label(title), start=label(start), passages=listing(passages),
-                  presence=listing([]), vars=listing([]))
+    return record(owner=label("ember"), title=label(title), start=label(start), passages=listing(passages),
+                  presence=listing([]), vars=listing([]), cooldown={"tag": "natural", "value": "0"},
+                  requires=listing([]), left=listing([]))
 
 
 GATE = [
@@ -43,7 +46,9 @@ GATE = [
 
 
 def why(reply):
-    return reply["result"]["payload"]["fields"][0]["value"]["value"]
+    """A refusal as `clause: reading`."""
+    fields = {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}
+    return "%s: %s" % (fields["clause"], fields["reading"])
 
 
 def plain(item):
@@ -79,6 +84,14 @@ class Scenes(test_chain.Chain):
         v = self.host.send(op="world-view", principal="ember", object="scene")
         self.assertEqual(v["status"], "viewed", v)
         return v["version"], plain(v["state"])
+
+    def test_the_owner_amends_the_scene_and_a_stranger_may_not(self):
+        self.scene()
+        law = 'law owner: request.kind == 0 or request.subject == "ember"'
+        theirs = self.host.send(op="world-amend", principal=GLM, identity="am-glm", object="scene", version=self.view()[0], law=law)
+        self.assertEqual((theirs["status"], theirs["receipt"]["outcome"].get("clause")), ("refused", "owner"), theirs)
+        mine = self.host.send(op="world-amend", principal="ember", identity="am-ember", object="scene", version=self.view()[0], law=law)
+        self.assertEqual(mine["status"], "admitted", mine)
 
     def test_enter_then_choose_moves_the_reader_and_sets_a_variable(self):
         self.scene()
@@ -120,7 +133,7 @@ class Scenes(test_chain.Chain):
                 self.assertEqual(self.view(), before)
         r = self.say("delvetalk scene choose\nchoice: Knock")
         print("--- refused card ---\n" + r["offers"][0]["text"])
-        self.assertIn("Not done: notOffered", r["offers"][0]["text"])
+        self.assertIn("refused notOffered: ", r["offers"][0]["text"])
         # A principal who never entered has no passage to choose from.
         r = self.say("delvetalk scene choose\nchoice: Open", principal=KIM)
         self.assertTrue(why(r).startswith("notHere"), why(r))

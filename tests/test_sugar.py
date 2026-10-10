@@ -242,12 +242,14 @@ class SugarTests(unittest.TestCase):
         self.assertIn("write Lists.length::<T>(...) naming T", message)
 
     def test_a_partly_inferred_call_shows_what_was_inferred(self):
-        # kept<T, U>(found: Maybe<U>, rest: List<U>) never mentions T.
-        source = LISTS_HEAD + "def pick(state: State) -> Lists.List<Rain>:\n  Lists.kept(Lists.Maybe.none({}), state.rains)\n"
+        # kept<T, U>(found: Maybe<U>, rest: List<U>) never mentions T (List.kept itself
+        # lost that phantom parameter, so the fixture declares its own).
+        source = LISTS_HEAD + ("def kept<T, U>(found: Lists.Maybe<U>, rest: Lists.List<U>) -> Lists.List<U>:\n  rest\n"
+                               "def pick(state: State) -> Lists.List<Rain>:\n  kept(Lists.Maybe.none({}), state.rains)\n")
         reply = self.check(source, "pick", ("List",))
         self.assertEqual(reply["status"], "refused", reply)
-        self.assertIn("cannot infer the type argument T of Lists.kept", reply["diagnostic"]["message"])
-        self.assertIn("write Lists.kept::<T, Rain>(...) naming T", reply["diagnostic"]["message"])
+        self.assertIn("cannot infer the type argument T of kept", reply["diagnostic"]["message"])
+        self.assertIn("write kept::<T, Rain>(...) naming T", reply["diagnostic"]["message"])
     # 3. The statement form for one expected response.
     def test_let_response_is_its_match(self):
         self.same(BUMP_EXPLICIT, BUMP_SUGARED, "bump")

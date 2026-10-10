@@ -125,9 +125,9 @@ def inline(tail: String) -> Fields2:
   if tail == "" then Fields2.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then trimStart(textDrop(tail, 1n)) else tail, true)
 def slashed(before: String, rest: String, commas: Bool) -> Fields2:
   let at = textBreak(rest, "/")
-  if at == textLength(rest) then segment(textConcat(before, rest), commas) else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n), commas)
+  if at == textLength(rest) then segment("{before}{rest}", commas) else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n), commas)
 def slashAt(before: String, head: String, after: String, commas: Bool) -> Fields2:
-  if looksLikeField(trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), blanks()) == 1n) then both(segment(textConcat(before, head), commas), slashed("", trimStart(after), commas)) else slashed(textConcat(before, textConcat(head, "/")), after, commas)
+  if looksLikeField(trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), blanks()) == 1n) then both(segment("{before}{head}", commas), slashed("", trimStart(after), commas)) else slashed("{before}{head}/", after, commas)
 def segment(text: String, commas: Bool) -> Fields2:
   if trimStart(text) == "" then Fields2.found({bindings: Bindings.nil()}) else piece(trimStart(text))
 # Commas: a comma continues the current value unless what follows it looks like `name:`.
@@ -139,20 +139,20 @@ def looksLikeField(value: String) -> Bool:
   colon > 0n && textTake(value, colon) != value && isIdentifier(textTake(value, colon))
 def startField(value: String, rest: String) -> Fields2:
   let colon = textBreak(value, ":")
-  if looksLikeField(value) then continued(textTake(value, colon), trimStart(textDrop(value, colon + 1n)), rest) else Fields2.bad({reason: textConcat("Not a field: ", textTake(value, 40n))})
+  if looksLikeField(value) then continued(textTake(value, colon), trimStart(textDrop(value, colon + 1n)), rest) else Fields2.bad({reason: "Not a field: {textTake(value, 40n)}"})
 def continued(name: String, value: String, rest: String) -> Fields2:
   if rest == "" then consed(name, trimEnd(value), Fields2.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
 def more(name: String, value: String, stop: Nat, rest: String) -> Fields2:
   let next = trimStart(textTake(rest, stop))
-  if looksLikeField(next) then consed(name, trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, textConcat(value, textConcat(",", textTake(rest, stop))), textDrop(rest, stop + 1n))
+  if looksLikeField(next) then consed(name, trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, "{value},{textTake(rest, stop)}", textDrop(rest, stop + 1n))
 def both(first: Fields2, second: Fields2) -> Fields2:
   match first:
     case found(f): sequenced(f.bindings, second)
     case _: first
 def sequenced(bindings: Bindings, second: Fields2) -> Fields2:
   match second:
-    case found(g): Fields2.found({bindings: Lists.concat::<Binding>(bindings, g.bindings)})
-    case stray(st): Fields2.stray({bindings: Lists.concat::<Binding>(bindings, st.bindings), rest: st.rest})
+    case found(g): Fields2.found({bindings: Lists.concat(bindings, g.bindings)})
+    case stray(st): Fields2.stray({bindings: Lists.concat(bindings, st.bindings), rest: st.rest})
     case _: second
 def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
   match parsed:
@@ -231,16 +231,16 @@ def number(value: String) -> Number:
 def digits(rest: String, total: Nat) -> Nat:
   if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + digit(textTake(rest, 1n)))
 def joined(options: Form.Names) -> String:
-  Lists.fold::<String, String>(options, "", fn(option: String) -> String -> String: fn(rest: String) -> String: if rest == "" then option else textConcat(option, textConcat(", ", rest)))
+  Lists.fold(options, "", fn(option: String) -> String -> String: fn(rest: String) -> String: if rest == "" then option else "{option}, {rest}")
 def judge(field: Form.Field, value: String) -> Verdict:
   match field.kind:
-    case text(t): if textLength(value) < t.min || textLength(value) > t.max then Verdict.wrong({reason: textConcat(field.name, textConcat(" takes ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters.")))))}) else Verdict.fine({})
+    case text(t): if textLength(value) < t.min || textLength(value) > t.max then Verdict.wrong({reason: "{field.name} takes {natText(t.min)} to {natText(t.max)} characters."}) else Verdict.fine({})
     case natural(n): judgeNumber(field.name, n.min, n.max, number(value))
-    case choice(c): if Lists.any::<String>(c.options, fn(option: String) -> Bool: option == value) then Verdict.fine({}) else Verdict.wrong({reason: textConcat(field.name, textConcat(" is one of: ", joined(c.options)))})
+    case choice(c): if Lists.any(c.options, fn(option: String) -> Bool: option == value) then Verdict.fine({}) else Verdict.wrong({reason: "{field.name} is one of: {joined(c.options)}"})
 def judgeNumber(name: String, min: Nat, max: Nat, parsed: Number) -> Verdict:
   match parsed:
-    case no(_): Verdict.wrong({reason: textConcat(name, " takes a natural number in plain digits.")})
-    case yes(y): if y.value < min || y.value > max then Verdict.wrong({reason: textConcat(name, textConcat(" takes ", textConcat(natText(min), textConcat(" to ", natText(max)))))}) else Verdict.fine({})
+    case no(_): Verdict.wrong({reason: "{name} takes a natural number in plain digits."})
+    case yes(y): if y.value < min || y.value > max then Verdict.wrong({reason: "{name} takes {natText(min)} to {natText(max)}"}) else Verdict.fine({})
 def named(name: String) -> Binding -> Bool:
   fn(binding: Binding) -> Bool: binding.name == name
 def audit(bindings: Bindings, fields: Form.Fields) -> Verdict:
@@ -248,8 +248,8 @@ def audit(bindings: Bindings, fields: Form.Fields) -> Verdict:
     case nil(_): Verdict.fine({})
     case cons(c):
       match lookup(fields, c.head.name):
-        case none(_): Verdict.wrong({reason: textConcat("Unknown field ", c.head.name)})
-        case some(s): if Lists.any::<Binding>(c.tail, named(c.head.name)) then Verdict.wrong({reason: textConcat("Duplicate field ", c.head.name)}) else next(judge(s.field, c.head.value), c.tail, fields)
+        case none(_): Verdict.wrong({reason: "Unknown field {c.head.name}"})
+        case some(s): if Lists.any(c.tail, named(c.head.name)) then Verdict.wrong({reason: "Duplicate field {c.head.name}"}) else next(judge(s.field, c.head.value), c.tail, fields)
 def next(verdict: Verdict, rest: Bindings, fields: Form.Fields) -> Verdict:
   match verdict:
     case fine(_): audit(rest, fields)
@@ -270,17 +270,17 @@ def natural(parsed: Number) -> Value:
 def entry(bindings: Bindings) -> Form.Field -> Entry:
   fn(field: Form.Field) -> Entry: {name: field.name, value: typed(field.kind, valueOf(bindings, field.name))}
 def missing(bindings: Bindings, fields: Form.Fields) -> Form.Names:
-  Lists.map::<Form.Field, String>(Lists.filter::<Form.Field>(fields, fn(field: Form.Field) -> Bool: Lists.any::<Binding>(bindings, named(field.name)) == false), fn(field: Form.Field) -> String: field.name)
+  Lists.map(Lists.filter(fields, fn(field: Form.Field) -> Bool: Lists.any(bindings, named(field.name)) == false), fn(field: Form.Field) -> String: field.name)
 def fit(parsed: Parsed, form: Form.Form) -> Fit:
   match parsed:
     case notASpell(n): Fit.refused({reason: n.reason})
-    case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: textConcat("This card offers ", textConcat(form.card, textConcat(" ", form.action)))}) else fitBound(rebound(s.fields, form), form)
+    case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: "This card offers {form.card} {form.action}"}) else fitBound(rebound(s.fields, form), form)
 def fitBound(bindings: Bindings, form: Form.Form) -> Fit:
   decide(bindings, form, audit(bindings, form.fields))
 # A field named as the action (`plant: a fern`, as the town writes) fills the form's first
 # text field the other lines leave open.
 def rebound(bindings: Bindings, form: Form.Form) -> Bindings:
-  if Lists.any::<Binding>(bindings, named(form.action)) then renamed(bindings, form.action, Lists.find::<Form.Field>(form.fields, fn(f: Form.Field) -> Bool: isText(f.kind) && Lists.any::<Binding>(bindings, named(f.name)) == false)) else bindings
+  if Lists.any(bindings, named(form.action)) then renamed(bindings, form.action, Lists.find(form.fields, fn(f: Form.Field) -> Bool: isText(f.kind) && Lists.any(bindings, named(f.name)) == false)) else bindings
 def isText(kind: Form.Kind) -> Bool:
   match kind:
     case text(_): true
@@ -288,12 +288,12 @@ def isText(kind: Form.Kind) -> Bool:
 def renamed(bindings: Bindings, action: String, open: Lists.Maybe<Form.Field>) -> Bindings:
   match open:
     case none(_): bindings
-    case some(f): Lists.map::<Binding, Binding>(bindings, fn(b: Binding) -> Binding: if b.name == action then {name: f.value.name, value: b.value} else b)
+    case some(f): Lists.map(bindings, fn(b: Binding) -> Binding: if b.name == action then {name: f.value.name, value: b.value} else b)
 def decide(bindings: Bindings, form: Form.Form, verdict: Verdict) -> Fit:
   match verdict:
     case wrong(w): Fit.refused({reason: w.reason})
     case fine(_): complete(bindings, form, missing(bindings, form.fields))
 def complete(bindings: Bindings, form: Form.Form, needs: Form.Names) -> Fit:
   match needs:
-    case nil(_): Fit.proposal({card: form.card, action: form.action, bindings: Lists.map::<Form.Field, Entry>(form.fields, entry(bindings))})
+    case nil(_): Fit.proposal({card: form.card, action: form.action, bindings: Lists.map(form.fields, entry(bindings))})
     case cons(_): Fit.unclear({needs: needs})

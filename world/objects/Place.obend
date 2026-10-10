@@ -18,10 +18,36 @@ record State:
   exits: Lists.List<Exit>
   present: Lists.List<Plans.Reference>
   things: Lists.List<Plans.Reference>
-# Every method that can refuse answers with this sum.
+# Every method that can refuse answers with this sum; a refusal names its clause (a Why
+# arm here, Thing's for a thing) and its reading.
 sum Done:
   done: {}
-  refused: {reason: String}
+  refused: Card.Refusal
+sum Why:
+  alreadyHere: {}
+  notHere: {}
+  notAThing: {doing: String}
+  notPresent: {doing: String}
+  notLying: {}
+  alreadyLying: {}
+def why(w: Why) -> String:
+  match w:
+    case alreadyHere(_): "Already here."
+    case notHere(_): "Not here."
+    case notAThing(n): "Only a thing can {n.doing}."
+    case notPresent(n): "Only someone here can {n.doing}."
+    case notLying(_): "That is not lying here."
+    case alreadyLying(_): "That is already lying here."
+def clause(w: Why) -> String:
+  match w:
+    case alreadyHere(_): "alreadyHere"
+    case notHere(_): "notHere"
+    case notAThing(_): "notAThing"
+    case notPresent(_): "notPresent"
+    case notLying(_): "notLying"
+    case alreadyLying(_): "alreadyLying"
+def refused(w: Why) -> Done:
+  Done.refused({clause: clause(w), reading: why(w)})
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   owner: String
@@ -39,17 +65,16 @@ record Edits:
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {owner: "", name: "", description: "", exits: Lists.List::<Exit>.nil(), present: Lists.List::<Plans.Reference>.nil(), things: Lists.List::<Plans.Reference>.nil()}
+  {owner: "", name: "", description: "", exits: Lists.List.nil(), present: Lists.List.nil(), things: Lists.List.nil()}
 def seeded(seed: Seed) -> State:
   {owner: seed.owner, name: seed.name, description: seed.description, exits: seed.exits, present: seed.present, things: seed.things}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {name: Plans.Edit::<String, {}>.keep({}), description: Plans.Edit::<String, {}>.keep({}), present: Plans.Entries::<Plans.Reference, {}>.keep({}), things: Plans.Entries::<Plans.Reference, {}>.keep({})}
+  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), present: Plans.Entries.keep({}), things: Plans.Entries.keep({})}
 def written(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: edits})):
-    case written(_): Done.done({})
-    case _: Done.refused({reason: "The write was not answered."})
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: edits}))
+  Done.done({})
 # Whoever enters or leaves is the calling object, or, in a direct turn, the avatar
 # of the principal (an avatar's id is its principal's DID).
 def actor(context: Abi.Context) -> Plans.Reference:
@@ -59,45 +84,45 @@ def caller(context: Abi.Context) -> Plans.Reference:
 # Join the people here. Law decides whether the subject may enter.
 def enter(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, actor(context)):
-    case some(_): Done.refused({reason: "Already here."})
-    case none(_): written(context, extend(keep(), {present: Plans.Entries::<Plans.Reference, {}>.append({item: actor(context)})}))
+    case some(_): refused(Why.alreadyHere({}))
+    case none(_): written(context, extend(keep(), {present: Plans.Entries.append({item: actor(context)})}))
 def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, actor(context)):
-    case none(_): Done.refused({reason: "Not here."})
-    case some(_): written(context, extend(keep(), {present: Plans.Entries::<Plans.Reference, {}>.removeItem({item: actor(context)})}))
+    case none(_): refused(Why.notHere({}))
+    case some(_): written(context, extend(keep(), {present: Plans.Entries.removeItem({item: actor(context)})}))
 # A thing leaves the floor into the hands of the principal, who must be here. Only
 # the thing itself (the calling object) takes itself off the floor.
 def person(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.principal}
 def take(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller == "" then Done.refused({reason: "Only a thing can take itself."}) else takeFrom(state, context)
+  if context.caller == "" then refused(Why.notAThing({doing: "take itself"})) else takeFrom(state, context)
 def takeFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, person(context)):
-    case none(_): Done.refused({reason: "Only someone here can take things."})
+    case none(_): refused(Why.notPresent({doing: "take things"}))
     case some(_): takeThing(state, context)
 def takeThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.things, caller(context)):
-    case none(_): Done.refused({reason: "That is not lying here."})
-    case some(_): written(context, extend(keep(), {things: Plans.Entries::<Plans.Reference, {}>.removeItem({item: caller(context)})}))
+    case none(_): refused(Why.notLying({}))
+    case some(_): written(context, extend(keep(), {things: Plans.Entries.removeItem({item: caller(context)})}))
 def put(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller == "" then Done.refused({reason: "Only a thing can put itself down."}) else putFrom(state, context)
+  if context.caller == "" then refused(Why.notAThing({doing: "put itself down"})) else putFrom(state, context)
 def putFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, person(context)):
-    case none(_): Done.refused({reason: "Only someone here can put things down."})
+    case none(_): refused(Why.notPresent({doing: "put things down"}))
     case some(_): putThing(state, context)
 def putThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.things, caller(context)):
-    case some(_): Done.refused({reason: "That is already lying here."})
-    case none(_): written(context, extend(keep(), {things: Plans.Entries::<Plans.Reference, {}>.append({item: caller(context)})}))
+    case some(_): refused(Why.alreadyLying({}))
+    case none(_): written(context, extend(keep(), {things: Plans.Entries.append({item: caller(context)})}))
 def line(prefix: String, suffix: String) -> Document.Document:
-  Document.text(textConcat(prefix, textConcat(suffix, "\n")))
+  Document.text("{prefix}{suffix}\n")
 def reference(prefix: String) -> Plans.Reference -> Document.Document:
   fn(item: Plans.Reference) -> Document.Document: line(prefix, Card.handle(item.object))
 def exit(item: Exit) -> Document.Document:
-  line("Exit ", textConcat(item.label, textConcat(" to ", item.to.object)))
+  line("Exit ", "{item.label} to {item.to.object}")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Lists.concat::<Document.Document>(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.present, reference("Here: ")), 8n)), Card.clipped(Lists.map::<Plans.Reference, Document.Document>(state.things, reference("Lying here: ")), 8n)), Lists.concat::<Document.Document>(Lists.map::<Exit, Document.Document>(state.exits, exit), hereLine(state, context)))})
+  Document.Document.sequence({items: Lists.concat(Lists.concat(Lists.concat(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map(state.present, reference("Here: ")), 8n)), Card.clipped(Lists.map(state.things, reference("Lying here: ")), 8n)), Lists.concat(Lists.map(state.exits, exit), hereLine(state, context)))})
 # A reader whose avatar is here is told so.
 def hereLine(state: State, context: Abi.Context) -> Document.Documents:
   match Plans.indexOf(state.present, person(context)):
@@ -110,6 +135,6 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answerLensed::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else textConcat("Only the room's owner changes it; that is ", Card.name(state.owner, context)), render(state, context))
+  Card.answerLensed(Card.routeHeard(input, context, forms()), context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))
 def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})
+  Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})
