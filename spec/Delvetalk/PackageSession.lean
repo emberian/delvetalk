@@ -29,6 +29,8 @@ structure Cache where
   heldBytes : Nat := 0
   hits : Nat := 0
   misses : Nat := 0
+  /-- Libraries this process sealed (`library-load`), newest first, at most `maxLibraries`. -/
+  libraries : List Host.Library := []
 
 def modulesKey (j : Json) : Json :=
   match j.getObjVal? "modules" with
@@ -146,7 +148,8 @@ def status (cache : Cache) : Json :=
     ("maxEntryBytes", toJson Bounds.entryCacheBytes), ("hits", toJson cache.hits), ("misses", toJson cache.misses)]
 
 /-- Runs of a held entry never decode the packet or re-check the package. -/
-def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) : Except String Json := do
+def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) (world : Option Host.World := none) :
+    Except String Json := do
   let limits := Package.getLimits j
   if operation == "run" then
     let profile := (j.getObjValAs? Bool "profile").toOption.getD false
@@ -154,12 +157,13 @@ def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) : E
   else if operation == "run-data-v1" then
     Package.executeDataEntryWire entry (← j.getObjVal? "arguments") limits
   else if operation == "turn-start" then
+    let j ← Host.withBindingContext world entry j
     Delvetalk.Turn.startEntryJson entry (← j.getObjVal? "arguments") limits j
   else if operation == "turn-resume" then
     Delvetalk.Turn.resumeEntryJson entry (← j.getObjVal? "checkpoint") (← j.getObjVal? "response") limits j
   else throw "unsupported held operation"
 
-def step (cache : Cache) (request : Json) : Cache × Except String Json :=
+def step (cache : Cache) (request : Json) (world : Option Host.World := none) : Cache × Except String Json :=
   match request.getObjValAs? String "op" with
   | .ok "compile" =>
       match compile cache request with
@@ -172,9 +176,36 @@ def step (cache : Cache) (request : Json) : Cache × Except String Json :=
         | .error e => (cache, .error e)
         | .ok artifact =>
           let (cache, entry) := entryOf cache artifact
-          (cache, entry.bind fun entry => runHeld entry operation request)
+          (cache, entry.bind fun entry => runHeld entry operation request world)
       else (cache, Package.job request)
   | .error _ => (cache, Package.job request)
+
+/-- Sealed libraries a stateless process keeps (`library-load`). -/
+def maxLibraries : Nat := 4
+
+/-- `check-package` and `compile` may name a sealed library by `library: <pin>` instead of sending
+    its modules: the pin is resolved among the open world's libraries, then those `library-load`
+    sealed in this process, and the request's own modules are put over it (`Host.overLibrary`).
+    Any other request is as sent. -/
+def overLibrary (cache : Cache) (world : Option Host.World) (request : Json) : Except String Json := do
+  let some pin := (request.getObjValAs? String "library").toOption | return request
+  let some lib := (world.bind (·.libraries[pin]?)).orElse fun _ => cache.libraries.find? (·.pin == pin)
+    | throw s!"unknown library pin {pin}: open a world sealed with it, or send library-load first"
+  let modules ← Host.overLibrary lib (← Host.requestModules request)
+  let rest := (request.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) =>
+    k != "library" && k != "modules" && k != "source"
+  return Json.mkObj (("modules", Host.modulesJson modules) :: rest)
+
+/-- `library-load {path}`: seal the library directory at `path` in this process (as `world-open
+    {library}` does) and keep it for `library: <pin>`; answers `{status: "library", pin, modules}`. -/
+def libraryLoad (cache : Cache) (request : Json) : IO (Cache × Except String Json) := do
+  let .ok path := request.getObjValAs? String "path" | return (cache, .error "library-load needs a path")
+  match ← Host.loadLibrary path with
+  | .error e => return (cache, .error e)
+  | .ok lib =>
+    let kept := (lib :: cache.libraries.filter (·.pin != lib.pin)).take maxLibraries
+    return ({ cache with libraries := kept }, .ok (Json.mkObj [("status", toJson "library"),
+      ("pin", toJson lib.pin), ("modules", toJson lib.modules.length)]))
 
 /-- Per-process state: the compile cache beside an optional open World. -/
 structure Session where
@@ -188,8 +219,17 @@ def stepIO (session : Session) (request : Json) : IO (Session × Except String J
     if Host.isWorldOp op then
       let (world, result) ← Host.stepWorld session.world request
       return ({ session with world }, result)
+    else if op == "library-load" then
+      let (cache, result) ← libraryLoad session.cache request
+      return ({ session with cache }, result)
     else
-      let (cache, result) := step session.cache request
+      let world := session.world.map (·.world)
+      let request ← if op == "check-package" || op == "compile" then
+          match overLibrary session.cache world request with
+          | .ok r => pure r
+          | .error e => return (session, .error e)
+        else pure request
+      let (cache, result) := step session.cache request world
       return ({ session with cache }, result)
   | .error _ =>
     let (cache, result) := step session.cache request

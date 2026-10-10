@@ -17,9 +17,10 @@ Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes 
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
+Import order: Store, Journal, Law, Relative, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
+- **Relative.lean**: checkpoint tokens with heap addresses relative to their cells (5.34); imported by Ops.
 - **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
   `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey`. Pure data.
 - **Journal.lean** (33): `bodyHash (body : Json) : String` (SHA-256 of `body.compress`; Lean orders
@@ -93,7 +94,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
@@ -104,7 +105,7 @@ uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `
 either journals a `settings` entry, and a later open with other values is refused by name.
 `world-open {opener}` records the world's opener in the same settings entry (only when named); the opener alone may
 `world-create {…, owner}`. `world-principal {principal, did, handle}` (clock principal only) journals a `principal`
-entry for the handle registry (5.22).
+entry for the handle registry (5.22); `world-arrive {principal, did, handle}` also creates the newcomer's Avatar, Env and Wake (5.31).
 `world-posted {principal, uri, cid, object, slot?, page?, section?}` journals a `posted` entry (identity `posted:<uri>`;
 `page`/`section` when the post carried the object's publication, section "" for the whole page) and indexes
 `world.posts` (`Post {object, slot, page, part, height}`; snapshots keep them); `world-addressee {parent}` answers
@@ -157,7 +158,7 @@ Outcomes:
   checks `request == p.digest`, re-runs `judge`, and requires that `judged.reprograms`,
   `amendments`, `creates` equal the recorded JSON exactly and that each recorded write version equals
   the replayed new version. So admitted entries are re-judged, not trusted.
-- **refused**: `{tag, class, clause?, object?, reason?}`. Classes (`refusalClasses`): staleRoot,
+- **refused**: `{tag, class, clause?, object?, reason?, expected?, root?}` (`expected`: 5.29, `root`: 5.33). Classes (`refusalClasses`): staleRoot,
   typeMismatch (conformance), capacity (byte or count limit), outOfRange (index past the end), lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation,
   budget (reason = the exhausted machine resource: ticks, heap, stack, nodes, bytes),
   budgetExhausted (reason = exhausted ledger field), programRefused (clause = packageBytes, compile,
@@ -308,7 +309,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    the entry, so a retry returns them identically); receipts in `delivered`, `resumed` and `world-deliver`'s
    `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
    {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
-   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root}`, root
+   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root, reason?}`, root
    `{object, version?, cid?}`; 5.22)
    and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
    view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
@@ -499,7 +500,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    not held by an object, this turn's creates, or a suspended turn's `absent`. Every creation of an id of that
    shape, named or minted, raises its parent's counter (`noteMinted`, at commit, world-create and replay);
    snapshots keep `minted`. A named `requireAbsent` behaves as before.
-25. **Checkpoint blocks (host6).** The kernel already collects before encoding (`Turn.conclude`:
+25. **Checkpoint blocks (host6; cut and addressed anew in 5.34).** The kernel already collects before encoding (`Turn.conclude`:
    `checkpoint = collect (settle state)`); what remained was the program's own terms in every checkpoint. A
    suspended entry's `checkpoint.tokens` is journaled as `tokenTree {depth, roots}` over content-defined blocks
    (`cutBlocks`: windowed FNV cut, leaves 32..1024 tokens, inner 4..64 names, at most 16 roots), each block a
@@ -514,6 +515,96 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    refused `staleRoot` (transient) and `resumeOne` re-runs the direct turn once, at once, from its journaled request
    (`TurnMeta.rerun`, journaled `rerun: true`; the reply carries `rerunOf` = the refusal's hash); a re-run's own
    stale resumption is final. Deliveries are not re-run.
+
+27. **The binding fills the Context (host7).** Stateless `turn-start` on an entry whose last parameter is a Context
+   (`isContextType`: a record, through the bounds, naming `principal` and `intent`, every field one `contextData` fills)
+   and that is sent one argument short appends the Context itself (`withBindingContext`, Ops; called from
+   `PackageSession.runHeld`): object, principal and intent from the binding, `inputOrigin {kind: "repl", command: <entry>}`,
+   `handle`/`height`/`clock` from the world the process has open, else "" and 0, fitted to the entry's own Context
+   type. A REPL caller passes only the method's own input. A request that sends the Context too is as before (for one
+   release); `turn-resume` needs nothing (the checkpoint holds it). Tests: `test_turn.ContextTests`.
+
+28. **Checks against the sealed library (host7).** `world-check {principal, modules | source, entry, limits?}` compiles the
+   modules over the world's library (`overLibrary`: the library modules they import, in library order, then their own
+   modules minus those that are the library's own bytes; another module of a library name is refused "shadows"), journals
+   nothing, and answers `check-package`'s shape plus `library` (`checkModules`: `{status: "checked", artifact}` or
+   `{status: "refused", diagnostic}` with module, span and hint). Any principal ("" anonymous) may ask; a package with
+   laws compiles, as at `world-create`. Stateless `check-package` and `compile` take `library: <pin>` instead of the
+   library's modules (`PackageSession.overLibrary`): resolved among the open world's libraries, then those this process
+   sealed with `library-load {path}` (answers `{status: "library", pin, modules}`; at most 4 kept, newest first); an
+   unknown pin is a request error naming it. The pure profile still refuses laws. `overLibrary` also lets a package be a
+   library module named by itself (all own modules the library's: the last is the entry and stays); `attachLibrary` keeps
+   it, which `world-arrive` (5.31) needs. Tests: `test_reflection.LibraryCheck`.
+
+29. **A typeMismatch says what was expected (host7).** A turn (or delivery) refused `typeMismatch` because its argument
+   does not fit the method's input journals `expected {method, type, form?}` on the refused outcome (`expectedInput`,
+   `Refusal.expected`, `Abort.refused … expected`): `type` is the input as the artifact's method table records it
+   (resolved, readable alone), else the compiled domain's `typeJson`; `form` is the card form `methodForms` derives for
+   the method (plain JSON: `{card, action, fields [{name, kind {tag, min, max | options}}]}`) when it has one. The
+   receipt carries it whole for the turn's own principal; the public projection does not. A `call` Plan is still answered
+   `refused {clause: typeMismatch}`. The package loader's "import must name an earlier supplied module" now ends
+   `: <path>` (`Package.modulesAndAsts`, a one-line edit in the kernel's file). Tests: `test_integration.Integration`.
+
+30. **Another object's law is asked in the turn (host7).** A `reprogram`/`extend` or `amend` Plan naming an object other
+   than the running one records the target as a root and dry-runs that change alone through `judge` (`dryChange`: the
+   target's law text with kind 1 or 2, `request.caller` = the proposer, the frame's subject or grantor; a reprogram's
+   compile, migration and state type; an amendment's syntax and metarule), at the version read. A refusal is answered
+   `refused {clause}` (the class when there is no clause; the metarule's message as the clause) and nothing is staged, so
+   the proposer commits what it says about the refusal and never offers "Reprogrammed X" in a turn the target's law
+   would refuse. The commit still judges the whole turn (the dry run cannot see a change the same turn makes later). A
+   change of the running object itself is judged only at the commit, as before. Tests: `test_reflection.ReprogramAnother`,
+   `test_workshop.Workshop`, `test_extend.Extend`.
+
+31. **Arrival (host7).** `world-arrive {principal, did, handle}` (`arriveOp`; the clock principal only, the world must
+   name an opener and have a library) records the handle as `world-principal` does, then creates each of `arrivals did`
+   that is absent: `<did>` from the library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`. Each is
+   `create` with principal = the opener, identity `arrive:<id>`, `owner: did`, modules = that one library module (the
+   entry stays, 5.28), and a partial seed naming, of `owner` (the DID), `handle` and `env` (Reference to `env/<did>`),
+   the fields the package's `initial()` state has. So the journal holds ordinary `created` entries (owner checked
+   against the opener on replay) and a `principal` entry; nothing new replays. Idempotent: a repeat answers
+   `{status: "arrived", did, handle, created: []}` with no entry; a new handle is one `principal` entry. The reply
+   carries `created [{object, height}]` and `principal` (the principal entry, when one was written). A missing library
+   module is a request error naming it, and nothing is journaled (the step is one durable write). GENESIS.md says when
+   transport calls it. Tests: `tests/test_arrive.py` (a library of world/lib plus Avatar, Env, Wake and Place).
+
+32. **Law readings in refusals (host7).** `Object.readings` holds the artifact's `laws[]` readings (`artifactReadings`,
+   empty ones dropped) for the clauses that are still the package's: `makeObject` keeps those whose clause the effective
+   law (the package's, or a law text given at creation) leaves equal; an amendment keeps those whose clause it leaves
+   equal (by parsed `LawExpr`); a reprogram keeps them (the law is not code). Snapshots carry `readings` only when non-empty.
+   A refusal by a text-law clause with a reading journals `reason: "refused <name>: <reading>"` (`readingOf`), and
+   `publicRefusal` shows a `lawRefused` outcome's `reason` (the package's public text, never state), so the receipt, the
+   turn reply's `public` and other readers' projections say it. Bend-law (`law(old, new, request)`) clauses and the
+   metarule have no readings. Tests: `test_law.Readings`.
+
+33. **A requiredAbsence names its root (host7, rehearsal run 6 finding 1).** The object whose `create` found the id taken
+   (`TurnState.violator`, kept through suspensions as the activity's `violator`) is journaled as the refused outcome's
+   `root` beside `object` (the taken id); `Refusal.root`. `publicRefusal` builds its `root {object, version, cid?}` from
+   `outcome.root` when present (the creator at the version the turn read it) and adds `object` (the taken id): a second
+   cistern reads `{class: requiredAbsence, root: {object: garden, version, cid}, object: garden/cistern}`. Tests:
+   `test_hub` (the cistern pair).
+
+34. **Suspensions journal only what changed (host7, rehearsal run 6 finding 5).** Measured on the rehearsal's own journal
+   (foundation b530dbf's `rehearse.py`, 95 directory suspensions): before, 5.94 MB, median 51,858 B, ten of 150 to 160 KB.
+   What the bytes were: (a) one checkpoint leaf of about 32 KB that changed every time held a 27 KB token, the Garden's
+   source as the directory's `inspect` answered it, next to the turn's own cells; (b) the entry body (13 KB) carried the
+   interpretation's `offers` (9 KB, the same doors' forms every time) and the utterance three times; (c) the ten large
+   ones are each a principal's FIRST prose reading: the directory walks `greeted` to the speaker, so the speaker's place
+   decides how many list cells are materialized and every heap address after them moves; a later reading by a speaker
+   at a known place dedups. Changes: `cutBlocks` leaves are at most 256 tokens (`leafHigh`), a token of 256 bytes or more
+   is a leaf of its own (`leafBig`), and the tokens carrying the turn's argument texts and utterance are leaves of their
+   own (`compactCheckpoint … dynamic`); inner nodes cut at 2..16 names (every 4); the interpretation journals `offers` and
+   `utterance` as one-item blocks by CID (`offersBlock`, `utteranceBlock`; `compactInterpretation`,
+   `expandInterpretation`, and `interpretationOf w s` restores them; old entries carry them inline and read as before);
+   and checkpoint tokens are journaled with every heap address relative to the cell holding it
+   (`Host/Relative.lean`: decode with the kernel's `decodeState`, rename addresses zigzag-relative to the cell's index,
+   the control's and stack's to the heap size, re-encode; the writer checks the inverse reproduces the tokens and else
+   journals them plain; `tokenTree.relative: true`; `expandCheckpoint` inverts, and the checkpoint digest stays over the
+   kernel's tokens, so replay checks it as before). After: 1.57 MB, median 10,090 B, the ten first readings 42 to 50 KB.
+   Without relative addresses the median is 9,073 B but the first readings stay at 90 to 98 KB (1.93 MB): relative
+   addressing pays as the town grows. Old journals replay unchanged (any cut reassembles). Further cuts need the kernel:
+   a collector that orders cells so a walked list's materialized prefix does not renumber the rest. Synthetic gate:
+   `tests/test_suspension_size.py` (nine prose replies: one speaker median 6.7 KB, nine new speakers 24.9 KB; both were
+   about 64 KB).
 
 ## 6. Gotchas
 
@@ -618,6 +709,19 @@ queue: items 1 to 5 above, unchanged. Asks for other lanes: transport should sen
 now holds lexicon, examples, forms and the utterance), call `world-principal` at each author's first post, and open
 with `opener`; `transport/model.py`'s comment ("the host fits raw") is now the object's fitting; Env.obend's comment
 quotes the old metarule message.
+
+lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
+`world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
+another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31); law readings in refusals (5.32);
+from rehearsal run 6: a `requiredAbsence` names its root (5.33); suspensions journal only what changed (5.34).
+Section 7's queue items 1 to 5 above are unchanged. Asks it leaves for other lanes: transport (hostd) should send
+`library-load {path}` to its stateless process at spawn and the HTTP front `library: <pin>` (the pin `world-open`
+answers) instead of reading world/lib (5.28), and the bridge should call `world-arrive`, not `world-principal`, at a
+principal's first post (5.31); objects/deploy: the sealed library must hold Avatar, Env, Wake and Place for
+`world-arrive` to make anything (world/lib does not); api: AGENTS-API step 12 may drop "pass its Context as the last
+argument" (5.27); kernel: a collector that orders cells so a walked list's materialized prefix does not renumber the
+rest of the heap would shrink a speaker's first reading further (5.34). `tests/test_artifact_pins` fails at base
+4068305 (world/ moved after the fixture was recorded; foundation re-recorded it since); no host change touches it.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
 as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).
