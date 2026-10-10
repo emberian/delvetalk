@@ -21,7 +21,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import bridge, hand, pages, post
+from transport import bridge, hand, oauth, pages, post
 from transport.hostd import CLOCK
 from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
@@ -320,6 +320,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
+        self.oauth = oauth.OAuth(origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
@@ -580,6 +581,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form)
             return self.html(code, body, headers)
+        if path.split('/')[1:2] == ['oauth']:
+            return oauth.route(self, method, path)
         name, p = resolve(method, path)
         if name is None:
             allow = [m for m in ('GET', 'POST') if resolve(m, path)[0]]

@@ -83,6 +83,14 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   `delvetalk-proxy.service`, `delvetalk-portal.service`; keep
   `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/` (`world`, `town-v1`, `forge-v1`, `clerk`,
   `operator-service`; there is no `agents` directory there) stays where it is.
+- Log in with delve.town (`transport/oauth.py`) names the front by `--origin`: the client id is
+  `<origin>/oauth/client-metadata.json` and the callback `<origin>/oauth/callback`. The account's PDS fetches the
+  document itself, so it must answer 200 `application/json` over HTTPS at exactly that URL (no redirect); Caddy needs
+  nothing new, since the gsb route already proxies every path but `/hand`. A login started on another name is first
+  sent to the origin's, where its one-time cookie lives. Check it after a deploy:
+  `curl -s https://gsb.fg-goose.online/oauth/client-metadata.json` shows `client_id` equal to that URL. pds.delve.town
+  is its own authorization server (PAR, PKCE S256, DPoP ES256, `client_id_metadata_document_supported`; checked
+  2026-10-10). The image installs `cryptography` for ES256 from `deploy/requirements-transport.txt`, pinned by hash.
 - Firewall :8765 on the workhorse to Caddy's host (the anchor, 10.10.1.5) only: `--trust-proxy` believes the last
   `X-Forwarded-For` entry from whoever connects, so anything else on 10.10.1.0/24 that reaches the port can choose it.
   Measured 2026-10-10: the workhorse has no host firewall to add this to (no ufw; `nftables.service` disabled and
