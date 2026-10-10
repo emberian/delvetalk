@@ -14,7 +14,9 @@ record Seed:
 record Edits:
   title: Plans.Edit<String, {}>
 type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+# The workshop views the object it reprograms (any object: its state is Data here) for the
+# version a card cites; a card never shows a hash.
+type Response = Plans.Response<Data, {}>
 # What the workshop did, as data: nothing is a silent default.
 sum Verdict:
   clean: {}
@@ -66,8 +68,8 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
   match diagnostics:
     case nil(_): Document.text("✾ WORKSHOP\n\nChecked: it compiles.\n")
     case cons(_): Document.Document.sequence({items: Document.Documents.cons({head: Document.text(cat("✾ WORKSHOP\n\nChecked: ", cat(natText(problems(diagnostics)), if problems(diagnostics) == 1n then " problem.\n\n" else " problems.\n\n"))), tail: Lists.map(diagnostics, problem)})})
-def reprogrammedCard(target: String, was: String, pin: String) -> Document.Document:
-  Document.text(cat("✾ WORKSHOP\n\nReprogrammed ", cat(target, cat(".\nWas: ", cat(was, cat("\nNow: ", cat(pin, "\n")))))))
+def reprogrammedCard(target: String, version: Nat) -> Document.Document:
+  Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def refusedCard(reason: String) -> Document.Document:
   Document.text(cat("Not done: ", cat(reason, "\n")))
 def usage() -> Document.Document:
@@ -91,22 +93,22 @@ def checkTarget(target: String, context: Abi.Context) -> Activity<Plan, Response
   match perform(Plan.inspect({object: {world: context.world, object: target}})):
     case inspected(i): runCheck(i.source)
     case _: tell(Verdict.refused({reason: cat("No object called ", target)}), refusedCard(cat("No object called ", target)))
-# Inspect the target, check the new package, and reprogram only if it is clean.
+# View the target (for its version), check the new package, and reprogram only if it is clean.
 def runPropose(target: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
-  match perform(Plan.inspect({object: {world: context.world, object: target}})):
-    case inspected(i): vetted(target, i.pin, package, migration, context)
+  match perform(Plan.view({object: {world: context.world, object: target}})):
+    case viewed(v): vetted(target, v.version, package, migration, context)
     case _: tell(Verdict.refused({reason: cat("No object called ", target)}), refusedCard(cat("No object called ", target)))
-def vetted(target: String, was: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+def vetted(target: String, was: Nat, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.check({package: package})):
     case checked(c): adopted(target, was, package, migration, context, c.diagnostics)
     case _: tell(Verdict.refused({reason: "The workshop could not check it."}), refusedCard("The workshop could not check it."))
-def adopted(target: String, was: String, package: String, migration: String, context: Abi.Context, diagnostics: Form.Names) -> Activity<Plan, Response, Verdict>:
+def adopted(target: String, was: Nat, package: String, migration: String, context: Abi.Context, diagnostics: Form.Names) -> Activity<Plan, Response, Verdict>:
   match diagnostics:
     case cons(_): tell(Verdict.flawed({diagnostics: diagnostics}), checkedCard(diagnostics))
     case nil(_): reprogram(target, was, package, migration, context)
-def reprogram(target: String, was: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+def reprogram(target: String, was: Nat, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.reprogram({object: {world: context.world, object: target}, package: package, migration: migration})):
-    case reprogrammed(r): tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was, r.pin))
+    case reprogrammed(r): tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was))
     case refused(r): tell(Verdict.refused({reason: r.clause}), refusedCard(r.clause))
     case _: tell(Verdict.refused({reason: "The reprogram was not answered."}), refusedCard("The reprogram was not answered."))
 def propose(state: State, input: {target: String, package: String, migration: String}, context: Abi.Context) -> Activity<Plan, Response, Verdict>:

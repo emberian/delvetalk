@@ -180,7 +180,21 @@ def directory(context: Abi.Context) -> Plans.Reference:
 def forwarding<E>(text: String, post: String, context: Abi.Context) -> Plans.Plan<E>:
   Plans.Plan.send({object: directory(context), method: "receive", argument: {text: text, post: post}})
 def forwarded<E, S, R, T>(text: String, post: String, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  if context.caller != "" || context.object == directory(context).object then result else sending(text, post, context, result)
+  if handsOn(text, context) == false then result else sending(text, post, context, result)
+# Only prose that may be for another card is handed on: a `name: value` line, or a door
+# word or a town action named in it (a cheap word check, so conversational replies under a
+# bell cost no model call; rehearsal run 7 counted 127 of 132 hand-ons "not addressed").
+def handsOn(text: String, context: Abi.Context) -> Bool:
+  context.caller == "" && context.object != directory(context).object && (Lists.length(Spell.bare(text)) > 0n || Lists.any(townWords(), fn(w: String) -> Bool: contains(text, w)))
+def townWords() -> Lists.List<String>:
+  pieces("garden GARDEN Garden rooms ROOMS conversations CONVERSATIONS play PLAY workshop WORKSHOP studio STUDIO anthology ANTHOLOGY Anthology directory policy tide scene plant rain submit cistern subscribe")
+def pieces(text: String) -> Lists.List<String>:
+  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, " ")), tail: pieces(textDrop(text, textBreak(text, " ") + 1n))})
+# Whether `needle` stands in `text`.
+def contains(text: String, needle: String) -> Bool:
+  containsFrom(textDrop(text, textBreak(text, textTake(needle, 1n))), needle)
+def containsFrom(rest: String, needle: String) -> Bool:
+  if textLength(rest) < textLength(needle) then false else if textTake(rest, textLength(needle)) == needle then true else contains(textDrop(rest, 1n), needle)
 def sending<E, S, R, T>(text: String, post: String, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match perform(forwarding(text, post, context)):
     case _: result

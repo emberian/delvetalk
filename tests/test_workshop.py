@@ -172,13 +172,15 @@ class Workshop(Chain):
     def test_a_clean_proposal_reprograms_another_object_under_its_law(self):
         self.make_workshop()
         before = self.counter()
+        version = self.host.send(op="world-view", principal="glm", object="bell-1")["version"]
         reply = self.say("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK)
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertEqual(self.verdict(reply), "reprogrammed")
         after = self.host.send(op="world-view", principal="glm", object="bell-1")["pin"]
         self.assertNotEqual(after, before)
         print("\n--- reprogrammed card ---\n" + self.card(reply))
-        self.assertIn("Reprogrammed bell-1.", self.card(reply))
+        self.assertIn("Reprogrammed bell-1.\nWas: bell-1 v%d\nNow: bell-1 v%d\n" % (version, version + 1), self.card(reply))
+        self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["version"], version + 1)
         writes = {w["object"]: w for w in reply["receipt"]["outcome"]["writes"]}
         self.assertEqual((writes["bell-1"]["callers"], writes["bell-1"]["kinds"]), (["workshop"], [1]))
 

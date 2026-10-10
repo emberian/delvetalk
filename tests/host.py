@@ -53,7 +53,10 @@ class Host:
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
         assert line, "host closed its output"
-        return json.loads(line)
+        reply = json.loads(line)
+        hashed = [t for t in card_texts(reply) if "bafy" in t]
+        assert not hashed, "a card or offer cites a hash: %r" % hashed[:1]
+        return reply
 
     def alive(self):
         return self.proc.poll() is None
@@ -159,3 +162,22 @@ def start_hostd(state, binary_path=None, opener=None, library=None):
 def stop_hostd(d):
     d.shutdown()
     d.close()
+
+
+def card_texts(reply):
+    """Every card and offer text in a host reply: what a reader sees, which never cites a hash."""
+    out = []
+    def walk(v, offered):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k == "text" and offered and isinstance(x, str):
+                    out.append(x)
+                else:
+                    walk(x, offered or k in ("offers", "document"))
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, offered)
+    walk(reply, False)
+    if reply.get("status") == "card" and isinstance(reply.get("text"), str):
+        out.append(reply["text"])
+    return out

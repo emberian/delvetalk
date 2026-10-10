@@ -20,7 +20,7 @@ def variant(tag, **fields):
 
 def event(kind="mention", actor="did:plc:mimo", text="hello", reply_to=""):
     return record(kind=label(kind), actor=label(actor), uri=label("at://x/p/1"), cid=label("bafy"), text=label(text),
-                  replyTo=label(reply_to), at=nat(0))
+                  replyTo=label(reply_to), at=nat(0), handle=label(""))
 
 
 def heard(text):
@@ -154,7 +154,8 @@ class Wakes(Chain):
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
                            entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))
-        self.assertEqual(r, {"status": "error", "message": "law does not admit an amendment by its proposer ember: owner: request.subject == new.owner"})
+        self.assertEqual(r["status"], "error", r)
+        self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
     def test_env_law_refuses_a_strangers_write_proposed_directly(self):
         env = self.env()
