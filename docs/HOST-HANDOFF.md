@@ -449,12 +449,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    offer forms of several cards (the Directory offers its doors'). The model's spell is fitted against
    the offered forms (`spellVerdict`, which now returns the form's `card`) and the proposal checked
    against the object that card names (an id, else `resolveCard` for the asking principal): the
-   method must be one it offers (5.62) and the argument fit its input. `Interpreted.proposal` gains
-   `object: String`; whether the call site's type has it is decided where the kernel reports that type,
-   at the `interpret` yield (`proposalNamesObject`), and journaled as the interpretation's `named: true`.
-   A verdict resumes `proposal {object, method, argument}` (World.obend's `Interpreted` has carried
-   `object` since host10; an entry journaled before then, without `named`, is read as a proposal for the
-   asking object only, another card being `unclear`). A JSON proposal `{method, argument}` is for the asking object. Test:
+   method must be one it offers (5.62) and the argument fit its input. `Interpreted.proposal` carries
+   `object: String`, and every verdict names it (host11 deleted the unnamed path and the
+   interpretation's `named` flag: no journal from before host10 is opened). A JSON proposal `{method, argument}` is for the asking object. Test:
    `tests/test_interpret_object.py` (a hub whose World copy carries the new line proposes `g plant`
    and calls it; a form naming a method its card does not offer is `unclear`). The World.obend line
    and the Directory's `world.call::<Data>({object, method, argument})` are the objects lane's.
