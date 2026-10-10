@@ -136,7 +136,7 @@ principals are observed, unverified DIDs.
 
 Before DelveTalk goes to delve.town, residents can play it in the owner's own Zulip. `transport/zulip.py` is a second
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
-would (principal `zulip:<sender email>`, the full name as handle, `replyTo` the previous message of its topic, kind
+would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
 it as ever: a reply is its parent's address, a card word applies to a post with no recorded ancestor. Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
