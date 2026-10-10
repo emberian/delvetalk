@@ -109,6 +109,15 @@ class HttpFront(unittest.TestCase):
     def turn(self, tok, intent):
         return self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': record(), 'intent': intent}, tok)
 
+    def test_verify_records_the_handle_with_the_host(self):
+        seen = []
+        send = self.host.send
+        self.host.send = lambda req, *a, **k: (seen.append(req), send(req, *a, **k))[1]
+        self.login()
+        regs = [r for r in seen if r['op'] == 'world-principal']
+        self.assertEqual(regs, [{'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': HANDLE}])
+        self.assertEqual(send({'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': HANDLE})['status'], 'principal')
+
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
@@ -434,6 +443,7 @@ class HttpFront(unittest.TestCase):
                 return {'status': 'card', 'text': 'CARD for ' + req['principal']}
             return real(req)
         self.host.send = send
+        newest = real({'op': 'world-status'})['height']  # the last entry touching c1; verifying journals the handle after it
         tok = self.login()
         cookie = 'dt_credential=' + tok
         before = real({'op': 'world-status'})['height']
@@ -444,7 +454,7 @@ class HttpFront(unittest.TestCase):
         heights = [int(x) for x in __import__('re').findall(rb'<tr><td>(\d+)</td>', page)]
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
-        self.assertEqual(heights[0], before)
+        self.assertEqual(heights[0], newest)
 
 
 if __name__ == '__main__':

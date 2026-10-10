@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
+from transport.hostd import CLOCK
 from transport.hostproc import LIBRARY, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
@@ -116,6 +117,11 @@ class Front(HTTPServer):
         hits = self.used(key)
         self.hits[key] = hits + [self.clock()]
         return len(hits) >= rate
+
+    def record_handle(self, did, handle):
+        """Tell the host who a verified account is (the clock principal alone may), so cards name them by handle.
+        Journaled once by the host, so repeating it is harmless; a refusal leaves the verification standing."""
+        return self.host.send({'op': 'world-principal', 'principal': CLOCK, 'did': did, 'handle': handle})
 
     def guide(self, path=GUIDE):
         return path.read_text().replace('{{origin}}', self.origin)
@@ -299,6 +305,7 @@ class Handler(BaseHTTPRequestHandler):
             out = self.server.identity.verify(data.get('handle'), data.get('uri'))
         except IdentityError as err:
             return self.fail(400, err.code)
+        self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
         self.reply(200, canonical(out), headers=self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ())
 
