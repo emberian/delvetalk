@@ -214,6 +214,34 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
 
+    def test_the_binary_is_hashed_once_and_cached_by_path_size_and_mtime(self):
+        import hashlib
+        import tempfile as tf
+        from unittest import mock
+        from transport import hostd
+        with tf.TemporaryDirectory() as d2:
+            binary, cache = Path(d2) / 'bin', Path(d2) / 'binary-pin'
+            binary.write_bytes(b'host one')
+            first = hostd.binary_pin(cache, binary)
+            self.assertEqual(first, hashlib.sha256(b'host one').hexdigest())
+            with mock.patch.object(hostd.hashlib, 'sha256', side_effect=AssertionError('hashed again')):
+                self.assertEqual(hostd.binary_pin(cache, binary), first)
+            binary.write_bytes(b'host two!')  # size and mtime moved
+            self.assertEqual(hostd.binary_pin(cache, binary), hashlib.sha256(b'host two!').hexdigest())
+
+    def test_a_host_opens_its_journal_with_the_sync_it_is_given(self):
+        import tempfile as tf
+        from transport.hostproc import Host as TransportHost
+        sent = []
+        with tf.TemporaryDirectory() as d2:
+            for kw, want in (({}, 'fsync'), ({'sync': 'none'}, 'none')):
+                h = TransportHost(str(Path(d2) / f'{want}.journal'), binary(), **kw)
+                real = h._exchange
+                h._exchange = lambda req, real=real: (sent.append(req), real(req))[1]
+                h.send({'op': 'world-status'})
+                h.close()
+        self.assertEqual([r['sync'] for r in sent if r['op'] == 'world-open'], ['fsync', 'none'])
+
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
         from transport.hostproc import LIBRARY
