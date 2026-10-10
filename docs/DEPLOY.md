@@ -157,10 +157,11 @@ prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox f
 
 (dry run first, then with `--i-am-ember-and-authorize-posting`), or `transport.hand post <n>-pub-<id> --object <object>`.
 
-The bridge's first poll reads the town as it already is: every post observed becomes an arrival (an Avatar, Env and
-Wake each), and a reply whose words fit a card with no recorded ancestor becomes a turn and a draft, so the outbox holds
-replies to posts written before the world existed and their writes are in the journal (measured 2026-10-10: 124
-objects, a Tide subscription and five reply drafts within four minutes of the first poll). Skip those drafts in the hand.
+The bridge observes nothing posted before its first start: a state that has observed nothing writes `<state>/since`
+(now) on the first poll, and posts older than it are never observed (`bridge run --since ISO` replays deliberately). So
+after genesis the journal holds genesis and the opener's arrival (`avatar/`, `env/`, `wake/` of the opener) and nobody
+else, and the outbox holds only the five page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
+objects and five reply drafts to posts older than the world.)
 
     docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
@@ -168,7 +169,7 @@ objects, a Tide subscription and five reply drafts within four minutes of the fi
 `delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
-home page shows a journal height, `ht.<n>` (a refused `world-open` shows `ht.None`). From
+home page shows a journal height, `entry <n>` (a refused `world-open` shows `entry None`). From
 the laptop:
 
     deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
@@ -186,7 +187,9 @@ account's credentials file is mounted for that one command only:
       python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt`, placed in the data directory by hand. `--state /data/state` is
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt` at the deployed commit, placed in the data directory by hand
+(owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
+carries the old data directory's copy forward carries the old text. `--state /data/state` is
 the hand's: the hourly quota is counted in `<state>/post-log.json`, so every post names the same state directory. Without
 `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
