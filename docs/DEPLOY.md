@@ -28,7 +28,7 @@ by replaying the journal, and serves the front, the bridge, the interpreter,
 `post --record` and `deploy.seed` over `/data/state/host.sock` (mode 0600). Private
 heaps live in the same daemon, addressed by a `heap: <did>` field. At a journal's first open hostd seals
 `world/lib` into it as the library (`--library`; the opener may change it, each heap's owner theirs),
-so packages import `./Plan.obend` and the rest by name. Those programs
+so packages import `./Plan.obend` and the rest by name. hostd seals `world/lib` together with `world/objects/{Avatar,Env,Wake,Place}.obend` (the packages `world-arrive` creates from; copied to `<state>/library` at each start), or arrival creates nothing. Those programs
 are clients: stop, start or run them at any time without touching the world.
 `--standalone --journal J` still opens a journal in-process; use it only with the
 stack stopped. The lock holds where one kernel sees the file: a local Linux

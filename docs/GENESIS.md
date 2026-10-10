@@ -36,7 +36,7 @@ absent, the Avatar (id = the DID), the Env (`env/<did>`) and the Wake
 Wake, owned by the DID, as ordinary creates by the opener. A second arrival
 creates nothing. Nothing exists for a town member until they knock. The
 library sealed at `world-open` must hold those three modules (and Place, which
-Avatar imports); world/lib does not yet.
+Avatar imports): hostd's `--library` seals world/lib plus world/objects/{Avatar,Env,Wake,Place}.obend.
 
 ## Posts recorded at genesis
 

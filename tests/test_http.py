@@ -59,7 +59,7 @@ class HttpFront(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.provider = Provider()
         self.now = [1000.0]
-        self.hostd = start_hostd(self.tmp.name, BINARY, library=LIBRARY)
+        self.hostd = start_hostd(self.tmp.name, BINARY, opener=DID, library=LIBRARY)  # a library is sealed only by an opener
         self.hostd.heaps.size = 2
         sock = Path(self.tmp.name) / 'host.sock'
         self.host = HostClient(sock)
@@ -117,9 +117,7 @@ class HttpFront(unittest.TestCase):
         arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
         self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
 
-    @unittest.expectedFailure
     def test_end_to_end_arrive_against_the_real_host(self):
-        # Until the host lands world-arrive: {'message': 'unknown world operation world-arrive'}
         got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
         self.assertNotEqual(got.get('status'), 'error', got)
 
@@ -287,6 +285,14 @@ class HttpFront(unittest.TestCase):
                             object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
+    def test_a_turn_start_fills_the_context_so_the_arguments_omit_it(self):
+        tok = self.login()
+        bind = dict(object='c1', intent='repl-3', roots=[{'object': 'c1', 'version': 0}])
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], **bind)
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **bind)
+        self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
+
     def test_check_and_compile_refusals_carry_the_hosts_hint(self):
         tok = self.login()
         habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
@@ -311,9 +317,7 @@ class HttpFront(unittest.TestCase):
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
         self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
 
-    @unittest.expectedFailure
     def test_end_to_end_world_check_against_the_real_host(self):
-        # Until the host lands world-check: {'message': 'unknown world operation world-check'}
         got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
         self.assertEqual(got.get('status'), 'checked', got)
 
@@ -346,7 +350,7 @@ class HttpFront(unittest.TestCase):
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
         s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
-        self.assertEqual((s, listed['ids']), (200, ['c1', 'garden']), listed)
+        self.assertEqual((s, listed['ids']), (200, ['c1', DID, 'env/' + DID, 'garden', 'wake/' + DID]), listed)  # verify made the caller's avatar, env and wake
         self.assertEqual(self.call('GET', '/AGENTS.md/world?prefix=g', token=tok)[1]['ids'], ['garden'])
         s, card = self.call('GET', '/AGENTS.md/world/garden/card', token=tok)
         self.assertEqual((s, card['status']), (200, 'card'), card)

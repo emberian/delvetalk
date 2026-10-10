@@ -10,7 +10,6 @@ import collections
 import hashlib
 import json
 import os
-import re
 import secrets
 import subprocess
 import sys
@@ -22,7 +21,7 @@ from pathlib import Path
 
 from transport import pages
 from transport.hostd import CLOCK
-from transport.hostproc import LIBRARY, HostClient, RemoteHeaps, add_host_args
+from transport.hostproc import HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
@@ -35,8 +34,6 @@ RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
-UNKNOWN_OP = 'unknown world operation'
-IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
@@ -98,24 +95,6 @@ def compact_offers(reply):
     return {'status': reply['status'], 'offers': [o['text'] for o in offers], **({'height': offers[-1]['height']} if offers else {})}
 
 
-def library(modules):
-    """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
-    found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
-    have, out = {m.get('name') for m in modules}, []
-
-    def visit(name):
-        if name not in have and name in found:
-            have.add(name)
-            source = found[name].read_text()
-            for dep in IMPORT.findall(source):
-                visit(dep)
-            out.append({'name': name, 'source': source})
-    for m in modules:
-        for dep in IMPORT.findall(str(m.get('source', ''))):
-            visit(dep)
-    return out + modules
-
-
 class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
@@ -126,8 +105,9 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
-        self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
-                            else host.send({'op': 'hostd-info'}).get('hostSha256', 'unknown'))
+        info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
+        self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
+        self.library = info.get('library')  # the pin of the library hostd sealed; the REPL compiles against it by name
 
     def used(self, credential):
         now = self.clock()
@@ -358,12 +338,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
         if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
             checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
-            if UNKNOWN_OP in str(checked.get('message')):
-                # TODO(world-check): delete this fallback, which reads world/lib from disk, once every host answers world-check.
-                checked = self.server.repl.send({'op': 'check-package', 'modules': library(modules), 'entry': data.get('entry')})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
-        repl, modules = self.server.repl, library(modules)
-        compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
+        repl, pin = self.server.repl, {'library': self.server.library} if self.server.library else {}
+        compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry'), **pin})
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)
         ty = compiled['artifact'].get('type') or {}

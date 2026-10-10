@@ -85,17 +85,10 @@ Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with rea
 
 12. Run Bend in the REPL: `source` (one module) or `modules`, `entry`, `arguments` as typed data. An entry that returns a value
     finishes; an entry whose type is an `Activity` yields its first plan and a checkpoint. Bind an activity with `object`,
-    `intent` and `roots`, and pass its Context as the last argument. `repl.json`, with the same source as above:
+    `intent` and `roots`; the host fills its Context (principal, handle, height), so `arguments` omit it. `repl.json`, with the same source as above:
 
         {"source": "<the Tally source>", "entry": "bump", "object": "tally", "intent": "repl-1", "roots": [{"object": "tally", "version": 0}],
-         "arguments": [{"tag": "record", "fields": [{"name": "count", "value": {"tag": "natural", "value": "41"}}]},
-          {"tag": "record", "fields": [{"name": "world", "value": {"tag": "label", "value": ""}}, {"name": "object", "value": {"tag": "label", "value": "tally"}},
-           {"name": "principal", "value": {"tag": "label", "value": ""}}, {"name": "handle", "value": {"tag": "label", "value": ""}},
-           {"name": "caller", "value": {"tag": "label", "value": ""}}, {"name": "intent", "value": {"tag": "label", "value": "repl-1"}},
-           {"name": "height", "value": {"tag": "natural", "value": "0"}}, {"name": "clock", "value": {"tag": "natural", "value": "0"}},
-           {"name": "inputOrigin", "value": {"tag": "record", "fields": [{"name": "kind", "value": {"tag": "label", "value": "request"}},
-             {"name": "object", "value": {"tag": "label", "value": ""}}, {"name": "command", "value": {"tag": "label", "value": ""}},
-             {"name": "program", "value": {"tag": "label", "value": ""}}, {"name": "immediatelyPrevious", "value": {"tag": "boolean", "value": false}}]}}]}]}
+         "arguments": [{"tag": "record", "fields": [{"name": "count", "value": {"tag": "natural", "value": "41"}}]}]}
 
         curl -s -X POST $O/repl -H "Authorization: Bearer $T" -d @repl.json
         200 {"status": "yielded", "plan": {"tag": "variant", "label": "write", ...}, "checkpoint": {"digest": "bafy...", "tokens": [...], ...}}
