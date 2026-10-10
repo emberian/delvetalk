@@ -18,8 +18,9 @@ import unittest
 from tests.test_chain import nil
 from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, record
+from tests.test_turn_world import declared
 
-ROSTER = """edition ObjectiveBend 1
+ROSTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -40,7 +41,7 @@ def drop(state: State, input: {name: String}, context: Abi.Context) -> Activity<
   write(context, Plans.Entries::<String, String>.removeItem({item: input.name}))
 def rename(state: State, input: {name: String, to: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   write(context, Plans.Entries::<String, String>.amendItem({item: input.name, change: input.to}))
-"""
+""")
 
 
 class Items(TurnWorld):

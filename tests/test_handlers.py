@@ -18,8 +18,9 @@ import unittest
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import declared
 
-COUNTER = """edition ObjectiveBend 1
+COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -39,10 +40,10 @@ def probe(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan,
   match perform(Plan.judge({edits: {count: Plans.Edit::<Nat, Nat>.add({delta: input.n})}})):
     case judged(j): if j.admitted then "admitted" else j.clause
     case _: "other"
-"""
+""")
 
 # Answers the counter's writes itself: the write never reaches the host.
-SANDBOX = """edition ObjectiveBend 1
+SANDBOX = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -58,10 +59,10 @@ def handle(state: State, plan: Plan, context: Abi.Context) -> Handled:
   match plan:
     case write(_): Handled.answer({response: Response.written({})})
     case _: Handled.pass({})
-"""
+""")
 
 # Takes only views: a write does not conform to its input, so it passes.
-VIEWS = """edition ObjectiveBend 1
+VIEWS = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -74,9 +75,9 @@ def initial() -> State:
   {count: 0n}
 def handle(state: State, plan: Views) -> Handled:
   Handled.answer({response: Response.denied({})})
-"""
+""")
 
-RUNNER = """edition ObjectiveBend 1
+RUNNER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -92,7 +93,7 @@ def go(state: State, input: {target: String, handler: String}, context: Abi.Cont
     case returned(r): r.result
     case refused(_): 99n
     case _: 98n
-"""
+""")
 
 
 class Handlers(Reflection):

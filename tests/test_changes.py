@@ -19,10 +19,11 @@ import unittest
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
 from tests.test_world_object import extended_library
+from tests.test_turn_world import declared
 
 EXTRA = ""  # world/lib/World.obend declares subscribe, unsubscribe and Subscribed itself (objects6)
 
-BELL = """edition ObjectiveBend 1
+BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -43,9 +44,9 @@ def ring(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
 def name(state: State, input: {who: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = world.write::<Edits>({rung: Plans.Edit.keep({}), names: Plans.Entries.append({item: input.who})})
   0n
-"""
+""")
 
-WATCHER = """edition ObjectiveBend 1
+WATCHER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./World.obend as World
@@ -70,9 +71,9 @@ def unwatch(state: State, input: {target: String, field: String}, context: Abi.C
 def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Data, retracted: Data}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = world.write::<Edits>({seen: Plans.Edit.add({delta: 1n}), last: Plans.Edit.set({value: input.version})})
   state.seen + 1n
-"""
+""")
 
-READER = """edition ObjectiveBend 1
+READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./World.obend as World
@@ -89,7 +90,7 @@ def later(state: State, input: {other: String, slot: String}, context: Abi.Conte
       let written(_) = world.write::<Edits>({got: Plans.Edit.set({value: v.state + 100n})})
       v.state
     case _: 0n
-"""
+""")
 
 
 class Changes(Reflection):
@@ -198,7 +199,7 @@ class Changes(Reflection):
 RECEIVER_PROTOCOL = ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed",
                      "  subscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed")
 
-RECEIVER = """edition ObjectiveBend 1
+RECEIVER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -227,7 +228,7 @@ def asText(state: State, input: {object: Plans.Reference, field: String, version
 def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Data, retracted: Data}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = world.write::<Edits>({heard: Plans.Edit.keep({}), wrong: Plans.Edit.keep({}), plain: Plans.Edit.add({delta: 1n})})
   0n
-"""
+""")
 
 
 class Receivers(Reflection):

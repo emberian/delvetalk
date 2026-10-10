@@ -11,8 +11,9 @@ from tests.test_chain import Chain, garden_seed
 from tests.test_objects import closure, run_pure
 from tests.test_replay import rows
 from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import declared
 
-GARDEN = """edition ObjectiveBend 1
+GARDEN = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Card.obend as Card
@@ -25,9 +26,9 @@ def counted(n: Nat) -> String:
   let children = Relations.Relation.rows({items: Lists.List.cons({head: child(1n, Bell.Colour.violet({})), tail: Lists.List.cons({head: child(2n, Bell.Colour.amber({})), tail: Lists.List.cons({head: child(3n, Bell.Colour.violet({})), tail: Lists.List.nil({})})})})})
   let state: O.State = extend(O.initial(), {children: children})
   textJoin(Lists.map(Relations.rows(O.byColour(state, Card.stranger())), fn(t: O.Tally) -> String: "{Bell.colourName(t.colour)} {natText(t.count)}"), ", ")
-"""
+""")
 
-PLACE = """edition ObjectiveBend 1
+PLACE = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Card.obend as Card
@@ -37,7 +38,7 @@ import ./Place.obend as O
 def shown(n: Nat) -> String:
   let state: O.State = extend(O.initial(), {things: Relations.Relation.rows({items: Lists.List.cons({head: {world: "", object: "porch/stone"}, tail: Lists.List.nil({})})}), exits: Lists.List.cons({head: {label: "in", to: {world: "", object: "garden"}}, tail: Lists.List.nil({})})})
   Document.plain(O.affordances(state, extend(Card.stranger(), {object: "porch", principal: "did:plc:glm"})))
-"""
+""")
 
 
 class DerivedViews(Chain):
@@ -59,7 +60,7 @@ class DerivedViews(Chain):
         self.make("garden", closure("Garden"), garden_seed())
         planted = self.turn("garden", "plant", record(colour=label("violet"), seed=label("a moth")), principal="glm")
         self.assertEqual(planted["status"], "admitted", planted)
-        asker = """edition ObjectiveBend 1
+        asker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -74,7 +75,7 @@ def ask(state: State, context: Abi.Context) -> Activity<Plan, Response, Data>:
   match perform(Plan.viewDerived({object: {world: context.world, object: "garden"}, view: "byColour"})):
     case derived(d): d.value
     case _: Plans.nothing()
-"""
+""")
         r = self.host.send(op="world-create", principal="ember", identity="mk-asker", object="asker",
                            modules=closure("Plan") + [{"name": "Asker", "source": asker}], entry="initial", seed=record(n=nat(0)))
         self.assertEqual(r["status"], "created", r)

@@ -13,6 +13,7 @@ from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_replay import get, rows, silver
 from tests.test_turn_world import TurnWorld, label, nat, record
+from tests.test_turn_world import declared
 
 
 def uri(post):
@@ -25,7 +26,7 @@ def bell_seed(post="post-1"):
 
 # The object the planting posts are recorded for: a reply to one runs here (its receive
 # refuses, by its law, when the reply says "no"), and that turn answers the post.
-HUB = """edition ObjectiveBend 1
+HUB = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -42,7 +43,7 @@ def receive(state: State, input: {text: String, post: String}, context: Abi.Cont
 def refusing(context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case _: 1n
-"""
+""")
 
 
 class Await(Chain):
@@ -101,7 +102,7 @@ class Create(Await):
 
     def test_a_partial_seed_overlays_initial_and_a_field_the_state_lacks_is_refused_as_type_mismatch(self):
         child = "edition ObjectiveBend 1\nrecord State:\n  n: Nat\n  m: Nat\ndef initial() -> State:\n  {n: 0n, m: 9n}\n"
-        maker = """edition ObjectiveBend 1
+        maker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -117,7 +118,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
     case created(_): "created"
     case refused(r): r.clause
     case _: "other"
-"""
+""")
         modules = closure("Plan") + [{"name": "Child", "source": child}, {"name": "Maker", "source": maker}]
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="maker",
                            modules=modules, entry="initial", seed=record(made=nat(0)))
@@ -273,7 +274,7 @@ class Suspend(Await):
 
 
 # Waits on a post, then sends the bell a rain under the waiting turn's principal.
-RELAY = """edition ObjectiveBend 1
+RELAY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -292,7 +293,7 @@ def sent(text: String, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.send({object: {world: context.world, object: "bell"}, method: "rain", argument: {text: text}})):
     case delivery(_): 1n
     case _: 0n
-"""
+""")
 
 
 class Rains(Await):

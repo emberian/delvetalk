@@ -15,8 +15,9 @@ import unittest
 from tests.test_replay import relation
 from tests.test_chain import field, nil, reference
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
+from tests.test_turn_world import declared
 
-LEDGER = """edition ObjectiveBend 1
+LEDGER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -97,7 +98,7 @@ def swap(context: Abi.Context, source: String) -> Activity<Plan, Response, Out>:
     case reprogrammed(_): out("reprogrammed", 1n)
     case refused(r): out(r.clause, 0n)
     case _: out("unanswered", 0n)
-"""
+""")
 
 
 def ledger(law="", comment=""):

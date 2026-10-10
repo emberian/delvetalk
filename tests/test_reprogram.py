@@ -7,7 +7,7 @@ Programmable from within: reprogram and amend, judged by the object's own law.
 """
 import unittest
 
-from tests.test_turn_world import ON_DISK, TurnWorld, closure, label, nat, record, fixture
+from tests.test_turn_world import ON_DISK, TurnWorld, closure, label, nat, record, fixture, declared
 
 with open(ON_DISK["Counter"]) as handle:
     COUNTER = handle.read()
@@ -17,7 +17,7 @@ ADDS_TWO = COUNTER.replace("add 1n", "add 2n").replace("state.count + 1n", "stat
 EMBER_ONLY = 'law counter: request.subject == "ember"'
 BOTH = 'law counter: request.subject == "ember" or request.subject == "kimik3"'
 
-TOTALS = """edition ObjectiveBend 1
+TOTALS = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -36,7 +36,7 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), total: Plans.Edit::<Nat, Nat>.keep({})}})):
     case written(_): state.total
     case _: 0n
-"""
+""")
 
 
 def with_law(source, law):
@@ -271,7 +271,7 @@ class PlansInTurn(Reprogram):
 
     def test_an_object_reprograms_itself_with_a_plan_and_runs_the_new_code_next_turn(self):
         fixture_source = PLAN_FIXTURE[-1]["source"]
-        newer = fixture_source + "def extra(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:\n  addSelf(context, 40n)\n"
+        newer = declared(fixture_source.split("\ndef methods()")[0] + "\ndef extra(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:\n  addSelf(context, 40n)\n")
         r = self.turn("p", "evolve", record(package=label(newer)))
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(len(r["receipt"]["outcome"]["reprograms"]), 1)

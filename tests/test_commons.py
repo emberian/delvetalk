@@ -15,6 +15,7 @@ import unittest
 
 from tests.test_replay import get, items
 from tests.test_turn_world import TurnWorld, closure, label, record
+from tests.test_turn_world import declared
 
 OWNER, GLM, KIM = "did:plc:ember", "did:plc:glm", "did:plc:kimik3"
 
@@ -49,7 +50,7 @@ def seed(paths=None, presence=()):
                   presence=lst(presence))
 
 
-DOOR = """edition ObjectiveBend 1
+DOOR = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -72,7 +73,7 @@ def told(done: Done) -> String:
   match done:
     case moved(m): textConcat("moved to ", m.to)
     case refused(r): r.reading
-"""
+""")
 
 
 class Commons(TurnWorld):

@@ -16,9 +16,10 @@ import unittest
 from tests.test_reflection import PROBE, Reflection, probe_seed
 from tests.test_turn_world import label, nat, record
 from tests.test_world import COUNTER, WorldCase, put, root, seed, write
+from tests.test_turn_world import declared
 
 # Calls PROBE.bump2 (input {n: Nat}) with {m: Nat}, and inspects objects.
-CALLER = """edition ObjectiveBend 1
+CALLER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -71,7 +72,7 @@ def lines(items: Lists.List<String>) -> String:
     case cons(c): textConcat(c.head, textConcat("|", lines(c.tail)))
 def tally(state: State, input: {items: Lists.List<String>}, context: Abi.Context) -> Activity<Plan, Response, String>:
   said(context, "tally")
-"""
+""")
 
 
 class Integration(Reflection):

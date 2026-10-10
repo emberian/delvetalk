@@ -10,9 +10,9 @@ root at the old version, a future version answered, or a private object answered
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
-COUNTER = """edition ObjectiveBend 1
+COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -39,7 +39,7 @@ def at(state: State, input: {target: String, version: Nat}, context: Abi.Context
     case refused(_): 999999n
     case denied(_): 888888n
     case _: 0n
-"""
+""")
 
 
 class ViewAt(Reflection):

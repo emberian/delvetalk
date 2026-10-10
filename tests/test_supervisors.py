@@ -14,9 +14,9 @@ import unittest
 
 from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
-SUPERVISOR = """edition ObjectiveBend 1
+SUPERVISOR = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -40,9 +40,9 @@ def classOf(outcome: Plans.Outcome) -> String:
 def ended(state: State, input: {receipt: Plans.Receipt, how: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), how: Plans.Edit::<String, {}>.set({value: input.how}), class: Plans.Edit::<String, {}>.set({value: classOf(input.receipt.outcome)}), who: Plans.Edit::<String, {}>.set({value: context.caller})}})):
     case _: 0n
-"""
+""")
 
-WORKER = """edition ObjectiveBend 1
+WORKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -73,7 +73,7 @@ def spawn(state: State, input: {id: String, supervisor: String}, context: Abi.Co
     case created(_): 1n
     case refused(_): 0n
     case _: 2n
-"""
+""")
 
 
 class Supervisors(Reflection):

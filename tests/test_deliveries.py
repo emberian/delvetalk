@@ -14,11 +14,12 @@ Loop is the same package sending to itself.
 import unittest
 
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
+from tests.test_turn_world import declared
 
 MAX_DEPTH = 100          # Limits.maxDepth
 SENDS_PER_TURN = 32      # Limits.sendsPerTurn
 
-SOURCE = """edition ObjectiveBend 1
+SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -77,7 +78,7 @@ def fanOut(target: String, left: Nat) -> Activity<Plan, Response, Nat>:
       match perform(Plan.send({object: {world: "", object: target}, method: "light", argument: Data.of::<Arg>({target: "", left: 0n})})):
         case delivery(_): fanOut(target, previous)
         case _: 0n
-"""
+""")
 
 
 def package(law=""):

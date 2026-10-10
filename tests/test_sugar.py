@@ -15,7 +15,7 @@ import json
 import unittest
 
 from tests.test_turn import BINDING, Host, library_modules, nat, variant
-from tests.test_turn_world import TurnWorld, label, record
+from tests.test_turn_world import TurnWorld, declared, label, record
 
 HEAD = "edition ObjectiveBend 1\n"
 
@@ -529,7 +529,7 @@ class LawReading(TurnWorld):
     the statement form runs on the real host (a staged write is answered `written`)."""
 
     def test_a_law_with_a_reading_enforces_as_before(self):
-        self.create("c", library_modules("Abi", "Plan") + [{"name": "Package", "source": COUNTER}], 0)
+        self.create("c", library_modules("Abi", "Plan") + [{"name": "Package", "source": declared(COUNTER)}], 0)
         ok = self.turn("c", "bump", record(n=nat(5)))
         self.assertEqual(ok["status"], "admitted", ok)
         refused = self.turn("c", "bump", record(n=nat(150)))
@@ -539,7 +539,7 @@ class LawReading(TurnWorld):
     def test_write_runs_on_the_host(self):
         source = WRITE_SUGARED + "def initial() -> State:\n  {planted: 0n, children: Lists.List.nil({}), note: \"\"}\n"
         r = self.host.send(op="world-create", principal="ember", identity="create-g", object="g",
-                           modules=library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": source}],
+                           modules=library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": declared(source)}],
                            entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
         child = record(world=label(""), object=label("bell-1"))

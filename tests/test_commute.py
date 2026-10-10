@@ -19,8 +19,9 @@ from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
 from tests.test_world import COUNTER, BOUNDED, WorldCase, add, put, root, seed, write
+from tests.test_turn_world import declared
 
-BELL = """edition ObjectiveBend 1
+BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -52,7 +53,7 @@ def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<
   write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.removeItem({item: input.text})})
 def fix(state: State, input: {text: String, to: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.amendItem({item: input.text, change: input.to})})
-"""
+""")
 
 
 def items(state):

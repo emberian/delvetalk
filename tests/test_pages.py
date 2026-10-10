@@ -5,11 +5,12 @@ import json
 import re
 import urllib.parse
 
+from tests.test_turn_world import declared
 from tests.test_http import DID, FORM, FrontCase, browser_login
 from transport.hostproc import HostClient
 
 HTML = {'Accept': 'text/html,application/xhtml+xml'}
-PICKER = """edition ObjectiveBend 1
+PICKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 sum Colour:
@@ -26,7 +27,7 @@ def initial() -> State:
 def pick(state: State, input: {colour: Colour}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case _: state.count + 1n
-"""
+""")
 
 
 class Pages(FrontCase):

@@ -18,11 +18,11 @@ import unittest
 
 from tests.host import HostCase
 from tests.test_chain import field, nil, reference
-from tests.test_turn_world import ROOT, label, nat, record
+from tests.test_turn_world import ROOT, label, nat, record, declared
 
 LIBRARY = os.path.join(ROOT, "world", "lib")
 
-PACKAGE = """edition ObjectiveBend 1
+PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -37,7 +37,7 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case written(_): state.count + 1n
     case _: 0n
-"""
+""")
 
 BARE = """edition ObjectiveBend 1
 record State:
@@ -52,7 +52,7 @@ def initial() -> Nat:
 """
 
 # One object that reflects (inspect, check) and one that interprets and sends.
-PROBE = """edition ObjectiveBend 1
+PROBE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -104,16 +104,16 @@ def fire(state: State, input: {target: String}, context: Abi.Context) -> Activit
   match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: Data.of::<Arg>({n: 0n})})):
     case delivery(_): note(context, 0n, "sent")
     case _: note(context, 0n, "other")
-"""
+""")
 
-POLICY = """edition ObjectiveBend 1
+POLICY = declared("""edition ObjectiveBend 1
 record State:
   model: String
   system: String
   examples: String
 def initial() -> State:
   {model: "", system: "", examples: ""}
-"""
+""")
 
 
 def source_seed(count=0):
@@ -508,7 +508,7 @@ class CallerAcrossSend(Reflection):
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="bell"), before)
 
 
-FORGE = """edition ObjectiveBend 1
+FORGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -532,7 +532,7 @@ def relaw(state: State, input: {target: String, law: String}, context: Abi.Conte
     case amended(_): said(context, "amended")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-"""
+""")
 
 REWORKED = PACKAGE.replace("case _: 0n", "case _: 7n")
 
