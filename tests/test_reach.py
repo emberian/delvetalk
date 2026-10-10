@@ -50,6 +50,21 @@ def plant(state: State, input: {seed: String}, context: Abi.Context) -> Activity
 
 PROSE = "lovely evening, the moths are out"
 
+RELAY = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  n: Nat
+def initial() -> State:
+  {n: 0n}
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<String>:
+  match world.send({object: {world: "", object: "card"}, method: "receive", argument: Data.of::<{text: String, post: String}>({text: input.text, post: input.post})}):
+    case delivery(d): "handed on"
+    case _: "other"
+""", "receive")
+
 
 class Reach(Chain):
     policy = policy_tests.PolicyObject.policy
@@ -89,6 +104,22 @@ class Reach(Chain):
         self.assertEqual(self.pending()[0]["reach"], "reply")
         r = self.say(replyTo="at://did:plc:someone/app.bsky.feed.post/x")  # an unrecorded post does not reach
         self.assertEqual(r["result"]["value"], "not addressed", r)
+
+    def test_a_reply_handed_on_by_send_keeps_its_reach(self):
+        """A card that hands a reply on to another (a card forwarding to the directory) passes how the words
+        reached it: prose that reached no one is still not addressed, a mention is still a mention."""
+        seen, mods = set(), []
+        for dep in ("Abi", "List", "Plan", "World"):
+            closure(dep, seen, mods)
+        self.make("relay", mods + [{"name": "Relay", "source": RELAY}], record())
+        quiet = self.host.send(op="world-turn", principal="glm", object="relay", method="receive",
+                               argument=record(text=label(PROSE), post=label("at://glm/p/q")), identity="q")
+        self.assertEqual(quiet["status"], "admitted", quiet)
+        self.assertEqual([d.get("result") for d in quiet["delivered"]], [label("not addressed")], quiet)
+        loud = self.host.send(op="world-turn", principal="glm", object="relay", method="receive", reach="mention",
+                              argument=record(text=label(PROSE), post=label("at://glm/p/l")), identity="l")
+        self.assertEqual([d["status"] for d in loud["delivered"]], ["suspended"], loud)
+        self.assertEqual([i["reach"] for i in self.pending()], ["mention"])
 
     def test_a_named_method_reaches_directly(self):
         r = self.host.send(op="world-turn", principal="glm", object="card", method="ask",

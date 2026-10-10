@@ -2,6 +2,7 @@
 import Delvetalk.Host.Ops
 import Delvetalk.Host.TurnLoop
 import Delvetalk.Host.Snapshot
+import Delvetalk.Host.Root
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -251,6 +252,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
           ("height", toJson o.world.height), ("head", toJson o.world.head)] ++
           (if o.world.name.isEmpty then [] else [("name", toJson o.world.name)]) ++ [
           ("objects", toJson o.world.objects.size), ("snapshot", o.report.json)] ++ extra ++
+          (if o.world.shadowed.isEmpty then [] else [("shadowed", Json.arr o.world.shadowed)]) ++
           (o.world.library.map fun l => [("library", toJson l.pin)]).getD [])
         match request.getObjValAs? String "library" with
         | .error _ => return (some o, .ok (opened o []))
@@ -312,6 +314,8 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       | "world-reprogram" => durable s reader (fun w => reprogramOp w request)
       | "world-amend" => durable s reader (fun w => amendOp w request)
       | "world-revoke" => durable s reader (fun w => revokeOp w request)
+      | "world-root" => durable s reader (fun w => rootOp w request)
+      | "world-settings" => durable s reader (fun w => worldSettingsOp w request)
       | "world-advance" => durable s reader (fun w => advance w request)
       | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
@@ -329,7 +333,11 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
+          ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world),
+          ("modelQuota", Json.mkObj [("quota", toJson s.world.modelQuota), ("used", toJson
+            (if s.world.modelDay.1 == s.world.clock / 1440 then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / 1440 + 1) * 1440))]),
+          ("hour", (if s.world.hourCounts.hour == s.world.clock / 60 then s.world.hourCounts else { hour := s.world.clock / 60 }).json),
+          ("shadowed", Json.arr s.world.shadowed), ("ignored", toJson s.world.ignored), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
           ("recompiledDifferently", toJson s.world.recompiledDifferently),
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),

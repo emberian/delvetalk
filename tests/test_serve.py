@@ -122,7 +122,7 @@ class Serve(unittest.TestCase):
 
     def test_the_stateless_session_holds_the_library_and_compiles_by_pin(self):
         info = self.client.send({'op': 'hostd-info'})
-        self.assertEqual((info['status'], info['pid'], info['replay']), ('hostd', self.server.proc.pid, 2), info)
+        self.assertEqual((info['status'], info['pid'], info['replay']), ('hostd', self.server.proc.pid, 3), info)
         self.assertRegex(info['hostSha256'], r'^[0-9a-f]{64}$')
         self.assertEqual(self.client.send({'op': 'hostd-info'})['hostSha256'], info['hostSha256'])
         checked = HostClient(self.sock, stateless=True).send({'op': 'check-package', 'library': info['library'], 'entry': 'initial',
