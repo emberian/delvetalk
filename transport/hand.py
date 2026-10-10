@@ -116,7 +116,7 @@ class Hand:
 
     def summary(self, i, d):
         r = d.get('receipt')
-        line = f'receipt {r.get("slug")}: {outcome_of(r)}' if r else 'by hand' if d.get('hand') else 'a publication'
+        line = f'receipt {r.get("slug")}: {outcome_of(r)}' if r else 'usage' if d.get('usage') else 'by hand' if d.get('hand') else 'a publication'
         state = 'posted' if d['posted'] else 'skipped' if d.get('skipped') else 'waiting'
         return {'id': i, 'object': d.get('object'), 'receipt': line, 'slug': (r or {}).get('slug') or 'by hand', 'height': (r or {}).get('height'),
                 'outcome': outcome_of(r) if r else 'drafted', 'text': d['text'], 'state': state,

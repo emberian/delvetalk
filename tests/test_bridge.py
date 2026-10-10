@@ -227,6 +227,24 @@ class Stub:
         return {'status': 'ok'}
 
 
+class Usage(BridgeCase):
+    def test_a_question_mark_is_answered_with_the_hosts_usage_and_the_post_is_done(self):
+        stub = Stub()
+        real = stub.send
+        stub.send = lambda req: ({'status': 'usage', 'object': 'garden-1', 'text': 'Reply with a spell:\n\n    delvetalk garden-1 plant\n'}
+                                 if req['op'] == 'world-turn' else real(req))
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        post['text'] = 'delvetalk garden-1 ?'
+        self.observe([post])
+        r = bridge.run(self.state, stub)
+        self.assertEqual((r['failed'], r['turns']), ([], [post['uri']]))
+        (d,) = self.drafts()
+        self.assertEqual((d['text'], d['replyTo'], d['object'], d['principal']), ('Reply with a spell:\n\n    delvetalk garden-1 plant\n', post['uri'], 'garden-1', DID))
+        before = len(stub.ops)
+        self.assertEqual(bridge.run(self.state, stub)['turns'], [])  # not retried
+        self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
+
+
 class Routing(BridgeCase):
     def test_clock_ticks_once_per_run_and_only_in_unix_minutes(self):
         stub = Stub()

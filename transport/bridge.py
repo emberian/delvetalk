@@ -90,7 +90,9 @@ def refusal_line(outcome, fallback_class=None):
 
 def draft_text(reply, origin=None):
     """The only text a draft carries. A refusal is the turn line, the host's hint when it gives one, and the receipt's name;
-    no state, hash or CID."""
+    no state, hash or CID. A usage answer is the host's text."""
+    if reply.get('status') == 'usage':
+        return str(reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
@@ -326,6 +328,12 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         if obs['replyTo']:
             request['replyTo'] = obs['replyTo']
         reply = host.send(request)
+        if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
+            write_atomic(outbox / f"0-{uri_hash(obs['uri'])}.json", {
+                'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+                'object': obj, 'slot': slot_arg(slot), 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
+            done.append(obs['uri'])
+            continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
