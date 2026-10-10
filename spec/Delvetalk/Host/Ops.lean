@@ -1723,6 +1723,10 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
     match w.objects[r]? with
     | some ro =>
       unless p.roots.any (·.1 == r) do return refuse "lawReads"
+      -- A law reads only what its subject may view: its verdict could disclose the rest (codex host 3).
+      unless ro.read.permits subject do
+        return some { cls := "lawRefused", clause := some "lawReads", object := some id,
+                      reason := some s!"refused lawReads: the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
   let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method

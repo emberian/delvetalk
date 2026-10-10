@@ -678,6 +678,12 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `publishPage` decides for itself. Test: `tests/test_publish.py`
    `test_a_card_only_some_may_read_gets_no_default_page`.
 
+89. **A Bend law reads only what its subject may view (host12; codex host 3).** `bendLaw` supplies an
+   object `lawReads()` names only when that object's read policy permits the judgment's subject (the
+   principal, or a grant's grantor); otherwise the write is refused `lawRefused`, clause `lawReads`,
+   "refused lawReads: the law of <id> reads <r>, which you may not see.", since the verdict could
+   disclose the state. Test: `tests/test_law.py` `test_a_bend_law_is_given_no_object_its_subject_may_not_view`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
