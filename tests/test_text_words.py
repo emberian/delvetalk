@@ -10,6 +10,7 @@ where walking the text through Bend list functions cost about 200,000 ticks for 
 
     python3 -m unittest tests.test_text_words -v
 """
+import time
 import unittest
 
 from tests.test_turn import Host, label, library_modules
@@ -57,6 +58,36 @@ class TextHasAny(unittest.TestCase):
         found, ticks = self.check(reply[:-10] + " lantern.")
         self.assertTrue(found)
         self.assertLess(ticks, 10000, ticks)
+
+
+MANY = """edition ObjectiveBend 1
+import ./List.obend as Lists
+def many(text: String, words: String) -> Bool:
+  textHasAny(text, Lists.List.cons({head: words, tail: Lists.List.nil({})}))
+"""
+
+
+class ManyWords(unittest.TestCase):
+    def test_many_words_against_many_words_is_linear_work(self):
+        # Refuted by list membership per text word: 30,000 `a` words against 30,000 `b`
+        # words is 900 million failed comparisons (seconds) under a tariff of 240,001 ticks.
+        h = Host()
+        self.addCleanup(h.close)
+        reply = h.send({"op": "compile", "entry": "many",
+                        "modules": library_modules("List") + [{"name": "Package", "source": MANY}]})
+        self.assertEqual(reply["status"], "compiled", reply)
+        art = reply["artifact"]
+        n = 30000
+        walls = []
+        for text, words in (("a " * n, "b " * n), ("a " * n + "b", "b " * n)):
+            began = time.monotonic()
+            ran = h.send({"op": "run", "artifact": art, "arguments": [label(text), label(words)],
+                          "limits": {"ticks": "1000000"}})
+            walls.append(time.monotonic() - began)
+            self.assertEqual(ran["status"], "finished", ran)
+        self.assertEqual(ran["value"]["value"], True)
+        print("\n  textHasAny, 30,000 words against 30,000: %.3f s, %.3f s" % tuple(walls))
+        self.assertLess(max(walls), 0.5, walls)
 
 
 if __name__ == "__main__":

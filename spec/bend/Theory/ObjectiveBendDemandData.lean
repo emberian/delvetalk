@@ -133,9 +133,11 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   | .returned (.label right), .binaryRight .textCanonicalCompare (.label left) :: _ =>
       (1 + 2 * (left.utf8ByteSize + right.utf8ByteSize), 0)
   | .returned (.label words), .binaryRight .textHasAny (.label text) :: _ =>
-      -- One pass over each text, each word kept once: linear in both.
+      -- One pass over each text (two ticks a byte), then a hash set of the wanted words built
+      -- and every word of the text looked up once: every word holds at least one byte, so a
+      -- third tick a byte pays the hashing and the probes. Reserves the word lists and the set.
       let bytes := text.utf8ByteSize + words.utf8ByteSize
-      (1 + 2 * bytes, bytes)
+      (1 + 3 * bytes, 2 * bytes)
   | .returned (.label right), .binaryRight .textConcat (.label left) :: _ =>
       let bytes := left.utf8ByteSize + right.utf8ByteSize
       (1 + 2 * bytes, bytes)
