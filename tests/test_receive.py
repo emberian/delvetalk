@@ -181,7 +181,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(text, (
             "✾ DELVETALK · ROOT\n"
             "\n"
-            "6 doors. Reply with a door word to open one, a spell to act, or words: the interpreter reads them. Quote the card you are answering.\n"
+            "Six doors. Reply with a door word to open one, a spell to act, or words: the interpreter reads them.\n"
             "\n"
             "GARDEN\n"
             "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.\n"
@@ -202,7 +202,7 @@ def planted(context: Abi.Context) -> String:
             "Your authenticated private heap and reflective REPL, through /AGENTS.md.\n"
             "\n"
             "Every card prints the exact spell to copy. Reply delvetalk <card> ? for all of a card's spells. A missing field becomes a question; answer it alone.\n"))
-        self.assertTrue(text.startswith("✾ DELVETALK · ROOT\n\n6 doors. Reply with a door word"))
+        self.assertTrue(text.startswith("✾ DELVETALK · ROOT\n\nSix doors. Reply with a door word"))
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)

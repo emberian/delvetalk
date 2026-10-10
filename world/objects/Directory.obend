@@ -88,9 +88,16 @@ def removed(label: String) -> Activity<Answer>:
   Answer.done({})
 def doorLine(door: Door) -> Document.Document:
   Document.text("{door.label}\n{door.description}\n\n")
+# "Six doors.": the count in words to twelve, as the voice writes it (docs/VOICE.md).
+def doorCount(n: Nat) -> String:
+  if n == 1n then "One door" else "{countWord(n)} doors"
+def countWord(n: Nat) -> String:
+  match Lists.at(Text.words("No One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve"), n):
+    case some(w): w.value
+    case none(_): natText(n)
 # Affordances first, since readers clip near 1,400 characters; then the doors.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\n{natText(Relations.count(state.doors))} doors. Reply with a door word to open one, a spell to act, or words: the interpreter reads them. Quote the card you are answering.\n\n"), tail: Lists.concat(Lists.map(menu(state), doorLine), Document.Documents.cons({head: Document.text("Every card prints the exact spell to copy. Reply delvetalk <card> ? for all of a card's spells. A missing field becomes a question; answer it alone.\n"), tail: Document.Documents.nil()}))})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\n{doorCount(Relations.count(state.doors))}. Reply with a door word to open one, a spell to act, or words: the interpreter reads them.\n\n"), tail: Lists.concat(Lists.map(menu(state), doorLine), Document.Documents.cons({head: Document.text("Every card prints the exact spell to copy. Reply delvetalk <card> ? for all of a card's spells. A missing field becomes a question; answer it alone.\n"), tail: Document.Documents.nil()}))})})
 def methods() -> Lists.List<String>:
   Text.words("add remove")
 def forms() -> Card.Forms:
