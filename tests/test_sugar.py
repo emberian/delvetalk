@@ -450,11 +450,34 @@ class Forms(unittest.TestCase):
         source = FORM_HEAD + "form plant:\n  seed: text 1..80\n"
         self.assertEqual(self.check(source, "plantForm")["status"], "checked")
 
+    def test_a_source_field_is_the_source_kind(self):
+        # Form.obend's `source: {}` case is the objects lane's: one library with it, one without.
+        modules, lacking = library_modules("List", "Form"), library_modules("List", "Form")
+        for with_case, ms in ((True, modules), (False, lacking)):
+            for m in ms:
+                if m["name"] == "Form":
+                    bare = m["source"].replace("  source: {}\n", "")
+                    m["source"] = bare.replace("sum Kind:\n", "sum Kind:\n  source: {}\n") if with_case else bare
+        explicit = FORM_HEAD + ("def workshopForm() -> F.Form:\n  {card: \"\", action: \"compile\", fields: "
+                                "F.Fields.cons({head: {name: \"program\", kind: F.Kind.source({})}, tail: "
+                                "F.Fields.cons({head: {name: \"note\", kind: F.Kind.text({min: 1n, max: 80n})}, "
+                                "tail: F.Fields.nil({})})})}\n")
+        sugared = FORM_HEAD + "form compile as workshopForm:\n  program: source\n  note: text 1..80\n"
+        replies = [self.h.send({"op": "compile", "entry": "workshopForm",
+                                "modules": modules + [{"name": "Package", "source": text}]}) for text in (explicit, sugared)]
+        self.assertEqual(core(replies[0]["artifact"]), core(replies[1]["artifact"]), replies)
+        self.assertIn('"source"', json.dumps(replies[1]["artifact"]["packet"]))
+        # Against a Form library without the case, the lowering is refused by the elaborator.
+        reply = self.h.send({"op": "check-package", "entry": "workshopForm",
+                             "modules": lacking + [{"name": "Package", "source": sugared}]})
+        self.assertEqual(reply["status"], "refused", reply)
+
     def test_a_form_block_needs_the_form_library_and_known_kinds(self):
         reply = self.check(HEAD + "form plant:\n  seed: text 1..80\n", "plantForm")
         self.assertIn("a form block needs the Form library", reply["diagnostic"]["message"])
         reply = self.check(FORM_HEAD + "form plant:\n  seed: words 1..80\n", "plantForm")
         self.assertIn("a form field is `name: text MIN..MAX`", reply["diagnostic"]["message"])
+        self.assertIn("`name: source`", reply["diagnostic"]["message"])
 
 
 class Writes(unittest.TestCase):

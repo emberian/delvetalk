@@ -874,11 +874,14 @@ def cap (s : List Char) (caps : Caps) (i : Nat) : String := String.ofList ((capt
       colour: amber | violet | silver
       seed: text 1..80
       count: natural 1..1000
+      program: source
 
 declares `def planting() -> F.Form` (default name `plantForm`) whose body is the Form
 record the library uses, `F` being the module's alias of `Form.obend`:
 `{card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind:
-F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`. -/
+F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`.
+`source` is `F.Kind.source({})`: Bend source, which the host reads as text of 1 to
+`Host.Limits.formSourceMax` characters and fills from a reply's fenced `obend` block. -/
 def formRe : Re := seqs [str "form", many1 space, group 1 ident,
   opt (seqs [many1 space, str "as", many1 space, group 2 ident]), many space, chr ':', .done]
 def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 space,
@@ -890,6 +893,7 @@ def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
   let span := line.span
   let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
   let trimmed := String.ofList spec |>.trimAscii |>.toString
+  if trimmed == "source" then return .call (lib "Kind" "source") [.record [] span] span
   if let some (_, caps) ← matchAt line rangeKindRe trimmed.toList then
     let kind := cap trimmed.toList caps 1
     let low := natValue ((capture trimmed.toList caps 2).getD [])
@@ -897,7 +901,7 @@ def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
     return .call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
   let options := (trimmed.splitOn "|").map fun o => o.trimAscii.toString
   if options.length < 2 || options.any (fun o => !isIdent o.toList) then
-    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX` or `name: a | b | c`"
+    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX`, `name: source` or `name: a | b | c`"
   let names := options.foldr (fun o acc =>
       Expr.call (lib "Names" "cons") [.record [("head", .str o span), ("tail", acc)] span] span)
     (.call (lib "Names" "nil") [.record [] span] span)
