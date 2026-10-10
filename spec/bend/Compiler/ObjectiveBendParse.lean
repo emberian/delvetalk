@@ -1245,6 +1245,17 @@ def parseObjective (source : String) : Except Diagnostic Module := do
     | .record "State" _ fields _ => acc ++ (fields.filter fun f => (f.type.splitOn "Relation<").length > 1).map (·.name)
     | _ => acc) []
   let decls := decls.map (·.mapExpr (lowerRemove plans relations))
+  -- `Edits` and `keep()` are derived from the State (the generics pass) only with Plan.obend.
+  let declaresState := decls.any fun d => match d with
+    | .record "State" .. | .typeAlias "State" .. => true
+    | _ => false
+  if declaresState && !imports.any (·.path.endsWith "Plan.obend") && !decls.any (·.name == "keep") then
+    let marked : Expr → Expr := fun e => match e with
+      | .call (.var "keep" _) [] s => .call (.var removeMarker s) [] s
+      | e => e
+    if let some d := decls.find? (fun d => d.mapExpr marked != d) then
+      throw ⟨"refused (derived-edits): write {...} and keep() derive Edits from State through the Plan library; " ++
+        "import ./Plan.obend as Plans", some d.span⟩
   -- A layer imports the module it layers over as `Super` (unless it already does).
   let imports := match layer with
     | some (path, span) =>
