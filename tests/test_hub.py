@@ -319,13 +319,9 @@ class LinkDoors(test_chain.Chain):
 
 class SpellsPassedOn(test_chain.Chain):
     """A spell under the directory's post naming another card is passed on by call to its
-    `receive` (Directory.passOn). The host reads spells only on a direct turn (HOST-HANDOFF
-    5.49), so a card in the message dialect gets the call unparsed and without `fields`, and
-    refuses it `typeMismatch`. Expected to fail until the host reads a `receive` call or
-    delivery to a message-dialect card as it reads a direct one (or the Directory moves, when
-    the host retargets the turn itself)."""
+    `receive` (Directory.passOn). The host reads a called `receive` to a card in the message
+    dialect as it reads a direct one (HOST-HANDOFF 5.63): the spell runs the card's action."""
 
-    @unittest.expectedFailure
     def test_a_spell_under_the_directory_runs_on_a_message_dialect_card(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), policy=reference("")))
@@ -343,9 +339,8 @@ class HandedToTheDirectory(test_chain.Chain):
     against every door's forms, and the model's submit spell reaches the anthology."""
     policy = test_policy.PolicyObject.policy
 
-    # The model's submit reaches the anthology by the Directory's `call` of its `receive`
-    # (SpellsPassedOn): expected to fail until the host reads a called `receive` as a spell.
-    @unittest.expectedFailure
+    # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which the
+    # host reads as a spell (SpellsPassedOn).
     def test_two_anthology_lines_under_glms_planting_are_submitted(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
@@ -499,8 +494,7 @@ class AnthologyReachable(test_chain.Chain):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
 
     # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which
-    # the host does not read as a spell (SpellsPassedOn): refused typeMismatch until it does.
-    @unittest.expectedFailure
+    # the host reads as a spell (SpellsPassedOn).
     def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),

@@ -434,6 +434,19 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `tests/test_public_methods.py` (the review's reproductions, a bare package, calls and sends, a helper
    receiver); fixtures declare their methods with `tests.test_turn_world.declared`.
 
+63. **Called and delivered spells (host10).** A `receive {text, …}` to a card of the message dialect is
+   read as a spell whether a principal turned it, an object called it, or a delivery brought it
+   (`routeSpell` -> `SpellRoute`: `run {object, method, argument, command}`, `usage`, `refuse`, `asIs`; the
+   direct path, `spellTurn`, is the same function). A direct turn goes to the card the spell names; a call
+   or a delivery reads only spells naming the card it was sent to (another is `otherCard`), since its
+   sender chose that object, and a `callVia`/`sendVia` is never read (its grant names one method). The
+   principal reading is the frame's subject (call) or the delivery's principal. A call's misfit is
+   answered `refused {clause}` with the spell's clause; a delivery's is a consumed `badSpell` refusal
+   with `clause`, `reason` and `hint`. A `?` in a call or delivery runs `receive` as asked. A spell runs
+   the named method only if the card offers it (5.62). Tests: `tests/test_hub.py` `SpellsPassedOn`,
+   `HandedToTheDirectory`, `AnthologyReachable` (the Directory's call of the anthology's `receive`),
+   `tests/test_places.py` `Scoped` (an avatar's send to a counter); their `expectedFailure`s are gone.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
