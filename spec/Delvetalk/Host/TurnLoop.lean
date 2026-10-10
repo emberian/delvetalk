@@ -1678,22 +1678,6 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
-/-- `receive`'s `slot` is the host's: an object that declares `receive {text, post}` gets the
-    argument without one (`transport/http.py` still sends one), and one that still declares `slot` gets it filled from the recorded post the turn replies to (its slot as
-    compressed JSON, "" for none) when the client left it out. Any other argument is as sent. -/
-def receiveArgument (init : TurnState) (req : TurnRequest) (slot : Option Json) : Data × TurnState :=
-  if req.method != "receive" then (req.argument, init) else
-  match req.argument, init.world.objects[req.object]? with
-  | .record fs, some obj =>
-    match ((compiledMethod obj "receive").run.run init) with
-    | (.ok c, st) =>
-      let without := Data.record (fs.filter (·.1 != "slot"))
-      let filled := Data.record (fs ++ [("slot", .label ((slot.map (·.compress)).getD ""))])
-      let pick := [req.argument, without, filled].find? (argumentFits c ·)
-      ((pick.getD req.argument), st)
-    | (.error _, _) => (req.argument, init)
-  | _, _ => (req.argument, init)
-
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing, except for a delivery, which must be consumed. -/
 def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String (World × Json) := do
@@ -1710,8 +1694,6 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let answers := match post with
     | some p => if p.object == req.object then req.replyTo else ""
     | none => ""
-  let (argument, init) := receiveArgument init req (post.bind (·.slot))
-  let req := { req with argument }
   let (result, st) := (runMethod 0 req.object req.method req.argument how.caller req.principal how.via |>.run).run init
   let ctx : Ctx :=
     { principal := req.principal

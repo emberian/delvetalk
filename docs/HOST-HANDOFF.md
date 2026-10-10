@@ -170,7 +170,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `offer {to, document}` ("" = the frame's subject). An admitted entry retains `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`). `world-offers {principal, after?}` answers `offers [{height, ordinal, identity, text, from {post, principal, intent}}]` (`originOf`). A turn's reply carries only offers addressed to its own principal. A turn that offers nothing has no `offers` field.
 - Reads under authority: `world-receipt {principal, identity, of?}`; `projectEntry` gives the identity's own principal the whole entry, anyone else a `publicRefusal` (`{status: "refused", class, root {object, version?}, reason?}`, plus `object` and `hint` for `unknownObject`, `object` for `requiredAbsence`) or chain fields, roots and writes of objects the reader may view, and an `elided` count. A refused turn reply carries it as `public`.
 - `publish {page, section, body}` -> `published {post}` (at most `publishesPerTurn`; a title or section with a line break or over 256 bytes is `refused {clause: title}`). The admitted entry retains `publishes [{id, object, page, section, text}]` with agentwiki text (`wiki: Title\n\nbody` or `edit: Title › Section\n\nbody`). `world-publications {principal, after?, before?, reverse?, limit?}` answers `publications [{height, ordinal, id, object, page, section, body, hash, replyTo?}]`.
-- `world-turn {replyTo}` (in the digest): when the parent is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` maps the post to the turn. `receive`'s `slot` is the host's (`receiveArgument`): dropped for an object declaring `{text, post}`, filled from the recorded post's slot for one still declaring it.
+- `world-turn {replyTo}` (in the digest): when the parent is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` maps the post to the turn. `receive` takes `{text, post}` as sent (host10 deleted `receiveArgument`: a `slot` field is a `typeMismatch` like any other).
 - Transport side: `transport/bridge.py` `publication_drafts` writes each publication as an outbox draft and never posts; `transport/post.py --record` confirms as the clock principal and calls `world-posted`.
 
 ### 5.6 Snapshots and replay
@@ -405,7 +405,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `amend {item, change}`/`remove {item}` (item-addressed under the old labels; Plan.obend writes
    `amendItem`/`removeItem`, so the objects lane may drop them) and `withBindingContext`'s
    Context-carrying `turn-start` request, which `tests/test_layers.py` and the kernel tests send.
-   Not deleted: `receiveArgument`. Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
+   Not deleted then: `receiveArgument` (host10 deleted it after transport2 stopped sending `slot`). Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
    `test_zulip`: `transport/http.py:113` sends `{text, post, slot: ""}` and the bridge and zulip tests'
    objects declare `slot` (`tests/test_bridge.py:36`). Once transport stops sending it and those
    fixtures drop it, delete `receiveArgument` and its two lines in `runTurnWith`, and turn
