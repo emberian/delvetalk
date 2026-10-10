@@ -154,6 +154,35 @@ the same claim made with exact text: whole cards, hint strings, tick counts, pag
 | theme | - | 9 | 130 | The theme without a browser: both palettes pass WCAG AA, the site carries the front's palette, every kind has its own mark, receipt fates are word plus icon, doors and spells are styled, the frog is one plate. | split | literal: 6 |
 | world_protocol | - | 2 | 102 | An object in the message dialect compiles against World.obend, each protocol call lowers to one named world message, and the same object runs through the host (follow, bump, changed delivery, viewAt, viewDerived). | LATER delete | literal: 1 |
 
+## After (lane tests2, on foundation f7865b0)
+
+| | audit | pass 1 | pass 2 |
+| --- | ---: | ---: | ---: |
+| tests run | 1,285 | 1,008 | 663 |
+| lines in `test_*.py` | 27,660 | 23,974 | 21,361 |
+| wall time, hbox (`swarm-build`) | 70.0 s, load 20 | 48.4 s, load 20 | 104 s, load 37-40 |
+
+Wall time is now the critical path of one class: `test_archive` runs `rehearsal/rehearse.py` over
+the 1,763 posts (45 s at load 20, 104 s at load 40); the next slowest class takes 39 s. Every other
+failure is a defect the properties found (below). How we know no behaviour went: each removed
+test is named in its commit (b224238.., this lane's two deletion commits) with the property,
+scenario or remaining test that asserts its claim; merged tests keep their assertions as table rows.
+
+Tests are under half (663 of 1,285 run counted with inherited classes: 52%; 653 `def test_`).
+Lines are not: 77%. What remains is mostly Bend fixture source the adversarial tests compile, and
+the fixture backbone (`closure`, `record`, `label`, `nat`, `declared`, `Chain`, `garden_seed`,
+`Reflection`, `get`, `rows`, `items`) that about eighty modules import from test_turn_world,
+test_chain, test_reflection and test_replay. Halving lines needs step 5 below, which touches
+`tests/host.py` (open on lane/rewrite3).
+
+Defects found, reported, not fixed: methods without an input admit any argument (Avatar hold and
+release, Env observe, Scene enter and leave, Tide tick; test_principal asserts the same admission
+for Door.knock, Lantern.light, Place.enter, so one of the two is wrong once decided); on the
+archive 54 interpretations not 43, three anthology lines of four, no planting recorded for glm's
+bell (rehearse.py reads garden `children`, which the kind/bell cut renamed), a Workshop
+publication draft of 1,444 characters; a second arrival under a new handle updates the registry
+but not the Avatar's `handle` field.
+
 ## The plan
 
 1. **Properties** (`test_properties`, layer properties): the town as genesis builds it, driven by a
@@ -176,10 +205,12 @@ the same claim made with exact text: whole cards, hint strings, tick counts, pag
    `test_list`, `test_view_data`, `test_derived_forms`, `test_card`, `test_located`), `test_kinds`
    (folded into the Bell scenario), and every flagged test in the files this pass may touch, except
    where the flagged test is a behaviour's only evidence (listed in the commit).
-5. **Second pass** (the `LATER` files, once rewrite2 and host13 land): test_bridge, test_http,
-   test_hub, test_hypermedia, test_objects, test_receive, test_views, test_wakes, test_policy,
-   test_spell, test_replay and the rest of the LATER rows, split as their rows say; then move the
-   fixture backbone (`closure`, `record`, `label`, `nat`, `declared`, `Chain`, `garden_seed`,
-   `Reflection`, `get`, `rows`, `items`) out of test_turn_world, test_chain, test_reflection and
-   test_replay into `host.py`, so the test modules stop importing one another (81, 50, 31 and 15
-   importers today), and collapse test_canonical's and test_turn's private `Host` classes into it.
+5. **Next** (needs `tests/host.py`, open on lane/rewrite3; and lane/kernel11's `test_conformance`,
+   `test_stored`, `tests/conformance/`, deferred with `test_serve`): move the fixture backbone
+   (`closure`, `record`, `label`, `nat`, `declared`, `Chain`, `garden_seed`, `Reflection`, `get`,
+   `rows`, `items`) out of test_turn_world, test_chain, test_reflection and test_replay into
+   `host.py`, so the test modules stop importing one another, and collapse test_canonical's and
+   test_turn's private `Host` classes into it; then share one Bend fixture module per object kind
+   instead of a source string per test file. That is where the remaining half of the lines is.
+   Then decide the input-less-method defect and fix whichever of test_principal and
+   EveryMethod is wrong.
