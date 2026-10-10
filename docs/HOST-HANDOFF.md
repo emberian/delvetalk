@@ -862,6 +862,21 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    (`interpretsStarted`); retries spend none of it, and the `attempted` entries are the record of model
    credit spent.
 
+108. **State bytes are canonical bytes (host12; OBJECTS-HANDOFF §4).** `stateBytes`, which
+   `Limits.maxStateBytes` and `maxSeedBytes` (256 KiB), the storage ledger and the creation charge
+   count, is the length of the Data's canonical DAG-CBOR (`Delvetalk.Canonical.encode`), not of its wire
+   JSON (about 150 B of tags and names per relation row: the Anthology refused its 631st short line).
+   `world-inspect` answers `stateBytes`. Measured on hbox, a Bell with 2,048 rains (a 32-byte DID
+   author, a 19-byte handle, `at` and `n` four digits) is 216,899 B with 20-character texts, about
+   86 B per row plus the text; at 60 characters 2,048 rows exceed the bound (about 297 KB), and at the
+   rain form's 280 at most about 716 rows fit. So a relation's `limit` must satisfy limit × (86 + its
+   widest text) ≤ 262,144 for the object to stay writable when full (retention cannot drop below the
+   byte bound): for the Bell 640 rows (worst case 234 KB), or 2,048 with a 40-character text. The
+   statement FOUNDATION's scale section should make: "a relation's declared limit times its widest row
+   fits in 256 KiB; the lazy cells (KERNEL-HANDOFF §15) are the real fix, after which the bound is
+   per cell". Test: `tests/test_relation.py` `test_state_bytes_are_the_canonical_encodings` (2,048 rows
+   that were 600 KB of wire JSON, created).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

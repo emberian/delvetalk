@@ -242,8 +242,10 @@ partial def compressedSize : Json → Nat
     let (n, count) := kvs.foldl (fun (n, c) k v => (n + (Json.renderString k "").utf8ByteSize + 1 + compressedSize v, c + 1)) (0, 0)
     2 + n + (count - 1)
 
-/-- The bytes of a state as the bound counts them: its wire JSON, compressed. -/
-def stateBytes (state : Data) : Nat := compressedSize (dataJson state)
+/-- The bytes of a state as the bound counts them: the canonical DAG-CBOR of the Data
+    (`Delvetalk.Canonical.encode`), not its verbose wire JSON, where a relation row cost about 150
+    bytes of tags and names (the Anthology refused its 631st short line). -/
+def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
 
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/

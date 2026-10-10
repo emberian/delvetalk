@@ -2460,6 +2460,8 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
+      -- Its size against `Limits.maxStateBytes`, as the host counts it (`stateBytes`).
+      ("stateBytes", toJson (stateBytes o.state)),
       ("forms", dataJson (listData ((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)))),
       -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
       ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
