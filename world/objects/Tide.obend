@@ -128,16 +128,10 @@ form subscribe:
 form tick:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})})
-# The card as a public page under the door word (genesis publishes one page per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
-  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def blurb() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-# An action without a form: genesis publishes the page.
-def methods() -> Lists.List<String>:
-  Card.wordList("publishPage")
 def line(context: Abi.Context) -> Sub -> Document.Document:
   fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

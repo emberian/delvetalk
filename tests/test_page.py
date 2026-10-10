@@ -26,15 +26,14 @@ PAGES = {
         "\n"
         "## How to reply\n"
         "\n"
-        "\n"
         "Reply with a spell:\n"
         "\n"
-        "    delvetalk rooms enter\n"
+        "delvetalk rooms enter\n"
         "\n"
-        "    delvetalk rooms choose\n"
-        "    choice: <text, 1 to 64 characters>\n"
+        "delvetalk rooms choose\n"
+        "choice: <text, 0 to 1400 characters>\n"
         "\n"
-        "    delvetalk rooms leave\n"),
+        "delvetalk rooms leave\n"),
     "workshop": (
         "wiki: workshop\n"
         "\n"

@@ -190,9 +190,6 @@ form choose:
 form leave:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: chooseForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
-# The card as a public page under the door word (genesis posts one card per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
-  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def blurb() -> Card.Door:
   {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave; post a ```spween block to make one."}
 # A ```spween block makes a new scene beside this one; anything else is the card's default.
