@@ -181,10 +181,11 @@ def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=N
     return {**result, 'recorded': record_posted(host, result, obj, slot, wiki_target(text)) if obj else None}
 
 
-def post_drafts(state, host, client, stream, now=None):
+def post_drafts(state, host, client, stream, now=None, topic=None):
     """Post every unposted draft with text, oldest first, until the hourly quota refuses; record each with the host.
     A reply draft goes to its post's topic, addressed to its author; a page publication to a topic named for the page
-    (a section edit waits until its page is recorded and the bridge has given it the page post to reply to)."""
+    (a section edit waits until its page is recorded and the bridge has given it the page post to reply to).
+    With `topic` the playtest lives in that one topic: a page publication goes there too, and nothing is posted elsewhere."""
     sent, held = [], []
     for path in sorted((Path(state) / 'outbox').glob('*.json')):  # posted, but the host has not yet been told
         d = json.loads(path.read_text())
@@ -200,7 +201,10 @@ def post_drafts(state, host, client, stream, now=None):
             target = (where[0], where[1]) if where else None
             text = f"@**{d['replyHandle']}**\n{d['text']}" if 'publication' not in d else d['text']
         else:
-            target, text = ((stream, d['page']) if 'publication' in d and not d['section'] else None), d.get('text')
+            target, text = ((stream, topic or d['page']) if 'publication' in d and not d['section'] else None), d.get('text')
+        if target is not None and topic and target[1] != topic:
+            held.append({'file': path.name, 'reason': 'outside_topic'})
+            continue
         if target is None:
             continue
         obj = d.get('object') or (d.get('publication') or {}).get('object')

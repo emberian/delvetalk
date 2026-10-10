@@ -218,6 +218,17 @@ class Bridging(ZulipCase):
         self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
         self.assertEqual([m['subject'] for m in self.zulip.mine()], ['mobo'])
 
+    def test_with_a_topic_a_page_publication_goes_to_the_topic_not_a_topic_named_for_the_page(self):
+        import transport.bridge as b
+        d = {'text': 'a page', 'page': 'Garden', 'section': '', 'publication': {'object': None}, 'posted': False, 'replyTo': None}
+        sent = []
+        client = type('C', (), {'send': lambda self, st, t, c: sent.append((st, t)) or {'id': 7}})()
+        orig = zulip.unposted
+        zulip.unposted = lambda state: [(Path(self.tmp.name) / 'x.json', d)]
+        self.addCleanup(setattr, zulip, 'unposted', orig)
+        zulip.post_drafts(self.state, self.host, client, 'delvetalk', topic='mobo')
+        self.assertEqual(sent, [('delvetalk', 'mobo')])
+
     def test_a_mention_of_the_bot_summons_the_directory(self):
         self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** what is here?')
         got = self.bridge()
