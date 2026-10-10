@@ -26,7 +26,7 @@ def inspect (t : Term) : View t :=
   | .specification m e => .value (.specification m e)
   | .prototype s v => .value (.prototype s v)
   | .inject k v => .value (.inject k v)
-  | .bound _ => .stuck
+  | .bound _ | .refuse _ => .stuck
   | .perform p => .yield p [] (.perform p)
   | .done v => .step v (.done v)
   | .toData v => .step v (.toData v)
@@ -187,6 +187,7 @@ partial def decode (j : Json) : Except String Term := do
   | "done" => arity 1; return .done (← t 1)
   | "toData" => arity 1; return .toData (← t 1)
   | "textJoin" => arity 2; return .textJoin (← t 1) (← t 2)
+  | "refuse" => arity 1; return .refuse (← str 1)
   | _ => throw s!"unknown term constructor {tag}"
 
 private def arr (tag : String) (args : List Json) : Json := .arr ((.str tag :: args).toArray)
@@ -219,6 +220,7 @@ partial def encode (t : Term) : Json :=
   | .done v => arr "done" [encode v]
   | .toData v => arr "toData" [encode v]
   | .textJoin l s => arr "textJoin" [encode l, encode s]
+  | .refuse r => arr "refuse" [.str r]
 
 partial def run (t : Term) (fuel : Nat) (responses : List Term) (plans : Array Json := #[]) : String × Term × Array Json :=
   match inspect t with

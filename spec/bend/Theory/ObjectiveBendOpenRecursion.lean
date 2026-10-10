@@ -64,6 +64,10 @@ inductive Term where
   `textJoinExpansion`, a fold in the other constructors; the demand machine runs
   it natively with an accumulator, so a join costs linear work in its output. -/
   | textJoin (list separator : Term)
+  /-- Hosted extension, not upstream: refuse the turn, naming why. Typed at any
+  activity type and never a value: `Step` has no rule for it (a program stuck here
+  has refused), and the machine stops with `Refusal.program reason`. -/
+  | refuse (reason : String)
   deriving Repr
 
 def liftRename (rename : Nat → Nat) : Nat → Nat
@@ -101,6 +105,7 @@ def Term.rename (rename : Nat → Nat) : Term → Term
   | .done value => .done (value.rename rename)
   | .toData value => .toData (value.rename rename)
   | .textJoin list separator => .textJoin (list.rename rename) (separator.rename rename)
+  | .refuse reason => .refuse reason
 
 termination_by source => sizeOf source
 decreasing_by
@@ -151,6 +156,7 @@ def Term.substitute (substitution : Nat → Term) : Term → Term
   | .done value => .done (value.substitute substitution)
   | .toData value => .toData (value.substitute substitution)
   | .textJoin list separator => .textJoin (list.substitute substitution) (separator.substitute substitution)
+  | .refuse reason => .refuse reason
 
 termination_by source => sizeOf source
 decreasing_by

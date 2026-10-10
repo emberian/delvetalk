@@ -198,6 +198,15 @@ structure EntryCompiled where
   artifact : Json
   entry : Delvetalk.CheckedEntry
   laws : List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
+  /-- Each law's reading (`law NAME "reading": EXPR`; "" when none), by law name. -/
+  readings : List (String × String)
+
+/-- The entry module's laws as the artifact's `laws` table: `[{name, reading}]` in source
+order; absent when the module declares none. -/
+def lawReadings (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
+  ast.decls.filterMap fun d => match d with
+    | .law name _ reading _ => some (name, reading)
+    | _ => none
 
 /-- Compile `entry` from a prepared closure: select its reached knot, build the proposal
 and packet once, check it. -/
@@ -220,7 +229,11 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
     ("methods", methodTable entryModule.name signatures globals), ("law", law)]
-  return ⟨artifact, ⟨pin, accepted.source, accepted.typed, accepted.packet.fuel⟩, lowered.laws⟩
+  let readings := lawReadings (prepared.asts.getLastD default)
+  let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
+    (Json.arr (readings.toArray.map fun (name, reading) =>
+      Json.mkObj [("name", toJson name), ("reading", toJson reading)]))
+  return ⟨artifact, ⟨pin, accepted.source, accepted.typed, accepted.packet.fuel⟩, lowered.laws, readings⟩
 
 /-- Compile the request's entry: prepare its closure, then the entry. -/
 def compileEntry (j : Json) : Except Diagnostic EntryCompiled := do

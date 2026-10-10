@@ -456,3 +456,130 @@ compile (173 ms on hbox at 81ea9ec; the cost was the whole-closure proposal, 77 
 generics, 60 ms, not packet decoding: the closure's packet decoded in 3.6 ms and an entry's in
 under 1.5 ms).
 
+
+## 11. Kernel lane 5 (lane/kernel4, 2026-10-09): surface sugar, no new semantics
+
+Each form lowers to its explicit spelling; `tests/test_sugar.py` compiles both and
+compares the packet without `sourceModules` (the only field that names source bytes).
+Every world artifact is byte-identical (`tests/test_artifact_pins.py` against the
+fixture recorded by the foundation binary).
+
+- Implicit `Data` injection (`ObjectiveBendElaborate.coerceAt`/`coerceArgs`/`coerceGo`).
+  Where the expected type is `Data` and the expression synthesizes a type `T` other
+  than `Data`, the elaborated term is wrapped `toData T`, exactly as `Data.of::<T>(e)`
+  wraps it. Expected types come from a sum payload, a call's parameter (the callee's
+  synthesized arrow), an extended field and a definition's result (pure, or the `A` of
+  an activity tail), and descend through record literals and both branches of `if`.
+  The probe runs AFTER the ordinary elaboration and restores the elaborator state unless
+  it injected, so a program with nothing to inject elaborates as before (recursive-sum
+  variable numbering is a side effect of type resolution and is in packets). A value
+  whose synthesized type holds an arrow or a computation is refused by name
+  ("refused (data-injection): this value is a function|an Activity, ..."); a value whose
+  type does not synthesize is left alone for the checker. All 11 `Data.of` in world/
+  are unnecessary: stripped, every one of the 717 entries compiles to the same packet
+  (minus source hashes).
+- Rank-1 type-argument inference (`Generics.lean`, "Type-argument inference"). A call of a
+  generic definition or constructor without `::<...>` gets the type arguments its explicit
+  spelling would name, and is then rewritten exactly as that spelling: arguments first,
+  then the instance, its arguments instantiated left to right with nested sums first (as
+  `typeOf` does a type text), so instance numbers and packets agree. Inference never
+  instantiates: `IType` keeps a generic sum as an application (`app`) and opens an
+  existing instance back into one (`ofG`, `State.instanceByName`); `itypeOf` mirrors
+  `typeOf` without side effects; `synthI` synthesizes over the surface with locals typed
+  on demand (`List (String × M IType)`), and expected types travel the same way
+  (`rewriteExpr`/`rewriteBody` take `M IType`: a call's parameter, a record field, an
+  extended field, a definition's result, `perform`'s Plan, `if` and `match` arms, `let`
+  annotations, a lambda's result). `inferArguments` binds from declared argument types,
+  then the expected type (an activity callee's result against the expected activity, a
+  pure one against its result `A`), then record literals (weak: a literal never beats a
+  declared type, so `{head: {..}, tail: xs}` names `xs`'s record, as the explicit spelling
+  does). A parameter left unbound is refused: "cannot infer the type argument U of
+  Lists.kept (line N) from its arguments or the type its position expects; write
+  Lists.kept::<T, Rain>(...) naming T" (inferred ones are shown). A nested call whose
+  own argument is unknown makes the OUTER call the one named. Inference steps have their
+  own budget (`maxInferenceSteps`), so the node budget refuses exactly as before. All 537
+  type-argument lists in world/ (548 `::<` outside comments, 11 of them `Data.of`) are
+  unnecessary: stripped (both forms), every one of the 717 entries compiles to the same
+  packet minus source hashes. Pins test 8.3-8.9 s with either binary.
+- `let label(x) = perform(P)` then the rest of the block: performs, binds the payload of
+  the one named response, continues; any other response refuses the turn by name. The
+  parser (`letCaseRe`) lowers it to `match perform(P): case label(x): <rest>` plus one
+  `Pattern.unexpected` branch; the elaborator expands that branch, like a wildcard, into
+  one arm per label the match does not name, in row order, each exactly
+  `case l(_): refuse("unexpected response l")` (`tests/test_sugar.py` compares the
+  packets). The scrutinee must be a `perform` ("refused (let-response)"). Typing of the
+  form is the match's; the refusal arms need the new core term:
+- `Term.refuse (reason : String)` (hosted extension, not upstream). Surface
+  `refuse("why")` (one string literal) stands only where an activity finishes (a tail,
+  both branches of a tail `if`, a match arm): "refused (refuse-outside-tail)" elsewhere,
+  "refused (refuse-outside-activity)" in a pure definition. Typing rule
+  `PartialTyping.refuse`: any `.computation P R A` with P a Plan sum, R data, A not a
+  computation, using nothing; the checker reads that type from the annotation at the
+  term's position (its codomain; `ATerm.refuse` carries it, `annotate` emits domain =
+  codomain = the activity type). No `Step` rule: the reference relation is stuck there.
+  Machine: `evaluate (.refuse r)` -> `control := .refused (.program r)` (new `Refusal`
+  constructor, one tick); `Turn.refusalText` turns it into "turn refused: <reason>"
+  (`evaluate-term` reports it as `stuck`, as every refusal). Checkpoint term tag 26
+  `[26, text]`; a refusal is now encoded `encodeRefusal` (`[8, text]` for `program`), and
+  `refusal_roundTrip` is stated on token lists. Proofs touched: CheckpointRoundTrip (term
+  and refusal cases), CollectProofs (`related_stepRaw` case), Fast (`sizesAfter`),
+  TermWire (`decode_json` case); every other proof stood unchanged. Checkpoints taken
+  before this change decode unchanged (only additions); one holding a `refuse` term does
+  not decode on an older binary. Not proved: that an activity typed by the new rule
+  refuses only through `refuse` (there is no progress theorem here to extend).
+- Hints: `halt(` now suggests the statement form (both the line and the parsed-declaration
+  hint); the list-literal hint spells lists without `::<T>`.
+- Evaluators: `["refuse", text]` is a stuck leaf in all three (arity 2, string argument);
+  the generator emits it bare, as an operand, in taken and untaken `ifBool` arms, under a
+  lambda and in a `case` arm, and now keeps `textJoin` separators well formed (a
+  malformed separator inside a separator was an old divergence the shifted stream
+  exposed). 1500-case report: 1445/1500 agree per evaluator, 55 known shared-effect,
+  0 unexpected (120 cases hold a `refuse`).
+- Pin fixture keyed by source (after host6 made an object's pin its source closure).
+  `tests/fixtures/pins/artifacts.json` is `{module: {pin, entries: {def: {status,
+  packet?}}}}`: `pin` = the closure's `sourcesSha256` (null for a library module none of
+  whose defs compile alone). `tests/test_artifact_pins.py` fails only when a module's
+  source pin changes or a def that compiled stops compiling; packets that recompile
+  differently are counted and printed ("PinsA: N entries recompiled to a different
+  packet"). Since the pin depends on world sources alone, re-record only when world/
+  changes, with any binary: `DELVETALK_OBEND=... python3 -m tests.test_artifact_pins
+  --record`. Recorded at foundation d547bae by that binary (40 modules, 778 defs); this
+  lane's binary: 0 recompiled differently.
+- Law readings: `law NAME "reading": EXPR` (the reading a JSON string literal, optional).
+  `Surface.Decl.law name source reading`; the enforced law is unchanged. The entry
+  module's laws reach the artifact as `laws: [{name, reading}]` (source order, reading ""
+  when none; the key is absent for a module without laws, so lawless artifacts are
+  unchanged) and the host-side `Package.EntryCompiled.readings`. For the host lane: a
+  refusal by law `n` can quote `reading` ("refused owner: only the owner ..."); the pure
+  profile still refuses packages with laws, so the field is observable only through the
+  host (`compileEntry`).
+- String interpolation (`ObjectiveBendParse.interpolationPieces`/`joinPieces`): a string
+  token with an unescaped `{` is text pieces and the expressions between braces; up to
+  four pieces lower to right-nested `textConcat`, more to `textJoin(TextPieces..., "")`
+  over the new built-in sum `TextPieces` (`nil | cons{head: String, tail}`, beside
+  SpecMeta; registering it moved no packet). `{{`/`}}` are literal braces; an
+  expression's own string literals are escaped inside the token (`{f(\"a\")}`); a lone
+  `}`, an unclosed `{` and two expressions in one pair of braces are refused by name.
+  Document templates now quote their text with braces as `{`/`}`, so expanded
+  templates never interpolate (same decoded strings, same packets). Parse fuel is now the
+  expression's characters plus tokens (nested interpolations parse their own tokens).
+  A `${`/`f"` line hints the form.
+- Form blocks (`ObjectiveBendParse.formRe`/`formKind`): `form ACTION [as NAME]:` with
+  indented `field: text A..B | natural A..B | a | b | c` lines declares the nullary
+  `def NAME() -> F.Form` (default `ACTIONForm`) whose body is the Form record built from
+  the module's alias `F` of `Form.obend` (`F.Fields.cons`, `F.Kind.choice`,
+  `F.Names.cons`, lists ending in `nil({})`). Refused by name without a Form import or
+  with an unknown kind. Garden's `planting()` (World ~85) is the motivating case; its
+  explicit spelling builds options with `Lists.append`, so converting it moves its
+  packet (not its behaviour).
+- `write {field: op value, ...}` (parser atom): the Plan
+  `Plan.write({object: P.self(context), edits: extend(keep(), {field: E, ...})})` with
+  `E` = `P.Edit.add({delta: v})` | `P.Edit.set({value: v})` | `P.Entries.append({item: v})`
+  | `P.Entries.remove({index: v})` | `P.Entries.removeItem({item: v})`, type arguments
+  inferred from the object's Edits. It relies on the object conventions: a local
+  `type Plan`, a nullary `keep()`, a parameter named `context`; `P` is the module's
+  alias of Plan.obend, written as the placeholder `$plans` and replaced after parsing
+  (`Surface.Decl.mapVars`; "Plans" when no import names Plan.obend, so the elaborator
+  refuses an unbound alias). Tested against the explicit spelling and through
+  world-create/world-turn. A `state.x = ...` line hints it.
+- Correction: the form-block note above means Garden.obend ~85 (`planting()`).

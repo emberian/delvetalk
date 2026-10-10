@@ -387,6 +387,76 @@ def natValue (t : List Char) : String :=
   let stripped := digits.dropWhile (· == '0')
   String.ofList (if stripped.isEmpty then ['0'] else stripped)
 
+/-! ## String interpolation
+
+`"SCENE {state.title} ({natText(n)} here)"` is the text pieces and the expressions between
+braces, joined: up to four pieces by right-nested `textConcat`, more by `textJoin` over the
+built-in `TextPieces` list with separator "". `{{` and `}}` are literal braces; an
+expression's own string literals are escaped (`{f(\"a\")}`), as everything inside the
+token is. A token without an unescaped `{` is an ordinary string. -/
+
+inductive Piece where
+  | text (raw : List Char)
+  /-- An expression's source text (still escaped) and its character offset in the token. -/
+  | code (raw : List Char) (offset : Nat)
+
+def interpolationPieces (token : List Char) : Except String (List Piece) := do
+  let inner := (token.drop 1).dropLast.toArray
+  let mut pieces : Array Piece := #[]
+  let mut literal : Array Char := #[]
+  let mut i := 0
+  for _ in [0:inner.size + 1] do
+    if i ≥ inner.size then break
+    let c := inner[i]!
+    if c == '\\' then
+      literal := (literal.push c).push (inner[i + 1]?.getD c)
+      i := i + 2
+    else if c == '{' && inner[i + 1]? == some '{' then
+      literal := literal.push '{'; i := i + 2
+    else if c == '}' && inner[i + 1]? == some '}' then
+      literal := literal.push '}'; i := i + 2
+    else if c == '}' then
+      throw "Error: a lone } in a string literal is written }}"
+    else if c == '{' then
+      let mut depth := 1
+      let mut j := i + 1
+      for _ in [0:inner.size + 1] do
+        if j ≥ inner.size || depth == 0 then break
+        let d := inner[j]!
+        if d == '\\' then j := j + 2
+        else
+          if d == '{' then depth := depth + 1
+          if d == '}' then depth := depth - 1
+          j := j + 1
+      if depth != 0 then throw "Error: an interpolation { in a string literal is not closed"
+      if !literal.isEmpty then pieces := pieces.push (.text literal.toList)
+      literal := #[]
+      pieces := pieces.push (.code (inner.extract (i + 1) (j - 1)).toList (i + 2))
+      i := j
+    else
+      literal := literal.push c; i := i + 1
+  if !literal.isEmpty then pieces := pieces.push (.text literal.toList)
+  return pieces.toList
+
+def builtinTextPieces : String := "TextPieces"
+
+/-- The pieces joined: one piece is itself, up to four a right-nested `textConcat`, more a
+`textJoin` over `TextPieces` with separator "". -/
+def joinPieces (pieces : List Expr) (span : Span) : Expr :=
+  if pieces.length ≤ 4 then
+    match pieces.reverse with
+    | [] => .str "" span
+    | last :: earlier => earlier.foldl (fun acc p => .call (.var "textConcat" span) [p, acc] span) last
+  else
+    let ctor := fun (label : String) => Expr.member (.var builtinTextPieces span) label span
+    let list := pieces.foldr (fun p acc => Expr.call (ctor "cons") [.record [("head", p), ("tail", acc)] span] span)
+      (.call (ctor "nil") [.record [] span] span)
+    .call (.var "textJoin" span) [list, .str "" span] span
+
+/-- The placeholder a `write {...}` names the Plan library by, until the module's alias of
+`Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
+def writePlansAlias : String := "$plans"
+
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -448,6 +518,41 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
           (.lambda parameters (String.ofList resultType) closureBody span, span)
         else
           (.extensionValue parameters (String.ofList resultType) closureBody span, span)
+    -- `write {field: op value, ...}`: the Plan that writes the running object's edits,
+    -- every other field kept. Lowers to
+    -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
+    -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
+    -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
+    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem); `Plans` is the module's
+    -- alias of Plan.obend (`writePlansAlias`, resolved after parsing) and the type
+    -- arguments are inferred from the object's Edits.
+    else if firstText == "write" && (← peek env) == some "{" then
+      let open_ ← take env (some "{")
+      let span := env.location first.start open_.stop
+      let plans := Expr.var writePlansAlias span
+      let lib := fun (type name : String) => Expr.member (.member plans type span) name span
+      let mut edits : Array (String × Expr) := #[]
+      for _ in [0:env.tokens.size + 1] do
+        let name ← take env
+        if !isIdent name.text then throw "Error: write {field: op value, ...} expects a field name"
+        discard <| take env (some ":")
+        let op ← take env
+        let (value, _) ← parseExpr env fuel 0
+        let (type, ctor, payload) ← match tokenText op with
+          | "add" => pure ("Edit", "add", "delta")
+          | "set" => pure ("Edit", "set", "value")
+          | "append" => pure ("Entries", "append", "item")
+          | "remove" => pure ("Entries", "remove", "index")
+          | "removeItem" => pure ("Entries", "removeItem", "item")
+          | other => throw ("Error: write {field: op value} takes add, set, append, remove or removeItem, not " ++ other)
+        edits := edits.push (tokenText name, .call (lib type ctor) [.record [(payload, value)] span] span)
+        let next ← take env
+        if tokenText next == "}" then break
+        if tokenText next != "," then throw "Error: expected , or } in write {...}"
+      let object := Expr.call (.member plans "self" span) [.var "context" span] span
+      let changes := Expr.extend (.call (.var "keep" span) [] span) edits.toList span
+      result := (.call (.member (.var "Plan" span) "write" span)
+        [.record [("object", object), ("edits", changes)] span] span, span)
     else if firstText == "{" then
       let mut fields : Array (String × Expr) := #[]
       if (← peek env) != some "}" then
@@ -478,8 +583,27 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
       result := (.nat (natValue first.text) span, span)
     else if first.text.head? == some '"' then
       let span := env.location first.start first.stop
-      let value ← StateT.lift (jsonStringLiteral first.text)
-      result := (.str value span, span)
+      let pieces ← StateT.lift (interpolationPieces first.text)
+      if pieces.all (fun p => match p with | .text _ => true | _ => false) then
+        let raw := pieces.flatMap fun p => match p with | .text r => r | _ => []
+        let value ← StateT.lift (jsonStringLiteral ('"' :: raw ++ ['"']))
+        result := (.str value span, span)
+      else
+        let mut parts : List Expr := []
+        for piece in pieces do
+          match piece with
+          | .text raw => parts := parts ++ [.str (← StateT.lift (jsonStringLiteral ('"' :: raw ++ ['"']))) span]
+          | .code raw offset =>
+            let code ← StateT.lift (unescape (raw.length + 1) raw)
+            let tokens ← StateT.lift (tokenize code)
+            let base := env.byteAt[first.start + offset]!
+            let byteAt := (code.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
+              (#[], base)) |> fun (acc, last) => acc.push last
+            let inner : ExprEnv := ⟨code, tokens, byteAt, env.line⟩
+            let ((e, _), cursor) ← StateT.lift ((parseExpr inner fuel 0).run 0)
+            if cursor != tokens.size then throw "Error: an interpolation in a string literal holds one expression"
+            parts := parts ++ [e]
+        result := (joinPieces parts span, span)
     else if isIdent first.text then
       let span := env.location first.start first.stop
       result := (.var firstText span, span)
@@ -550,7 +674,7 @@ def expression (text : List Char) (start line : Nat) : Except String Expr := do
   let byteAt := (text.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
     (#[], start)) |> fun (acc, last) => acc.push last
   let env : ExprEnv := ⟨text, tokens, byteAt, line⟩
-  let ((expr, _), cursor) ← (parseExpr env (tokens.size + 1) 0).run 0
+  let ((expr, _), cursor) ← (parseExpr env (text.length + tokens.size + 1) 0).run 0
   if cursor != tokens.size then throw "Error: unexpected trailing expression token"
   return expr
 
@@ -615,6 +739,11 @@ def caseRe : Re := seqs [str "case", many1 space,
 def letRe : Re := seqs [str "let", many1 space, group 1 ident, many space,
   opt (seqs [chr ':', many space, group 2 (lazy1 dot)]), many space, chr '=', many space, group 3 (many1 dot), .done]
 
+/-- `^let\s+([A-Za-z_]\w*)\(\s*([A-Za-z_]\w*)?\s*\)\s*=\s*(.+)$`: a statement that
+performs and continues with one response. -/
+def letCaseRe : Re := seqs [str "let", many1 space, group 1 ident, many space, chr '(', many space,
+  opt (group 2 ident), many space, chr ')', many space, chr '=', many space, group 3 (many1 dot), .done]
+
 def startsWith (s : List Char) (p : String) : Bool := p.toList.isPrefixOf s
 def endsWith (s : List Char) (p : String) : Bool := p.toList.reverse.isPrefixOf s.reverse
 
@@ -653,6 +782,19 @@ def body (lines : Array Line) : Nat → Nat → PS Body
         branches := branches.push (pattern, branchBody, branch.span)
       if branches.isEmpty then fail line "empty match"
       return .cases scrutinee branches.toList line.span
+    -- `let label(x) = E` then the rest of the block: `match E:` with `case label(x):` the
+    -- rest and every other label refusing the turn by name (`Pattern.unexpected`).
+    if let some (_, caps) ← matchAt line letCaseRe line.text then
+      let label := String.ofList ((capture line.text caps 1).getD [])
+      let binder := String.ofList ((capture line.text caps 2).getD ['_'])
+      let valueText := (capture line.text caps 3).getD []
+      let value ← lineExpr line valueText
+      match lines[i + 1]? with
+      | some next => if next.indent != line.indent then fail line "a let must be followed by its body at the same indent"
+      | none => fail line "a let must be followed by its body at the same indent"
+      let rest ← body lines fuel (line.indent - 1)
+      return .cases value [(.ctor label binder, rest, line.span),
+        (.unexpected, .expr (.str ("unexpected response") line.span) line.span, line.span)] line.span
     if let some (_, caps) ← matchAt line letRe line.text then
       let name := (capture line.text caps 1).getD []
       if name != "in".toList then
@@ -702,8 +844,10 @@ def typeAliasRe : Re := seqs [str "type", many1 space, group 1 ident, many space
 def sumCaseRe : Re := seqs [group 1 ident, many space, chr ':', many space, group 2 (many1 dot), .done]
 def recordRe : Re := seqs [str "record", many1 space, group 1 ident, chr ':', .done]
 def fieldRe : Re := seqs [group 1 (.alt ident quoted), chr ':', many space, group 2 (many1 dot), .done]
-/-- `law NAME: EXPR`, a top-level ENFORCED law of the package (`Compiler.ObjectiveBendLaw`). -/
-def lawRe : Re := seqs [str "law", many1 space, group 1 ident, many space, chr ':', many space, group 2 (many1 dot), .done]
+/-- `law NAME "reading": EXPR`, a top-level ENFORCED law of the package (`Compiler.ObjectiveBendLaw`);
+the optional reading (a string literal) is what a refusal by it quotes. -/
+def lawRe : Re := seqs [str "law", many1 space, group 1 ident, opt (seqs [many1 space, group 3 quoted]), many space,
+  chr ':', many space, group 2 (many1 dot), .done]
 
 /-- `String.prototype.split` on one character. -/
 def splitChar (s : List Char) (sep : Char) : List (List Char) :=
@@ -712,6 +856,41 @@ def splitChar (s : List Char) (sep : Char) : List (List Char) :=
   (current.reverse :: finished).reverse
 
 def cap (s : List Char) (caps : Caps) (i : Nat) : String := String.ofList ((capture s caps i).getD [])
+
+/-! ## Form blocks
+
+    form plant as planting:
+      colour: amber | violet | silver
+      seed: text 1..80
+      count: natural 1..1000
+
+declares `def planting() -> F.Form` (default name `plantForm`) whose body is the Form
+record the library uses, `F` being the module's alias of `Form.obend`:
+`{card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind:
+F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`. -/
+def formRe : Re := seqs [str "form", many1 space, group 1 ident,
+  opt (seqs [many1 space, str "as", many1 space, group 2 ident]), many space, chr ':', .done]
+def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 space,
+  group 2 (many1 (.char asciiDigit)), opt (chr 'n'), many space, str "..", many space,
+  group 3 (many1 (.char asciiDigit)), opt (chr 'n'), many space, .done]
+
+/-- One form field's kind, as the Form library's constructor application. -/
+def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
+  let span := line.span
+  let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
+  let trimmed := String.ofList spec |>.trimAscii |>.toString
+  if let some (_, caps) ← matchAt line rangeKindRe trimmed.toList then
+    let kind := cap trimmed.toList caps 1
+    let low := natValue ((capture trimmed.toList caps 2).getD [])
+    let high := natValue ((capture trimmed.toList caps 3).getD [])
+    return .call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
+  let options := (trimmed.splitOn "|").map fun o => o.trimAscii.toString
+  if options.length < 2 || options.any (fun o => !isIdent o.toList) then
+    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX` or `name: a | b | c`"
+  let names := options.foldr (fun o acc =>
+      Expr.call (lib "Names" "cons") [.record [("head", .str o span), ("tail", acc)] span] span)
+    (.call (lib "Names" "nil") [.record [] span] span)
+  return .call (lib "Kind" "choice") [.record [("options", names)] span] span
 
 def genericParameters (raw : List Char) : Except String (List String) := do
   let names := (splitPieces raw).map jsTrim
@@ -828,6 +1007,33 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
       if labels.eraseDups.length != labels.length then fail line "duplicate sum label"
       decls := decls.push (.sum (cap line.text caps 1) cases.toList typeParameters line.span)
       continue
+    if let some (_, caps) ← matchAt line formRe line.text then
+      let action := cap line.text caps 1
+      let name := match capture line.text caps 2 with
+        | some n => String.ofList n
+        | none => action ++ "Form"
+      let some formImport := imports.find? (·.path.endsWith "Form.obend")
+        | fail line "a form block needs the Form library: import ./Form.obend as Form"
+      let alias := formImport.importAlias
+      let span := line.span
+      let mut fields : Array (String × Expr) := #[]
+      for _ in [0:lines.size] do
+        let j ← get
+        let some c := lines[j]? | break
+        if c.indent == 0 then break
+        set (j + 1)
+        let some (_, m) ← matchAt c sumCaseRe c.text | fail c "expected a form field: name: kind"
+        let fieldName := cap c.text m 1
+        if fields.any (·.1 == fieldName) then fail c "duplicate form field"
+        fields := fields.push (fieldName, ← formKind alias c ((capture c.text m 2).getD []))
+      let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
+      let list := fields.toList.foldr (fun (n, kind) acc =>
+          Expr.call (lib "Fields" "cons") [.record [("head", .record [("name", .str n span), ("kind", kind)] span),
+            ("tail", acc)] span] span)
+        (.call (lib "Fields" "nil") [.record [] span] span)
+      let value := Expr.record [("card", .str "" span), ("action", .str action span), ("fields", list)] span
+      decls := decls.push (.function ⟨name, [], alias ++ ".Form", span⟩ none (.expr value span) span)
+      continue
     if let some (_, caps) ← matchAt line recordRe line.text then
       let mut methods : Array Signature := #[]
       let mut fields : Array Field := #[]
@@ -849,7 +1055,12 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
     if let some (_, caps) ← matchAt line lawRe line.text then
       let text := cap line.text caps 2
       if let .error message := ObjectiveBendLaw.parse text then fail line message
-      decls := decls.push (.law (cap line.text caps 1) text line.span)
+      let reading ← match capture line.text caps 3 with
+        | none => pure ""
+        | some quotedText => match Lean.Json.parse (String.ofList quotedText) with
+          | .ok (.str r) => pure r
+          | _ => fail line "a law's reading is a string literal: law name \"what it means\": EXPR"
+      decls := decls.push (.law (cap line.text caps 1) text reading line.span)
       continue
     if startsWith line.text "law " || line.text == "law".toList || startsWith line.text "law:" then
       fail line (ObjectiveBendLaw.refusalPrefix ++ "expected `law NAME: EXPR` (a top-level law has a name and no parameters)")
@@ -871,6 +1082,9 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
 def parseObjective (source : String) : Except Diagnostic Module := do
   let lines ← sourceLines source
   let ((imports, decls), _) ← (declarations lines).run 0
+  -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
+  let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
+  let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
   return ⟨imports.toList, decls.toList⟩
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a

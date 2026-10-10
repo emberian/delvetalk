@@ -22,7 +22,7 @@ def termKind : Term → String
   | .label _ => "label" | .binary _ _ _ => "binary" | .unary _ _ => "unary" | .extend _ _ => "extend"
   | .record _ => "record" | .get _ _ => "get" | .ifZero _ _ _ => "ifZero" | .inject _ _ => "inject"
   | .case _ _ => "case" | .ifBool _ _ _ => "ifBool" | .perform _ => "perform" | .done _ => "done"
-  | .toData _ => "toData" | .textJoin _ _ => "textJoin"
+  | .toData _ => "toData" | .textJoin _ _ => "textJoin" | .refuse _ => "refuse"
 
 def frameKind : Frame → String
   | .argument .. => "argument" | .nativeArgument _ => "nativeArgument" | .update _ => "update"

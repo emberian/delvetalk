@@ -68,6 +68,9 @@ inductive Pattern where
   | wildcard
   | bool (value : Bool)
   | ctor (label binder : String)
+  /-- Every label no other arm names, each arm refusing the turn by name
+  (`refuse("unexpected response <label>")`). Written by `let label(x) = perform(...)`. -/
+  | unexpected
   deriving Inhabited, Repr, BEq
 
 /-- The binder a pattern names, `""` when it names none (as the AST's absent `binder`). -/
@@ -128,7 +131,8 @@ inductive Decl where
   | typeAlias (name type : String) (span : Span)
   | sum (name : String) (cases : List Field) (typeParameters : List String) (span : Span)
   | record (name : String) (methods : List Signature) (fields : List Field) (span : Span)
-  | law (name source : String) (span : Span)
+  /-- `law NAME "reading": EXPR`; `reading` is "" when the source gives none. -/
+  | law (name source reading : String) (span : Span)
   /-- `typeParameters` is present (possibly empty) exactly when the source wrote `def f<...>`
   or the generics pass made the function an instance. -/
   | function (signature : Signature) (typeParameters : Option (List String)) (body : Body) (span : Span)
@@ -141,7 +145,7 @@ def Decl.name : Decl → String
 
 def Decl.span : Decl → Span
   | .reexport _ _ s | .extension _ _ _ _ _ s | .typeAlias _ _ s | .sum _ _ _ s | .record _ _ _ s
-  | .law _ _ s | .function _ _ _ s => s
+  | .law _ _ _ s | .function _ _ _ s => s
   | .spec s => s.span
 
 /-- The declaration's generic type parameters (`[]` for every non-generic declaration). -/
@@ -210,6 +214,7 @@ def Pattern.json : Pattern → Json
   | .ctor l b => Json.mkObj [("kind", toJson "constructor"), ("label", toJson l), ("binder", toJson b)]
   | .succ b => Json.mkObj [("kind", toJson "succ"), ("binder", toJson b)]
   | .zero => Json.mkObj [("kind", toJson "zero")]
+  | .unexpected => Json.mkObj [("kind", toJson "unexpected")]
 
 mutual
 def Body.json : Body → Json
@@ -267,7 +272,8 @@ def Decl.json : Decl → Json
   | .record n methods fields s => Json.mkObj [("kind", toJson "record"), ("name", toJson n),
       ("methods", Json.arr (methods.map Signature.json).toArray), ("fields", Json.arr (fields.map Field.json).toArray),
       ("span", s.json)]
-  | .law n source s => Json.mkObj [("kind", toJson "law"), ("name", toJson n), ("source", toJson source), ("span", s.json)]
+  | .law n source reading s => Json.mkObj ([("kind", toJson "law"), ("name", toJson n), ("source", toJson source)] ++
+      (if reading.isEmpty then [] else [("reading", toJson reading)]) ++ [("span", s.json)])
   | .function sig ps b s => Json.mkObj ([("kind", toJson "function"), ("signature", sig.json)] ++
       (match ps with | some ps => [("typeParameters", toJson ps)] | none => []) ++
       [("body", b.json), ("span", s.json)])
@@ -339,8 +345,54 @@ def Decl.mapSpans (f : Span → Span) : Decl → Decl
   | .typeAlias n t s => .typeAlias n t (f s)
   | .sum n cases ps s => .sum n (cases.map (fun x => x.mapSpans f)) ps (f s)
   | .record n methods fields s => .record n (methods.map (fun x => x.mapSpans f)) (fields.map (fun x => x.mapSpans f)) (f s)
-  | .law n source s => .law n source (f s)
+  | .law n source reading s => .law n source reading (f s)
   | .function sig ps b s => .function (sig.mapSpans f) ps (b.mapSpans f) (f s)
+
+/-! ## Variable renaming (the parser's placeholders for import aliases) -/
+
+mutual
+def Expr.mapVars (f : String → String) : Expr → Expr
+  | .var n s => .var (f n) s
+  | .record fs s => .record (mapFieldVars f fs) s
+  | .extend i fs s => .extend (i.mapVars f) (mapFieldVars f fs) s
+  | .member t n s => .member (t.mapVars f) n s
+  | .call c args s => .call (c.mapVars f) (mapListVars f args) s
+  | .compose specs s => .compose (mapListVars f specs) s
+  | .fix spec inherited s => .fix (spec.mapVars f) (inherited.mapVars f) s
+  | .lambda ps r b s => .lambda ps r (b.mapVars f) s
+  | .extensionValue ps t b s => .extensionValue ps t (b.mapVars f) s
+  | .binary op l r s => .binary op (l.mapVars f) (r.mapVars f) s
+  | .ite c t e s => .ite (c.mapVars f) (t.mapVars f) (e.mapVars f) s
+  | .letE n t v b s => .letE n t (v.mapVars f) (b.mapVars f) s
+  | .specialize t types s => .specialize (t.mapVars f) types s
+  | .dataOf t v s => .dataOf t (v.mapVars f) s
+  | e => e
+def mapFieldVars (f : String → String) : List (String × Expr) → List (String × Expr)
+  | [] => []
+  | (n, v) :: rest => (n, v.mapVars f) :: mapFieldVars f rest
+def mapListVars (f : String → String) : List Expr → List Expr
+  | [] => []
+  | e :: rest => e.mapVars f :: mapListVars f rest
+end
+
+mutual
+def Body.mapVars (f : String → String) : Body → Body
+  | .expr e s => .expr (e.mapVars f) s
+  | .cases sc branches s => .cases (sc.mapVars f) (mapBranchVars f branches) s
+  | .letB n t v b s => .letB n t (v.mapVars f) (b.mapVars f) s
+def mapBranchVars (f : String → String) : List (Pattern × Body × Span) → List (Pattern × Body × Span)
+  | [] => []
+  | (p, b, s) :: rest => (p, b.mapVars f, s) :: mapBranchVars f rest
+end
+
+def Decl.mapVars (f : String → String) : Decl → Decl
+  | .spec sp =>
+    let methods := sp.methods.map fun m => { m with body := m.body.mapVars f }
+    let claims := sp.claims.map fun c => { c with body := c.body.mapVars f }
+    .spec { sp with methods, claims }
+  | .extension n ps t b binders s => .extension n ps t (b.mapVars f) binders s
+  | .function sig ps b s => .function sig ps (b.mapVars f) s
+  | d => d
 
 def Module.mapSpans (f : Span → Span) (m : Module) : Module :=
   { imports := m.imports.map fun i => { i with span := f i.span }, decls := m.decls.map (fun x => x.mapSpans f) }

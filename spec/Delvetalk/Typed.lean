@@ -28,6 +28,7 @@ partial def annotationSites (term : Term) (path : List Nat := []) : List (List N
   | .record fs => fields path fs
   | .extend a fs | .case a fs => child 0 a ++ fields (path ++ [1]) fs
   | .ifZero a b c | .ifBool a b c => child 0 a ++ child 1 b ++ child 2 c
+  | .refuse _ => [path]
   | .bound _ | .nat _ | .boolean _ | .label _ => []
 
 /-- Decode only the envelope here. Types, quantities, bounds, contexts, annotation

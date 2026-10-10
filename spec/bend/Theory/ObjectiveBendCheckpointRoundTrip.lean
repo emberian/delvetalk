@@ -17,7 +17,8 @@ theorem primitive_roundTrip (primitive : Primitive) : primitiveOf (primitiveCode
 theorem unary_roundTrip (primitive : UnaryPrimitive) : unaryOf (unaryCode primitive) = some primitive := by
   cases primitive <;> rfl
 
-theorem refusal_roundTrip (reason : Refusal) : refusalOf (refusalCode reason) = some reason := by
+theorem refusal_roundTrip (reason : Refusal) (rest : Tokens) :
+    decodeRefusal (encodeRefusal reason ++ rest) = some (reason, rest) := by
   cases reason <;> rfl
 
 mutual
@@ -98,6 +99,7 @@ theorem term_roundTrip : ∀ (term : Term) (fuel : Nat) (rest : Tokens),
   | .textJoin l s, fuel+1, rest, h => by
       simp only [encodeTerm,List.length_cons,List.length_append] at h
       simp [encodeTerm,decodeTerm,List.append_assoc,term_roundTrip l fuel _ (by omega),term_roundTrip s fuel rest (by omega)]
+  | .refuse reason, _+1, rest, _ => by simp [encodeTerm,decodeTerm]
   | term, 0, rest, h => by cases term <;> simp [encodeTerm] at h
 theorem fields_roundTrip : ∀ (fields : List (String × Term)) (fuel : Nat) (rest : Tokens),
     (encodeFields fields).length ≤ fuel → decodeFields fuel (encodeFields fields ++ rest) = some (fields,rest)
@@ -267,7 +269,7 @@ theorem control_roundTrip (control : Control) (fuel : Nat) (rest : Tokens)
   | complete value =>
       simp only [encodeControl,List.length_cons] at enough
       simp [encodeControl,decodeControl,value_roundTrip value fuel rest (by omega)]
-  | refused reason => simp [encodeControl,decodeControl,refusal_roundTrip]
+  | refused reason => simp [encodeControl,decodeControl,refusal_roundTrip reason rest]
   | nativeApplication function argument remaining =>
       simp only [encodeControl,List.length_cons,List.length_append] at enough
       have each : ∀ item ∈ remaining, ∀ rest,

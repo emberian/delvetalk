@@ -44,7 +44,7 @@ static void fields(J *fs) {
 }
 static void validate(J *t) {
  if(!json_object_is_type(t,json_type_array)||LEN(t)<2||!isstr(AT(t,0))) fail("invalid term array");
- if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label binary unary extend record get ifZero inject case ifBool perform done toData textJoin")) fail("unknown term constructor");
+ if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label refuse binary unary extend record get ifZero inject case ifBool perform done toData textJoin")) fail("unknown term constructor");
  J *a=AT(t,1); size_t n=LEN(t);
  if(tag(t,"bound")) { if(n!=2||!isint(a)) fail("invalid bound index"); }
  else if(tag(t,"nat")) {
@@ -54,6 +54,7 @@ static void validate(J *t) {
   for(size_t i=0;i<k;i++) if(s[i]<'0'||s[i]>'9') fail("invalid natural");
  } else if(tag(t,"boolean")) { if(n!=2||!json_object_is_type(a,json_type_boolean)) fail("invalid boolean"); }
  else if(tag(t,"label")) { if(n!=2||!isstr(a)) fail("invalid label"); }
+ else if(tag(t,"refuse")) { if(n!=2||!isstr(a)) fail("invalid refuse"); }
  else if(named(AT(t,0),"lam reflect metadata project perform done toData")) { if(n!=2) fail("wrong unary arity"); validate(a); }
  else if(named(AT(t,0),"app mix fix specification prototype textJoin")) { if(n!=3) fail("wrong binary arity"); validate(a); validate(AT(t,2)); }
  else if(tag(t,"record")) { if(n!=2) fail("wrong record arity"); fields(a); }
@@ -80,7 +81,7 @@ static J *walk(J *t,uint64_t depth,int mode,uint64_t delta,J *arg) {
   if(!mode&&k>SAFE-delta) fail("bound index exceeds portable wire range");
   return one("bound",json_object_new_uint64(mode?k-1:k+delta));
  }
- if(named(AT(t,0),"nat boolean label")) return keep(t);
+ if(named(AT(t,0),"nat boolean label refuse")) return keep(t);
  J *r=arr(); add(r,keep(AT(t,0)));
  for(size_t i=1;i<LEN(t);i++) {
   int fs=(tag(t,"record")&&i==1)||((tag(t,"extend")||tag(t,"case"))&&i==2);

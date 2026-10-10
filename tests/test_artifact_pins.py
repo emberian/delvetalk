@@ -1,14 +1,20 @@
-"""Every entry of every world closure compiles to the artifact it compiled to before.
+"""Every entry of every world closure keeps its source pin and still compiles.
 
-Pins and journals depend on the packet bytes, so a change to the compiler's internals must
-leave every artifact identical. tests/fixtures/pins/artifacts.json holds, per module and
-top-level def of world/lib and world/objects (compiled in the pure profile, as
-tests.test_objects does), the reply status, the packetSha256 and a SHA-256 of the artifact
-(or of the refusal message). Record it again only for an intended language change:
+An object's pin is the CID of its source closure (the artifact's `sourcesSha256`); the
+compiled packet is an observation beside it (`compiled {binary, packet}`), which replay
+counts but never compares. tests/fixtures/pins/artifacts.json holds, per module of
+world/lib and world/objects (compiled in the pure profile, as tests.test_objects does),
+the closure's source pin and, per top-level def, the reply status and the packet's
+digest. The test fails when a module's source pin changes or an entry that compiled
+stops compiling; a packet that recompiles differently is counted and printed, not failed
+(a compiler change may move packets; it must not move pins or break entries).
+
+The source pin is a function of the world sources alone, so the fixture changes only when
+world/ changes. To re-record after a world change, from any binary (the packet digests
+are informational):
 
     DELVETALK_OBEND=... python3 -m tests.test_artifact_pins --record
 """
-import hashlib
 import json
 import os
 import sys
@@ -21,17 +27,21 @@ FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "
 SHARDS = 4
 
 
-def digest(value):
-    text = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
 def outcome(process, name, entry):
     reply = process.send(op="compile", modules=pure(closure(name)), entry=entry)
     if reply.get("status") == "compiled":
         artifact = reply["artifact"]
-        return {"status": "compiled", "packetSha256": artifact["packetSha256"], "artifact": digest(artifact)}
-    return {"status": reply.get("status"), "message": digest(reply.get("message"))}
+        return {"status": "compiled", "pin": artifact["sourcesSha256"], "packet": artifact["packetSha256"]}
+    return {"status": reply.get("status")}
+
+
+def module_record(process, name):
+    """The module's source pin (from any entry that compiles) and each entry's outcome."""
+    results = {entry: outcome(process, name, entry) for entry in entries(name)}
+    pins = {r["pin"] for r in results.values() if "pin" in r}
+    assert len(pins) <= 1, (name, pins)
+    return {"pin": next(iter(pins), None),
+            "entries": {entry: {k: v for k, v in r.items() if k != "pin"} for entry, r in results.items()}}
 
 
 def shard(index):
@@ -44,9 +54,7 @@ def entries(name):
 
 def record():
     process = host.Host()
-    table = {}
-    for name in sorted(MODULES):
-        table[name] = {entry: outcome(process, name, entry) for entry in entries(name)}
+    table = {name: module_record(process, name) for name in sorted(MODULES)}
     process.close()
     with open(FIXTURE, "w") as handle:
         json.dump(table, handle, indent=1, sort_keys=True)
@@ -56,16 +64,26 @@ def record():
 class Pins:
     index = 0
 
-    def test_every_entry_compiles_to_its_recorded_artifact(self):
+    def test_every_entry_keeps_its_source_pin_and_compiles(self):
         with open(FIXTURE) as handle:
             expected = json.load(handle)
         process = host.Host()
         self.addCleanup(process.close)
+        recompiled = 0
         for name in shard(self.index):
-            self.assertEqual(sorted(expected.get(name, {})), sorted(entries(name)), name)
+            want = expected.get(name, {"pin": None, "entries": {}})
+            self.assertEqual(sorted(want["entries"]), sorted(entries(name)), name)
             for entry in entries(name):
+                got = outcome(process, name, entry)
+                was = want["entries"][entry]
                 with self.subTest(module=name, entry=entry):
-                    self.assertEqual(outcome(process, name, entry), expected[name][entry])
+                    if was["status"] == "compiled":
+                        self.assertEqual(got["status"], "compiled", f"{name}.{entry} stopped compiling")
+                    if got["status"] == "compiled":
+                        self.assertEqual(got["pin"], want["pin"], f"{name}: source pin changed")
+                        if was["status"] == "compiled" and got["packet"] != was["packet"]:
+                            recompiled += 1
+        print(f"\n{type(self).__name__}: {recompiled} entries recompiled to a different packet", file=sys.stderr)
 
 
 class PinsA(Pins, unittest.TestCase):

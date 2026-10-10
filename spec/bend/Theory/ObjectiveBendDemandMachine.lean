@@ -72,6 +72,8 @@ inductive Refusal where
   stack): its effect would be cached and shared, so it is refused. Typed programs
   never reach it (computation types are never cell types). -/
   | sharedEffect
+  /-- The program refused its turn by name (`Term.refuse`). -/
+  | program (reason : String)
   deriving Repr
 inductive Control where
   | evaluate (term : Term) (environment : Environment)
@@ -194,6 +196,7 @@ def stepRaw (state : State) : State :=
     | .case scrutinee arms => {state with control:=.evaluate scrutinee environment, stack:=.case arms environment::state.stack}
     | .ifBool condition whenTrue whenFalse => {state with control:=.evaluate condition environment, stack:=.ifBool whenTrue whenFalse environment::state.stack}
     | .done value | .toData value => {state with control:=.evaluate value environment}
+    | .refuse reason => {state with control:=.refused (.program reason)}
     | .textJoin list separator =>
       {state with control:=.evaluate separator environment, stack:=.joinSeparator list environment::state.stack}
     | .perform plan =>

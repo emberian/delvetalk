@@ -1,7 +1,7 @@
 """Closed core terms in the evaluators' JSON array wire, for conformance.
 
 Wire (shared by impl/c, impl/js, impl/python and the `evaluate-term` op):
-  ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["lam", b]
+  ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["refuse", "reason"] ["lam", b]
   ["app", f, a] ["mix", l, u] ["fix", s, i] ["specification", m, e]
   ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done"|"toData", x] ["textJoin", list, separator]
   ["unary", prim, x] ["binary", prim, l, r] ["get", x, "name"]
@@ -19,7 +19,7 @@ import random
 import sys
 
 TAGS = ["bound", "lam", "app", "mix", "fix", "specification", "prototype", "reflect", "metadata",
-        "project", "nat", "boolean", "label", "unary", "binary", "extend", "record", "get", "ifZero",
+        "project", "nat", "boolean", "label", "refuse", "unary", "binary", "extend", "record", "get", "ifZero",
         "inject", "case", "ifBool", "perform", "done", "toData", "textJoin"]
 BINARY = ["add", "multiply", "equal", "conjunction", "labelEqual", "subtract", "divide", "less",
           "lessEqual", "modulo", "textConcat", "textTake", "textDrop", "textSpan", "textBreak"]
@@ -64,6 +64,7 @@ def tags(term, out=None):
 class Gen:
     def __init__(self, rng):
         self.r = rng
+        self.separator = 0  # >0 while generating a join separator
 
     # kinds: nat bool label rec sum fn
     def term(self, kind, env, b):
@@ -87,7 +88,12 @@ class Gen:
         if c == 1:
             return ["ifZero", self.g_nat(env, h // 2), self.g_nat(env, h // 2), self.g_nat(["nat"] + env, h // 2)]
         if c == 2:
-            return ["ifBool", self.g_bool(env, h // 2), self.g_nat(env, h // 2), self.g_nat(env, h // 2)]
+            cond, yes, no = self.g_bool(env, h // 2), self.g_nat(env, h // 2), self.g_nat(env, h // 2)
+            if r.random() < 0.1:
+                # refuse has no reduction: stuck when this arm is taken, inert when not.
+                refusal = ["refuse", r.choice(STRINGS)]
+                yes, no = (refusal, no) if r.random() < 0.5 else (yes, refusal)
+            return ["ifBool", cond, yes, no]
         if c == 3:
             return ["get", self.g_rec(env, h), r.choice(FIELDS)]
         if c == 4:
@@ -174,7 +180,14 @@ class Gen:
         if c == 6:
             return ["binary", "textTake", self.g_label(env, h), ["nat", str(r.randrange(0, 6))]]
         if c == 7:
-            return ["textJoin", self.g_strings(env, h), self.g_label(env, max(1, h // 2))]
+            strings = self.g_strings(env, h)
+            # A join forces its separator only between two items, and the machine forces a
+            # stuck separator where a call-by-name evaluator never reaches it: keep it well-formed.
+            self.separator += 1
+            try:
+                return ["textJoin", strings, self.g_label(env, max(1, h // 2))]
+            finally:
+                self.separator -= 1
         return ["label", r.choice(STRINGS)]
 
     def g_strings(self, env, b):
@@ -184,10 +197,10 @@ class Gen:
         items = ["inject", "nil", ["record", []]]
         for _ in range(r.randrange(0, 5)):
             head = self.g_label(env, max(1, b // 3))
-            if r.random() < 0.05:
+            if r.random() < 0.05 and not self.separator:
                 head = ["nat", "1"]
             fields = [["head", head], ["tail", items]]
-            if r.random() < 0.05:
+            if r.random() < 0.05 and not self.separator:
                 fields = fields[:1]
             items = ["inject", "cons", ["record", fields]]
         return items
@@ -249,6 +262,10 @@ def stuck(g, rng):
         ["project", n], ["reflect", rec], ["metadata", n], ["extend", n, [["a", n]]],
         ["binary", "textTake", n, n], ["binary", "textSpan", l, n], ["ifZero", bo, n, n],
         ["done", ["binary", "add", l, l]],
+        ["refuse", rng.choice(STRINGS)], ["binary", "add", ["refuse", "operand"], n],
+        ["ifBool", ["boolean", True], ["refuse", "taken"], n], ["ifBool", ["boolean", False], n, ["refuse", "taken"]],
+        ["ifBool", ["boolean", True], n, ["refuse", "never"]], ["app", ["lam", ["refuse", "body"]], n],
+        ["case", ["inject", "ok", n], [["ok", ["refuse", "arm"]]]],
     ])
 
 
