@@ -672,6 +672,28 @@ class Writes(unittest.TestCase):
         library = ("Abi", "List", "World", "Relation")
         self.assertEqual(self.compiled_core(sugared, library), self.compiled_core(explicit, library))
 
+    def test_remove_resolves_the_state_and_field_types_first(self):
+        # Refuted when `remove` on a relation reached through `type State = Lib.State` or a
+        # field typed by an alias lowers to removeItem (review kernel 6).
+        library = ("Abi", "List", "World", "Relation")
+        lib = {"name": "Lib", "source": ROWS.split("def plant")[0]}
+        head = (HEAD + "import ./Abi.obend as Abi\nimport ./Plan.obend as P\nimport ./World.obend as World\n"
+                "import ./Lib.obend as Lib\ntype State = Lib.State\n"
+                "def plant(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Nat>:\n")
+        def compiled(source, extra):
+            reply = self.h.send({"op": "compile", "entry": "plant", "modules": library_modules(*library) + extra +
+                                 [{"name": "Package", "source": source}]})
+            self.assertEqual(reply["status"], "compiled", reply)
+            return core(reply["artifact"])
+        sugared = head + "  let written(_) = write {rows: remove {at: input.at}}\n  0n\n"
+        explicit = head + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Lib.Row, Lib.Row>.retract({key: {at: input.at}})}))\n  0n\n"
+        self.assertEqual(compiled(sugared, [lib]), compiled(explicit, [lib]))
+        rows = ROWS.replace("record State:\n  rows: Relations.Relation<Row>\n",
+                            "type Rows = Relations.Relation<Row>\nrecord State:\n  rows: Rows\n")
+        sugared = rows + "  let written(_) = write {rows: remove {at: input.at}}\n  0n\n"
+        explicit = rows + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Row, Row>.retract({key: {at: input.at}})}))\n  0n\n"
+        self.assertEqual(compiled(sugared, []), compiled(explicit, []))
+
     def test_an_index_is_refused_by_name(self):
         source = GARDEN + "  let written(_) = write {children: remove {index: 0n}}\n  state.planted\n"
         reply = self.h.send({"op": "check-package", "entry": "plant",

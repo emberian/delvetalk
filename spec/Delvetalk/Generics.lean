@@ -983,6 +983,8 @@ end
 /-- A specialization anywhere, a type alias, or a declaration with type parameters. -/
 def declGenerics (d : Decl) : Bool :=
   !d.typeParameters.isEmpty ||
+  -- A `write {f: remove v}` is lowered once the State's field types are resolved.
+  d.mapVars (fun n => if n == ObjectiveBendParse.removeMarker then "" else n) != d ||
   match d with
   | .typeAlias .. | .protocol .. => true
   | .function _ _ b _ | .extension _ _ _ b _ _ => (bodyGenerics b)
@@ -1131,6 +1133,20 @@ def entriesItem (g : GType) : M (Option GType) := do
      (i.declarationName == "Relation" && labels == ["rows"]) then return some x
   return none
 
+/-- The row type of a relation (`Relation<X>`: the one-case sum `rows`), as `entriesItem`
+recognises it. -/
+def relationItem (g : GType) : M (Option GType) := do
+  let .named m n _ := g | return none
+  let s ← get
+  if m != s.generatedModule then return none
+  let some i := (s.instanceByName[n]?).bind (s.instances[·]?) | return none
+  let [x] := i.arguments | return none
+  let home ← originModule i.origin
+  let some d := s.byName[(home.name, i.declarationName)]? | return none
+  let .sum _ cases [_] _ := d.ast | return none
+  if i.declarationName == "Relation" && cases.map (·.name) == ["rows"] then return some x
+  return none
+
 def derivedRefusal (module message : String) (tag := "derived-edits") : String :=
   "refused (" ++ tag ++ "): " ++ message ++ " (module " ++ module ++ ")"
 
@@ -1208,6 +1224,15 @@ def effectiveStateFields : Nat → Nat → M (Option (List ObjectiveBendSurface.
       if source.ast.layerOver.isNone then return none
       let some below := (source.module.imports.find? (·.importAlias == "Super")).map (·.target) | return none
       effectiveStateFields fuel below
+
+/-- The fields of the State module `index` edits whose resolved type is a relation: what
+`write {f: remove KEY}` retracts by key (`ObjectiveBendParse.lowerRemove`). The State and the
+field's type are resolved first, so an alias of either does not change the meaning. -/
+def relationFields (index : Nat) : M (List String) := do
+  let some (fields, home, _) ← effectiveStateFields (← get).sources.size index | return []
+  fields.filterMapM fun f => do
+    let some g ← tryCatch (some <$> typeOf maxNesting home [] f.type) (fun _ => pure none) | return none
+    return if (← relationItem g).isSome then some f.name else none
 
 /-- Refuse a write that names a fixed field of the State module `index` edits. -/
 def checkFixed (index : Nat) : M Unit := do
@@ -1370,8 +1395,8 @@ def resolveChoices (labels : List (String × List String)) : Expr → Expr
 
 /-- Each module's derived declarations (`Edits`, `keep()`, form inputs, `forms()`; empty where
 it gets none) and form blocks. Types are resolved in a pass of their own whose state is dropped. -/
-def derivedDecls (sources : Array Source) : Except String (Array (List Decl × DerivedForms)) := do
-  let probe : M (Array (List Decl × DerivedForms)) := do
+def derivedDecls (sources : Array Source) : Except String (Array (List Decl × DerivedForms × List String)) := do
+  let probe : M (Array (List Decl × DerivedForms × List String)) := do
     preamble
     let mut out := #[]
     for index in [:sources.size] do
@@ -1381,7 +1406,7 @@ def derivedDecls (sources : Array Source) : Except String (Array (List Decl × D
       -- The canonical order: `forms()`, then `Edits` and `keep()`, then the form inputs. A
       -- module that writes `forms()` at its end (its `Edits` and inputs derived) is this order.
       let (functions, types) := forms.decls.partition (· matches .function ..)
-      out := out.push (functions ++ edits ++ types, forms)
+      out := out.push (functions ++ edits ++ types, forms, ← relationFields index)
     return out
   return (← probe.run (← initialState sources)).1
 
@@ -1395,9 +1420,12 @@ def run (sources : Array Source) : Except String Output := do
   let found ← derivedDecls sources
   let derived := found.map (·.1)
   let sources := sources.mapIdx fun i source =>
-    let (own, forms) := found[i]!
+    let (own, forms, relations) := found[i]!
     let decls := if forms.labels.isEmpty then source.ast.decls
       else source.ast.decls.map (·.mapExpr (resolveChoices forms.labels))
+    -- `write {f: remove v}`: a retract on a relation field of the resolved State, else removeItem.
+    let plans := ((source.ast.imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
+    let decls := decls.map (·.mapExpr (ObjectiveBendParse.lowerRemove plans relations))
     let blocks := if forms.forms.isEmpty then source.ast.forms else forms.forms
     let ast : ObjectiveBendSurface.Module := { source.ast with decls := decls ++ own, forms := blocks }
     { source with ast }

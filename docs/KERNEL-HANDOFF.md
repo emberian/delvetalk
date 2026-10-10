@@ -539,9 +539,11 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   "relations(): a limit is a Nat". The host reads them from the artifact (`declsOfArtifact`, Ops.lean; host11). Test:
   `test_sugar.Relations`.
 - `write {f: remove v}` is `removeItem {item: v}`, or `retract {key: v}` when the module's
-  `State` types `f` as a `Relation<…>` (the parser emits the marker `$remove` and
-  `parseObjective` lowers it once the declarations are read, `lowerRemove` over
-  `Decl.mapExpr`); `write {f: amend v with c}` is `amendItem {item: v, change: c}`. An index
+  `State` types `f` as a `Relation<…>` (the parser emits the marker `$remove`; since kernel10 the
+  generics pass lowers it with `lowerRemove` once `Generics.relationFields` has resolved the
+  effective State and each field's type, the relation recognised as derived Edits recognise it, so
+  `type State = Lib.State`, an aliased field type and a layer's inherited relation retract by key;
+  a marker makes a declaration take the generics pass, `declGenerics`); `write {f: amend v with c}` is `amendItem {item: v, change: c}`. An index
   (`remove {index: …}`, `amend {index: …} with …`) is refused by name ("names a position, and
   edits name items: write `f: remove ITEM` …"). Tests: `test_sugar.Writes`.
 
