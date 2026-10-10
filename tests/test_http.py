@@ -387,6 +387,17 @@ class Bearer(FrontCase):
             self.assertIn(HANDLE, page.decode())
 
 
+class Forms(FrontCase):
+    def test_a_browser_form_keeps_a_deliberately_blank_field_for_the_host(self):
+        tok = self.login()
+        real, sent = self.host.send, []
+        self.host.send = lambda req: (sent.append(req) if req['op'] == 'world-turn' else None) or real(req)
+        self.request('POST', f'/play/{self.c}', raw=b'method=bump&migration=&note=x',
+                     headers={'Cookie': f'dt_credential={tok}', 'Content-Type': 'application/x-www-form-urlencoded'})
+        (turn,) = sent
+        self.assertEqual({f['name']: f['value']['value'] for f in turn['argument']['fields']}, {'migration': '', 'note': 'x'})
+
+
 class Turns(FrontCase):
     def test_a_logged_in_agent_views_takes_a_turn_reads_its_receipt_and_sees_the_new_version(self):
         tok = self.login()

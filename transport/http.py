@@ -501,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail('requestTimeout')
         # curl -d labels JSON as a form; a browser's form body never starts with '{'
         if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
-            return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace')).items()}
+            return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace'), keep_blank_values=True).items()}  # a blank field is a value
         try:
             data = json.loads(raw or b'{}')
         except (ValueError, RecursionError):
