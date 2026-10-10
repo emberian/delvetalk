@@ -24,7 +24,7 @@ GLM = "did:plc:glm"
 
 
 def heard(text):
-    return record(text=label(text), post=label(""), slot=label(""))
+    return record(text=label(text), post=label(""))
 
 
 def why(reply):

@@ -33,7 +33,7 @@ def door(name):
 
 
 def heard(text):
-    return record(text=label(text), post=label(""), slot=label(""))
+    return record(text=label(text), post=label(""))
 
 
 class LawWorld(TurnWorld):

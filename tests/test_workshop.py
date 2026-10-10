@@ -106,7 +106,7 @@ class Workshop(Chain):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
 
     def say(self, text, obj="workshop"):
-        return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1"), slot=label("")), principal="glm")
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1")), principal="glm")
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
@@ -204,7 +204,7 @@ class Workshop(Chain):
         self.make_workshop()
         before = self.counter()
         reply = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
-                                                         post=label("at://kim/p/1"), slot=label("")), principal="kimik3")
+                                                         post=label("at://kim/p/1")), principal="kimik3")
         # The target's law is asked in the turn: the workshop says it was refused, never
         # "Reprogrammed", and holds the proposal for the owner.
         held = self.card(reply)
@@ -219,7 +219,7 @@ class Workshop(Chain):
         self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
         listing = self.say("")["offers"][0]["text"]
         self.assertIn("#1 for bell-1 from kimik3\n", listing)
-        say = lambda text, who: self.turn("workshop", "receive", record(text=label(text), post=label("at://x/1"), slot=label("")), principal=who)
+        say = lambda text, who: self.turn("workshop", "receive", record(text=label(text), post=label("at://x/1")), principal=who)
         # Adopting is the target's owner's: the law judges the reprogram as the adopter's.
         stranger = say("delvetalk workshop adopt / n: 1", "zero")
         self.assertEqual(self.verdict(stranger), "refused")
@@ -236,9 +236,9 @@ class Workshop(Chain):
         self.make_workshop()
         self.counter()
         propose = lambda who, ident: self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
-                                                                            post=label("at://x/" + ident), slot=label("")), principal=who, identity=ident)
+                                                                            post=label("at://x/" + ident)), principal=who, identity=ident)
         propose("kimik3", "p1")
-        out = self.turn("workshop", "receive", record(text=label("delvetalk workshop withdraw / n: 1"), post=label(""), slot=label("")), principal="kimik3")
+        out = self.turn("workshop", "receive", record(text=label("delvetalk workshop withdraw / n: 1"), post=label("")), principal="kimik3")
         self.assertEqual(self.card(out), "✾ WORKSHOP\n\nWithdrew #1.\n")
         # Sixteen are held; a seventeenth drops the oldest with a line.
         for i in range(17):

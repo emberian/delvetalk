@@ -211,7 +211,7 @@ class OfferTests(HostCase):
         made = self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
                               modules=closure("Garden"), entry="initial", seed=garden_state(2))
         self.assertEqual(made["status"], "created", made)
-        look = record(text=label(""), post=label("at://glm/p/look"), slot=label(""))
+        look = record(text=label(""), post=label("at://glm/p/look"))
         turn = self.host.send(op="world-turn", principal="glm", object="garden", method="receive",
                               argument=look, identity="look-1")
         self.assertEqual(turn["status"], "admitted", turn)

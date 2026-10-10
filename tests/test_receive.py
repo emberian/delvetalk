@@ -5,7 +5,7 @@ Evidence for FOUNDATION §5 (layer: objects).
 
 The cards the town sees first: Garden.receive and Directory.receive.
 
-Every observed spell reaches `<card>.receive {text, post, slot}`; who wrote it is the turn's
+Every observed spell reaches `<card>.receive {text, post}`; who wrote it is the turn's
 principal, and the reply card is what the turn offers.
 """
 import unittest
@@ -36,7 +36,7 @@ class Cards(Chain):
         self.make("garden", closure("Garden"), garden_seed())
 
     def say(self, text, who="glm", post="at://glm/post/1", obj="garden", method="receive"):
-        return self.turn(obj, method, record(text=label(text), post=label(post), slot=label("")), principal=who)
+        return self.turn(obj, method, record(text=label(text), post=label(post)), principal=who)
 
     def card(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)

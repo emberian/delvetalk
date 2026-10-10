@@ -59,7 +59,7 @@ class Floor(Chain):
 
     def card(self, name, principal="visitor"):
         """The card is what receive offers for an empty reply, here to someone not in the room."""
-        reply = self.turn(name, "receive", record(text=label(""), post=label(""), slot=label("")), principal=principal)
+        reply = self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
         # The card without the spells it teaches (a place's are say, emote and whisper).
         return reply["offers"][0]["text"].split("\nReply with a spell:")[0]
@@ -214,7 +214,7 @@ class Floor(Chain):
                                 writes=[{"object": "stone", "edits": [edits]}])
         self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "notOffered"), forged)
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
-        by_spell = self.turn("kimik3", "receive", record(text=label("delvetalk kimik3 accept / thing: stone"), post=label(""), slot=label("")), principal="kimik3")
+        by_spell = self.turn("kimik3", "receive", record(text=label("delvetalk kimik3 accept / thing: stone"), post=label("")), principal="kimik3")
         self.assertEqual(self.result_label(by_spell), "done", by_spell)
         self.assertEqual((self.holder(), self.holding("kimik3")), ("kimik3", ["stone"]))
 
@@ -244,14 +244,14 @@ class Floor(Chain):
 
     def test_thing_inspect_offers_its_card(self):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
-        card = self.turn("stone", "receive", record(text=label(""), post=label(""), slot=label("")), principal="visitor")["offers"][0]["text"]
+        card = self.turn("stone", "receive", record(text=label(""), post=label("")), principal="visitor")["offers"][0]["text"]
         self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n\nReply with a spell:\n"), card)
         self.assertIn("\nReply with a spell:\n\n    delvetalk stone acquire\n", card)
 
     def test_a_place_with_64_things_renders_under_the_default_budget(self):
         things = ["thing%02d" % i for i in range(64)]
         self.make("hall", closure("Place"), place_seed("Hall", [("out", "porch")], present=["glm", "kimik3"], things=things))
-        reply = self.turn("hall", "receive", record(text=label(""), post=label(""), slot=label("")), principal="glm")
+        reply = self.turn("hall", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("Lying here: "), 8)
@@ -269,7 +269,7 @@ class Floor(Chain):
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
         self.assertEqual(over["status"], "admitted", over)  # a full inbox drops its oldest
-        reply = self.turn("glm", "receive", record(text=label(""), post=label(""), slot=label("")), principal="glm")
+        reply = self.turn("glm", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest
