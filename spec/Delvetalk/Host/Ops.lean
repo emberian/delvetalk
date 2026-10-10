@@ -362,7 +362,7 @@ def Proposal.digest (p : Proposal) : String :=
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "outOfRange", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey"]
+   "keyTaken", "duplicateKey", "badSpell"]
 
 structure Refusal where
   cls : String
@@ -375,6 +375,8 @@ structure Refusal where
   /-- The root the refusal was judged against when it is not `object`: for `requiredAbsence`, the
       object whose create found `object` already there. -/
   root : Option String := none
+  /-- For `badSpell`: the spell the reply meant, its blanks shown, to resend. -/
+  hint : Option String := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -1866,7 +1868,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
         (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
         (r.expected.map fun e => [("expected", e)]).getD [] ++
-        (r.root.map fun x => [("root", toJson x)]).getD [])
+        (r.root.map fun x => [("root", toJson x)]).getD [] ++
+        (r.hint.map fun x => [("hint", toJson x)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
@@ -2708,6 +2711,9 @@ def publicRefusal (entry : Json) : Json :=
     (reading.map fun r => [("reason", toJson r)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
+    -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
+    else if cls == "badSpell" then
+      [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else

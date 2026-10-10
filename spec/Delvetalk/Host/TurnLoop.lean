@@ -10,6 +10,7 @@
 import Delvetalk.Host.Ops
 import Delvetalk.Turn
 import Delvetalk.Document
+import Delvetalk.Host.Spell
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -31,6 +32,10 @@ structure TurnRequest where
   /-- The post this turn's text replies to ("" for none): the bridge names the parent of an
       observed reply, so a reply to a recorded post is the reply that post awaits. -/
   replyTo : String := ""
+  /-- How the method was asked for (`inputOrigin.kind`): `request`, or `spell` when the host parsed
+      the reply's spell (`spellTurn`), and the line that asked (`inputOrigin.command`, "" for the method). -/
+  origin : String := "request"
+  command : String := ""
 
 def parseTurn (j : Json) : Except String TurnRequest := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
@@ -56,7 +61,7 @@ def parseTurn (j : Json) : Except String TurnRequest := do
     | .ok (.bool b) => pure b
     | .ok _ => throw "profile must be true or false"
     | .error _ => pure false
-  return ⟨principal, object, method, argument, intent, limits, digest, profile, replyTo⟩
+  return { principal, object, method, argument, intent, limits, digest, profile, replyTo }
 
 inductive Abort where
   /-- The request is not a well-formed turn; nothing is journaled. -/
@@ -100,6 +105,9 @@ structure TurnState where
   argument : Data := .record []
   /-- A turn a principal asked for directly (not a delivery): only such a turn may grant. -/
   direct : Bool := true
+  /-- The top frame's `inputOrigin` kind and command (`TurnRequest.origin`, `command`). -/
+  origin : String := "request"
+  command : String := ""
   grants : List Grant := []
   revokes : List String := []
   /-- Uses of limited grants this turn spent, by grant id. -/
@@ -597,7 +605,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
-    (if depth == 0 then "request" else "call") method
+    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method)
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
@@ -1360,7 +1368,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .ok b => pure b.ticks
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
-                            direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile }
+                            direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile,
+                            origin := req.origin, command := req.command }
   -- A reply to a post recorded for this very object answers it (reply-is-address).
   let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
   let answers := match post with
@@ -1386,10 +1395,156 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let (w', r) ← finishTurn w ctx result st
   return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
+/-- A turn state for compiling outside a turn. -/
+def scratchState (w : World) : TurnState :=
+  { world := w, principal := "", intent := "", subject := "", ticks := 0, limits := Json.mkObj [] }
+
+/-! ## Spells (WHOLENESS §2, host day 2)
+
+A direct `receive {text, post}` to an object written in the message dialect is read by the host:
+the reply's spell (`Spell.parse`) names a card and an action; the card resolves as `Card.names` does
+(`resolveCard`) and the turn is retargeted to it; the action is looked up among the card's forms
+(`methodForms`) and the fields fitted (`Spell.fit`); a fitting spell runs the method with the typed
+argument (`inputOrigin.kind = "spell"`, `command` the spell line). A spell that does not fit is a
+refused turn of class `badSpell` with `clause`, `reason` and `hint` (the spell with its blanks). A
+spell missing fields, or a reply with no spell, runs `receive` with the bare `name: value` lines in
+`Heard.fields` (completion is the object's policy, WHOLENESS's root decision). `?` is answered by
+the host with the card's usage and journals nothing. An object of the sum-Plan dialect reads its
+own replies, as before. -/
+
+/-- Does a compiled method yield `World.Message`s (the message dialect)? -/
+def isMessageDialect (c : Compiled) : Bool :=
+  let rec peel : Ty → Option Ty
+    | .arrow _ _ _ r => peel r
+    | .computation p _ _ => some p
+    | _ => none
+  match peel c.type with
+  | some plan =>
+    let plan := match plan with
+      | .variable i => (c.bounds.lookup i).getD plan
+      | p => p
+    match plan with
+    | .field .. | .emptyRow => true
+    | _ => false
+  | none => false
+
+/-- A form's field as the spell a reader copies (`Card.hint`). -/
+def spellHint : Spell.Kind → String
+  | .text a b => s!"<text, {a} to {b} characters>"
+  | .natural a b => s!"<a number from {a} to {b}>"
+  | .choice options => s!"<{", ".intercalate options}>"
+
+/-- One form as the spell to send, the fields `given` filled in and the rest shown as blanks. -/
+def spellTemplate (card : String) (form : Spell.Form) (given : List Spell.Binding := []) : String :=
+  s!"delvetalk {card} {form.action}\n" ++ String.join (form.fields.map fun f =>
+    s!"{f.name}: {((given.find? (·.name == f.name)).map (·.value)).getD (spellHint f.kind)}\n")
+
+/-- A card's usage (`Card.usage`): every form as a template. -/
+def spellUsage (card : String) (forms : List Spell.Form) : String :=
+  if forms.isEmpty then s!"{card} takes no spells." else
+  "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)
+
+/-- The spell line a reply's spell stands on, for `inputOrigin.command`. -/
+def spellLine (card action : String) : String := s!"delvetalk {card} {action}"
+
+/-- A fitted spell's typed argument: the form's fields in order, text as text, a natural as a
+    natural, a choice as the variant of that name with an empty payload. -/
+def spellArgument (entries : List Spell.Entry) : Data :=
+  .record (entries.map fun e => (e.name, match e.value with
+    | .text t => .label t
+    | .natural n => .natural n
+    | .choice c => .variant c (.record [])))
+
+def bindingsData (bs : List Spell.Binding) : Data :=
+  listData (bs.map fun b => .record [("name", .label b.name), ("value", .label b.value)])
+
+/-- Journal a `badSpell` refusal of the turn as asked (its identity binds, so a resend is a new
+    turn). -/
+def refuseSpell (w : World) (req : TurnRequest) (object clause reason hint : String) : Except String (World × Json) := do
+  let ctx : Ctx := { principal := req.principal, intent := req.intent, object := req.object, method := req.method,
+                     argument := req.argument, digest := req.digest, ledger := Ledger.start, delivery := none,
+                     ticksStart := 0 }
+  let p : Proposal := { principal := req.principal, intent := req.intent, roots := [], writes := [], turn := w.height + 1 }
+  let (w', r) := commit w p (entryBase ctx 0)
+    (some { cls := "badSpell", clause := some clause, object := some object, reason := some reason, hint := some hint })
+  return (w', turnReply w' r)
+
+/-- `receive`'s argument with the bare field lines added when the method declares `fields`. -/
+def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.Binding) : Data :=
+  match argument with
+  | .record fs =>
+    let candidate := Data.record (fs.filter (·.1 != "fields") ++ [("fields", bindingsData fields)])
+    match ((compiledMethod o "receive").run.run (scratchState w)).1 with
+    | .ok c => if argumentFits c candidate then candidate else argument
+    | .error _ => argument
+  | other => other
+
+/-- The forms a card offers, as the spell grammar reads them. -/
+def spellForms (id : String) (o : Object) : List Spell.Form := (methodForms id o.methods).filterMap Spell.Form.ofData
+
+/-- Does an object read its replies in the message dialect (the host then parses its spells)? -/
+def speaksMessages (w : World) (o : Object) : Bool :=
+  match ((compiledMethod o "receive").run.run (scratchState w)).1 with
+  | .ok c => isMessageDialect c
+  | .error _ => false
+
+/-- `receive` with the bare field lines (`Heard.fields`): completion is the card's policy. -/
+def receiveHeard (w : World) (req : TurnRequest) (o : Object) (fields : List Spell.Binding) : Except String (World × Json) :=
+  runTurnWith w { req with argument := withFields w o req.argument fields } {}
+
+/-- Run what a spell naming `card` and `action` with `fields` asks of the turn's card `o`. -/
+def castSpell (w : World) (req : TurnRequest) (o : Object) (card action : String) (fields : List Spell.Binding) :
+    Except String (World × Json) := do
+  let id := resolveCard req.principal card
+  let usageHere := spellUsage req.object (spellForms req.object o)
+  let some target := w.objects[id]? | refuseSpell w req req.object "otherCard" s!"There is no card {card}." usageHere
+  unless target.read.permits req.principal do
+    return ← refuseSpell w req req.object "otherCard" s!"There is no card {card}." usageHere
+  let req := { req with object := id }
+  -- A card of the sum-Plan dialect reads its own replies.
+  unless speaksMessages w target do return ← runTurnWith w req {}
+  let forms := spellForms id target
+  if action == "?" then
+    return (w, Json.mkObj [("status", toJson "usage"), ("object", toJson id), ("text", toJson (spellUsage id forms))])
+  let some form := forms.find? (·.action == action)
+    | refuseSpell w req id "noAction" s!"{id} has no action {action}." (spellUsage id forms)
+  match Spell.fit (.spell id action fields) form with
+  | .proposal _ _ entries =>
+    let asked := { req with method := action, argument := spellArgument entries, origin := "spell", command := spellLine card action }
+    runTurnWith w asked {}
+  | .unclear _ => receiveHeard w req target fields
+  | .refused clause reason => refuseSpell w req id clause.name reason (spellTemplate id form fields)
+
+/-- A direct turn's `receive` read as a spell by the host when its object speaks the message
+    dialect; `none` when the host leaves the turn as asked. -/
+def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) := do
+  guard (req.method == "receive")
+  let .record args := req.argument | none
+  let some (.label text) := args.lookup "text" | none
+  let o ← w.objects[req.object]?
+  guard (speaksMessages w o)
+  match Spell.parse text with
+  | .spell card action fields => some (castSpell w req o card action fields)
+  | .notASpell reason fielded =>
+    if reason.startsWith "the block <<" then
+      return refuseSpell w req req.object "unclosedBlock" reason (spellUsage req.object (spellForms req.object o))
+    let bare := Spell.bare text
+    -- A reply with no spell line whose first field line names an action or a field of one of this
+    -- card's forms is that form's spell (`Card.withBare`).
+    let first := if fielded then bare.head? else none
+    let form := first.bind fun b => (spellForms req.object o).find? fun f => f.action == b.name || f.fields.any (·.name == b.name)
+    match form with
+    | some f => some (castSpell w req o req.object f.action (bare.filter fun b => b.name == f.action || f.fields.any (·.name == b.name)))
+    | none => some (receiveHeard w req o bare)
+
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
-    `unknownObject` naming `env/<principal>` when it has none. -/
+    `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message
+    dialect is read as a spell first (`spellTurn`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
-  runTurnWith w { req with object := resolveCard req.principal req.object } {}
+  let req := { req with object := resolveCard req.principal req.object }
+  match spellTurn w req with
+  | some r => r
+  | none => runTurnWith w req {}
 
 /-! ## Resuming suspended turns -/
 
@@ -1837,9 +1992,6 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
       ("utterance", toJson utterance), ("offers", plainJson offers)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
-
-def scratchState (w : World) : TurnState :=
-  { world := w, principal := "", intent := "", subject := "", ticks := 0, limits := Json.mkObj [] }
 
 def abortText : Abort → String
   | .request m | .evaluation m => m

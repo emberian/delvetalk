@@ -257,6 +257,24 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    state}` with one field when its value conforms to the call site's type (`typeMismatch` otherwise,
    `field` for a missing field); read authority and root as `view`. Test: `tests/test_world_object.py`.
 
+49. **The host reads spells (host8; WHOLENESS §2, host day 2).** `Host/Spell.lean` is Spell.obend's grammar in
+   Lean, rule for rule (`parse`, `bare`, `fit`, reasons verbatim, plus a `Clause`: `otherCard`, `noAction`,
+   `unknownField`, `duplicateField`, `badValue`, `unclosedBlock`, `unclear`); the stateless op `spell-parse
+   {text, form?}` answers `{status: "parsed", spell | notASpell, fit?, bare}`; `tests/test_host_spell.py` runs
+   115 fixtures (`tests/fixtures/spells/`) through both parsers and they agree. `runTurn` sends a direct
+   `receive {text, post}` to a card whose `receive` is in the message dialect through `spellTurn` (a sum-Plan
+   card reads its own replies, unchanged): the spell's card resolves (`resolveCard`) and the turn is
+   retargeted to it (same principal, identity, `replyTo`); `?` answers `{status: "usage", object, text}` and
+   journals nothing; the action is looked up in the card's `methodForms`; a fitting spell runs the method with
+   the typed argument (text, natural, a choice as its empty-payload variant), `inputOrigin.kind = "spell"`,
+   `command` the spell line; a misfit is refused, class `badSpell` (binding), with `clause`, `reason` and
+   `hint` (the spell with the given fields and blanks; the usage for `noAction`/`otherCard`), all in the
+   public projection. Per the root decision, a spell missing fields and a reply with no spell run `receive`
+   with the bare `name: value` lines as `fields` (when `receive` declares them): completion is the card's
+   policy. A reply with no spell line whose first field line names one of the card's actions or fields is
+   that form's spell (`Card.withBare`). Not yet: the interpretation verdict fitted as spell text (§2
+   "Interpretation"), lenses' `set`. Test: `tests/test_spell_turns.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

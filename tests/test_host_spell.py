@@ -1,7 +1,7 @@
 """The host's Lean spell parser (spec/Delvetalk/Host/Spell.lean, op `spell-parse`) agrees with the
 Bend grammar (world/lib/Spell.obend) on every input tests/test_spell.py exercises, plus edge inputs.
 
-Evidence for WHOLENESS section 2 (the host parses spells): parse, bare and fit, with the refusal
+Evidence for WHOLENESS section 2 (layer: host): the host parses spells: parse, bare and fit, with the refusal
 clause names. The Bend parser is the reference; the fixtures are tests/fixtures/spells/*.json.
 
     python3 -m unittest tests.test_host_spell -v
