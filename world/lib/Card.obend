@@ -44,7 +44,7 @@ sum Routed:
   refused: Refusal
   set: {field: String, value: String}
   help: {}
-  quiet: {text: String, post: String}
+  quiet: {text: String, post: String, fielded: Bool}
 # What receive answers when no method was acted on (in either dialect).
 sum Replied:
   done: {action: String}
@@ -67,7 +67,7 @@ def blank(text: String) -> Bool:
   textDrop(text, textSpan(text, " \n\t\r")) == ""
 def heardAs(parsed: Spell.Parsed, input: Heard, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
-    case notASpell(_): if blank(input.text) then Routed.usage({}) else Routed.quiet({text: input.text, post: input.post})
+    case notASpell(n): if blank(input.text) then Routed.usage({}) else Routed.quiet({text: input.text, post: input.post, fielded: n.fielded})
     case spell(_): routeParsed(parsed, context, forms)
 # A reply with no delvetalk line whose first `name: value` line names an action or a
 # field of one of this card's forms is that form's spell (a bell reads a fenced `rain:
@@ -174,7 +174,7 @@ def answeredOrHelp(routed: Routed, context: Abi.Context, forms: Forms, card: Doc
 # type: `result` is what a non-acting reply finishes with.
 def answerAsPlan<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match routed:
-    case quiet(q): forwarded(q.text, q.post, context, result)
+    case quiet(q): forwarded(q.text, q.post, if q.fielded then Spell.bare(textTake(q.text, 2000n)) else Spell.Bindings.nil(), context, result)
     case _: offering(routed, context, forms, card, result)
 # The directory reads prose a card without a policy could not place: the card sends it
 # the reply (`receive {text, post}`, under the speaker) and offers nothing itself, so an
@@ -182,10 +182,12 @@ def answerAsPlan<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms,
 # started (context.caller) forwards nothing: the directory itself passes replies on.
 def directory(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: "directory"}
-def forwarding<E>(text: String, post: String, context: Abi.Context) -> Plans.Plan<E>:
-  Plans.Plan.send({object: directory(context), method: "receive", argument: {text: text, post: post}})
-def forwarded<E, S, R, T>(text: String, post: String, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  if handsOn(text, context) == false then result else sending(text, post, context, result)
+# The directory's receive takes a Reply: the hand-off carries the reply's field lines (of its
+# first 2,000 characters, as much as the directory reads; read only when the parse noticed one).
+def forwarding<E>(text: String, post: String, fields: Spell.Bindings, context: Abi.Context) -> Plans.Plan<E>:
+  Plans.Plan.send({object: directory(context), method: "receive", argument: {text: text, post: post, fields: fields}})
+def forwarded<E, S, R, T>(text: String, post: String, fields: Spell.Bindings, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  if handsOn(text, context) == false then result else sending(text, post, fields, context, result)
 # A turn some object started, and the directory itself, hand nothing on. Whether the prose
 # names anything is the directory's to judge from what it learned of its doors (`mentions`),
 # before any model call: a card holds no word list (rehearsal run 7 counted 127 of 132
@@ -246,8 +248,8 @@ def contains(text: String, needle: String) -> Bool:
   containsFrom(textDrop(text, textBreak(text, textTake(needle, 1n))), needle)
 def containsFrom(rest: String, needle: String) -> Bool:
   if textLength(rest) < textLength(needle) then false else if textTake(rest, textLength(needle)) == needle then true else contains(textDrop(rest, 1n), needle)
-def sending<E, S, R, T>(text: String, post: String, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(forwarding(text, post, context)):
+def sending<E, S, R, T>(text: String, post: String, fields: Spell.Bindings, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match perform(forwarding(text, post, fields, context)):
     case _: result
 def offering<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match perform(Plans.Plan.offer({to: "", document: answeredOrHelp(routed, context, forms, card)})):
@@ -685,11 +687,10 @@ def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card:
 # Prose a card does not take is sent to the directory (`receive {text, post}`, under the
 # speaker), which judges whether it names any door; the card offers nothing itself. A turn
 # some object started, and the directory itself, hand nothing on (`handsOn`).
-# TODO(directory): send `fields` too when the Directory's receive takes a Reply.
 def handOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
   if handsOn(input.text, context) then handingOn(input, context, result) else result
 def handingOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
-  match world.send({object: directory(context), method: "receive", argument: {text: input.text, post: input.post}}):
+  match world.send({object: directory(context), method: "receive", argument: input}):
     case _: result
 # Posts an object's page as its door word's wiki page; the post, or the refusal's clause.
 def publishPage(word: String, page: Page) -> Activity<String>:
@@ -708,3 +709,29 @@ def subscribed(object: Plans.Reference, field: String, method: String) -> Activi
   match world.subscribe({object: object, field: field, method: method}):
     case subscribed(_): true
     case _: false
+# Interpretation in the message dialect: the `interpret` argument of attempt 0 (the utterance,
+# the policy's model) or 1 (the utterance with what the first answer missed, the policy's
+# escalate model). The host fits the model's spell against the offered forms and answers a
+# `proposal {object, method, argument}` or `unclear {needs}`; text with no spell is `replied`,
+# which `prose` reads: `unclear: not addressed` (or an empty `unclear:`) is silence, any other
+# `unclear: <need>` and other words are a miss.
+def interpretation(utterance: String, forms: Forms, reference: Plans.Reference, policy: Policies.State, attempt: Nat, needs: Form.Names) -> {utterance: String, offers: Forms, policy: Plans.Reference, model: String}:
+  if attempt == 0n then {utterance: utterance, offers: forms, policy: reference, model: ""} else {utterance: retried(utterance, needs), offers: forms, policy: reference, model: policy.escalate}
+def prose(text: String) -> Fitted:
+  unclearLine(textDrop(text, textSpan(text, " \n\t\r")))
+def unclearLine(text: String) -> Fitted:
+  if textTake(text, 8n) == "unclear:" then needOf(Spell.trimEnd(Spell.trimStart(textTake(textDrop(text, 8n), textBreak(textDrop(text, 8n), "\n"))))) else Fitted.miss({needs: Form.Names.nil()})
+# Whether a host verdict's needs say the prose was addressed to nobody, or name nothing.
+def silentNeeds(needs: Form.Names) -> Bool:
+  Lists.length(needs) == 0n || notAddressed(needs)
+# The second miss: the copy to the policy's escalateTo (when it names one), then the needs card
+# to the speaker (when a need is named).
+def unfitted<T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  if policy.escalateTo == "" then neededCard(needs, card, result) else escalated(policy, utterance, needs, context, card, result)
+def escalated<T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  match world.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; I could not fit it ({context.object}).\n")}):
+    case _: neededCard(needs, card, result)
+def neededCard<T>(needs: Form.Names, card: Document.Document, result: T) -> Activity<T>:
+  match needs:
+    case nil(_): result
+    case cons(_): tell(result, card)

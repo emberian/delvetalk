@@ -234,8 +234,8 @@ def planted(context: Abi.Context) -> String:
     def test_env_and_wake_spells_reach_the_speakers_own(self):
         """Rehearsal run 4, finding D: mimo's `delvetalk env subscribe / card: wake` and `delvetalk
         wake watch / …` got the pointer. A call to the bare `env` is refused unknownObject (the host
-        resolves bare ids for a turn's object, not for a call's), so the directory calls the
-        speaker's own env/<did> and wake/<did>, and Card.route takes the bare word as theirs."""
+        resolves bare ids for a turn's object, not for a call's). The host reads the spell under the
+        hub and runs it on the speaker's own env/<did> and wake/<did> as this turn."""
         self.directory()
         did = "did:plc:l7exgoq5pjijbeoo3jaxnwse"
         r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
@@ -243,24 +243,26 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(r["status"], "created", r)
         observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
         self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0\\n\\nReply with a spell:\\n\\n    delvetalk env/did:plc:l7exgoq5pjijbeoo3jaxnwse observe\\n\\n    delvetalk env/did:plc:l7exgoq5pjijbeoo3jaxnwse seen\\n    at: <a number from 0 to 1000000000>\\n'}]")
-        self.assertEqual((observed["status"], observed["result"]["label"]), ("admitted", "passed"), observed)
+        self.assertEqual((observed["status"], observed["result"]["label"]), ("admitted", "done"), observed)
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
         # A speaker without a wake: the host names what it looked for.
-        missing = self.say("delvetalk wake watch / event: mention / actor: ember.delve.town", obj="root", who=did)
-        self.assertEqual(str(missing.get("offers", missing)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'No card named wake; reply here for the list of doors.\\n'}]")
-        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "No card named wake; reply here for the list of doors.\n"), missing)
+        missing = self.turn("root", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
+        out = missing["receipt"]["outcome"]
+        self.assertEqual((missing["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "otherCard", "There is no card wake."), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
         self.garden()
         r = self.say("quoting the hub post\ndelvetalk garden plant / colour: silver / seed: a fern", obj="root")
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
+        # The host runs the spell on the card it names, as this turn: the result is the garden's.
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
         self.assertIn("Planted for glm: a silver bell", r["offers"][0]["text"])
         self.assertEqual(self.version("garden"), 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
-        ghost = self.say("delvetalk forge make / name: sentry", obj="root")
-        self.assertEqual(ghost["offers"][0]["text"], "No card named forge; reply here for the list of doors.\n")
+        ghost = self.turn("root", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
+        out = ghost["receipt"]["outcome"]
+        self.assertEqual((ghost["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "otherCard", "There is no card forge."), ghost)
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()
