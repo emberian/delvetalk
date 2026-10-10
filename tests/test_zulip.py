@@ -59,6 +59,14 @@ class FakeZulip:
                 fake.calls.append((method, url.path))
                 if (method, url.path) == ('GET', '/api/v1/users/me'):
                     return self.reply(200, {'result': 'success', **BOT})
+                if url.path.startswith('/api/v1/messages/') and method in ('GET', 'DELETE'):
+                    mid = int(url.path.rsplit('/', 1)[1])
+                    found = next((m for m in fake.messages if m['id'] == mid), None)
+                    if found is None:
+                        return self.reply(400, {'result': 'error', 'msg': 'no such message'})
+                    if method == 'DELETE':
+                        fake.messages.remove(found)
+                    return self.reply(200, {'result': 'success', 'message': found})
                 if (method, url.path) == ('GET', '/api/v1/messages'):
                     key = {'channel': 'display_recipient', 'topic': 'subject', 'sender': 'sender_email'}
                     narrow = json.loads(p['narrow'])
@@ -81,6 +89,7 @@ class FakeZulip:
 
             do_GET = lambda self: self.handle_any('GET')
             do_POST = lambda self: self.handle_any('POST')
+            do_DELETE = lambda self: self.handle_any('DELETE')
 
         self.server = serve(ThreadingHTTPServer(('127.0.0.1', 0), Handler))
 
@@ -174,6 +183,15 @@ class Observing(ZulipCase):
         there.poll()
         them = json.loads(there.db.execute('SELECT json FROM observations').fetchone()[0])['author']['did']
         self.assertEqual((here, them), ('zulip:127.0.0.1:1000', 'zulip:localhost:1000'))  # the same user id, two realms
+
+    def test_the_bot_deletes_its_own_message_and_never_a_residents(self):
+        theirs = self.zulip.say('t', 'Alice', 'mine')
+        ours = self.zulip.add('t', BOT['email'], BOT['full_name'], 'the bot said this')
+        client = self.client()
+        with self.assertRaises(zulip.Failure):
+            client.delete(theirs)
+        client.delete(ours)
+        self.assertEqual([m['id'] for m in self.zulip.messages], [theirs])
 
     def test_a_bad_credential_is_a_failure_not_a_crash(self):
         self.rc.write_text(self.rc.read_text().replace(KEY, 'wrong'))

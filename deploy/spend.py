@@ -29,6 +29,19 @@ def totals(state, month=None):
     return out
 
 
+def since(state, start):
+    """{calls, inputTokens, outputTokens, dollars} of the replied calls at or after unix time `start`."""
+    path, t = Path(state) / 'model-spend.jsonl', {'calls': 0, 'inputTokens': 0, 'outputTokens': 0}
+    for line in path.read_text().splitlines() if path.exists() else []:
+        row = json.loads(line)
+        if row['at'] >= start:
+            t['calls'] += 1
+            t['inputTokens'] += row.get('inputTokens') or 0
+            t['outputTokens'] += row.get('outputTokens') or 0
+    t['dollars'] = round((t['inputTokens'] * RATES['input'] + t['outputTokens'] * RATES['output']) / 1e6, 4)
+    return t
+
+
 def report(state, month, grant, out):
     month = month or time.strftime('%Y-%m', time.gmtime())
     for key, t in sorted(totals(state).items()):

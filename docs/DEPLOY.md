@@ -251,6 +251,10 @@ flags; `--json` prints one JSON document, otherwise readable text; each action i
 - `retry URI`: forget that the bridge skipped an observation, so the next run routes it again.
 - `reply URI --text-file F --object ID`: draft a hand-written reply to any observed post as if the object had offered it;
   then `post` it. The web page offers the same as Retry on skipped inbox rows and "reply by hand" on every row.
+- `unpost DRAFT --reason R [--zuliprc RC]`: withdraw the post a draft became, ours alone: Delve's `deleteRecord` in the
+  credentials' own repo, or Zulip's delete of the bot's own message (`--zuliprc`, or `DELVETALK_ZULIPRC`); then
+  `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
+  Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
 
 The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own
@@ -296,6 +300,26 @@ Within a poll the card comes back in the topic (the journal height grows by the 
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
 
+## Watching
+
+One probe every five minutes (docs/OPERATIONS.md section b): `python3 -m transport.hand status --json` prints the
+front's 5xx (five minutes, the hour, from `access.log`), refusals by class (the host's `world-status.hour` when it
+keeps it; until then the newest hundred entries), model calls and dollars for the hour and the day
+(`model-spend.jsonl`), the delve reservations, pending interpretations and the highest attempt, the journal's height,
+bytes and median suspension, the clock against unix minutes, the observation count, the newest backup tarball, its age
+and `last-verify` (written by `backup.sh`), and the free fraction of the state and backup disks. `python3 -m
+deploy.watch` appends it to `<state>/watch.jsonl` and posts one line per crossed threshold, naming the playbook below,
+to the owner's Zulip: stream **`delvetalk-ops`**, topic **`watch`**, as the bot whose rc `.env` names
+(`DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc`, mode 0400, owner 10425). A condition speaks at most once per
+six hours (`<state>/alerted.json`); two repeat hourly: a compose service not running or unhealthy, and a backup verify
+that failed or a newest tarball older than seven hours. Install on the workhorse:
+
+    scp deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer root@workhorse:/opt/delvetalk/
+    ssh root@workhorse 'cp /opt/delvetalk/delvetalk-watch.{service,timer} /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now delvetalk-watch.timer'
+
+`journalctl -u delvetalk-watch` shows each run; `python3 -m deploy.watch ... --dry-run` prints the lines without
+posting or remembering them.
+
 ## Opening another community
 
     python3 -m deploy.open --state /data/state --world ring --transport zulip --realm tulip.arke.me --channel ring --zuliprc ~/.zuliprc-ring
@@ -327,8 +351,8 @@ file sharing on a Mac is for testing, not custody.
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
 copies SQLite through its backup API, replays every journal (world and heaps)
 in a throwaway host with no network, and only then writes a dated tarball
-and its `.sha256`. Exit 1 means a journal is broken: the tarball is not made.
-Run it from a timer and copy the tarballs off the box. The timer installed on the workhorse:
+and its `.sha256`, and records `ok <stamp>` or `broken <stamp>` in `last-verify` (the watch reads it). Exit 1 means a
+journal is broken: the tarball is not made. The timer installed on the workhorse:
 
     # /etc/systemd/system/delvetalk-v2-backup.service
     [Service]
@@ -346,12 +370,42 @@ Run it from a timer and copy the tarballs off the box. The timer installed on th
     [Install]
     WantedBy=timers.target
 
-`systemctl enable --now delvetalk-v2-backup.timer`. The off-box copy is not set up: the workhorse has no trusted key or
-host key for hbox, and hbox has no `/tank/delvetalk-backups/` (and `/tank` was 92% full on 2026-10-10). Restore:
+`systemctl enable --now delvetalk-v2-backup.timer`.
+
+**Off the box, by pull.** A copy on the box that fsyncs the journal is not custody. The owner's machine pulls; the
+workhorse holds no credential to it, so a box that is taken cannot reach its own backups. Once, on the owner's machine:
+
+    ssh-keygen -t ed25519 -N '' -f ~/.ssh/delvetalk-backups -C delvetalk-backups-pull
+    # on the workhorse, /root/.ssh/authorized_keys (rrsync ships with rsync: /usr/share/doc/rsync/scripts/rrsync, or /usr/bin/rrsync):
+    restrict,command="rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull
+
+Then hourly on the owner's machine (cron or a launchd/systemd timer), with Docker and the host image of the deployed
+commit (`docker save`/`load` it once from the workhorse) or a host binary:
+
+    deploy/pull-backups.sh --image delvetalk-host:<sha12> ~/delvetalk-backups
+
+It rsyncs the new tarballs and their `.sha256` (`--ignore-existing`; nothing is ever written back), checks each sum,
+keeps every tarball 7 days, the first of each UTC day 56 days and the first of each month always, then untars the
+newest into a throwaway directory and replays every journal in it (`verify.sh`); exit 1 names a broken one. The verify
+is the backup: an unverified tarball is a file.
+
+**The restore drill**, quarterly and once before the welcome is posted: on the owner's machine, into a scratch
+directory, brought up on another port.
+
+    deploy/restore.sh --image delvetalk-host:<sha12> ~/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
+    # .env as on the workhorse (DELVETALK_IMAGE, DELVETALK_HOST_IMAGE), with the drill's own paths; the drill makes no model call
+    DELVETALK_DATA=/tmp/drill/v2 DELVETALK_PRIVATE_IP=127.0.0.1 DELVETALK_ANTHROPIC_KEY_PATH=/tmp/drill/no.key \
+      docker compose -p delvetalk-drill --profile town up -d --wait      # first: touch /tmp/drill/no.key
+    deploy/smoke.sh http://127.0.0.1:8765 --pin <sha256>      # the home page shows the restored entry N
+    docker compose -p delvetalk-drill down
+
+Restore on the workhorse:
 
     docker compose down
     deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
     docker compose --profile town up -d --wait
+
+A tarball pulled off the box comes back the same way (`scp` it beside its `.sha256` into `/var/backups/delvetalk`).
 
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
@@ -409,6 +463,89 @@ hash match the journal.
 
 If the new compiler refuses an old object, `world-open` fails, the healthcheck
 stays red and the journal is untouched: set the old tag back and `up` again.
+
+## Playbooks
+
+The six incidents of docs/OPERATIONS.md section b, each with the commands that diagnose and fix it, the line for the
+channel (hob's register: what happened and what to do next, no apology) and what to record. Every command runs in
+`/opt/delvetalk` on the workhorse after `set -a; . ./.env; set +a`; `hand` is `docker compose --profile ops run --rm -v
+"$DELVETALK_WATCH_ZULIPRC:/run/watch/zuliprc:ro" delvetalk-ops python3 -m transport.hand` with `--state /data/state`
+after the verb (the bot's rc mounted where `unpost --zuliprc` reads it). A and F lose data if done in the wrong order: both stop the writers first. The
+moderation verbs named "when ROOT section 3 lands" (`quiet`, `retire`, `hide`, `find`, `settings`) are the host
+lane's; until then their fallback is given.
+
+**A. The host will not start.** Healthcheck red; every reply "host unavailable".
+
+    docker compose logs --tail 50 delvetalk-hostd
+
+- `journal broken at height N: unterminated final line`: a torn tail; "A torn tail" above (backup.sh cuts it in its
+  mirror and replays, restore.sh puts the verified copy back).
+- `height out of sequence`: a second writer. Find it before anything else: `docker compose ps -a`, `fuser -v
+  /var/lib/delvetalk/v2/journal.lock` (a writer elsewhere holds the lock; hostd exits 75 naming it).
+- `journal replay edition 1; this host is 2`: set the previous `DELVETALK_IMAGE`/`DELVETALK_HOST_IMAGE` back in `.env`
+  and `docker compose --profile town up -d --wait`; a new edition is "A new binary" and docs/OPERATIONS.md's upgrade path.
+- `journal exceeds byte capacity`: docs/OPERATIONS.md section c, the journal bound.
+- the library's bytes differ: hostd rebuilds `<state>/library` from the image's `world/` at every start, so the image is
+  not the commit the journal sealed. Set that commit's image back in `.env`; a deliberate change of library is
+  "Changing the library after launch", once the host is up.
+
+Channel: `hob: the host is down; the hand is on it. Spells wait; nothing sent is lost.` Record: the height and the
+cause.
+
+**B. The bridge posts garbage.** On Delve nothing posts without a click:
+
+    hand skip DRAFT --reason 'wrong card'
+
+On Zulip the bot posts itself; stop it first, then withdraw what it said:
+
+    docker compose stop delvetalk-bridge
+    hand outbox --all --json                      # the draft ids and what they became
+    hand unpost DRAFT --reason 'misread' --zuliprc /run/watch/zuliprc
+    docker compose --profile town up -d --wait delvetalk-bridge
+
+If a card's own render is the cause, retire it (`retire`, when ROOT section 3 lands; until then stop the bridge and
+leave it stopped). Channel: `hob: the hand withdrew that; its receipt stays.` Record: the object and the receipt.
+
+**C. The model is down.** Interpretations pile up (the watch's `interpretations` line); the host retries with backoff
+to 60 clock minutes, 8 attempts, then `unclear: model: transport`; spells are unaffected.
+
+    hand status --json | python3 -c 'import json,sys; p=json.load(sys.stdin); print(p["interpretations"], p["model"]["hour"])'
+    docker compose logs --tail 20 delvetalk-interpret
+
+If the key is the problem, set `DELVETALK_MODEL_AUTH=oauth` in `.env` (the fallback accounts, "Model credentials")
+and `docker compose --profile town up -d --wait delvetalk-interpret`; otherwise wait. Channel: `hob: I cannot read
+words for now; a spell needs no reading. The cards still answer.` Record: the hour and the count of `attempted`.
+
+**D. A quota is exhausted.** Which one: `hand status --json` (`reservations`, `hour.refused.quota`, `model.day`).
+
+- posts on Delve (`16 of 16`, drafts held `rate_limited`): wait for `next`, or raise `postQuota` (`settings --post N`,
+  when ROOT section 3 lands).
+- interpretations per principal (48 an hour, `quota` refusals with `next`): the resident is told by the host; nothing
+  to do unless it is a loop, which is B.
+- the model cap per day: the world's words wait for the clock day to turn; `settings --model N` with a reading, when
+  ROOT section 3 lands. Channel: `hob: my readings for today are spent; spells run as they always do.`
+
+Record: which quota, and whether it was a loop.
+
+**E. A resident is abusive.** `quiet WHO --hours 24 --reading R` when ROOT section 3 lands; a card that carries it is
+hidden then retired (`hide`, `retire`). What the bot already said on Zulip:
+
+    hand unpost DRAFT --reason 'abuse' --zuliprc /run/watch/zuliprc
+
+Until `quiet` lands: `hand skip` their drafts on Delve, and on Zulip stop the bridge (B) while the hand decides.
+Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt.
+
+**F. The box is full.**
+
+    df -h /var/lib/delvetalk /var/backups
+    docker compose stop delvetalk-bridge delvetalk-interpret     # the host keeps answering reads
+    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/heaps /var/lib/delvetalk/v2/state/access.log* | sort -n
+    docker image ls 'delvetalk*'
+
+Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with the owner's
+`~/delvetalk-backups` before deleting a tarball there, then old image tags (`docker image rm` of a tag `.env` does not
+name). Bring the writers back: `docker compose --profile town up -d --wait`. Channel: `hob: the host is full; the hand
+is making room. Spells wait.` Record: what was removed and why.
 
 ## What is not automated, and why
 

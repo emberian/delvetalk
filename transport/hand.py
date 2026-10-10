@@ -6,9 +6,12 @@ assistant over ssh. Both read the bridge's state directory and ask hostd; nothin
 the `post` verb), with the owner's credentials file. Every action appends a line to <state>/hand-log.jsonl.
 """
 import argparse
+import calendar
+import collections
 import hmac
 import json
 import os
+import shutil
 import sys
 import time
 import urllib.parse
@@ -20,6 +23,7 @@ from deploy.genesis import OPENER as OWNER
 from transport import post, pages
 from transport.bridge import all_observations, awaiting_path, skipped, uri_hash, write_atomic
 from transport.delve import Failure, canonical
+from transport.hostd import CLOCK
 from transport.hostproc import HostClient
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
@@ -76,6 +80,42 @@ class Hand:
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
                 'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
                 'hostd pid': pid.read_text().strip() if pid.exists() else 'none'}
+
+    def probe(self, backups=None, journal=None):
+        """The one monitoring probe (`status --json`, docs/OPERATIONS.md section b): plain numbers, every threshold the watch's."""
+        now, st = self.clock(), self.host.send({'op': 'world-status'})
+        rows = [l.split() for p in (self.state / 'access.log.1', self.state / 'access.log') if p.exists() for l in p.read_text().splitlines()]
+        when = lambda x: calendar.timegm(time.strptime(x[0], '%Y-%m-%dT%H:%M:%SZ'))
+        recent = lambda secs: [x for x in rows if len(x) >= 4 and now - when(x) < secs]
+        hour = st.get('hour')  # the host's counters for the clock hour, when it keeps them (ROOT section 4)
+        if hour is None:  # until then the newest hundred entries
+            entries = self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'limit': 100}).get('entries') or []
+            outcomes = [(e.get('outcome') or {}) for e in entries]
+            hour = {'window': f'{len(entries)} newest entries', 'turns': len(entries), 'refused': dict(collections.Counter(
+                o.get('class') or '?' for o in outcomes if o.get('tag') == 'refused'))}
+        waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
+        journal = Path(journal) if journal else self.state.parent / 'world.journal'
+        sizes = []
+        if journal.exists():
+            with open(journal, 'rb') as f:
+                f.seek(max(0, journal.stat().st_size - (4 << 20)))  # the newest 4 MiB is enough for a median
+                sizes = sorted(len(l) for l in f.read().splitlines()[1:] if b'"tag":"suspended"' in l)
+        backups = Path(backups or os.environ.get('DELVETALK_BACKUPS', '/var/backups/delvetalk'))
+        tars = sorted(backups.glob('delvetalk-*.tar.gz')) if backups.is_dir() else []
+        verify = (backups / 'last-verify').read_text().split() if (backups / 'last-verify').exists() else []
+        disk = {str(p): round(shutil.disk_usage(p).free / shutil.disk_usage(p).total, 3) for p in (self.state, backups) if p.exists()}
+        return {'at': int(now), 'front': {'requests5m': len(recent(300)), '5xx5m': sum(1 for x in recent(300) if x[3].startswith('5')),
+                                          '5xxHour': sum(1 for x in recent(3600) if x[3].startswith('5'))},
+                'hour': hour, 'model': {'hour': spend.since(self.state, now - 3600), 'day': spend.since(self.state, now - 86400)},
+                'reservations': next((s for s in (st.get('posts') or {}).get('sources') or [] if s.get('source') == 'delve'), {}),
+                'interpretations': {'pending': len(waiting), 'maxAttempts': max([p.get('attempts') or 0 for p in waiting] or [0])},
+                'journal': {'height': st.get('height'), 'bytes': journal.stat().st_size if journal.exists() else None,
+                            'medianSuspendedBytes': sizes[len(sizes) // 2] if sizes else None},
+                'clock': {'world': st.get('clock'), 'behindMinutes': int(now // 60) - (st.get('clock') or 0)},
+                'observed': len(self.observed()),
+                'backup': {'newest': tars[-1].name if tars else None, 'ageSeconds': int(now - tars[-1].stat().st_mtime) if tars else None,
+                           'verify': verify[0] if verify else None},
+                'freeFraction': disk}
 
     def search(self, slug):
         return self.host.send({'op': 'world-resolve', 'principal': self.owner, 'slug': slug.strip()})
@@ -157,6 +197,30 @@ class Hand:
         write_atomic(path, dict(d, posted=False, skipped=True, reason=reason.strip() or 'skipped by the owner'))
         self.log('skip', draft_id, reason=reason)
         return {'skipped': draft_id}
+
+    def unpost(self, draft_id, reason, zulip=None, client=None):
+        """Delete the post this draft became (ours alone: Delve's deleteRecord in the session's repo, Zulip's DELETE of the
+        bot's message) and tell the host (`world-posted {unposted: true}`, so replies stop routing to it); the draft and
+        the hand's log keep the fact whatever the host answers."""
+        path, d = self.draft(draft_id)
+        uri = (d.get('sent') or {}).get('uri')
+        if not d.get('posted') or not uri or d.get('unposted'):
+            raise HandError(f'{draft_id} is no post of ours to withdraw')
+        try:
+            if uri.startswith('zulip://'):
+                from transport.zulip import parse_uri
+                if zulip is None:
+                    raise HandError('a Zulip post is withdrawn with --zuliprc')
+                zulip.delete(parse_uri(uri)[2])
+            else:
+                post.unsend(uri, self.credentials, client)
+        except Failure as err:
+            raise HandError(f'unpost failed: {err.code}') from None
+        got = self.host.send({'op': 'world-posted', 'principal': CLOCK, 'uri': uri, 'cid': d['sent'].get('cid'), 'object': post.draft_object(d),
+                              'intent': d.get('intent'), 'unposted': True, 'reason': reason})
+        write_atomic(path, dict(d, unposted={'at': int(self.clock()), 'reason': reason, 'recorded': got}))
+        self.log('unpost', draft_id, uri=uri, reason=reason)
+        return {'unposted': uri}
 
     def hold(self, draft_id):
         self.draft(draft_id)
@@ -248,6 +312,11 @@ def text_of(data, indent=''):
     return indent + str(data)
 
 
+def zulip_client(rc):
+    from transport.zulip import Client
+    return Client(rc)
+
+
 def main(argv=None, out=None, host=None, poster=post.post_draft):
     out = out or sys.stdout
     common = argparse.ArgumentParser(add_help=False)
@@ -261,7 +330,9 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
             'outbox': [('--all', dict(action='store_true'))], 'show': [('draft', {})],
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
-            'status': [], 'search': [('slug', {})], 'retry': [('uri', {})],
+            'unpost': [('draft', {}), ('--reason', dict(required=True)), ('--zuliprc', dict(default=os.environ.get('DELVETALK_ZULIPRC')))],
+            'status': [('--journal', dict(help='--json: the world journal (default <state>/../world.journal)')),
+                       ('--backups', dict(help='--json: the backup directory (default DELVETALK_BACKUPS or /var/backups/delvetalk)'))], 'search': [('slug', {})], 'retry': [('uri', {})],
             'reply': [('uri', {}), ('--text-file', dict(required=True)), ('--object', dict(required=True))],
             'log': [('--tail', dict(type=int, default=20))]}
     for name, args in spec.items():
@@ -276,7 +347,8 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
         read = lambda p: Path(p).read_text()
         data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'show': lambda: h.show(a.draft),
                 'edit': lambda: h.edit(a.draft, sys.stdin.read() if a.stdin else read(a.text_file)), 'post': lambda: h.post(a.draft, object=a.object),
-                'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft), 'status': h.status, 'search': lambda: h.search(a.slug),
+                'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft),
+                'unpost': lambda: h.unpost(a.draft, a.reason, zulip_client(a.zuliprc) if a.zuliprc else None), 'status': (lambda: h.probe(a.backups, a.journal)) if a.json else h.status, 'search': lambda: h.search(a.slug),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail)}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
