@@ -727,6 +727,17 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `capacity` ("maxRoots") on the roots it read itself, so no admitted entry is one replay refuses.
    Test: `tests/test_law.py` `test_a_law_reading_too_many_objects_is_refused_capacity_and_the_journal_replays`.
 
+95. **Retention evictions are facts of the write (host12; codex host 8, 10).** `applyEditsEvicting`
+   returns, beside the state, the rows the declared retention dropped to make room for an insert or
+   upsert (`canonicalRowsDropping`). `judge` gives them to the law as `Law.Facts.evicted`, and
+   `insertOnly` exempts exactly those rows (5.74's inference from a full relation and key order is
+   gone: retract-then-insert into a full relation is refused). The admitted write journals their keys
+   as `evicted: [{field, key}]` when there are any (replay re-derives and compares them), and
+   `touchesOf` indexes each as a `retract` of its key, so a waiting upsert or retract of an evicted key
+   is `staleRoot` and re-run. Tests: `tests/test_relation.py`
+   `test_insert_only_counts_a_proposed_retraction_from_a_full_relation`,
+   `test_a_retract_of_a_key_retention_evicted_meanwhile_is_stale`; `#guard`s in `Law.lean`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

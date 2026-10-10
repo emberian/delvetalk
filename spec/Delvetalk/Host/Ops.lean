@@ -516,15 +516,19 @@ def keyOf (d : RelDecl) : Data → EditResult Data
 def keyAsDeclared (d : RelDecl) (key : Data) : EditResult Data := keyOf d key
 
 /-- Rows sorted by their keys' canonical bytes, no key twice (`duplicateKey`), the oldest by key
-    order dropped past the declared limit. -/
-def canonicalRows (d : RelDecl) (rows : List Data) : EditResult (List Data) := do
+    order dropped past the declared limit; with the rows dropped. -/
+def canonicalRowsDropping (d : RelDecl) (rows : List Data) : EditResult (List Data × List Data) := do
   let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
   let sorted := (keyed.toArray.qsort fun a b => Law.bytesLt a.1 b.1).toList
   let mut prev : Option ByteArray := none
   for (k, _) in sorted do
     if prev == some k then throw "duplicateKey"
     prev := some k
-  return (sorted.drop (sorted.length - d.cap)).map (·.2)
+  let over := sorted.length - d.cap
+  return ((sorted.drop over).map (·.2), (sorted.take over).map (·.2))
+
+def canonicalRows (d : RelDecl) (rows : List Data) : EditResult (List Data) :=
+  (·.1) <$> canonicalRowsDropping d rows
 
 def canonicalRelation (d : RelDecl) (v : Data) : EditResult Data := do
   return relationOf (← canonicalRows d (← relationRows v))
@@ -543,36 +547,42 @@ def canonicalState (decls : List RelDecl) : Data → EditResult Data
     | insert  | add        | no change             | refused `keyTaken`     |
     | upsert  | add        | no change             | replace                |
     | retract | no change  | remove                | remove                 | -/
-def relationEdit (d : RelDecl) (old : Data) (kind : EditKind) : EditResult Data := do
+def relationEdit (d : RelDecl) (old : Data) (kind : EditKind) : EditResult (Data × List Data) := do
   let rows ← relationRows old
   let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
   let others := fun (k : ByteArray) => (keyed.filter (·.1 != k)).map (·.2)
+  -- The rows the declared retention drops to keep the relation within its limit go with it.
+  let kept := fun (rows : List Data) => do
+    let (rows, dropped) ← canonicalRowsDropping d rows
+    return (relationOf rows, dropped)
   match kind with
   | .insert row | .upsert row =>
     let k := Delvetalk.Canonical.encode (← keyOf d row)
     match keyed.find? (·.1 == k) with
-    | none => canonicalRelation d (relationOf (rows ++ [row]))
+    | none => kept (rows ++ [row])
     | some (_, r) =>
-      if Delvetalk.Canonical.encode r == Delvetalk.Canonical.encode row then pure old
+      if Delvetalk.Canonical.encode r == Delvetalk.Canonical.encode row then pure (old, [])
       else match kind with
         | .insert _ => throw "keyTaken"
-        | _ => canonicalRelation d (relationOf (others k ++ [row]))
+        | _ => kept (others k ++ [row])
   | .retract key =>
     let k := Delvetalk.Canonical.encode (← keyAsDeclared d key)
-    if keyed.any (·.1 == k) then pure (relationOf (others k)) else pure old
+    if keyed.any (·.1 == k) then pure (relationOf (others k), []) else pure (old, [])
   | _ => throw "typeMismatch"
 
 /-- All edits of a step read the state before the step. A relation field takes `insert`, `upsert`,
     `retract` (`relationEdit`); any other edit of it is followed by putting it back in canonical form. -/
-def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : Step) : EditResult (List (String × Data)) :=
-  step.foldlM (init := fields) fun acc e => do
+def applyStep (decls : List RelDecl) (state : List (String × Data) × List (String × Data)) (step : Step) :
+    EditResult (List (String × Data) × List (String × Data)) :=
+  let (fields, evicted) := state
+  step.foldlM (init := (fields, evicted)) fun (acc, evicted) e => do
     let some old := fields.lookup e.field | throw "typeMismatch"
     let decl := decls.find? (·.field == e.field)
     let put := fun (v : Data) => match decl with
-      | some d => do return replaceField acc e.field (← canonicalRelation d v)
-      | none => pure (replaceField acc e.field v)
+      | some d => do return (replaceField acc e.field (← canonicalRelation d v), evicted)
+      | none => pure (replaceField acc e.field v, evicted)
     match e.kind with
-    | .keep => pure acc
+    | .keep => pure (acc, evicted)
     | .set v => put v
     | .add n => match old with
         | .natural m => put (.natural (m + n))
@@ -581,12 +591,19 @@ def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : St
     | .amendItem item c => put (← editByItem item (some c) old)
     | .removeItem item => put (← editByItem item none old)
     | .insert _ | .upsert _ | .retract _ => match decl with
-      | some d => pure (replaceField acc e.field (← relationEdit d old e.kind))
+      | some d =>
+        let (v, dropped) ← relationEdit d old e.kind
+        pure (replaceField acc e.field v, evicted ++ dropped.map (e.field, ·))
       | none => throw "typeMismatch"
 
-def applyEdits (decls : List RelDecl) : Data → List Step → EditResult Data
-  | .record fields, steps => (steps.foldlM (applyStep decls) fields).map .record
+/-- The steps applied in order, with the rows the declared retention evicted to make room for an
+    insert or an upsert, by field (codex host 8, 10: `insertOnly` and the conflict index read them). -/
+def applyEditsEvicting (decls : List RelDecl) : Data → List Step → EditResult (Data × List (String × Data))
+  | .record fields, steps => (steps.foldlM (applyStep decls) (fields, [])).map fun (fs, ev) => (.record fs, ev)
   | _, _ => throw "typeMismatch"
+
+def applyEdits (decls : List RelDecl) (state : Data) (steps : List Step) : EditResult Data :=
+  (·.1) <$> applyEditsEvicting decls state steps
 
 /-! ## Law as state, and programs -/
 
@@ -1507,6 +1524,9 @@ structure Judged where
   amendments : List Json
   creations : List (String × Object) := []
   creates : List Json := []
+  /-- Per written object, the keys its declared retention evicted (`{field, key}`), journaled as the
+      write's `evicted` when there are any. -/
+  evicted : List (String × Array Json) := []
 
 /-- The id of the `ordinal`th grant of the turn with this identity. -/
 def grantId (principal intent : String) (ordinal : Nat) : String :=
@@ -1791,13 +1811,18 @@ def touchesOf (entry : Json) : List (String × Touch) :=
     let version ← (x.getObjValAs? Nat "version").toOption
     let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
     let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    -- A key the declared retention evicted is touched as a retraction of it (codex host 10).
+    let evicted := (((x.getObjVal? "evicted").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList.filterMap fun e => do
+      let f ← (e.getObjValAs? String "field").toOption
+      let k ← (e.getObjVal? "key").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+      return (f, Data.variant "retract" (Data.record [("key", k)]))
     let edits : Option (List (String × Data)) :=
       if kinds.any (fun k => !((k.getNat?.toOption.map Law.editKind).getD false)) then none else
-      steps.foldlM (init := []) fun acc step => match decodeData Limits.dataDepth step with
-        | .ok (.record fs) => some (acc ++ fs.filter fun (_, k) => match k with
-            | .variant "keep" _ => false
+      (steps.foldlM (init := ([] : List (String × Data))) fun acc step => match decodeData Limits.dataDepth step with
+        | .ok (.record fs) => some (acc ++ fs.filter fun (x : String × Data) => match x.2 with
+            | Data.variant "keep" _ => false
             | _ => true)
-        | _ => none
+        | _ => none).map (· ++ evicted)
     return (id, { version, edits })
 
 /-- A root `id` the turn read at `seen` that has moved since may still commit when every change the
@@ -1884,11 +1909,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   let mut out : List (String × Object) := []
   let mut reprograms : List Json := []
   let mut amendments : List Json := []
+  let mut evictions : List (String × Array Json) := []
   for (id, changes) in writes do
     let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
-    let written ← match applyEdits o.relations o.state (changes.map (·.edits)) with
+    let (written, evicted) ← match applyEditsEvicting o.relations o.state (changes.map (·.edits)) with
       | .ok d => pure d
       | .error clause => throw { cls := clause, object := id }
+    let evictedKeys := evicted.toArray.filterMap fun (f, row) => do
+      let d ← o.relations.find? (·.field == f)
+      let k ← (keyOf d row).toOption
+      return Json.mkObj [("field", toJson f), ("key", dataJson k)]
+    unless evictedKeys.isEmpty do evictions := evictions ++ [(id, evictedKeys)]
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
     -- A fixed field is set when the object is made and never after: no write changes it (a
     -- proposal's edits are not the kernel's, which refuses such a write at compile).
@@ -1952,8 +1983,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         match grantStands w via id method with
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
-      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
-                                 relations := next.relations }
+      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method, evicted }
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
     -- The Bend law, after the text admits: once for each write of edits (the object's own or a
@@ -1980,7 +2010,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       next := { next with law, lawText := text, readings := given ++ kept }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
     out := out ++ [(id, { next with version := o.version + 1, state })]
-  return { updates := out, reprograms, amendments,
+  return { updates := out, reprograms, amendments, evicted := evictions,
            creations := p.creates.map fun (id, c) => (id, c.object),
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
@@ -2233,7 +2263,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) :: ("cid", toJson (stateCid o.state)) ::
-          writtenFields ((p.allWrites.lookup id).getD [])))
+          writtenFields ((p.allWrites.lookup id).getD []) ++
+          ((judged.evicted.lookup id).map (fun ks => [("evicted", Json.arr ks)])).getD []))
       let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
         (if judged.reprograms.isEmpty then [] else [("reprograms", Json.arr judged.reprograms.toArray)]) ++
         (if judged.amendments.isEmpty then [] else [("amendments", Json.arr judged.amendments.toArray)]) ++
@@ -2978,6 +3009,11 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless judged.reprograms == recordedPrograms.toList && judged.amendments == recordedLaws.toList &&
           judged.creates == recordedCreates.toList do
         throw "recorded reprograms, amendments or creations do not replay"
+      for x in rawWrites do
+        let id := (x.getObjValAs? String "object").toOption.getD ""
+        let recorded := ((x.getObjVal? "evicted").toOption.bind (·.getArr?.toOption)).getD #[]
+        unless recorded == ((judged.evicted.lookup id).getD #[]) do
+          throw s!"the rows retention evicted from {id} do not replay"
       let w := (judged.updates.filter (fun (id, _) => judged.reprograms.any fun r =>
           (r.getObjValAs? String "object").toOption == some id) ++ judged.creations).foldl (fun w (_, o) => noteRecompiled w o) w
       let updates := judged.updates

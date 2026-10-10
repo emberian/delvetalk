@@ -24,9 +24,9 @@ structure Facts where
   kind : Nat := 0
   /-- The method whose run made the change; "" for an op. -/
   method : String := ""
-  /-- The relations the object's code declares: `insertOnly` does not count a row its declared
-      retention dropped. -/
-  relations : List RelDecl := []
+  /-- The rows the declared retention dropped while the write's edits were applied, by field
+      (`Ops.applyEditsEvicting`): `insertOnly` does not count them, and nothing else. -/
+  evicted : List (String × Data) := []
 
 /-- The kinds of change a law tells apart by `request.kind`, by name. `proposed` is a state write
     that does not come from the object's own method: a `world-propose`, or the state a reprogram's
@@ -94,24 +94,6 @@ def bytesLt (a b : ByteArray) : Bool := Id.run do
   for i in [0:min a.size b.size] do
     if a[i]! != b[i]! then return a[i]! < b[i]!
   return a.size < b.size
-
-/-- The canonical bytes of a row's key under `d`, none when a key column is missing. -/
-def keyBytes (d : RelDecl) (row : Data) : Option ByteArray :=
-  match row with
-  | .record cols => (d.key.mapM fun k => (cols.lookup k).map (k, ·)).map fun ks => Delvetalk.Canonical.encode (.record ks)
-  | _ => none
-
-/-- Was `row` dropped by the declared retention of relation `field`, which now holds `after`? The
-    relation is full (`RelDecl.cap`) and the row's key sorts before every kept key (the first rows
-    in key order go), so no row with its key is kept: an altered row keeps its key and counts. -/
-def retentionDropped (decls : List RelDecl) (field : String) (after : List Data) (row : Data) : Bool :=
-  match decls.find? (·.field == field) with
-  | none => false
-  | some d =>
-    after.length == d.cap &&
-    match keyBytes d row, after.mapM (keyBytes d) with
-    | some k, some kept => kept.all fun c => bytesLt k c
-    | _, _ => false
 
 /-- `old` is a prefix of `new`. -/
 def isPrefix : List String → List String → Bool
@@ -200,8 +182,8 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
     | _, _ => false
   -- Relations (RELATIONAL §5). Rows are compared whole by canonical bytes: a relation holds no
   -- key twice, so "every old row is in new" is "new ⊇ old by key, every old row unchanged".
-  -- A row the declared retention dropped (`dropOldest`: the relation is full and the row's key
-  -- sorts before every key it kept) was not retracted by the write, so it does not count.
+  -- A row the declared retention dropped while this write was applied (`Facts.evicted`, as the
+  -- edits ran: codex host 8) was not retracted by the write, so it does not count.
   | .insertOnly field => match (rawField field new).bind rowsOf with
     | none => false
     | some after => match old with
@@ -209,7 +191,7 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
       | some before => match (rawField field before).bind rowsOf with
         | some rows =>
           let now := after.map canon
-          rows.all fun r => now.contains (canon r) || retentionDropped facts.relations field after r
+          rows.all fun r => now.contains (canon r) || facts.evicted.any fun (f, x) => f == field && canon x == canon r
         | none => false
   | .countLe field bound => match (rawField field new).bind rowsOf with
     | some rows => decide ((rows.length : Int) ≤ bound)
@@ -322,14 +304,14 @@ private def rel (rows : List Data) : Data :=
 #guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "kim" 2 "b"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "changed"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rec1 1)) (rec1 1) (parsed "insertOnly(count)")
--- Retention: with `limit: 2` keyed by `at`, a full relation drops its first row by key; that row
--- does not count against insertOnly, but a retraction or an alteration still does.
-private def limited : Facts := { facts with relations := [{ field := "rains", key := ["at"], limit := 2 }] }
+-- Retention: a row the write's insert evicted does not count against insertOnly, but a retraction
+-- or an alteration still does, and a full relation is no evidence of eviction (codex host 8).
+private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "a")] }
 #guard denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "b", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "b", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
 #guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "a"]) (parsed "insertOnly(rains)")
 #guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "a", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
-#guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "x", rain "kim" 2 "b"]) (parsed "insertOnly(rains)")
+#guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "x", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
 #guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= 2")
 #guard !denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= 1")
 #guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
