@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (foundation after lane/kernel9; the queue is §16).
+State on 2026-10-10 (foundation after lane/kernel10; the queue is §16).
 
 ## Summary
 
@@ -332,12 +332,10 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (lane/kernel9, after foundation 3f743e2)
+## 16. Queue for the successor (lane/kernel10, after foundation 534b92c)
 
-Done: items 1-6 (kernel7, kernel8: §19-§22); item 8, the State is the schema (kernel9, §23):
-`Edits`/`keep()` derived from `State` and a hand-written pair refused, `fixed` State fields, form
-blocks declaring `NameInput` and `forms()` with the method's input enforced, `form` on method
-rows, `fixed` and `declares` in the artifact. Item 8b needed nothing in the kernel. Remaining:
+Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the ten kernel findings of the
+codex review of a3e1fb2 (kernel10, §24). Remaining:
 
 7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
    native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
@@ -348,7 +346,16 @@ rows, `fixed` and `declares` in the artifact. Item 8b needed nothing in the kern
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
 11. The host reads `declares` (TurnLoop `declaredForms`, Ops `packageDeclares`) and `fixed`
-   (actions, inspect, the Workshop's `set`): host lane.
+   (actions, inspect, the Workshop's `set`): host lane. Since kernel10 both cover a layer's stack.
+12. Host lane: `Turn.resumeEntryStep entry checkpoint issued binding value b dictionary?` takes
+   the journaled digest; the two TurnLoop call sites pass `checkpoint.digest` of the journaled
+   checkpoint (and `suspension.checkpoint.digest` for the profile). `expandSuspended` recomputes a
+   digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
+   host that ever resumes a checkpoint from outside its journal must look its digest up there.
+13. Stateless `turn-resume` resumes only checkpoints its process issued (§24): the HTTP REPL's
+   client-held checkpoints die with the repl process (transport lane, if that matters to it).
+14. The three evaluators' `textHasAny` are still list searches; they are references, not
+   budgeted, so only if conformance ever times them.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -633,3 +640,29 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   a layer that wrote no `methods()` or `forms()` declared neither, so the host took inherited methods
   for helpers and refused inherited forms). The host lane switches `declaredForms` and
   `packageDeclares` to it. Test: `test_sugar.Declares`.
+
+## 24. The codex review's kernel findings (lane/kernel10, after foundation 534b92c)
+
+One commit each, each with its failing input as a test first (all ten failed before their fix):
+1. Natural arithmetic past 2^64 is charged before the result is built (`naturalStepCost`, §5);
+   forty squarings of 2 are refused, not a 128 GiB natural. `test_tariff.NaturalArithmetic`.
+3. A checkpoint resumes only against a digest its resumer recorded (`issued`; §2, §16 item 12);
+   a stateless session keeps the digests it handed out. The packet-path `resumeActivity` is
+   deleted. `test_turn`.
+4. `textHasAny` looks words up in a hash set (`textHasAnyWordFast`, `@[csimp]` to the list
+   reference, axioms pinned) and pays a tick a byte more. `test_text_words.ManyWords`.
+7. `encodeJson` refuses a negative integer below -2^64. `test_canonical`.
+8. The byte budget is the canonical DAG-CBOR size (`Data.canonicalBytes`, §4), for results and,
+   newly, Plans; the legacy `encoded` is gone. `test_tariff.CanonicalBytes`.
+9. `labelEqual` costs `1 + min` of its operands' bytes. `test_tariff.LabelEqual`.
+10. A take/drop preflight that cannot pay spends its allowance. `test_tariff.FailedPreflight`.
+2. `fixed` follows alias chains and a layer's inherited State; `checkFixed` refuses a layer's
+   write of an inherited fixed field. `test_sugar.FixedFields`.
+5. `declares` covers a layer's stack. `test_sugar.Declares`.
+6. `write {f: remove v}` is lowered in the generics pass after the State and field types resolve.
+   `test_sugar.Writes`.
+Also, for the host lane: `request.kind == proposed` (and write, reprogram, amend) in the law
+fragment (`kindNumber`, `parse_kind_names`).
+No pinned tick count and no packet moved (pins: 0 recompiled). The three evaluators and the
+conformance generator needed nothing: no term form or primitive meaning changed, and conformance
+compares values, never costs. Full suite on hbox at the end: 1,148 tests, 0 failed.
