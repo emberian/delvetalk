@@ -1196,10 +1196,23 @@ def declWritten : Decl → List String
   | .spec sp => sp.methods.flatMap (bodyWritten ·.body)
   | _ => []
 
-/-- Refuse a write that names a fixed State field of module `index`. -/
+/-- The State a module's writes edit: its own, or in a layer that declares none, the State of
+the module it is a layer over (its `Super`), as far down as the stack goes. -/
+def effectiveStateFields : Nat → Nat → M (Option (List ObjectiveBendSurface.Field × Nat × Span))
+  | 0, _ => return none
+  | fuel + 1, index => do
+    let some source := (← get).sources[index]? | return none
+    match ← tryCatch (stateFields index source.ast) (fun _ => pure none) with
+    | some found => return some found
+    | none =>
+      if source.ast.layerOver.isNone then return none
+      let some below := (source.module.imports.find? (·.importAlias == "Super")).map (·.target) | return none
+      effectiveStateFields fuel below
+
+/-- Refuse a write that names a fixed field of the State module `index` edits. -/
 def checkFixed (index : Nat) : M Unit := do
   let some source := (← get).sources[index]? | return
-  let some (fields, _, _) ← tryCatch (stateFields index source.ast) (fun _ => pure none) | return
+  let some (fields, _, _) ← effectiveStateFields (← get).sources.size index | return
   let fixed := (fields.filter (·.fixed)).map (·.name)
   if fixed.isEmpty then return
   for name in source.ast.decls.flatMap declWritten do

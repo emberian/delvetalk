@@ -614,7 +614,10 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   `Edits` field or any `world.write(...)` argument (a record, or `extend(keep(), {...})`, so every
   `write {...}`) naming one: "refused (fixed): colour is fixed; no edit names it". The artifact of
   an entry whose State has fixed fields lists them, `fixed: [names]` in State order (absent
-  otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`.
+  otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`. Since kernel10
+  both follow the effective State: `Package.stateRecordAt` resolves `type` alias chains of any length and,
+  in a layer that declares no State, the State below (`Super`); `Generics.effectiveStateFields` makes
+  `checkFixed` refuse a layer's write naming an inherited fixed field (`test_sugar.FixedFields`).
   Pins: 0 recompiled. Tests: `test_sugar.FixedFields` (the packet equals the State-renamed module
   whose hand-written pair omits the fixed fields; the refusals).
 - Commit 3 moved 36 test files' fixtures off hand-written pairs (deleted; `test_relation`'s own

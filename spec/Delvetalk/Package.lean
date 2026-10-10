@@ -263,31 +263,35 @@ theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveB
     (lawTable laws ast).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
 
-/-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order: its own
-`record State`, or the record a `type State = Alias.S` names in the module imported as `Alias`. -/
 def fixedNames (fields : List Minidregg.Compiler.ObjectiveBendSurface.Field) : List String :=
   (fields.filter (·.fixed)).map (·.name)
 
+/-- The record a State-like name resolves to from module `index`: a `record`, through `type`
+aliases (`Alias.N` names the import aliased `Alias`) however many, and for `State` in a layer
+that declares none, the State of the module below (`Super`). `fuel` bounds the chain. -/
+def stateRecordAt (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) :
+    Nat → Nat → String → Option (List Minidregg.Compiler.ObjectiveBendSurface.Field)
+  | 0, _, _ => none
+  | fuel + 1, index, name => do
+    let ast ← asts[index]?
+    let module ← modules[index]?
+    let target := fun (alias : String) => (module.imports.find? (·.importAlias == alias)).map (·.target)
+    match ast.decls.find? (fun d => d.name == name && (d matches .record .. || d matches .typeAlias ..)) with
+    | some (.record _ _ fields _) => some fields
+    | some (.typeAlias _ type _) =>
+      match (Minidregg.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
+      | [alias, n] => stateRecordAt modules asts fuel (← target alias) n
+      | [n] => stateRecordAt modules asts fuel index n
+      | _ => none
+    | _ => if name == "State" && ast.layerOver.isSome then stateRecordAt modules asts fuel (← target "Super") "State" else none
+
+/-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order, of the
+State it runs on: its own, an alias chain's record, or a layer's inherited one. -/
 def fixedFields (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) (index : Nat) :
-    List String := Id.run do
-  let some ast := asts[index]? | return []
-  for d in ast.decls do
-    match d with
-    | .record "State" _ fields _ => return fixedNames fields
-    | .typeAlias "State" type _ =>
-      let some (module : SourceModule) := modules[index]? | return []
-      let (home, name) := match (Minidregg.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
-        | [alias, n] => ((module.imports.find? (fun (i : LockedImport) => i.importAlias == alias)).map (fun (i : LockedImport) => i.target), n)
-        | [n] => (some index, n)
-        | _ => (none, "")
-      let some home := home | return []
-      let some other := asts[home]? | return []
-      for o in other.decls do
-        if let .record r _ fields _ := o then
-          if r == name then return fixedNames fields
-      return []
-    | _ => pure ()
-  return []
+    List String :=
+  match stateRecordAt modules asts (4 * modules.length + 4) index "State" with
+  | some fields => fixedNames fields
+  | none => []
 
 /-- The conventional declarations a host looks for in an entry module. -/
 def conventionalNames : List String :=

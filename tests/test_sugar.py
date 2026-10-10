@@ -940,6 +940,30 @@ class FixedFields(unittest.TestCase):
             self.assertEqual(reply["status"], "refused", reply)
             self.assertIn("refused (fixed): note is fixed; no edit names it", reply["diagnostic"]["message"])
 
+    def test_fixed_fields_follow_layers_and_alias_chains(self):
+        # Refuted by an artifact without `fixed` whose effective State has fixed fields: a layer
+        # with no State of its own, or a State aliasing an alias of one (review kernel 2).
+        base = [{"name": "Base", "source": FIXED_HEAD + DERIVED_REST}]
+        layer = ("layer over ./Base.obend\n" + HEAD + "import ./Abi.obend as Abi\n"
+                 "def louder(state: Super.State, context: Abi.Context) -> Nat:\n  state.planted + 2n\n")
+        for entry in ("plant", "louder"):
+            with self.subTest(layer=entry):
+                self.assertEqual(self.compiled(layer, entry, base).get("fixed"), ["note", "owner"])
+        lib = [{"name": "Lib", "source": FIXED_HEAD + DERIVED_REST + "type Shared = State\n"}]
+        aliased = (HEAD + "import ./Lib.obend as Lib\ntype Again = Lib.Shared\ntype State = Again\n"
+                   "def initial() -> State:\n  Lib.initial()\n")
+        self.assertEqual(self.compiled(aliased, "initial", lib).get("fixed"), ["note", "owner"])
+
+    def test_a_layer_write_naming_an_inherited_fixed_field_is_refused(self):
+        base = [{"name": "Base", "source": FIXED_HEAD + DERIVED_REST}]
+        layer = ("layer over ./Base.obend\n" + HEAD + "import ./Abi.obend as Abi\nimport ./Plan.obend as P\n"
+                 "import ./World.obend as World\n"
+                 "def retitle(state: Super.State, input: {}, context: Abi.Context) -> Activity<Nat>:\n"
+                 "  let written(_) = world.write::<Super.Edits>({note: P.Edit.set({value: \"\"})})\n  state.planted\n")
+        reply = self.send("check-package", layer, "retitle", base)
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (fixed): note is fixed; no edit names it", reply["diagnostic"]["message"])
+
     def test_only_a_state_field_is_fixed(self):
         source = DERIVED_HEAD.replace("  text: String\n", "  text: fixed String\n") + DERIVED_REST
         reply = self.send("check-package", source, "plant")
