@@ -73,7 +73,7 @@ def seeds(opener):
             ('directory', 'Directory', rec(owner=lab(opener), policy=ref('policy'),
                                            doors=relation(*[rec(label=lab(l), description=lab(d), to=ref(t), place=nat(i))
                                                             for i, (l, d, t) in enumerate(DOORS)]))),
-            ('garden', 'Garden', rec(owner=lab(opener), policy=ref('policy'))),
+            ('garden', 'Garden', rec(owner=lab(opener), ownerHandle=lab(HANDLE), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),

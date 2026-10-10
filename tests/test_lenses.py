@@ -12,6 +12,7 @@ Policy's model, escalate and system and an Avatar's handle are lenses; Policy.se
 Refuted by: a stranger's set changing the policy, a value outside its kind being written, a set of
 two fields, a field without a lens, or `?` omitting a lens.
 """
+import json
 import unittest
 
 from tests import test_chain, test_policy
@@ -160,6 +161,13 @@ class OwnedLenses(test_chain.Chain):
         self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember"))
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "ember")
         self.assertEqual(r["result"]["label"], "changed", r)
+        # A real owner is named by the handle the seed gave, never a fragment of its DID.
+        owner = "did:plc:6amo7col5h4ciq2gpm5eur7b"
+        self.make("garden2", closure("Garden"), record(owner=label(owner), ownerHandle=label("ember.delve.town")))
+        r = self.say("garden2", "delvetalk garden2 set\nconfirm: no", "glm")
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember.delve.town"))
+        merge = self.turn("garden2", "receive", record(text=label("merge"), post=label("at://glm/m")), principal="glm")
+        self.assertIn("Only the page's owner, ember.delve.town, merges it.", json.dumps(merge))
         self.assertEqual(self.listed("garden", "confirmFor"), [])
         r = self.say("garden", "delvetalk garden set\nconfirm: yes", "ember")
         self.assertEqual(self.listed("garden", "confirmFor"), ["plant"])

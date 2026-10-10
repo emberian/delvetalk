@@ -152,8 +152,9 @@ def doorLines(doors: Doorways) -> Document.Documents:
 def isMerge(text: String) -> Bool:
   let rest = textDrop(text, textSpan(text, " \n\t\r"))
   textTake(rest, 5n) == "merge" && textSpan(textDrop(rest, 5n), " \n\t\r") == textLength(rest) - 5n
+# owner: the owner as the card names it (`shown`), "" for none.
 def notOwner(owner: String) -> String:
-  if owner == "" then "This page has no owner to merge it." else "Only the page's owner, {handle(owner)}, merges it."
+  if owner == "" then "This page has no owner to merge it." else "Only the page's owner, {owner}, merges it."
 # The card's line for it: "" before the first merge.
 def checkpointLine(post: String) -> String:
   if post == "" then "" else "page checkpointed at {post}\n"
