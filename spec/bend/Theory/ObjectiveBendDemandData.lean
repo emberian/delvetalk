@@ -232,7 +232,7 @@ abbrev Fetch := String → Nat → Option Data
 def Fetch.none : Fetch := fun _ _ => Option.none
 
 /-- An unforced stored row the control is entering, and what the store answers for it. -/
-def fetchable (fetch : Fetch) (state : State) : Option (Nat × String × Nat × Data) :=
+@[inline] def fetchable (fetch : Fetch) (state : State) : Option (Nat × String × Nat × Data) :=
   match state.control with
   | .enter address => match state.heap[address]? with
     | some (.stored (.row field position) Option.none) => (fetch field position).map (address, field, position, ·)

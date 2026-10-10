@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (foundation b0f3618, after lane/kernel10 and the codex review of a3e1fb2, whose kernel findings are §24; the queue is §16).
+State on 2026-10-10 (lane/kernel11 after foundation f7865b0: lazy state cells, §15, built and measured; the queue is §16).
 
 ## Summary
 
@@ -431,14 +431,40 @@ Step 4 (bound): `Turn.relationRows state field`, `Turn.cellOverBound relations s
 row past `Bounds.maxCellBytes`) and `Turn.changedCellBytes relations before after : Nat` (the
 scalar part's bytes when a scalar field changed, plus each row whose key is new or whose row
 changed), `relations` being the artifact's `[(field, key)]`; `#guard`ed. The host's half, by
-site: `Ops.lean` 1952 and 1971 (`stateBytes written ≤ Limits.maxStateBytes`) become
+site: `Ops.lean` 1960 and 1979 (`stateBytes written ≤ Limits.maxStateBytes`) become
 `cellOverBound decls written = none`, refused `capacity` with reason `maxCellBytes` and the
-cell; 2442 (`maxSeedBytes`) the same over the seed; the storage ledger at 2887 charges
-`changedCellBytes decls before after` instead of the difference of `stateBytes`; `world-inspect`
+cell; 2450 (`maxSeedBytes`), with `TurnLoop.lean` 1757 for a fixed seed, the same over the seed; the storage ledger at 2919 charges
+`changedCellBytes decls before after` instead of the difference of `stateBytes`; `world-inspect` (`TurnLoop.lean` 2765)
 keeps `stateBytes` and gains `scalarBytes` (`Canonical.encode (scalarPart …)`). FOUNDATION §9's
 scale rule becomes: "State is bounded per cell: the scalar fields together and each relation row
 are at most 256 KiB of canonical bytes, a relation's length is its declared limit, and a write
 pays for the cells it changes."
+
+Step 5 (measured on hbox, P-cores, lane against foundation f7865b0). `compile-profile stored
+REQUEST ROWS R` runs `tests/test_stored.py`'s `third` (a write, then row 3's text) from a state of
+ROWS rains, quoted and stored. At 2,048 rows the start and resume take 2,853 us quoted and 45 us
+stored (0 rows: 32 and 29 us); ticks 81 + 168 quoted, 79 + 208 stored (the fetched row is
+`1 + 2b`); one row forced; the suspension's checkpoint is 45,357 canonical bytes quoted and 540
+stored (557 and 538 at 0 rows). The host still runs the quoted path, so the rehearsal replay
+(18,183 captured requests, `compile-profile replay … "world-turn directory receive" 1`) writes a
+byte-identical journal on both binaries (median suspension entry 3,895 bytes over its 43, the
+same ticks per class) in 84.75 G user instructions against 84.53 G (within the 5% run-to-run
+noise; directory `receive` 1,501 ms against 1,511). The Counter bump replay (R = 50, best of
+three): 120 us a bump on both, 102 ticks, 21.73 G instructions on both. `fetchable` is
+`@[inline]` so the hosted runner's fetch test costs nothing on a run without stored cells.
+
+**The host's entry points (lane/host14).** All in `Delvetalk.Turn` unless named:
+`Store`, `StoredRelation`, `Store.bounded`, `startEntryStored`, `resumeSuspendedStored`,
+`resumeEntryStepStored` (each `Except String (Step × Reads)`), `Package.executeDataEntryStored`
+for cards and views, `Read`/`Reads`/`Reads.toJson`, `keyProjection`, `scalarPart`,
+`relationRows`, `cellOverBound`, `changedCellBytes`, `Bounds.maxCellBytes`, and `storeOfState state
+[{field, key}]` (a `Store` over the state's own rows, as the tests and the profile build it). The host builds a
+`Store` per turn from the object's state at its read height (`relations` from the artifact's
+`[{field, key}]` with each relation's row count, `fetch f j` its row j in key order), records each
+`Read` as `{object, field, key}` and each span as the key range above, and keeps that store for
+the turn's resumed segments. When every turn takes the stored path, `test_tariff`'s pins are
+re-recorded (one commit, the reason being the native argument's one tick a node) and the quoted
+entry points are deleted.
 
 **Estimate.** Kernel: cells, fetch, codecs, Fast, proofs, generator (step 2) 2 days; runner and
 reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `Store` over its
@@ -464,6 +490,11 @@ codex review of a3e1fb2 (kernel10, §24). Remaining:
    digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
    host that ever resumes a checkpoint from outside its journal must look its digest up there.
 13. Done (`52ad1b2`): a REPL checkpoint from before the host restarted is refused `replRestarted`.
+14. Lazy state (§15) is built through step 5 (lane/kernel11). After the host's switch (lane/host14):
+   delete `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt`
+   for state, and move `test_tariff`'s pins in that commit.
+15. The two primitives of §15, `relationCount` and `relationLookup` (with `Store.key`), then
+   `Relation.obend`'s `count` and `lookup` onto them (objects lane).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
