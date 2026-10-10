@@ -1623,7 +1623,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
-        (("object", toJson id) :: ("version", toJson o.version) ::
+        (("object", toJson id) :: ("version", toJson o.version) :: ("cid", toJson (stateCid o.state)) ::
           writtenFields ((p.allWrites.lookup id).getD [])))
       let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
         (if judged.reprograms.isEmpty then [] else [("reprograms", Json.arr judged.reprograms.toArray)]) ++
@@ -2254,6 +2254,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         let id ← raw.getObjValAs? String "object"
         let some (_, o) := updates.find? (·.1 == id) | throw "write missing"
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
+        -- The state an admitted write commits to (host7; earlier entries name none).
+        if let some cid := (raw.getObjValAs? String "cid").toOption then
+          unless cid == stateCid o.state do throw s!"the state of {id} does not replay to the CID its write recorded"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w grants revokes spent

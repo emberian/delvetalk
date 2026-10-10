@@ -186,6 +186,33 @@ class Snapshots(Reflection):
         self.assertEqual(checked["snapshot"]["refused"], [{"height": height, "reason": "it disagrees with replay at its height"}])
         self.assertEqual(self.count("a"), "1")
 
+    def forge_count(self, value, recompute):
+        self.make("a", PACKAGE, source_seed())
+        self.turn("a", "bump")
+        height = self.snapshot()
+        path = self.path + f".snapshot.{height}.cbor"
+        body = read_snapshot(path)
+        [obj] = body["objects"]
+        self.assertEqual(obj["stateCid"], cid_of(obj["state"]))
+        obj["state"]["fields"][0]["value"]["value"] = value
+        if recompute:
+            obj["stateCid"] = cid_of(obj["state"])
+        write_snapshot(path, body)
+        return height
+
+    def test_a_state_that_is_not_its_cids_is_refused_by_a_plain_open(self):
+        height = self.forge_count("41", recompute=False)
+        report = self.reopen_report()
+        self.assertEqual(report["refused"], [{"height": height, "reason": "the state of a is not its CID's"}])
+        self.assertEqual(self.count("a"), "1")
+
+    def test_a_consistent_forgery_is_refused_by_a_plain_open_against_the_journals_write(self):
+        # The forger recomputes the state's CID and the snapshot's; the bump's entry still commits to the real state.
+        height = self.forge_count("41", recompute=True)
+        report = self.reopen_report()
+        self.assertEqual(report["refused"], [{"height": height, "reason": "the state of a is not the one the journal commits to at version 1"}])
+        self.assertEqual(self.count("a"), "1")
+
     def test_a_snapshot_whose_version_is_not_the_journals_is_refused(self):
         self.make("a", PACKAGE, source_seed())
         self.turn("a", "bump")
