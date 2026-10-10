@@ -261,7 +261,7 @@ class HostParses(BridgeCase):
     def test_a_line_the_host_does_not_read_as_a_spell_is_not_routed_by_its_second_word(self):
         self.make('garden-1')
         post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
-        post['record']['text'] = 'delvetalk Garden-1 plant\nseed: a\ncolour: amber'  # the card alphabet is lowercase
+        post['record']['text'] = f"delvetalk {'g' * 129} plant\nseed: a\ncolour: amber"  # past 128 bytes the host reads no card
         self.observe([post])
         got = self.run_bridge()
         self.assertEqual((got['turns'], self.drafts()), ([], []), got)
