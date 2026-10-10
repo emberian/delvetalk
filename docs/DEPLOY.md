@@ -290,6 +290,8 @@ The bot's own messages are never observed (`ZulipObserver.store` skips its sende
 
 Within a poll the card comes back in the topic (the journal height grows by the planting) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
 
+`--no-welcome` starts the world without posting the welcome or the page cards (it makes the page drafts and marks them posted), for a stream that already holds them; say what happened with one `transport.zulip post --object directory` message in the `welcome` topic. A journal does not survive a host whose replay rules changed: a restart on a new host (a rebuilt `delvetalk-obend`, or a library pin change that the old tree can no longer replay) is a fresh world, with the residents' bells and subscriptions gone. The old run directory stays on disk.
+
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
 
