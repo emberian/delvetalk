@@ -353,7 +353,13 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(code, canonical(body), headers=headers)
 
     def browser(self):
-        return 'text/html' in (getattr(self, 'headers', None) or {}).get('Accept', '')
+        return 'text/html' in (getattr(self, 'headers', None) or {}).get('Accept', '') or self.textual()
+
+    def textual(self):
+        """?text=1, or Accept: text/plain without HTML or JSON: the page as plain text, read off the page's own markup."""
+        accept = (getattr(self, 'headers', None) or {}).get('Accept', '')
+        return urllib.parse.parse_qs(urllib.parse.urlsplit(getattr(self, 'path', '')).query).get('text') == ['1'] or \
+            ('text/plain' in accept and 'text/html' not in accept and 'application/json' not in accept)
 
     def send_error(self, code, message=None, explain=None):
         """http.server's own refusals (a bad request line, a long URI or header, an unknown method), in the envelope."""
@@ -722,7 +728,7 @@ class Handler(BaseHTTPRequestHandler):
             if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
-                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), line=html.escape(turn_line(r)),
+                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r)),
                                               offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
@@ -731,7 +737,7 @@ class Handler(BaseHTTPRequestHandler):
             name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')), doors=pages.door_nav(door_rows(view)))))
 
     def html(self, code, body, headers=()):
-        self.reply(code, body, 'text/html', headers)
+        self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
 
     def home(self):
         who, host = self.principal(self.cookie()), self.server.host

@@ -1,11 +1,15 @@
 """The theme, without a browser: both palettes pass WCAG AA on every text-on-surface pair, the site carries the front's
-palette, and every kind the brief names has its own botanical mark."""
+palette, every kind the brief names has its own botanical mark, a receipt's fate is a word and an icon in the markup (never
+colour alone), doors are visibly doors at rest and ringed on focus, and spells are set in the monospace."""
 import re
 import unittest
 from pathlib import Path
 
+from transport import pages
+
 ROOT = Path(__file__).resolve().parent.parent
 FRONT, SITE = ROOT / 'transport' / 'static' / 'style.css', ROOT / 'site' / 'style.css'
+SPECIMEN = ROOT / 'transport' / 'static' / 'specimen.html'
 TEXT = ('ink', 'soft', 'muted', 'amber', 'violet', 'silver', 'terracotta', 'sage')  # every colour text is set in
 SURFACES = ('paper', 'leaf', 'tint', 'rtint')  # every colour text is set on
 KINDS = {'garden': 'garden', 'bell': 'garden/bell/1', 'env': 'env/did:plc:x', 'wake': 'wake/did:plc:x', 'tide': 'tide', 'deal': 'deal/1',
@@ -51,6 +55,35 @@ class Theme(unittest.TestCase):
             self.assertGreaterEqual(contrast(p['amber'], p['paper']), 3, 'the focus ring')  # non-text contrast
         self.assertEqual(failures, [])
 
+    def test_text_stays_aa_where_it_crosses_the_notebooks_ruled_lines(self):
+        for name, p in palettes(FRONT.read_text()).items():
+            self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)
+            self.assertLess(contrast(p['ruleline'], p['paper']), 1.5, f'{name}: a ruled line is faint')
+
+    def test_doors_are_doors_at_rest_and_ringed_on_focus(self):
+        for name, p in palettes(FRONT.read_text()).items():  # the door's edge and face, non-text contrast at rest
+            self.assertGreaterEqual(min(contrast(p['violet'], p[bg]) for bg in ('paper', 'leaf')), 3, name)
+        for css in (FRONT.read_text(), SITE.read_text()):
+            door = re.search(r'\n\.door \{([^}]*)\}', css)[1]
+            for rest in ('border-color: var(--violet)', 'box-shadow: 0 2px 0 var(--violet)', 'linear-gradient(currentColor, currentColor)'):
+                self.assertIn(rest, door)  # the button face and the underline are there before any hover
+            self.assertRegex(css, r'\.door::before \{ content: "\["')
+            self.assertRegex(css, r'\.door:focus-visible[^{]*\{ outline: 2px solid var\(--amber\)')
+
+    def test_a_receipts_fate_is_a_word_and_an_icon_never_colour_alone(self):
+        self.assertEqual(len(set(pages.STAMPS.values())), len(pages.STAMPS))
+        specimen = SPECIMEN.read_text()
+        for fate, icon in pages.STAMPS.items():
+            self.assertIn(f'<span class="stamp">{icon} {fate}</span>', specimen)  # shown in /style/ as the markup carries it
+        for css in (FRONT.read_text(), SITE.read_text()):
+            self.assertNotRegex(css, r'\.(slip|stamp)[^{,]*::(before|after)[^{]*\{[^}]*content')  # no fate drawn by the stylesheet alone
+
+    def test_spells_are_monospace_everywhere_they_appear(self):
+        for css in (FRONT.read_text(), SITE.read_text()):
+            for rule in (r'\npre \{', r'\ncode, kbd \{', r'\ntextarea, input \{', r'\.slip \.line \{', r'\.door, button \{'):
+                self.assertRegex(css, rule + r'[^}]*var\(--mono\)', rule)
+        self.assertIn('<pre class="spell">{spell}</pre>', (ROOT / 'transport' / 'static' / 'pages.html').read_text())
+
     def test_the_site_carries_the_fronts_palette(self):
         self.assertEqual(palettes(SITE.read_text()), palettes(FRONT.read_text()))
 
@@ -68,6 +101,20 @@ class Theme(unittest.TestCase):
             self.assertIn('white-space: pre;', card)
             self.assertIn('72ch', card)
             self.assertIn('overflow-x: auto', card)  # a long line scrolls inside its frame, never the page
+
+    def test_the_frog_is_one_plate_in_three_places_drawn_in_the_themes_own_ink(self):
+        plate = lambda markup: re.search(r'<svg class="frog[^"]*"[^>]*role="img".*?</svg>', markup, re.S)[0]
+        specimen, site = SPECIMEN.read_text(), (ROOT / 'site' / 'index.html').read_text()
+        drawn = plate(specimen)
+        self.assertEqual(plate(site).replace(' colophon-mark', ''), drawn)  # the specimen's margin and the site's colophon
+        self.assertLess(len(drawn.encode()), 3072)
+        self.assertNotRegex(drawn, r'#[0-9a-fA-F]{3,6}\b|<script|on[a-z]+=')  # currentColor and the theme's tokens, no script
+        self.assertIn("the stamped tickets and the plain-text view are the frog's, fwog-gpt6.delve.town", specimen)
+        quiet = (ROOT / 'transport' / 'static' / 'pages.html').read_text().split('<!-- quiet', 1)[1].split('<!--', 1)[0]
+        self.assertIn('<svg class="frog glyph"', quiet)
+        self.assertIn('aria-hidden="true"', quiet)  # silence's glyph is decoration; the stamp's word says it
+        self.assertEqual(specimen.count('<svg class="frog'), 3)
+        self.assertEqual(site.count('<svg class="frog'), 1)
 
 
 if __name__ == '__main__':

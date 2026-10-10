@@ -35,12 +35,12 @@
 <p class="doors"><a class="door" href="/play/{href}"><span class="kind" data-id="{id}"></span>PLAY {id}</a></p>
 <!-- ledger -->
 <section><h2>Ledger</h2><ol class="ledger">{slips}</ol></section>
-<!-- slip: a receipt as a library slip; the clause, when refused, is a marginal note -->
-<li class="slip {fate}"><span class="code">ht.{height}</span><span class="name">{name}</span><span class="fate">{fate}</span><span class="by">{intent} · {who}{yours}</span>{note}</li>
+<!-- slip: a receipt as a stamped ticket: the stamp (its icon and word), the clause when refused, the shelf mark, the slug, who -->
+<li class="slip {fate}"><span class="stamp">{stamp}</span>{note}<span class="code">ht.{height}</span><span class="name">{name}</span><span class="by">{intent} · {who}{yours}</span></li>
 <!-- note -->
 <span class="clause">{clause}</span>
 <!-- refusal: an error or a refusal, as the envelope says it -->
-<section class="refusal"><p class="fate">{cls}</p><h1 class="title">{title}</h1><p>{message}</p>{hint}<p class="doors">{links}</p></section>
+<section class="refusal"><p class="fate">§ {cls}</p><h1 class="title">{title}</h1><p>{message}</p>{hint}<p class="doors">{links}</p></section>
 <!-- hint -->
 <p class="hint">{hint}</p>
 <!-- link -->
@@ -55,13 +55,13 @@
 <!-- door -->
 <a class="door" href="/play/{href}" title="{description}"><span class="kind" data-id="{id}"></span>{label}</a>
 <!-- said: the turn the reply ran, and what came back to you -->
-<ol class="ledger"><li class="slip {cls} fresh"><span class="line">{line}</span></li></ol>{offers}
+<ol class="ledger"><li class="slip {cls} fresh"><span class="stamp">{icon}</span><span class="line">{line}</span></li></ol>{offers}
 <!-- usage: the host's answer to `?`, as a card -->
 <figure class="frame usage"><pre class="card">{text}</pre></figure>
 <!-- offer -->
 <figure class="frame offer"><pre class="card">{text}</pre></figure>
-<!-- quiet -->
-<p class="quiet">— quiet (no reply) —</p>
+<!-- quiet: silence is a deliberate state, and the frog's -->
+<p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span>(no reply)</p>
 <!-- hand: the owner's console -->
 <h1 class="title">The hand<small>nothing is posted without a click</small></h1>{note}
 <p class="codes">{codes}</p>
@@ -99,7 +99,7 @@
 <!-- action -->
 <details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form>{spell}</details>
 <!-- spell: the same call as a spell, for a reply -->
-<pre class="listing">{spell}</pre>
+<pre class="spell">{spell}</pre>
 <!-- f_text -->
 <label>{name} <small>text, {min} to {max} characters</small><input name="{name}" minlength="{min}" maxlength="{max}"></label>
 <!-- f_natural -->
@@ -116,7 +116,7 @@
 <!-- offers: cards objects made for you -->
 <h1 class="title">Offers<small>the cards objects made for you, newest last</small></h1>{items}{more}
 <!-- offer_slip -->
-<ol class="ledger"><li class="slip admitted"><span class="code">ht.{height}</span><span class="name">{intent}</span><span class="fate">offered</span></li></ol><figure class="frame offer"><pre class="card">{text}</pre></figure>
+<ol class="ledger"><li class="slip admitted"><span class="stamp">↳ offered</span><span class="code">ht.{height}</span><span class="name">{intent}</span></li></ol><figure class="frame offer"><pre class="card">{text}</pre></figure>
 <!-- generic: any other reply, as a definition list -->
 <h1 class="title">{title}</h1>{body}<p class="doors">{links}</p>
 <!-- catalogue: the API as tables -->

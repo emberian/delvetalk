@@ -1,5 +1,6 @@
-/* DelveTalk: the Seed Catalogue by day, the Night Herbarium and Ledger by night.
-   Day: warm paper, iron-gall ink, pressed-flower accents, a botanical mark beside every door. Night: slate, bone, the garden's colours.
+/* DelveTalk: the Field Notebook by day, the Night Herbarium and Ledger by night.
+   Day: ruled paper with a margin, iron-gall ink, pressed-flower accents, a botanical mark beside every door. Night: slate, bone, the garden's colours.
+   Receipts are stamped tickets: the stamp's icon and word are in the markup, so a screen reader and the plain-text view keep them; colour only repeats them.
    A refusal is set as large as the card body: the moment a spell fails is when the page must be easiest to read.
    The palette is the two token blocks below and nothing else; site/style.css carries the same tokens, and tests/test_theme.py
    checks every text-on-surface pair in both for WCAG AA. Change a colour here and in site/style.css, then run that test. */
@@ -10,6 +11,11 @@
   --ink: #2a2118; --soft: #4a3f33; --muted: #6b5c48;
   --amber: #8a5300; --violet: #6a3d9a; --silver: #585d64; --terracotta: #a3361f; --sage: #3d6b35;
   --glow: #d99a1e; --button: #6a3d9a; --bink: #fbf6e8;
+  --ruleline: #dde0d4; --margin: #c98f84;
+  --ruling: linear-gradient(var(--margin), var(--margin)) max(5px, calc(50% - 24rem + 2px)) 0 / 1px 100% no-repeat,
+    linear-gradient(var(--margin), var(--margin)) max(8px, calc(50% - 24rem + 5px)) 0 / 1px 100% no-repeat,
+    repeating-linear-gradient(transparent 0 27px, var(--ruleline) 27px 28px);
+  --sprig: "❀ " / "";
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme=light]) {
@@ -18,6 +24,7 @@
     --ink: #e6edf3; --soft: #c9d1d9; --muted: #8b949e;
     --amber: #e3b341; --violet: #bc8cff; --silver: #9aa3ad; --terracotta: #f85149; --sage: #8fc49a;
     --glow: #f0883e; --button: #bc8cff; --bink: #0d1117;
+  --ruleline: #1a1f27; --margin: #30363d; --ruling: none; --sprig: none;
   }
 }
 [data-theme=dark] {
@@ -26,6 +33,7 @@
   --ink: #e6edf3; --soft: #c9d1d9; --muted: #8b949e;
   --amber: #e3b341; --violet: #bc8cff; --silver: #9aa3ad; --terracotta: #f85149; --sage: #8fc49a;
   --glow: #f0883e; --button: #bc8cff; --bink: #0d1117;
+  --ruleline: #1a1f27; --margin: #30363d; --ruling: none; --sprig: none;
 }
 :root {
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -35,8 +43,8 @@
 /* ---- the page */
 *, *::before, *::after { box-sizing: border-box; }
 html { background: var(--paper); }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.65 var(--serif); overflow-wrap: break-word; }
-[data-theme] { background: var(--paper); color: var(--ink); }
+body { margin: 0; background: var(--ruling) var(--paper); color: var(--ink); font: 17px/1.65 var(--serif); overflow-wrap: break-word; }
+[data-theme] { background: var(--ruling) var(--paper); color: var(--ink); }
 header, main, footer { max-width: 48rem; margin: 0 auto; padding: 0 16px; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1.25rem; padding-top: 1.1rem; padding-bottom: .6rem; border-bottom: 3px double var(--rule); }
 header nav { display: flex; flex-wrap: wrap; gap: .2rem 1rem; margin-right: auto; }
@@ -49,6 +57,7 @@ footer { border-top: 1px solid var(--rule); padding-top: .75rem; padding-bottom:
 h1, h2 { font-family: var(--serif); font-weight: 400; line-height: 1.2; }
 h1 { font-size: 1.9rem; margin: .5rem 0 .75rem; }
 h2 { font-size: .78rem; font-family: var(--mono); text-transform: uppercase; letter-spacing: .18em; color: var(--muted); margin: 2rem 0 .5rem; }
+h2::before { content: var(--sprig); color: var(--margin); letter-spacing: 0; }  /* the notebook's pressed flower; none at night */
 h1.title small { display: block; font-size: .95rem; color: var(--muted); font-style: italic; }
 a { color: var(--violet); text-underline-offset: .2em; text-decoration-thickness: 1px; }
 section { margin: 1.25rem 0; }
@@ -101,45 +110,50 @@ ul.index a { text-decoration: none; }
 .code { display: inline-block; font: 500 .75rem var(--mono); color: var(--silver); border: 1px solid var(--rule); padding: 0 .4em; letter-spacing: .05em; font-variant-numeric: tabular-nums; }
 .codes { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; }
 
-/* ---- doors: bracketed, tactile, lit on hover and focus */
+/* ---- doors: unmistakable at rest (brackets, a button face, an underline across the label), lit on hover, ringed on focus */
 .doors { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; padding: 0; }
 .door, button { display: inline-flex; align-items: baseline; gap: .15em; font: 600 .85rem/1.4 var(--mono); letter-spacing: .08em; text-decoration: none;
   padding: .45rem .8rem; border: 1px solid var(--rule); border-radius: 2px; cursor: pointer; }
-.door { color: var(--violet); background: var(--leaf); }
+.door { color: var(--violet); background: linear-gradient(currentColor, currentColor) center bottom .3rem / calc(100% - 2.6rem) 1px no-repeat, var(--leaf);
+  border-color: var(--violet); box-shadow: 0 2px 0 var(--violet); }
 .door::before { content: "["; content: "[" / ""; color: var(--muted); margin-right: .2em; }
 .door::after { content: "]"; content: "]" / ""; color: var(--muted); margin-left: .2em; }
 .door .kind::before { width: 1.2em; }
-.door:hover, .door:focus-visible { color: var(--ink); border-color: var(--glow); box-shadow: 0 0 0 1px var(--glow), 0 0 18px -4px var(--glow); }
+.door:hover, .door:focus-visible { color: var(--ink); border-color: var(--glow); box-shadow: 0 2px 0 var(--glow), 0 0 0 1px var(--glow), 0 0 18px -4px var(--glow); }
+.door:focus-visible, button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.door:active { transform: translateY(1px); box-shadow: 0 1px 0 var(--violet); }
 button { background: var(--button); color: var(--bink); border-color: var(--button); }
 button:hover, button:focus-visible { box-shadow: 0 0 0 1px var(--glow), 0 0 18px -4px var(--glow); }
 button.ask { background: var(--leaf); color: var(--violet); border-color: var(--rule); }
 
-/* ---- receipts: library slips; the spoken name in small caps, the clause a marginal note */
+/* ---- receipts: stamped tickets with perforated edges; the stamp carries its icon and word (● admitted, § refused, … suspended, — quiet)
+   in the markup, so colour only repeats what the words say. A refusal's clause is a note in the ticket's margin. */
 ol.ledger { list-style: none; padding: 0; margin: .5rem 0; container: ledger / inline-size; }
 .slip.refused .line { font-size: 15px; }
-.slip { position: relative; display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: .1rem .75rem; margin: .5rem 0; padding: .55rem .9rem .55rem 1.6rem;
-  background: var(--leaf); border: 1px solid var(--rule); border-left: 3px double var(--rule); font: .9rem/1.5 var(--serif); }
-:root:not([data-theme=dark]) .slip { border-top: 1px dashed var(--rule); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .slip { border-top-style: solid; } }
-.slip::before { content: "●"; content: "●" / ""; position: absolute; left: .55rem; top: .6rem; font-size: .6rem; color: var(--silver); }
-.slip.admitted::before { color: var(--sage); }
+.slip { display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "stamp code name" "by by by" "clause clause clause"; align-items: center;
+  gap: .2rem .75rem; margin: .6rem 0; padding: .6rem 1.1rem; background: var(--leaf); border: 1px solid var(--rule); font: .9rem/1.5 var(--serif);
+  -webkit-mask: radial-gradient(circle at 0 50%, #0000 3.5px, #000 4px) 0 0 / 51% 12px repeat-y, radial-gradient(circle at 100% 50%, #0000 3.5px, #000 4px) 100% 0 / 51% 12px repeat-y;
+  mask: radial-gradient(circle at 0 50%, #0000 3.5px, #000 4px) 0 0 / 51% 12px repeat-y, radial-gradient(circle at 100% 50%, #0000 3.5px, #000 4px) 100% 0 / 51% 12px repeat-y; }
 .slip.refused { background: var(--rtint); }
-.slip.refused::before { color: var(--terracotta); }
-.slip.suspended::before { content: "○"; content: "○" / ""; color: var(--amber); }
-.slip .name { font-variant: small-caps; letter-spacing: .08em; font-size: 1.05rem; color: var(--ink); }
-.slip .fate { font: .75rem var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
-.slip.refused .fate { color: var(--terracotta); }
-.slip .by { grid-column: 1 / -1; font: .78rem var(--mono); color: var(--muted); overflow-wrap: anywhere; }
-.slip .line { grid-column: 1 / -1; font: 14px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.stamp, .slip .fate { grid-area: stamp; justify-self: start; padding: .05rem .45rem; border: 2px solid currentColor; border-radius: 4px; color: var(--silver);
+  font: 700 .72rem/1.35 var(--mono); text-transform: uppercase; letter-spacing: .12em; white-space: nowrap; transform: rotate(-3deg); }
+.slip.admitted .stamp { color: var(--sage); }
+.slip.refused .stamp, .slip.refused .fate { color: var(--terracotta); }
+.slip.suspended .stamp { color: var(--amber); }
+.slip .code { grid-area: code; }
+.slip .name { grid-area: name; font-variant: small-caps; letter-spacing: .08em; font-size: 1.05rem; color: var(--ink); }
+.slip .by { grid-area: by; font: .78rem var(--mono); color: var(--muted); border-top: 1px dashed var(--rule); padding-top: .2rem; }
+.slip .line { grid-column: 1 / -1; font: 14px/1.5 var(--mono); white-space: pre-wrap; color: var(--ink); }
+.slip .stamp + .line { grid-column: 2 / -1; grid-row: 1; }
 .slip > * { min-width: 0; overflow-wrap: anywhere; }
-.slip .clause { grid-column: 1 / -1; font: 1rem/1.5 var(--serif); color: var(--ink); border-top: 1px dotted var(--terracotta); padding-top: .3rem; }
-.slip .clause::before { content: "※ "; content: "※ " / ""; color: var(--terracotta); }
-@container ledger (min-width: 36rem) {  /* room for a margin: the clause moves beside the slip, as a note in a ledger's margin */
-  .slip { grid-template-columns: auto auto 1fr minmax(0, 15rem); }
-  .slip .by { grid-column: 1 / 4; }
-  .slip .clause { grid-column: 4; grid-row: 1 / span 2; border: 0; border-left: 2px solid var(--terracotta); padding: 0 0 0 .7rem; }
+.slip .clause { grid-area: clause; font: 1rem/1.5 var(--serif); color: var(--ink); border-top: 1px dotted var(--terracotta); padding-top: .3rem; }
+@container ledger (min-width: 36rem) {  /* room for a margin: the clause moves beside the ticket, as a note in a notebook's margin */
+  .slip { grid-template-columns: auto auto 1fr minmax(0, 15rem); grid-template-areas: "stamp code name clause" "by by by clause"; }
+  .slip .clause { border: 0; border-left: 2px solid var(--terracotta); padding: 0 0 0 .7rem; }
 }
-.quiet { color: var(--muted); font-style: italic; text-align: center; letter-spacing: .08em; margin: 1rem 0; }
+.quiet { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .3rem .7rem; margin: 1rem 0; padding: .6rem 1rem;
+  color: var(--muted); font-style: italic; letter-spacing: .08em; border: 1px dashed var(--muted); border-radius: 2px; }
+.quiet .stamp { color: var(--muted); font-style: normal; }
 @media (prefers-reduced-motion: no-preference) {
   .slip.fresh { animation: settle .7s cubic-bezier(.2, .8, .2, 1) both; }
 }
@@ -184,6 +198,17 @@ pre.listing { margin: .75rem 0; padding: .75rem 1rem; background: var(--leaf); b
 pre.listing.law { white-space: pre-wrap; overflow-wrap: anywhere; border-left: 3px solid var(--violet); }
 dd > dl, dd > ol { margin: .15rem 0 .35rem; padding-left: .75rem; border-left: 1px solid var(--rule); }
 dd > ol { padding-left: 1.75rem; }
+/* ---- the frog (fwog-gpt6.delve.town), a botanical plate: in the specimen's margin, the site's colophon, and quiet's glyph */
+.frog { color: var(--sage); stroke-width: 1.2; }
+.frog .bloom { color: var(--violet); }
+.frog .vein { stroke-width: .6; }
+.frog .eye { fill: currentColor; }
+.frog .fill { fill: var(--paper); }
+.frog.glyph { width: 1.1em; height: 1.1em; flex: none; color: var(--muted); stroke-width: 1.3; }
+.colophon { position: relative; display: flex; align-items: flex-end; gap: 1rem; margin: 1rem 0 1.5rem; color: var(--soft); font-style: italic; }
+.colophon .frog { flex: none; width: 7.5rem; height: auto; }
+.colophon p { margin: 0; }
+@media (min-width: 66rem) { .colophon .frog { position: absolute; right: calc(100% + 1.5rem); bottom: 0; width: 8.5rem; } }
 @media (max-width: 34rem) {
   body { font-size: 16px; }
   h1 { font-size: 1.55rem; }
