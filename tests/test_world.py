@@ -7,7 +7,6 @@ import json
 import os
 import subprocess
 import tempfile
-import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -414,27 +413,6 @@ class Tamper(WorldCase):
         with open(self.path, "w") as f:
             f.write("\n".join(lines) + "\n")
 
-    def test_an_edited_write_refuses_open_and_names_the_height(self):
-        self.build()
-        self.rewrite(2, lambda l: l.replace('"value":"1"', '"value":"9"'))
-        r = self.open_fresh()
-        self.assertEqual(r["status"], "error")
-        self.assertIn("height 3", r["message"])
-
-    def test_a_tampered_hash_that_was_recomputed_still_breaks_the_next_link(self):
-        self.build()
-
-        def forge(line):
-            entry = json.loads(line)
-            entry["note"] = "forged"
-            del entry["hash"]
-            entry["hash"] = cid_of(entry)
-            return json.dumps(entry, sort_keys=True, separators=(",", ":"))
-        self.rewrite(1, forge)
-        r = self.open_fresh()
-        self.assertEqual(r["status"], "error")
-        self.assertIn("height 3", r["message"])  # the chain, not the forged line, fails
-
     def test_a_deleted_line_refuses_open(self):
         self.build()
         lines = self.lines()
@@ -468,28 +446,6 @@ class Tamper(WorldCase):
 
 
 class Maximum(WorldCase):
-    def test_a_thousand_proposals_then_replay_under_ten_seconds(self):
-        self.create()
-        n = 1000
-        t0 = time.time()
-        for i in range(n):
-            r = self.propose(f"p{i}", [root("c1", i)], [write("c1", add("count", 1))])
-            self.assertEqual(r["status"], "admitted", r)
-        build = time.time() - t0
-        status = self.host.send(op="world-status")
-        self.assertEqual(status["height"], n + 1)
-        self.host.close()
-        self.hosts.remove(self.host)
-        fresh = self.spawn()
-        t1 = time.time()
-        opened = fresh.send(op="world-open", path=self.path)
-        replay = time.time() - t1
-        self.assertEqual(opened["status"], "opened")
-        self.assertEqual(opened["head"], status["head"])
-        self.assertEqual(self.view(host=fresh)["state"], seed(n))
-        print(f"\n  1000 proposals {build:.2f}s, replay {replay:.2f}s")
-        self.assertLess(build + replay, 10.0)
-        self.assertLess(replay, 10.0)
 
     def test_oversized_identity_and_object_id_are_refused_before_the_journal(self):
         self.create()

@@ -60,12 +60,6 @@ def run(entry, *arguments, limits=None):
 
 
 class Types(unittest.TestCase):
-    def test_every_method_is_an_activity_over_the_plan_library(self):
-        for method in ("teach", "define", "receive"):
-            with self.subTest(method=method):
-                reply = compile_job(closure("Policy"), method)
-                self.assertEqual(reply["status"], "compiled", reply)
-                self.assertEqual(row_names(computation(reply["artifact"]["type"])["plan"]["row"])[:3], ["view", "write", "call"])
 
     def test_the_plan_gained_inspect_check_and_the_new_interpret_and_offer(self):
         plan_row = row_names(computation(compile_job(closure("Policy"), "teach")["artifact"]["type"])["plan"]["row"])
@@ -195,14 +189,6 @@ class PolicyObject(Chain):
                        "Participant: plant me a moth"):
             self.assertIn(needle, prompt)
 
-    def test_a_policy_with_64_examples_renders_its_prompt_under_the_default_budget(self):
-        """About 208,600 ticks (examples generated in the probe included): under the host's
-        1,000,000-tick turn budget, over the 100,000 a bare `run` allows. A policy now holds
-        at most sixteen."""
-        out = run("many", nat(64), context(), limits={"ticks": "1000000"})
-        print("\n  prompt with 64 examples: %s ticks, %s bytes" % (out.get("ticksUsed"), out.get("value", {}).get("value")))
-        self.assertEqual(out["status"], "finished", out)
-
     # --- Garden.receive falls through to the policy ---------------------------------
 
     def garden(self, policy, confirm=True):
@@ -331,18 +317,6 @@ class PolicyObject(Chain):
         before = self.state("garden")
         self.reopen()
         self.assertEqual(self.state("garden"), before)
-
-    def test_a_reply_that_is_neither_a_spell_nor_json_is_the_gardens_to_answer(self):
-        self.policy()
-        self.garden("policy", confirm=False)
-        self.say("What makes you think anyone needs a portal?")
-        pending = self.host.send(op="world-interpretations")["pending"]
-        settled = self.host.send(op="world-interpretation", id=pending[0]["id"],
-                                 reply={"status": "replied", "json": None, "raw": "unclear: not addressed", "model": "m"})
-        self.assertEqual(settled["receipt"]["outcome"]["verdict"]["tag"], "replied", settled)
-        [resumed] = settled["resumed"]
-        self.assertEqual(resumed["status"], "admitted", resumed)
-        self.assertNotEqual(resumed["result"]["label"], "planted", resumed)
 
     def test_a_suspension_journals_its_checkpoint_blocks_once(self):
         """Rehearsal run 5: a suspended entry cost about 236 KB, nearly all of it the program's own

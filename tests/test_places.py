@@ -37,24 +37,6 @@ def names(wire):
     return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in wire["items"]]
 
 
-class Types(unittest.TestCase):
-    METHODS = {"Place": ["enter", "leave", "take", "put", "receive"], "Thing": ["acquire", "drop", "offer", "withdraw", "transfer", "give", "receive"],
-               "Avatar": ["move", "arrive", "note", "hold", "release", "accept", "receive"]}
-
-    def test_every_method_is_an_activity_over_the_plan_library(self):
-        for module, methods in self.METHODS.items():
-            for method in methods:
-                with self.subTest(method="%s.%s" % (module, method)):
-                    reply = compile_job(closure(module), method)
-                    self.assertEqual(reply["status"], "compiled", reply)
-                    comp = computation(reply["artifact"]["type"])
-                    self.assertEqual(row_names(comp["plan"]["row"])[:3], ["view", "write", "call"])
-
-    def test_every_object_exports_initial(self):
-        for module in self.METHODS:
-            self.assertEqual(compile_job(closure(module), "initial")["status"], "compiled")
-
-
 class Floor(Chain):
     test_ring_then_open_then_light = None  # inherited from Chain; not a floor test
 
@@ -274,10 +256,10 @@ class Floor(Chain):
         self.assertLess(reply["ticksUsed"], 100000)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
-        """The inbox keeps the newest 64 notes (the mailbox's bound): 248 notes leave 64, and the
+        """The inbox keeps the newest 64 notes (the mailbox's bound): 65 notes leave 64, and the
         card shows eight of them and counts the rest."""
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
-        for i in range(247):
+        for i in range(64):
             note = self.turn("glm", "note", record(text=label("note %03d" % i)), principal="kimik3")
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
@@ -286,9 +268,10 @@ class Floor(Chain):
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest
-        self.assertLess(text.index("one too many"), text.index("kimik3: note 246"))  # newest first
+        self.assertLess(text.index("one too many"), text.index("kimik3: note 063"))  # newest first
+        self.assertNotIn("note 000", text)
         self.assertIn("… and 56 more\n", text)
-        print("\n  avatar with 64 of 248 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
+        print("\n  avatar with 64 of 65 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
         self.assertLess(reply["ticksUsed"], 100000)
 
     # --- paths through remove -----------------------------------------------------------

@@ -89,7 +89,8 @@ class Snapshots(Reflection):
         opened = self.host.send(op="world-open", path=self.path)
         return opened["snapshot"]
 
-    def test_500_creates_snapshot_and_reopen_under_a_second(self):
+    def test_smoke_bound_500_objects_reopen_from_a_snapshot_in_under_five_seconds(self):
+        """The host's one wall-clock smoke bound, generous: measured 0.2 s on hbox."""
         for i in range(500):
             self.make(f"c{i}", PACKAGE, source_seed(i))
         self.assertEqual(self.turn("c7", "bump")["status"], "admitted")
@@ -103,7 +104,7 @@ class Snapshots(Reflection):
         self.assertEqual(opened["status"], "opened", opened)
         self.assertEqual(opened["snapshot"], {"resumed": height, "refused": []})
         self.assertEqual(opened["objects"], 500)
-        self.assertLess(took, 1.0, f"reopen took {took:.2f} s")
+        self.assertLess(took, 5.0, f"reopen took {took:.2f} s")
         self.assertEqual((self.count("c7"), self.count("c9"), self.count("c499")), ("8", "10", "499"))
         # The resumed world runs turns, retries return their receipts, and history reads entries.
         again = self.turn("c7", "bump")

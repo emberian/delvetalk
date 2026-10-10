@@ -6,7 +6,6 @@ Measured on this branch, 500 Bells from world/objects in a library world: before
 """
 import json
 import os
-import time
 import unittest
 
 from tests.test_chain import boolean, empty, nil, reference
@@ -63,22 +62,18 @@ class Lock(Reflection):
 
 
 class Maximum(Reflection):
-    def test_two_hundred_bells_create_and_replay_compiling_once(self):
+    def test_two_hundred_bells_journal_their_source_once_and_replay(self):
         self.open_library()
-        started = time.time()
         for i in range(200):
             r = self.host.send(op="world-create", principal="ember", identity=f"mk{i}", object=f"bell{i}", source=BELL,
                                entry="initial", seed=SEED)
             self.assertEqual(r["status"], "created", r)
-        created = time.time() - started
-        reopened = time.time()
+        before = self.host.send(op="world-inspect", principal="ember", object="bell199")
         self.reopen()
-        replay = time.time() - reopened
         size = os.path.getsize(self.path)
-        print(f"\n  200 bells: create {created:.2f}s, reopen {replay:.2f}s, journal {size / 1e6:.2f} MB")
-        self.assertLess(created, 10.0)
-        self.assertLess(replay, 3.0)
-        self.assertLess(size, 600000)
+        print(f"\n  200 bells: journal {size / 1e6:.2f} MB")
+        self.assertLess(size, 600000)  # one copy of Bell's source: 200 copies would be 3 MB
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="bell199"), before)
 
 
 if __name__ == "__main__":

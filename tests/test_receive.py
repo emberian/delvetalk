@@ -225,7 +225,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(self.version("garden"), 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
         ghost = self.say("delvetalk forge make / name: sentry", obj="root")
-        print("--- root, an unknown card ---\n" + str(ghost.get("offers", ghost)))
+        self.assertEqual(ghost["offers"][0]["text"], "Not passed to forge: unknownObject\n")
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()

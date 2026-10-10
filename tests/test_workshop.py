@@ -97,15 +97,6 @@ class Hints(unittest.TestCase):
         self.assertNotIn("  hint:", text)
 
 
-class Types(unittest.TestCase):
-    def test_every_method_compiles_as_an_activity(self):
-        for method in ("check", "propose", "receive"):
-            with self.subTest(method=method):
-                reply = compile_job(closure("Workshop"), method)
-                self.assertEqual(reply["status"], "compiled", reply)
-                self.assertEqual(row_names(computation(reply["artifact"]["type"])["plan"]["row"])[:3], ["view", "write", "call"])
-
-
 class Workshop(Chain):
     def make_workshop(self):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))

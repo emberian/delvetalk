@@ -49,7 +49,8 @@ class Genesis(unittest.TestCase):
 
     @unittest.expectedFailure
     def test_every_door_publishes_its_page_and_the_outbox_holds_a_wiki_draft_each(self):
-        # Until the objects lane lands Card.publishPage: the turn is refused as an unknown method.
+        # Tide has no publishPage method (Card.publishPage is generic; Tide never instantiates it), so the
+        # TIDE door's page is refused "method publishPage does not compile: missing selected entry".
         from transport import bridge
         with tempfile.TemporaryDirectory() as tmp:
             d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)

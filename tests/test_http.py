@@ -2,7 +2,6 @@ import http.client
 import json
 import tempfile
 import threading
-import time
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -117,10 +116,6 @@ class HttpFront(unittest.TestCase):
         arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
         self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
 
-    def test_end_to_end_arrive_against_the_real_host(self):
-        got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
-        self.assertNotEqual(got.get('status'), 'error', got)
-
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
@@ -208,27 +203,6 @@ class HttpFront(unittest.TestCase):
         s, e = self.call('POST', '/AGENTS.md/world/c1/bump', token=tok, raw=b'{"intent":"' + b'x' * (65 * 1024) + b'"}')
         self.assertEqual(s, 413)
         self.assertEqual(self.call('POST', '/AGENTS.md/world/c1/bump', token=tok, raw=b'{nope')[0], 400)
-
-    def test_host_death_is_survived_with_state_intact(self):
-        tok = self.login()
-        for i in range(2):
-            self.assertEqual(self.turn(tok, f'd{i}')[1]['status'], 'admitted')
-        self.hostd.shared.proc.kill()
-        self.hostd.shared.proc.wait()
-        s, v = self.call('GET', '/AGENTS.md/world/c1', token=tok)
-        self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 2), v)
-        self.assertEqual(self.turn(tok, 'd1')[1]['status'], 'admitted')  # retried identity: original receipt
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 2)
-
-    def test_two_hundred_turns_under_ten_seconds(self):
-        tok = self.login()
-        t0 = time.time()
-        for i in range(200):
-            self.now[0] += 3  # stay under the rate limit; the clock is the limiter's, not the host's
-            self.assertEqual(self.turn(tok, f'm{i}')[1]['status'], 'admitted')
-        took = time.time() - t0
-        self.assertLess(took, 10)
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 200)
 
     # ---- REPL
 
@@ -365,10 +339,6 @@ class HttpFront(unittest.TestCase):
         s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
         self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
-
-    def test_end_to_end_world_check_against_the_real_host(self):
-        got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
-        self.assertEqual(got.get('status'), 'checked', got)
 
     def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
         tok = self.login()

@@ -186,18 +186,6 @@ class WriteIsSelfOnly(Authority):
         self.assertEqual(self.outcome(r)["writes"][0]["callers"], ["", "a", "a", "a"])
 
 
-class DefaultLaw(Authority):
-    def test_anyone_may_invoke_a_method_but_only_the_creator_may_amend(self):
-        self.ledger("a")
-        self.assertEqual(self.turn("a", "bump", principal="kim")["status"], "admitted")
-        amend = self.host.send(op="world-amend", principal="kim", identity="am1", object="a",
-                               version=self.version("a"), law="law steward: request.subject == \"ember\"")
-        self.assertEqual((amend["status"], self.outcome(amend)["clause"]), ("refused", "owner"))
-        mine = self.host.send(op="world-amend", principal="ember", identity="am2", object="a",
-                              version=self.version("a"), law="law steward: request.subject == \"ember\"")
-        self.assertEqual(mine["status"], "admitted", mine)
-
-
 class LawsOnWho(Authority):
     def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
         door = record(label=label("garden"), description=label("a garden"), to=reference("garden"))

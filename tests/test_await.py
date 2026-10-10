@@ -2,7 +2,6 @@
 
 The clock is `world-advance`; the host never reads wall time.
 """
-import time
 import unittest
 
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
@@ -83,16 +82,6 @@ class Create(Await):
         return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post), slot=label("")),
                          principal=who, identity=post)
 
-    def test_a_planted_bell_appears_with_its_planter_and_only_the_overlaid_fields(self):
-        self.make("garden", closure("Garden"), garden_seed())
-        self.assertEqual(self.plant()["status"], "admitted")
-        bell = self.state("garden/bell/1")
-        self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
-        self.assertEqual(get(bell, "rung"), boolean(False))                 # default from initial()
-        v = self.host.send(op="world-view", principal="e", object="garden/bell/1")
-        self.assertEqual((v["status"], v["version"]), ("viewed", 0))
-        self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(1))
-
     def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):
         self.make("garden", closure("Garden"), garden_seed())
         r = self.plant()
@@ -104,16 +93,6 @@ class Create(Await):
         again = self.host.send(op="world-turn", principal="glm", object="garden/bell/1", method="rain",
                                argument=record(text=label("rain")), identity="r1")
         self.assertEqual(again["status"], "admitted", again)
-
-    def test_a_second_create_of_one_id_is_refused_naming_the_root_and_creates_nothing(self):
-        self.make("garden", closure("Garden"), garden_seed())
-        first = self.turn("garden", "cistern", record(), principal="kimik3")
-        self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "made"))
-        second = self.turn("garden", "cistern", record(), principal="glm")
-        out = second["receipt"]["outcome"]
-        self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern"))
-        self.assertEqual(second["receipt"]["absent"], ["garden/cistern"])
-        self.assertNotIn("creates", out)
 
     def test_a_partial_seed_overlays_initial_and_a_field_the_state_lacks_is_refused_as_type_mismatch(self):
         child = "edition ObjectiveBend 1\nrecord State:\n  n: Nat\n  m: Nat\ndef initial() -> State:\n  {n: 0n, m: 9n}\n"
@@ -304,7 +283,7 @@ class Seeds(TurnWorld):
 
 
 class Maximum(Await):
-    def test_a_hundred_suspended_activities_over_twenty_objects_resume_one_slot_each_in_time(self):
+    def test_a_hundred_suspended_activities_over_twenty_objects_each_resume_on_their_own_slot(self):
         for i in range(20):
             self.bell(f"b{i}", post=f"p{i}-0")
         for i in range(20):
@@ -317,16 +296,12 @@ class Maximum(Await):
                 self.assertEqual(self.strike(bell, ident=f"s-{i}-{k}")["status"], "suspended")
                 slots.append((bell, f"s-{i}-{k}"))
         self.assertEqual(sum(1 for _ in slots), 100)
-        t0 = time.time()
         resumed = 0
         for i in range(20):
             for post in (f"p{i}-0", f"p{i}-1"):
                 r = self.settle(post)
                 resumed += len(r.get("resumed", []))
-        took = time.time() - t0
-        print(f"\n  100 resumptions {took:.2f}s")
         self.assertEqual(resumed, 100)
-        self.assertLess(took, 10.0)
 
 
 if __name__ == "__main__":

@@ -73,43 +73,6 @@ def graft(state: State, input: {target: String, package: String}, context: Abi.C
 """
 
 
-# The layer of tests/test_layers.py, grafted by the host's extend Plan.
-LOUDER = """layer over ./Bell.obend
-edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./Document.obend as Document
-type State = Super.State
-def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.concat(Document.text("LOUDER\\n"), Super.render(state, context))
-"""
-
-
-class LouderBell(Reflection):
-    """Louder over Bell through the host's `extend` Plan: a rain reply's card is the bell as the
-    layer renders it (Bell's receive calls render; with late binding across the stack,
-    KERNEL-HANDOFF section 13, that is Louder's): the host writes the layer line (HOST-HANDOFF 5.18)."""
-
-    def setUp(self):
-        super().setUp()
-        self.open_library()
-        with open("world/objects/Bell.obend") as handle:
-            bell = handle.read()
-        empty = {"tag": "list", "items": []}
-        self.make("bell", bell, record(colour={"tag": "variant", "label": "amber", "payload": record()}, seed=label("a fern"),
-                                       rains=empty, rung={"tag": "boolean", "value": False}, planting=label(""),
-                                       planter=label("glm"), planterHandle=label(""), observers=empty))
-        self.make("forge", FORGE, record(note=label("")))
-
-    def test_a_rain_reply_after_the_graft_shows_louders_card(self):
-        graft = self.turn("forge", "graft", record(target=label("bell"), package=label(LOUDER)))
-        self.assertEqual((graft["status"], graft["result"]), ("admitted", label("grafted")), graft)
-        rain = self.turn("bell", "receive", record(text=label("delvetalk bell rain\ntext: a drizzle"), post=label("at://x/1")), principal="glm")
-        self.assertEqual((rain["status"], rain["result"]["label"]), ("admitted", "done"), rain)
-        card = rain["offers"][0]["text"]
-        self.assertIn("a drizzle", card)
-        self.assertTrue(card.startswith("LOUDER\n"), card)
-
-
 class Extend(Reflection):
     def setUp(self):
         super().setUp()

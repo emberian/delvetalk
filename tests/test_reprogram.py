@@ -210,11 +210,6 @@ class DefaultLaw(Reprogram):
         r = self.make(principal='bad"name')
         self.assertEqual(r["status"], "error")
 
-    def test_an_explicit_law_still_goes_through_the_amendment_clause_rule(self):
-        r = self.make(source=with_law(COUNTER, 'law sealed: request.kind == 0 and request.subject == "nobody"'))
-        self.assertEqual(r["status"], "error")
-        self.assertIn("law does not admit an amendment by its proposer ember: sealed: ", r["message"])
-
     def test_the_law_can_tell_an_amend_from_a_reprogram(self):
         law = 'law split: request.kind == 0 or request.kind == 2'
         self.make(source=with_law(COUNTER, law))

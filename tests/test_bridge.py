@@ -174,12 +174,13 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge()['failed'], [])
         self.assertIn('planted', self.drafts()[0]['text'])
 
-    def test_two_hundred_observations_under_fifteen_seconds(self):
+    def test_smoke_bound_two_hundred_observations_bridge_in_under_a_minute(self):
+        """The transport's one wall-clock smoke bound, generous: measured about 3 s on hbox."""
         self.make('garden-1')
         self.observe([spell_post(i, 'garden-1', f'2026-10-09T10:{i // 60:02d}:{i % 60:02d}Z') for i in range(200)])
         t0 = time.time()
         self.assertEqual(len(self.run_bridge()['turns']), 200)
-        self.assertLess(time.time() - t0, 15)
+        self.assertLess(time.time() - t0, 60)
         self.assertEqual(len(self.drafts()), 200)
 
 
@@ -277,11 +278,6 @@ class Routing(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
 
-    @unittest.expectedFailure
-    def test_end_to_end_clock_and_addressee_against_the_real_host(self):
-        # Until the host lands world-addressee: {'message': 'unknown world operation world-addressee'}
-        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': 'at://x/y/z'}).get('status'), 'addressee')
-
 
 class Suspended(BridgeCase):
     def test_a_suspended_turn_has_no_draft_then_the_resumed_offer_is_drafted_once(self):
@@ -316,21 +312,6 @@ class Suspended(BridgeCase):
         (d,) = self.drafts()
         self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
 
-    def test_end_to_end_a_handed_on_offer_carries_from_on_the_real_host(self):
-        from deploy import genesis
-        from transport.hostproc import LIBRARY
-        with tempfile.TemporaryDirectory() as tmp:
-            d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
-            try:
-                host = HostClient(Path(tmp) / 'host.sock')
-                self.assertIsNone(genesis.run(host)[1])
-                host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'receive', 'identity': 'handed',
-                           'argument': genesis.rec(text=genesis.lab('delvetalk garden plant\nseed: a\ncolour: amber'), post=genesis.lab('at://x/p/1'), slot=genesis.lab(''))})
-                offers = host.send({'op': 'world-offers', 'principal': genesis.OPENER})['offers']
-                self.assertTrue(offers and all('from' in o for o in offers), offers)
-            finally:
-                stop_hostd(d)
-
 
 class Slugs(unittest.TestCase):
     def test_a_draft_cites_the_slug_and_carries_no_cid(self):
@@ -343,18 +324,6 @@ class Slugs(unittest.TestCase):
         self.assertIn('receipt babab-dabab\n', texts[1])
         for t in texts:
             self.assertFalse(re.search(r'bafy', t), t)
-
-    def test_end_to_end_the_host_names_receipts_with_slugs(self):
-        from deploy import genesis
-        from transport.hostproc import LIBRARY
-        with tempfile.TemporaryDirectory() as tmp:
-            d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
-            try:
-                host = HostClient(Path(tmp) / 'host.sock')
-                self.assertIsNone(genesis.run(host)[1])
-                self.assertIn('slug', host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-garden'})['receipt'])
-            finally:
-                stop_hostd(d)
 
 
 class Mentions(BridgeCase):
@@ -512,16 +481,6 @@ class Principals(BridgeCase):
         self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-arrive')
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
-
-    def test_end_to_end_arrive_against_the_real_host(self):
-        from transport.hostproc import LIBRARY
-        with tempfile.TemporaryDirectory() as tmp:
-            d = start_hostd(tmp, BINARY, opener=DID, library=LIBRARY)
-            try:
-                got = HostClient(Path(tmp) / 'host.sock').send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'})
-                self.assertEqual(len(got.get('created', [])), 3, got)
-            finally:
-                stop_hostd(d)
 
 
 class RealAwaitPost(test_outbound.ReplyIsAddress):

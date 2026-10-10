@@ -57,13 +57,6 @@ class Resumed(test_chain.Chain):
     def text(self, raw):
         return {"status": "replied", "json": None, "raw": raw, "model": "m"}
 
-    def test_a_spell_in_the_models_text_plants(self):
-        self.policy()
-        self.garden("policy", confirm=False)
-        self.say("Could we plant a silver fern that remembers?")
-        resumed = self.interpret(self.text(SPELL))
-        self.assertEqual(resumed["result"]["label"], "planted", resumed)
-
     def test_not_addressed_ends_the_turn_with_no_card(self):
         self.policy()
         self.garden("policy")

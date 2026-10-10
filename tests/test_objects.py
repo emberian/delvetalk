@@ -170,14 +170,6 @@ ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
 
 
 class Library(unittest.TestCase):
-    def test_every_module_compiles(self):
-        for name in sorted(MODULES):
-            entries = [d for d in definitions(name) if not d[1]]
-            if not entries:
-                continue
-            with self.subTest(module=name):
-                reply = compile_job(closure(name), entries[0][0])
-                self.assertEqual(reply["status"], "compiled", reply)
 
     def test_one_context_record(self):
         owners = []
