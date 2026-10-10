@@ -402,10 +402,13 @@ def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colo
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})}))
   Card.tellTo(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
 def grow(state: State, context: Abi.Context, post: String, found: Held, colour: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
-  match perform(Plan.create({package: "Bell", seed: {colour: colour, seed: seed, planting: post, planter: context.principal, planterHandle: context.handle}, law: "Bell", requireAbsent: minted()})):
+  match perform(Plan.create({package: "Bell", seed: bellSeed(context, post, colour, seed), law: "Bell", requireAbsent: minted()})):
     case created(c): counted(state, context, found, c.object, Bell.colourName(colour), seed)
     case refused(r): refused(found, context, Why.world({clause: r.clause}))
     case _: refused(found, context, Why.noCreation({what: "plant"}))
+# A bell is planted with a door home to its garden.
+def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: String) -> {colour: Bell.Colour, seed: String, planting: String, planter: String, planterHandle: String, doors: Card.Doorways}:
+  {colour: colour, seed: seed, planting: post, planter: context.principal, planterHandle: context.handle, doors: Card.Doorways.cons({head: {label: "garden", to: Plans.self(context)}, tail: Card.Doorways.nil()})}
 # Planting counts, keeps the bell among the children, and settles whatever this
 # principal had waiting.
 def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:

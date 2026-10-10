@@ -169,6 +169,11 @@ the library).
   its own package with its state minus holder, offer and owner (the copy is the asker's:
   the host fills owner with the creating principal, and the law must admit its own owner),
   lying nowhere; not copyable is refused by name to the asker.
+* **Doors on any card** (objects5): `Card.Doorway {label, to}`, `doors: Card.Doorways` in
+  state and Edits, `Card.doorForm()`/`undoorForm()`, `Card.dooring` (the owner's, refused by
+  name otherwise; eight at most) and `Card.doorLines` ("label: id"). Bell has them (its
+  planter's) and Garden plants each bell with `garden: <garden>`. (`door()` stays the
+  directory blurb, so the action is a form, not a method named door.)
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

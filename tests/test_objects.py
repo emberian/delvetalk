@@ -136,7 +136,7 @@ BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
     case 0: Lists.List::<O.Rain>.nil()
     case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain"}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil()}
+  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil(), doors: Lists.List::<Card.Doorway>.nil()}
 def many(n: Nat) -> String:
   Document.plain(O.render(sample(rains(n)), Card.stranger()))
 def weight(n: Nat) -> Nat:

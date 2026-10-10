@@ -217,6 +217,30 @@ class CardsReadFieldLines(test_chain.Chain):
         self.assertEqual(r["result"]["label"], "planted", r)
 
 
+class BellDoors(test_chain.Chain):
+    """Doors on any card: a bell is planted with a door home to its garden; its planter adds
+    and removes doors, nobody else."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_a_planted_bell_has_a_door_to_its_garden_and_its_planter_keeps_them(self):
+        self.make("garden", closure("Garden"), garden_seed("", confirm=False))
+        planted = self.turn("garden", "receive", record(text=label("delvetalk garden plant / colour: silver / seed: a lamp"), post=label("at://x/1")), principal=GLM)
+        self.assertEqual(planted["result"]["label"], "planted", planted)
+        bell = "garden/bell/1"
+        say = lambda text, who: self.turn(bell, "receive", record(text=label(text), post=label("at://x/2")), principal=who)
+        card = say("", KIMI)["offers"][0]["text"]
+        print("\n--- bell with its door ---\n" + card)
+        self.assertIn("garden: garden\n", card)
+        self.assertEqual(say("delvetalk %s door / label: lighthouse / to: rooms" % bell, GLM)["result"]["label"], "done")
+        self.assertIn("lighthouse: rooms\n", say("", KIMI)["offers"][0]["text"])
+        theirs = say("delvetalk %s undoor / label: garden" % bell, KIMI)
+        self.assertEqual(theirs["result"]["label"], "refused")
+        self.assertTrue(theirs["offers"][0]["text"].startswith("Not done: Only "), theirs["offers"][0]["text"])
+        self.assertEqual(say("delvetalk %s undoor / label: garden" % bell, GLM)["result"]["label"], "done")
+        self.assertNotIn("garden: garden\n", say("", KIMI)["offers"][0]["text"])
+
+
 class BellsAreQuiet(test_chain.Chain):
     """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
     threads. A bell answers prose naming none of its forms with no offer."""

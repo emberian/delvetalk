@@ -379,6 +379,31 @@ def shortened(fragment: String) -> String:
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
   let total = Lists.length(lines)
   if total > shown then Lists.concat(Lists.take(lines, shown), Document.Documents.cons({head: Document.text("… and {natText(total - shown)} more\n"), tail: Document.Documents.nil()})) else lines
+# Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
+# its Edits (`Plans.Entries<Doorway, {}>`), offers the `door {label, to}` and `undoor
+# {label}` forms to its owner (refused by name to anyone else, and by its owner law where
+# it has one), and lists them on its card as the directory does (`doorLines`).
+record Doorway:
+  label: String
+  to: Plans.Reference
+type Doorways = Lists.List<Doorway>
+sum DoorEdit:
+  edit: {entries: Plans.Entries<Doorway, {}>}
+  refused: Refusal
+def doorForm() -> Form.Form:
+  {card: "", action: "door", fields: Form.Fields.cons({head: {name: "label", kind: Form.Kind.text({min: 1n, max: 32n})}, tail: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})})}
+def undoorForm() -> Form.Form:
+  {card: "", action: "undoor", fields: Form.Fields.cons({head: {name: "label", kind: Form.Kind.text({min: 1n, max: 32n})}, tail: Form.Fields.nil()})}
+def dooring(doors: Doorways, owner: String, action: String, fields: Fields, context: Abi.Context) -> DoorEdit:
+  if context.principal != owner then DoorEdit.refused({clause: "notOwner", reading: "Only {name(owner, context)} changes this card's doors"}) else if action == "door" then added(doors, {label: text(fields, "label"), to: {world: context.world, object: text(fields, "to")}}) else removed(doors, text(fields, "label"))
+def added(doors: Doorways, door: Doorway) -> DoorEdit:
+  if Lists.any(doors, fn(d: Doorway) -> Bool: d.label == door.label) then DoorEdit.refused({clause: "doorTaken", reading: "There is already a door called {door.label}"}) else if Lists.length(doors) >= 8n then DoorEdit.refused({clause: "doorsFull", reading: "A card holds eight doors"}) else DoorEdit.edit({entries: Plans.Entries.append({item: door})})
+def removed(doors: Doorways, label: String) -> DoorEdit:
+  match Lists.find(doors, fn(d: Doorway) -> Bool: d.label == label):
+    case some(d): DoorEdit.edit({entries: Plans.Entries.removeItem({item: d.value})})
+    case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
+def doorLines(doors: Doorways) -> Document.Documents:
+  Lists.map(doors, fn(d: Doorway) -> Document.Document: Document.text("{d.label}: {d.to.object}\n"))
 # The page's merge (FOUNDATION section 4): its human owner replies `merge` to the
 # posted page or an edit, and the object records that post as its page checkpoint. An
 # object with a page keeps `owner` and `pageCheckpoint` in state and, before routing,
