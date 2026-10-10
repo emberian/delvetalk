@@ -944,6 +944,9 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
+/-- Why `me` names nothing yet. -/
+def noAvatarReason : String := "You have no avatar here yet; your first arrival in the town makes one, and then me is it."
+
 /-- What a spell naming `card` and `action` with `fields` asks of card `self` (`o`), read for
     `principal`. `retarget`: a direct turn goes to the card the spell names; a call or a delivery
     reads only spells naming the card it was sent to (another is `otherCard`), since its sender chose
@@ -957,7 +960,10 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let here := usageForms w self o principal (spellForms w self o)
   let unknown := if here.isEmpty then s!"no card named {card}; reply to the directory for the doors"
     else spellUsage self here
-  let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
+  let some target := w.objects[id]?
+    | if card == meCard then
+        return .refuse self "noAvatar" noAvatarReason unknown
+      else return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
   unless target.read.permits principal && (retarget || id == self) do
     return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
   let forms := spellForms w id target
@@ -1990,7 +1996,11 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
     `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message
     dialect is read as a spell first (`spellTurn`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+  let asked := req.object
   let req := { req with object := resolveCard req.principal req.object }
+  -- `me` before the speaker has an avatar: refused by name, saying what makes one.
+  if asked == meCard && !w.objects.contains req.object && (retainedTurn w req).isNone then
+    refuseSpell w req meCard "noAvatar" noAvatarReason "" else
   -- A retry is answered from the identity before its spell is read again: new code may route the
   -- same words elsewhere (codex host 13).
   if let some r := retainedTurn w req then .ok (w, r) else

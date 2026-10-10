@@ -905,6 +905,14 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    Tests: `tests/test_usage_voice.py` `test_hobs_tail_line_follows_usage_and_hints_only_when_a_library_is_visible`,
    `tests/test_law.py` `test_inspect_answers_each_clause_with_its_reading`.
 
+111. **`me` is the speaker's avatar (host12; docs/GROUND.md §6 change 2).** `resolveCard` reads the card
+   `me` as the principal's own avatar, the object an arrival makes under the principal's own id
+   (`arrivals`: the avatar is `<did>`, not `avatar/<did>`), in direct turns and spells alike, so cards
+   print `delvetalk me watch / to: … / field: …`, `me move`, `me accept`, `me go`; usage and reasons
+   speak `me`, never the DID. A speaker with no avatar is refused `badSpell`, clause `noAvatar`, "You have
+   no avatar here yet; your first arrival in the town makes one, and then me is it." `me` joins
+   `ownCards`, so no object may take the id. Test: `tests/test_arrive.py` `test_me_is_the_speakers_own_avatar`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
