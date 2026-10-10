@@ -59,7 +59,7 @@ class HttpFront(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.provider = Provider()
         self.now = [1000.0]
-        self.hostd = start_hostd(self.tmp.name, BINARY, library=LIBRARY)
+        self.hostd = start_hostd(self.tmp.name, BINARY, opener=DID, library=LIBRARY)  # a library is sealed only by an opener
         self.hostd.heaps.size = 2
         sock = Path(self.tmp.name) / 'host.sock'
         self.host = HostClient(sock)
@@ -117,9 +117,7 @@ class HttpFront(unittest.TestCase):
         arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
         self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
 
-    @unittest.expectedFailure
     def test_end_to_end_arrive_against_the_real_host(self):
-        # Until the host lands world-arrive: {'message': 'unknown world operation world-arrive'}
         got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
         self.assertNotEqual(got.get('status'), 'error', got)
 
@@ -311,9 +309,7 @@ class HttpFront(unittest.TestCase):
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
         self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
 
-    @unittest.expectedFailure
     def test_end_to_end_world_check_against_the_real_host(self):
-        # Until the host lands world-check: {'message': 'unknown world operation world-check'}
         got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
         self.assertEqual(got.get('status'), 'checked', got)
 
@@ -346,7 +342,7 @@ class HttpFront(unittest.TestCase):
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
         s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
-        self.assertEqual((s, listed['ids']), (200, ['c1', 'garden']), listed)
+        self.assertEqual((s, listed['ids']), (200, ['c1', DID, 'env/' + DID, 'garden', 'wake/' + DID]), listed)  # verify made the caller's avatar, env and wake
         self.assertEqual(self.call('GET', '/AGENTS.md/world?prefix=g', token=tok)[1]['ids'], ['garden'])
         s, card = self.call('GET', '/AGENTS.md/world/garden/card', token=tok)
         self.assertEqual((s, card['status']), (200, 'card'), card)

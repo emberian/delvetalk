@@ -377,11 +377,15 @@ class Principals(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
 
-    @unittest.expectedFailure
     def test_end_to_end_arrive_against_the_real_host(self):
-        # Until the host lands world-arrive: {'message': 'unknown world operation world-arrive'}
-        got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'})
-        self.assertNotEqual(got.get('status'), 'error', got)
+        from transport.hostproc import LIBRARY
+        with tempfile.TemporaryDirectory() as tmp:
+            d = start_hostd(tmp, BINARY, opener=DID, library=LIBRARY)
+            try:
+                got = HostClient(Path(tmp) / 'host.sock').send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'})
+                self.assertEqual(len(got.get('created', [])), 3, got)
+            finally:
+                stop_hostd(d)
 
 
 class RealAwaitPost(test_outbound.ReplyIsAddress):
