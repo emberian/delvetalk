@@ -242,8 +242,8 @@ def planted(context: Abi.Context) -> String:
                            entry="initial", seed=record(owner=label(did)))
         self.assertEqual(r["status"], "created", r)
         observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
-        self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0\\n\\nReply with a spell:\\n\\n    delvetalk env/did:plc:l7exgoq5pjijbeoo3jaxnwse observe\\n\\n    delvetalk env/did:plc:l7exgoq5pjijbeoo3jaxnwse seen\\n    at: <a number from 0 to 1000000000>\\n'}]")
-        self.assertEqual((observed["status"], observed["result"]["label"]), ("admitted", "done"), observed)
+        self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0\\n'}]")
+        self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
         # A speaker without a wake: the host names what it looked for.

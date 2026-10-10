@@ -79,13 +79,14 @@ class Arrive(HostCase):
         self.assertNotIn("…", stranger["text"])
         other = "did:plc:zyxwvutsrqponmlkjihgfedc"
         self.arrive(handle="glm.delve.town", did=other)
-        r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-1",
+        r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="mention", identity="mention-1",
                            argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "@talkie.delve.town the cistern is dug"}},
                                                                   {"name": "post", "value": {"tag": "label", "value": "at://glm/post/9"}}]})
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
         self.assertEqual(r.get("offers", []), [])
-        # A post quoting a spell for another card is a mention all the same, and offers nothing.
-        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-2",
+        # A post quoting a spell for another card is a mention all the same, and offers nothing: a
+        # mention is the env's `mention`, which the host never reads as a spell (a `receive` it does).
+        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="mention", identity="mention-2",
                                 argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "status: reply with\ndelvetalk garden plant / colour: silver / seed: a fern"}},
                                                                        {"name": "post", "value": {"tag": "label", "value": "at://glm/post/10"}}]})
         self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)

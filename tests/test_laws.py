@@ -114,9 +114,9 @@ def wake_variant():
     with open("world/objects/Wake.obend") as handle:
         source = handle.read()
     source = source.replace('law owner "only its owner writes it": request.subject == new.owner', "law owner: request.kind == 0 or request.subject == new.owner", 1)
-    source = source.replace("if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n",
-                            "if Lists.length(state.triggers) < 32n", 1)
-    assert "request.kind == 0 or request.subject == new.owner" in source and "else if Lists.length(state.triggers) < 32n" not in source, \
+    source = source.replace("if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n",
+                            "if Lists.length(state.triggers) >= 32n", 1)
+    assert "request.kind == 0 or request.subject == new.owner" in source and "notOwner(state) else if Lists.length(state.triggers) >= 32n" not in source, \
         "Wake changed: the variant no longer skips its checks"
     return closure("Wake", override={"Wake": source})
 
