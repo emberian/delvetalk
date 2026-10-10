@@ -180,7 +180,7 @@ class Views(test_chain.Chain):
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"
         self.make("garden", closure("Garden"), record(policy=reference(""), confirmFor={"tag": "list", "items": [label("plant")]},
-                                                      pending=relation(record(principal=label("glm"), spell=label(spell), needs={"tag": "list", "items": []}))))
+                                                      pending=relation(record(principal=label("glm"), colour=label("violet"), seed=label("a moth"), needs={"tag": "list", "items": []}))))
         mine, theirs = self.card("garden", "glm"), self.card("garden", "kimik3")
         self.assertEqual(mine, (
             "✾ THE NIGHT GARDEN\n"

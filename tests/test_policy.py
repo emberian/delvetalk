@@ -238,22 +238,10 @@ class PolicyObject(Chain):
         self.assertEqual(through["status"], "suspended", through)
         [item] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(item["utterance"], "moth for")
-        usage = self.say("delvetalk garden ?", identity="usage")["offers"][0]["text"]
-        self.assertEqual(usage, (
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk garden plant\n"
-            "    colour: <amber, violet, silver>\n"
-            "    seed: <text, 1 to 80 characters>\n"
-            "\n"
-            "    delvetalk garden cistern\n"
-            "    name: <text, 0 to 120 characters>\n"
-            "\n"
-            "To change a field, reply (one field a spell):\n"
-            "\n"
-            "    delvetalk garden set\n"
-            "    confirm: <yes, no>\n"
+        # `?` is the host's usage; the blank reply's card shows the policy's shortcuts.
+        usage = self.say("", identity="usage")["offers"][0]["text"]
+        self.assertTrue(usage.startswith("✾ THE NIGHT GARDEN\n"), usage)
+        self.assertEqual(usage[usage.index("\nShortcuts"):], (
             "\n"
             "Shortcuts (no model is asked):\n"
             "    moth for {who}\n"
@@ -395,16 +383,19 @@ class PolicyObject(Chain):
         self.assertEqual(rows(self.pending()), [])
         self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(0))
 
-    def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_refused_by_name(self):
+    def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_unclear_naming_the_colours(self):
         self.policy()
         self.garden("policy", confirm=False)
         self.say("Could we plant a silver fern that remembers?")
         planted = self.interpret(self.planting())
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.say("a green one", identity="green")
+        # The host reads the colour's word as its case: one naming none is `unclear` (HOST-HANDOFF
+        # 5.52), a miss asked once more, then answered with what is needed.
+        self.assertEqual(self.interpret(self.planting("green", "a fern"))["status"], "suspended")
         green = self.interpret(self.planting("green", "a fern"))
-        self.assertEqual(green["result"]["label"], "refused")
-        self.assertEqual(green["offers"][0]["text"], "Not planted, refused badColour: colour is one of: amber, violet, silver\n")
+        self.assertEqual(green["result"]["label"], "unclear")
+        self.assertEqual(green["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: colour is one of: amber, violet, silver (not green).\n")
 
     def test_an_unclear_interpretation_offers_its_needs(self):
         self.policy()
@@ -444,14 +435,16 @@ class PolicyObject(Chain):
                        "Participant: Could we plant a silver fern that remembers?"):
             self.assertIn(needle, system)
 
-    def test_a_plain_spell_reply_resumes_replied_and_the_garden_plants_it(self):
+    def test_a_plain_spell_reply_is_fitted_to_a_proposal_and_the_garden_plants_it(self):
         self.policy()
         self.garden("policy", confirm=False)
         self.say("Could we plant a silver fern that remembers?")
         pending = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=pending[0]["id"],
                                  reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
-        self.assertEqual(settled["receipt"]["outcome"]["verdict"], {"tag": "replied", "text": SPELL}, settled)
+        # The host fits the model's spell to the offered plant form (HOST-HANDOFF 5.54).
+        verdict = settled["receipt"]["outcome"]["verdict"]
+        self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), settled)
         [resumed] = settled["resumed"]
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(resumed["result"]["label"], "planted", resumed)

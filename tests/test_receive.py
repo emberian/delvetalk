@@ -72,18 +72,20 @@ class Cards(Chain):
         self.assertIn("I still need: colour, seed.", text)
         self.assertIn("    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n", text)
 
-    def test_refusals_are_one_line_cards_and_write_nothing(self):
+    def test_refusals_are_the_hosts_by_name_and_write_nothing(self):
+        """A spell that does not fit is the host's refusal, class badSpell, with its clause and
+        reason (HOST-HANDOFF 5.49); nothing is written."""
         self.garden()
         cases = {
-            "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted, refused badSpell: colour is one of: amber, violet, silver\n",
-            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted, refused badSpell: Unknown field smell\n",
-            "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted, refused badSpell: This card offers garden plant\n",
+            "delvetalk garden plant\nseed: a fern\ncolour: green": ("badValue", "colour is one of: amber, violet, silver"),
+            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": ("unknownField", "Unknown field smell"),
+            "delvetalk orchard plant\nseed: a fern\ncolour: silver": ("otherCard", "There is no card orchard."),
         }
-        for spell, expected in cases.items():
+        for spell, (clause, reason) in cases.items():
             with self.subTest(spell=spell[:40]):
-                self.assertEqual(self.card(self.say(spell)), expected)
+                out = self.say(spell)["receipt"]["outcome"]
+                self.assertEqual((out["class"], out["clause"], out["reason"]), ("badSpell", clause, reason), out)
         self.assertEqual(self.version("garden"), 0)
-        self.assertEqual(expected, "Not planted, refused badSpell: This card offers garden plant\n")
 
     def test_a_proposal_plants_a_bell_and_offers_the_garden_card(self):
         self.garden()
@@ -104,7 +106,7 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Garden.obend as Garden
 def planted(context: Abi.Context) -> String:
-  Document.plain(Garden.plantedCard(context, "glm", {world: "", object: "garden/bell/1"}, "silver", "a fern that remembers yesterday", 1n))
+  Document.plain(Garden.plantedCard(context, {world: "", object: "garden/bell/1"}, "silver", "a fern that remembers yesterday", 1n))
 """
         compiled = compile_job(closure("Garden") + [{"name": "Probe", "source": probe}], "planted")
         self.assertEqual(compiled["status"], "compiled", compiled)
@@ -125,9 +127,9 @@ def planted(context: Abi.Context) -> String:
         reply = "\n".join(lines) + "\n"
         self.assertTrue(4000 <= len(reply.encode()) <= 4096, len(reply.encode()))
         out = self.say(reply)
-        print("\n  dense %d-byte reply through Garden.receive: %s ticks" % (len(reply.encode()), out["ticksUsed"]))
-        self.assertEqual(self.card(out), "Not planted, refused badSpell: Unknown field f00\n")
-        self.assertLess(out["ticksUsed"], 1000000)
+        # The host parses and refuses it before any Bend runs.
+        self.assertEqual((out["receipt"]["outcome"]["class"], out["receipt"]["outcome"]["reason"]), ("badSpell", "Unknown field f00"), out)
+        self.assertEqual(out["ticksUsed"], 0)
 
     def version(self, name):
         return self.host.send(op="world-view", principal="ember", object=name)["version"]

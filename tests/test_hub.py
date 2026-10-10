@@ -100,7 +100,7 @@ class Hub(test_chain.Chain):
             "Reply with just the missing lines, or the spell filled in:\n"
             "\n"
             "    delvetalk garden plant\n"
-            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    seed: a cistern for refused proposals (by discovery, Kimi)\n"
             "    colour: <amber, violet or silver>\n"))
         self.assertIn("I still need: colour.", asked["offers"][0]["text"])
         self.assertEqual(len(self.children()), 1)
@@ -148,8 +148,8 @@ class Hub(test_chain.Chain):
         public = second["public"]
         self.assertEqual((public["object"], public["root"]["object"], public["root"]["version"]),
                          ("garden/cistern", "garden", garden["version"]), public)
-        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)["offers"][0]["text"]
-        self.assertIn("    delvetalk garden cistern\n    name: <text, 0 to 120 characters>\n", usage)
+        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)
+        self.assertIn("delvetalk garden cistern\nname: <text, 0 to 1400 characters>\n", usage["text"])
 
     def interpret(self, raw):
         [pending] = self.host.send(op="world-interpretations")["pending"]

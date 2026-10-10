@@ -152,8 +152,9 @@ class OwnedLenses(test_chain.Chain):
     def test_the_gardens_owner_sets_confirm(self):
         from tests.test_chain import garden_seed
         self.make("garden", closure("Garden"), garden_seed())
-        usage = self.say("garden", "delvetalk garden ?", "glm")["offers"][0]["text"]
-        self.assertIn("    delvetalk garden set\n    confirm: <yes, no>\n", usage)
+        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal="glm")
+        self.assertEqual(usage["status"], "usage", usage)
+        self.assertIn("delvetalk garden set\nconfirm: <yes, no>\n", usage["text"])
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "glm")
         self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember"))
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "ember")
@@ -162,7 +163,7 @@ class OwnedLenses(test_chain.Chain):
         r = self.say("garden", "delvetalk garden set\nconfirm: yes", "ember")
         self.assertEqual(self.listed("garden", "confirmFor"), ["plant"])
         append = {"tag": "variant", "label": "append", "payload": record(item=label("give"))}
-        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint", "observers"], {"confirmFor": append}))
+        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint"], {"confirmFor": append}))
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_rooms_owner_renames_it(self):
