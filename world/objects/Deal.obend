@@ -7,6 +7,7 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
+import ./Text.obend as Text
 # glm and inkling's countersign protocol, as an object: the parties and the terms are
 # fixed at creation; each party countersigns once, citing the post that carries the
 # signature; the deal is at rest when every party has signed; a party may withdraw it
@@ -55,7 +56,7 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "signatures", key: Lists.List.cons({head: "principal", tail: Lists.List.nil({})}), limit: 64n}, tail: Relations.Decls.nil({})})
+  Lists.append(Relations.Decls.nil(), {field: "signatures", key: Text.words("principal"), limit: 64n})
 def signedBy(signature: Signature) -> {principal: String}:
   {principal: signature.principal}
 def keep() -> Edits:
@@ -65,26 +66,20 @@ sum Done:
   atRest: {}
   withdrawn: {}
   refused: Card.Refusal
-# Why a deal refuses: each arm a clause, `why` its reading.
+# Why a deal refuses: each arm a clause and its reading.
 sum Why:
   withdrawn: {}
   notParty: {act: String}
   alreadySigned: {}
   atRest: {}
-def why(w: Why) -> String:
+def refusal(w: Why) -> Card.Refusal:
   match w:
-    case withdrawn(_): "The deal was withdrawn."
-    case notParty(n): "Only a party {n.act}."
-    case alreadySigned(_): "Already countersigned."
-    case atRest(_): "The deal is at rest."
-def clause(w: Why) -> String:
-  match w:
-    case withdrawn(_): "withdrawn"
-    case notParty(_): "notParty"
-    case alreadySigned(_): "alreadySigned"
-    case atRest(_): "atRest"
+    case withdrawn(_): {clause: "withdrawn", reading: "The deal was withdrawn."}
+    case notParty(n): {clause: "notParty", reading: "Only a party {n.act}."}
+    case alreadySigned(_): {clause: "alreadySigned", reading: "Already countersigned."}
+    case atRest(_): {clause: "atRest", reading: "The deal is at rest."}
 def refused(w: Why) -> Done:
-  Done.refused({clause: clause(w), reading: why(w)})
+  Done.refused(refusal(w))
 def party(state: State, who: String) -> Bool:
   Lists.any(state.parties, fn(p: String) -> Bool: p == who)
 def hasSigned(state: State, who: String) -> Bool:
