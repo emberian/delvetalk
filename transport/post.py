@@ -80,6 +80,11 @@ def slot_record(text):
     return {'principal': principal, 'intent': intent}
 
 
+def draft_object(d):
+    """The object a draft addresses: a reply's `object`, a publication's `publication.object`."""
+    return d.get('object') or (d.get('publication') or {}).get('object')
+
+
 def record_posted(host, result, obj, slot=None, target=None):
     """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?, page?, section?},
     as the clock principal hostd opens the world with (the only one that may confirm posts).
@@ -175,7 +180,7 @@ def record_sent(state, host):
     done = []
     for path in sorted((Path(state) / 'outbox').glob('*.json')):
         d = json.loads(path.read_text())
-        obj = d.get('object') or (d.get('publication') or {}).get('object')
+        obj = draft_object(d)
         if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
             got = record_posted(host, d['sent'], obj, slot_record(d['slot']) if d.get('slot') else None, wiki_target(d['text']))
             write_atomic(path, dict(d, recorded=got))
@@ -199,7 +204,7 @@ def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=Non
     from transport.bridge import write_atomic
     d = dict(d, text=body, posted=True, sent=result, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
     write_atomic(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
-    object = object or d.get('object')
+    object = object or draft_object(d)
     if object:
         result = dict(result, recorded=record_posted(host, result, object, slot, wiki_target(body)))
         write_atomic(path, dict(d, recorded=result['recorded']))
@@ -231,7 +236,7 @@ def main(argv=None, out=None, client=None):
             d = json.loads(Path(a.draft).read_text())
             if d.get('posted'):
                 raise Failure('draft_already_posted')
-            a.reply_to, a.record, a.slot = a.reply_to or d.get('replyTo'), a.record or d.get('object'), a.slot or d.get('slot')
+            a.reply_to, a.record, a.slot = a.reply_to or d.get('replyTo'), a.record or draft_object(d), a.slot or d.get('slot')
         if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) + bool(a.draft) != 1 or (not (a.text_file or a.draft) and not a.body_file):
             raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
         if a.draft:

@@ -540,5 +540,18 @@ class Idempotent(unittest.TestCase):
         self.assertEqual((pds.creates, [r['uri'] for r in host.posted]), (1, [got['uri']] * 2))
 
 
+    def test_a_publication_draft_is_recorded_for_its_publications_object_by_the_hand_and_the_cli(self):
+        page = {'publication': {'id': 'p1', 'height': 3, 'object': 'genesis'}, 'page': 'Genesis', 'section': '',
+                'replyTo': None, 'text': 'wiki: Genesis\n\nbody', 'posted': False}
+        self.draft.write_text(json.dumps(page))
+        pds, host = Pds(), Recorder()
+        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        self.assertEqual([(r['object'], r['uri'], r['page']) for r in host.posted], [('genesis', got['uri'], 'Genesis')])
+        self.draft.write_text(json.dumps(page))
+        code, plan = 0, io.StringIO()
+        code = post.main(['--state', str(self.state), 'post', '--intent', 'x', '--draft', str(self.draft),
+                          '--host-socket', str(self.state / 'none.sock')], plan, pds)
+        self.assertEqual((code, json.loads(plan.getvalue())['record']['object']), (2, 'genesis'))
+
 if __name__ == '__main__':
     unittest.main()

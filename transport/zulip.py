@@ -23,7 +23,7 @@ from pathlib import Path
 from transport.bridge import unposted, write_atomic
 from transport.delve import Failure, canonical, http_transport
 from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import ledger, quota_limit, record_posted, slot_record, take_slot, wiki_target
+from transport.post import draft_object, ledger, quota_limit, record_posted, slot_record, take_slot, wiki_target
 
 STREAM = 'delvetalk'
 BATCH = 100
@@ -216,7 +216,7 @@ def post_drafts(state, host, client, stream, now=None):
             target, text = ((stream, d['page']) if 'publication' in d and not d['section'] else None), d.get('text')
         if target is None:
             continue
-        obj = d.get('object') or (d.get('publication') or {}).get('object')
+        obj = draft_object(d)
         try:
             got = deliver(state, host, client, target[0], target[1], text, obj, slot_record(d['slot']) if d.get('slot') else None, now,
                           intent=f'zulip-{path.stem}')
