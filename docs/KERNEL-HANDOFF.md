@@ -842,3 +842,28 @@ Card's declarations alone (one entry module, `check-package`, 20 entries in one 
    `held` (12 drafts) cannot hold 12 full-size packages in 256 KiB: `test_relation_limits` fills it
    with 16,384-byte packages and must keep doing so until that switch.
 
+2. The generic-instance bound. `Generics.maxInstances` 256 -> 1,024. Measured (`k13_many.py`: N row
+   types, each used through Relation insert, count, retract and rows, about eleven instances each;
+   `check-package` then the compile of an entry reaching all of them, one process):
+
+   | instances | check | compile | packet | resident |
+   |---|---|---|---|---|
+   | 178 | 0.09 s | 0.06 s | 0.35 MB | 87 MB |
+   | 354 | 0.15 | 0.11 | 0.70 | |
+   | 706 | 0.27 | 0.23 | 1.40 | |
+   | 1,025 | 0.39 | 0.35 | 2.04 | 107 MB |
+   | 1,410 | 0.57 | 0.55 | 2.81 | |
+   | 2,818 | 1.38 | 1.33 | 5.63 | 167 MB |
+
+   Linear (about 0.37 ms of check and 2 KB of packet an instance); 1,024 is the most whose check and
+   compile stay under a second together. World closures today: Kind 197, Directory 190, Garden and
+   Place 140; the 258 KB Garden of item 1 needs 308. The refusal names the count, the bound and the
+   declaration that asked, at that declaration: "refused (generic-instances): the package needs more
+   than 1024 generic instances; Many.use92 asks for instance 1025, removeWhere at Many.R92
+   (Generics.maxInstances)", `module`, `span`. Mechanism: the pass's error is `Generics.Refusal
+   {message, module?, span?}`; text thrown anywhere in the pass is placed by `rewriteTop` at the
+   declaration being rewritten (so `Package.localize`'s recompile-each-function search, 2.5 s on a
+   32 KB package, no longer runs for a specialization refusal), and `throwThe Refusal (refusalAt …)`
+   places one more precisely. The dead linear `instances.find?` by key (a key is a hash of the pair
+   `instanceOf` already indexes) is gone. Packets do not move (pins: 0 recompiled).
+   `test_package_bounds.InstanceBound`.

@@ -77,8 +77,8 @@ def prepareParsed (modules : List SourceModule) (asts : List ObjectiveBendSurfac
     Except Diagnostic Prepared := do
   if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
   let sources := (modules.zip asts).map fun (module, ast) => Generics.Source.mk module ast
-  let specialized ← (Generics.run sources.toArray).mapError fun message =>
-    { stage := "source-specialization", message }
+  let specialized ← (Generics.run sources.toArray).mapError fun r =>
+    { stage := "source-specialization", message := r.message, span := r.span, sourceModule := r.module }
   let note := instancesNote specialized.instances
   let origins := originsOf specialized.instances
   let elaborated ← (ObjectiveBendElaborate.elaboratePackageLocated specialized.modules).mapError

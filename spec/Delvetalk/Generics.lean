@@ -11,7 +11,13 @@ open ObjectiveBendFrontEnd
 open ObjectiveBendSurface (Span Param Expr Body Signature Decl)
 set_option autoImplicit false
 
-def maxInstances : Nat := 256
+/-- Generic instances one package specializes. Measured on persvati (lane/kernel13): a closure
+of N row types each used through Relation insert, count, retract and rows (about eleven
+instances each) checks and compiles an entry reaching every instance in 0.15 s at 354 instances,
+0.73 s at 1,025 (107 MB resident, a 2.0 MB packet), 1.12 s at 1,410 and 2.7 s at 2,818: 1,024 is
+the most whose check and compile together stay under a second. The world's largest closure
+(Kind) is 197. -/
+def maxInstances : Nat := 1024
 /-- Surface nodes visited, over all rewriting. -/
 def maxExpansionNodes : Nat := 262144
 def maxExpansionStringBytes : Nat := 8388608
@@ -55,6 +61,15 @@ partial def GType.isClosed : GType → Bool
   | .row fields => fields.all (fun p => p.2.isClosed)
   | .overlay a b => a.isClosed && b.isClosed
 
+/-- A type as a refusal names it (`Lists.List<Rows.Rain>`). -/
+partial def GType.brief : GType → String
+  | .atom n => n
+  | .named m n _ => m ++ "." ++ n
+  | .applied n args => n ++ "<" ++ ", ".intercalate (args.map GType.brief) ++ ">"
+  | .arrow a b => a.brief ++ " -> " ++ b.brief
+  | .row fields => "{" ++ ", ".intercalate (fields.map fun (n, t) => n ++ ": " ++ t.brief) ++ "}"
+  | .overlay a b => a.brief ++ " with " ++ b.brief
+
 structure Instance where
   key : String
   declaration : String
@@ -91,8 +106,32 @@ structure State where
   /-- Instances by their fresh name. -/
   instanceByName : Std.HashMap String Nat := {}
   inferRemaining : Nat := maxInferenceSteps
+  /-- The declaration being rewritten (module, name), which an instance is specialized for. -/
+  current : String × String := ("", "")
 
-abbrev M := StateT State (Except String)
+/-- A refusal of the pass: its message and, when known, the module and the span of the source
+that asked for it. A refusal raised inside a declaration's rewriting is placed at that
+declaration (`run`) unless it names a span of its own. -/
+structure Refusal where
+  message : String
+  module : Option String := none
+  span : Option Span := none
+  deriving Inhabited
+
+instance : Coe String Refusal := ⟨fun message => { message }⟩
+instance : MonadLift (Except String) (Except Refusal) := ⟨fun e => e.mapError (fun message => { message })⟩
+
+abbrev M := StateT State (Except Refusal)
+
+/-- The pass throws and catches text (`throw "…"`, `tryCatch … fun message => …`); a refusal
+placed at a span is thrown with `throwThe Refusal`, and text caught is its message alone. -/
+instance : MonadExceptOf String M where
+  throw message := throwThe Refusal { message }
+  tryCatch x handle := tryCatchThe Refusal x fun r => handle r.message
+
+/-- A refusal at `span` of `module`. -/
+def refusalAt (module : String) (span : Span) (message : String) : Refusal :=
+  { message, module := some module, span := some span }
 
 def spend : M Unit := do
   let s ← get
@@ -671,8 +710,11 @@ def instantiate : Nat → Declaration → List GType → M GType
         return .named state.generatedModule priorInstance.name priorInstance.key
     let argumentId := Minidregg.Compiler.Sha256.hexString argumentIdentity
     let key := Minidregg.Compiler.Sha256.hexString (toJson [declarationId, argumentId]).compress
-    if let some priorInstance := state.instances.find? (·.key == key) then return .named state.generatedModule priorInstance.name priorInstance.key
-    if state.instances.size >= maxInstances then throw "generic specialization exceeds instance budget"
+    if state.instances.size >= maxInstances then
+      let (module, name) := state.current
+      throw (s!"refused (generic-instances): the package needs more than {maxInstances} generic instances; " ++
+        s!"{module}.{name} asks for instance {maxInstances + 1}, {declaration.name} at " ++
+        ", ".intercalate (arguments.map GType.brief) ++ " (Generics.maxInstances)")
     let name ← fresh
     let index := (← get).instances.size
     modify fun s => { s with
@@ -1395,7 +1437,7 @@ def resolveChoices (labels : List (String × List String)) : Expr → Expr
 
 /-- Each module's derived declarations (`Edits`, `keep()`, form inputs, `forms()`; empty where
 it gets none) and form blocks. Types are resolved in a pass of their own whose state is dropped. -/
-def derivedDecls (sources : Array Source) : Except String (Array (List Decl × DerivedForms × List String)) := do
+def derivedDecls (sources : Array Source) : Except Refusal (Array (List Decl × DerivedForms × List String)) := do
   let probe : M (Array (List Decl × DerivedForms × List String)) := do
     preamble
     let mut out := #[]
@@ -1410,7 +1452,14 @@ def derivedDecls (sources : Array Source) : Except String (Array (List Decl × D
     return out
   return (← probe.run (← initialState sources)).1
 
-def run (sources : Array Source) : Except String Output := do
+/-- Rewrite one declaration of module `index`, every refusal placed at the declaration unless
+it names a span of its own. -/
+def rewriteTop (site : Site) (d : Decl) : M Decl := do
+  modify fun s => { s with current := (site.target, d.name) }
+  tryCatchThe Refusal (rewriteDecl maxNesting site [] d) fun e =>
+    throwThe Refusal (if e.span.isSome then e else { e with module := some site.target, span := some d.span })
+
+def run (sources : Array Source) : Except Refusal Output := do
   if !sources.any (fun s => s.ast.decls.any declGenerics) then
     let modules ← sources.toList.mapM fun source =>
       ObjectiveBendElaborate.ofSurface source.module.name source.module.aliases source.ast
@@ -1441,13 +1490,13 @@ def run (sources : Array Source) : Except String Output := do
       let mut ordinary : Array Decl := #[]
       for d in source.ast.decls.take (source.ast.decls.length - derived[index]!.length) do
         if (d matches .typeAlias ..) || !d.typeParameters.isEmpty then continue
-        ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
+        ordinary := ordinary.push (← rewriteTop site d)
       rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
     for index in [:sources.size] do
       if derived[index]!.isEmpty then continue
       let source := sources[index]!
       let site : Site := { origin := index, target := source.module.name, bindings := [], lifted := false }
-      let own ← (derived[index]!.filter fun d => !(d matches .typeAlias ..)).mapM (rewriteDecl maxNesting site [])
+      let own ← (derived[index]!.filter fun d => !(d matches .typeAlias ..)).mapM (rewriteTop site)
       rewritten := rewritten.set index (source.module.name, { source.ast with
         decls := (rewritten[index]!.2.decls) ++ own })
     let state ← get

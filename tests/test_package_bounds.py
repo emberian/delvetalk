@@ -73,5 +73,26 @@ class PackageBound(unittest.TestCase):
         self.assertIn("exceeds maxPackageSourceBytes (1048576 bytes)", reply["message"])
 
 
+class InstanceBound(unittest.TestCase):
+    def test_a_closure_of_a_thousand_instances_compiles(self):
+        modules = instances(92)
+        checked = host.check({"op": "check-package", "modules": modules, "entry": "all"})
+        self.assertEqual(checked["status"], "checked", json.dumps(checked)[:400])
+        count = len(checked["artifact"]["genericInstances"])
+        self.assertGreater(count, 1000)
+        self.assertLessEqual(count, MAX_INSTANCES)
+
+    def test_past_the_bound_the_refusal_names_count_bound_and_module(self):
+        reply = host.check({"op": "check-package", "modules": instances(100), "entry": "all"})
+        self.assertEqual(reply["status"], "refused")
+        d = reply["diagnostic"]
+        self.assertEqual(d["stage"], "source-specialization")
+        self.assertIn(f"refused (generic-instances): the package needs more than {MAX_INSTANCES} generic instances",
+                      d["message"])
+        self.assertIn("Many.use", d["message"])
+        self.assertEqual(d.get("module"), "Many")
+        self.assertIn("line", d.get("span", {}))
+
+
 if __name__ == "__main__":
     unittest.main()
