@@ -45,7 +45,7 @@ DOORS = [
      [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'Subscribe yourself to a cadence; anyone may tick; too soon is refused by name.', 'tide', 'ticks',
      [('delvetalk tide subscribe / every: 3 / note: first light', ''),
-      ('delvetalk tide tick', 'sooner than the gap: refused tooSoon; a due tick notes your avatar')]),
+      ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
     ('ANTHOLOGY', 'Write a line; the keeper admits; the card numbers them.', 'anthology', 'lines',
      [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
     ('KINDS', 'Make a kind; anyone makes one of it.', 'kinds', 'count',
@@ -59,7 +59,9 @@ def door(label, description, to, watch, examples):
     """A Directory `Door` (world/objects/Directory.obend)."""
     return rec(label=lab(label), description=lab(description), to=ref(to),
                examples=lst(*[rec(example=lab(e), comes=lab(c)) for e, c in examples]), watch=lab(watch))
-POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
+# hob's instruction (docs/FLEX.md §2), as Policy.hob() (world/objects/Policy.obend) has it.
+POLICY_SYSTEM = ('hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; '
+                 'the card and its law decide what is admitted, never you.')
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
 def choice(text, to, key='', value=''):
     """A choice; a key sets that variable to value when it is taken (one `set` effect). As tests/test_scene.py builds it."""
@@ -80,7 +82,8 @@ def moss_gate(opener):
 
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
-            ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber')]
+            ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber'),
+            ('how many have been planted?', 'card')]  # a question the card already answers (docs/FLEX.md §3)
 
 
 # The library's stacks (docs/LIBRARY.md): (name, kind, title); each body is capsules/pages/<name>.txt, so the page in
@@ -113,15 +116,23 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
             'and unchanged(head) and unchanged(body)))')
 
 
+# Place.lawText() (world/objects/Place.obend): a place's package declares no law either (tests/test_genesis.py compares the two).
+PLACE_LAW = ('law owner "the owner stays; only the owner renames, redescribes or reprograms it; anyone comes and goes by its spells": '
+             'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(ownerHandle) and unchanged(name) '
+             'and unchanged(description) and unchanged(exits) and unchanged(makes) and unchanged(keep) and unchanged(policy) '
+             'and unchanged(confirmFor) and unchanged(pageCheckpoint)))')
+
+
 # The law each package's objects are created with, where its source declares none.
-LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
+LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW, 'Place': lambda _: PLACE_LAW}
 
 
 # The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's bell and
 # cistern, whose bodies are world/bodies/<name>.obend, layers over Record.obend grafted on each instance.
 KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW, 'bell'),
-         ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern')]
+         ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern'),
+         ('place', 'place', 'name: text 1..64', '', PLACE_LAW, '')]
 
 
 def body_of(name):

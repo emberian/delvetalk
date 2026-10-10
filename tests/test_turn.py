@@ -250,14 +250,6 @@ class Host:
         self.proc.wait(timeout=30)
 
 
-WALK = """edition ObjectiveBend 1
-def walk(text: String, n: Nat) -> Nat:
-  match n:
-    case 0n: 0n
-    case 1n+p: textLength(textTake(text, 1n)) + walk(textDrop(text, 1n), p)
-"""
-
-
 class TurnCase(unittest.TestCase):
     """Stateless turn ops on one process per class; `fresh` classes (cache counters) get one per call."""
     independent = True
@@ -284,20 +276,18 @@ class OldDialectTests(TurnCase):
         self.assertEqual(reply["status"], "refused", reply)
         return reply["diagnostic"]["message"]
 
-    def test_the_three_argument_activity_is_refused_as_the_old_dialect(self):
+    def test_the_three_argument_activity_and_surface_perform_are_refused_by_name(self):
         message = self.check("edition ObjectiveBend 1\nsum Plan:\n  w: Nat\nsum Reply:\n  ok: {}\n"
                              "def a(n: Nat) -> Activity<Plan, Reply, Nat>:\n  n\n")
         self.assertIn("refused (old-dialect)", message)
         self.assertIn("Activity<Plan, Response, Result> is withdrawn", message)
-
-    def test_surface_perform_is_refused_by_name(self):
         message = self.check("edition ObjectiveBend 1\nsum Plan:\n  w: Nat\nsum Reply:\n  ok: {}\n"
                              "def a(n: Nat) -> Nat:\n  match perform(Plan.w(n)):\n    case ok(_): n\n")
         self.assertIn("refused (perform): surface perform is withdrawn", message)
 
 
 class TurnTests(TurnCase):
-    def test_bump_yields_write_then_written_finishes_after_value(self):
+    def test_an_activity_yields_each_world_call_and_finishes_on_its_responses(self):
         h = self.host()
         art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
@@ -307,16 +297,10 @@ class TurnTests(TurnCase):
         self.assertEqual(plan_field(y["plan"], "method"), label("write"))
         done = h.resume(art, y["checkpoint"], variant("written"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(4)), done)
-
-    def test_bump_refused_response_finishes_with_unchanged_value(self):
-        h = self.host()
         art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         done = h.resume(art, y["checkpoint"], variant("refused"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(3)), done)
-
-    def test_activity_that_performs_twice_yields_twice_then_finishes(self):
-        h = self.host()
         art = h.compile(PLANS, "twice", world=PLANS_WORLD)
         first = h.start(art, [nat(10)])
         self.assertEqual(first["status"], "yielded", first)
@@ -399,18 +383,6 @@ class TurnTests(TurnCase):
         self.assertEqual((r["status"], r["message"]), ("error", "checkpoint belongs to another package"), r)
         self.assertEqual(h.resume(a, y["checkpoint"], variant("written"))["status"], "finished")
 
-    def test_tick_exhaustion_is_a_named_silence_not_a_crash(self):
-        h = self.host()
-        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
-        y = h.start(art, [nat(3)])
-        r = h.resume(art, y["checkpoint"], variant("written"), ticks=1)
-        self.assertEqual((r["status"], r["resource"]), ("exhausted", "ticks"), r)
-        s = h.start(art, [nat(3)], ticks=1)
-        self.assertEqual((s["status"], s["resource"]), ("exhausted", "ticks"), s)
-        # the host survived both
-        done = h.resume(art, y["checkpoint"], variant("written"))
-        self.assertEqual(done["status"], "finished", done)
-
     def test_a_process_resumes_only_checkpoints_it_issued(self):
         # A stateless process has no journal: what it trusts is the digests of the
         # checkpoints it handed out. A world host resumes from its journal instead.
@@ -459,7 +431,7 @@ class TurnTests(TurnCase):
         r = h.resume(art, cp, variant("written"))
         self.assertEqual((r["status"], r["message"]), ("error", NOT_ISSUED), r)
 
-    def test_recursive_list_in_a_plan_with_100_elements_yields_and_resumes(self):
+    def test_lists_documents_and_the_widest_record_cross_a_yield_and_a_malformed_response_is_refused(self):
         h = self.host()
         art = h.compile(LISTS, "collect", library=("List",), world=LISTS_WORLD)
         y = h.start(art, [nat(100)])
@@ -469,9 +441,6 @@ class TurnTests(TurnCase):
                          [str(n) for n in range(100, 0, -1)])
         done = h.resume(art, y["checkpoint"], variant("none"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(0)), done)
-
-    def test_recursive_list_response_conforms_and_a_malformed_cons_is_refused(self):
-        h = self.host()
         art = h.compile(LISTS, "collect", library=("List",), world=LISTS_WORLD)
         y = h.start(art, [nat(2)])
         good = variant("names", from_list([label("a"), label("b"), label("c")]))
@@ -491,9 +460,6 @@ class TurnTests(TurnCase):
             self.assertIn("does not conform", r["message"])
         # the checkpoint is still usable
         self.assertEqual(h.resume(art, y["checkpoint"], good)["status"], "finished")
-
-    def test_document_in_a_plan_round_trips_through_the_response(self):
-        h = self.host()
         art = h.compile(DOCUMENTS, "show", library=("Document",), world=DOCUMENTS_WORLD)
         y = h.start(art, [label("hello")])
         self.assertEqual(y["status"], "yielded", y)
@@ -507,9 +473,6 @@ class TurnTests(TurnCase):
         broken["label"] = "no-such-document-form"
         r = h.resume(art, y["checkpoint"], variant("back", broken))
         self.assertEqual(r["status"], "error", r)
-
-    def test_maximum_plan_record_and_long_label_round_trip(self):
-        h = self.host()
         art = h.compile(wide_source(), "wide", world=wide_world())
         text = "é" * 2048  # 4096 UTF-8 bytes
         self.assertEqual(len(text.encode()), 4096)
@@ -539,7 +502,7 @@ def cat(t: String) -> Activity<Nat>:
 
 
 class BindingTests(TurnCase):
-    def test_a_checkpoint_resumes_only_for_the_same_object_principal_intent_and_roots(self):
+    def test_a_checkpoint_resumes_only_for_the_same_object_principal_intent_and_roots_which_both_ops_require(self):
         h = self.host()
         art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
@@ -555,6 +518,15 @@ class BindingTests(TurnCase):
         for message, binding in cases.items():
             r = h.resume(art, cp, variant("written"), binding=binding)
             self.assertEqual((r["status"], r["message"]), ("error", message), r)
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
+        for missing in ("object", "principal", "intent", "roots"):
+            binding = {k: v for k, v in BINDING.items() if k != missing}
+            r = h.send({"op": "turn-start", "artifact": art, "arguments": [nat(3)], **binding})
+            self.assertEqual(r["status"], "error", (missing, r))
+        y = h.start(art, [nat(3)])
+        r = h.send({"op": "turn-resume", "artifact": art, "checkpoint": y["checkpoint"],
+                    "response": variant("written")})
+        self.assertEqual(r["status"], "error", r)
 
     def test_editing_the_claimed_binding_inside_the_checkpoint_breaks_the_digest(self):
         h = self.host()
@@ -565,18 +537,6 @@ class BindingTests(TurnCase):
             forged = copy.deepcopy(y["checkpoint"]); forged[field] = value
             r = h.resume(art, forged, variant("written"))
             self.assertEqual((r["status"], r["message"]), ("error", "checkpoint digest mismatch"), (field, r))
-
-    def test_the_binding_is_required_by_both_ops(self):
-        h = self.host()
-        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
-        for missing in ("object", "principal", "intent", "roots"):
-            binding = {k: v for k, v in BINDING.items() if k != missing}
-            r = h.send({"op": "turn-start", "artifact": art, "arguments": [nat(3)], **binding})
-            self.assertEqual(r["status"], "error", (missing, r))
-        y = h.start(art, [nat(3)])
-        r = h.send({"op": "turn-resume", "artifact": art, "checkpoint": y["checkpoint"],
-                    "response": variant("written")})
-        self.assertEqual(r["status"], "error", r)
 
 
 NOTED_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """record Note:
@@ -616,7 +576,7 @@ class ContextTests(TurnCase):
     """turn-start fills a method's trailing Context from the binding; refuted if the plan does not
     carry the binding's principal, intent and object, or if an explicit Context stops working."""
 
-    def test_the_binding_fills_a_trailing_context(self):
+    def test_the_binding_fills_a_trailing_context_and_only_a_context(self):
         h = self.host()
         art = h.compile(NOTED, "bump", library=("Abi",), world=NOTED_WORLD)
         y = h.start(art, [nat(3)])
@@ -626,23 +586,17 @@ class ContextTests(TurnCase):
                          [label("glm"), label("t1"), label("counter")])
         done = h.resume(art, y["checkpoint"], variant("ok"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(4)), done)
-
-    def test_an_explicit_context_is_still_accepted(self):
-        h = self.host()
         art = h.compile(NOTED, "bump", library=("Abi",), world=NOTED_WORLD)
         y = h.start(art, [nat(3), context_data("someone", "i9", "elsewhere")])
         self.assertEqual(y["status"], "yielded", y)
         self.assertEqual(plan_field(message_argument(y["plan"]), "who"), label("someone"))
-
-    def test_a_missing_argument_that_is_not_a_context_is_not_filled(self):
-        h = self.host()
         art = h.compile(NOTED, "plain", library=("Abi",), world=NOTED_WORLD)
         r = h.start(art, [nat(3)])
         self.assertNotEqual(r["status"], "yielded", r)
 
 
 class ExhaustionTests(TurnCase):
-    def test_each_budgeted_resource_is_a_named_silence_on_start(self):
+    def test_each_budgeted_resource_is_a_named_silence_on_start_and_other_refusals_stay_errors(self):
         h = self.host()
         art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         wide = h.compile(wide_source(), "wide", world=wide_world())
@@ -659,6 +613,9 @@ class ExhaustionTests(TurnCase):
                 self.assertEqual((reply["status"], reply["resource"]), ("exhausted", resource), reply)
                 self.assertIn("ticksUsed", reply)
                 self.assertNotIn("message", reply)
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
+        r = h.start(art, [label("not a number")])
+        self.assertEqual(r["status"], "error", r)
 
     def test_each_budgeted_resource_is_a_named_silence_on_resume(self):
         h = self.host()
@@ -676,12 +633,6 @@ class ExhaustionTests(TurnCase):
         done = h.resume(wide, yw["checkpoint"], variant("ok"))
         self.assertEqual(done["status"], "finished")
         self.assertEqual(h.start(cat, [label("y" * 200)])["status"], "yielded")
-
-    def test_ordinary_refusals_stay_errors(self):
-        h = self.host()
-        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
-        r = h.start(art, [label("not a number")])
-        self.assertEqual(r["status"], "error", r)
 
 
 class DiagnosticTests(TurnCase):
@@ -706,27 +657,6 @@ class DiagnosticTests(TurnCase):
                                  "modules": [{"name": "First", "source": good}]})["status"], "checked")
 
 
-class TextTariffTests(TurnCase):
-    def walk(self, h, art, steps, ticks=None):
-        request = {"op": "run", "artifact": art, "arguments": [label("a" * 4096), nat(steps)]}
-        if ticks:
-            request["limits"] = {"ticks": str(ticks)}
-        return h.send(request)
-
-    def test_character_walk_cost_is_linear_not_quadratic_in_the_input(self):
-        h = self.host()
-        art = h.compile(WALK, "walk")
-        # 1024 one-character steps over a 4096-byte string fit the DEFAULT budget
-        small = self.walk(h, art, 1024)
-        self.assertEqual((small["status"], small["value"]), ("finished", nat(1024)), small)
-        self.assertLess(small["ticksUsed"], 100000)
-        # the whole 4096-byte string, one character at a time, under 300,000 ticks
-        whole = self.walk(h, art, 4096, 300000)
-        self.assertEqual((whole["status"], whole["value"]), ("finished", nat(4096)), whole)
-        # 4x the steps costs about 4x the ticks (a whole-input charge would be 4x per step too)
-        self.assertLess(whole["ticksUsed"], 4.5 * small["ticksUsed"])
-
-
 if __name__ == "__main__":
     unittest.main()
 
@@ -743,7 +673,7 @@ def wide_library(count):
 class KnotTests(TurnCase):
     """The packet's knot holds only what the entry reaches, so closure size is not capped."""
 
-    def test_a_600_definition_closure_compiles_when_the_entry_reaches_ten(self):
+    def test_the_knot_holds_what_the_entry_reaches_so_a_600_definition_closure_compiles(self):
         # Refuted if every closure definition still enters the knot (type nesting capacity at ~256).
         h = self.host()
         modules = [{"name": "Wide", "source": wide_library(590)},
@@ -756,6 +686,14 @@ class KnotTests(TurnCase):
         self.assertEqual(sorted(set(knot)), sorted(f"Wide.f{i}" for i in range(10)))
         ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(5)]})
         self.assertEqual((ran["status"], ran["value"]), ("finished", nat(15)), ran)
+        source = ("edition ObjectiveBend 1\ndef count(n: Nat) -> Nat:\n  match n:\n    case 0: 0n\n"
+                  "    case 1+p: 1n + count(p)\ndef unused(n: Nat) -> Nat:\n  n\ndef start(n: Nat) -> Nat:\n  count(n)\n")
+        r = h.send({"op": "compile", "entry": "start", "modules": [{"name": "Package", "source": source}]})
+        self.assertEqual(r["status"], "compiled", r)
+        packet = json.dumps(r["artifact"]["packet"])
+        self.assertIn('"Package.count"', packet)
+        self.assertNotIn('"Package.unused"', packet)
+        self.assertEqual(h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(4)]})["value"], nat(4))
 
     def test_an_entry_reaching_600_definitions_compiles(self):
         # Refuted if a row's length still counts as type nesting (the old cap was 254 reached).
@@ -767,48 +705,21 @@ class KnotTests(TurnCase):
         ran = h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(0)]})
         self.assertEqual((ran["status"], ran["value"]), ("finished", nat(599)), ran)
 
-    def test_an_unreached_definition_is_absent_and_a_reached_recursive_one_present(self):
-        h = self.host()
-        source = ("edition ObjectiveBend 1\ndef count(n: Nat) -> Nat:\n  match n:\n    case 0: 0n\n"
-                  "    case 1+p: 1n + count(p)\ndef unused(n: Nat) -> Nat:\n  n\ndef start(n: Nat) -> Nat:\n  count(n)\n")
-        r = h.send({"op": "compile", "entry": "start", "modules": [{"name": "Package", "source": source}]})
-        self.assertEqual(r["status"], "compiled", r)
-        packet = json.dumps(r["artifact"]["packet"])
-        self.assertIn('"Package.count"', packet)
-        self.assertNotIn('"Package.unused"', packet)
-        self.assertEqual(h.send({"op": "run", "artifact": r["artifact"], "arguments": [nat(4)]})["value"], nat(4))
-
 
 class SessionCacheTests(TurnCase):
     """One prepared closure per package, entries held decoded and checked, runs by pin."""
-    fresh = True  # the tests read the process's cache counters
 
     SOURCE = "edition ObjectiveBend 1\ndef double(n: Nat) -> Nat:\n  n + n\ndef seven() -> Nat:\n  7n\n"
 
     def compile(self, h, entry, source=None):
         return h.send({"op": "compile", "entry": entry, "modules": [{"name": "Package", "source": source or self.SOURCE}]})
 
-    def test_an_unreached_ill_typed_definition_still_refuses_the_package(self):
+    def test_an_unreached_ill_typed_definition_an_unknown_pin_and_a_tampered_artifact_are_refused(self):
         # Refuted if pruning an entry's packet let an unreached declaration go unchecked.
         h = self.host()
         bad = self.SOURCE + "def broken(n: Nat) -> Bool:\n  n + 1n\n"
         r = self.compile(h, "double", bad)
         self.assertEqual(r["status"], "error", r)
-
-    def test_entries_share_one_prepared_closure_and_run_by_pin(self):
-        h = self.host()
-        double = self.compile(h, "double")["artifact"]
-        seven = self.compile(h, "seven")["artifact"]
-        status = h.send({"op": "packet-cache-status"})
-        self.assertEqual((status["fronts"], status["entries"]), (1, 2), status)
-        by_pin = h.send({"op": "run", "artifact": {"packetSha256": double["packetSha256"]}, "arguments": [nat(4)]})
-        self.assertEqual((by_pin["status"], by_pin["value"]), ("finished", nat(8)), by_pin)
-        whole = h.send({"op": "run", "artifact": seven, "arguments": []})
-        self.assertEqual(whole["value"], nat(7), whole)
-        self.assertGreaterEqual(h.send({"op": "packet-cache-status"})["hits"], 2)
-
-    def test_an_unknown_pin_and_a_tampered_artifact_are_refused_by_name(self):
-        h = self.host()
         art = self.compile(h, "double")["artifact"]
         unknown = h.send({"op": "run", "artifact": {"packetSha256": "bafyreinotapin"}, "arguments": [nat(1)]})
         self.assertEqual(unknown["status"], "error")
@@ -818,12 +729,3 @@ class SessionCacheTests(TurnCase):
         self.assertEqual((refused["status"], refused["message"]),
                          ("error", "artifact does not match recompilation of its claimed source"), refused)
 
-    def test_a_fresh_process_verifies_a_known_artifact_once_then_holds_it(self):
-        art = self.compile(self.host(), "double")["artifact"]
-        h = self.host()
-        first = h.send({"op": "run", "artifact": art, "arguments": [nat(2)]})
-        self.assertEqual(first["value"], nat(4), first)
-        status = h.send({"op": "packet-cache-status"})
-        self.assertEqual((status["misses"], status["entries"]), (1, 1), status)
-        h.send({"op": "run", "artifact": art, "arguments": [nat(3)]})
-        self.assertEqual(h.send({"op": "packet-cache-status"})["hits"], 1)

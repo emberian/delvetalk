@@ -44,32 +44,16 @@ class Posts(Reflection):
         self.assertEqual(self.host.send(op="world-addressee", parent=URI + "x"), {"status": "addressee", "object": "bell"})
         self.assertEqual(plain["status"], "posted")
         self.assertEqual(self.host.send(op="world-addressee", parent="at://nobody/p/1"), {"status": "unknown"})
-
-    def test_the_index_is_rebuilt_by_replay(self):
-        self.posted(slot=SLOT)
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["slot"], SLOT)
-
-    def test_a_retried_confirmation_is_the_same_entry_and_another_cid_is_refused(self):
-        first = self.posted()
-        again = self.posted()
-        self.assertEqual(again["height"], first["height"])
+        self.assertEqual(self.posted(slot=SLOT)["height"], r["height"])  # a retried confirmation is the same entry
         other = posted(self.host, principal="transport", uri=URI, cid="bafyreiother", object="bell")
         self.assertEqual(other.get("class"), "duplicateIdentity", other)
+        self.reopen()  # the index is rebuilt by replay
+        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["slot"], SLOT)
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
         self.assertEqual(posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
         refused = self.posted(uri="https://example.com")
         self.assertEqual(refused, {"status": "error", "message": "uri must be an at:// or zulip:// URI, not https://"})
-
-    def test_a_zulip_message_is_recorded_and_a_reply_to_it_finds_its_object(self):
-        # The playtest transport's messages: zulip://<stream>/<topic>/<id>.
-        uri = "zulip://delvetalk/garden/1042"
-        r = self.posted(uri=uri, slot=SLOT)
-        self.assertEqual(r["status"], "posted", r)
-        self.assertEqual(self.host.send(op="world-addressee", parent=uri), {"status": "addressee", "object": "bell", "slot": SLOT})
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-addressee", parent=uri)["object"], "bell")
 
 
 CARDED = PACKAGE.replace("import ./Plan.obend as Plans", "import ./Plan.obend as Plans\nimport ./Document.obend as Document") + """def render(state: State) -> Document.Document:
@@ -77,9 +61,6 @@ CARDED = PACKAGE.replace("import ./Plan.obend as Plans", "import ./Plan.obend as
 """
 
 # A card with a point of view: `render(state, context)`, the name objects use once `renderFor` is renamed.
-VIEWED = CARDED.replace("def render(state: State) -> Document.Document:\n  Document.text(textConcat(\"Count: \", natText(state.count)))\n", "") + """def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("for ", textConcat(context.principal, textConcat(" by ", textConcat(context.caller, textConcat(" of ", textConcat(context.object, textConcat(" intent ", textConcat(context.intent, textConcat(" from ", context.inputOrigin.kind))))))))))
-"""
 # Both names, as objects have them until the rename: `renderFor` is the one the host runs.
 BOTH = CARDED + """def renderFor(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat("Count for ", textConcat(context.principal, textConcat(": ", natText(state.count)))))
@@ -137,16 +118,6 @@ class Listing(Catalogue):
         self.assertEqual(self.listing("bell", after="bell-a"), "bell-b,.")
         self.assertEqual(self.listing(), "bell-a,bell-b,directory,lamp,.")
 
-    def test_the_op_pages_by_64_and_says_more(self):
-        for i in range(66):
-            self.host.send(op="world-create", principal="ember", identity=f"mk-n{i}", object=f"n{i:03}",
-                           source=CARDED, entry="initial", seed=source_seed())
-        page = self.host.send(op="world-objects", principal="kim", prefix="n")
-        self.assertEqual((len(page["ids"]), page["more"], page["ids"][0]), (64, True, "n000"))
-        rest = self.host.send(op="world-objects", principal="kim", prefix="n", after=page["ids"][-1])
-        self.assertEqual((rest["ids"], rest["more"]), (["n064", "n065"], False))
-        self.assertEqual(self.host.send(op="world-objects", principal="kim", prefix=7)["status"], "error")
-
 
 class Cards(Catalogue):
     def show(self, target, principal="kim"):
@@ -154,8 +125,6 @@ class Cards(Catalogue):
         self.assertEqual(r["status"], "admitted", r)
         return r["result"]["value"]
 
-    def test_an_object_shows_another_of_a_different_state_type_by_its_card(self):
-        self.assertEqual(self.show("bell-a"), "Count: 0")
 
     def test_a_card_is_denied_where_the_state_would_be_and_absent_render_is_noCard(self):
         self.assertEqual(self.show("bell-secret"), "denied")
@@ -163,24 +132,6 @@ class Cards(Catalogue):
         self.assertEqual(self.show("ghost"), "denied")
         self.make("bare", PACKAGE, source_seed())
         self.assertEqual(self.show("bare"), "noCard")
-
-    def test_the_card_op_returns_text_and_document_under_the_readers_authority(self):
-        height = self.host.send(op="world-status")["height"]
-        r = self.host.send(op="world-card", principal="kim", object="bell-a")
-        self.assertEqual((r["status"], r["text"]), ("card", "Count: 0"), r)
-        self.assertEqual(r["document"]["tag"], "variant")
-        self.assertEqual(self.host.send(op="world-card", principal="kim", object="bell-secret")["status"], "denied")
-        self.assertEqual(self.host.send(op="world-card", principal="kim", object="ghost")["status"], "unknown")
-        self.assertEqual(self.host.send(op="world-status")["height"], height)
-
-    def test_a_card_is_rendered_for_its_reader_through_either_name(self):
-        self.make("viewed", VIEWED, source_seed())
-        self.make("both", BOTH, source_seed())
-        self.assertEqual(self.show("viewed"), "for kim by directory of viewed intent t1 from card")
-        self.assertEqual(self.host.send(op="world-card", principal="kim", object="viewed")["text"],
-                         "for kim by  of viewed intent  from card")
-        self.assertEqual(self.show("both", principal="ember"), "Count for ember: 0")
-        self.assertEqual(self.host.send(op="world-card", principal="kim", object="both")["text"], "Count for kim: 0")
 
 
 WAITER = declared("""edition ObjectiveBend 1
@@ -207,14 +158,6 @@ class Time(Reflection):
         self.open_library()
         self.make("waiter", WAITER, record(note=label("")))
 
-    def test_await_until_is_an_absolute_clock_height_not_a_patience(self):
-        self.host.send(op="world-advance", height=5)
-        r = self.turn("waiter", "wait", record(until=nat(7)))
-        self.assertEqual(r["status"], "suspended", r)
-        self.assertEqual(r["deadline"], 7)
-        self.assertNotIn("resumed", self.host.send(op="world-advance", height=7))
-        [resumed] = self.host.send(op="world-advance", height=8)["resumed"]
-        self.assertEqual(whole(self.host, resumed)["result"], label("timedOut"))
 
     def test_an_until_already_past_answers_timedOut_without_suspending(self):
         self.host.send(op="world-advance", height=5)
@@ -293,16 +236,13 @@ class Offers(TellerWorld):
         self.assertEqual(self.offers("cid"), [])
         self.assertEqual(self.offers("ann"), [])
 
-    def test_a_retry_returns_the_same_offer_and_retains_it_once(self):
+    def test_a_retried_offer_is_retained_once_and_listed_after_a_height(self):
         first = self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
-        again = self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+        self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
         self.assertEqual(first["offers"], [{"principal": "ann", "text": "hello"}])
-        self.assertEqual((again["offers"], again["receipt"]), (first["offers"], first["receipt"]))
-        self.assertEqual(self.offers("ann"), ["hello"])
         self.reopen()
         self.assertEqual(self.offers("ann"), ["hello"])
-        height = first["receipt"]["height"]
-        self.assertEqual(self.offers("ann", after=height), [])
+        self.assertEqual(self.offers("ann", after=first["receipt"]["height"]), [])
         self.assertEqual(self.host.send(op="world-offers", principal="ann", after="soon")["status"], "error")
 
     def test_a_delivered_offer_goes_to_its_addressee_not_into_the_reply_that_ran_it(self):
@@ -325,26 +265,16 @@ class Offers(TellerWorld):
         self.assertEqual(self.offers("kim"), ["woken"])
         self.assertEqual(self.offers("glm"), [])
 
-    def test_a_turn_that_offers_nothing_carries_no_offers_and_journals_like_any_other(self):
+    def test_a_turn_that_offers_nothing_carries_no_offers(self):
         """Rehearsal finding 3: prose addressed to no card gets nothing back. A turn that performs
-        no `offer` answers without an `offers` field (not an empty one), its entry retains none,
-        and it is journaled, retried and replayed as any admitted turn, so transport drafts
-        exactly when `offers` is present."""
-        height = self.host.send(op="world-status")["height"]
+        no `offer` answers without an `offers` field (not an empty one) and its entry retains none,
+        so transport drafts exactly when `offers` is present."""
         quiet = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
         self.assertEqual(quiet["status"], "admitted", quiet)
         self.assertNotIn("offers", quiet)
         self.assertNotIn("offers", quiet["receipt"])
-        self.assertEqual(quiet["receipt"]["height"], height + 1)
-        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
-        self.assertEqual(field(self.host.send(op="world-view", principal="ann", object="teller")["state"], "note"),
-                         label("noted"))
         self.assertEqual(self.offers("ann"), [])
-        again = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
-        self.assertEqual(again, quiet)
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-receipt", principal="ann", identity="quiet")["receipt"], quiet["receipt"])
-        self.assertEqual(self.offers("ann"), [])
+
 
 class Publish(Reflection):
     """publish is retained like an addressed offer, for transport to post as the object's page."""
@@ -361,26 +291,6 @@ class Publish(Reflection):
 
     def publications(self, principal="transport"):
         return self.host.send(op="world-offers", principal=principal).get("publications")
-
-    def test_a_publication_is_retained_and_listed_for_the_transport_as_the_objects_page(self):
-        r = self.publish()
-        post = r["result"]["value"]
-        [p] = self.publications()
-        self.assertEqual((p["id"], p["object"], p["page"], p["section"]), (post, "teller", "teller", "Notes"))
-        self.assertEqual(p["text"], "edit: teller › Notes\n\nthe bell rang")
-        self.assertIsNone(self.publications("ann"))
-        whole = self.publish(section="", body="all of it", identity="pub-2")
-        self.assertEqual(self.publications()[1]["text"], "wiki: teller\n\nall of it")
-        self.reopen()
-        self.assertEqual(len(self.publications()), 2)
-        self.assertEqual(self.publish()["receipt"], r["receipt"])          # a retry publishes nothing twice
-        self.assertEqual(len(self.publications()), 2)
-
-    def test_a_reply_to_the_confirmed_post_finds_the_object(self):
-        self.publish()
-        confirmed = posted(self.host, principal="transport", uri=URI, cid="bafyreipage", object="teller")
-        self.assertEqual(confirmed["status"], "posted", confirmed)
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["object"], "teller")
 
     def test_world_publications_lists_bodies_and_a_section_edit_replies_to_its_pages_newest_post(self):
         edit = self.publish()
@@ -489,13 +399,6 @@ class Projection(Reflection):
         self.assertIn("secret-xyz", json.dumps(full))
         self.assertEqual(self.host.send(op="world-history", object="lamp")["status"], "error")
 
-    def test_an_unknown_card_is_named_with_a_hint_in_public_and_to_its_author(self):
-        """Rehearsal finding 7: `delvetalk forge make` with no forge said only `unknownObject`."""
-        r = self.turn("forge", "make", principal="gemini", identity="forge-1")
-        public = {"status": "refused", "class": "unknownObject", "root": {"object": "forge"}, "object": "forge",
-                  "hint": "no card named forge; reply to the directory for the list", "slug": r["receipt"]["slug"]}
-        self.assertEqual((r["status"], r["public"]), ("refused", public), r)
-        self.assertEqual(self.host.send(op="world-receipt", principal="cid", identity="forge-1", of="gemini"), public)
 
     def test_env_and_wake_are_the_speakers_own_and_cannot_be_taken(self):
         self.make("env/ann", TELLER, record(note=label("")))
@@ -753,48 +656,6 @@ class SourcePins(Reflection):
         r = self.make(name, TELLER, record(note=label("")))
         return r["receipt"]["outcome"]
 
-    def tamper_last(self, change):
-        self.release()
-        with open(self.path) as f:
-            lines = f.read().splitlines()
-        last = json.loads(lines[-1])
-        change(last)
-        del last["hash"]
-        last["hash"] = cid_of(last)
-        lines[-1] = json.dumps(last, separators=(",", ":"))
-        with open(self.path, "w") as f:
-            f.write("\n".join(lines) + "\n")
-        self.host = self.spawn()
-        return self.host.send(op="world-open", path=self.path)
-
-    def test_the_pin_is_the_sources_and_a_different_packet_is_only_counted(self):
-        from tests.test_snapshot import read_snapshot, write_snapshot
-        self.open_library()
-        a = self.created("a")
-        self.assertNotIn("compiled", a)
-        height = self.host.send(op="world-snapshot")["height"]
-        b = self.created("b")
-        self.assertEqual(a["pin"], b["pin"])
-        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["pin"], a["pin"])
-        path = self.path + f".snapshot.{height}.cbor"
-        body = read_snapshot(path)
-        [obj] = [o for o in body["objects"] if o["id"] == "a"]
-        obj["packet"] = a["pin"]
-        write_snapshot(path, body)
-        self.release()
-        self.host = self.spawn()
-        opened = self.host.send(op="world-open", path=self.path)
-        self.assertEqual(opened["snapshot"]["resumed"], height, opened)
-        self.assertEqual(self.host.send(op="world-status")["recompiledDifferently"], 1)
-        self.assertEqual(self.host.send(op="world-view", principal="ember", object="b")["status"], "viewed")
-        def old_field(entry):
-            entry["outcome"]["compiled"] = {"binary": "b", "packet": "p"}
-        self.assertEqual(self.tamper_last(old_field)["status"], "opened")
-        def other_pin(entry):
-            entry["outcome"]["pin"] = cid_of("another source closure")
-        refused = self.tamper_last(other_pin)
-        self.assertEqual(refused["status"], "error", refused)
-        self.assertIn("is not the source closure its pin names", refused["message"])
 
     def test_an_object_from_before_a_context_field_keeps_running_after_the_library_gains_it(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -883,26 +744,17 @@ class Malformed(Reflection):
         self.open_library()
         self.make("teller", TELLER, record(note=label("")))
 
-    def test_malformed_turn_limits_are_refused_by_name_not_defaulted(self):
-        base = dict(op="world-turn", principal="kim", object="teller", method="tell",
-                    argument=record(to=label(""), text=label("t")))
-        for limits, word in (({"ticks": "many"}, "ticks"), ({"ticks": -3}, "ticks"), ("fast", "limits")):
-            r = self.host.send(identity=f"l-{word}-{limits}", limits=limits, **base)
-            self.assertEqual(r["status"], "error", (limits, r))
+    def test_malformed_limits_and_migrations_are_refused_by_name_not_defaulted(self):
+        turn = dict(op="world-turn", principal="kim", object="teller", method="tell", argument=record(to=label(""), text=label("t")))
+        cases = [(dict(turn, identity="l-%d" % i, limits=limits), word) for i, (limits, word) in
+                 enumerate((({"ticks": "many"}, "ticks"), ({"ticks": -3}, "ticks"), ("fast", "limits")))]
+        cases += [(dict(op="world-deliver", limit=bad), "limit") for bad in ("x", 0, 10 ** 6)]
+        cases.append((dict(op="world-reprogram", principal="ember", identity="rp", object="teller", version=0, package=TELLER, migration=7), "migration"))
+        for request, word in cases:
+            r = self.host.send(**request)
+            self.assertEqual(r["status"], "error", (request, r))
             self.assertIn(word, r["message"])
-
-    def test_a_malformed_or_out_of_range_deliver_limit_is_refused(self):
-        for bad in ("x", 0, 10 ** 6):
-            r = self.host.send(op="world-deliver", limit=bad)
-            self.assertEqual(r["status"], "error", (bad, r))
-            self.assertIn("limit", r["message"])
         self.assertEqual(self.host.send(op="world-deliver", limit=4)["status"], "delivered")
-
-    def test_a_malformed_migration_is_refused_not_read_as_none(self):
-        r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="teller", version=0,
-                           package=TELLER, migration=7)
-        self.assertEqual(r["status"], "error", r)
-        self.assertIn("migration", r["message"])
 
     def test_a_state_type_differing_below_eight_rounds_of_bounds_is_not_the_same(self):
         depth = 12

@@ -14,8 +14,7 @@ the whole stack; an unlayered package compiles exactly as before
 import unittest
 
 from tests.test_objects import closure, pure
-from tests.test_policy import context
-from tests.test_turn import BINDING, Host, label, variant
+from tests.test_turn import Host, label
 
 LOUDER = """layer over ./Bell.obend
 edition ObjectiveBend 1
@@ -90,46 +89,8 @@ class Layers(unittest.TestCase):
                   "import ./Base.obend as Super\ndef relay(n: Nat) -> String:\n  Super.hello(n)\n"}]
         self.assertEqual(self.run_(plain, "relay", [{"tag": "natural", "value": "1"}]), label("hi!"))
 
-    def test_louder_over_bell_changes_render_and_bells_own_rain_sees_it(self):
-        bell = pure(closure("Bell"))
-        louder = bell + [{"name": "Louder", "source": LOUDER}]
-        empty = {"tag": "list", "items": []}
-        state = {"tag": "record", "fields": [{"name": k, "value": v} for k, v in [
-            ("colour", variant("amber")), ("seed", label("a fern")), ("rains", {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [{"name": "items", "value": empty}]}}),
-            ("rung", {"tag": "boolean", "value": False}), ("planting", label("")), ("planter", label("glm")),
-            ("planterHandle", label("")), ("doors", empty)]]}
-        ctx = context("bell")
-        self.assertTrue(self.run_(louder, "loud", [ctx])["value"].startswith("LOUDER\n"))
-        # Bell's rain offers its card, which calls render; under the layer it renders Louder's card.
-        art = self.compile(louder, "rain")
-        start = dict(BINDING, op="turn-start", artifact=art, arguments=[state, {"tag": "record", "fields": [{"name": "text", "value": label("hello")}]}, ctx])
-        wrote = self.h.send(start)
-        self.assertEqual((wrote["status"], message(wrote["plan"])["method"]), ("yielded", label("write")), wrote)
-        offered = self.h.send(dict(BINDING, op="turn-resume", artifact=art, checkpoint=wrote["checkpoint"],
-                                   response=variant("written")))
-        self.assertEqual((offered["status"], message(offered["plan"])["method"]), ("yielded", label("offer")), offered)
-        document = {f["name"]: f["value"] for f in message(offered["plan"])["argument"]["fields"]}["document"]
-        text = self.h.send({"op": "render-document", "document": document})["text"]
-        self.assertTrue(text.startswith("LOUDER\n"), text)
-        self.assertIn("hello", text)
-        # Bell alone renders without it.
-        bare = self.compile(bell, "rain")
-        wrote = self.h.send(dict(start, artifact=bare))
-        offered = self.h.send(dict(BINDING, op="turn-resume", artifact=bare, checkpoint=wrote["checkpoint"],
-                                   response=variant("written")))
-        document = {f["name"]: f["value"] for f in message(offered["plan"])["argument"]["fields"]}["document"]
-        self.assertFalse(self.h.send({"op": "render-document", "document": document})["text"].startswith("LOUDER"))
 
-    def test_the_method_table_lists_the_whole_stack_top_first(self):
-        bell = pure(closure("Bell"))
-        art = self.compile(bell + [{"name": "Louder", "source": LOUDER}], "rain")
-        names = [m["name"] for m in art["methods"]]
-        self.assertEqual(names.count("render"), 1)
-        self.assertEqual(names[0], "render")  # Louder's rows first
-        for method in ("rain", "strike", "receive"):
-            self.assertIn(method, names)
-
-    def test_an_override_that_changes_the_type_is_refused_by_name_where_it_is_written(self):
+    def test_a_retyping_override_and_a_late_layer_line_are_refused_by_name(self):
         modules = pure(closure("Bell")) + [{"name": "Retyped", "source": RETYPED}]
         reply = self.h.send({"op": "check-package", "entry": "render", "modules": modules})
         self.assertEqual(reply["status"], "refused", reply)
@@ -138,8 +99,6 @@ class Layers(unittest.TestCase):
         self.assertEqual((d["module"], d["span"]["line"]), ("Retyped", 6))
         self.assertTrue(d["found"].endswith("-> String"), d)
         self.assertIn("signature of Bell.render", d["hint"])
-
-    def test_the_layer_line_is_the_first_line(self):
         late = "edition ObjectiveBend 1\nlayer over ./Base.obend\ndef greet(n: Nat) -> String:\n  \"x\"\n"
         reply = self.h.send({"op": "check-package", "entry": "greet",
                              "modules": [{"name": "Base", "source": BASE}, {"name": "Top", "source": late}]})

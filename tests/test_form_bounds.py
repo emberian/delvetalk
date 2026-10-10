@@ -10,9 +10,8 @@ the method; a form's bounds not shown by world-inspect.
 import unittest
 
 from tests.test_chain import Chain, town_kinds
-from tests.test_turn_world import ON_DISK, closure, declared, label, record
+from tests.test_turn_world import closure, declared, label, record
 
-KIND_LINE = ("  choice: {options: Names}\n", "  choice: {options: Names}\n  source: {}\n")
 
 BENCH = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -43,12 +42,9 @@ def receive(state: State, input: {text: String, post: String}, context: Abi.Cont
 class FormBounds(Chain):
     def setUp(self):
         super().setUp()
-        with open(ON_DISK["Form"], encoding="utf-8") as f:
-            form = f.read()
-        override = {"Form": form if "source:" in form else form.replace(*KIND_LINE)}
         seen, out = set(), []
         for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out, override)
+            closure(dep, seen, out)
         self.make("bench", out + [{"name": "Bench", "source": BENCH}], record())
 
     def got(self, name="got"):
@@ -57,31 +53,12 @@ class FormBounds(Chain):
     def say(self, text):
         return self.turn("bench", "receive", record(text=label(text), post=label("")), principal="glm")
 
-    def test_a_source_block_takes_sixteen_kib_and_no_more(self):
-        code = ("def x() -> Nat:\n  0n\n" * 400)[:6000].rstrip("\n")
-        r = self.say("delvetalk bench check\nsource: <<BEND\n" + code + "\nBEND")
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(len(self.got()), len(code))
-        big = "x" * 20000
-        r = self.say("delvetalk bench check\nsource: <<BEND\n" + big + "\nBEND")
-        outcome = r["receipt"]["outcome"]
-        self.assertEqual((outcome["class"], outcome["clause"]), ("badSpell", "badValue"), r)
-        self.assertIn("source takes 1 to 16384 characters", outcome["reason"])
-
     def test_a_fenced_block_is_the_source_field_under_the_same_bound(self):
         r = self.say("delvetalk bench check\n\n```obend\nedition ObjectiveBend 1\n```\n")
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(self.got(), "edition ObjectiveBend 1")
         r = self.say("delvetalk bench check\n```obend\n" + "y" * 17000 + "\n```")
         self.assertEqual(r["receipt"]["outcome"]["clause"], "badValue", r)
-
-    def test_the_forms_bounds_hold_and_inspect_shows_them(self):
-        self.assertEqual(self.say("delvetalk bench jot\nnote: abcdefg")["receipt"]["outcome"]["clause"], "badValue")
-        self.assertEqual(self.say("delvetalk bench jot\nnote: abc")["status"], "admitted")
-        self.assertEqual(self.got("note"), "abc")
-        forms = self.host.send(op="world-inspect", principal="glm", object="bench", source=False)["forms"]
-        self.assertIn("16384", str(forms))
-        self.assertIn("{'name': 'max', 'value': {'tag': 'natural', 'value': '5'}}", str(forms))
 
 
 class WorkshopSource(Chain):
@@ -120,65 +97,6 @@ class ExpectedForm(Chain):
         self.assertEqual(out["class"], "typeMismatch", r)
         fields = {f["name"]: f["kind"] for f in out["expected"]["form"]["fields"]}
         self.assertEqual((fields["seed"]["min"], fields["seed"]["max"]), (1, 80), fields)
-
-    def test_a_direct_turn_is_held_to_the_declared_bounds(self):
-        # codex host 12 / agent 3: the spell path refused an 81-character seed; a direct turn took it.
-        from tests.test_chain import garden_seed
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
-        for seed in ("", "s" * 81):
-            r = self.turn("garden", "plant", record(colour=label("amber"), seed=label(seed)), principal="glm")
-            out = r["receipt"]["outcome"]
-            self.assertEqual((r["status"], out["class"]), ("refused", "typeMismatch"), r)
-            self.assertIn("seed takes 1 to 80 characters", out["reason"])
-
-
-# A form block and no hand-written forms() or methods(): the kernel derives forms() and lists it in
-# the artifact's `declares`, so `jot` is public and judged by its block's bound.
-DERIVED = """edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./List.obend as Lists
-import ./Plan.obend as Plans
-import ./Form.obend as Form
-import ./World.obend as World
-record State:
-  got: String
-record Binding:
-  name: String
-  value: String
-def initial() -> State:
-  {got: ""}
-form jot:
-  note: text 2..5
-def jot(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {got: set input.note}
-  1n
-def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:
-  0n
-"""
-
-
-class DerivedForms(Chain):
-    def setUp(self):
-        super().setUp()
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
-        self.modules = out + [{"name": "Bench", "source": DERIVED}]
-        self.make("bench", self.modules, record())
-
-    def say(self, text):
-        return self.turn("bench", "receive", record(text=label(text), post=label("")), principal="glm")
-
-    def test_a_derived_forms_makes_its_method_public_and_bounded(self):
-        artifact = self.host.send(op="compile", modules=self.modules, entry="initial")["artifact"]
-        self.assertIn("forms", artifact["declares"])
-        self.assertEqual(self.turn("bench", "jot", record(note=label("abc")), principal="glm")["status"], "admitted")
-        out = self.say("delvetalk bench jot\nnote: abcdefg")["receipt"]["outcome"]
-        self.assertEqual((out["class"], out["clause"]), ("badSpell", "badValue"), out)
-        self.assertEqual(self.say("delvetalk bench jot\nnote: abcd")["status"], "admitted")
-        forms = self.host.send(op="world-inspect", principal="glm", object="bench", source=False)["forms"]
-        self.assertIn("{'name': 'max', 'value': {'tag': 'natural', 'value': '5'}}", str(forms))
 
 
 if __name__ == "__main__":

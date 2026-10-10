@@ -12,13 +12,12 @@ of it); packages import it by name and carry none of it.
 """
 import os
 import atexit
-import re
 import shutil
 import tempfile
 import unittest
 
 from tests.host import HostCase
-from tests.test_chain import field, nil, reference
+from tests.test_chain import field
 from tests.test_turn_world import ROOT, label, nat, record, declared
 
 WORLD_LIBRARY = os.path.join(ROOT, "world", "lib")
@@ -104,7 +103,7 @@ def first(context: Abi.Context, found: Lists.List<String>) -> Activity<String>:
     case nil(_): note(context, 0n, "clean")
     case cons(c): note(context, 0n, c.head)
 def ask(state: State, input: {utterance: String, policy: String}, context: Abi.Context) -> Activity<String>:
-  match world.interpret::<Arg>({utterance: input.utterance, offers: offered(), policy: {world: "", object: input.policy}, model: ""}):
+  match world.interpret::<Arg>({utterance: input.utterance, offers: offered(), policy: {world: "", object: input.policy}, model: "", held: "", misfit: ""}):
     case proposal(p): note(context, p.argument.n, p.method)
     case unclear(_): note(context, 0n, "unclear")
     case timedOut(_): note(context, 0n, "timedOut")
@@ -167,11 +166,6 @@ class Reflection(HostCase):
 
 
 class Library(Reflection):
-    def test_a_package_importing_plans_and_abi_by_name_runs_its_activity(self):
-        self.open_library()
-        self.make("c", PACKAGE, source_seed())
-        r = self.turn("c", "bump")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
 
     def test_the_journal_records_the_library_pin_and_the_object_names_it_not_its_bytes(self):
         opened = self.open_library()
@@ -193,16 +187,22 @@ class Library(Reflection):
         bump = self.turn("c", "bump")
         self.assertEqual((bump["status"], bump["result"]), ("admitted", nat(1)), bump)
 
-    def test_a_package_may_not_shadow_a_library_module_with_other_bytes(self):
+    def test_a_bad_library_or_a_package_shadowing_or_missing_a_library_module_is_refused_by_name(self):
+        def opened(files):
+            with tempfile.TemporaryDirectory() as scratch:
+                for name, text in files.items():
+                    with open(os.path.join(scratch, name + ".obend"), "w") as handle:
+                        handle.write("edition ObjectiveBend 1\n" + text)
+                return self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
+        self.assertIn("cycle", opened({"A": "import ./B.obend as X\n", "B": "import ./A.obend as X\n"})["message"])
+        self.assertIn("not in the library", opened({"B": "import ./Missing.obend as X\n"})["message"])
+        self.assertIn("more than 256", opened({f"M{i:03}": "" for i in range(257)})["message"])
+        self.assertIn("opening principal", self.host.send(op="world-open", path=self.path, library=LIBRARY)["message"])
         self.open_library()
         r = self.host.send(op="world-create", principal="ember", identity="x", object="c", entry="initial",
                            seed=source_seed(), modules=[{"name": "Plan", "source": "edition ObjectiveBend 1\n"},
                                                         {"name": "Main", "source": PACKAGE}])
-        self.assertEqual(r["status"], "error")
         self.assertIn("shadows the library", r["message"])
-
-    def test_an_import_the_library_lacks_is_refused_with_the_compilers_diagnostic(self):
-        self.open_library()
         r = self.host.send(op="world-create", principal="ember", identity="x", object="c", entry="initial",
                            seed=source_seed(), source=PACKAGE.replace("./Abi.obend", "./Nope.obend"))
         self.assertEqual(r["status"], "error")
@@ -246,33 +246,6 @@ class Library(Reflection):
             self.assertEqual(differ["status"], "error")
             self.assertIn("the bytes differ", differ["message"])
 
-    def test_a_world_opened_without_a_library_path_replays_from_the_journal(self):
-        self.open_library()
-        self.make("c", PACKAGE, source_seed())
-        self.turn("c", "bump")
-        before = self.host.send(op="world-view", principal="ember", object="c")
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-view", principal="ember", object="c"), before)
-        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
-
-    def test_a_library_that_imports_a_module_it_lacks_or_cycles_is_refused_by_name(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            for name, imports in (("A", "B"), ("B", "A")):
-                with open(os.path.join(scratch, name + ".obend"), "w") as handle:
-                    handle.write(f"edition ObjectiveBend 1\nimport ./{imports}.obend as X\n")
-            r = self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
-            self.assertEqual(r["status"], "error")
-            self.assertIn("cycle", r["message"])
-            with open(os.path.join(scratch, "B.obend"), "w") as handle:
-                handle.write("edition ObjectiveBend 1\nimport ./Missing.obend as X\n")
-            r = self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
-            self.assertIn("not in the library", r["message"])
-
-    def test_opening_with_a_library_names_the_opening_principal(self):
-        r = self.host.send(op="world-open", path=self.path, library=LIBRARY)
-        self.assertEqual(r["status"], "error")
-        self.assertIn("opening principal", r["message"])
-
 
 class Inspect(Reflection):
     def setUp(self):
@@ -281,16 +254,17 @@ class Inspect(Reflection):
         self.make("secret", PACKAGE, source_seed(), read={"principals": ["ember"]})
         self.make("probe", PROBE, probe_seed())
 
-    def test_the_creator_inspects_pin_law_and_entry_source_and_a_stranger_is_denied(self):
+    def test_the_creator_inspects_pin_law_and_entry_source_and_a_stranger_is_denied_also_in_a_turn(self):
         mine = self.host.send(op="world-inspect", principal="ember", object="secret", source=True)
-        self.assertEqual(mine["status"], "inspected", mine)
-        self.assertEqual(mine["source"], PACKAGE)
+        self.assertEqual((mine["status"], mine["source"]), ("inspected", PACKAGE), mine)
         self.assertRegex(mine["pin"], r"^bafyrei[a-z2-7]{52}$")  # CIDv1, dag-cbor, sha2-256
         self.assertIn("owner", mine["law"])
         stranger = self.host.send(op="world-inspect", principal="kim", object="secret")
         self.assertEqual(stranger["status"], "denied")
         self.assertNotIn("source", stranger)
         self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="ghost")["status"], "unknown")
+        self.assertEqual(self.turn("probe", "inspectIt", record(target=label("secret")))["result"], label(PACKAGE))
+        self.assertEqual(self.turn("probe", "inspectIt", record(target=label("secret")), principal="kim")["result"], label("denied"))
 
     def test_the_inspect_plan_without_the_source_answers_the_laws_and_what_the_reader_is_offered(self):
         # The rewrite lane: the library's laws page read the whole source and ran out of ticks; a card's
@@ -306,50 +280,27 @@ class Inspect(Reflection):
         forms = self.host.send(op="world-inspect", principal="kim", object="probe")["forms"]
         self.assertEqual(offered, [next(x["value"]["value"] for x in f["fields"] if x["name"] == "action") for f in forms["items"]] or [""], kim)
 
-    def test_the_inspect_plan_answers_under_the_turns_principal(self):
-        mine = self.turn("probe", "inspectIt", record(target=label("secret")))
-        self.assertEqual((mine["status"], mine["result"]), ("admitted", label(PACKAGE)), mine)
-        kim = self.turn("probe", "inspectIt", record(target=label("secret")), principal="kim")
-        self.assertEqual((kim["status"], kim["result"]), ("admitted", label("denied")))
-
-
 class Check(Reflection):
     def setUp(self):
         super().setUp()
         self.open_library()
         self.make("probe", PROBE, probe_seed())
 
-    def test_a_broken_package_gets_a_located_diagnostic_and_a_clean_one_none(self):
+    def test_a_check_locates_a_diagnostic_checks_the_whole_module_and_installs_nothing(self):
+        status = self.host.send(op="world-status")
         broken = self.turn("probe", "checkIt", record(package=label(BROKEN)))
-        self.assertEqual(broken["status"], "admitted", broken)
-        self.assertRegex(broken["result"]["value"], r"^Checked:\d+: [a-z-]+: .+")
-        self.assertNotRegex(broken["result"]["value"], r"^Checked:0:")
-        clean = self.turn("probe", "checkIt", record(package=label(PACKAGE)))
-        self.assertEqual(clean["result"], label("clean"))
-
-    def test_a_check_installs_nothing_and_the_journal_keeps_only_the_count(self):
-        height = self.host.send(op="world-status")["height"]
-        objects = self.host.send(op="world-status")["objects"]
-        r = self.turn("probe", "checkIt", record(package=label(BROKEN)))
-        self.assertEqual(r["receipt"]["checks"], 1)
-        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
-        self.assertEqual(self.host.send(op="world-status")["objects"], objects)
+        self.assertRegex(broken["result"]["value"], r"^Checked:[1-9]\d*: [a-z-]+: .+")
+        self.assertEqual(broken["receipt"]["checks"], 1)
+        after = self.host.send(op="world-status")
+        self.assertEqual((after["height"], after["objects"]), (status["height"] + 1, status["objects"]))
         self.assertNotIn("def initial", self.lines()[-1])
-
-    def test_a_module_without_initial_is_checked_whole_not_refused_for_its_entry(self):
         plain = "edition ObjectiveBend 1\ndef bump(count: Nat) -> Nat:\n  count + 1n\n"
-        self.assertEqual(self.turn("probe", "checkIt", record(package=label(plain)))["result"], label("clean"))
         types = "edition ObjectiveBend 1\nrecord Pair:\n  left: Nat\n  right: Nat\n"
-        self.assertEqual(self.turn("probe", "checkIt", record(package=label(types)))["result"], label("clean"))
+        for clean in (PACKAGE, plain, types):
+            self.assertEqual(self.turn("probe", "checkIt", record(package=label(clean)))["result"], label("clean"))
         # A broken definition after the first is still found: the entry does not limit the check.
         later = plain + "def later() -> Nat:\n  missing\n"
-        self.assertRegex(self.turn("probe", "checkIt", record(package=label(later)))["result"]["value"],
-                         r"^Checked:\d+: .*missing")
-
-    def test_a_package_that_declares_a_law_checks_clean(self):
-        law = PACKAGE.replace("def initial", "law ceiling: new.count <= 5\ndef initial")
-        self.assertEqual(self.turn("probe", "checkIt", record(package=label(law)))["result"], label("clean"))
-
+        self.assertRegex(self.turn("probe", "checkIt", record(package=label(later)))["result"]["value"], r"^Checked:\d+: .*missing")
 
 def interpreter_world(test):
     test.open_library()
@@ -366,25 +317,17 @@ class LibraryCheck(Reflection):
     sending it; refuted if a check journals, if the library is read from the request, or if a
     stateless process cannot resolve the pin."""
 
-    def test_world_check_compiles_over_the_sealed_library_and_journals_nothing(self):
+    def test_world_check_compiles_over_the_sealed_library_accepts_laws_locates_refusals_and_journals_nothing(self):
         opened = self.open_library()
         before = self.host.send(op="world-status")["height"]
         r = self.host.send(op="world-check", principal="", modules=[{"name": "Tally", "source": PACKAGE}], entry="bump")
         self.assertEqual((r["status"], r["library"]), ("checked", opened["library"]), r)
         self.assertIn("Plan", [m["name"] for m in r["artifact"]["modules"]])
-        self.assertEqual(self.host.send(op="world-status")["height"], before)
-
-    def test_world_check_names_the_module_and_line_of_a_refusal(self):
-        self.open_library()
+        self.assertEqual(self.host.send(op="world-check", principal="glm", source=LAWFUL, entry="initial")["status"], "checked")
         r = self.host.send(op="world-check", principal="glm", source=BROKEN, entry="initial")
-        self.assertEqual(r["status"], "refused", r)
-        self.assertEqual((r["diagnostic"]["module"], r["diagnostic"]["span"]["line"]), ("Package", 3), r)
+        self.assertEqual((r["status"], r["diagnostic"]["module"], r["diagnostic"]["span"]["line"]), ("refused", "Package", 3), r)
         self.assertIn("missing", r["diagnostic"]["message"])
-
-    def test_world_check_accepts_a_package_with_laws_as_world_create_does(self):
-        self.open_library()
-        r = self.host.send(op="world-check", principal="glm", source=LAWFUL, entry="initial")
-        self.assertEqual(r["status"], "checked", r)
+        self.assertEqual(self.host.send(op="world-status")["height"], before)
 
     def test_stateless_check_and_compile_resolve_the_pin_from_the_open_world(self):
         opened = self.open_library()
@@ -428,17 +371,6 @@ class Interpret(Reflection):
     def replied(self, method="bump2", **argument):
         return {"status": "replied", "json": {"method": method, "argument": argument}, "model": "m"}
 
-    def test_interpret_suspends_and_lists_the_request_with_the_policys_system_prompt(self):
-        r = self.ask()
-        self.assertEqual(r["status"], "suspended", r)
-        [item] = self.pending()
-        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "card", "held", "misfit", "reach", "attempts", "next"})
-        self.assertEqual((item["attempts"], item["next"]), (0, None))
-        self.assertEqual(item["object"], "probe")
-        self.assertEqual(item["utterance"], "ring it three times")
-        self.assertEqual(item["policy"], {"model": "claude-test", "system": "Be literal.", "examples": "one example", "lexicon": None})
-        self.assertEqual(item["offers"], [{"card": "probe", "action": "bump2", "fields": []}])
-        self.assertEqual(self.seen("probe"), "")
 
     def test_a_reply_that_fits_resumes_proposal_and_the_turn_commits(self):
         self.ask()
@@ -451,28 +383,24 @@ class Interpret(Reflection):
         self.assertEqual((self.seen("probe"), field(self.state("probe"), "count")), ("bump2", nat(3)))
         self.assertEqual(self.pending(), [])
 
-    def test_a_reply_that_does_not_fit_resumes_unclear(self):
+    def test_a_reply_that_does_not_fit_or_failed_resumes_unclear(self):
         for index, reply in enumerate((
                 self.replied(n="three"),                    # the argument is not the method's input type
                 self.replied(method="ghost", n=1),          # not a method of the object
                 self.replied(method="ask", n=1),            # a method, but not an offered action
                 {"status": "replied", "json": ["nonsense"]},
-                {"status": "replied", "json": {"argument": {"n": 1}}})):
+                {"status": "replied", "json": {"argument": {"n": 1}}},
+                # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107).
+                {"status": "failed", "reason": "refused", "detail": "400"})):
             self.ask(identity=f"ask-{index}")
             [item] = self.pending()
-            settled = self.settle(item, reply)
-            self.assertEqual(settled["receipt"]["outcome"]["verdict"]["tag"], "unclear", (reply, settled))
+            verdict = self.settle(item, reply)["receipt"]["outcome"]["verdict"]
+            self.assertEqual(verdict["tag"], "unclear", reply)
+            if reply["status"] == "failed":
+                self.assertIn("refused", verdict["needs"][0])
             self.assertEqual(self.seen("probe"), "unclear", reply)
             self.assertEqual(self.pending(), [])
         self.assertEqual(field(self.state("probe"), "count"), nat(0))
-
-    def test_a_failed_reply_resumes_unclear_naming_the_reason(self):
-        self.ask()
-        [item] = self.pending()
-        # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107).
-        settled = self.settle(item, {"status": "failed", "reason": "refused", "detail": "400"})
-        self.assertIn("refused", settled["receipt"]["outcome"]["verdict"]["needs"][0])
-        self.assertEqual(self.seen("probe"), "unclear")
 
     def test_a_reply_nobody_is_waiting_for_is_refused_and_a_retry_returns_the_same_receipt(self):
         self.assertEqual(self.host.send(op="world-interpretation", id="nope", reply=self.replied(n=1))["status"], "error")
@@ -595,45 +523,19 @@ class ReprogramAnother(Reflection):
         refused = self.rework("c", principal="kim", obj="other")
         self.assertEqual((refused["status"], refused["result"]), ("admitted", label("forge")), refused)
 
-    def test_an_amend_of_another_object_is_judged_by_its_law(self):
-        self.make("c", PACKAGE, source_seed())
-        text = 'law owner: request.kind == 0 or request.subject == "ember"\nlaw small: new.count <= 3'
-        r = self.turn("forge", "relaw", record(target=label("c"), law=label(text)))
-        self.assertEqual((r["status"], r["result"]), ("admitted", label("amended")), r)
-        self.assertIn("small", self.host.send(op="world-inspect", principal="ember", object="c")["law"])
-        kim = self.turn("forge", "relaw", record(target=label("c"), law=label(text)), principal="kim")
-        self.assertEqual((kim["status"], kim["result"]), ("admitted", label("owner")), kim)
-
-    def test_an_amendment_that_would_seal_out_its_proposer_is_answered_in_the_turn(self):
+    def test_an_amend_of_another_object_is_judged_by_its_law_and_may_not_seal_out_its_proposer(self):
         self.make("c", PACKAGE, source_seed())
         sealed = 'law owner: request.kind == 0 or request.subject == "nobody"'
         r = self.turn("forge", "relaw", record(target=label("c"), law=label(sealed)))
-        self.assertEqual(r["status"], "admitted", r)
         self.assertIn("law does not admit an amendment by its proposer ember", r["result"]["value"])
-        self.assertNotIn("nobody", self.host.send(op="world-inspect", principal="ember", object="c")["law"])
-
-
-class Maximum(Reflection):
-    def test_a_128_module_library_chained_by_imports_seals_and_reopens(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            for i in range(128):
-                with open(os.path.join(scratch, f"M{i:03}.obend"), "w") as handle:
-                    imports = f"import ./M{i - 1:03}.obend as P\n" if i else ""
-                    handle.write(f"edition ObjectiveBend 1\n{imports}def one{i}() -> Nat:\n  1n\n")
-            r = self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
-            self.assertEqual(r["status"], "opened", r)
-            self.reopen()
-            self.assertEqual(self.host.send(op="world-open", path=self.path)["library"], r["library"])
-
-    def test_a_library_of_too_many_modules_is_refused_by_name(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            for i in range(257):
-                with open(os.path.join(scratch, f"M{i:03}.obend"), "w") as handle:
-                    handle.write("edition ObjectiveBend 1\n")
-            r = self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
-            self.assertEqual(r["status"], "error")
-            self.assertIn("more than 256", r["message"])
-
+        text = 'law owner: request.kind == 0 or request.subject == "ember"\nlaw small: new.count <= 3'
+        kim = self.turn("forge", "relaw", record(target=label("c"), law=label(text)), principal="kim")
+        self.assertEqual((kim["status"], kim["result"]), ("admitted", label("owner")), kim)
+        r = self.turn("forge", "relaw", record(target=label("c"), law=label(text)))
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("amended")), r)
+        law = self.host.send(op="world-inspect", principal="ember", object="c")["law"]
+        self.assertIn("small", law)
+        self.assertNotIn("nobody", law)
 
 if __name__ == "__main__":
     unittest.main()

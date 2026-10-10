@@ -128,14 +128,11 @@ class LawFacts(Reflection):
     def clause(self, r):
         return r["receipt"]["outcome"].get("clause") if r["status"] == "refused" else r["status"]
 
-    def test_membership_comes_from_state_not_a_hard_coded_principal(self):
+    def test_membership_comes_from_state_and_the_law_reads_the_method_that_made_the_change(self):
         self.assertEqual(self.clause(self.turn("roster", "ring", principal="kim")), "members")
         self.assertEqual(self.clause(self.turn("roster", "admit", record(who=label("kim")))), "admitted")
         self.assertEqual(self.clause(self.turn("roster", "ring", principal="kim")), "admitted")
         self.assertEqual(self.clause(self.turn("roster", "ring", principal="bob")), "members")
-
-    def test_the_law_reads_the_method_that_made_the_change(self):
-        self.assertEqual(self.clause(self.turn("roster", "ring")), "admitted")
         self.assertEqual(self.clause(self.turn("roster", "toll")), "rings")
 
     def test_a_list_membership_of_a_number_fact_is_refused_at_compile(self):
@@ -186,19 +183,25 @@ class Grants(Reflection):
         self.assertEqual(entry["outcome"]["writes"][0]["vias"], [grant])
         self.assertEqual(self.bell(), ("1", "registrar", "scheduler"))
 
-    def test_the_same_send_without_a_grant_runs_as_the_waker_and_the_law_refuses_it(self):
-        self.authorize()
+    def test_without_the_grant_for_this_method_and_object_the_send_is_the_wakers_or_noGrant(self):
+        self.make("other", SCHEDULER, record(note=label("")))
+        grant = self.authorize()
         self.assertEqual(self.fire(""), "sent")
         delivered = self.deliver()
         self.assertEqual((delivered["status"], delivered["receipt"]["outcome"]["clause"]), ("refused", "registrar"))
+        self.assertEqual(self.fire(grant, obj="other"), "noGrant")       # granted to the scheduler, not to other
+        self.assertEqual(self.fire(self.authorize(method="toll")), "noGrant")   # a grant names one method
         self.assertEqual(self.bell(), ("0", "", ""))
 
-    def test_after_revoke_the_send_is_refused_noGrant_in_the_turn(self):
+    def test_a_stranger_cannot_revoke_and_after_the_grantors_revoke_the_send_is_noGrant(self):
+        self.make("other", SCHEDULER, record(note=label("")))
         grant = self.authorize()
-        r = self.turn("scheduler", "cancel", record(id=label(grant)), principal="registrar")
-        self.assertEqual(r["result"], label("revoked"), r)
+        self.assertEqual(self.turn("other", "cancel", record(id=label(grant)), principal="mallory")["result"], label("notGrantor"))
+        self.assertEqual(self.fire(grant), "sent")
+        self.assertEqual(self.turn("scheduler", "cancel", record(id=label(grant)), principal="registrar")["result"], label("revoked"))
         self.assertEqual(self.fire(grant), "noGrant")
-        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
+        self.reopen()
+        self.assertEqual(self.fire(grant), "noGrant")
 
     def test_after_the_clock_passes_until_the_send_is_refused_noGrant(self):
         grant = self.authorize(until=5)
@@ -231,22 +234,6 @@ class Grants(Reflection):
         plain = self.turn("scheduler", "poke", record(target=label("bell"), via=label("")), principal="wake")
         self.assertEqual(plain["receipt"]["outcome"]["clause"], "registrar")
 
-    def test_a_grant_names_one_method_and_one_object(self):
-        grant = self.authorize(method="toll")
-        self.assertEqual(self.fire(grant), "noGrant")
-
-    def test_another_object_cannot_use_a_grant_made_to_the_scheduler(self):
-        self.make("other", SCHEDULER, record(note=label("")))
-        grant = self.authorize()
-        self.assertEqual(self.fire(grant, obj="other"), "noGrant")
-
-    def test_a_stranger_cannot_revoke_and_the_grant_still_stands(self):
-        self.make("other", SCHEDULER, record(note=label("")))
-        grant = self.authorize()
-        r = self.turn("other", "cancel", record(id=label(grant)), principal="mallory")
-        self.assertEqual(r["result"], label("notGrantor"), r)
-        self.assertEqual(self.fire(grant), "sent")
-
     def test_only_a_direct_turn_may_grant_not_a_callee(self):
         self.make("other", SCHEDULER, record(note=label("")))
         r = self.turn("other", "relay", record(other=label("scheduler"), target=label("bell")), principal="registrar")
@@ -254,18 +241,6 @@ class Grants(Reflection):
         self.assertEqual(r["result"], label("notDirect"), r)
         direct = self.turn("scheduler", "authorizeBell", principal="registrar")
         self.assertEqual(len(direct["result"]["value"]), 59, direct)
-
-    def test_grants_and_revocations_replay(self):
-        grant = self.authorize()
-        kept = self.authorize()
-        self.turn("scheduler", "cancel", record(id=label(grant)), principal="registrar")
-        self.assertEqual(self.fire(kept), "sent")
-        before = self.host.send(op="world-view", principal="ember", object="bell")
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-view", principal="ember", object="bell"), before)
-        self.assertEqual(self.fire(grant), "noGrant")
-        self.assertEqual(self.fire(kept), "sent")
-
 
 if __name__ == "__main__":
     unittest.main()
@@ -364,7 +339,8 @@ class Attenuation(Reflection):
         [after] = self.host.send(op="world-grants", principal="", reverse=True)["grants"]
         self.assertTrue(after["revoked"], after)
 
-    def test_the_fixed_part_is_merged_into_the_callers_argument(self):
+    def test_the_fixed_part_is_merged_into_the_callers_argument_and_a_grant_needs_a_use(self):
+        self.assertEqual(self.grant(uses=0), "uses")
         g = self.grant()
         r = self.use("dim", g, level=nat(3))
         self.assertEqual((r["status"], r["result"]), ("admitted", label("red")), r)
@@ -417,5 +393,3 @@ class Attenuation(Reflection):
         self.assertEqual(self.use("dim", g, level=nat(2))["result"], label("noGrant"))
         self.assertEqual(self.host.send(op="world-revoke", principal="owner", identity="r3", grant="nope")["status"], "error")
 
-    def test_a_grant_of_no_uses_is_refused(self):
-        self.assertEqual(self.grant(uses=0), "uses")

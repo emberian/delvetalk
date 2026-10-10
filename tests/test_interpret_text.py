@@ -1,22 +1,20 @@
-"""The garden fits the model's own words with Spell: a spell plants, `unclear: not addressed` is
-silence, a miss is asked once more and then answered with what is still needed.
+"""The garden fits the model's own words with Spell: a spell plants, hob's `none` is silence, its
+`ask` one question over the plant spell, its `card` the garden card; there is no second attempt.
 
 Evidence for FOUNDATION §6 (layer: objects).
 
-The garden reads the model's own words (rehearsal findings 2 and 3, objects side), with
-Card's interpretation default.
+The garden reads hob's one answer (docs/FLEX.md §2). The host resumes an interpretation whose
+reply carries no `{method, argument}` json by fitting the words: a spell that fits is the host's
+`proposal`; `ask: <question>` is `unclear {needs: [question]}` (so is a spell that does not fit,
+its reason the need), `card` is `replied {text: "card"}`, and `none` is `unclear: not addressed`.
+Card.hobNeeds / Card.hobSaid classify these: a question, or none (not addressed, blank, or a
+`model:` need, a model that could not be asked); the text "card" is the card, any other text none.
+The garden answers `ask` with `hob: {question}` and the plant spell with blanks (and, when the
+policy names `escalateTo`, a short copy to that principal), `card` with the garden card, `none`
+with silence, still one attempt.
 
-The host resumes an interpretation whose reply carries no `{method, argument}` json with
-`replied {text}` when the model's words hold no spell the host could fit (a spell that fits is
-the host's `proposal`); Card.prose reads those words: `unclear: not addressed` (or an empty
-`unclear:`) is silence, any other `unclear: <need>` or words that are no spell are a miss with
-what is missing. A miss is asked
-once more, the utterance with "missing: <needs>" and the policy's escalate model; a second miss
-offers the needs card to the speaker and a short copy to the policy's escalateTo principal.
-
-Refuted by: a spell in the model's text not planting, `unclear: not addressed` offering a card, a
-first miss not asked again with its needs, or a second miss not reaching the needs card and the
-escalation copy.
+Refuted by: a spell in the model's text not planting, `none` offering a card, an `ask` asked
+again or answered without its question, or a second interpretation being requested.
 """
 import unittest
 
@@ -24,30 +22,42 @@ from tests.host import as_owner
 
 from tests import test_chain, test_policy
 from tests.test_objects import PROBE_HEAD_G, run_pure
+from tests.test_replay import rows
 from tests.test_turn_world import label, record
 
 SPELL = "delvetalk garden plant / colour: silver / seed: a fern that remembers"
 
 PROBE = PROBE_HEAD_G + """import ./Text.obend as Text
-def back(text: String) -> String:
-  match Card.prose(text):
-    case miss(m): textConcat("miss ", Text.joined(m.needs))
-    case silent(_): "silent"
+def need(text: String) -> String:
+  match Card.hobNeeds(Card.one(text)):
+    case ask(a): textConcat("ask ", a.question)
+    case none(_): "none"
+    case card(_): "card"
+def said(text: String) -> String:
+  match Card.hobSaid(text):
+    case ask(_): "ask"
+    case none(_): "none"
+    case card(_): "card"
 """
 
 
 class Classified(unittest.TestCase):
-    def back(self, text):
-        out = run_pure("Garden", "back", label(text), probe=PROBE)
+    def back(self, method, text):
+        out = run_pure("Garden", method, label(text), probe=PROBE)
         self.assertEqual(out["status"], "finished", out)
         return out["value"]["value"]
 
-    def test_the_models_words_are_a_need_or_silence(self):
-        self.assertEqual(self.back("unclear: colour"), "miss colour")
-        self.assertEqual(self.back("  unclear:   seed  \nmore"), "miss seed")
-        self.assertEqual(self.back("unclear: not addressed"), "silent")
-        self.assertEqual(self.back("unclear:"), "silent")
-        self.assertEqual(self.back("I think they are just chatting."), "miss ")
+    def test_a_need_is_a_question_unless_it_is_not_addressed_blank_or_a_model_failure(self):
+        self.assertEqual(self.back("need", "which colour?"), "ask which colour?")
+        self.assertEqual(self.back("need", "not addressed"), "none")
+        self.assertEqual(self.back("need", ""), "none")
+        self.assertEqual(self.back("need", "model: timed out"), "none")
+
+    def test_the_text_card_is_the_card_and_any_other_text_is_none(self):
+        self.assertEqual(self.back("said", "card"), "card")
+        self.assertEqual(self.back("said", "  card \n"), "card")
+        self.assertEqual(self.back("said", "I think they are just chatting."), "none")
+        self.assertEqual(self.back("said", ""), "none")
 
 
 class Resumed(test_chain.Chain):
@@ -55,16 +65,10 @@ class Resumed(test_chain.Chain):
     garden = test_policy.PolicyObject.garden
     say = test_policy.PolicyObject.say
     interpret = test_policy.PolicyObject.interpret
+    pending = test_policy.PolicyObject.pending
 
     def text(self, raw):
         return {"status": "replied", "json": None, "raw": raw, "model": "m"}
-
-    def test_not_addressed_ends_the_turn_with_no_card(self):
-        self.policy()
-        self.garden("policy")
-        self.say("What makes you think anyone needs a portal?")
-        resumed = self.interpret(self.text("unclear: not addressed"))
-        self.assertEqual((resumed["status"], resumed["result"]["label"], resumed["offers"]), ("admitted", "silent", []), resumed)
 
     def settle(self, raw):
         """Settle the one pending interpretation with the model's text; the resumed turn."""
@@ -74,43 +78,56 @@ class Resumed(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
-    def test_a_miss_is_asked_once_more_with_its_needs_and_a_hit_then_plants(self):
+    def test_words_that_are_no_spell_are_none_and_end_with_no_card(self):
+        self.policy()
+        self.garden("policy")
+        self.say("What makes you think anyone needs a portal?")
+        _, quiet = self.settle("I think they are just chatting.")
+        self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+
+    def test_an_ask_is_one_attempt_whose_question_stands_over_the_plant_spell(self):
         self.policy(escalate="claude-opus")
         self.garden("policy", confirm=False)
         self.say("plant something pretty")
-        first, again = self.settle("unclear: colour")
-        self.assertEqual(again["status"], "suspended", again)
-        [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertNotEqual(item["id"], first["id"])
-        self.assertEqual(item["utterance"], "plant something pretty\n\nmissing: colour")
-        # The second attempt asks the policy's escalate model; the first asked its own.
-        self.assertEqual((first["policy"]["model"], item["policy"]["model"]), ("claude-haiku", "claude-opus"), item)
-        _, planted = self.settle(SPELL)
-        self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
+        first, asked = self.settle("ask: which colour?")
+        # One attempt: nothing is asked again, and the policy's escalate model is not tried.
+        self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        self.assertEqual(first["policy"]["model"], "claude-haiku", first)
+        [card] = [o["text"] for o in asked["receipt"]["offers"]]
+        self.assertTrue(card.startswith("hob: which colour?\n"), card)
+        self.assertIn("delvetalk garden plant\n", card)
+        self.assertIn("colour: <amber, violet, silver>", card)
+        self.assertEqual(rows(self.pending()), [])  # and nothing is held
 
-    def test_a_second_miss_offers_the_needs_card_and_a_copy_to_escalate_to(self):
-        self.policy(escalate="claude-opus", escalate_to="did:plc:operator4keeper")
-        self.garden("policy")
-        self.say("plant something pretty")
-        self.settle("unclear: colour")
-        _, missed = self.settle("delvetalk garden plant / seed: something pretty")
-        self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
-        offers = [(o["to"], o["text"]) for o in missed["receipt"]["offers"]]
-        self.assertEqual(offers, [("did:plc:operator4keeper", "glm said: plant something pretty; I could not fit it (garden).\n"),
-                                  ("glm", "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour.\n")])
-        self.assertEqual(offers[-1], ("glm", "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour.\n"))
-        copy = [o["text"] for o in self.host.send(op="world-offers", principal="did:plc:operator4keeper")["offers"]]
-        self.assertEqual(copy, ["glm said: plant something pretty; I could not fit it (garden).\n"])
-
-    def test_without_escalate_to_a_second_miss_offers_only_the_needs_card(self):
+    def test_a_spell_that_does_not_fit_is_hobs_question_with_the_reason(self):
         self.policy()
         self.garden("policy")
         self.say("plant something pretty")
-        self.settle("unclear: colour")
-        _, missed = self.settle("unclear: colour")
-        self.assertEqual([o["to"] for o in missed["receipt"]["offers"]], ["glm"], missed)
-        self.assertIn("I still need: colour.", missed["receipt"]["offers"][0]["text"])
+        _, missed = self.settle("delvetalk garden plant / seed: something pretty")
+        self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
+        [card] = [o["text"] for o in missed["receipt"]["offers"]]
+        self.assertTrue(card.startswith("hob: "), card)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+
+    def test_an_ask_copies_the_question_to_escalate_to(self):
+        self.policy(escalate_to="did:plc:operator4keeper")
+        self.garden("policy")
+        self.say("plant something pretty")
+        _, asked = self.settle("ask: which colour?")
+        offers = [(o["to"], o["text"]) for o in asked["receipt"]["offers"]]
+        self.assertEqual(offers[0], ("did:plc:operator4keeper", "glm said: plant something pretty; hob asked: which colour? (garden).\n"))
+        self.assertEqual([to for to, _ in offers], ["did:plc:operator4keeper", "glm"])
+        copy = [o["text"] for o in self.host.send(op="world-offers", principal="did:plc:operator4keeper")["offers"]]
+        self.assertEqual(copy, ["glm said: plant something pretty; hob asked: which colour? (garden).\n"])
+
+    def test_without_escalate_to_an_ask_offers_only_the_question_card(self):
+        self.policy()
+        self.garden("policy")
+        self.say("plant something pretty")
+        _, asked = self.settle("ask: which colour?")
+        self.assertEqual([o["to"] for o in asked["receipt"]["offers"]], ["glm"], asked)
 
     def test_with_the_default_policy_an_understood_planting_plants_and_the_receipt_answers(self):
         """Confirmation is per action: the policy's confirmFor (reprogram, amend, offer by
@@ -132,14 +149,6 @@ class Resumed(test_chain.Chain):
         self.assertEqual(asked["result"]["label"], "confirming", asked)
         card = self.turn("policy", "receive", record(text=label(""), post=label("")), principal="glm")["offers"][0]["text"]
         self.assertIn("A card asks the speaker first before: reprogram, amend, offer, plant.\n", card)
-
-    def test_words_that_are_no_spell_twice_end_with_no_card(self):
-        self.policy()
-        self.garden("policy")
-        self.say("What makes you think anyone needs a portal?")
-        self.settle("I think they are just chatting.")
-        _, quiet = self.settle("Still chatting.")
-        self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
 
 if __name__ == "__main__":

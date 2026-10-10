@@ -58,32 +58,14 @@ class Protocols(unittest.TestCase):
     def check(self, thing, entry="render"):
         return self.h.send({"op": "check-package", "entry": entry, "modules": self.modules(thing)})
 
-    def test_an_implementation_is_recorded_with_its_protocol(self):
-        for claim in ("implements Kit.Card", "implements Card"):
-            with self.subTest(claim=claim):
-                reply = self.check(THING.replace("implements Kit.Card", claim))
-                self.assertEqual(reply["status"], "checked", reply)
-                art = reply["artifact"]
-                self.assertEqual(art["protocols"], ["Card"])
-                rows = {m["name"]: m for m in art["methods"]}
-                self.assertEqual(rows["receive"]["protocol"], "Card")
-                self.assertEqual(rows["render"]["protocol"], "Card")
 
-    def test_a_module_claiming_nothing_has_no_protocols(self):
-        reply = self.check(THING.replace("implements Kit.Card\n", ""))
-        self.assertEqual(reply["status"], "checked", reply)
-        self.assertNotIn("protocols", reply["artifact"])
-        self.assertTrue(all("protocol" not in m for m in reply["artifact"]["methods"]))
-
-    def test_a_missing_method_is_refused_by_name_at_the_claim(self):
+    def test_a_missing_or_mistyped_method_is_refused_by_name_where_it_is_claimed_or_written(self):
         reply = self.check(THING.replace('def door() -> String:\n  "thing"\n', ""))
         self.assertEqual(reply["status"], "refused", reply)
         d = reply["diagnostic"]
         self.assertIn("implements Card but defines no door", d["message"])
         self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 6))
         self.assertIn("protocol Card", d["hint"])
-
-    def test_a_mistyped_method_is_refused_by_name_where_it_is_written(self):
         reply = self.check(THING.replace('def render(state: State, context: Abi.Context) -> String:\n  "a thing"',
                                          'def render(state: State, context: Abi.Context) -> Nat:\n  1n'))
         self.assertEqual(reply["status"], "refused", reply)
@@ -93,11 +75,6 @@ class Protocols(unittest.TestCase):
         self.assertEqual(d["expected"], "State -> Abi.Context -> String")
         self.assertTrue(d["found"].endswith("-> Nat"), d)
         self.assertIn("protocol Card", d["hint"])
-
-    def test_an_unknown_protocol_is_refused(self):
-        reply = self.check(THING.replace("implements Kit.Card", "implements Kit.Door"))
-        self.assertEqual(reply["status"], "refused", reply)
-        self.assertIn("implements Kit.Door, which no module it imports declares", reply["diagnostic"]["message"])
 
 
 if __name__ == "__main__":

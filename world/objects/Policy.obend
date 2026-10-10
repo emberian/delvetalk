@@ -15,12 +15,15 @@ type Macro = Policies.Macro
 # the configured model and returns the answer as a proposal, never as authority. Its
 # State is Policies.State, so a card may import the type and view it.
 type State = Policies.State
-# What waits for a yes by default: changing an object's program or law, and giving
-# offering custody away. Planting, raining, subscribing and submitting run at once.
+# What waits for a yes by default: changing an object's program or law, giving custody away,
+# a countersignature and an adoption. Planting, raining, subscribing and submitting run at once.
 def asking() -> Lists.List<String>:
-  Text.words("reprogram amend offer")
+  Text.words("reprogram amend offer countersign adopt")
+# hob's instruction (docs/FLEX.md §2), the policy's `system` unless its owner sets another.
+def hob() -> String:
+  "hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; the card and its law decide what is admitted, never you."
 def initial() -> State:
-  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: "", escalateTo: "", macros: Lists.List.nil({}), confirmFor: asking()}
+  {owner: "", model: "", system: hob(), lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: "", escalateTo: "", macros: Lists.List.nil({}), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
 # stranger by name before writing.
 law owner "the owner never changes, and only the owner teaches it": unchanged(owner) and request.subject == new.owner
@@ -127,18 +130,30 @@ def formParts(form: Form.Form) -> Lists.List<String>:
 def termLine(term: Term) -> String:
   "- {term.word}: {term.meaning}\n"
 def exampleLine(example: Example) -> String:
-  "Participant: {example.utterance}\nSpell:\n{example.spell}\n\n"
+  "Said: {example.utterance}\n{example.spell}\n\n"
 def many(forms: Lists.List<Form.Form>) -> Lists.List<String>:
   match forms:
     case nil(_): Lists.List.nil()
     case cons(c): Lists.concat(formParts(c.head), many(c.tail))
 def part(text: String) -> Lists.List<String>:
   Lists.List.cons({head: text, tail: Lists.List.nil()})
-# The system prompt the host sends: the policy's instruction, the lexicon, the
-# examples as pairs, the offered forms in the exact spell grammar, and the answer
-# format. Pieces are joined in balanced rounds, so its cost is near linear.
-def prompt(state: State, offers: Lists.List<Form.Form>, utterance: String) -> String:
-  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(Lists.concat(part("{state.system}\n\nLexicon:\n"), Lists.map(state.lexicon, termLine)), part("\nExamples:\n")), Lists.map(state.examples, exampleLine)), part("Offered forms (a spell is the delvetalk line, then one field: value line per field):\n\n")), Lists.concat(many(offers), part("\nAnswer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.\n\nParticipant: {utterance}"))))
+def heldPart(held: String) -> String:
+  if held == "" then "" else "Held for this participant: {held}\n"
+def misfitPart(misfit: String) -> String:
+  if misfit == "" then "" else "Misfit: {misfit}\n"
+def examplesPart(state: State) -> Lists.List<String>:
+  if Lists.length(state.examples) == 0n then Lists.List.nil() else Lists.concat(part("\nSaid, and the answer:\n"), Lists.map(state.examples, exampleLine))
+def answers() -> String:
+  "\nAnswer with exactly one of these, and nothing else:\n- the spell, up to three one after another; every value from their words, never invented, a choice never widened;\n- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n- card when they ask something the card already shows (a count, a rule, who is here);\n- none when the words ask nothing of this card: talk among participants, a report, a note.\n"
+# The system prompt the host sends with the utterance as the user turn (docs/FLEX.md §2): hob's
+# instruction, the card as the speaker reads it, its forms in the spell grammar, the lexicon,
+# what the card holds for the speaker and the misfit, the examples, and the four answers.
+# Pieces are joined in balanced rounds, so its cost is near linear.
+def prompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, held: String, misfit: String}) -> String:
+  let head = part("{state.system}\n\nThe card they answered:\n{asked.card}\n\nWhat it takes (a spell is the delvetalk line, then one `field: value` line per field, in any order):\n")
+  let words = if Lists.length(state.lexicon) == 0n then Lists.List::<String>.nil() else Lists.concat(part("\nWords:\n"), Lists.map(state.lexicon, termLine))
+  let tail = if asked.held == "" && asked.misfit == "" then Lists.List::<String>.nil() else part("\n{heldPart(asked.held)}{misfitPart(asked.misfit)}")
+  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(head, many(asked.offers)), words), Lists.concat(tail, examplesPart(state))), part(answers())))
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleLine(example))
 def stance(context: Abi.Context, state: State) -> String:

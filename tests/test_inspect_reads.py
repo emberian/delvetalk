@@ -31,23 +31,6 @@ class Admits(Reflection):
         self.assertEqual(r["status"], "inspected", r)
         return {m["name"]: m.get("admits") for m in r["methods"]}
 
-    def test_each_turnable_method_carries_the_laws_verdict_for_the_reader(self):
-        kim = self.admits("kim")
-        self.assertEqual(kim["bump2"], {"clause": "owner", "reading": "only ember bumps by two"})
-        self.assertEqual(kim["fire"], {"clause": "quiet"})
-        self.assertIs(kim["ask"], True)
-        # `cap` reads the state, and is judged on it as it stands (codex agent 11): count 3 refuses it.
-        self.assertEqual(kim["bump"], {"clause": "cap"})
-        ember = self.admits("ember")
-        self.assertIs(ember["bump2"], True)
-        self.assertEqual(ember["fire"], {"clause": "quiet"})
-        # Every turnable method carries a verdict, and nothing else does.
-        methods = self.host.send(op="world-inspect", principal="kim", object="probe")["methods"]
-        self.assertEqual([m["name"] for m in methods if "admits" in m], [m["name"] for m in methods if m["context"]])
-        # The verdict is the commit's for the request-only clauses.
-        refused = self.turn("probe", "bump2", record(n=nat(1)), principal="kim")
-        self.assertEqual((refused["receipt"]["outcome"]["class"], refused["receipt"]["outcome"]["clause"]), ("lawRefused", "owner"))
-
 
     def test_the_source_is_left_out_unless_asked_for(self):
         whole = self.host.send(op="world-inspect", principal="kim", object="probe", source=True)

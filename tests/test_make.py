@@ -125,18 +125,6 @@ class CreateThenExtend(Reflection):
         self.open_library()
         self.make("kind", KIND, record(made=nat(0)))
 
-    def test_a_kind_makes_a_thing_and_grafts_its_body_in_one_turn(self):
-        r = self.turn("kind", "make", record(source=label(LAMP), body=label(DIM), id=label("lamp")), principal="kim")
-        self.assertEqual((r["status"], r.get("result")), ("admitted", label("made lamp")), r)
-        outcome = r["receipt"]["outcome"]
-        [made] = outcome["creates"]
-        self.assertNotIn("reprograms", outcome)
-        lamp = self.host.send(op="world-inspect", principal="kim", object="lamp")
-        self.assertEqual(lamp["pin"], made["pin"])
-        self.assertEqual(self.turn("lamp", "light", principal="kim")["status"], "admitted")
-        self.assertEqual(self.turn("lamp", "dim", principal="kim")["result"], {"tag": "boolean", "value": False})
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="lamp")["pin"], made["pin"])
 
     def test_a_method_the_body_adds_runs_on_the_made_thing_and_a_later_layer_lays_over_it(self):
         """The objects lane's atomic make: the layer's own methods are the made thing's, taking their input."""

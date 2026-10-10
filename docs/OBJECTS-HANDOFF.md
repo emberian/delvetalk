@@ -47,65 +47,99 @@ whose `adopt` `make`s it with `madeFrom`); the root menu's head and tail in v4's
 case as the host does; the library's laws page reads inspect's `laws`; kind/cistern adds `monotone(next)`.
 Tests use `tests.test_chain.town_kinds(send)` wherever a garden plants.
 
-Open from 3b, for the next lane:
+Step 4a, done on lane/rewrite3 (d706f13; 1,334 tests, 0 failed; pins re-recorded): hob reads once and
+PLACE stands lawless.
 
-- **Atomic make** (host13's same-turn extend): world/objects/Kind.obend with `bodied` (create, then
-  `world.extend` on the new id, `refuse` when refused) in place of `grafting`/`graft` is the target, but
-  a method the creation's layer adds is refused typeMismatch (`kind/key make / seed: x`, direct or by
-  spell; a later extend over it the same), so a made kind's make never runs. Host repro: tests/test_kinds
-  with that Kind. Until it is fixed Kind keeps the self-sent graft.
-- **A taken id stops a kind**: the kind names `<under>/<name>/<count+1>` and a create on a held id is the
-  whole turn's requiredAbsence, so one squatted `garden/bell/N` stops every planting
-  (tests/test_await.py expectedFailure). Host: `create` minting `<under>/<kind>/<n>` past held ids.
-- **The workshop's lineage needs a receipt hash**: `adopt` of a draft passes `madeFrom.receipt: ""`
-  (refused `madeFrom`) because no Plan answers Bend a hash; host: the await's `Plans.Receipt` gains
-  `hash` (receiptData), then `adopt` awaits the holding turn's slot (`Held.intent`) and cites it.
-- **The root menu is at its budget**: seven doors and one arc fill 1,400 characters; the WORKSHOP door
-  now has one spell (`make`), and v4's library lines under STUDIO do not fit yet. Step 4's directory body
-  decides (MENU §1.1 rule 4).
-- The receipt line names the turn's own object's write (transport `turn_line`, bridge `receipt_line`):
-  a planting writes kind/bell before the garden.
-- Docs not in this lane: SEEDING's T1 and the flood (now `garden/cistern/<n>` by `cistern`, the level is
-  `next` less one, a watch on `next`), LIBRARY's plant walk (`field: marks`).
+- **FLEX §2 in Bend.** `world.interpret` carries `held` and `misfit`; `Card.Heard {text, post, fields,
+  misfit}` is what Garden's and Directory's `receive` take (host 121), so a direct misfit spell reaches
+  them: with a policy hob sees `Misfit: <clause>, <reason>`, with none the card refuses by that clause
+  (Garden `Card.answerRefused`, Directory `refusing`). `Card.hobNeeds`/`hobSaid` read hob's answers;
+  `Card.hobbed` is none (silence), card (the card), ask (`hob: {q}` over the first spell, `askCard`, and
+  the escalateTo copy). The root's ask is `hob: {q} The nearest:` over the pruned menu. Gone: the second
+  attempt, `escalate` as a retry model (the field stays in Policy, unused), the mention gate, every
+  "I still need" card. Garden keeps a held planting through hob's none and shows it as `held`.
+  `Card.offeredCard` lists only inspect's `offered`. `Policy.prompt(state, asked)` is FLEX's text.
+- **PLACE** (Place.obend, state in `world/lib/Places.obend`): lawless (`PLACE_LAW`), exits are
+  `Card.Doorways` (owner's `door`/`undoor`), `keep` bounds traces (`traces` lens; 0 keeps none, the
+  card says nothing), `makes`/`made`/`count`, `making` calls the kind's `makeUnder`, the owner's `shape`
+  grafts `form make: kind: <choice>` plus the union of the makes' fields (`Forms.obend`, shared with
+  Kind). Also on the state for the garden to come: `policy`, `confirmFor`, `held` (Pending {principal,
+  kind, fields, needs}), `pageCheckpoint`. `kind/place` makes `place/<n>` from `name` (Kind's
+  `placeSeed`). Places.obend is not folded: arrival's sealed library is world/lib plus Avatar, Env and
+  Wake only (`Serve.arrival`, `Ops.arrivals`, hostproc `ARRIVAL`), and the avatar imports it.
+- **The root menu**: a link door is never clipped (`Menu.trieUnder` says it after the clipped branches);
+  the greeting's head drops "words reach hob; its spell runs unless the card asks first" (hob's line says
+  it). Seven doors and the bell arc fit 1,400 on the day the newest names show, greeting included
+  (`tests/test_genesis.py`). docs/previews/gsb-root-menu-v4.txt is that render.
 
-Remaining, in order (each a commit, suite green, pins re-recorded):
+Open, found in 4a:
 
-3b. (done, above) **Garden plants through kind/bell**: `Garden.grow` calls `kind/bell` `makeUnder {under: "garden",
-   fields: [colour, seed]}` instead of `world.create({package: "Bell"})`; `cistern` the same through
-   kind/cistern; then delete `world/objects/Bell.obend` and `Cistern.obend` (keep Cistern's `retain`
-   as a fixture in tests/fixtures/objects for test_await, test_outbound, test_replay, test_wakes),
-   `type Rain = Line` and `Rows.Colour` where unused. The planted card keeps VOICE's
-   `Planted, {handle}: an amber bell, “{seed}”, at {id}; {n} planted.` Watches name `field: marks`
-   (a bell's `rung` is a mark), so SEEDING's T1 and LIBRARY's plant walk say `marks`.
-   **The KINDS door** (seventh; `DOORS`: `('KINDS', 'Make a kind; anyone makes one of it.', 'kinds',
-   'count', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp,
-   a kind anyone makes')])`, Menu's `counted` gains `count`). **GROUND's `workshop make`**: `make {name,
-   description}` asks `world.interpret` for Bend from the prose (Policy's prompt for a draft), `check`s
-   it, holds it as `#n` for the describer (`held` row with `package`), and `adopt / n` calls
-   `world.make({package, seed: {}, law: "", requireAbsent, madeFrom: {object: workshop, receipt}})`.
-4. **PLACE** (with host13's misfit: `Card.Reply` gains `misfit {clause, reason}`, passed to `interpret`
-   with `held` per FLEX §2; Card's blank-reply usage lists inspect's `offered` only): make Place.obend lawless (its law to genesis as `PLACE_LAW`), add `makes:
-   List<Reference>`, `make` = the kind's `makeUnder` with `under` = the place, `traces` keep as a seed
-   field (0 for the Reading Room), exits as `Card.Doorways`; Places.obend and Policies.obend fold in;
-   the garden is a PLACE seed (`makes: [kind/bell]`) with `plant` as the alias of make (a generated
-   form like Kind's, from the makes' forms). Directory as a body over PLACE: the trie, the second miss,
-   hob's greeting (VOICE's surfaces table), FLEX §2/§4: `Policy.prompt` text, `world.interpret` gains
-   `held` and `misfit` (World.obend's line), the model's `none` (hob's silence), `card` (the card) and
-   `ask: q` (`hob: {q}` over the primary spell) handled in `Card.prose`; `Directory.learnedOf`,
-   `mentions`, `vocabulary`, `scanned`, `judged`, `ownFamily`, `knownFields` go. Scene as a body over
-   PLACE; rooms revisable (`passages` out of `fixed`, owner propose shows v+1). kind/place.
+- **A handed-on reply costs a reading whatever its reach.** `Card.handingOn` is a `send`, so the
+  directory's turn has reach `delivery` and hob is asked even for words that reached no one. Host: a
+  delivery keeps its origin turn's reach (or the card `call`s, which carries `TurnState.reach`; that
+  folds the directory's suspension into the card's turn). Check: a bell reply with no reach leaves
+  nothing pending.
+- **Place's generated make requires every field of every kind** (the union, each required): a place
+  making bells and cisterns could not make a cistern without a colour. Either one form per kind
+  (`plant` for bell, `dig` for cistern: the alias design below) or Kind's form gaining optional fields.
+  And `Kind.makeUnder` does not check fields against its form: a place's make passes text, so a choice
+  outside the options would seed. Check: `kind/bell makeUnder` with `colour: green` is refused by name.
+- `kind/place make` takes `name` only; description, traces and doors are the owner's lenses and spells
+  after. CATALOGUE §4's `/ traces: 0` and `/ makes: kind/bell` in one spell need optional fields.
+- hob is offered only the doors' own forms at the root (`Mentions.doorForms`); FLEX's 801-token root
+  counts the bell's rain as well. Decide: offer the first child's forms too, or say so in FLEX.
+
+Still open from 3b (host fixes pending; their expectedFailures stay until a binary has them):
+
+- **Atomic make**: host 122 lays an `extend` into a creation of the same turn, but a method the layer
+  adds is refused typeMismatch on the made kind (`kind/key make / seed: x`), so Kind keeps the self-sent
+  graft (`grafting`/`graft`). Host repro: tests/test_kinds with Kind's `bodied` (create, then extend).
+- **A taken id stops a kind**: `<under>/<name>/<count+1>` on a held id is the turn's requiredAbsence
+  (tests/test_await.py expectedFailure). Host: `create` minting past held ids.
+- **The workshop's lineage needs a receipt hash**: `adopt` passes `madeFrom.receipt: ""`; host: the
+  awaited `Plans.Receipt` gains `hash`, then `adopt` awaits the holding turn and cites it.
+
+Remaining, in order (each a commit, the suite green, pins re-recorded):
+
+4b. **The garden as a PLACE seed.** genesis `garden` from Place with `makes: [kind/bell, kind/cistern]`,
+   `policy`, owner ember, then `shape`. Design to settle first: `plant` as the alias of make. Proposal:
+   Place gains `verbs: List<{action, kind}>` (seed; `plant` -> kind/bell, `dig` -> kind/cistern) and the
+   shape layer emits one form per verb with that kind's exact fields, each calling `Super.making`;
+   `make` stays for a place whose kinds share their fields. Garden.obend's prose handling (held
+   plantings, confirm, macros, `hobbed`) moves to Card as FLEX objects 4 says (`Card` holds the
+   asked-first proposal per principal; Place has `held` for it), so a Place with a policy reads words
+   with its makes' forms. The planted card (`Planted, {handle}: an amber bell, “{seed}”, at {id}; {n}
+   planted.` / `Rain on it:` / the spell / `Another:`) and the garden card are VOICE's, pinned by
+   tests/test_objects.py: Place's render needs a `head` (seed text) and the made line per kind, or a
+   garden body; CATALOGUE §5 lists no garden body, so prefer a seed `head` and a per-verb `»` line.
+   The directory's GARDEN door watches `made` (`count`) instead of `children`; Wake's `watchBell` send
+   moves with it; `byColour` and the page (`publishPage`, merge) need a home or go (decide with the
+   owner: the page is ember's wiki checkpoint). Delete Garden.obend; tests re-pointed by
+   `tests.test_chain.town_kinds` and a `town_garden` helper.
+4c. **The directory as a body over PLACE** (world/bodies/directory.obend). A layer cannot add state, so
+   Place's state must carry what the directory keeps: exits as the doors need `examples`, `watch` and
+   `place` (a `Card.Doorway` has only label and to): either Doorway grows (Record's doors too) or Place
+   gains `doors: Relation<Menu.Listed>` beside `exits`; and `greeted`, `news`, `visits`, `missed`. Its
+   laws (`greeted` insertOnly) join PLACE_LAW for the root (genesis passes a law per instance). Keep the
+   Directory's 32 KiB bound.
+4d. **The scene as a body over PLACE** (world/bodies/scene.obend; Scenes, Spween unchanged): Scene's
+   state (title, start, passages, presence, vars, cooldown, requires, left) onto Place as with 4c;
+   its Bend law (cooldown, `crowded`) needs a law in a layer or text law clauses. **Rooms revisable**:
+   `passages` and `start` out of `law fixed`, so only the owner's reprogram with a migration (kind 1,
+   which the Bend law does not judge) revises them; the Workshop's propose shows `v+1`. kind/scene.
 5. **WATCH** from Wake (forms for `rows`/`writes`/`grows`/`turns`, `where` as one `column op value`
    line, `do: say`); tide as a body over WATCH; **THING** from Thing with the avatar body (`me`, `go`,
    `lend`, the `circle` lens); **BOND** from Deal with `deals` by spell. Arrival still names Avatar,
    Env, Wake modules (`Ops.lean` `arrivals`, `transport/hostproc.py` ARRIVAL): ask the host lane for
    Record/Watch/Thing with seeds before Env and Wake files go. kind/watch, kind/thing, kind/bond.
 6. Genesis to §5's table; the library's walks (`capsules/pages/<walk>.txt`, kind `walk`) and the four
-   "how do I" macros (`find {words}`); `Policy.prompt` per FLEX §2; every card in VOICE's register;
+   "how do I" macros (`find {words}`); every card in VOICE's register;
    this file rewritten as the surface as it stands.
 
 Folkways and arcs so far: folkway 1 and the seventh rain's `ring`/`strike` (bell body); folkway 3
-(Record's `kept`, `admit`); the flood's level (cistern body's `next`); the rest are still in their
-old objects (Place 4, 5; Thing 6; Deal 7; Directory 9; Scene 10; Tide 2) and must move with them.
+(Record's `kept`, `admit`); folkways 4 and 5 (Place: traces, `notPresent`); the flood's level (cistern
+body's `next`); the rest are still in their old objects (Thing 6; Deal 7; Directory 9; Scene 10;
+Tide 2) and must move with them.
 
 ## Summary
 

@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 TIMINGS = HERE / '.timings.json'
 
 
-LAYERS = ['kernel', 'host', 'objects', 'transport', 'rehearsal']  # each module's docstring names its own
+LAYERS = ['properties', 'scenarios', 'kernel', 'host', 'objects', 'transport', 'rehearsal']  # each module's docstring names its own
 SPLIT = 8.0  # seconds: a fresh-world class measured slower than this runs in that many parallel chunks
 
 

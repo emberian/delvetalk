@@ -148,7 +148,7 @@ form draft:
 def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
   if Plans.isNobody(state.policy) then refusing("noInterpreter", "Nobody reads words here; send the source: delvetalk workshop draft / name: {input.name} / source: <<BEND … BEND") else asked(input.name, input.description, context, state)
 def asked(name: String, description: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.interpret::<{name: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(draftForm(), context.object), tail: Lists.List.nil()}), policy: state.policy, model: ""}):
+  match world.interpret::<{name: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(draftForm(), context.object), tail: Lists.List.nil()}), policy: state.policy, model: "", held: "", misfit: ""}):
     case proposal(p): drafting(name, p.argument.source, context, state)
     case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND")
 def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:

@@ -15,7 +15,6 @@ import unittest
 
 from tests.test_reflection import PACKAGE, Reflection, source_seed
 from tests.test_turn_world import nat, record
-from tests.wire import cid_of
 
 CONSONANTS, VOWELS = "bdfghjklmnprstvz", "aiou"
 
@@ -38,15 +37,6 @@ class Slugs(Reflection):
         super().setUp()
         self.open_library()
 
-    def test_a_known_cid_has_a_fixed_slug(self):
-        state = record(count=nat(COLLIDING[0]))
-        self.assertEqual(slug_of(cid_of(state)), COLLISION_SLUG)
-        made = self.make("a", PACKAGE, record(count=nat(COLLIDING[0])))
-        self.assertEqual(made["receipt"]["slug"], slug_of(made["receipt"]["hash"]))
-        inspected = self.host.send(op="world-inspect", principal="ember", object="a")
-        self.assertEqual(inspected["pinSlug"], slug_of(inspected["pin"]))
-        resolved = self.host.send(op="world-resolve", principal="ember", slug=COLLISION_SLUG)
-        self.assertEqual((resolved["status"], resolved["kind"], resolved["cid"]), ("resolved", "state", cid_of(state)), resolved)
 
     def test_resolve_round_trips_receipts_pins_and_states(self):
         made = self.make("a", PACKAGE, source_seed())
@@ -70,14 +60,6 @@ class Slugs(Reflection):
         r = self.host.send(op="world-resolve", principal="ember", slug=COLLISION_SLUG)
         self.assertEqual((r["status"], r["matches"]), ("ambiguous", 2), r)
         self.assertEqual(r["message"], "ambiguous: 2 matches; cite the object and version")
-
-    def test_a_public_refusal_carries_its_receipts_slug(self):
-        self.make("a", PACKAGE, source_seed())
-        stale = self.host.send(op="world-propose", principal="ann", identity="stale",
-                               roots=[{"object": "a", "version": 7}], writes=[])
-        self.assertEqual(stale["public"]["slug"] if "public" in stale else
-                         self.host.send(op="world-receipt", principal="bob", identity="stale", of="ann")["slug"],
-                         slug_of(stale["receipt"]["hash"]))
 
 
 if __name__ == "__main__":

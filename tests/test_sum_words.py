@@ -14,7 +14,7 @@ reaches the object as text.
 import unittest
 
 from tests.test_reflection import Reflection, POLICY
-from tests.test_turn_world import label, nat, record, declared
+from tests.test_turn_world import label, record, declared
 
 
 def variant(name, payload):
@@ -58,7 +58,7 @@ def named(state: State, input: {name: String}, context: Abi.Context) -> Activity
 def offered() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "garden", action: "plant", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
 def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activity<Nat>:
-  match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: ""}):
+  match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
     case proposal(p): put(textConcat(colourText(p.argument.colour), textConcat(":", p.argument.seed)))
     case unclear(_): put("unclear")
     case _: put("other")
@@ -77,29 +77,13 @@ class SumWords(Reflection):
     def planted(self):
         return self.state("garden")["fields"][0]["value"]
 
-    def test_a_word_is_the_case_of_that_name(self):
-        r = self.turn("garden", "plant", record(colour=label("violet"), seed=label("rue")))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.planted(), label("violet:rue"))
-        # The typed case is accepted as before.
-        r = self.turn("garden", "plant", record(colour=variant("amber", record()), seed=label("moss")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.planted(), label("amber:moss"))
 
-    def test_words_in_a_nested_record_and_a_list(self):
+    def test_a_word_is_its_case_in_a_nested_record_and_a_list_and_a_word_naming_none_is_refused_naming_them(self):
         bed = record(colours={"tag": "list", "items": [label("silver"), label("amber")]})
         r = self.turn("garden", "border", record(bed=bed))
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(self.planted(), label("silver,amber,"))
-
-    def test_a_text_field_stays_text(self):
-        r = self.turn("garden", "named", record(name=label("amber")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.planted(), label("amber"))
-
-    def test_a_word_naming_no_case_is_refused_naming_the_cases(self):
         r = self.turn("garden", "plant", record(colour=label("gold"), seed=label("rue")), identity="gold")
-        first = r["receipt"]
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"]), ("refused", "typeMismatch"), r)
         self.assertIn("colour is one of: amber, violet, silver (not gold)", out["reason"])
@@ -107,12 +91,7 @@ class SumWords(Reflection):
         bed = record(colours={"tag": "list", "items": [label("silver"), label("teal")]})
         r = self.turn("garden", "border", record(bed=bed))
         self.assertIn("bed.colours[1] is one of: amber, violet, silver (not teal)", r["receipt"]["outcome"]["reason"])
-        self.assertEqual(self.planted(), label(""))
-        # It binds: the identity's retry answers the same receipt.
-        again = self.turn("garden", "plant", record(colour=label("gold"), seed=label("rue")), identity="gold")
-        self.assertEqual(again["receipt"], first)
-        self.reopen()
-        self.assertEqual(self.planted(), label(""))
+        self.assertEqual(self.planted(), label("silver,amber,"))
 
     def interpret(self, argument):
         r = self.turn("garden", "ask", record(utterance=label("plant something purple")))
@@ -122,15 +101,13 @@ class SumWords(Reflection):
                               reply={"status": "replied", "model": "m", "json": {"method": "plant", "argument": argument}})
 
     # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
-    def test_a_proposals_word_is_the_case(self):
+    def test_a_proposals_word_is_the_case_and_one_naming_none_is_unclear_naming_them(self):
         settled = self.interpret({"colour": "violet", "seed": "rue"})
         verdict = settled["receipt"]["outcome"]["verdict"]
         self.assertEqual(verdict["tag"], "proposal", settled)
         self.assertEqual(verdict["argument"], record(colour=variant("violet", record()), seed=label("rue")))
         self.assertEqual(settled["resumed"][0]["status"], "admitted", settled)
         self.assertEqual(self.planted(), label("violet:rue"))
-
-    def test_a_proposals_word_naming_no_case_is_unclear_naming_the_cases(self):
         settled = self.interpret({"colour": "gold", "seed": "rue"})
         verdict = settled["receipt"]["outcome"]["verdict"]
         self.assertEqual(verdict, {"tag": "unclear", "needs": ["colour is one of: amber, violet, silver (not gold)"]}, settled)

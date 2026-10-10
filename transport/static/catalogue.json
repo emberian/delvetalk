@@ -236,7 +236,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "every entry as an AT Protocol record, read only (docs/REPO.md)"
+   "does": "every entry as an AT Protocol record, read only, in a signed repository (docs/REPO.md)"
   },
   {
    "name": "did",
@@ -460,7 +460,7 @@
   },
   "RepoNotServed": {
    "code": 400,
-   "when": "no MST, no signed commit"
+   "when": "no signing key on this box: no MST, no signed commit"
   },
   "InvalidToken": {
    "code": 401,

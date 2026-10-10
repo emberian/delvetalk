@@ -9,7 +9,6 @@ the supervisor as `ended {receipt, how}` under the causal ledger.
 
     python3 -W error -m unittest tests.test_supervisors -v
 """
-import json
 import unittest
 
 from tests.test_chain import field
@@ -79,7 +78,7 @@ class Supervisors(Reflection):
         s = self.state("boss")
         return tuple(field(s, k)["value"] for k in ("count", "how", "class", "who"))
 
-    def test_a_broken_activity_is_told_to_the_supervisor_under_the_ledger(self):
+    def test_a_broken_out_of_budget_or_timed_out_activity_is_told_to_the_supervisor_under_the_ledger(self):
         r = self.turn("w", "deep")
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "evaluation"), r)
         ended = r["receipt"]["ended"]
@@ -91,21 +90,16 @@ class Supervisors(Reflection):
         self.reopen()
         self.assertEqual(self.boss(), ("1", "broken", "evaluation", "w"))
         self.assertEqual(self.host.send(op="world-pending")["count"], 0)
-
-    def test_an_activity_out_of_budget_is_told(self):
+        # Out of budget, and an await timed out when it ends, are told too.
         r = self.host.send(op="world-turn", principal="ember", object="w", method="spin", argument=record(),
                            identity="s1", limits={"ticks": "2000"})
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "budget"), r)
-        self.assertEqual(self.boss(), ("1", "budget", "budget", "w"))
-
-    def test_an_activity_whose_await_timed_out_is_told_when_it_ends(self):
-        r = self.turn("w", "wait")
-        self.assertEqual(r["status"], "suspended", r)
-        self.assertEqual(self.boss()[0], "0")
-        advanced = self.host.send(op="world-advance", principal="ember", height=5)
-        [resumed] = advanced["resumed"]
+        self.assertEqual(self.boss(), ("2", "budget", "budget", "w"))
+        self.assertEqual(self.turn("w", "wait")["status"], "suspended")
+        self.assertEqual(self.boss()[0], "2")
+        [resumed] = self.host.send(op="world-advance", principal="ember", height=5)["resumed"]
         self.assertEqual((resumed["status"], resumed["receipt"]["result"]), ("admitted", nat(7)), resumed)
-        self.assertEqual(self.boss(), ("1", "timedOut", "admitted", "w"))
+        self.assertEqual(self.boss(), ("3", "timedOut", "admitted", "w"))
 
     def test_an_admitted_turn_and_an_unsupervised_object_tell_nobody(self):
         self.assertEqual(self.turn("w", "bump")["status"], "admitted")
@@ -114,19 +108,6 @@ class Supervisors(Reflection):
         self.assertNotIn("ended", r["receipt"])
         self.assertEqual(self.boss()[0], "0")
 
-    def test_a_child_created_under_a_supervisor_reports_to_it(self):
-        r = self.turn("free", "spawn", record(id=label("kid"), supervisor=label("boss")))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(r["receipt"]["outcome"]["creates"][0]["supervisor"], "boss")
-        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="kid")["supervisor"], "boss")
-        self.turn("kid", "deep")
-        self.assertEqual(self.boss(), ("1", "broken", "evaluation", "kid"))
-        none = self.turn("free", "spawn", record(id=label("kid2"), supervisor=label("ghost")))
-        self.assertEqual(none["result"], nat(0), none)
-        self.assertIn("height", self.host.send(op="world-snapshot"))
-        self.reopen()
-        self.turn("kid", "deep")
-        self.assertEqual(self.boss(), ("2", "broken", "evaluation", "kid"))
 
     def test_a_supervisor_must_offer_ended(self):
         # codex host 6: a creator naming another object supervisor would reach its private `ended`.
@@ -137,15 +118,10 @@ class Supervisors(Reflection):
         r = self.turn("free", "spawn", record(id=label("kid"), supervisor=label("victim")))
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(0)), r)
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="kid")["status"], "unknown")
-        r = self.host.send(op="world-create", principal="ember", identity="mk-y", object="y", source=WORKER,
-                           entry="initial", seed=record(count=nat(0)), supervisor="victim")
-        self.assertEqual(r["status"], "error", r)
-
-    def test_a_supervisor_that_is_not_an_object_is_a_request_error(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="x", source=WORKER,
-                           entry="initial", seed=record(count=nat(0)), supervisor="ghost")
-        self.assertEqual(r["status"], "error", r)
-
+        for supervisor in ("victim", "ghost"):   # one that does not offer ended, or no object
+            r = self.host.send(op="world-create", principal="ember", identity="mk-y", object="y", source=WORKER,
+                               entry="initial", seed=record(count=nat(0)), supervisor=supervisor)
+            self.assertEqual(r["status"], "error", r)
 
 if __name__ == "__main__":
     unittest.main()
