@@ -58,7 +58,7 @@ def binary_pin(cache, binary):
 
 
 def sealed_library(library, directory):
-    """<directory>: the library plus the packages arrival creates from (world/objects/{Avatar,Env,Wake,Place}),
+    """<directory>: the library plus the packages arrival creates from (world/objects/{Avatar,Env,Wake}),
     rebuilt at each start; this is what hostd seals into the world."""
     shutil.rmtree(directory, ignore_errors=True)
     shutil.copytree(library, directory)
