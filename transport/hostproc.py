@@ -114,6 +114,13 @@ class Heaps:
         self.pool.clear()
 
 
+# Ops the host answers the same way when sent twice: reads, and a turn (bound to its identity). Only these are
+# re-sent on a new connection after a broken one; any other op surfaces "hostd unavailable" and the caller decides.
+IDEMPOTENT = frozenset({'world-status', 'world-view', 'world-card', 'world-objects', 'world-offers', 'world-history', 'world-receipt',
+                        'world-resolve', 'world-inspect', 'world-entries', 'world-entry', 'world-object', 'world-publications',
+                        'world-grants', 'world-source', 'world-sources', 'world-state-cid', 'world-addressee', 'hostd-info', 'world-turn'})
+
+
 class HostClient:
     """Same send() as Host, over hostd's socket. heap=<did> addresses a private heap; stateless=True the REPL process.
     One persistent connection per thread, re-made on EOF or when the socket path names a different hostd (a restart).
@@ -161,7 +168,7 @@ class HostClient:
                 return json.loads(line)
             except (OSError, ValueError):
                 self.close()
-                if fresh:  # a reused connection may only have gone stale: once more on a new one
+                if fresh or request.get('op') not in IDEMPOTENT:  # a stale reused connection: once more on a new one, if the op is safe to repeat
                     break
         return {'status': 'error', 'message': 'hostd unavailable'}
 
