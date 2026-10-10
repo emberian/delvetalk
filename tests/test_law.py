@@ -1,4 +1,9 @@
-"""The two-tier law (FOUNDATION section 13): after the law text admits an ordinary write, the
+"""The two-tier law: the Bend predicate judges after the law text admits, reads the roots it
+declares, runs under its own budget, and can never seal out a reprogram or amendment.
+
+Evidence for FOUNDATION §4 (layer: host).
+
+The two-tier law: after the law text admits an ordinary write, the
 package's Bend `law(old, new, request)` judges it under `Bounds.lawTicks`, reading the objects
 `lawReads()` names as roots. Reprograms and amendments are the law text's alone.
 

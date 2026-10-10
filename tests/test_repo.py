@@ -1,4 +1,9 @@
-"""The read-only AT Protocol repository (transport/repo.py, docs/REPO.md) against a real hostd: a Garden, a
+"""The journal as a read-only AT Protocol repository over a real hostd: records by slug and CID agree
+with the host, blocks hash to their CIDs, private records stay private.
+
+Evidence for FOUNDATION §2 Journal, §7 (layer: transport).
+
+The read-only AT Protocol repository (transport/repo.py, docs/REPO.md) against a real hostd: a Garden, a
 planting, a refusal, a publication and a private counter.
 
 Refuted by: a receipt read by slug, by CID and by world-receipt differing; a sync CAR whose block does not
@@ -12,6 +17,7 @@ import json
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from pathlib import Path
 
 from tests.host import serve, start_hostd, stop_hostd
@@ -21,7 +27,6 @@ from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, 
 from transport import delve, identity
 from transport.hostproc import LIBRARY, HostClient
 from transport.http import Front, RemoteHeaps
-import urllib.parse
 from transport.identity import ORIGIN
 
 HOST = urllib.parse.urlsplit(ORIGIN).netloc
@@ -151,7 +156,7 @@ class Repository(unittest.TestCase):
     def receipt(self, intent, reader='anonymous'):
         return self.host.send({'op': 'world-receipt', 'principal': reader, 'identity': intent, 'of': DID})
 
-    def test_did_document_describe_repo_and_handle(self):
+    def test_the_did_document_names_the_repo_and_its_handle_resolves_to_it(self):
         s, doc = self.get('/.well-known/did.json')
         self.assertEqual((s, doc['id'], doc['alsoKnownAs']), (200, REPO, ['at://' + HOST]), doc)
         self.assertEqual(doc['service'], [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer',
@@ -260,7 +265,7 @@ class Repository(unittest.TestCase):
         self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
 
-    def test_sources_publications_and_grants(self):
+    def test_sources_and_publications_are_records_and_no_grant_is_listed(self):
         s, sources = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'source')
         self.assertIn('Garden', [x['value']['name'] for x in sources['records']])
         first = sources['records'][0]

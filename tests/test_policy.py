@@ -1,4 +1,9 @@
-"""The interpretation policy as an object, and Garden.receive falling through to it.
+"""The interpretation policy is an object its owner teaches; prose to the garden suspends on it, and
+the model's answer plants, asks first, or is refused by name.
+
+Evidence for FOUNDATION §6 (layer: objects).
+
+The interpretation policy as an object, and Garden.receive falling through to it.
 
 `interpret` suspends the turn; `world-interpretations` lists what waits and
 `world-interpretation {id, reply}` settles it with the model's reply, which the host checks
@@ -99,7 +104,45 @@ class PolicyObject(Chain):
             reply = self.turn("policy", "receive", record(text=label(spell), post=label(""), slot=label("")), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
-        print("\n--- policy card ---\n" + card)
+        self.assertEqual(card, (
+            "✾ INTERPRETATION POLICY\n"
+            "\n"
+            "Model: claude-sonnet\n"
+            "I only propose. A card asks the speaker first before: reprogram, amend, give, offer.\n"
+            "When unsure I escalate to claude-opus.\n"
+            "What a card cannot fit twice goes to …r4keeper.\n"
+            "\n"
+            "Only its owner, ember, teaches it.\n"
+            "\n"
+            "What I know:\n"
+            "- moth: a seed\n"
+            "Participant: a fern\n"
+            "Spell:\n"
+            "delvetalk garden-1 plant seed: fern, colour: silver\n"
+            "\n"
+            "Participant: a moth\n"
+            "Spell:\n"
+            "delvetalk garden-1 plant seed: moth, colour: amber\n"
+            "\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk policy teach\n"
+            "    utterance: <text, 1 to 280 characters>\n"
+            "    spell: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk policy define\n"
+            "    word: <text, 1 to 64 characters>\n"
+            "    meaning: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk policy macro\n"
+            "    name: <text, 1 to 64 characters>\n"
+            "    pattern: <text, 1 to 280 characters>\n"
+            "    expansion: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk policy confirm\n"
+            "    action: <text, 1 to 64 characters>\n"
+            "    ask: <yes, no>\n"))
         self.assertIn("Model: claude-sonnet", card)
         self.assertIn("When unsure I escalate to claude-opus.\nWhat a card cannot fit twice goes to …r4keeper.\n", card)
         self.assertIn("delvetalk policy teach", card)
@@ -146,7 +189,36 @@ class PolicyObject(Chain):
         holes = self.turn("policy", "receive", record(text=label("delvetalk policy macro / name: all / pattern: {x} / expansion: garden plant"), post=label("")), principal="ember")
         self.assertIn("starts with a word", holes["result"]["payload"]["fields"][1]["value"]["value"])
         card = self.card("policy")
-        print("\n--- policy card with a macro ---\n" + card)
+        self.assertEqual(card, (
+            "✾ INTERPRETATION POLICY\n"
+            "\n"
+            "Model: claude-haiku\n"
+            "I only propose. A card asks the speaker first before: reprogram, amend, give, offer.\n"
+            "\n"
+            "Only its owner, ember, teaches it.\n"
+            "\n"
+            "What I know:\n"
+            "Macro moth-bell: moth for {who}\n"
+            "  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk policy teach\n"
+            "    utterance: <text, 1 to 280 characters>\n"
+            "    spell: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk policy define\n"
+            "    word: <text, 1 to 64 characters>\n"
+            "    meaning: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk policy macro\n"
+            "    name: <text, 1 to 64 characters>\n"
+            "    pattern: <text, 1 to 280 characters>\n"
+            "    expansion: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk policy confirm\n"
+            "    action: <text, 1 to 64 characters>\n"
+            "    ask: <yes, no>\n"))
         self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
 
     def test_a_macro_fires_without_the_model_and_a_non_match_falls_through_to_it(self):
@@ -166,7 +238,27 @@ class PolicyObject(Chain):
         [item] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(item["utterance"], "moth for")
         usage = self.say("delvetalk garden ?", identity="usage")["offers"][0]["text"]
-        print("\n--- garden ? with macros ---\n" + usage)
+        self.assertEqual(usage, (
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    colour: <amber, violet, silver>\n"
+            "    seed: <text, 1 to 80 characters>\n"
+            "\n"
+            "    delvetalk garden cistern\n"
+            "    name: <text, 0 to 120 characters>\n"
+            "\n"
+            "To change a field, reply (one field a spell):\n"
+            "\n"
+            "    delvetalk garden set\n"
+            "    confirm: <yes, no>\n"
+            "\n"
+            "Shortcuts (no model is asked):\n"
+            "    moth for {who}\n"
+            "      means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n"
+            "    a {colour} bell for {who} please\n"
+            "      means: delvetalk garden plant / colour: {colour} / seed: a bell for {who}\n"))
         self.assertIn("\nShortcuts (no model is asked):\n    moth for {who}\n      means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", usage)
 
     def test_the_sixteenth_example_is_the_last(self):
@@ -181,7 +273,26 @@ class PolicyObject(Chain):
         out = run("plantPrompt", context())
         self.assertEqual(out["status"], "finished", out)
         prompt = out["value"]["value"]
-        print("\n--- prompt ---\n" + prompt)
+        self.assertEqual(prompt, (
+            "You turn words into one spell.\n"
+            "\n"
+            "Lexicon:\n"
+            "- moth: a seed\n"
+            "\n"
+            "Examples:\n"
+            "Participant: a silver fern\n"
+            "Spell:\n"
+            "delvetalk garden-1 plant seed: a fern, colour: silver\n"
+            "\n"
+            "Offered forms (a spell is the delvetalk line, then one field: value line per field):\n"
+            "\n"
+            "delvetalk garden-1 plant\n"
+            "  colour: one of amber, violet, silver\n"
+            "  seed: text of 1 to 80 characters\n"
+            "\n"
+            "Answer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n"
+            "\n"
+            "Participant: plant me a moth"))
         for needle in ("You turn words into one spell.\n", "Lexicon:\n- moth: a seed\n",
                        "Participant: a silver fern\nSpell:\ndelvetalk garden-1 plant seed: a fern, colour: silver\n",
                        "delvetalk garden-1 plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
@@ -293,7 +404,21 @@ class PolicyObject(Chain):
         self.say("Could we plant a silver fern that remembers?")
         [item] = self.host.send(op="world-interpretations")["pending"]
         system = item["policy"]["system"]
-        print("\n--- system sent ---\n" + system)
+        self.assertEqual(system, (
+            "S\n"
+            "\n"
+            "Lexicon:\n"
+            "\n"
+            "Examples:\n"
+            "Offered forms (a spell is the delvetalk line, then one field: value line per field):\n"
+            "\n"
+            "delvetalk garden plant\n"
+            "  colour: one of amber, violet, silver\n"
+            "  seed: text of 1 to 80 characters\n"
+            "\n"
+            "Answer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n"
+            "\n"
+            "Participant: Could we plant a silver fern that remembers?"))
         self.assertTrue(system.startswith("S\n\nLexicon:\n"), system)
         for needle in ("Offered forms (a spell is the delvetalk line, then one field: value line per field):",
                        "delvetalk garden plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",

@@ -1,4 +1,9 @@
-"""Canonical DAG-CBOR for Data and journal entries, and CID identity.
+"""Every Data value and journal entry has one canonical DAG-CBOR form, and an entry's CID is that
+form's: the AppView's own post records encode to the CIDs it returned.
+
+Evidence for FOUNDATION §2 Journal (layer: kernel).
+
+Canonical DAG-CBOR for Data and journal entries, and CID identity.
 
 The decisive test is the first: records the AT Protocol AppView returned, with the CID it
 gave each, encode through our encoder to exactly that CID.

@@ -1,7 +1,13 @@
-"""The Automatafl table on commit-reveal seats: one opening round of the original 11x11
+"""Automatafl on commit-reveal seats: one opening round played through the host resolves to the
+qualified game's own result.
+
+Evidence for FOUNDATION §3 (layer: objects).
+
+The Automatafl table on commit-reveal seats: one opening round of the original 11x11
 game, played through the host. Each seat is its own object; a reveal awaits the
 opponent's commitment slot (the turn named Seats.commitIntent) and resumes when it is
-admitted. The resolved board equals the qualified game's pure result for the same pair."""
+admitted. The resolved board equals the qualified game's pure result for the same pair.
+"""
 import hashlib
 import json
 import os
@@ -67,7 +73,7 @@ class Table(Chain):
         mine = self.host.send(op="world-amend", principal="ember", identity="am-ember", object="table", version=version, law=law)
         self.assertEqual(mine["status"], "admitted", mine)
 
-    def test_one_opening_round(self):
+    def test_one_opening_round_resolves_to_the_qualified_games_result(self):
         s0, t0, s1, t1 = self.MOVES
         wrong = self.seal("north", NORTH, s0, t0, self.NONCE0, identity="at://glm/p/1")
         self.assertEqual(self.reason(wrong), "Seal in the turn named table/0/commit")
@@ -96,7 +102,20 @@ class Table(Chain):
         for seat in ("north", "south"):
             self.assertEqual((get(self.state(seat), "round"), get(self.state(seat), "digest")), (nat(1), label("")))
         card = self.turn("table", "receive", record(text=label(""), post=label(""), slot=label("")), principal="did:plc:zero")["offers"][0]["text"]
-        print("--- table card ---\n" + card)
+        self.assertEqual(card, (
+            "AUTOMATAFL, round 1: Seal, open, resolve.\n"
+            "\n"
+            "-.+..-+...-\n"
+            "-...+-+...-\n"
+            "...........\n"
+            ".+.......+.\n"
+            "--.......--\n"
+            "--...@...--\n"
+            "--.......--\n"
+            ".+.......+.\n"
+            "...........\n"
+            "-...+-+...-\n"
+            "-.+..-+...-\n"))
         self.assertTrue(card.endswith("-.+..-+...-\n"), card)    # row 10: the attractor moved from x=4 to x=2
         self.assertIn("\n-.+..-+...-\n-...+-+...-\n", card)      # row 0 likewise
         self.assertEqual(self.reason(self.turn("north", "next", principal=NORTH)), "Only the table moves the round.")

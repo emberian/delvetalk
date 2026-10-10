@@ -1,4 +1,9 @@
-"""The host-owned outbound channel: what the world says to whom, retained and readable under
+"""What the world says to whom: posts recorded so a reply finds its object, cards under the reader's
+authority, offers to their addressees, publications, public projections, the clock.
+
+Evidence for FOUNDATION §3, §5 (layer: host).
+
+The host-owned outbound channel: what the world says to whom, retained and readable under
 the reader's authority, and the posts transport made for objects, so replies find their way back.
 
 Each case is named by the defect that would make it fail.

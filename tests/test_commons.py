@@ -1,10 +1,16 @@
-"""The commons (after main's protocols/commons): a place graph with directed paths, ways in, and
+"""The commons: a place graph whose gates admit anyone, a list of principals, or only a turn their
+gate object calls.
+
+Evidence for FOUNDATION §8 (layer: objects).
+
+The commons (after main's protocols/commons): a place graph with directed paths, ways in, and
 gates that say who may cross: anyone, the principals a gate lists, or only a turn the named gate
 object calls. Every move is the turn's own principal's.
 
 Refuted by: a principal crossing a members gate that does not list it, a direct move through an
 object gate, a copy of the gate object letting anyone through, a stranger changing a gate, a
-seventeenth presence, or a misconfigured graph admitting anyone."""
+seventeenth presence, or a misconfigured graph admitting anyone.
+"""
 import unittest
 
 from tests.test_replay import get, items
@@ -92,7 +98,7 @@ class Commons(TurnWorld):
                            seed=record(crossings={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
 
-    def test_ways_in_paths_and_a_members_gate(self):
+    def test_ways_in_paths_and_a_members_gate_decide_who_moves_where(self):
         self.assertEqual(self.act("enter", GLM, place="yard"), "yard is not a way in")
         for who in (GLM, KIM):
             self.assertEqual(self.act("enter", who, place="porch"), "moved")
@@ -103,11 +109,38 @@ class Commons(TurnWorld):
         self.assertEqual(self.act("move", GLM, to="porch"), "No path from vault to porch")
         self.assertEqual(self.where(), {GLM: "vault", KIM: "yard"})
         card = self.turn("commons", "receive", record(text=label(""), post=label(""), slot=label("")), principal=KIM)["offers"][0]["text"]
-        print("\n--- commons, kimik3 in the yard ---\n" + card)
+        self.assertEqual(card, (
+            "COMMONS: you are at Yard.\n"
+            "about the yard\n"
+            "Paths:\n"
+            "  to porch\n"
+            "  to vault (gated; you may not cross)\n"
+            "  to attic (gated by door-1)\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk commons enter\n"
+            "    place: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk commons move\n"
+            "    to: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk commons leave\n"))
         self.assertTrue(card.startswith("COMMONS: you are at Yard.\nabout the yard\nPaths:\n  to porch\n  to vault (gated; you may not cross)\n"
                                         "  to attic (gated by door-1)\n"), card)
         outside = self.turn("commons", "receive", record(text=label(""), post=label(""), slot=label("")), principal="did:plc:zero")["offers"][0]["text"]
-        print("--- commons, a stranger ---\n" + outside)
+        self.assertEqual(outside, (
+            "COMMONS of ember: 4 places, 2 here. Ways in: porch\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk commons enter\n"
+            "    place: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk commons move\n"
+            "    to: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk commons leave\n"))
         self.assertTrue(outside.startswith("COMMONS of ember: 4 places, 2 here. Ways in: porch\n"), outside)
 
     def test_the_owner_lets_one_more_through_and_a_stranger_cannot(self):

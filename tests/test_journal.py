@@ -1,4 +1,9 @@
-"""Journal weight: each source module is journaled once, by CID, and each distinct package
+"""A source module is journaled once and named by CID after, a journal opens in one process at a
+time, and two hundred bells replay from one copy of Bell.
+
+Evidence for FOUNDATION §2 Journal (layer: host).
+
+Journal weight: each source module is journaled once, by CID, and each distinct package
 compiles once per process (creation and replay alike).
 
 Measured on this branch, 500 Bells from world/objects in a library world: before, create

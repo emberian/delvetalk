@@ -1,7 +1,13 @@
-"""Appointments: a booking creates an Appointment that waits in its own turn (an await on
+"""A booking creates an Appointment that waits for its time in its own turn and then notes the
+recipient; a cancelled one sends nothing.
+
+Evidence for FOUNDATION §3 Time (layer: objects).
+
+Appointments: a booking creates an Appointment that waits in its own turn (an await on
 a slot nobody settles, resumed timedOut when the clock passes) and then notes its
 recipient's Avatar. Cancelling writes the appointment, so the waiting turn resumes on a
-stale root and sends nothing."""
+stale root and sends nothing.
+"""
 import unittest
 
 from tests.test_chain import Chain

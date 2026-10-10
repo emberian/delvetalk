@@ -1,4 +1,9 @@
-"""Extend, not replace (FOUNDATION section 13, row 3): `reprogram {mode: extend}` and Plan
+"""Extend, not replace: a layer grafted by reprogram or the extend Plan overrides what it defines,
+stacks, survives snapshots and replay, and is judged by the object's law.
+
+Evidence for FOUNDATION §8 extend (layer: host).
+
+Extend, not replace: `reprogram {mode: extend}` and Plan
 `extend` add the offered module as a layer over the object's current code, which it sees as
 `Super`; what the layer defines overrides, everything else is the code below.
 

@@ -1,4 +1,9 @@
-"""create and await: objects born in turns, turns suspended on other turns' receipts.
+"""Objects are born in turns by create, and a turn suspended on another turn's receipt or a post
+resumes when it lands, times out by the clock, and survives restart.
+
+Evidence for FOUNDATION §3 (layer: host).
+
+create and await: objects born in turns, turns suspended on other turns' receipts.
 
 The clock is `world-advance`; the host never reads wall time.
 """

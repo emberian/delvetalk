@@ -1,4 +1,10 @@
-"""Program reflection: inspect, check, the sealed standard library, interpret as a suspension,
+"""Programs read programs: the sealed library, inspect and check under the turn's principal,
+interpret as a suspension, the sending object as a delivered turn's caller, reprogram through a
+forge.
+
+Evidence for FOUNDATION §3 (layer: host).
+
+Program reflection: inspect, check, the sealed standard library, interpret as a suspension,
 and the sending object as the delivered turn's caller.
 
 Each case is named by the defect that would make it fail. The library is world/lib (or a copy

@@ -1,4 +1,9 @@
-"""The Zulip transport against a fake Zulip server (users/me, GET and POST messages) on loopback, and a real hostd.
+"""The Zulip playtest transport against a fake Zulip and a real hostd: topics route as threads, the
+hourly quota holds, the welcome is recorded.
+
+Evidence for FOUNDATION §7 (layer: transport).
+
+The Zulip transport against a fake Zulip server (users/me, GET and POST messages) on loopback, and a real hostd.
 
     python3 -W ignore -m tests.run test_zulip
 """

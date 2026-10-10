@@ -1,4 +1,8 @@
-"""`textHasAny(text, words)`: whether any of the words is a whole word of the text (words
+"""textHasAny finds whole words in one pass, its tariff linear in the text and the word list.
+
+Evidence for FOUNDATION §1 (layer: kernel).
+
+`textHasAny(text, words)`: whether any of the words is a whole word of the text (words
 are maximal runs of ASCII letters, digits and non-ASCII scalars; ASCII letters compare
 lowercased). One pass over each text: its tariff is linear in the text plus the word list,
 where walking the text through Bend list functions cost about 200,000 ticks for an

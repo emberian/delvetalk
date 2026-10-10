@@ -1,4 +1,9 @@
-"""The tariff, pinned: exact tick counts of workloads whose code is fixed in this file, so
+"""The tariff, pinned: exact tick counts of workloads whose code lives in the test, so only a change
+to the machine's charges moves them.
+
+Evidence for FOUNDATION §2 Limits (layer: kernel).
+
+The tariff, pinned: exact tick counts of workloads whose code is fixed in this file, so
 only a change to the machine's charges can move them.
 
     python3 -m unittest tests.test_tariff -v
@@ -53,7 +58,7 @@ def size(n: Nat) -> Nat:
 
 
 class TariffTests(unittest.TestCase):
-    def test_bump_turn(self):
+    def test_a_bump_turn_costs_56_ticks_to_start_and_10_to_resume(self):
         h = Host()
         self.addCleanup(h.close)
         art = h.compile(PLANS, "bump")
@@ -62,7 +67,7 @@ class TariffTests(unittest.TestCase):
         print("\n  bump: start %d + resume %d ticks" % (started["ticksUsed"], resumed["ticksUsed"]))
         self.assertEqual((started["ticksUsed"], resumed["ticksUsed"]), (56, 10))
 
-    def test_plain_of_1025_leaves(self):
+    def test_document_plain_over_1025_leaves_costs_its_pinned_ticks(self):
         flat = run_pure("Document", "flat", nat(1025), probe=DOCUMENT, limits=BIG)
         sized = run_pure("Document", "sized", nat(1025), probe=DOCUMENT, limits=BIG)
         print("\n  plain, 1,025 leaves: %d ticks (was 336,659); size walk %d; plain's own work %d"

@@ -1,4 +1,9 @@
-"""World kernel: object store, hash-chained journal, commit-on-roots, receipts.
+"""The world kernel: create and view, per-field edits, commit on current roots, laws, retries,
+history, replay to the same head, and a tampered journal refused by height.
+
+Evidence for FOUNDATION §2 (layer: host).
+
+World kernel: object store, hash-chained journal, commit-on-roots, receipts.
 
 Python only drives bytes over stdin/stdout; every decision is Lean's. Each case
 is named by the defect that would make it fail.

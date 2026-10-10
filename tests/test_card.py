@@ -1,6 +1,12 @@
-"""The uniform card protocol (world/lib/Card.obend): receive {text, post, slot} routes a spell
+"""The card protocol: a spell naming the card runs its action, an empty reply gets the card, prose
+addressed to nobody gets nothing.
+
+Evidence for FOUNDATION §5 (layer: objects).
+
+The uniform card protocol (world/lib/Card.obend): receive {text, post, slot} routes a spell
 naming the object to one of its forms, and answers anything else with the card and its
-forms. Lantern is the smallest object that follows it."""
+forms. Lantern is the smallest object that follows it.
+"""
 import unittest
 
 from tests.host import HostCase
@@ -69,7 +75,7 @@ class CounterCard(TurnWorld):
                            entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
 
-    def test_a_bump_spell_bumps_and_prose_gets_the_count(self):
+    def test_a_bump_spell_bumps_an_empty_reply_shows_the_count_and_prose_gets_nothing(self):
         r = self.turn("k", "receive", heard("delvetalk k bump"), principal="glm")
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
         r = self.turn("k", "receive", heard(""), principal="glm")

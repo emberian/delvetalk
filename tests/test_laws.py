@@ -1,4 +1,9 @@
-"""Laws in source (FOUNDATION section 2 and section 13's two tiers) on the objects.
+"""The world's objects carry their laws in source: only owners change directories and admit anthology
+lines, and Tide's and Wake's predicates refuse what their code would.
+
+Evidence for FOUNDATION §4 (layer: objects).
+
+Laws in source on the objects.
 
 Policy: `owner: (request.kind == 0 and request.method == "describe") or request.subject == new.owner`.
 Directory: only its owner adds or removes a door. Anthology: anyone submits, only its owner admits.
@@ -12,7 +17,8 @@ the real one makes (and, for Wake, whose law text admits any ordinary write, so 
 stands); the refusal's clause is the predicate's: "self", "tooSoon", "owner".
 
 Refuted by: a stranger's add, remove or admit committing; an owner's being refused; a stranger's
-submit being refused; the variants committing once the host runs predicates."""
+submit being refused; the variants committing once the host runs predicates.
+"""
 import unittest
 
 from tests.test_chain import nil, reference

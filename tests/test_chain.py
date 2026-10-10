@@ -1,4 +1,9 @@
-"""The message chains: bell rings, door opens, lantern lights; and a cycle.
+"""Sends ring a bell that opens a door that lights a lantern, delivered in the settling pass; a cycle
+ends in a budget refusal.
+
+Evidence for FOUNDATION §3 Delivery (layer: host).
+
+The message chains: bell rings, door opens, lantern lights; and a cycle.
 
 Both tests drive the host's `send` machinery: `world-turn` answers a send with a
 delivery id, and the settling pass after every durable op runs pending deliveries

@@ -1,4 +1,10 @@
-"""Turn-by-turn activity execution through delvetalk-obend (turn-start / turn-resume).
+"""An activity yields Plans and resumes from a checkpoint bound to its package, object, principal,
+intent and roots; a tampered or foreign checkpoint is refused by name, exhaustion is a named
+silence.
+
+Evidence for FOUNDATION §2 Turn (layer: kernel).
+
+Turn-by-turn activity execution through delvetalk-obend (turn-start / turn-resume).
 
 Each test names what would refute it. One host process per test unless the test
 is about process boundaries.

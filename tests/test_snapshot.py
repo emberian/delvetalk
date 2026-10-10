@@ -1,4 +1,9 @@
-"""Snapshots: the store at a height in canonical bytes; world-open resumes from the newest valid
+"""A snapshot every thousand entries lets a reopen replay only the tail; a tampered, foreign or
+forged snapshot is refused by name and replay used instead.
+
+Evidence for FOUNDATION §2 Journal (layer: host).
+
+Snapshots: the store at a height in canonical bytes; world-open resumes from the newest valid
 one and replays only later entries; one that fails a check is refused by name and the previous
 one (or full replay) is used; `verify: true` replays everything and refuses a snapshot that
 disagrees with replay at its height.

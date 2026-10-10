@@ -1,4 +1,9 @@
-"""send and the causal ledger: deliveries run as later turns, budgets only shrink.
+"""A send runs as a later turn under the sender's principal with a causal ledger that only shrinks:
+depth and work run out by name, and a restart neither loses nor mints a delivery.
+
+Evidence for FOUNDATION §3 Delivery (layer: host).
+
+send and the causal ledger: deliveries run as later turns, budgets only shrink.
 
 Deliveries run in the settling pass after every durable op (at most 64 per op), so a
 sending turn's reply carries them as `delivered`; `world-deliver` runs what is left.

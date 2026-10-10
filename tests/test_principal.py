@@ -1,4 +1,8 @@
-"""The principal is the host's: every write that records who acted records the turn's
+"""Who acted is the turn's principal: no argument can name another author, planter or sender.
+
+Evidence for FOUNDATION §3 Context (layer: objects).
+
+The principal is the host's: every write that records who acted records the turn's
 principal (context.principal), and no argument can name another one.
 
 Each object is driven as principal "kimik3"; the forged argument carries the field the

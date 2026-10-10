@@ -1,4 +1,9 @@
-"""Kernel integration in the host: an argument that does not conform to the method's input is
+"""An argument the method does not take is the journaled class typeMismatch, saying what the method
+takes; a turn can be profiled without changing its receipt; inspect answers forms.
+
+Evidence for FOUNDATION §2 Turn (layer: host).
+
+Kernel integration in the host: an argument that does not conform to the method's input is
 the journaled class `typeMismatch`; `profile: true` on `world-turn` answers the tick breakdown of
 the turn's activity segments; `inspect` answers the object's actions as forms derived from the
 artifact's method table.

@@ -1,4 +1,9 @@
-"""The authority model: a write changes only the running object, cross-object change is
+"""A write changes only the running object; a change to another object is a call its own law judges,
+and the law sees who called.
+
+Evidence for FOUNDATION §3, §4 (layer: host).
+
+The authority model: a write changes only the running object, cross-object change is
 a call judged by the callee's own law, and the law sees who called.
 
 Each case is named by the defect that would make it fail. The fixture object `Ledger`

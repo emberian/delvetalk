@@ -1,3 +1,8 @@
+"""Genesis seeds the town's world once through a real hostd: every door resolves, the opener's handle
+shows, and the door pages are published.
+
+Evidence for FOUNDATION §7, §11 (layer: transport).
+"""
 import json
 import tempfile
 import unittest

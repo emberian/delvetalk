@@ -1,4 +1,9 @@
-"""Every entry of every world closure keeps its source pin and still compiles.
+"""Every entry of every world module keeps its source pin and still compiles, and every object
+activity yields over the Plan library and hears its silences.
+
+Evidence for FOUNDATION §2 Store (layer: objects).
+
+Every entry of every world closure keeps its source pin and still compiles.
 
 An object's pin is the CID of its source closure (the artifact's `sourcesSha256`); the
 compiled packet is an observation beside it (`compiled {binary, packet}`), which replay

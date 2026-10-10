@@ -1,4 +1,9 @@
-"""Host-side Document projection: render-document, and the `offer` Plan.
+"""The host renders a Document byte for byte as Bend's Document.plain does, and an offer turn's card
+is retained on its receipt and replayed.
+
+Evidence for FOUNDATION §5 (layer: host).
+
+Host-side Document projection: render-document, and the `offer` Plan.
 
 `render` must equal Bend's Document.plain byte for byte and `lines` Document.lines.
 Run from the repository root:  python3 -m unittest tests.test_document -v

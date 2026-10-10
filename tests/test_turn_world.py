@@ -1,4 +1,9 @@
-"""world-turn: activities run against the durable store and commit once.
+"""A turn runs against the durable store and commits once: receipts name roots, a retry returns the
+same receipt, views are typed by the reader's authority.
+
+Evidence for FOUNDATION §2 Turn (layer: host).
+
+world-turn: activities run against the durable store and commit once.
 
 Counter and Bell are the real world/objects files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """

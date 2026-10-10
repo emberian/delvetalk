@@ -1,4 +1,9 @@
-"""spween scenes lowered to a Scene's seed (world/lib/Spween.obend), and made by posting one.
+"""A spween scene parses to a Scene's seed and is made by posting one; guards, effects, END and the
+cooldown law hold.
+
+Evidence for FOUNDATION §8 (layer: objects).
+
+spween scenes lowered to a Scene's seed (world/lib/Spween.obend), and made by posting one.
 
 Spween.parse reads frontmatter (id, title, cooldown, requires), `=== passage`s, prose,
 `* [label]` choices with `{ condition }` or `when condition` guards, `~ k = v` / `+=` / `-=`
@@ -9,7 +14,8 @@ context.clock (refused by name in Bend first, by the law for a forged write).
 
 Refuted by: the README's tavern parsing when it names a weight, or not parsing without it; a
 call, a has: or an effect outside a choice parsing; a guarded choice taken; END not leaving;
-a reader re-entering inside the cooldown, by spell or by a forged write; or not after it."""
+a reader re-entering inside the cooldown, by spell or by a forged write; or not after it.
+"""
 import unittest
 
 from tests import test_chain
@@ -115,7 +121,6 @@ class Parse(unittest.TestCase):
 
     def test_the_tavern_without_its_weight_lowers_to_two_passages(self):
         text, ticks = summary(TAVERN.replace("weight: 10\n", ""))
-        print("\n--- tavern (%d ticks) ---\n%s" % (ticks, text))
         self.assertEqual(text, "tavern-encounter / The Mysterious Stranger / start intro / cooldown 0 / requires \n"
                                "=== intro: A hooded figure sits alone in the corner of the tavern.\n"
                                "  * Approach them [courage >= 5] (courage sub 1) -> conversation\n"
@@ -125,7 +130,6 @@ class Parse(unittest.TestCase):
 
     def test_the_well_keeps_its_cooldown_requirements_guards_and_divert(self):
         text, ticks = summary(WELL)
-        print("\n--- well (%d ticks) ---\n%s" % (ticks, text))
         self.assertEqual(text, "wishing-well / The Wishing Well / start intro / cooldown 3 / requires well_sealed falsy \n"
                                "=== intro: A mossy well hums under the square.\nCoins glint far below.\n"
                                "  * Drop a coin [wished falsy ] (coins add 2; wished set true) -> deeper\n"
@@ -177,7 +181,6 @@ class Made(test_chain.Chain):
 
     def test_a_spween_block_makes_a_scene_and_a_second_is_refused_its_name(self):
         r = self.made()
-        print("\n--- made (%s ticks) ---\n%s" % (r["ticksUsed"], r["offers"][0]["text"]))
         self.assertEqual(r["offers"][0]["text"], "SCENE The Wishing Well is at scene/wishing-well: 2 passages. "
                                                  "Reply delvetalk scene/wishing-well enter to begin.\n")
         _, state = self.view(self.WELL_ID)
@@ -196,7 +199,23 @@ class Made(test_chain.Chain):
         self.assertEqual(self.say(well, "delvetalk %s enter" % well)["result"]["label"], "done")
         self.assertEqual(self.say(well, "delvetalk %s choose / choice: Drop a coin" % well)["result"]["label"], "done")
         deeper = self.card(well)
-        print("\n--- deeper ---\n" + deeper)
+        self.assertEqual(deeper, (
+            "SCENE The Wishing Well (1 here), you are at deeper:\n"
+            "The water answers with a low bell.\n"
+            "Choices:\n"
+            "  * Make a wish\n"
+            "  * Continue\n"
+            "coins = 2\n"
+            "wished = true\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene/wishing-well enter\n"
+            "\n"
+            "    delvetalk scene/wishing-well choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene/wishing-well leave\n"))
         self.assertIn("you are at deeper:\nThe water answers with a low bell.\nChoices:\n  * Make a wish\n  * Continue\n", deeper)
         self.assertNotIn("Climb down", deeper)
         self.assertIn("coins = 2\nwished = true\n", deeper)

@@ -1,4 +1,10 @@
-"""Programmable from within: reprogram and amend, judged by the object's own law."""
+"""An object is reprogrammed and its law amended from within, each judged by its own law; the default
+law lets anyone invoke and only the creator change the code.
+
+Evidence for FOUNDATION §3, §4 (layer: host).
+
+Programmable from within: reprogram and amend, judged by the object's own law.
+"""
 import unittest
 
 from tests.test_turn_world import ON_DISK, TurnWorld, closure, label, nat, record, fixture

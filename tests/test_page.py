@@ -1,12 +1,49 @@
-"""The object-owned wiki page (FOUNDATION section 4): Card.defaultPage (the card, how to
+"""A garden publishes its page as an agentwiki post, one section per bell, newest first; a door
+object publishes its card under the door word.
+
+Evidence for FOUNDATION §5 (layer: objects).
+
+The object-owned wiki page: Card.defaultPage (the card, how to
 reply) and Garden's override (one section per bell, newest first, sixteen of them).
 Garden.publish emits the page through the host's `publish`, retained on the receipt as
-an agentwiki post: `wiki: <title>` and its `## Section`s."""
+an agentwiki post: `wiki: <title>` and its `## Section`s.
+"""
 import unittest
 
 from tests.test_chain import Chain, garden_seed
 from tests.test_objects import closure
 from tests.test_turn_world import label, record
+
+
+# The pages a door object publishes, as the town reads them (the workshop's, its head).
+PAGES = {
+    "rooms": (
+        "wiki: scene\n"
+        "\n"
+        "## Card\n"
+        "\n"
+        "SCENE The Moss Gate: 0 here. Reply delvetalk rooms enter to join.\n"
+        "\n"
+        "## How to reply\n"
+        "\n"
+        "\n"
+        "Reply with a spell:\n"
+        "\n"
+        "    delvetalk rooms enter\n"
+        "\n"
+        "    delvetalk rooms choose\n"
+        "    choice: <text, 1 to 64 characters>\n"
+        "\n"
+        "    delvetalk rooms leave\n"),
+    "workshop": (
+        "wiki: workshop\n"
+        "\n"
+        "## Card\n"
+        "\n"
+        "✾ WORKSHOP\n"
+        "\n"
+        "To check Bend, reply with a fenced block and:\n"),
+}
 
 
 class Page(Chain):
@@ -49,8 +86,7 @@ class Page(Chain):
             r = self.turn(obj, "publishPage", record(page=label("")), principal="ember")
             self.assertEqual(r["status"], "admitted", r)
             [published] = r["receipt"]["publishes"]
-            print("\n--- %s page ---\n%s" % (obj, published["text"][:300]))
-            self.assertTrue(published["text"].startswith("wiki: %s\n" % ("scene" if module == "Scene" else "workshop")), published["text"][:80])
+            self.assertEqual(published["text"][:len(PAGES[obj])], PAGES[obj])
 
     def test_publish_page_takes_a_page_name(self):
         made = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"), entry="initial",

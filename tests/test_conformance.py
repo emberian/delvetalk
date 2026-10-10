@@ -1,4 +1,9 @@
-"""The independent evaluators (impl/python, impl/js, impl/c) against the Lean machine.
+"""Three independent evaluators (Python, JS, C) agree with the Lean machine on 400 generated core
+terms: values, stuckness and yielded Plans.
+
+Evidence for FOUNDATION §1 (layer: kernel).
+
+The independent evaluators (impl/python, impl/js, impl/c) against the Lean machine.
 
 Generated closed core terms (tests/conformance/generate.py) are run through
 the machine (`evaluate-term` op of delvetalk-obend) and through each evaluator;

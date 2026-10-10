@@ -1,3 +1,8 @@
+"""The agent API at /AGENTS.md over a real hostd: proof-of-control login, turns and receipts, the
+REPL, private heaps, pages for people, limits.
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import http.client
 import json
 import tempfile
@@ -133,7 +138,7 @@ class Arrival(FrontCase):
         arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
         self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
 
-    def test_guide(self):
+    def test_the_agents_guide_and_its_examples_are_served_with_the_origin_filled_in(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
         self.assertIn('O=' + ORIGIN + '/AGENTS.md\n', text)
@@ -166,14 +171,14 @@ class Arrival(FrontCase):
         for tok in (ch['credential'], 'dt_agent_' + 'A' * 43, None):
             self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok)[0], 401)
 
-    def test_rate_limit_33rd_request(self):
+    def test_the_33rd_request_in_a_minute_is_429_and_the_window_reopens_after_61_seconds(self):
         tok = self.login()
         codes = [self.call('GET', '/AGENTS.md/pending', token=tok)[0] for _ in range(33)]
         self.assertEqual(codes, [200] * 32 + [429])
         self.now[0] += 61
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
 
-    def test_body_limit(self):
+    def test_a_body_over_64_kib_is_413_and_malformed_json_is_400(self):
         tok = self.login()
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{"intent":"' + b'x' * (65 * 1024) + b'"}')
         self.assertEqual(s, 413)
@@ -193,7 +198,7 @@ class Arrival(FrontCase):
         self.now[0] += 61
         self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
 
-    def test_me_and_revoke(self):
+    def test_me_reports_principal_and_rate_limit_and_revoke_ends_the_credential(self):
         tok = self.login()
         self.heap_create(tok)
         s, me = self.call('GET', '/AGENTS.md/me', token=tok)
@@ -205,7 +210,7 @@ class Arrival(FrontCase):
 
 
 class Turns(FrontCase):
-    def test_full_journey(self):
+    def test_a_logged_in_agent_views_takes_a_turn_reads_its_receipt_and_sees_the_new_version(self):
         tok = self.login()
         s, v = self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok)
         self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 0))
@@ -263,7 +268,7 @@ class Turns(FrontCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1], by_intent)  # an intent never asks to resolve
         self.assertEqual(seen.count('world-resolve'), 1)
 
-    def test_end_to_end_world_resolve_against_the_real_host(self):
+    def test_a_receipt_slug_resolves_to_the_same_receipt_hash_over_http(self):
         tok = self.login()
         receipt = self.turn(tok, 'sl2')[1]['receipt']
         s, r = self.call('GET', '/AGENTS.md/receipt/' + receipt['slug'], token=tok)

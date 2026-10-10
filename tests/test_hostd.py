@@ -1,3 +1,8 @@
+"""hostd is the one writer: a private socket, one lock, concurrent clients in one chain, a respawned
+host replaying to the same receipts, private heaps and the sealed library.
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import io
 import json
 import os

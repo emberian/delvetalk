@@ -1,4 +1,9 @@
-"""Handlers as cards and judge as a dry run (FOUNDATION section 13, row 4).
+"""A handler object answers a callee's Plans before the host does, and judge answers the law's
+verdict on edits without committing them.
+
+Evidence for FOUNDATION §8 handlers (layer: host).
+
+Handlers as cards and judge as a dry run.
 
 `run {object, method, argument, handler}` runs the callee as `call` does, but offers every Plan
 the callee yields to the handler's pure `handle(state, plan, context)` first: `answer {response}`

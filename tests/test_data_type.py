@@ -1,4 +1,9 @@
-"""The universal first-order type `Data` (`Data.of::<T>(value)`, no elimination).
+"""Data, the universal first-order type: one Plan carries any payload shape, Data.of checks its
+declared type, nothing takes Data apart, and a malformed value is refused on every admission path.
+
+Evidence for FOUNDATION §3 (layer: kernel).
+
+The universal first-order type `Data` (`Data.of::<T>(value)`, no elimination).
 
 Each test names what would refute it.
 """

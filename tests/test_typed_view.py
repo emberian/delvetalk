@@ -1,4 +1,9 @@
-"""Typed foreign views: `Plan.view::<S>({object})` is answered `viewed {version, state: S}`
+"""A typed foreign view answers another package's state as the type the viewer names, checked by the
+host.
+
+Evidence for FOUNDATION §3 (layer: kernel).
+
+Typed foreign views: `Plan.view::<S>({object})` is answered `viewed {version, state: S}`
 for a first-order S the viewer's closure names, and the arm is typed by S. The compiler
 lowers it to the Plan `viewAs {object, as}` naming the response arm `viewed:S`, which the
 package's Plan and Response instances gain; the host answers that arm after checking the

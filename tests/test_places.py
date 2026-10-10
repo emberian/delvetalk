@@ -1,4 +1,9 @@
-"""Places, things and avatars: the MUD floor as ordinary objects.
+"""Places, things and avatars are ordinary objects: moving, taking, offering and accepting, scoped
+commands, talk, copies and traces, each refused by name where it should be.
+
+Evidence for FOUNDATION §8 MUD floor (layer: objects).
+
+Places, things and avatars: the MUD floor as ordinary objects.
 
 Compile-level types for every method, then turns through the real host.
 
@@ -151,7 +156,12 @@ class Floor(Chain):
         self.assertTrue(second.startswith("Already offered to kimik3 until "), second)
         self.assertEqual(self.refusal_reason(self.accept("mallory")), "It is offered to kimik3")
         card = self.card("stone", principal="kimik3")
-        print("\n--- stone, offered, read by kimik3 ---\n" + card)
+        self.assertEqual(card, (
+            "stone\n"
+            "a stone\n"
+            "Held by glm.\n"
+            "Offered to kimik3 (you): accept it from your avatar until clock 50.\n"
+            "(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n"))
         self.assertIn("Offered to kimik3 (you): accept it from your avatar until clock ", card)
         self.assertEqual(self.result_label(self.accept()), "done")
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
@@ -275,7 +285,7 @@ class Floor(Chain):
 
     # --- paths through remove -----------------------------------------------------------
 
-    def test_leave_removes_from_present(self):
+    def test_leaving_removes_the_avatar_from_who_is_here_and_traces_the_leave(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
         reply = self.turn("porch", "leave", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
@@ -343,7 +353,6 @@ class Scoped(Chain):
 
     def test_look_shows_the_place_and_two_of_a_name_are_asked_about(self):
         look = self.say("look")
-        print("\n--- look ---\n" + look["offers"][0]["text"])
         self.assertEqual(look["offers"][0]["text"], "Porch\nabout Porch\nHere: glm\nHere: kimik3\nLying here: stone\nExit in to garden\nYou are here.\n")
         self.make("porch2", closure("Place"), place_seed("Porch", present=["glm"], things=["stone", "pebble"]))
         self.make("pebble", closure("Thing"), thing_seed("stone", location="porch2"))
@@ -370,7 +379,7 @@ class Talk(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
-    def test_say_emote_and_whisper(self):
+    def test_say_and_emote_reach_everyone_present_whisper_one_and_a_stranger_is_refused(self):
         said = self.say("delvetalk porch say / line: the lamp is lit", "glm")
         self.assertEqual(said["result"]["label"], "done", said)
         # The newest arrival first; each avatar's principal gets the line.
@@ -399,7 +408,7 @@ class Copies(Chain):
         self.assertEqual(r["status"], "admitted", r)
         delivered = r.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
         texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
-        print("\n--- copy ---\n%r" % texts)
+        self.assertEqual(texts, ["Copied stone as stone/thing/1.\n"])
         self.assertTrue(any(t.startswith("Copied stone as ") for t in texts), (texts, delivered[:1]))
         copied = [t for t in texts if t.startswith("Copied stone as ")][0][len("Copied stone as "):-2]
         state = self.state(copied)
@@ -428,7 +437,30 @@ class Traces(Chain):
             self.turn("porch", "leave", record(), principal="did:plc:glmglmglmglm", identity="l%d" % i)
         self.turn("porch", "leave", record(), principal="did:plc:glmglmglmglm", identity="l-again")
         card = self.turn("porch", "receive", record(text=label(""), post=label("")), principal="visitor")["offers"][0]["text"]
-        print("\n--- traces ---\n" + card)
+        self.assertEqual(card, (
+            "Porch\n"
+            "about Porch\n"
+            "Traces:\n"
+            "  glm.delve.town leave: refused notHere\n"
+            "  glm.delve.town leave\n"
+            "  glm.delve.town enter\n"
+            "  glm.delve.town leave\n"
+            "  glm.delve.town enter\n"
+            "  glm.delve.town leave\n"
+            "  glm.delve.town enter\n"
+            "  glm.delve.town leave\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk porch say\n"
+            "    line: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk porch emote\n"
+            "    line: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk porch whisper\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "    line: <text, 1 to 280 characters>\n"))
         lines = card.split("Traces:\n")[1].split("\nReply with a spell:")[0].strip("\n").split("\n")
         self.assertEqual(len(lines), 8)
         self.assertEqual(lines[0], "  glm.delve.town leave: refused notHere")

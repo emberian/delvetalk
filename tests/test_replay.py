@@ -1,4 +1,9 @@
-"""FOUNDATION section 10: the hour of 2026-10-09, replayed as proposals.
+"""The hour of 2026-10-09, step by step on the host: planting, rain, the second cistern refused, the
+strike awaiting the planting post, the anthology.
+
+Evidence for FOUNDATION §11 (layer: rehearsal).
+
+The hour of 2026-10-09, replayed as proposals.
 
 Every step runs on the host: Garden creates the bell and the cistern, the strike awaits the
 planting turn's receipt. Authors and planters are the turns' principals.

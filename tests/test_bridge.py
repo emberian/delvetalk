@@ -1,3 +1,8 @@
+"""The bridge turns observed posts into turns in creation order, routes a reply by its nearest
+recorded ancestor, and drafts each offer once, never posting.
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import io
 import json
 import tempfile
@@ -173,7 +178,7 @@ class Bridging(BridgeCase):
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertEqual(out.getvalue(), '')
 
-    def test_real_garden_receive_end_to_end(self):
+    def test_a_spell_post_to_a_real_garden_is_bridged_into_a_draft_saying_planted(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)

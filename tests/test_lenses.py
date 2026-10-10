@@ -1,11 +1,17 @@
-"""Lenses (FOUNDATION section 13, row 2): an object's exposed scalar fields as Form.Lens {field,
+"""An object's exposed fields are lenses: `set` writes one through its kind and its owner, `?` lists
+every form and lens.
+
+Evidence for FOUNDATION §5 Spell grammar (layer: objects).
+
+Lenses: an object's exposed scalar fields as Form.Lens {field,
 form, put}. Card's answerLensed answers `delvetalk <card> set` with one `<field>: <value>` line by
 judging the value against the lens's kind and writing the lens's put; `delvetalk <card> ?` answers
 the usage card: every form, then every lens. Policy's model, escalate and system and an Avatar's
 handle are lenses; Policy.setModel is gone.
 
 Refuted by: a stranger's set changing the policy, a value outside its kind being written, a set of
-two fields, a field without a lens, or `?` omitting a lens."""
+two fields, a field without a lens, or `?` omitting a lens.
+"""
 import unittest
 
 from tests import test_chain, test_policy
@@ -80,7 +86,6 @@ class Lenses(test_chain.Chain):
         self.policy()
         r = self.say("delvetalk policy ?", principal="glm")
         text = r["offers"][0]["text"]
-        print("\n--- policy ? ---\n" + text)
         self.assertEqual(r["result"]["label"], "usage")
         self.assertEqual(text, "\nReply with a spell:\n\n    delvetalk policy teach\n    utterance: <text, 1 to 280 characters>\n"
                                "    spell: <text, 1 to 280 characters>\n\n    delvetalk policy define\n    word: <text, 1 to 64 characters>\n"
@@ -106,7 +111,7 @@ class Lenses(test_chain.Chain):
         self.assertEqual(self.say("delvetalk %s set\nhandle: glm.bsky" % GLM, principal=GLM, obj=GLM)["result"]["label"], "done")
         self.assertEqual(self.field("handle", GLM), "glm.bsky")
 
-    def test_set_model_is_gone(self):
+    def test_set_model_is_no_longer_a_policy_method(self):
         self.assertNotEqual(compile_job(closure("Policy"), "setModel")["status"], "compiled")
 
 

@@ -1,6 +1,11 @@
-"""`world-open {sync}`: "none" flushes, "fsync" (the default) asks the OS to write the bytes out,
+"""Each sync mode opens, writes and reopens a journal to the same head.
+
+Evidence for FOUNDATION §2 Durability (layer: host).
+
+`world-open {sync}`: "none" flushes, "fsync" (the default) asks the OS to write the bytes out,
 "full" adds the drive-cache barrier (F_FULLFSYNC on macOS). Each mode opens, writes and reopens
-to the same head; the boolean of the previous release still means none/fsync."""
+to the same head; the boolean of the previous release still means none/fsync.
+"""
 import json
 import os
 import unittest
