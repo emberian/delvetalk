@@ -32,10 +32,9 @@ def ref(obj): return rec(world=lab(''), object=lab(obj))
 def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(items=lst(*rows))}  # world/lib/Relation.obend
 
 
-DOORS = [  # docs/previews/gsb-root-menu.txt, one line each; every door with an object points at a genesis object
+DOORS = [  # one line each; every door with an object points at a genesis object. `play` is created but is not a door.
     ('GARDEN', "Plant something; rain on another's planting. Things remember who helped them grow.", 'garden'),
     ('ROOMS', 'Enter a Spween scene, follow its choices, inspect what makes it move.', 'rooms'),
-    ('PLAY', 'The original two-player, 11x11 Automatafl. Find a table, take a seat or follow a game.', 'play'),
     ('WORKSHOP', 'Inspect a thing; derive a variation; write Bend; offer the change for adoption.', 'workshop'),
     ('TIDE', 'Wake on a cadence: subscribe yourself; anyone may tick, never too soon.', 'tide'),
     ('ANTHOLOGY', "Submit a line; the anthology's law admits it.", 'anthology'),

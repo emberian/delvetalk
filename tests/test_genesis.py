@@ -15,6 +15,10 @@ from transport.hostproc import LIBRARY, HostClient
 from transport.identity import ORIGIN
 
 
+def menu_words(host):
+    return json.dumps(host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'}))
+
+
 class Genesis(unittest.TestCase):
     """One genesis per class: a hostd opened by the opener with the library sealed, then
     deploy/genesis.py's whole sequence."""
@@ -40,20 +44,21 @@ class Genesis(unittest.TestCase):
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 10))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 10))
         made_names = {m['object'] for m in made}
         self.assertEqual([l for l, _, to in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
         self.assertEqual([l for l, _, to in genesis.DOORS if not to], ['STUDIO'])
-        self.assertEqual([l for l, _, _ in genesis.DOORS], ['GARDEN', 'ROOMS', 'PLAY', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'STUDIO'])
+        self.assertEqual([l for l, _, _ in genesis.DOORS], ['GARDEN', 'ROOMS', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'STUDIO'])
         said = {}
-        for word in ('ROOMS', 'PLAY', 'STUDIO'):
+        for word in ('ROOMS', 'STUDIO'):
             got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
                              'argument': genesis.rec(text=genesis.lab(word), post=genesis.lab('at://x/p/' + word)),
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
         self.assertTrue(said['ROOMS'].startswith('SCENE The Moss Gate'), said)
-        self.assertTrue(said['PLAY'].startswith('AUTOMATAFL, round 0'), said)
+        self.assertNotIn('PLAY', menu_words(host))
+        self.assertEqual(host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'play'})['status'], 'viewed')  # created, not a door
         # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
         # "The door to  opens on nothing yet."), so only the menu carries its URL.
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
@@ -61,7 +66,7 @@ class Genesis(unittest.TestCase):
 
     def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
-        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'play', 'rooms', 'tide', 'workshop'], pages)
+        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'rooms', 'tide', 'workshop'], pages)
         card = json.dumps(self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
         self.assertIn('ember.delve.town', card)
 
