@@ -381,7 +381,7 @@ class Talk(Chain):
         self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]], [("kimik3", "glm whispers: psst\n")])
         stranger = self.say("delvetalk porch say / line: hello?", "zero")
         self.assertEqual(stranger["result"]["label"], "refused")
-        self.assertEqual(stranger["offers"][0]["text"], "Not done: only someone here can say.\n")
+        self.assertEqual(stranger["offers"][0]["text"], "Not done: Only someone here can say.\n")
 
 
 class Copies(Chain):

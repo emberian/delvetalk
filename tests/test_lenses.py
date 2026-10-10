@@ -128,9 +128,8 @@ if __name__ == "__main__":
 
 class OwnedLenses(test_chain.Chain):
     """Lenses on the objects that had no owner: Garden (confirm), Place and Thing (name,
-    description); Workshop has nothing to set and says so. Garden and Thing declare a law that
-    refuses the same write from anyone but the owner; Place is imported by Thing and Avatar, so
-    its guard is its code's alone."""
+    description); Workshop has nothing to set and says so. Garden, Place and Thing declare a law
+    that refuses the same write from anyone but the owner."""
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)
@@ -176,6 +175,9 @@ class OwnedLenses(test_chain.Chain):
         self.assertEqual(self.say("porch", "delvetalk porch set\ndescription: moths at the lamp", "ember")["result"]["label"], "done")
         self.assertEqual(self.say("porch", "delvetalk porch set\nname: Back Porch", "ember")["result"]["label"], "done")
         self.assertEqual((self.field("porch", "name"), self.field("porch", "description")), ("Back Porch", "moths at the lamp"))
+        set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
+        r = self.forged("porch", (["name", "description", "present", "things", "traces"], {"name": set_}))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_things_owner_redescribes_it_and_the_law_keeps_others_out(self):
         from tests.test_places import thing_seed
