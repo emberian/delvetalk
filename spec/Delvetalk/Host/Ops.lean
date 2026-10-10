@@ -1017,7 +1017,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let (methods, predicate, predicateReads) := artifactShape artifact
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
-  let relations ← if !entryDeclaresRelations (← resolved "initial") then pure [] else do
+  -- A layer that declares no relations keeps the relations of the code below it, as it keeps its law.
+  let relations ← if !entryDeclaresRelations (← resolved "initial") then pure (if extend then o.relations else []) else do
     let compiled ← (Package.compileEntry (← resolved "relations")).mapError (("key", ·.render))
     (declsOfEntry compiled.entry).mapError (("key", ·))
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))

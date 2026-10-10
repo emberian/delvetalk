@@ -8,19 +8,27 @@ send through the world, a method outside the protocol answered, or an object cre
 
     python3 -W error -m unittest tests.test_world_object -v
 """
+import os
+import shutil
+import tempfile
 import unittest
 
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
-from tests.test_world_calls import WORLD
+from tests.test_reflection import LIBRARY
 
-# The stand-in World module of tests/test_world_calls, with one method the host does not answer.
-WORLD_PLUS = WORLD.replace("protocol world:", """sum Awaited:
-  reply: {receipt: Plans.Receipt}
-  unknown: {}
-  timedOut: {}
-  broken: {}
-protocol world:""") + "  await({slot: Plans.Slot, patience: Nat}) -> Awaited\n  viewField<S>({object: Plans.Reference, field: String}) -> Viewed<S>\n  teleport({to: String}) -> Written\n"
+# The library's World module with one method the host does not answer.
+EXTRA = "  teleport({to: String}) -> Written\n"
+
+
+def extended_library(scratch, extra):
+    """A copy of world/lib whose World protocol declares `extra` lines as well."""
+    target = os.path.join(scratch, "lib")
+    shutil.copytree(LIBRARY, target)
+    with open(os.path.join(target, "World.obend"), "a", encoding="utf-8") as f:
+        f.write(extra)
+    return target
+
 
 THING = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -79,11 +87,13 @@ def away(state: State, input: {}, context: Abi.Context) -> Activity<String>:
 class WorldObject(Reflection):
     def setUp(self):
         super().setUp()
-        self.open_library()
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.open_library(library=extended_library(scratch.name, EXTRA))
 
     def thing(self, name, count=0):
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                           modules=[{"name": "World", "source": WORLD_PLUS}, {"name": "Thing", "source": THING}],
+                           modules=[{"name": "Thing", "source": THING}],
                            entry="initial", seed=record(count=nat(count)))
         self.assertEqual(r["status"], "created", r)
 
@@ -135,7 +145,7 @@ class WorldObject(Reflection):
 
     def test_the_id_world_is_reserved(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-w", object="world",
-                           modules=[{"name": "World", "source": WORLD_PLUS}, {"name": "Thing", "source": THING}],
+                           modules=[{"name": "Thing", "source": THING}],
                            entry="initial", seed=record())
         self.assertEqual(r["status"], "error", r)
         self.assertIn("not world", r["message"])

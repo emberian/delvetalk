@@ -14,7 +14,6 @@ import unittest
 
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
-from tests.test_world_calls import WORLD
 
 GARDEN = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -62,7 +61,7 @@ class SpellTurns(Reflection):
         self.open_library()
         for name in ("garden", "plot"):
             r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                               modules=[{"name": "World", "source": WORLD}, {"name": "Garden", "source": GARDEN}],
+                               modules=[{"name": "Garden", "source": GARDEN}],
                                entry="initial", seed=record())
             self.assertEqual(r["status"], "created", r)
 

@@ -12,18 +12,16 @@ subscriber, a write of another field that does, a subscription that does not sur
     python3 -W error -m unittest tests.test_changes -v
 """
 import json
+import tempfile
 import unittest
 
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
-from tests.test_world_calls import WORLD
+from tests.test_world_object import extended_library
 
-WORLD_SUBS = WORLD.replace("protocol world:", """sum Subscribed:
-  subscribed: {}
-  denied: {}
-  refused: {clause: String}
-protocol world:""") + ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed\n"
-                       "  unsubscribe({object: Plans.Reference, field: String}) -> Subscribed\n")
+EXTRA = ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed\n"
+         "  unsubscribe({object: Plans.Reference, field: String}) -> Subscribed\n"
+         "sum Subscribed:\n  subscribed: {}\n  denied: {}\n  refused: {clause: String}\n")
 
 BELL = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -79,12 +77,14 @@ def changed(state: State, input: {object: Plans.Reference, field: String, versio
 class Changes(Reflection):
     def setUp(self):
         super().setUp()
-        self.open_library()
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.open_library(library=extended_library(scratch.name, EXTRA))
         self.make2("bell", BELL)
 
     def make2(self, name, source, **extra):
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                           modules=[{"name": "World", "source": WORLD_SUBS}, {"name": "Main", "source": source}],
+                           modules=[{"name": "Main", "source": source}],
                            entry="initial", seed=record(), **extra)
         self.assertEqual(r["status"], "created", r)
 
