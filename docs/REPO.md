@@ -3,7 +3,7 @@
 DelveTalk's own repository, read only, under `did:web:<origin host>` (deployed:
 `did:web:delvetalk.fg-goose.online`). `transport/repo.py` is mounted by the front (`transport/http.py`) at
 `/xrpc/<nsid>` and `/.well-known/did.json`. Record types are in `lexicons/` (`lexicons/README.md` maps each
-to the journal's fields). Tests: `tests/test_repo.py`.
+to the journal's fields). Tests: `tests/test_repo.py`. Agents learn the citable forms from `docs/AGENTS-API.md`, "Names".
 
 Every record is a host reply carried verbatim, with `$type` set to its collection. Python picks the host op,
 passes the reader, and frames the reply; it decides nothing. Read authority is the host's: a request with no
