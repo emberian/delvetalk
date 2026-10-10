@@ -673,6 +673,57 @@ def scalarPart (stored : List String) : Data → Data
       else (name, value))
   | state => state
 
+/-! ### The per-cell bound (KERNEL-HANDOFF §15, step 4)
+
+A state is bounded per cell: its scalar part (`scalarPart`) and each row of a stored relation are
+at most `Bounds.maxCellBytes` canonical bytes. A write pays the canonical bytes of the cells it
+changes: the scalar part when a scalar field changed, and each row whose key is new or whose row
+changed. The host calls these at write (`stateBytes`, `maxStateBytes`, the storage ledger). -/
+
+/-- The rows of a stored relation field of a state record (`rows {items}`), or none. -/
+def relationRows (state : Data) (field : String) : Array Data :=
+  match state with
+  | .record fields => match fields.lookup field with
+    | some (.variant "rows" (.record [("items", items)])) => (listItems? items).getD #[]
+    | _ => #[]
+  | _ => #[]
+
+/-- The first cell of `state` past the cell bound: `"scalar"` for its scalar part, else the
+relation field and the key of a row; none when every cell fits. -/
+def cellOverBound (relations : List (String × List String)) (state : Data) : Option (String × Data) :=
+  let stored := relations.map (·.1)
+  if (Canonical.encode (scalarPart stored state)).size > Bounds.maxCellBytes then some ("scalar", .record [])
+  else relations.findSome? fun (field, key) =>
+    (relationRows state field).findSome? fun row =>
+      if (Canonical.encode row).size > Bounds.maxCellBytes then some (field, keyProjection key row) else none
+
+/-- The canonical bytes a write from `before` to `after` changes: the scalar part's when a scalar
+field differs, plus each row of `after` whose key is new or whose row differs. -/
+def changedCellBytes (relations : List (String × List String)) (before after : Data) : Nat :=
+  let stored := relations.map (·.1)
+  let scalar := Canonical.encode (scalarPart stored after)
+  let scalarBytes := if scalar == Canonical.encode (scalarPart stored before) then 0 else scalar.size
+  relations.foldl (fun total (field, key) =>
+    let old := (relationRows before field).map fun row => (Canonical.encode (keyProjection key row), Canonical.encode row)
+    (relationRows after field).foldl (fun total row =>
+      let bytes := Canonical.encode row
+      let k := Canonical.encode (keyProjection key row)
+      if old.any (fun (k', bytes') => k' == k && bytes' == bytes) then total else total + bytes.size) total) scalarBytes
+
+-- A changed scalar pays the scalar part; an inserted row pays its bytes; an unchanged row nothing.
+#guard
+  let row := fun (n : Nat) (t : String) => Data.record [("n", .natural n), ("text", .label t)]
+  let rel := fun (rows : List Data) => Data.variant "rows" (.record [("items", rows.foldr
+    (fun r tail => .variant "cons" (.record [("head", r), ("tail", tail)])) (.variant "nil" (.record [])))])
+  let s := fun (count : Nat) (rows : List Data) => Data.record [("count", .natural count), ("rains", rel rows)]
+  let decl := [("rains", ["n"])]
+  changedCellBytes decl (s 1 [row 0 "a"]) (s 1 [row 0 "a"]) == 0 &&
+  changedCellBytes decl (s 1 [row 0 "a"]) (s 1 [row 0 "a", row 1 "b"]) == (Canonical.encode (row 1 "b")).size &&
+  changedCellBytes decl (s 1 [row 0 "a"]) (s 1 [row 0 "z"]) == (Canonical.encode (row 0 "z")).size &&
+  changedCellBytes decl (s 1 [row 0 "a"]) (s 2 [row 0 "a"]) == (Canonical.encode (scalarPart ["rains"] (s 2 []))).size &&
+  (cellOverBound decl (s 1 [row 0 "a"])).isNone &&
+  (cellOverBound decl (s 1 [row 0 (String.mk (List.replicate 262144 (Char.ofNat 120)))])).map (·.1) == some "rains"
+
 /-- The machine state a stored turn starts from, with its activity shape: `entry` applied to
 the state (one stored object cell at address 0) and the remaining arguments natively. -/
 def storedStart (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store : Store) :

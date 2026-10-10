@@ -426,6 +426,20 @@ that reads no row, or one row, spends the same ticks over 0 or 2,048 rows; a row
 canonical bytes costs exactly 202 more ticks; a card render, a scan and a merge join report
 exactly the rows they read (the join none past the shorter relation's end).
 
+Step 4 (bound): `Turn.relationRows state field`, `Turn.cellOverBound relations state : Option
+(String × Data)` (`("scalar", {})` for the scalar part, else the field and the key of the first
+row past `Bounds.maxCellBytes`) and `Turn.changedCellBytes relations before after : Nat` (the
+scalar part's bytes when a scalar field changed, plus each row whose key is new or whose row
+changed), `relations` being the artifact's `[(field, key)]`; `#guard`ed. The host's half, by
+site: `Ops.lean` 1952 and 1971 (`stateBytes written ≤ Limits.maxStateBytes`) become
+`cellOverBound decls written = none`, refused `capacity` with reason `maxCellBytes` and the
+cell; 2442 (`maxSeedBytes`) the same over the seed; the storage ledger at 2887 charges
+`changedCellBytes decls before after` instead of the difference of `stateBytes`; `world-inspect`
+keeps `stateBytes` and gains `scalarBytes` (`Canonical.encode (scalarPart …)`). FOUNDATION §9's
+scale rule becomes: "State is bounded per cell: the scalar fields together and each relation row
+are at most 256 KiB of canonical bytes, a relation's length is its declared limit, and a write
+pays for the cells it changes."
+
 **Estimate.** Kernel: cells, fetch, codecs, Fast, proofs, generator (step 2) 2 days; runner and
 reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `Store` over its
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
