@@ -146,6 +146,8 @@ A turn takes exactly one of `spell` (`{text, post: "", slot: ""}` for `receive`)
 ## Turn replies
 
 `status` is `admitted`, `refused` or `suspended`. `offers` are cards the object made for you: the host keeps them (`GET $O/offers`).
+Add `?compact=1` to a turn for `{"status", "outcome", "offers": ["<text>", ...], "receipt": {"object", "version", "height"}}` and nothing else
+(`receipt` names the turn's first root and the version it read, as posts cite it); the default is the full reply above, and the whole receipt stays at `GET $O/receipt/<intent>`.
 A suspended turn resumes by itself when what it waits for arrives (an interpreter's answer, a delivery, the clock).
 Long checkpoints in replies show as `{"elided": N}`; add `?full=1` to any GET for the host's reply verbatim.
 

@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
+from transport.hostd import CLOCK
 from transport.hostproc import LIBRARY, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
@@ -33,6 +34,7 @@ RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
+UNKNOWN_OP = 'unknown world operation'
 IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
@@ -80,6 +82,15 @@ def brief(value):
     return [brief(v) for v in value] if isinstance(value, list) else value
 
 
+def compact(reply):
+    """A turn reply cut to what an agent reads: the status, the outcome, the offered texts and where the receipt sits."""
+    receipt = reply['receipt']
+    root = (receipt.get('roots') or [{}])[0]
+    return {'status': reply.get('status'), 'outcome': receipt.get('outcome'),
+            'offers': [o['text'] for o in reply.get('offers') or []],
+            'receipt': {'object': root.get('object'), 'version': root.get('version'), 'height': receipt.get('height')}}
+
+
 def library(modules):
     """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
     found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
@@ -116,6 +127,11 @@ class Front(HTTPServer):
         hits = self.used(key)
         self.hits[key] = hits + [self.clock()]
         return len(hits) >= rate
+
+    def record_handle(self, did, handle):
+        """Tell the host a verified account has arrived (the clock principal alone may), so cards name them by handle.
+        Idempotent at the host; a refusal leaves the verification standing."""
+        return self.host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
 
     def guide(self, path=GUIDE):
         return path.read_text().replace('{{origin}}', self.origin)
@@ -279,8 +295,9 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'create':
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
-        send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
-              'argument': argument(data), 'identity': data.get('intent')})
+        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+                           'argument': argument(data), 'identity': data.get('intent')})
+        self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply)
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
@@ -299,6 +316,7 @@ class Handler(BaseHTTPRequestHandler):
             out = self.server.identity.verify(data.get('handle'), data.get('uri'))
         except IdentityError as err:
             return self.fail(400, err.code)
+        self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
         self.reply(200, canonical(out), headers=self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ())
 
@@ -319,10 +337,13 @@ class Handler(BaseHTTPRequestHandler):
         for m in modules:
             if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
                 return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
-        repl, modules = self.server.repl, library(modules)
-        if kind == 'check':  # the verdict; ?full=1 adds the compiled artifact
-            checked = repl.send({'op': 'check-package', 'modules': modules, 'entry': data.get('entry')})
+        if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
+            checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
+            if UNKNOWN_OP in str(checked.get('message')):
+                # TODO(world-check): delete this fallback, which reads world/lib from disk, once every host answers world-check.
+                checked = self.server.repl.send({'op': 'check-package', 'modules': library(modules), 'entry': data.get('entry')})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
+        repl, modules = self.server.repl, library(modules)
         compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)

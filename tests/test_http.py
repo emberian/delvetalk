@@ -109,6 +109,20 @@ class HttpFront(unittest.TestCase):
     def turn(self, tok, intent):
         return self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': record(), 'intent': intent}, tok)
 
+    def test_verify_announces_the_arrival_to_the_host(self):
+        seen = []
+        send = self.host.send
+        self.host.send = lambda req, *a, **k: (seen.append(req), send(req, *a, **k))[1]
+        self.login()
+        arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
+        self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
+
+    @unittest.expectedFailure
+    def test_end_to_end_arrive_against_the_real_host(self):
+        # Until the host lands world-arrive: {'message': 'unknown world operation world-arrive'}
+        got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
+        self.assertNotEqual(got.get('status'), 'error', got)
+
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
@@ -149,6 +163,17 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 1)
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
         self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
+
+    def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
+        tok = self.login()
+        s, full = self.turn(tok, 'k1')
+        s, c = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
+        self.assertEqual(s, 200)
+        self.assertEqual(c, {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
+                             'receipt': {'object': 'c1', 'version': 0, 'height': full['receipt']['height']}})
+        self.assertIn('hash', full['receipt'])
+        s, e = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
+        self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
 
     def test_host_refusal_passes_through_verbatim(self):
         tok = self.login()
@@ -274,6 +299,23 @@ class HttpFront(unittest.TestCase):
         self.assertIn('stage', e)
         s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
+
+    def test_check_asks_the_world_and_sends_only_the_callers_modules(self):
+        tok = self.login()
+        seen, real = [], self.host.send
+        def send(req, *a, **k):
+            seen.append(req)
+            return {'status': 'checked', 'entry': req['entry']} if req['op'] == 'world-check' else real(req, *a, **k)
+        self.host.send = send
+        s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
+        self.assertEqual((s, ok['status']), (200, 'checked'), ok)
+        self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
+
+    @unittest.expectedFailure
+    def test_end_to_end_world_check_against_the_real_host(self):
+        # Until the host lands world-check: {'message': 'unknown world operation world-check'}
+        got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
+        self.assertEqual(got.get('status'), 'checked', got)
 
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
@@ -434,6 +476,7 @@ class HttpFront(unittest.TestCase):
                 return {'status': 'card', 'text': 'CARD for ' + req['principal']}
             return real(req)
         self.host.send = send
+        newest = real({'op': 'world-status'})['height']  # the last entry touching c1; verifying journals the handle after it
         tok = self.login()
         cookie = 'dt_credential=' + tok
         before = real({'op': 'world-status'})['height']
@@ -444,7 +487,7 @@ class HttpFront(unittest.TestCase):
         heights = [int(x) for x in __import__('re').findall(rb'<tr><td>(\d+)</td>', page)]
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
-        self.assertEqual(heights[0], before)
+        self.assertEqual(heights[0], newest)
 
 
 if __name__ == '__main__':
