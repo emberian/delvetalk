@@ -348,6 +348,16 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    lists the lenses after the forms. `bridge.draft_text` reading `hint` is transport's. Tests:
    `tests/test_spell_turns.py` `Lenses`, `Interpreted`.
 
+55. **`admits` per method (host9; AGENTS-API "host ops wanted" 1).** `world-inspect`'s `methods` rows
+   that take a context carry `admits: true | {clause, reading?}` (`methodAdmits`): the text law judged
+   for a kind-0 change by the reader through that method on the unchanged state (`Facts {subject:
+   reader, caller: "", kind: 0, method, height = turn = height + 1, pin}`). Only a clause that reads no
+   state field (`LawExpr.fields` empty) can refuse here, since the change cannot alter its verdict; a
+   clause that reads the state is left to the commit (`true`), so `admits` never refuses what a commit
+   would admit. The Bend law is not consulted. The front (`transport/http.py`) then omits refused
+   actions: `tests/test_hypermedia.py`'s law-refusal reply no longer offers `bump`. Test:
+   `tests/test_inspect_reads.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

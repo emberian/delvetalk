@@ -2038,8 +2038,27 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
 
 /-! ## Reflection and interpretation as ops -/
 
+/-- The text law's verdict on a kind-0 change by `principal` through `method`, judged on the unchanged
+    state (`Facts {subject: principal, caller: "", kind: 0, method, height, turn, pin}`): `true`, or
+    `{clause, reading?}` naming the first clause that refuses and reads no state field, whose verdict
+    the change cannot alter. A clause that reads the state leaves the verdict to the commit (`true`). -/
+def methodAdmits (w : World) (o : Object) (principal method : String) : Json :=
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method⟩
+  match o.law.find? fun (_, clause) => clause.fields.isEmpty && !Law.admits facts (some o.state) o.state clause with
+  | none => Json.bool true
+  | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
+
+/-- The method table as `principal` reads it: each method a turn can run (it takes a context) with
+    `admits` (`methodAdmits`). -/
+def methodsFor (w : World) (o : Object) (principal : String) : Json :=
+  Json.arr (((o.methods.getArr?.toOption).getD #[]).map fun m =>
+    match (m.getObjValAs? Bool "context").toOption, (m.getObjValAs? String "name").toOption with
+    | some true, some name => m.setObjVal! "admits" (methodAdmits w o principal name)
+    | _, _ => m)
+
 /-- `world-inspect {principal, object}`: the pin, law text and entry source an object
-    shows a reader its read policy permits. -/
+    shows a reader its read policy permits, and its method table with each turnable
+    method's `admits` for the reader. -/
 def inspectOp (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
   let principal ← readerOf j
@@ -2050,7 +2069,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")),
-      ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
+      ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
       ("forms", dataJson (listData (methodForms id o.methods)))] |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
