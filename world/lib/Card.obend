@@ -117,7 +117,7 @@ def kept(lines: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Documen
 def keptLine(line: Document.Document, size: Nat, rest: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Document.Documents:
   if shown == 0n || size > room then Document.Documents.cons({head: Document.text("… and {natText(left)} more\n"), tail: Document.Documents.nil()}) else Document.Documents.cons({head: line, tail: kept(rest, shown - 1n, room - size, left - 1n)})
 # Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
-# its Edits (`Plans.Entries<Doorway, {}>`), offers the `door {label, to}` and `undoor
+# its Edits (`Plans.Entries<Doorway, Doorway>`), offers the `door {label, to}` and `undoor
 # {label}` forms to its owner (`doorAdd`, `doorRemove`: refused by name to anyone else, and by
 # its owner law where it has one), and lists them on its card as the directory does
 # (`doorLines`).
@@ -126,7 +126,7 @@ record Doorway:
   to: Plans.Reference
 type Doorways = Lists.List<Doorway>
 sum DoorEdit:
-  edit: {entries: Plans.Entries<Doorway, {}>}
+  edit: {entries: Plans.Entries<Doorway, Doorway>}
   refused: Refusal
 def doorAdd(doors: Doorways, owner: String, door: Doorway, context: Abi.Context) -> DoorEdit:
   if context.principal != owner then notDoorOwner(owner, context) else added(doors, door)

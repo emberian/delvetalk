@@ -15,9 +15,9 @@ The findings below are as written at 8a4b141; this section says what became of e
   `form` block line since kernel8; 44c3d14, L); the Anthology's `admit {number}` already agreed.
 - 4 The Seed ritual is gone; `initial()` is the State (O). Only the Appointment keeps the `Seed` its
   book types.
-- 5 Every hand-written `Edits`/`keep()` is gone now that the kernel derives them (kernel9; O), except
-  Bell, Appointment and Seat, which leave out fields that never change and have no law to say so
-  (Bell and Appointment are imported by their creators, so they cannot carry one). Lawful objects
+- 5 Every hand-written `Edits`/`keep()` is gone now that the kernel derives them (kernel9; O). Bell,
+  Appointment and Seat (Seats.State), which have no law to say which fields never change, mark them
+  `fixed` in the State (objects10): no edit of their own names them. Lawful objects
   whose fields were read-only by omission say it in law: Scene and Table `law fixed`, Tide `law gap`.
   The Appointment's action `keep` is `wait`, so the name no longer shadows `keep()` (N).
 - 6 One `refusal(w) -> Card.Refusal` match: Deal (D), Garden (E), Wake (G), Policy (I), Tide (J).

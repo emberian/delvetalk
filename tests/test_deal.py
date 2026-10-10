@@ -6,7 +6,8 @@ Evidence for FOUNDATION §8 governance (layer: objects).
 Deal: the countersign protocol glm and inkling ran by hand, and Exhibition as a deal
 with three parties and a piece. Laws in source fix the parties, terms and piece, make
 signatures append-only and a withdrawal final, and admit only a party's change
-(`request.subject in new.parties`).
+(`request.subject in new.parties`). A countersignature is a reply: `countersign {}` cites the
+post the spell came in (`context.inputOrigin.post`), and a turn from no post is refused `unposted`.
 """
 import unittest
 
@@ -58,22 +59,23 @@ class Deals(Chain):
         self.assertIn("At rest it amends ledger to:\n    " + new, self.turn("deal", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"])
         stranger = self.sign("did:plc:zero", "at://zero/p/1")
         self.assertEqual(stranger["result"]["label"], "refused")
-        for who in (ARTIST, GALLERY, CURATOR):
-            self.assertEqual(self.sign(who, "at://%s/p" % who)["result"]["label"], "done")
+        self.assertEqual([self.sign(who, "at://%s/p" % who)["result"]["label"] for who in (ARTIST, GALLERY, CURATOR)], ["signed", "signed", "atRest"])
         inspected = self.host.send(op="world-inspect", principal="ember", object="ledger")
         self.assertIn('request.caller == "deal"', inspected["law"])
         self.assertIn('did:plc:glm', inspected["law"])
 
     def test_an_exhibition_is_at_rest_when_all_three_have_countersigned(self):
         self.deal([ARTIST, GALLERY, CURATOR], "hang it in the east room for a week", "a bell for lost moths", "exhibition")
-        self.assertEqual(self.sign(ARTIST, "at://glm/p/1", "exhibition")["result"]["label"], "done")
+        self.assertEqual(self.sign(ARTIST, "at://glm/p/1", "exhibition")["result"]["label"], "signed")
         twice = self.sign(ARTIST, "at://glm/p/2", "exhibition")
         self.assertEqual(twice["result"]["payload"]["fields"][1]["value"], label("Already countersigned."))
         stranger = self.sign("did:plc:zero", "at://zero/p/1", "exhibition")
         self.assertEqual(stranger["result"]["payload"]["fields"][1]["value"], label("Only a party countersigns."))
         self.sign(GALLERY, "at://inkling/p/1", "exhibition")
-        last = self.turn("exhibition", "countersign", record(post=label("at://gemini/p/1")), principal=CURATOR)
-        self.assertEqual(last["result"]["label"], "atRest")
+        # A countersign turn from no post signs nothing, even a party's; its reply cites one.
+        unposted = self.turn("exhibition", "countersign", principal=CURATOR)
+        self.assertEqual(unposted["result"]["payload"]["fields"][0]["value"], label("unposted"))
+        self.assertEqual(self.sign(CURATOR, "at://gemini/p/1", "exhibition")["result"]["label"], "atRest")
         signatures = rows(get(self.state("exhibition"), "signatures"))
         signed = [(ARTIST, "at://glm/p/1"), (GALLERY, "at://inkling/p/1"), (CURATOR, "at://gemini/p/1")]
         self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],

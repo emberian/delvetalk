@@ -15,21 +15,16 @@ sum Status:
   kept: {}
   cancelled: {}
 record State:
-  owner: String
-  topic: String
-  to: Plans.Reference
-  after: Nat
+  owner: fixed String
+  topic: fixed String
+  to: fixed Plans.Reference
+  after: fixed Nat
   status: Status
 record Seed:
   owner: String
   topic: String
   to: Plans.Reference
   after: Nat
-# Its own Edits, without the fields nothing may change (it has no law to say so).
-record Edits:
-  status: Plans.Edit<Status, {}>
-def keep() -> Edits:
-  {status: Plans.Edit.keep({})}
 def initial() -> State:
   {owner: "", topic: "", to: Plans.nobody(), after: 1n, status: Status.booked({})}
 sum Done:

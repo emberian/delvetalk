@@ -79,20 +79,26 @@ def receipt_line(receipt, origin=None):
     return f"{name}: {text} at height {receipt.get('height')}{link}\n"
 
 
+def refusal_line(outcome, fallback_class=None):
+    """A refusal as VOICE shapes it, `refused <clause>: <reading>`; a reason that already says so is kept as it is."""
+    why = outcome.get('reason') or ''
+    if why.startswith(('refused ', 'turn refused')):
+        return why
+    head, tail = f"refused {outcome.get('clause') or outcome.get('class') or fallback_class}", why or outcome.get('object', '')
+    return f'{head}: {tail}' if tail else head
+
+
 def draft_text(reply, origin=None):
-    """The only text a draft carries. A refusal names its class and root, nothing of state; no hash or CID."""
+    """The only text a draft carries. A refusal is the turn line, the host's hint when it gives one, and the receipt's name;
+    no state, hash or CID. A usage answer is the host's text."""
+    if reply.get('status') == 'usage':
+        return str(reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
-        public = reply.get('public')
-        if public:  # the host's projection, minus the CID, which stays in the API and the HTML page
-            root = public.get('root') or {}
-            text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('none', '')
-            lines = [f"reason: {public.get('class', 'unknown')}", f'root: {text}{link}']
-            lines += [f'{k}: {public[k]}' for k in ('object', 'hint') if public.get(k)]
-            lines += [f"receipt {receipt['slug']}"] if receipt.get('slug') else []
-            return 'proposal observed, not committed\n' + '\n'.join(lines) + '\n'
-        return f"proposal observed, not committed\nreason: {outcome.get('class', 'unknown')}\n" + receipt_line(receipt, origin)
+        hint = reply.get('hint') or (reply.get('public') or {}).get('hint')
+        lines = [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
+        return '\n'.join(lines) + '\n'
     offers = [o['text'] for o in reply.get('offers') or []]
     if offers:
         return '\n'.join(offers)
@@ -322,6 +328,12 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         if obs['replyTo']:
             request['replyTo'] = obs['replyTo']
         reply = host.send(request)
+        if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
+            write_atomic(outbox / f"0-{uri_hash(obs['uri'])}.json", {
+                'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+                'object': obj, 'slot': slot_arg(slot), 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
+            done.append(obs['uri'])
+            continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
