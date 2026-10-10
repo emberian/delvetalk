@@ -22,7 +22,7 @@ sum On:
   mention: {actor: String}
   keyword: {term: String}
   reply: {card: String}
-  schedule: {every: Nat}
+  schedule: {at: Nat, every: Nat}
   writes: {object: String, field: String, above: Nat}
   grows: {object: String, field: String}
   turns: {object: String, field: String}
@@ -68,6 +68,8 @@ sum Why:
   full: {}
   noTrigger: {id: Nat}
   early: {}
+  schedulesFull: {}
+  never: {}
   noRows: {field: String}
   unwatched: {object: String, field: String, clause: String}
 def refusal(w: Why) -> Card.Refusal:
@@ -76,6 +78,8 @@ def refusal(w: Why) -> Card.Refusal:
     case full(_): {clause: "full", reading: "Thirty-two triggers is the most a wake holds."}
     case noTrigger(n): {clause: "noTrigger", reading: "No trigger {natText(n.id)}"}
     case early(_): {clause: "early", reading: "The schedule was answered before its time."}
+    case schedulesFull(_): {clause: "schedulesFull", reading: "Eight standing schedules is the most a wake holds."}
+    case never(_): {clause: "never", reading: "A schedule needs a time after now: at, or every from now."}
     case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads rains, buffer, greeted, proposals, traces and subs)."}
     case unwatched(u): {clause: "unwatched", reading: "{u.object}.{u.field} cannot be watched ({u.clause})."}
 def refused(w: Why) -> Done:
@@ -103,7 +107,7 @@ def subscribing(event: On, action: Action, context: Abi.Context, state: State) -
     case grows(g): watchedField(g.object, g.field, receiverFor(event), event, action, state)
     case turns(t): watchedField(t.object, t.field, receiverFor(event), event, action, state)
     case rows(r): if receiverFor(event) == "" then refused(Why.noRows({field: r.field})) else watchedField(r.object, r.field, receiverFor(event), event, action, state)
-    case schedule(_): added(event, action, state)
+    case schedule(s): scheduling(s.at, s.every, action, context, state)
     case _: sensing(event, action, state)
 def sensing(event: On, action: Action, state: State) -> Activity<Done>:
   match world.subscribe({object: state.env, field: "buffer", method: "changedSensed"}):
@@ -263,15 +267,58 @@ def removing(found: Lists.Maybe<Trigger>, id: Nat) -> Activity<Done>:
 def removed(trigger: Trigger, id: Nat) -> Activity<Done>:
   let written(_) = write {triggers: removeItem trigger}
   Done.watching({id: id})
-# A schedule is an await on a height: the turn suspends on a slot nobody settles, and
-# when the clock passes `every` it resumes timedOut and acts. One firing per schedule
-# turn; schedule again to wake again.
-def schedule(state: State, input: {every: Nat, action: Action}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then notOwner(state) else waited(input.every, input.action, context, state)
-def waited(every: Nat, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
-  match world.await({slot: {principal: context.object, intent: "schedule/{context.intent}"}, patience: every}):
-    case timedOut(_): act(action, "scheduled every {natText(every)}", state)
+# A schedule fires at clock `at` (or `every` minutes from now when `at` is past) and again
+# every `every` minutes after (0: once). It stands as a trigger, at most eight of them, and
+# unwatch ends it. Each firing is its own turn: the wake sends itself `due {id, at}`, which
+# awaits the clock on a slot nobody settles, acts, and sends the next `due`; a once schedule's
+# next `due` (at 0) removes its trigger. A turn that only waits writes nothing, so a resumed
+# firing never meets a stale root.
+def schedule(state: State, input: {at: Nat, every: Nat, action: Action}, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then notOwner(state) else scheduling(input.at, input.every, input.action, context, state)
+def scheduling(at: Nat, every: Nat, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
+  if Lists.length(Lists.filter(state.triggers, fn(t: Trigger) -> Bool: isSchedule(t.event))) >= 8n then refused(Why.schedulesFull({})) else if firstAt(at, every, context.clock) <= context.clock then refused(Why.never({})) else standing(firstAt(at, every, context.clock), every, action, context, state)
+def firstAt(at: Nat, every: Nat, clock: Nat) -> Nat:
+  if at > clock then at else clock + every
+def isSchedule(on: On) -> Bool:
+  match on:
+    case schedule(_): true
+    case _: false
+def standing(at: Nat, every: Nat, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = write {triggers: append {id: state.nextId, event: On.schedule({at: at, every: every}), action: action}, nextId: add 1n}
+  match world.send({object: Plans.self(context), method: "due", argument: {id: state.nextId, at: at}}):
+    case _: Done.watching({id: state.nextId})
+def due(state: State, input: {id: Nat, at: Nat}, context: Abi.Context) -> Activity<Done>:
+  if context.caller != context.object then Done.fired({count: 0n}) else dueTrigger(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == input.id), input.at, context, state)
+def dueTrigger(found: Lists.Maybe<Trigger>, at: Nat, context: Abi.Context, state: State) -> Activity<Done>:
+  match found:
+    case none(_): Done.fired({count: 0n})
+    case some(s): if at == 0n then ended(s.value) else waited(s.value, at, context, state)
+def ended(trigger: Trigger) -> Activity<Done>:
+  let written(_) = write {triggers: removeItem trigger}
+  Done.fired({count: 0n})
+def waited(trigger: Trigger, at: Nat, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.awaitUntil({slot: {principal: context.object, intent: "schedule/{context.intent}"}, until: at}):
+    case timedOut(_): standsStill(trigger, at, context, state)
     case _: refused(Why.early({}))
+# The wait read the wake as it was; an unwatch since then ends the schedule here.
+def standsStill(trigger: Trigger, at: Nat, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.view::<State>({object: Plans.self(context)}):
+    case viewed(v): if Lists.any(v.state.triggers, fn(t: Trigger) -> Bool: t.id == trigger.id) then firing(trigger, at, context, state) else Done.fired({count: 0n})
+    case _: Done.fired({count: 0n})
+def firing(trigger: Trigger, at: Nat, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.send({object: target(trigger.action, state), method: method(trigger.action), argument: if isCall(trigger.action) then Plans.nothing() else {text: "scheduled at {natText(at)}"}}):
+    case _: rearmed(trigger, if everyOf(trigger.event) == 0n then 0n else at + everyOf(trigger.event), context)
+def rearmed(trigger: Trigger, next: Nat, context: Abi.Context) -> Activity<Done>:
+  match world.send({object: Plans.self(context), method: "due", argument: {id: trigger.id, at: next}}):
+    case _: Done.fired({count: 1n})
+def everyOf(on: On) -> Nat:
+  match on:
+    case schedule(s): s.every
+    case _: 0n
+def isCall(action: Action) -> Bool:
+  match action:
+    case call(_): true
+    case _: false
 # The event that woke a trigger, as a line.
 def woke(event: Rows.Sensed) -> String:
   "{event.kind} from {Card.handle(event.actor)}: {event.text}"
@@ -318,7 +365,7 @@ form keyword:
 form unwatch:
   id: natural 1..1000000
 def methods() -> Lists.List<String>:
-  Text.words("watch sense schedule ~arrived ~watchBell")
+  Text.words("watch sense schedule ~arrived ~watchBell ~due")
 def blurb() -> Card.Door:
   {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
@@ -328,7 +375,7 @@ def onText(on: On) -> String:
     case mention(m): "a mention by {Card.handle(m.actor)}"
     case keyword(k): "the word {k.term}"
     case reply(r): "a reply to {r.card}"
-    case schedule(s): "every {natText(s.every)}"
+    case schedule(s): if s.every == 0n then "once at {natText(s.at)}" else "every {natText(s.every)} from {natText(s.at)}"
     case writes(w): "{w.object}.{w.field} passing {natText(w.above)}"
     case grows(g): "each rise of {g.object}.{g.field}"
     case turns(t): "{t.object}.{t.field} turning true"
