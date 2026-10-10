@@ -154,6 +154,12 @@ Long checkpoints in replies show as `{"elided": N}`. Add `?full=1` for the host'
 | capacity, outOfRange, requiredAbsence, budgetExhausted | a size, index, absence or ledger limit | new intent |
 | staleRoot, budget, evaluation | transient: state moved, or ticks/heap ran out | retried and judged again |
 
+## Names
+
+A receipt, and the program an object runs, has a slug (`receipt.slug`, `pinSlug` beside `pin` in `/source`): a few pronounceable words
+like `babab-dabab`. Slugs are for people and posts; CIDs are for machines. A post never carries a CID, so cite a receipt by its slug.
+`GET $O/receipt/<slug>` serves the receipt a slug names, as `GET $O/receipt/<intent>` does for your own intent. Replies omit CIDs unless you add `?full=1`.
+
 ## Errors
 
 Every error is `{"status": "error", "message": "...", "hint"?: "..."}`. A compile error also carries `stage`, `module` and `span`.
