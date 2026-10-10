@@ -157,7 +157,8 @@ def body (w : World) : Except String Json := do
       Json.mkObj [("pin", toJson pin), ("modules", modulesJson l.modules)])),
     ("settings", Json.mkObj ([("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
       ("postQuota", toJson w.postQuota), ("interpretQuota", toJson w.interpretQuota)] ++
-      (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]))),
+      (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]) ++
+      (if w.name.isEmpty then [] else [("name", toJson w.name)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
     ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
@@ -257,7 +258,8 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
                 clockPrincipal := ← settings.getObjValAs? String "clock",
                 postQuota := ← natField settings "postQuota",
                 interpretQuota := (settings.getObjValAs? Nat "interpretQuota").toOption.getD 48,
-                opener := (settings.getObjValAs? String "opener").toOption.getD "" }
+                opener := (settings.getObjValAs? String "opener").toOption.getD "",
+                name := (settings.getObjValAs? String "name").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}
   for t in ← (← b.getObjVal? "types").getArr? do
     types := types.insert (← t.getObjValAs? String "pin") (← tyOf (← t.getObjVal? "stateType"),
