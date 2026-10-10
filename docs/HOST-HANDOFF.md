@@ -375,6 +375,16 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    host ms 25,646 -> 13,621; directory `receive` 11,339 -> 4,521 (120 turns, median 70 -> 22 ms); garden
    `receive` 5,189 -> 2,010; env `receive` 3,681 -> 2,267; rehearsal wall 62.3 -> 43.4 s.
 
+59. **Compile caches per process (host9).** `World.compiled`, `requests`, `builds` and `programs` are
+   keyed by content addresses (compile inputs naming the library by pin and modules by CID; `defKey`,
+   `buildKey`, `programKey`), so `Session.stepWorld` hands the caches of the world it had open to the
+   next it opens (`Caches`, `World.caches`/`withCaches`; `openWorld` -> `openContent` -> `startOf`,
+   `replayAll`, `resume`), and `world-fork`'s replay uses them. `world-status.compiled {packages,
+   closures, methods}` counts them. Measured on hbox (`world-create` of Place, Garden, Directory, Thing
+   from `world/objects`, a fresh world each time, one process): first world 78/137/92/102 ms, the next
+   world 6/8/6/6 ms. Separate processes (hostd's heaps) still compile from scratch: the on-disk cache is
+   queued (§7). Test: `tests/test_compile_cache.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -411,12 +421,22 @@ the full `tests.run` once (1011 tests green at lane/host8's last commit).
 1. Done on lane/host9 (5.52).
 2. Done on lane/host9 (5.54).
 3. Done on lane/host9 (5.55 to 5.57).
-4. **Compile cache per process.** `World.compiled/requests/builds` are per world, so a fresh world recompiles
-   every package (Place 0.11 s first, 0.02 s cached). Keys are content addresses (inputs digest with the
-   library pin), so a process-wide cache is sound: keep it in the session (`PackageSession.Session.cache` sits
-   beside the world already) and inject it into each world it opens. Heaps (`hostd` `heaps/<did>.journal`) are
-   separate processes, so they gain only from an on-disk cache keyed the same way; measure a heap's first
-   compile before and after.
+4. Per-process half done on lane/host9 (5.59). **The on-disk half is open:** heaps are separate
+   processes. Measured on hbox: compiling a package's `initial` 82 ms (Place), running it from its
+   packet (decode, Mini re-check, run) 10 ms, so a packet cache saves about 85%. Design points found:
+   (a) the key must also name the compiler: pins are sources and replay "recompiles with the current
+   compiler", so a disk cache keyed by inputs alone would serve an old binary's packet after an upgrade;
+   the binary is 129 MB, too big to hash per process in Lean, so use a stamp (size and mtime of
+   `IO.appPath`) as the cache's subdirectory, and say the operator removes old ones; (b) the compile
+   paths are pure (`compileObject`, `compileEntryIn`, `compiledMethod`): either Session prefetches the
+   keys a step will need (a `world-create`'s `buildKey`; the defs of objects the journal names, at
+   open) and writes new keys after `durable`, or the cache read is an `implemented_by` memo; the
+   prefetch is the clean one and misses only methods first compiled in a session; (c) `Built.laws` is
+   `LawExpr`, which has no codec: add one in `Law.lean` (encode, decode, `#guard` round trip) or
+   re-derive from the entry module's law lines; `Compiled` comes back from `CheckedEntry.ofPacket`
+   (re-checked by Mini, so a damaged file fails closed to a compile); (d) gate it on
+   `DELVETALK_COMPILE_CACHE=<dir>` (hostd's children inherit it), default off; (e) the cache dir is in
+   the TCB as the binary is: a forged packet type-checks but need not be its source's.
 5. **`world-open {interpretQuota: n}`** (default 48): interpretations one principal may start per clock hour,
    counted from the journal (suspended entries with `interpretation`, by principal and clock); the next is a
    journaled transient refusal, class `quota`, whose public projection carries `next: <clock>` and the message

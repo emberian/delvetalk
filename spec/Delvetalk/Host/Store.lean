@@ -418,6 +418,20 @@ structure World where
 def World.withCachesOf (w src : World) : World :=
   { w with compiled := src.compiled, requests := src.requests, builds := src.builds, programs := src.programs }
 
+/-- A world's memory-only compile caches. Every key is a content address (the digest of compile
+    inputs that name their library by pin and their modules by CID), so a process carries them from
+    one world it opens to the next (`Session.stepWorld`). -/
+structure Caches where
+  compiled : Std.HashMap String Compiled := {}
+  requests : Std.HashMap String Package.PreparedRequest := {}
+  builds : Std.HashMap String Built := {}
+  programs : Std.HashMap String Program := {}
+
+def World.caches (w : World) : Caches := ⟨w.compiled, w.requests, w.builds, w.programs⟩
+
+def World.withCaches (w : World) (c : Caches) : World :=
+  { w with compiled := c.compiled, requests := c.requests, builds := c.builds, programs := c.programs }
+
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress
 

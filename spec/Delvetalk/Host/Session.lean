@@ -68,7 +68,8 @@ def loadLibrary (path : String) : IO (Except String Library) := do
 /-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
     `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
     (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
-def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) : IO (Except String Open) := do
+def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) (caches : Caches := {}) :
+    IO (Except String Open) := do
   try
     let handle ← match held with
       | some h => pure h
@@ -82,7 +83,7 @@ def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Boo
           return .error "journal exceeds byte capacity"
         IO.FS.readFile path
       else pure ""
-    match ← Snapshot.openContent path content verify with
+    match ← Snapshot.openContent path content verify caches with
     | .error e => return .error e
     | .ok (world, report) => return .ok { world, path, handle, report, snapshotAt := report.resumed }
   catch e => return .error s!"journal unreadable: {e}"
@@ -145,7 +146,7 @@ def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
   if height == 0 || height > s.world.height then return .error s!"height must be 1..{s.world.height}"
   if into == s.path || (← System.FilePath.pathExists into) then return .error s!"{into} already exists"
   let w ← if height == s.world.height then pure s.world else
-    match Snapshot.replayAll (s.world.entries.extract 0 height) with
+    match Snapshot.replayAll (s.world.entries.extract 0 height) s.world.caches with
     | .ok w => pure w
     | .error e => return .error e
   let cid := ((s.world.entries[height - 1]?).bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
@@ -176,7 +177,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       let sync ← match Durability.ofJson? (request.getObjVal? "sync").toOption with
         | .ok d => pure d
         | .error e => return (session, .error e)
-      match ← openWorld path held verify with
+      -- What this process compiled for the world it had open stays compiled for the next.
+      match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) with
       | .error e => return (session, .error e)
       | .ok o =>
         let o := { o with sync }
@@ -277,7 +279,10 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
           ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name),
-          ("recompiledDifferently", toJson s.world.recompiledDifferently)] |>
+          ("recompiledDifferently", toJson s.world.recompiledDifferently),
+          -- What this process holds compiled (carried from world to world it opens).
+          ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
+            ("methods", toJson s.world.compiled.size)])] |>
           fun r => match s.world.forkedFrom with
             | some f => r.setObjVal! "forkedFrom" f
             | none => r))
