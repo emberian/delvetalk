@@ -9,9 +9,8 @@ import threading
 import time
 from pathlib import Path
 
-CLOCK = 'transport'  # the clock principal serve opens each world with
-HOST_TIMEOUT = 150  # seconds an op may take before the client answers hostTimeout
-ON_ROOT = 'the opener speaks on the root socket'
+HOST_TIMEOUT, CONNECT_WAIT = 150, 2  # seconds an op may take; seconds to wait for a socket not (yet) there
+CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the clock principal serve opens each world with; its refusal
 # Ops answered the same when sent twice (reads; a turn, by its identity): only these are re-sent after a broken connection.
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
               'grants source sources state-cid addressee turn'.split()} | {'hostd-info', 'serve-status'}
@@ -38,12 +37,13 @@ class HostClient:
         s, deadline = socket.socket(socket.AF_UNIX), time.monotonic() + self.timeout
         try:
             s.settimeout(self.timeout)
-            while True:  # a full accept backlog answers EAGAIN at once; nothing was sent, so any op may wait and connect again
+            started = time.monotonic()
+            while True:  # nothing was sent, so any op may wait and connect again: a full backlog (EAGAIN), or a serve starting
                 try:
                     s.connect(self.path)
                     break
-                except BlockingIOError:
-                    if time.monotonic() > deadline:
+                except (BlockingIOError, FileNotFoundError, ConnectionRefusedError) as err:
+                    if time.monotonic() > (deadline if isinstance(err, BlockingIOError) else started + CONNECT_WAIT):
                         raise
                     time.sleep(0.01)
             self.local.conn = (s, s.makefile('rb'), os.stat(self.path).st_ino)
@@ -55,7 +55,7 @@ class HostClient:
     def send(self, request):
         envelope = {**({'world': self.world} if self.world else {}), **request, **({'heap': self.heap} if self.heap else {}),
                     **({'stateless': True} if self.stateless else {})}  # a request naming its own world keeps it
-        data = (json.dumps(envelope) + '\n').encode()
+        data, began = (json.dumps(envelope) + '\n').encode(), time.monotonic()
         for _ in (0, 1):
             fresh = True
             try:
@@ -72,7 +72,7 @@ class HostClient:
                 self.close()
                 if fresh or request.get('op') not in IDEMPOTENT:  # a stale reused connection: once more on a new one, if the op is safe to repeat
                     break
-        return {'status': 'error', 'class': 'hostUnavailable', 'message': 'hostd unavailable'}
+        return {'status': 'error', 'class': 'hostUnavailable', 'message': f'hostd unavailable at {self.path} after {time.monotonic() - began:.1f} s'}
 
     def at(self, heap):
         return HostClient(self.path, self.world, heap=heap, timeout=self.timeout)
