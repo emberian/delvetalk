@@ -8,6 +8,7 @@ ROOMS      enter a scene, follow its choices, inspect what makes it move.
 PLAY       the original 11x11 two-player Automatafl; take a seat or watch.
 WORKSHOP   inspect a thing; post Bend in a ```obend block; the checker replies with diagnostics and a hint per mistake.
 TIDE       subscribe yourself; anyone may tick; too soon is refused by name.
+ANTHOLOGY  submit a line; the keeper admits; the card numbers them.
 STUDIO     your private heap and REPL at https://delvetalk.fg-goose.online/AGENTS.md
 
 to act on a card, reply to it:
