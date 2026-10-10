@@ -44,6 +44,10 @@ class JournalBound(unittest.TestCase):
 
     def test_an_append_near_the_bound_is_a_capacity_receipt_and_past_it_nothing_is_appended(self):
         size = os.path.getsize(self.path)
+        # A journal over its bound does not open, and the bound is never raised past its cap.
+        for bound in (size - 1, 1 << 40, "big"):
+            self.assertEqual(self.open(maxJournalBytes=bound)["status"], "error", bound)
+        self.assertIn("maxJournalBytes", self.open(maxJournalBytes=size - 1)["message"])
         self.assertEqual(self.open(maxJournalBytes=size + MIB + 3000)["status"], "opened")
         admitted = 0
         for n in range(40):
@@ -68,15 +72,6 @@ class JournalBound(unittest.TestCase):
         self.assertEqual(r["status"], "error", r)
         self.assertIn("maxJournalBytes", r["message"])
         self.assertEqual(os.path.getsize(self.path), before)
-
-    def test_a_journal_over_its_bound_does_not_open_and_the_bound_is_never_raised(self):
-        size = os.path.getsize(self.path)
-        refused = self.open(maxJournalBytes=size - 1)
-        self.assertEqual(refused["status"], "error", refused)
-        self.assertIn("maxJournalBytes", refused["message"])
-        self.assertEqual(self.open(maxJournalBytes=1 << 40)["status"], "error")
-        self.assertEqual(self.open(maxJournalBytes="big")["status"], "error")
-
 
 if __name__ == "__main__":
     unittest.main()

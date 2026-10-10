@@ -87,15 +87,13 @@ class CanonicalCompare(unittest.TestCase):
         x, y = self.bytes_of(a), self.bytes_of(b)
         return 0 if x < y else 1 if x == y else 2
 
-    def test_a_hundred_random_records_order_as_their_canonical_bytes(self):
+    def test_random_records_and_lists_order_as_their_canonical_bytes(self):
         art = self.compiled("order")
         r = random.Random(1010)
         rows = [row(r) for _ in range(100)]
         pairs = [(rows[i], rows[(i * 7 + 3) % 100]) for i in range(100)] + [(rows[5], rows[5])]
         for a, b in pairs:
             self.assertEqual(self.bend(art, a, b), self.expected(a, b), (a, b))
-
-    def test_lists_order_by_length_first(self):
         art = self.compiled("numbers")
         short = {"tag": "list", "items": [nat(9)]}
         long = {"tag": "list", "items": [nat(1), nat(2)]}

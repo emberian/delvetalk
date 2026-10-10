@@ -128,8 +128,9 @@ the morning.
 
 Today: `backup.sh` every 6 h into `/var/backups/delvetalk` on the workhorse
 (`verify.sh` replays every journal in a throwaway host with no network before
-the tarball is written), and no off-box copy (DEPLOY: hbox has no key and
-`/tank` was 92% full). A backup on the box that holds the journal is a copy
+the tarball is written), pulled to hbox's `/tank/delvetalk-backups` 30 minutes
+later and the newest replayed there (DEPLOY, "Off the box, by pull, to hbox";
+since 2026-10-10). A backup on the box that holds the journal is a copy
 of a torn tail, not custody.
 
 The target is the owner's choice (a Hetzner storage box, a disk on the

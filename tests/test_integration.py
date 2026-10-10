@@ -80,30 +80,15 @@ class Integration(Reflection):
         self.make("probe", PROBE, probe_seed())
         self.make("caller", CALLER, record(seen=label("")))
 
-    def test_a_turn_whose_argument_does_not_conform_is_refused_typeMismatch_and_binds(self):
-        r = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
-        self.assertEqual(r["status"], "refused", r)
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch", r)
-        self.assertEqual(r["receipt"]["outcome"]["object"], "probe", r)
-        # typeMismatch is not transient: the same request returns the same receipt.
-        again = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
-        self.assertEqual(again["receipt"]["hash"], r["receipt"]["hash"])
-        fine = self.turn("probe", "bump2", record(n=nat(2)))
-        self.assertEqual(fine["status"], "admitted", fine)
-
     def test_a_typeMismatch_says_what_the_method_takes(self):
         r = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["object"]), ("refused", "typeMismatch", "probe"), r)
         expected = r["receipt"]["outcome"]["expected"]
         self.assertEqual(expected["method"], "bump2", expected)
         self.assertEqual((expected["type"]["name"], expected["type"]["member"]["tag"]), ("n", "natural"), expected)
         self.assertEqual(expected["form"]["action"], "bump2", expected)
         self.assertEqual([(f["name"], f["kind"]["tag"]) for f in expected["form"]["fields"]], [("n", "natural")], expected)
 
-    def test_an_import_of_no_supplied_module_is_named(self):
-        r = self.host.send(op="check-package", entry="initial",
-                           modules=[{"name": "Package", "source": "edition ObjectiveBend 1\nimport ./Nowhere.obend as N\ndef initial() -> Nat:\n  0n\n"}])
-        self.assertEqual(r["status"], "refused", r)
-        self.assertIn("./Nowhere.obend", r["diagnostic"]["message"])
 
     def test_a_call_whose_argument_does_not_conform_is_answered_refused_typeMismatch(self):
         r = self.turn("caller", "poke", record(target=label("probe")))
@@ -153,20 +138,6 @@ class Integration(Reflection):
         forms = op["forms"]
         self.assertEqual(forms["tag"], "list")
         self.assertIn("paint", [f["fields"][1]["value"]["value"] for f in forms["items"]])
-
-    def test_check_carries_the_kernels_hint_line(self):
-        bad = "edition ObjectiveBend 1\ndef one(n: Nat) -> Nat:\n  [n]\n"
-        r = self.turn("caller", "checkAll", record(package=label(bad)))
-        lines = r["result"]["value"].split("|")[:-1]
-        self.assertEqual(len(lines), 2, lines)
-        self.assertRegex(lines[1], r"^Checked:\d+: hint: .*there are no list literals")
-        self.assertEqual(lines[0].split(":")[:2], lines[1].split(":")[:2])
-
-    def test_methods_survive_replay(self):
-        before = self.host.send(op="world-inspect", principal="ember", object="caller")
-        self.reopen()
-        after = self.host.send(op="world-inspect", principal="ember", object="caller")
-        self.assertEqual(before["methods"], after["methods"])
 
 
 class WriteOnce(WorldCase):

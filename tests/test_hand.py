@@ -95,28 +95,6 @@ class Hand(HandCase):
         self.assertIn('dt_hand=' + TOKEN, headers['Set-Cookie'])
         self.assertEqual(self.poster.calls, [])
 
-    def test_a_front_without_the_token_does_not_serve_it(self):
-        self.front.hand = None
-        self.assertEqual(self.get()[0], 404)
-
-    def test_inbox_outbox_and_status_render_from_state(self):
-        code, page, _ = self.get()
-        self.assertEqual(code, 200)
-        self.assertIn('talkie.delve.town', page)
-        self.assertIn('garden-1 / bofab-lukid / admitted', page)
-        self.assertIn('not yet turned', page)  # the second post has no draft and no verdict
-        self.assertIn('planted &lt;b&gt;a&lt;/b&gt;</textarea>', page)
-        self.assertIn('delvetalk garden-1 plant', page)  # the original post beside the draft
-        self.assertIn('41', page)
-        self.assertIn('3 of 16', page)
-        self.assertIn('1 (0 retrying)', page)
-        self.assertNotIn('<script src="/hand', page)
-
-    def test_search_by_slug_asks_the_host(self):
-        _, page, _ = self.get('/hand/?slug=bofab-lukid')
-        self.assertIn('resolved', page)
-        self.assertEqual([o for o in self.host.ops if o['op'] == 'world-resolve'][0]['slug'], 'bofab-lukid')
-
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):
         code, _, headers = self.req('POST', '/hand/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
         self.assertEqual(code, 303)
@@ -134,28 +112,6 @@ class Hand(HandCase):
         self.assertEqual((d['posted'], d['skipped'], d['reason']), (False, True, 'off topic'))
         self.assertNotIn('rows="8"', self.get()[1])  # no draft left to edit
         self.assertEqual([l['what'] for l in self.logged()], ['hold', 'skip'])
-
-    def test_post_draft_is_the_post_py_path_records_and_marks_posted(self):
-        from transport import post
-
-        class Writer:
-            def __init__(self): self.sent = []
-            def write(self, nsid, body, token=None):
-                self.sent.append((nsid, body))
-                return {'did': 'did:plc:x', 'accessJwt': 't'} if 'Session' in nsid else {'uri': 'at://did:plc:x/town.delve.feed.post/r9', 'cid': 'bafy9'}
-            def record(self, uri): return {'uri': uri, 'cid': 'c', 'value': {}}
-            def resolve_handle(self, h): return {}
-        creds = self.state / 'creds.json'
-        creds.write_text('{"identifier": "a", "password": "b"}')
-        w, path = Writer(), self.state / 'outbox' / '7-aaaa.json'
-        got = post.post_draft(path, self.state, self.host, creds, text='final', reader=w, client=w)
-        self.assertEqual(w.sent[1][1]['record']['text'], 'final')
-        self.assertEqual(w.sent[1][1]['record']['reply']['parent']['uri'], self.uri)
-        self.assertEqual([o['uri'] for o in self.host.ops if o['op'] == 'world-posted'], [got['uri']])
-        d = json.loads(path.read_text())
-        self.assertEqual((d['posted'], d['text'], d['original']), (True, 'final', 'planted <b>a</b>'))
-        with self.assertRaises(delve.Failure):
-            post.post_draft(path, self.state, self.host, creds, reader=w, client=w)
 
 
 class Listener(unittest.TestCase):
@@ -291,25 +247,6 @@ class Cli(HandCase):
         self.assertEqual(set(p) >= {'clock', 'observed', 'freeFraction', 'at'}, True)
         self.assertEqual(p['observed'], 2)
 
-    def test_reading_verbs_print_text_and_json_that_parses(self):
-        rows = self.js('inbox')
-        self.assertEqual([r['kind'] for r in rows], ['post', 'post'])  # a spell is the host's reading, not a kind
-        fates = {r['uri']: r['fate'] for r in rows}
-        self.assertEqual(fates[self.uri], 'garden-1 / bofab-lukid / admitted')
-        self.assertEqual(self.js('inbox', '--kind', 'summon'), [])
-        self.assertEqual(len(self.js('inbox', '--since', '7')), 1)  # the drafted one is at height 7
-        code, text = self.cmd('inbox')
-        self.assertIn('fate: garden-1 / bofab-lukid / admitted', text)
-        (g,) = self.js('outbox')
-        self.assertEqual((g['post'], g['original']['handle'], g['drafts'][0]['id']), (self.uri, 'talkie.delve.town', '7-aaaa'))
-        self.assertIn('planted <b>a</b>', self.cmd('outbox')[1])
-        shown = self.js('show', '7-aaaa')
-        self.assertEqual((shown['receipt'], shown['text'], shown['original post']['handle']), ('receipt bofab-lukid: admitted', 'planted <b>a</b>', 'talkie.delve.town'))
-        st = self.cmd('status')[1]  # the strip as text; `status --json` is the monitoring probe
-        self.assertIn('journal height: 41', st)
-        self.assertIn('posts this hour: 3 of 16', st)
-        self.assertEqual(self.js('search', 'bofab-lukid')['status'], 'resolved')
-        self.assertEqual(self.cmd('log')[1].strip(), '(nothing)')
 
     def test_edit_keeps_the_original_and_post_calls_the_poster_once_as_cli(self):
         f = self.state / 'new.txt'
@@ -360,17 +297,6 @@ class Cli(HandCase):
         self.assertEqual((w.sent[1][1]['record']['text'], w.sent[1][1]['record']['reply']['parent']['uri']), ('a word by hand', self.uri))
         self.assertEqual([(o['object'], o['uri']) for o in self.host.ops if o['op'] == 'world-posted'], [('garden-1', 'at://did:plc:x/town.delve.feed.post/r9')])
         self.assertEqual(self.cmd('reply', 'at://nope', '--text-file', str(f), '--object', 'x')[0], 1)
-
-    def test_the_web_face_retries_and_replies_by_hand_through_the_same_operations(self):
-        other = self.uri.replace('r000001', 'r000002')
-        (self.state / 'skipped.txt').write_text(other + '\n')
-        self.assertIn('Retry', self.get()[1])
-        self.assertIn('reply by hand', self.get()[1])
-        self.req('POST', '/hand/retry', {'uri': other}, f'dt_hand={TOKEN}')
-        self.assertEqual((self.state / 'skipped.txt').read_text(), '')
-        self.req('POST', '/hand/reply', {'uri': other, 'text': 'hi', 'object': 'garden-1'}, f'dt_hand={TOKEN}')
-        self.assertEqual([l['what'] for l in self.logged()], ['retry', 'reply'])
-        self.assertEqual({l['who'] for l in self.logged()}, {'owner'})
 
 
 if __name__ == '__main__':

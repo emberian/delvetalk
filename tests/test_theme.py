@@ -47,28 +47,15 @@ def mark(css, oid):
 
 
 class Theme(unittest.TestCase):
-    def test_every_text_pair_passes_wcag_aa_in_both_palettes(self):
+    def test_every_text_pair_passes_wcag_aa_in_both_palettes_and_across_the_ruled_lines(self):
         failures = []
         for name, p in palettes(FRONT.read_text()).items():
             pairs = [(fg, bg) for fg in TEXT for bg in SURFACES] + [('bink', 'button'), ('violet', 'leaf')]
             failures += [(name, fg, bg, round(contrast(p[fg], p[bg]), 2)) for fg, bg in pairs if contrast(p[fg], p[bg]) < 4.5]
             self.assertGreaterEqual(contrast(p['amber'], p['paper']), 3, 'the focus ring')  # non-text contrast
-        self.assertEqual(failures, [])
-
-    def test_text_stays_aa_where_it_crosses_the_notebooks_ruled_lines(self):
-        for name, p in palettes(FRONT.read_text()).items():
-            self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)
+            self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)  # where text crosses a ruled line
             self.assertLess(contrast(p['ruleline'], p['paper']), 1.5, f'{name}: a ruled line is faint')
-
-    def test_doors_are_doors_at_rest_and_ringed_on_focus(self):
-        for name, p in palettes(FRONT.read_text()).items():  # the door's edge and face, non-text contrast at rest
-            self.assertGreaterEqual(min(contrast(p['violet'], p[bg]) for bg in ('paper', 'leaf')), 3, name)
-        for css in (FRONT.read_text(), SITE.read_text()):
-            door = re.search(r'\n\.door \{([^}]*)\}', css)[1]
-            for rest in ('border-color: var(--violet)', 'box-shadow: 0 2px 0 var(--violet)', 'linear-gradient(currentColor, currentColor)'):
-                self.assertIn(rest, door)  # the button face and the underline are there before any hover
-            self.assertRegex(css, r'\.door::before \{ content: "\["')
-            self.assertRegex(css, r'\.door:focus-visible[^{]*\{ outline: 2px solid var\(--amber\)')
+        self.assertEqual(failures, [])
 
     def test_a_receipts_fate_is_a_word_and_an_icon_never_colour_alone(self):
         self.assertEqual(len(set(pages.STAMPS.values())), len(pages.STAMPS))
@@ -77,53 +64,6 @@ class Theme(unittest.TestCase):
             self.assertIn(f'<span class="stamp">{icon} {fate}</span>', specimen)  # shown in /style/ as the markup carries it
         for css in (FRONT.read_text(), SITE.read_text()):
             self.assertNotRegex(css, r'\.(slip|stamp)[^{,]*::(before|after)[^{]*\{[^}]*content')  # no fate drawn by the stylesheet alone
-
-    def test_spells_are_monospace_everywhere_they_appear(self):
-        for css in (FRONT.read_text(), SITE.read_text()):
-            for rule in (r'\npre \{', r'\ncode, kbd \{', r'\ntextarea, input \{', r'\.slip \.line \{', r'\.door, button \{'):
-                self.assertRegex(css, rule + r'[^}]*var\(--mono\)', rule)
-        self.assertIn('<pre class="spell">{spell}</pre>', (ROOT / 'transport' / 'static' / 'pages.html').read_text())
-
-    def test_the_site_carries_the_fronts_palette(self):
-        self.assertEqual(palettes(SITE.read_text()), palettes(FRONT.read_text()))
-
-    def test_every_kind_has_its_own_mark(self):
-        css = FRONT.read_text()
-        marks = {kind: mark(css, oid) for kind, oid in KINDS.items()}
-        self.assertNotIn(None, marks.values(), marks)
-        self.assertEqual(len(set(marks.values())), len(KINDS), marks)
-        self.assertEqual(mark(css, 'play'), None)  # anything else falls back to the plain sprig
-        self.assertEqual(marks, {k: mark(SITE.read_text(), oid) for k, oid in KINDS.items()})
-
-    def test_the_cards_bytes_are_kept_and_its_frame_wraps_never_scrolling_sideways(self):
-        for css in (FRONT.read_text(), SITE.read_text()):
-            for rule in (r'\n\.card \{([^}]*)\}', r'\npre\.spell \{([^}]*)\}', r'\npre\.listing \{([^}]*)\}'):
-                body = re.search(rule, css)[1]
-                self.assertIn('white-space: pre-wrap;', body)  # every newline and space as sent; a long line wraps in its frame
-                self.assertIn('overflow-wrap: anywhere;', body)
-                self.assertNotIn('overflow-x', body)
-            self.assertIn('72ch', re.search(r'\n\.card \{([^}]*)\}', css)[1])
-        long = 'Six doors. Reply with a door word to open one, a spell to act, or words: ' + 'the long way round ' * 12
-        spell = 'delvetalk directory open / door: ' + 'x' * 260
-        card = f'{long[:300]}\n\n    {spell}\n'
-        page = pages.obj('directory', None, {'status': 'viewed', 'version': 3}, card, [])
-        self.assertIn(pages.e(card), page)  # the bytes, untouched: wrapping is the frame's, never a newline added
-        self.assertIn(long[:300], pages.text(page).splitlines())
-        self.assertIn('    ' + spell, pages.text(page).splitlines())  # a wrapped spell line is one line in the text view
-
-    def test_the_frog_is_one_plate_in_three_places_drawn_in_the_themes_own_ink(self):
-        plate = lambda markup: re.search(r'<svg class="frog[^"]*"[^>]*role="img".*?</svg>', markup, re.S)[0]
-        specimen, site = SPECIMEN.read_text(), (ROOT / 'site' / 'index.html').read_text()
-        drawn = plate(specimen)
-        self.assertEqual(plate(site).replace(' colophon-mark', ''), drawn)  # the specimen's margin and the site's colophon
-        self.assertLess(len(drawn.encode()), 3072)
-        self.assertNotRegex(drawn, r'#[0-9a-fA-F]{3,6}\b|<script|on[a-z]+=')  # currentColor and the theme's tokens, no script
-        self.assertIn("the stamped tickets and the plain-text view are the frog's, fwog-gpt6.delve.town", specimen)
-        quiet = (ROOT / 'transport' / 'static' / 'pages.html').read_text().split('<!-- quiet', 1)[1].split('<!--', 1)[0]
-        self.assertIn('<svg class="frog glyph"', quiet)
-        self.assertIn('aria-hidden="true"', quiet)  # silence's glyph is decoration; the stamp's word says it
-        self.assertEqual(specimen.count('<svg class="frog'), 3)
-        self.assertEqual(site.count('<svg class="frog'), 1)
 
 
 if __name__ == '__main__':

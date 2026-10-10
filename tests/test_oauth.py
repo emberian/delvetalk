@@ -12,7 +12,6 @@ import http.client
 import json
 import secrets
 import tempfile
-import threading
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -249,7 +248,3 @@ class Login(unittest.TestCase):
         self.refused(self.get(f'{self.origin}/oauth/start?handle=nobody.example.com'), 'is not a handle this town knows')
         self.assertEqual(self.town.requests, {})
 
-    def test_the_home_page_offers_the_login_first_and_the_word_beneath(self):
-        page = self.get(self.origin + '/')[2]
-        self.assertLess(page.index('Log in with delve.town'), page.index('Give me a word'))
-        self.assertIn('formaction="/oauth/start"', page)

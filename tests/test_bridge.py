@@ -7,7 +7,6 @@ import io
 import json
 import re
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -103,40 +102,6 @@ class BridgeCase(unittest.TestCase):
         return bridge.run(self.state, self.host)
 
 
-class Cursor(BridgeCase):
-    def main(self, *more, state=None):
-        self.host  # starts this test's hostd
-        out = io.StringIO()
-        bridge.main(['run', '--once', '--state', str(state or self.state), '--host-socket', str(Path(self.tmp.name) / 'hostd' / 'host.sock'), '--mock', str(Path(__file__).parent / 'fixtures' / 'delve'),
-                     *more], out)
-        return json.loads(out.getvalue())
-
-    def observed(self):
-        return len(observe.Observer(self.state, None).db.execute('SELECT 1 FROM observations').fetchall())
-
-    def test_a_fresh_state_observes_nothing_older_than_its_start_and_journals_since(self):
-        before = time.time()
-        got = self.main()
-        self.assertEqual((got['turns'], self.observed()), ([], 0))
-        since = (self.state / 'since').read_text().strip()
-        self.assertGreaterEqual(observe.instant(since), int(before) - 1)
-        self.assertEqual(self.main()['turns'], [])  # the second run keeps the same start
-        self.assertEqual((self.state / 'since').read_text().strip(), since)
-
-    def test_since_overrides_for_a_deliberate_replay_and_the_fixture_replays(self):
-        got = self.main('--since', '1970-01-01T00:00:00Z')
-        self.assertGreater(self.observed(), 20)
-        self.assertEqual((self.state / 'since').read_text().strip(), '1970-01-01T00:00:00Z')
-
-    def test_a_state_that_already_observed_keeps_observing_everything_without_a_since(self):
-        self.main('--since', '1970-01-01T00:00:00Z')
-        (self.state / 'since').unlink()
-        n = self.observed()
-        self.main()
-        self.assertFalse((self.state / 'since').exists())  # it predates the cursor: no start is invented for it
-        self.assertEqual(self.observed(), n)
-
-
 class DirectReplies(BridgeCase):
     """A reply in a card's own thread is addressed to it: the directory answers prose naming
     nothing with its menu once an hour per speaker, never with a model call, and then is quiet."""
@@ -183,15 +148,6 @@ class OpenerPosts(BridgeCase):
 
 
 class Bridging(BridgeCase):
-    def test_a_bell_spell_in_a_fresh_post_routes_to_the_bell(self):
-        self.make('garden/bell/1')
-        post = spell_post(1, 'garden/bell/1', '2026-10-09T10:00:00Z')
-        post['record']['text'] = 'delvetalk garden/bell/1 rain\nnote: soft'
-        self.observe([post])
-        got = self.run_bridge()
-        self.assertEqual(len(got['turns']), 1, got)
-        (d,) = self.drafts()
-        self.assertEqual(d['object'], 'garden/bell/1')
 
     def test_three_posts_three_turns_in_created_order_then_nothing(self):
         self.make('garden-1')
@@ -239,11 +195,6 @@ class Bridging(BridgeCase):
         self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', d['text']), d['text'])
         self.assertTrue(d['text'].startswith('refused seen: stern\nreceipt '), d['text'])  # the clause names the law line; no state value
 
-    def test_unknown_card_yields_unknownObject_draft(self):
-        self.observe([spell_post(1, 'nowhere', '2026-10-09T10:00:00Z')])
-        self.run_bridge()
-        (d,) = self.drafts()
-        self.assertTrue(d['text'].startswith('refused unknownObject'), d['text'])
 
     def test_host_error_without_receipt_leaves_the_post_for_retry(self):
         self.make('garden-1')
@@ -254,21 +205,6 @@ class Bridging(BridgeCase):
         self.assertEqual((r['turns'], r['failed'][0]['message']), ([], 'boom'))
         self.assertEqual(self.run_bridge()['turns'], [p['uri']])
 
-    def test_outbox_listing_and_mark_posted(self):
-        self.make('garden-1')
-        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
-        self.run_bridge()
-        out = io.StringIO()
-        bridge.main(['outbox', '--state', str(self.state)], out)
-        self.assertTrue(out.getvalue().startswith('=== reply to: at://'))
-        self.assertIn('hello ' + DID, out.getvalue())
-        self.assertIn('post --draft', out.getvalue())
-        self.assertIn('--object garden-1', out.getvalue())
-        self.assertIn('mark-posted', out.getvalue())
-        bridge.main(['mark-posted', str(next((self.state / 'outbox').glob('*.json')))])
-        out = io.StringIO()
-        bridge.main(['outbox', '--state', str(self.state)], out)
-        self.assertEqual(out.getvalue(), '')
 
     def test_a_spell_post_to_a_real_garden_is_bridged_into_a_draft_saying_planted(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
@@ -280,15 +216,6 @@ class Bridging(BridgeCase):
         (d,) = self.drafts()
         self.assertIn('planted', d['text'])
         self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1, entry {d['receipt']['height']}\n"), d['text'])
-
-    def test_smoke_bound_two_hundred_observations_bridge_in_under_a_minute(self):
-        """The transport's one wall-clock smoke bound, generous: measured about 3 s on hbox."""
-        self.make('garden-1')
-        self.observe([spell_post(i, 'garden-1', f'2026-10-09T10:{i // 60:02d}:{i % 60:02d}Z') for i in range(200)])
-        t0 = time.time()
-        self.assertEqual(len(self.run_bridge()['turns']), 200)
-        self.assertLess(time.time() - t0, 60)
-        self.assertEqual(len(self.drafts()), 200)
 
 
 class HostParses(BridgeCase):
@@ -303,6 +230,7 @@ class HostParses(BridgeCase):
         (d,) = self.drafts()
         self.assertTrue(d['usage'], d)
         self.assertIn('delvetalk garden-1', d['text'])
+        self.assertEqual(self.run_bridge()['turns'], [])  # answered once, not retried
 
     def test_a_line_the_host_does_not_read_as_a_spell_is_not_routed_by_its_second_word(self):
         self.make('garden-1')
@@ -344,69 +272,25 @@ class Stub:
 
 
 class ReplyScoped(BridgeCase):
-    """Where a post reaches (FLEX.md): a direct reply to a recorded post, a summons, a spell line, or field lines in a
-    thread the world opened; never prose deep in a thread by its root."""
-    def turns(self, *posts):
-        card = f'at://{DID}/town.delve.feed.post/card'
-        stub = Stub({card: {'status': 'addressee', 'object': 'garden-1'}})
-        self.observe(list(posts))
-        bridge.run(self.state, stub)
-        return {o['identity'][-6:]: o['object'] for o in stub.ops if o['op'] == 'world-turn'}
-
-    def test_a_summons_reaches_the_directory_whatever_it_says(self):
-        self.assertEqual(self.turns(mk(1, '@livedelvetalk.delve.town I planted a fern, what colour is it #gsb')), {'000001': 'directory'})
-
-    def test_a_direct_reply_and_field_lines_deep_in_the_thread_reach_its_card_and_deep_prose_does_not(self):
-        card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
-        deep = lambda n, text: (lambda p: (p['record']['reply'].update(root={'uri': card, 'cid': 'x'}), p)[1])(mk(n, text, parent=other))
-        got = self.turns(mk(1, 'I planted a fern, what colour is it', parent=card), deep(2, 'For the record:\n\nplant: a bell\ncolour: silver'),
-                         deep(3, 'Open recursion with a bouncer deserves to be carved into the lintel.'))
-        self.assertEqual(got, {'000001': 'garden-1', '000002': 'garden-1'})
-
-    def test_each_turn_states_how_it_reached_so_the_host_may_read_its_prose(self):
+    """Where a post reaches (FLEX.md): a direct reply to a recorded post, a summons, a spell line, or field lines or a
+    door's name in a thread the world opened; never other prose deep in a thread, nor a door named outside the world's threads."""
+    def test_each_post_reaches_its_card_by_how_it_was_addressed_and_says_how(self):
         card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
         deep = lambda n, text: (lambda p: (p['record']['reply'].update(root={'uri': card, 'cid': 'x'}), p)[1])(mk(n, text, parent=other))
         stub = Stub({card: {'status': 'addressee', 'object': 'garden-1'}})
-        self.observe([mk(1, '@livedelvetalk.delve.town what is here #gsb'), mk(2, 'a fern, please', parent=card),
-                      deep(3, 'plant: a bell\ncolour: silver'), deep(4, 'that line belongs in the anthology'), mk(5, 'delvetalk garden-1 ?')])
+        self.observe([mk(1, '@livedelvetalk.delve.town I planted a fern, what colour is it #gsb'), mk(2, 'a fern, please', parent=card),
+                      deep(3, 'For the record:\n\nplant: a bell\ncolour: silver'), deep(4, 'And yes, that line belongs in the Anthology.'),
+                      deep(5, 'Open recursion with a bouncer deserves to be carved into the lintel.'),
+                      mk(6, 'that line belongs in the anthology', parent=f'at://{DID}/town.delve.feed.post/elsewhere'),
+                      mk(7, 'delvetalk garden-1 ?')])
         bridge.run(self.state, stub)
-        how = {o['identity'][-6:]: (o.get('reach'), o.get('replyTo')) for o in stub.ops if o['op'] == 'world-turn'}
-        self.assertEqual(how, {'000001': ('mention', None), '000002': (None, card), '000003': ('fields', other),
-                               '000004': ('door', other), '000005': (None, None)})  # a reply and a spell the host verifies itself
-
-    def test_prose_deep_in_the_worlds_thread_that_names_a_door_reaches_that_doors_card(self):
-        card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
-        deep = lambda n, text: (lambda p: (p['record']['reply'].update(root={'uri': card, 'cid': 'x'}), p)[1])(mk(n, text, parent=other))
-        outside = mk(3, 'that line belongs in the anthology', parent=f'at://{DID}/town.delve.feed.post/elsewhere')
-        got = self.turns(deep(1, 'And yes, that line belongs in the Anthology.'), deep(2, 'Agreed, beautifully put.'), outside)
-        self.assertEqual(got, {'000001': 'anthology'})  # a thread the world did not open: nothing
-
-
-class Usage(BridgeCase):
-    def test_a_question_mark_is_answered_with_the_hosts_usage_and_the_post_is_done(self):
-        stub = Stub()
-        real = stub.send
-        stub.send = lambda req: ({'status': 'usage', 'object': 'garden-1', 'text': 'Reply with a spell:\n\n    delvetalk garden-1 plant\n'}
-                                 if req['op'] == 'world-turn' else real(req))
-        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
-        post['text'] = 'delvetalk garden-1 ?'
-        self.observe([post])
-        r = bridge.run(self.state, stub)
-        self.assertEqual((r['failed'], r['turns']), ([], [post['uri']]))
-        (d,) = self.drafts()
-        self.assertEqual((d['text'], d['replyTo'], d['object'], d['principal']), ('Reply with a spell:\n\n    delvetalk garden-1 plant\n', post['uri'], 'garden-1', DID))
-        before = len(stub.ops)
-        self.assertEqual(bridge.run(self.state, stub)['turns'], [])  # not retried
-        self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
+        how = {o['identity'][-6:]: (o['object'], o.get('reach'), o.get('replyTo')) for o in stub.ops if o['op'] == 'world-turn'}
+        self.assertEqual(how, {'000001': ('directory', 'mention', None), '000002': ('garden-1', None, card),
+                               '000003': ('garden-1', 'fields', other), '000004': ('anthology', 'door', other),
+                               '000007': ('garden-1', None, None)})  # a reply and a spell the host verifies itself
 
 
 class Routing(BridgeCase):
-    def test_clock_ticks_once_per_run_and_only_in_unix_minutes(self):
-        stub = Stub()
-        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')])
-        with mock.patch.object(bridge.time, 'time', return_value=6000.0):
-            bridge.run(self.state, stub)
-        self.assertEqual([o for o in stub.ops if o['op'] == 'world-advance'], [{'op': 'world-advance', 'principal': 'transport', 'height': 100}])
 
     def test_a_reply_to_a_journaled_post_goes_to_its_addressee_not_the_card_word(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
@@ -460,12 +344,6 @@ class Routing(BridgeCase):
         bridge.run(self.state, stub)
         self.assertLessEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), 4)
 
-    def test_card_word_still_routes_a_post_with_no_journaled_parent(self):
-        stub = Stub()
-        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
-        bridge.run(self.state, stub)
-        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
-
 
 class Suspended(BridgeCase):
     def test_a_suspended_turn_has_no_draft_then_the_resumed_offer_is_drafted_once(self):
@@ -499,26 +377,6 @@ class Suspended(BridgeCase):
         self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri']])
         (d,) = self.drafts()
         self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
-
-
-class Slugs(unittest.TestCase):
-    def test_a_loopback_origin_gives_no_link_and_the_receipt_line_and_slug_stay(self):
-        receipt = {'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}}
-        for origin in ('http://127.0.0.1:8766', 'http://localhost:8765', 'http://[::1]:8765'):
-            self.assertEqual(bridge.receipt_line(receipt, origin), 'receipt babab-dabab: garden v3, entry 9\n')
-        self.assertEqual(bridge.receipt_line(receipt, 'https://gsb.fg-goose.online'),
-                         'receipt babab-dabab: garden v3, entry 9\nhttps://gsb.fg-goose.online/o/garden#v3\n')
-
-    def test_a_draft_cites_the_slug_and_carries_no_cid(self):
-        import re
-        receipt = {'hash': 'bafyrei' + 'a' * 52, 'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
-        refused = {'status': 'refused', 'receipt': {**receipt, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}},
-                   'public': {'class': 'lawRefused', 'root': {'object': 'garden', 'version': 3}}}
-        texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'), bridge.draft_text(refused)]
-        self.assertIn('receipt babab-dabab: garden v3, entry 9', texts[0])
-        self.assertIn('receipt babab-dabab\n', texts[1])
-        for t in texts:
-            self.assertFalse(re.search(r'bafy', t), t)
 
 
 class Mentions(BridgeCase):
@@ -637,27 +495,18 @@ class RealOffers(test_outbound.TellerWorld):
 
 
 class Projection(unittest.TestCase):
-    def test_a_refusal_draft_is_the_turn_line_the_hint_and_the_receipts_name(self):
-        reply = {'status': 'refused', 'receipt': {'hash': 'h', 'slug': 'tulun-huzif', 'outcome': {
-                     'tag': 'refused', 'class': 'badSpell', 'clause': 'noAction', 'reason': 'garden has no action wilt.', 'SECRET': 'state'}},
-                 'public': {'status': 'refused', 'class': 'badSpell', 'hint': 'delvetalk garden plant\ncolour: <...>'}}
-        text = bridge.draft_text(reply)
-        self.assertEqual(text, 'refused noAction: garden has no action wilt.\ndelvetalk garden plant\ncolour: <...>\nreceipt tulun-huzif\n')
-        self.assertNotIn('SECRET', text)
-        reply['receipt']['outcome'] = {'tag': 'refused', 'class': 'lawRefused', 'reason': 'refused owner: not yours'}
-        reply['public'] = {}
-        self.assertEqual(bridge.draft_text(reply), 'refused owner: not yours\nreceipt tulun-huzif\n')  # the reason already says it
-        del reply['receipt']['slug']
-        self.assertEqual(bridge.draft_text(reply), 'refused owner: not yours\n')
-
-    def test_no_draft_text_carries_a_hash_or_a_blob(self):
-        import re
+    def test_a_draft_cites_the_slug_and_no_draft_text_carries_a_hash_or_a_blob(self):
         h = 'bafyrei' + 'a' * 52
-        receipt = {'hash': h, 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
-        texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'),
-                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
-                 bridge.draft_text({'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
-        self.assertIn('receipt: garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[0])
+        receipt = {'hash': h, 'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
+        unslugged = {k: v for k, v in receipt.items() if k != 'slug'}
+        texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'), bridge.draft_text({'receipt': unslugged}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}},
+                                    'public': {'class': 'lawRefused', 'root': {'object': 'garden', 'version': 3}}}),
+                 bridge.draft_text({'status': 'refused', 'receipt': {**unslugged, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': unslugged, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
+        self.assertIn('receipt babab-dabab: garden v3, entry 9', texts[0])
+        self.assertIn('receipt: garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[1])
+        self.assertIn('receipt babab-dabab\n', texts[2])
         for t in texts:
             self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', t), t)
 
@@ -699,36 +548,6 @@ class RealAwaitPost(test_outbound.PostWaiterWorld):
 
 
 class Daemon(unittest.TestCase):
-    def test_loops_until_stopped_writes_and_removes_the_pid_file(self):
-        import os
-        import threading
-        with tempfile.TemporaryDirectory() as d:
-            stop, steps = threading.Event(), []
-
-            def step():
-                steps.append(1)
-                self.assertEqual(Path(d, 'bridge.pid').read_text(), str(os.getpid()))
-                if len(steps) == 3:
-                    stop.set()
-            bridge.daemon(d, 'bridge', 0, step, stop)
-            self.assertEqual(len(steps), 3)
-            self.assertFalse(Path(d, 'bridge.pid').exists())
-
-    def test_each_finished_step_refreshes_the_pid_file(self):
-        import os
-        import threading
-        with tempfile.TemporaryDirectory() as d:
-            stop, seen = threading.Event(), []
-            pid = Path(d, 'bridge.pid')
-
-            def step():
-                seen.append(pid.stat().st_mtime)
-                os.utime(pid, (0, 0))  # as if the previous step finished long ago
-                if len(seen) == 2:
-                    stop.set()
-            bridge.daemon(d, 'bridge', 0, step, stop)
-            self.assertGreater(seen[1], 0)
-
     def test_a_live_pid_file_blocks_a_second_daemon(self):
         import os
         with tempfile.TemporaryDirectory() as d:

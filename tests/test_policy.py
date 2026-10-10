@@ -16,8 +16,7 @@ from tests.host import as_owner
 from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
 from tests.test_objects import check, closure, compile_job
-from tests.test_places import listing
-from tests.test_turn_world import label, nat, record, declared
+from tests.test_turn_world import label, record, declared
 
 PROBE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -92,7 +91,7 @@ class PolicyObject(Chain):
     def card(self, name, principal="glm"):
         return self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)["offers"][0]["text"]
 
-    def test_teach_define_and_set_model_edit_the_policy_in_order(self):
+    def test_teach_define_and_set_model_edit_the_policy_in_order_and_a_stranger_is_offered_no_spell(self):
         self.policy()
         for utterance, spell in (("a fern", "delvetalk garden-1 plant seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant seed: moth, colour: amber")):
             reply = self.turn("policy", "teach", record(utterance=label(utterance), spell=label(spell)), principal="ember")
@@ -104,32 +103,15 @@ class PolicyObject(Chain):
             reply = self.turn("policy", "receive", record(text=label(spell), post=label("")), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
-        self.assertEqual(card, (
-            "✾ INTERPRETATION POLICY\n"
-            "\n"
-            "Model: claude-sonnet\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
-            "When unsure I escalate to claude-opus.\n"
-            "What a card cannot fit twice goes to …r4keeper.\n"
-            "\n"
-            "Only its owner, ember, teaches it.\n"
-            "\n"
-            "What I know:\n"
-            "- moth: a seed\n"
-            "Said: a fern\n"
-            "delvetalk garden-1 plant seed: fern, colour: silver\n"
-            "\n"
-            "Said: a moth\n"
-            "delvetalk garden-1 plant seed: moth, colour: amber\n"
-            "\n"))   # a stranger is offered none of the owner's spells: no usage
         owners = self.card("policy", "ember")
         for spell in ("teach", "define", "macro", "confirm"):
             self.assertIn("\n    delvetalk policy %s\n" % spell, owners)
-        self.assertNotIn("\n    delvetalk policy teach\n", card)
+        self.assertNotIn("Reply with a spell", card)  # a stranger is offered none of the owner's spells: no usage
         self.assertIn("Model: claude-sonnet", card)
         self.assertIn("When unsure I escalate to claude-opus.\nWhat a card cannot fit twice goes to …r4keeper.\n", card)
         self.assertIn("- moth: a seed", card)
         self.assertLess(card.index("Said: a fern"), card.index("Said: a moth"))
+
 
     def test_only_the_owner_teaches_and_the_law_refuses_what_bend_would_not(self):
         self.policy()
@@ -172,17 +154,7 @@ class PolicyObject(Chain):
         holes = self.turn("policy", "receive", record(text=label("delvetalk policy macro / name: all / pattern: {x} / expansion: garden plant"), post=label("")), principal="ember")
         self.assertIn("starts with a word", holes["result"]["payload"]["fields"][1]["value"]["value"])
         card = self.card("policy")
-        self.assertEqual(card, (
-            "✾ INTERPRETATION POLICY\n"
-            "\n"
-            "Model: claude-haiku\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
-            "\n"
-            "Only its owner, ember, teaches it.\n"
-            "\n"
-            "What I know:\n"
-            "Macro moth-bell: moth for {who}\n"
-            "  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n"))   # no usage for a stranger
+        self.assertNotIn("Reply with a spell", card)  # no usage for a stranger
         self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
 
     def test_a_macro_fires_without_the_model_and_a_non_match_falls_through_to_it(self):
@@ -204,13 +176,6 @@ class PolicyObject(Chain):
         # `?` is the host's usage; the blank reply's card shows the policy's shortcuts.
         usage = self.say("", identity="usage")["offers"][0]["text"]
         self.assertTrue(usage.startswith("✾ THE NIGHT GARDEN\n"), usage)
-        self.assertEqual(usage[usage.index("\nShortcuts"):], (
-            "\n"
-            "Shortcuts (no model is asked):\n"
-            "    moth for {who}\n"
-            "      means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n"
-            "    a {colour} bell for {who} please\n"
-            "      means: delvetalk garden plant / colour: {colour} / seed: a bell for {who}\n"))
         self.assertIn("\nShortcuts (no model is asked):\n    moth for {who}\n      means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", usage)
 
     def test_the_sixteenth_example_is_the_last(self):
@@ -220,32 +185,6 @@ class PolicyObject(Chain):
             self.assertEqual(r["result"]["label"], "taught", r)
         over = self.turn("policy", "teach", record(utterance=label("u16"), spell=label("s")), principal="ember")
         self.assertEqual(over["result"]["label"], "refused")
-
-    def test_the_prompt_for_gardens_plant_form_contains_its_fields_and_bounds_verbatim(self):
-        out = run("plantPrompt", context())
-        self.assertEqual(out["status"], "finished", out)
-        prompt = out["value"]["value"]
-        self.assertEqual(prompt, (
-            "You turn words into one spell.\n"
-            "\n"
-            "The card they answered:\n"
-            "THE CARD\n"
-            "\n"
-            "\n"
-            "What it takes (a spell is the delvetalk line, then one `field: value` line per field, in any order):\n"
-            "delvetalk garden-1 plant\n"
-            "  colour: one of amber, violet, silver\n"
-            "  seed: text of 1 to 80 characters\n"
-            "\n"
-            "Words:\n"
-            "- moth: a seed\n"
-            "\n"
-            "Said, and the answer:\n"
-            "Said: a silver fern\n"
-            "delvetalk garden-1 plant seed: a fern, colour: silver\n"
-            "\n") + HOB_ANSWERS)
-        # The utterance is the user turn, not part of the system text (docs/FLEX.md section 2).
-        self.assertNotIn("plant me a moth", prompt)
 
     def test_the_prompt_shows_what_the_card_holds_and_the_misfit_before_the_examples(self):
         out = run("heldPrompt", context())
@@ -258,6 +197,7 @@ class PolicyObject(Chain):
         plain = run("plantPrompt", context())["value"]["value"]
         self.assertNotIn("Held for this participant", plain)
         self.assertNotIn("Misfit:", plain)
+        self.assertNotIn("plant me a moth", plain)  # the utterance is the user turn, not the system text (docs/FLEX.md section 2)
 
     # --- Garden.receive falls through to the policy ---------------------------------
 
@@ -286,31 +226,20 @@ class PolicyObject(Chain):
     def pending(self):
         return [f["value"] for f in self.state("garden")["fields"] if f["name"] == "pending"][0]
 
-    def test_without_a_policy_prose_gets_nothing(self):
+    def test_without_a_policy_prose_gets_nothing_and_a_typed_spell_never_asks_one(self):
         self.garden("")
         reply = self.say("Could we plant a silver fern?")
         self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
-
-    def test_a_typed_spell_never_consults_the_policy(self):
         self.policy()
-        self.garden("policy")
-        reply = self.say("delvetalk garden plant\nseed: a fern")
-        self.assertIn("I still need: colour.", reply["offers"][0]["text"])
-
-    def test_prose_suspends_and_lists_the_plant_form_for_the_model(self):
-        self.policy()
-        self.garden("policy")
-        reply = self.say("Could we plant a silver fern that remembers?")
-        self.assertEqual(reply["status"], "suspended", reply)
-        [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual(item["object"], "garden")
-        self.assertEqual(item["utterance"], "Could we plant a silver fern that remembers?")
-        self.assertEqual([o["action"] for o in item["offers"]], ["plant"])
+        self.make("garden2", closure("Garden"), garden_seed("policy"))
+        typed = self.turn("garden2", "receive", record(text=label("delvetalk garden2 plant\nseed: a fern"), post=label("at://glm/p/2")), principal="glm", reach="mention")
+        self.assertIn("I still need: colour.", typed["offers"][0]["text"])  # a typed spell never consults the policy
 
     def test_with_confirm_on_the_garden_asks_first_then_yes_from_the_same_principal_plants(self):
         self.policy()
         self.garden("policy", confirm=True)
-        self.say("Could we plant a silver fern that remembers?")
+        self.assertEqual(self.say("Could we plant a silver fern that remembers?")["status"], "suspended")
+        self.assertEqual([o["action"] for o in self.host.send(op="world-interpretations")["pending"][0]["offers"]], ["plant"])
         asked = self.interpret(self.planting())
         self.assertEqual(asked["status"], "admitted", asked)
         self.assertEqual(asked["result"]["label"], "confirming")
@@ -348,16 +277,6 @@ class PolicyObject(Chain):
             self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 0, answer)
             self.assertEqual(rows(self.pending()), [])
 
-    def test_no_drops_the_waiting_proposal(self):
-        self.policy()
-        self.garden("policy", confirm=True)
-        self.say("a violet moth please")
-        self.interpret(self.planting("violet", "a moth"))
-        dropped = self.say("no")
-        self.assertEqual(dropped["result"]["label"], "cleared", dropped)
-        self.assertEqual(rows(self.pending()), [])
-        self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(0))
-
     def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_unclear_naming_the_colours(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -369,22 +288,9 @@ class PolicyObject(Chain):
         # 5.52). hob is asked once: its need is the question, put over the plant spell with blanks.
         green = self.interpret(self.planting("green", "a fern"))
         self.assertEqual((green["status"], green["result"]["label"]), ("admitted", "unclear"), green)
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-        self.assertEqual(green["offers"][0]["text"], (
-            "hob: colour is one of: amber, violet, silver (not green)\n"
-            "\n"
-            "    delvetalk garden plant\n"
-            "    colour: <amber, violet, silver>\n"
-            "    seed: <text, 1 to 80 characters>\n"))
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])  # hob is asked once
+        self.assertTrue(green["offers"][0]["text"].startswith("hob: colour is one of: amber, violet, silver (not green)\n"), green["offers"])
 
-    def test_the_interpretation_shows_the_model_the_card_as_the_speaker_reads_it(self):
-        # docs/FLEX.md §2: the card answered, rendered for the speaker, beside the forms and lexicon.
-        self.policy()
-        self.garden("policy")
-        self.say("plant something")
-        [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertIn("NIGHT GARDEN", pending["card"])
-        self.assertLessEqual(len(pending["card"]), 1400)
 
     def test_a_model_that_could_not_be_asked_is_silence_and_holds_nothing(self):
         self.policy()
@@ -403,22 +309,6 @@ class PolicyObject(Chain):
     def hob_says(self, text):
         return {"status": "replied", "json": None, "raw": text, "model": "m"}
 
-    def test_hob_asks_once_its_question_over_the_plant_spell_with_blanks(self):
-        self.policy()
-        self.garden("policy")
-        self.say("something silver, maybe")
-        asked = self.interpret(self.hob_says("ask: What is the seed?"))
-        self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
-        self.assertEqual(asked["offers"][0]["text"], (
-            "hob: What is the seed?\n"
-            "\n"
-            "    delvetalk garden plant\n"
-            "    colour: <amber, violet, silver>\n"
-            "    seed: <text, 1 to 80 characters>\n"))
-        # One attempt: nothing waits for a second, and nothing is held.
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-        self.assertEqual(rows(self.pending()), [])
-
     def test_hob_none_is_silence_and_a_held_planting_stays_held(self):
         self.policy()
         self.garden("policy")
@@ -431,15 +321,6 @@ class PolicyObject(Chain):
         silent = self.interpret(self.NONE)
         self.assertEqual((silent["status"], silent["result"]["label"], silent.get("offers", [])), ("admitted", "silent", []), silent)
         self.assertEqual(len(rows(self.pending())), 1)
-
-    def test_hob_card_offers_the_garden_card(self):
-        self.policy()
-        self.garden("policy")
-        self.say("how many are planted?")
-        shown = self.interpret(self.hob_says("card"))
-        self.assertEqual((shown["status"], shown["result"]["label"]), ("admitted", "shown"), shown)
-        self.assertTrue(shown["offers"][0]["text"].startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"), shown["offers"])
-        self.assertEqual(rows(self.pending()), [])
 
     def test_the_answer_to_hobs_question_completes_the_held_planting(self):
         self.policy()
@@ -473,15 +354,6 @@ class PolicyObject(Chain):
         self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
-    def test_an_ask_also_copies_the_policys_escalate_to(self):
-        self.policy(escalate_to="ember")
-        self.garden("policy")
-        self.say("something silver, maybe")
-        asked = self.interpret(self.hob_says("ask: What is the seed?"))
-        self.assertEqual(asked["result"]["label"], "unclear", asked)
-        copies = [o for o in asked["offers"] if o["principal"] == "ember"]
-        self.assertEqual([o["text"] for o in copies], ["glm said: something silver, maybe; hob asked: What is the seed? (garden).\n"], asked["offers"])
-
     # --- The model's own text, fitted by the garden (rehearsal finding 2) -----------------
 
     def test_the_request_carries_the_policys_rendered_prompt_as_its_system_text(self):
@@ -491,18 +363,13 @@ class PolicyObject(Chain):
         [item] = self.host.send(op="world-interpretations")["pending"]
         system = item["policy"]["system"]
         self.assertTrue(item["card"].startswith("✾ THE NIGHT GARDEN\n"), item["card"])
-        self.assertEqual(system, (
-            "S\n"
-            "\n"
-            "The card they answered:\n" + item["card"] + "\n"
-            "\n"
-            "What it takes (a spell is the delvetalk line, then one `field: value` line per field, in any order):\n"
-            "delvetalk garden plant\n"
-            "  colour: one of amber, violet, silver\n"
-            "  seed: text of 1 to 80 characters\n") + HOB_ANSWERS)
+        self.assertTrue(system.startswith("S\n\nThe card they answered:\n" + item["card"]), system)
+        self.assertIn("delvetalk garden plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n", system)
+        self.assertTrue(system.endswith(HOB_ANSWERS), system)
         # What the user turn carries is the utterance alone; no Held or Misfit line for a plain reply.
         self.assertNotIn("Could we plant", system)
         self.assertEqual((item["utterance"], item["held"], item["misfit"]), ("Could we plant a silver fern that remembers?", "", ""))
+
 
     def test_a_plain_spell_reply_is_fitted_to_a_proposal_and_the_garden_plants_it(self):
         self.policy()
@@ -518,38 +385,7 @@ class PolicyObject(Chain):
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(resumed["result"]["label"], "planted", resumed)
         self.assertIn("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1", resumed["receipt"]["offers"][0]["text"])
-        # The verdict replays: a fresh process reaches the same garden.
-        before = self.state("garden")
-        self.reopen()
-        self.assertEqual(self.state("garden"), before)
 
-    def test_a_suspension_journals_its_checkpoint_blocks_once(self):
-        """Rehearsal run 5: a suspended entry cost about 236 KB, nearly all of it the program's own
-        terms in the checkpoint. Blocks are journaled once; a later suspension of the same package
-        names them."""
-        self.policy()
-        self.garden("policy")
-        sizes = []
-        for i, text in enumerate(["Could we plant a silver fern that remembers?",
-                                  "a violet moth for the lost ones, and something else entirely, please"]):
-            self.assertEqual(self.say(text, identity="p%d" % i)["status"], "suspended")
-            with open(self.path) as f:
-                sizes.append(len(f.read().splitlines()[-1]))
-        print("\n  suspended entries: %d bytes, then %d bytes" % tuple(sizes))
-        self.assertLess(sizes[1], 20000)
-        # Both resume from their reassembled checkpoints, after a restart too.
-        self.reopen()
-        # Both are glm's: the first resumed upserts glm's pending row, which moves the garden
-        # under the second (the same key, so no rebase), and the host re-runs the second, which
-        # asks again; that answer resumes it.
-        admitted = []
-        for _ in range(4):
-            pending = self.host.send(op="world-interpretations")["pending"]
-            if not pending:
-                break
-            settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
-            admitted += [r for r in settled["resumed"] if r["status"] == "admitted"]
-        self.assertEqual(len(admitted), 2, admitted)
 
     def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting

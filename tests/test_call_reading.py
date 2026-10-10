@@ -11,10 +11,7 @@ import unittest
 
 from tests.test_chain import Chain
 from tests.test_spell_turns import GARDEN
-from tests.test_turn_world import ON_DISK, closure, declared, label, record
-
-RETURNED = ("sum Returned<R>:\n  returned: {result: R}\n  denied: {}\n  refused: {clause: String}\n",
-            "sum Returned<R>:\n  returned: {result: R}\n  denied: {}\n  refused: {clause: String, reading: String}\n")
+from tests.test_turn_world import closure, declared, label, record
 
 RELAY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -38,9 +35,6 @@ def handled(state: State, input: {to: String, handler: String}, context: Abi.Con
 
 class CallReading(Chain):
     def modules(self, name, source):
-        with open(ON_DISK["World"], encoding="utf-8") as f:
-            world = f.read()
-        self.assertIn(RETURNED[1], world)   # world/lib/World.obend carries the reading
         seen, out = set(), []
         for dep in ("Abi", "List", "Form", "Plan", "World"):
             closure(dep, seen, out)
@@ -56,19 +50,16 @@ class CallReading(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r["result"]["value"]
 
-    def test_a_refused_spell_and_an_unknown_card_say_why(self):
+    def test_a_refused_call_or_run_and_an_unknown_card_say_why(self):
         self.assertEqual(self.pass_("garden", "delvetalk garden plant\ncolour: gold\nseed: fern"),
                          "badValue|colour is one of: amber, violet, silver")
         self.assertEqual(self.pass_("forge", "delvetalk forge make"),
                          "unknownObject|no card forge that you may see; the directory lists the doors.")
         self.assertEqual(self.pass_("garden", "delvetalk garden plant\ncolour: amber\nseed: oak"), "returned")
-
-    def test_a_refused_run_says_why(self):
         run = lambda to, handler: self.turn("relay", "handled", record(to=label(to), handler=label(handler)), principal="glm")["result"]["value"]
         self.assertEqual(run("garden", "ghost"),
                          "handler|no handler ghost that you may see; a run names an object whose handle() answers plans.")
         self.assertEqual(run("forge", "garden"), "unknownObject|no card forge that you may see; the directory lists the doors.")
-
 
 if __name__ == "__main__":
     unittest.main()

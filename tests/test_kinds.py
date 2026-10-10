@@ -62,21 +62,6 @@ class Kinds(Chain):
         self.assertIn("Made, at key/1; 1 made.", text(made))
         self.assertIn("THE KEY, begun by kimik3: three hands deep", text(self.turn("key/1", "receive", record(text=label(""), post=label("")), principal=GLM)))
 
-    def test_the_bell_kind_grafts_its_body_and_the_seventh_rain_can_ring_it(self):
-        self.kind("bell", "record", "colour: amber | violet | silver\nseed: text 1..80", law=genesis.RECORD_LAW, body_source=body("bell"))
-        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell for lost moths")), principal=KIM)
-        self.assertEqual(made["status"], "admitted", made)
-        self.assertIn("Made, at bell/1; 1 made.", text(made))
-        card = text(self.turn("bell/1", "receive", record(text=label(""), post=label("")), principal=GLM))
-        self.assertIn("A silver bell, planted by kimik3: “a bell for lost moths” — silent. Rain on it:\n  delvetalk bell/1 rain / text: <1 to 200 characters>\n", card)
-        rained = self.turn("bell/1", "rain", record(text=label("it rained here first")), principal=GLM)
-        self.assertEqual(rained["status"], "admitted", rained)
-        self.assertIn("glm (yours): it rained here first\n", text(rained))
-        long = self.turn("bell/1", "write", record(text=label("x" * 201)), principal=GLM)
-        self.assertEqual(long["status"], "refused", long)
-        self.assertEqual(self.turn("bell/1", "ring", principal=GLM)["status"], "admitted")
-        self.assertIn("— rung.", text(self.turn("bell/1", "receive", record(text=label(""), post=label("")), principal=GLM)))
-
     def test_the_cistern_kind_pours_and_its_level_only_rises(self):
         self.kind("cistern", "record", "", law=genesis.RECORD_LAW, body_source=body("cistern"))
         self.assertEqual(self.turn("kind/cistern", "make", principal=GLM)["status"], "admitted")

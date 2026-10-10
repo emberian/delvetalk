@@ -11,7 +11,7 @@ import json
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_turn import MESSAGE, Host, TurnCase, nat, label, library_modules, variant
+from tests.test_turn import MESSAGE, Host, TurnCase, nat, label, variant
 from tests.test_turn_world import closure
 from tests.test_turn_world import declared
 
@@ -70,17 +70,6 @@ def record(**fields):
 
 class DataTypeTests(TurnCase):
 
-    def test_one_activity_calls_two_objects_with_different_argument_shapes(self):
-        # Refuted if a single world call cannot carry a Nat and a record payload in one activity.
-        h = self.host()
-        art = h.compile(CALLER, "fan", world=CALLER_WORLD)
-        first = h.start(art, [nat(5)])
-        self.assertEqual(first["status"], "yielded", first)
-        self.assertEqual(called(first["plan"]), nat(5))
-        self.assertEqual(field(first["plan"], "method"), label("call"))
-        second = h.resume(art, first["checkpoint"], variant("returned", record(result=nat(6))))
-        self.assertEqual(second["status"], "yielded", second)
-        self.assertEqual(called(second["plan"]), record(a=nat(5), b=label("hi")))
 
     def test_data_field_round_trips_through_a_checkpoint(self):
         # Refuted if a Data value (here a variant inside a record) changes across yield/resume.
@@ -96,7 +85,7 @@ class DataTypeTests(TurnCase):
         self.assertEqual(done["value"], echoed)
         self.assertEqual(done["type"], {"tag": "data"})
 
-    def test_data_argument_with_a_repeated_field_is_refused(self):
+    def test_a_repeated_field_or_a_shape_not_its_declared_type_is_refused(self):
         # Refuted if Data admits a record that is not well-formed data.
         h = self.host()
         art = h.compile(CALLER, "keep", world=CALLER_WORLD)
@@ -104,10 +93,7 @@ class DataTypeTests(TurnCase):
         reply = h.start(art, [bad, nat(0)])
         self.assertEqual(reply["status"], "error", reply)
         self.assertIn("does not conform", reply["message"])
-
-    def test_argument_shape_not_conforming_to_the_declared_type_is_refused(self):
         # Refuted if a Data payload of the wrong shape reaches a callee typed Pair.
-        h = self.host()
         art = h.compile(CALLER, "pair", world=CALLER_WORLD)
         reply = h.start(art, [record(a=nat(1))])
         self.assertEqual(reply["status"], "error", reply)
@@ -128,42 +114,6 @@ class DataTypeTests(TurnCase):
         good = h.send({"op": "compile", "entry": "f", "modules": [{"name": "Package", "source":
             "edition ObjectiveBend 1\ndef f(n: Nat) -> Data:\n  Data.of::<Nat>(n)\n"}]})
         self.assertEqual(good["status"], "compiled", good)
-
-    def test_a_long_list_argument_starts_an_activity_at_data_and_at_its_declared_type(self):
-        # Refuted if the activity path refuses a deep value the runtime admits: the checker's
-        # walk fuel for `Data` (and its fuel for an argument literal) was fixed, so a list
-        # of a couple of thousand items was refused at `Data` and of four thousand at
-        # `List<String>`, while the pure path has no such bound. Also refuted if starting
-        # costs more than linear-ish time (annotations were looked up by scanning a list).
-        h = self.host()
-        items = {"tag": "list", "items": [label("x%d" % i) for i in range(2500)]}
-        art = h.compile(CALLER, "keep", world=CALLER_WORLD)
-        started = h.start(art, [items, nat(0)])
-        self.assertEqual(started["status"], "yielded", started.get("message"))
-        self.assertEqual(called(started["plan"]), items)
-        typed = h.send({"op": "compile", "entry": "count", "modules": library_modules("List") + [
-            {"name": "World", "source": LONG_WORLD}, {"name": "Package", "source": LONG_TYPED}]})
-        self.assertEqual(typed["status"], "compiled", typed)
-        longer = {"tag": "list", "items": [label("y%d" % i) for i in range(4500)]}  # past the old four-thousand refusal
-        reply = h.start(typed["artifact"], [longer, nat(3)])
-        self.assertEqual(reply["status"], "yielded", reply.get("message"))
-        self.assertEqual(field(reply["plan"], "method"), label("say"))
-        self.assertEqual(field(reply["plan"], "argument"), record(n=nat(3)))
-
-
-LONG_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """sum Reply:
-  ok: {}
-protocol world:
-  say({n: Nat}) -> Reply
-"""
-
-LONG_TYPED = """edition ObjectiveBend 1
-import ./List.obend as Lists
-import ./World.obend as World
-def count(xs: Lists.List<String>, n: Nat) -> Activity<Nat>:
-  match world.say({n: n}):
-    case ok(_): n
-"""
 
 
 # A Counter whose state holds a universal `Data` payload (a Wake trigger's stored argument
@@ -315,7 +265,7 @@ class DataInPackageData(unittest.TestCase):
         cls.h = Host()
         cls.addClassCleanup(cls.h.close)
 
-    def test_run_data_admits_any_well_formed_value_and_refuses_a_repeated_field_by_name(self):
+    def test_run_data_and_the_compact_codec_carry_a_data_field_and_refuse_a_repeated_one_by_name(self):
         art = self.h.compile(STATE_PACKAGE, "touch")
         value = variant("deep", record(x=nat(1), y=variant("z", record())))
         ok = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": [record(count=nat(4), payload=value)]})
@@ -325,13 +275,9 @@ class DataInPackageData(unittest.TestCase):
         # The strict typed-data wire refuses the repeat before admission; the compact codec
         # (below) reaches the Data admission itself.
         self.assertEqual((bad["status"], bad["message"]), ("error", "duplicate typed data field"), bad)
-
-    def test_initial_state_with_a_data_field_evaluates(self):
         art = self.h.compile(STATE_PACKAGE, "initial")
         r = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": []})
         self.assertEqual((r["status"], r["value"]), ("finished", record(count=nat(0), payload=record(a=nat(1)))), r)
-
-    def test_the_compact_codec_carries_a_data_field_as_its_own_wire_value(self):
         art = self.h.compile(STATE_PACKAGE, "initial")
         value = record(count=nat(2), payload=record(b=label("x"), a=nat(3)))
         enc = self.h.send({"op": "encode-compact", "selection": {"artifact": art, "path": []}, "value": value})

@@ -46,11 +46,11 @@ class Watch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             sent, state = [], Path(d)
             run = lambda p: ((state / 'p.json').write_text(json.dumps(p)),
-                             watch.main(['--state', d, '--probe', str(state / 'p.json'), '--unhealthy', 'delvetalk-hostd'], io.StringIO(), sent.append))
+                             watch.main(['--state', d, '--probe', str(state / 'p.json'), '--unhealthy', 'delvetalk-host'], io.StringIO(), sent.append))
             run(probe(front={'5xx5m': 1}))
-            self.assertEqual(sent, ['unhealthy: delvetalk-hostd (playbook A)', 'the front answered 1 5xx in five minutes (playbook A)'])
+            self.assertEqual(sent, ['unhealthy: delvetalk-host (playbook A)', 'the front answered 1 5xx in five minutes (playbook A)'])
             run(probe(at=100000 + 3700, front={'5xx5m': 1}))
-            self.assertEqual(sent[2:], ['unhealthy: delvetalk-hostd (playbook A)'])  # the host pages hourly; the 5xx waits six hours
+            self.assertEqual(sent[2:], ['unhealthy: delvetalk-host (playbook A)'])  # the host pages hourly; the 5xx waits six hours
             run(probe(at=100000 + 6 * 3600 + 1, front={'5xx5m': 1}))
             self.assertEqual(len(sent), 5)
             self.assertEqual(len((state / 'watch.jsonl').read_text().splitlines()), 3)

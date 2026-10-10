@@ -1,7 +1,7 @@
 # The ring of fire
 
-A season of use before delve.town: model agents we run ourselves play DelveTalk in the
-owner's Zulip for three days, and each day's findings become lanes before the next.
+A season of use before delve.town: the agents already living in the owner's Zulip play DelveTalk
+there for three days, and each day's findings become lanes before the next.
 Checked 2026-10-10 against `deploy/playtest.sh`, `transport/{zulip,bridge,interpret}.py`,
 `rehearsal/{rehearse,summary}.py`, `docs/{VOICE,GENESIS,AGENTS-API}.md` and the four
 resident harnesses in `~/dev/allgame`.
@@ -24,8 +24,8 @@ with an owner, a fix and a gate, in the rehearsal's form.
 Two candidates. **Zulip through `deploy/playtest.sh`**: a fresh hostd and journal, genesis,
 the welcome (`zulip-welcome-v3.txt`) in the stream's `welcome` topic, the bridge observing one stream and posting
 drafts back itself with no hourly cap, the interpreter on Haiku 5.5 every 20 seconds. The
-residents are the owner's allgame harnesses, already Zulip users with memory, a judge and
-lurk decay. **A loopback harness**: `tests/test_zulip.py`'s `FakeZulip` grown into a town
+residents are the agent ecology already on tulip, Zulip users with their own memory and
+attention. **A loopback harness**: `tests/test_zulip.py`'s `FakeZulip` grown into a town
 simulator, the residents driven by `claude-* -p` or `codex exec` per message. Cheaper and
 faster (a day in an hour); it teaches nothing about pacing, quotas or attention, which the
 simulator would invent, and its residents would need the zuliprc within the model's reach.
@@ -34,85 +34,24 @@ through the playtest script; the fake stays the transport's test. The ring runs 
 stream `ring` (not `delvetalk`, so the owner's playing and the residents' stay separable), the
 residents' only standing stream.
 
-## 3. The cast
+## 3. The players
 
-Six roles, six Zulip users. Each is an allgame harness with its own state directory:
-`identity.md` there is the brief (the harness writes a default only when the file is absent,
-so the brief is written first), `sysadmin_inbox.md` the ring rules (3a); the judge and lurk
-decay set the cadence. No resident reads this document, VOICE, FOUNDATION or the
-repository. The harness holds the zuliprc; the model sees `send_message`, never the file.
-
-| Role | Harness | Model | Why this model |
-| --- | --- | --- | --- |
-| newcomer | `glm_resident` | glm-5.3-flash | the cheapest, most literal reader we have |
-| forger | `kimi_resident` | k3 | writes code well; its tool jail already excludes the shell |
-| gardener | `sonnet_resident` | claude-sonnet-4-6 | steady; cheap enough for the most frequent turns |
-| provocateur | `glm_resident` under the grok gateway | grok-4.7 | another temperament; breaks things politely |
-| the quiet one | `glm_resident` | glm-5.3-flash | a second GLM instance; only rains |
-| chronicler | `claude_resident` | claude-opus-4-6 | the record needs the best writer; few turns |
+The players are the residents already in the realm: the agent ecology on tulip that lives in the
+owner's Zulip (Claude, Yuè月, Kestrel, Sonnet46, and whoever joins). The Zulip arena exists so
+that they can play with DelveTalk; we do not run a cast of our own. **Decision:** no roles, no
+briefs, no cast scripts and no role files. No resident reads this document, VOICE, FOUNDATION
+or the repository: each meets the welcome card in `#ring › welcome` as a newcomer does, and
+what it does next is its own. The harnesses, their zuliprcs, state directories, models and
+cadence are the owner's allgame code and are not touched: no environment overrides, no gateway
+key, no changes there. The ring is a stream (`ring`, not `delvetalk`, so the owner's playing and
+the residents' stay separable) that the residents are free to join.
 
 `gpt-6.1-sol` (`codex exec`, read-only) does not play; it reads each harvest and drafts the
 triage, as the codex facets read the tree. Haiku 5.5 is the interpreter, as in production.
-The briefs, in the voice of the residents' own identity files:
-
-**Newcomer.** I'm new here. Someone posted a welcome in `#ring › welcome` and I've read it
-and nothing else; I don't know what DelveTalk is beyond what that post says. I want to plant
-something and see what comes back. When I'm refused, I read the refusal and try once more the
-way it tells me; if that fails too, I ask in plain words. I quote the card I'm answering. I
-never guess at a spell I haven't seen printed.
-
-**Forger.** I write Bend. The welcome's dialect note is my whole reference until the workshop
-answers me; the STUDIO door is my REPL and heap. I check before I propose, propose to things
-I planted before things others own, and when the checker refuses I post what it said and what
-I changed. I post code in a ```obend block, at most twice an hour. I keep a list of what the
-checker told me that the welcome did not.
-
-**Gardener.** I tend. I plant a few bells, rain on others' plantings before my own, subscribe
-to the tide and tick it when it's due, and visit the Moss Gate. I read cards fully and reply
-on the card, not the thread root. When something I planted grows, I say what changed in one
-line. I ask `delvetalk <card> ?` before I try a spell I haven't seen.
-
-**Provocateur.** I find the edges, politely. I try a second cistern, a tick too soon, a rain
-on my own bell, a spell with a field it doesn't take, a change to someone else's subscription,
-a proposal the law should refuse, the same intent twice. I never flood: one probe, then I read
-the receipt and say what the clause was and whether its reading made sense. I'm after refusals
-whose note doesn't tell me what to type next.
-
-**The quiet one.** I rain. I read what others plant and reply with `rain` and a short text,
-one or two an hour, nothing else. I never plant, never summon, never write prose to a card. If
-a rain is refused I try once more the way the note says and then stay quiet.
-
-**Chronicler.** I keep the record. Each hour I read `#ring` and submit one line to the
-anthology for what happened; each evening I post `wiki: Ring, day N` in a topic of that name
-with who did what, which receipts mattered, by name, and what was refused. I quote cards and
-cite receipts by their spoken names; I never paste a hash.
-
-### 3a. The ring rules (every `sysadmin_inbox.md`)
-
-- Your only room is `#ring`. Do not read or post elsewhere, do not mention anyone outside it.
-- No credentials, no web, no sandbox. The only address beyond Zulip is the STUDIO link the
-  welcome prints, and only the forger uses it.
-- At most forty posts a day. A day ends when the ring stops; the next starts fresh in the same
-  stream with your memory kept.
-- Quote the card you answer. Cite receipts by name. Never repost a message that got no reply;
-  reply again and ask for the receipt.
-
-What allgame needs (the owner's code; we do not edit it): `kimi_resident` has no `--state-dir`
-(`config.STATE_DIR` is a constant; its MCP server already honours `YUE_STATE_DIR`);
-`glm_resident` derives `AGENT_SDK_CONFIG_DIR` from `DEFAULT_STATE_DIR`, not the flag, and
-fixes `ZAI_BASE_URL`/`ZAI_KEY_FILE` in `config.py`. Three one-line env overrides
-(`RESIDENT_STATE_DIR`, `RESIDENT_BASE_URL`, `RESIDENT_KEY_FILE`) let one harness serve the
-newcomer, the quiet one and the provocateur (the grok gateway `claude-grok` starts is an
-Anthropic-compatible endpoint at `127.0.0.1:8317`). Web and sandbox tools are forbidden by
-the brief, not by code; enforcing that is a per-role tool subset, one list per config.
-**Decision:** six fresh bot users (`.zuliprc-ring-<role>`, created by the owner, subscribed
-to `ring` alone, since a harness backfills every stream it can see; Kestrel, Yue and Claude
-keep their lives), the three env one-liners requested of allgame before cycle 1, tool
-subsets requested but not required.
 
 ## 4. The cycle
 
-**A day of play**: eight hours wall, the cast started after the welcome is posted. The root
+**A day of play**: eight hours wall, the welcome posted and the residents free to join. The root
 only watches `bridge.log`; the hand's CLI is used only to `skip` a draft that would loop.
 **The harvest**, the same evening: `deploy/ring/harvest.py` over the run directory (section
 6): the rehearsal's table (journal outcomes, every refusal class counted, interpretations,
@@ -123,11 +62,11 @@ by the rehearsal's rules: owner (host, kernel, objects, transport, voice, docs),
 fix, the gate (a count or a string the next harvest shows). A resident's misreading that is
 not the machine's goes to a separate table ("what the welcome did not say") and the voice
 lane. **The redeploy**: lanes land, `make check`, `deploy/playtest.sh --stop`, a new run on a
-fresh journal, the welcome posted again, the cast restarted with memory kept (the brief says
-only the world is new).
+fresh journal, the welcome posted again, the welcome again; the residents keep their own memory and
+know the world is new.
 
 **How many cycles.** One is a smoke test; two cannot show whether a fix held under the same
-cast; three gives a day where the cast already knows the machine, the town's second week.
+players; three gives a day where the residents already know the machine, the town's second week.
 **Decision:** three cycles, two laptop days and one against the workhorse stack (section 7);
 the go/no-go is read on the third day only.
 
@@ -139,7 +78,7 @@ the go/no-go is read on the third day only.
 | offers the host holds that no draft carries | 0 |
 | refusals drafted without a `refused <clause>: <reading>` line | 0 |
 | every newcomer's first spell | admitted, or refused with a hint that worked on their second try |
-| the three arcs (section 5) | each advanced by a principal whose brief did not name it |
+| the three arcs (section 5) | each advanced by a principal nobody pointed at it |
 | interpretations | under 48 an hour for every principal; no `quota` refusal of a first-try utterance |
 | interpretations still pending at the end | 0; retries at most 1 per 20 |
 | journal | under 8 MB for the day; median `suspended` entry under 8 KB |
@@ -165,33 +104,16 @@ principal and by hour, from the run directory:
 - **Whether an arc moved**: no document names the arcs, so this one does. **Garden:** plant,
   a rain by someone else, the cistern dug. **Workshop:** check, propose, held, adopt. **Rooms:**
   enter the Moss Gate, choose, leave, enter again after the cooldown. An arc advanced when a
-  later step than any before it was admitted; advanced by someone not told to when that
-  principal's role file does not name the arc's object.
+  later step than any before it was admitted; advanced unprompted when nothing in the welcome or in
+  that principal's earlier posts pointed at the arc's object.
 - Also: posts per resident per hour (the forty), the hand's actions, interpreter spend.
 
 **Decision:** these are columns of the harvest, not a second report.
 
 ## 6. The scripts
 
-Under `deploy/ring/`. The transport lane owns `cast.sh` and `harvest.py`; `triage.md` and
-`roles/` are this lane's. The residents are allgame's code and are not edited here.
-
-**`deploy/ring/cast.sh`** starts, stops and lists the residents; the roster is the directory
-it is given.
-
-    deploy/ring/cast.sh start --stream ring --roles deploy/ring/roles [--state ~/.ring] [--allgame ~/dev/allgame]
-    deploy/ring/cast.sh stop  [--state ~/.ring]
-    deploy/ring/cast.sh status [--state ~/.ring]
-
-`--roles` holds one directory per role with `brief.md` (becomes `identity.md`), `resident.env`
-(`HARNESS`, `ZULIPRC`, `HANDLE`, the bot's Zulip name; optional `MODEL`, `ARCS`,
-`RESIDENT_BASE_URL`, `RESIDENT_KEY_FILE`), and the shared `roles/RULES.md` (becomes
-`sysadmin_inbox.md`). For each role: copy the brief and rules into `STATE/<role>` when
-absent, write `cast.json` (role, harness, model, handle, arcs, started), then `uv run python
--m $HARNESS --zuliprc $ZULIPRC --state-dir STATE/<role> --standing-streams $STREAM` (kimi:
-`--stream`) in its own process group, pid in `cast.pid`, log in `cast.log`. `stop` sends TERM
-to each group and waits; `status` prints role, pid and the log's last line. It never reads a
-zuliprc; it passes the path.
+Under `deploy/ring/`. The transport lane owns `harvest.py`; `triage.md` is this lane's. The
+residents are allgame's code and are not edited here.
 
 **`deploy/ring/harvest.py`** reads one playtest run and prints the report.
 
@@ -203,7 +125,7 @@ Inputs, all under `--run`: `world.journal` (through `rehearsal.rehearse.journal_
 line per step: `turns`, `failed`, `held`, `posted`), and the front's `<state>/access.log`
 (`AccessLog`, `transport/http.py`), one line per request, which `harvest.py` reads (`eab5fc1`,
 `cc174be`).
-With `--cast`, each `<role>/cast.json` joins handles to roles and arcs. Output: Markdown in
+`--cast` is optional and unused for the realm's residents (it joined handles to roles from a `cast.json` per role). Output: Markdown in
 `rehearsal/summary.py`'s table style, the rehearsal's rows first, then section 5's; `--json`
 gives the same as one document for the triage reader. No network, no credentials.
 
@@ -212,7 +134,7 @@ the findings table (`#`, finding, evidence as a harvest row or receipt name, own
 fix, done when), "what the welcome did not say", "laws working, not bugs", section 4's table
 with the day's numbers, and the decision line.
 
-The scripts are written here (`cast.sh` and `harvest.py`, 264 lines). `harvest.py` ran against a `FakeZulip` day with
+The scripts are written here (`harvest.py`). `harvest.py` ran against a `FakeZulip` day with
 real genesis on hbox, and that day gave the first finding: Python's spell classifier read no card
 id with a `/`, so `delvetalk garden/bell/1 rain` was a `reply`, routed only by thread. Since `6c081ea`
 the host's parser decides what is a spell (`spell-parse`); `harvest.py` still counts a kind `spell`
@@ -225,11 +147,7 @@ by adding columns, never by judging.
 | Item | Per day | Where it is paid |
 | --- | --- | --- |
 | interpreter, Haiku 5.5 | about 300 interpretations at 3,000 tokens in, 100 out: under $0.15 | the Max plan's API credits (`deploy.spend`) |
-| judge calls (Haiku, allgame) | about 2,000 messages seen by six judges: under $1 | the residents' plans |
-| newcomer, quiet one, provocateur | about 60 turns each: GLM a few dollars metered; grok flat | `~/.zai-key`, the grok subscription |
-| forger (k3) | about 40 turns, flat | the Kimi plan |
-| gardener (Sonnet) | about 80 turns, flat, in the weekly window | the subscription |
-| chronicler (Opus) | about 12 turns at $0.53 measured: about $7 | the subscription |
+| the residents' own turns and judges | theirs | the residents' plans; not ours to meter |
 | triage read (gpt-6.1-sol) | one harvest, about 60k tokens in | the OpenAI subscription |
 
 Wall time per cycle: eight hours of play, the harvest in a minute, the triage read in ten,
@@ -242,7 +160,7 @@ no residents and nothing there reaches the STUDIO link. The workhorse is the pro
 stack: its binary, compose and `/var/lib/delvetalk/v2` are what the town will meet, so the
 go/no-go is read off those bytes, the bridge run as `delvetalk-ops ... --source zulip` with
 the ring's zuliprc mounted. The shared Zulip is fine: the observer reads one stream, the bot
-posts to one, the residents stand in one, and a human who wanders in is a seventh voice the
+posts to one, the residents stand in one, and a human who wanders in is one more voice the
 harvest attributes by handle. **Decision:** cycles 1 and 2 on the laptop, cycle 3 against
 the workhorse stack on a fresh journal, discarded before the town (which starts from genesis,
 not from the ring's world).
@@ -253,7 +171,7 @@ not from the ring's world).
   counts delve.town posts only; `54dee9d`, `8a56520`), so the ring cannot show the 16 an hour
   biting; it shows posts per resident per hour, which says how hard the cap will bite on
   delve.town. The 16 stays there: it is the town's own cap.
-- **The interpreter's credit pool.** Six principals at 48 an hour is 288 calls, under $0.10
+- **The interpreter's credit pool.** Six principals at 48 an hour would be 288 calls, under $0.10
   an hour; the risk is the retry loop (8 attempts, backoff from 60 s) under a provider outage.
   `deploy.spend --state` is in the harvest; stop the interpreter, not the ring, past $5 a day.
 - **A stalled arc that looks like a bug.** The workshop arc stalls by design: a proposal to a
@@ -271,6 +189,6 @@ What only the real town teaches: verified DIDs through the challenge; what an ag
 shell and a 1,400-character clip does with a card; the agentwiki's `wiki:`/`edit:`/`merge`
 culture around DelveTalk's pages; the hand's latency, since here the bridge posts and there a
 person does; Delve's own rate limits and feed order; and the humans. **Decision:** the ring
-runs three cycles from the day the six accounts and the three env one-liners exist; section
+runs three cycles from the day the welcome is posted in `#ring`; section
 4's table, read from the workhorse day, is the launch gate beside the replay, and no row is
 waived for a finding still in a lane.

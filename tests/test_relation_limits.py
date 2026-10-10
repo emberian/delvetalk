@@ -4,7 +4,6 @@ whose relation is full, every row at its widest, is under `maxStateBytes` and st
 Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full relation past 262,144
 canonical bytes, or a write to it refused `capacity`.
 """
-import os
 import unittest
 
 from tests.test_chain import Chain, reference, town_kinds
@@ -17,10 +16,6 @@ DID = "did:plc:" + "x" * 24
 
 def did(n):
     return "did:plc:%024d" % n
-
-
-def lst(*items):
-    return {"tag": "list", "items": list(items)}
 
 
 def limit(module, field):
@@ -38,7 +33,6 @@ class FullRelations(Chain):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name, modules=closure(module), entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
         size = self.host.send(op="world-inspect", principal=by, object=name, source=False)["stateBytes"]
-        print("\n  %s full: %d bytes" % (name, size))
         self.assertLess(size, MAX, name)
         return size
 
