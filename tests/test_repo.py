@@ -41,6 +41,11 @@ from transport.host import HostClient
 from transport.http import Front
 from transport.identity import ORIGIN
 
+# Signing is ECDSA with RFC 6979 nonces (`deterministic_signing`), which cryptography has from 43.0.0.
+CRYPTOGRAPHY = tuple(int(x) for x in __import__('cryptography').__version__.split('.')[:2])
+signs = unittest.skipIf(CRYPTOGRAPHY < (43, 0), 'deterministic ECDSA needs cryptography >= 43.0 (this is %d.%d); persvati has it' % CRYPTOGRAPHY)
+
+
 HOST = urllib.parse.urlsplit(ORIGIN).netloc
 REPO = 'did:web:' + HOST
 NS = 'town.delvetalk.'
@@ -261,6 +266,7 @@ class Repository(unittest.TestCase):
         s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
         self.assertEqual((s, e['error']), (401, 'InvalidToken'))  # a bad bearer is not the public reader
 
+    @signs
     def test_signed_over_the_real_journal_every_leaf_names_its_entry(self):
         repo = Repo(ORIGIN, sign.Key.generate())
         code, car, _ = repo.serve(self.host, 'GET', 'com.atproto.sync.getRepo', {'did': REPO}, None)
@@ -387,6 +393,7 @@ class Vectors(unittest.TestCase):
             self.assertEqual([k.decode() for k, _ in leaves(blocks, tree.root())], keys)
         self.assertEqual(str(Tree().root()), 'bafyreie5737gdxlw5i64vzichcalba3z2v5n6icifvx5xytvske7mr3hpm')  # the empty tree
 
+    @signs
     def test_did_keys_and_signatures(self):
         for v in vectors('w3c_didkey_K256.json'):
             key = sign.Key(sign.ec.derive_private_key(int(v['privateKeyBytesHex'], 16), sign.ec.SECP256K1()))
@@ -459,6 +466,7 @@ class World:
         return {'status': 'unknown', 'message': q['op']}
 
 
+@signs
 class SignedRepository(unittest.TestCase):
     """Ten entries on a fake world, read through the front on loopback with a key."""
 
