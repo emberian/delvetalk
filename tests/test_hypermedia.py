@@ -449,7 +449,7 @@ class Catalogue(unittest.TestCase):
         named = set(re.findall(r'=> "(\w+)"', re.search(r'def Clause.name.*?\n\n', spell, re.S)[0])) - {'unclear'}  # unclear is a question, never a refusal
         literal = set(re.findall(r'\.refuse \w+ "(\w+)"|refuseSpell w req \w+ "(\w+)"', loop))
         clauses = named | {a or b for a, b in literal}
-        listed = re.search(r'`clause` says which part \(([^)]*)\)', REFUSALS['badSpell']['means'])[1]
+        listed = re.search(r'`clause` says which part \(([^);]*)', REFUSALS['badSpell']['means'])[1]
         self.assertEqual(set(listed.split(', ')), clauses)
 
     def test_no_example_reply_carries_more_than_one_hash_except_a_source(self):

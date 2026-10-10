@@ -557,7 +557,7 @@
   "badSpell": {
    "transient": false,
    "hint": "source",
-   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, badValue, fixed, unclosedBlock), `reason` says why, and `hint` is the spell with its blanks, to resend"
+   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, missingField, badValue, fixed, unclosedBlock, unknownKind, noBody, unknownLaw, noLaw, lawClash, notYours; the last six are become's, adopt's and lend's), `reason` says why, and `hint` is the spell with its blanks, to resend"
   },
   "quota": {
    "transient": true,
