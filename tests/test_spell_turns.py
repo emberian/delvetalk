@@ -87,11 +87,11 @@ class SpellTurns(Reflection):
 
     def test_misfits_are_refused_by_clause_with_reason_and_hint(self):
         cases = [("delvetalk garden plant\ncolour: gold\nseed: fern", "badValue", "colour is one of: amber, violet, silver"),
-                 ("delvetalk garden plant\nsize: big", "unknownField", "Unknown field size"),
-                 ("delvetalk garden plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField", "Duplicate field colour"),
-                 ("delvetalk garden water", "noAction", "garden has no action water."),
-                 ("delvetalk nowhere plant", "otherCard", "There is no card nowhere."),
-                 ("delvetalk garden plant\nseed: <<END\nfern\n", "unclosedBlock", "the block <<END for seed is never closed by a line END")]
+                 ("delvetalk garden plant\nsize: big", "unknownField", "No field size in this spell; it takes colour, seed."),
+                 ("delvetalk garden plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField", "colour is given twice; keep one."),
+                 ("delvetalk garden water", "noAction", "garden has no spell water; it has these:"),
+                 ("delvetalk nowhere plant", "otherCard", "There is no card nowhere; the directory lists the doors."),
+                 ("delvetalk garden plant\nseed: <<END\nfern\n", "unclosedBlock", "The block <<END for seed needs a last line that is exactly END.")]
         for i, (text, clause, reason) in enumerate(cases):
             r = self.say(text, identity=f"bad{i}")
             out = r["receipt"]["outcome"]
@@ -197,7 +197,7 @@ class Lenses(Reflection):
     def test_misfits_are_refused_by_clause(self):
         cases = [("delvetalk lamp set\nsize: 12", "badValue", "size"),
                  ("delvetalk lamp set\nmood: grim", "badValue", "mood is one of: calm, wild"),
-                 ("delvetalk lamp set\ncolour: red", "unknownField", "Unknown field colour; set takes one of: name, size, mood"),
+                 ("delvetalk lamp set\ncolour: red", "unknownField", "No field colour in this spell; it takes name, size, mood."),
                  ("delvetalk lamp set\nname: a\nsize: 2", "unknownField", "set takes one field a spell, not name, size")]
         for i, (text, clause, reason) in enumerate(cases):
             out = self.say(text, identity=f"bad{i}")["receipt"]["outcome"]
@@ -210,7 +210,7 @@ class Lenses(Reflection):
         self.assertEqual(self.say("delvetalk lamp set")["result"], nat(2))
         usage = self.say("delvetalk lamp ?")
         self.assertEqual(usage["status"], "usage", usage)
-        self.assertIn("To change a field, reply (one field a spell):", usage["text"])
+        self.assertIn("To set a field, reply with one of these (one field a spell):", usage["text"])
         self.assertIn("delvetalk lamp set\nmood: <calm, wild>", usage["text"])
 
 

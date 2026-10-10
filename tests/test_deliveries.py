@@ -188,7 +188,7 @@ class Exhaustion(Deliveries):
         self.assertEqual(self.fields("loop")["count"], str(MAX_DEPTH))
         self.assertEqual(self.pending()["count"], 0)
         last = receipts[-1]["receipt"]["outcome"]
-        self.assertEqual((last["class"], last["reason"]), ("budgetExhausted", "depth"))
+        self.assertEqual((last["class"], last["reason"]), ("budgetExhausted", "the chain of sends spent its depth."))
         self.assertEqual(len(receipts), MAX_DEPTH)          # 99 runs and the refusal
         self.assertEqual(receipts[-1]["receipt"]["ledger"]["depth"], 0)
         self.assertEqual(sum(1 for r in receipts if r["status"] == "admitted"), MAX_DEPTH - 1)
@@ -211,7 +211,7 @@ class Exhaustion(Deliveries):
         self.turn("ping", "spin", arg("pong"))
         receipts = self.deliver_all()
         last = receipts[-1]["receipt"]
-        self.assertEqual((last["outcome"]["class"], last["outcome"]["reason"]), ("budgetExhausted", "work"))
+        self.assertEqual((last["outcome"]["class"], last["outcome"]["reason"]), ("budgetExhausted", "the chain of sends spent its work."))
         self.assertGreater(last["ledger"]["depth"], 0)
         self.assertEqual(int(self.fields("ping")["count"]) + int(self.fields("pong")["count"]), 3)
 
@@ -256,7 +256,7 @@ class Restart(Deliveries):
         self.settled = []
         receipts = self.deliver_all()
         self.assertEqual(int(self.fields("loop")["count"]), MAX_DEPTH)
-        self.assertEqual(receipts[-1]["receipt"]["outcome"]["reason"], "depth")
+        self.assertEqual(receipts[-1]["receipt"]["outcome"]["reason"], "the chain of sends spent its depth.")
 
     def test_a_tampered_ledger_in_a_sending_entry_breaks_the_chain(self):
         self.make("loop")

@@ -99,7 +99,7 @@ class Workshop(Chain):
         open_ = self.say("delvetalk workshop check\nsource: <<BEND\n%s" % BLOCK)
         out = open_["receipt"]["outcome"]
         self.assertEqual((open_["status"], out["class"], out["clause"]), ("refused", "badSpell", "unclosedBlock"), open_)
-        self.assertIn("the block <<BEND for source is never closed by a line BEND", out["reason"])
+        self.assertIn("The block <<BEND for source needs a last line that is exactly BEND.", out["reason"])
 
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()

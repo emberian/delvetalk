@@ -243,7 +243,7 @@ partial def valued (name : String) (value rest : T) : Fields2 :=
 
 partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields2 :=
   if rest.isEmpty then
-    .bad s!"the block <<{str delimiter} for {name} is never closed by a line {str delimiter}"
+    .bad s!"The block <<{str delimiter} for {name} needs a last line that is exactly {str delimiter}."
   else
     let line := rest.take (brk rest ['\n'])
     let after := rest.drop (brk rest ['\n'] + 1)
@@ -253,7 +253,7 @@ partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields
 end
 
 partial def parseFrom (text : T) (quoted : Candidate) (fielded : Bool) : Parsed :=
-  let noLine := "The reply has no delvetalk line."
+  let noLine := "No delvetalk line; the spell is the last unquoted one."
   let spelled' := fun (card action : String) (tail rest : T) => spelled card action (both (inline tail) (fieldLines rest))
   if text.isEmpty then
     match quoted with
@@ -335,9 +335,9 @@ def audit (fields : List Field) : List Binding → Option (Clause × String)
   | [] => none
   | b :: rest =>
       match fields.find? (·.name == b.name) with
-      | none => some (.unknownField, s!"Unknown field {b.name}")
+      | none => some (.unknownField, s!"No field {b.name} in this spell; it takes {if fields.isEmpty then "none" else ", ".intercalate (fields.map (·.name))}.")
       | some f =>
-          if rest.any (named b.name) then some (.duplicateField, s!"Duplicate field {b.name}")
+          if rest.any (named b.name) then some (.duplicateField, s!"{b.name} is given twice; keep one.")
           else match judge f b.value with
             | some w => some w
             | none => audit fields rest
@@ -365,14 +365,14 @@ def rebound (bindings : List Binding) (form : Form) : List Binding :=
   else bindings
 
 def clauseOfReason (reason : String) : Clause :=
-  if reason.startsWith "the block <<" then .unclosedBlock else .noAction
+  if reason.startsWith "The block <<" then .unclosedBlock else .noAction
 
 def fit (parsed : Parsed) (form : Form) : Fit :=
   match parsed with
   | .notASpell reason _ => .refused (clauseOfReason reason) reason
   | .spell card action fields =>
       if card != form.card || action != form.action then
-        .refused .otherCard s!"This card offers {form.card} {form.action}"
+        .refused .otherCard s!"This card answers {form.card} {form.action}."
       else
         let bindings := rebound fields form
         match audit form.fields bindings with
@@ -490,11 +490,11 @@ private def plant : Form :=
 #guard parse "delvetalk tide subscribe / every: 1 / note: WC-01, first light" ==
   .spell "tide" "subscribe" [⟨"every", "1"⟩, ⟨"note", "WC-01, first light"⟩]
 #guard parse "delvetalk w c\nsource: <<BEND\nline\n" ==
-  .notASpell "the block <<BEND for source is never closed by a line BEND" true
+  .notASpell "The block <<BEND for source needs a last line that is exactly BEND." true
 #guard fit (parse "delvetalk garden-1 plant\nplant: a fern") plant == .unclear ["colour"]
 #guard fit (parse "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver") plant ==
-  .refused .unknownField "Unknown field plant"
-#guard fit (parse "delvetalk garden-2 plant") plant == .refused .otherCard "This card offers garden-1 plant"
+  .refused .unknownField "No field plant in this spell; it takes colour, seed."
+#guard fit (parse "delvetalk garden-2 plant") plant == .refused .otherCard "This card answers garden-1 plant."
 #guard bare "plant: a fern\n> x: y\n" == [⟨"plant", "a fern"⟩]
 
 end Delvetalk.Host.Spell

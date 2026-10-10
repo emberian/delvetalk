@@ -55,10 +55,12 @@ def show_fit(fit):
 
 
 def clause_for(reason):
-    for prefix, clause in (("This card offers", "otherCard"), ("Unknown field", "unknownField"),
-                           ("Duplicate field", "duplicateField"), ("the block <<", "unclosedBlock")):
+    for prefix, clause in (("This card answers", "otherCard"), ("No field ", "unknownField"),
+                           ("The block <<", "unclosedBlock")):
         if reason.startswith(prefix):
             return clause
+    if reason.endswith(" is given twice; keep one."):
+        return "duplicateField"
     if "takes" in reason or " is one of: " in reason:
         return "badValue"
     return "noAction"
