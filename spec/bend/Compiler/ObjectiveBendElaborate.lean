@@ -36,36 +36,48 @@ def dropEndStr (s : String) (n : Nat) : String := String.ofList (s.toList.take (
 
 abbrev Param := ObjectiveBendSurface.Param
 
+/-- Every node keeps the span of the surface node it was read from (an implicit field:
+patterns never mention it), so a refusal can point at the source. -/
 inductive Expr where
-  | var (name : String)
-  | nat (value : String)
-  | bool (value : Bool)
-  | str (value : String)
-  | unit
-  | record (fields : List (String × Expr))
-  | extend (inherited : Expr) (fields : List (String × Expr))
-  | member (target : Expr) (name : String)
-  | call (callee : Expr) (args : List Expr)
-  | compose (specs : List Expr)
-  | fix (spec inherited : Expr)
-  | closure (params : List Param) (resultType : String) (body : Expr)
-  | binary (op : String) (left right : Expr)
-  | ite (condition whenTrue whenFalse : Expr)
+  | var (name : String) {span : ObjectiveBendSurface.Span}
+  | nat (value : String) {span : ObjectiveBendSurface.Span}
+  | bool (value : Bool) {span : ObjectiveBendSurface.Span}
+  | str (value : String) {span : ObjectiveBendSurface.Span}
+  | unit {span : ObjectiveBendSurface.Span}
+  | record (fields : List (String × Expr)) {span : ObjectiveBendSurface.Span}
+  | extend (inherited : Expr) (fields : List (String × Expr)) {span : ObjectiveBendSurface.Span}
+  | member (target : Expr) (name : String) {span : ObjectiveBendSurface.Span}
+  | call (callee : Expr) (args : List Expr) {span : ObjectiveBendSurface.Span}
+  | compose (specs : List Expr) {span : ObjectiveBendSurface.Span}
+  | fix (spec inherited : Expr) {span : ObjectiveBendSurface.Span}
+  | closure (params : List Param) (resultType : String) (body : Expr) {span : ObjectiveBendSurface.Span}
+  | binary (op : String) (left right : Expr) {span : ObjectiveBendSurface.Span}
+  | ite (condition whenTrue whenFalse : Expr) {span : ObjectiveBendSurface.Span}
   /-- `let name: type = value in body` (type `_` when unannotated). -/
-  | letE (name type : String) (value body : Expr)
+  | letE (name type : String) (value body : Expr) {span : ObjectiveBendSurface.Span}
   /-- `Data.of::<T>(value)` (rewritten by the hosted front end): inject first-order
   data of type `T` into the universal type `Data`. -/
-  | toData (type : String) (value : Expr)
+  | toData (type : String) (value : Expr) {span : ObjectiveBendSurface.Span}
   deriving Inhabited, Repr
+
+def Expr.span : Expr → ObjectiveBendSurface.Span
+  | @var _ s | @nat _ s | @bool _ s | @str _ s | @unit s | @record _ s | @extend _ _ s | @member _ _ s
+  | @call _ _ s | @compose _ s | @fix _ _ s | @closure _ _ _ s | @binary _ _ _ s | @ite _ _ _ s
+  | @letE _ _ _ _ s | @toData _ _ s => s
 
 abbrev Pattern := ObjectiveBendSurface.Pattern
 
 inductive Body where
-  | expr (e : Expr)
-  | cases (scrutinee : Expr) (branches : List (Pattern × Body))
+  | expr (e : Expr) {span : ObjectiveBendSurface.Span}
+  /-- `armSpans` are the branches' own spans, in order. -/
+  | cases (scrutinee : Expr) (branches : List (Pattern × Body)) {span : ObjectiveBendSurface.Span}
+      {armSpans : List ObjectiveBendSurface.Span}
   /-- `let name: type = value` then the rest of the body. -/
-  | letB (name type : String) (value : Expr) (body : Body)
+  | letB (name type : String) (value : Expr) (body : Body) {span : ObjectiveBendSurface.Span}
   deriving Inhabited, Repr
+
+def Body.span : Body → ObjectiveBendSurface.Span
+  | @expr _ s | @cases _ _ s _ | @letB _ _ _ _ s => s
 
 structure Method where
   name : String
@@ -136,34 +148,34 @@ def expr : Nat → ObjectiveBendSurface.Expr → Except String Expr
     let fields := fun (fs : List (String × ObjectiveBendSurface.Expr)) =>
       fs.mapM fun (n, v) => do return (n, ← expr fuel v)
     match e with
-    | .var n _ => return .var n
-    | .nat v _ => return .nat v
-    | .bool v _ => return .bool v
-    | .str v _ => return .str v
-    | .unit _ => return .unit
-    | .record fs _ => return .record (← fields fs)
-    | .extend i fs _ => return .extend (← expr fuel i) (← fields fs)
-    | .member t n _ => return .member (← expr fuel t) n
-    | .call c args _ => return .call (← expr fuel c) (← args.mapM (expr fuel))
-    | .compose specs _ => return .compose (← specs.mapM (expr fuel))
-    | .fix spec inherited _ => return .fix (← expr fuel spec) (← expr fuel inherited)
-    | .extensionValue ps t b _ => return .closure ps t (← expr fuel b)
-    | .lambda ps r b _ => return .closure ps r (← expr fuel b)
-    | .binary op l r _ => return .binary op (← expr fuel l) (← expr fuel r)
-    | .ite c t f _ => return .ite (← expr fuel c) (← expr fuel t) (← expr fuel f)
-    | .letE n t v b _ => return .letE n t (← expr fuel v) (← expr fuel b)
-    | .dataOf t v _ => return .toData t (← expr fuel v)
+    | .var n s => return .var n (span := s)
+    | .nat v s => return .nat v (span := s)
+    | .bool v s => return .bool v (span := s)
+    | .str v s => return .str v (span := s)
+    | .unit s => return .unit (span := s)
+    | .record fs s => return .record (← fields fs) (span := s)
+    | .extend i fs s => return .extend (← expr fuel i) (← fields fs) (span := s)
+    | .member t n s => return .member (← expr fuel t) n (span := s)
+    | .call c args s => return .call (← expr fuel c) (← args.mapM (expr fuel)) (span := s)
+    | .compose specs s => return .compose (← specs.mapM (expr fuel)) (span := s)
+    | .fix spec inherited s => return .fix (← expr fuel spec) (← expr fuel inherited) (span := s)
+    | .extensionValue ps t b s => return .closure ps t (← expr fuel b) (span := s)
+    | .lambda ps r b s => return .closure ps r (← expr fuel b) (span := s)
+    | .binary op l r s => return .binary op (← expr fuel l) (← expr fuel r) (span := s)
+    | .ite c t f s => return .ite (← expr fuel c) (← expr fuel t) (← expr fuel f) (span := s)
+    | .letE n t v b s => return .letE n t (← expr fuel v) (← expr fuel b) (span := s)
+    | .dataOf t v s => return .toData t (← expr fuel v) (span := s)
     | .specialize .. => .error "unknown AST expression specialize"
 
 def body : Nat → ObjectiveBendSurface.Body → Except String Body
   | 0, _ => .error "AST nesting capacity"
   | fuel + 1, b => do
     match b with
-    | .expr e _ => return .expr (← expr fuel e)
-    | .cases sc branches _ =>
-      let branches ← branches.mapM fun (p, b, _) => do return (p, ← body fuel b)
-      return .cases (← expr fuel sc) branches
-    | .letB n t v rest _ => return .letB n t (← expr fuel v) (← body fuel rest)
+    | .expr e s => return .expr (← expr fuel e) (span := s)
+    | .cases sc branches s =>
+      let arms ← branches.mapM fun (p, b, _) => do return (p, ← body fuel b)
+      return .cases (← expr fuel sc) arms (span := s) (armSpans := branches.map (·.2.2))
+    | .letB n t v rest s => return .letB n t (← expr fuel v) (← body fuel rest) (span := s)
 
 def signature (s : ObjectiveBendSurface.Signature) : Signature := ⟨s.name, s.params, s.resultType⟩
 
@@ -286,7 +298,19 @@ structure Proposal where
   reason : Option String := none
   deriving Inhabited
 
+/-- Where elaborated code comes from: the module and declaration being elaborated and the
+span of the surface node in that module's source. -/
+structure Loc where
+  module : String
+  definition : String
+  span : ObjectiveBendSurface.Span
+  deriving Inhabited, Repr
+
 inductive ATerm where
+  /-- The term elaborated from the surface node at `loc`. Transparent: it renders, erases
+  and annotates as its term, adds no checker position, and exists so that a refusal of the
+  checker at a position can be traced back to the source (`ObjectiveBendBlame.locate`). -/
+  | located (loc : Loc) (term : ATerm)
   | bound (index : Nat)
   | lam (proposal : Proposal) (body : ATerm)
   | app (fn arg : ATerm)
@@ -319,6 +343,7 @@ inductive ATerm where
 
 mutual
 def ATerm.json : ATerm → Json
+  | .located _ t => t.json
   | .bound i => Json.mkObj [("tag", "bound"), ("index", toJson i)]
   | .lam _ b => Json.mkObj [("tag", "lam"), ("body", b.json)]
   | .app f a => Json.mkObj [("tag", "app"), ("fn", f.json), ("arg", a.json)]
@@ -375,6 +400,7 @@ def unaryPrimitiveOf : String → Except String CoreUnaryPrimitive
 
 mutual
 def ATerm.erase : ATerm → Except String CoreTerm
+  | .located _ t => t.erase
   | .bound i => .ok (.bound i)
   | .lam _ b => return .lam (← b.erase)
   | .app f a => return .app (← f.erase) (← a.erase)
@@ -467,10 +493,51 @@ structure St where
   fixTarget : Option PTy := none
   /-- The Plan/Response of the activity being lowered (none outside one). -/
   effect : Option (PTy × PTy) := none
+  /-- The knot key of the declaration being elaborated (`Loc.definition`). -/
+  declKey : String := ""
+  /-- The innermost surface node being elaborated: where a refusal is reported. -/
+  here : Option Loc := none
 
-abbrev M := StateT St (Except String)
+/-- An elaboration refusal: its message, where it was raised when known, and a one-line
+statement of the real form when one applies. -/
+structure Refusal where
+  message : String
+  loc : Option Loc := none
+  hint : Option String := none
+  /-- For a refusal about a sum's cases: the sum and the case found, in surface syntax. -/
+  expected : Option String := none
+  found : Option String := none
+  deriving Inhabited
 
-def fail {α : Type} (message : String) : M α := throw message
+instance : Coe String Refusal := ⟨fun message => { message }⟩
+
+abbrev M := StateT St (Except Refusal)
+
+def fail {α : Type} (message : String) : M α := do
+  throw { message, loc := (← get).here }
+
+/-- Refuse at `loc` (rather than at the node being elaborated), with a hint. -/
+def failAt {α : Type} (loc : Option Loc) (message : String) (hint : Option String := none)
+    (expected found : Option String := none) : M α :=
+  throw { message, loc, hint, expected, found }
+
+/-- Elaborate the surface node at `span` of module `m`: refusals inside are reported there
+(unless a deeper node claims them), and the term is marked with where it came from. -/
+def withLoc (span : ObjectiveBendSurface.Span) (m : Module) (action : M ATerm) : M ATerm := do
+  let outer := (← get).here
+  let loc : Loc := ⟨m.name, (← get).declKey, span⟩
+  modify fun st => { st with here := some loc }
+  let t ← action
+  modify fun st => { st with here := outer }
+  return .located loc t
+
+/-- Elaborate declaration `key`: its nodes' locations name it. -/
+def inDecl {α : Type} (key : String) (action : M α) : M α := do
+  let outer := (← get).declKey
+  modify fun st => { st with declKey := key }
+  let a ← action
+  modify fun st => { st with declKey := outer }
+  return a
 def typeError (message : String) : M Unit := modify fun s => { s with typeErrors := s.typeErrors.push message }
 
 def quantityOf (p : Param) : M String :=
@@ -1034,7 +1101,7 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
       return some (PTy.row row)
     | .extend inherited fields =>
       let some base ← synth c fuel inherited env m | return none
-      let some provided ← synth c fuel (.record fields) env m | return none
+      let some provided ← synth c fuel (.record fields (span := e.span)) env m | return none
       let bounds := (← get).sumBounds
       let rowVariable := match base with
         | .variable k => (bounds.lookup k).map isRowTy | _ => none
@@ -1222,6 +1289,7 @@ def PTy.subst (σ : Nat → Option PTy) : PTy → PTy
 mutual
 /-- Apply `f` to every type annotation of a lowered term. -/
 def ATerm.mapTypes (f : PTy → PTy) : ATerm → ATerm
+  | .located l t => .located l (t.mapTypes f)
   | .bound i => .bound i
   | .lam p b => .lam { p with domain := p.domain.map f, codomain := p.codomain.map f } (b.mapTypes f)
   | .app x y => .app (x.mapTypes f) (y.mapTypes f)
@@ -1505,6 +1573,10 @@ def coerceGo (c : Ctx) : Nat → Option PTy → Expr → ATerm → List Binding 
   | 0, _, _, t, _, _ => return (t, false)
   | fuel + 1, expected, e, t, env, m => do
     let some ty := expected | return (t, false)
+    -- A location mark is transparent: coerce what it marks, keep the mark.
+    if let .located loc inner := t then
+      let (inner', changed) ← coerceGo c fuel expected e inner env m
+      return (.located loc inner', changed)
     if let (.ite _ whenTrue whenFalse, .ifBool ct tt ft) := (e, t) then
       let (tt', a) ← coerceGo c fuel (some ty) whenTrue tt env m
       let (ft', b) ← coerceGo c fuel (some ty) whenFalse ft env m
@@ -1567,7 +1639,7 @@ def coerceArgs (c : Ctx) (fuel : Nat) (callee : Expr) (args : List Expr) (terms 
 mutual
 def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
-  | fuel + 1, e, env, m => do
+  | fuel + 1, e, env, m => withLoc e.span m do
     match e with
     | .var name =>
       if let some i := env.findIdx? (·.name == name) then return .bound i
@@ -1716,7 +1788,13 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         let hasCase := match c.sum? key with
           | some (_, .sum _ cases) => cases.any (·.1 == caseLabel)
           | _ => false
-        if !hasCase then fail ("sum " ++ key ++ " has no case " ++ caseLabel)
+        if !hasCase then
+          let cases := match c.sum? key with
+            | some (_, .sum _ cases) => cases.map (·.1)
+            | _ => []
+          throw { message := "sum " ++ key ++ " has no case " ++ caseLabel, loc := (← get).here,
+                  expected := some (sumName ++ " (" ++ " | ".intercalate cases ++ ")"), found := some caseLabel,
+                  hint := some ("the cases of " ++ sumName ++ " are " ++ ", ".intercalate cases) }
         if args.length > 1 then fail "a sum case carries one payload; use a record"
         if let [a] := args then noActivity c fuel a env m "effect-in-payload" "a sum payload is a shared lazy cell"
         let payload ← match args with
@@ -1768,7 +1846,7 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
 /-- A tail position of an activity body: pure results are lifted with `done`. -/
 def tail (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
-  | fuel + 1, e, env, m => do
+  | fuel + 1, e, env, m => withLoc e.span m do
     if let .fix .. := e then modify fun st => { st with fixTarget := st.resultType }
     let some (p, r) := (← get).effect | do
       coerceAt c fuel (← get).resultType e (← expression c fuel e env m) env m
@@ -1802,7 +1880,7 @@ def templateLayer (c : Ctx) : Nat → String → Decl → Module → M (Nat × N
       | fail ("open declaration " ++ key ++ ": its Self/Super bounds do not resolve")
     let (.variable i, .variable j) := (selfVar, superVar)
       | fail ("open declaration " ++ key ++ ": its Self/Super variables are unresolved")
-    let layer ← withTypes [("Self", selfVar), ("Super", superVar)] do
+    let layer ← inDecl key <| withTypes [("Self", selfVar), ("Super", superVar)] do
       match d with
       | .spec s =>
         let some provided ← specProvided c fuel s m.name superVar
@@ -1989,10 +2067,10 @@ def fieldsOf (c : Ctx) : Nat → List (String × Expr) → List Binding → Modu
 def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
   | fuel + 1, .expr e, env, m => tail c fuel e env m
-  | fuel + 1, .letB name type value rest, env, m =>
+  | fuel + 1, b@(.letB name type value rest), env, m => withLoc b.span m do
     lowerLet c fuel name type value env m true (expression c fuel value env m)
       (fun inner => body c fuel rest inner m) (fun inner => synthBody c fuel rest inner m)
-  | fuel + 1, .cases scrutinee branches, env, m => do
+  | fuel + 1, b@(@Body.cases scrutinee branches _ armSpans), env, m => withLoc b.span m do
     if branches.any (fun b => match b.1 with | .bool _ => true | _ => false) then
       let t := branches.find? (fun b => b.1 == .bool true)
       let f := branches.find? (fun b => b.1 == .bool false)
@@ -2021,7 +2099,18 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
       let missing := rowLabels.filter (fun l => !labels.contains l)
       let extra := labels.filter (fun l => !rowLabels.contains l)
       if (!missing.isEmpty && defaults.isEmpty) || !extra.isEmpty then
-        fail ("sum match is not exhaustive: missing [" ++ String.intercalate ", " missing ++ "], unknown [" ++ String.intercalate ", " extra ++ "]")
+        -- Point at the first arm naming no case (else at the match), naming the cases.
+        let here := (← get).here
+        let arm := (branches.zip armSpans).find? fun ((p, _), _) => match p with
+          | .ctor l _ => extra.contains l
+          | _ => false
+        let loc := match arm, here with
+          | some (_, span), some h => some { h with span }
+          | _, h => h
+        failAt loc ("sum match is not exhaustive: missing [" ++ String.intercalate ", " missing ++ "], unknown [" ++ String.intercalate ", " extra ++ "]")
+          (some ("the cases of this sum are " ++ String.intercalate ", " rowLabels ++
+            (if extra.isEmpty then "; add the missing ones or a final `case _:`" else "")))
+          (some ("(" ++ " | ".intercalate rowLabels ++ ")")) (if extra.isEmpty then none else some (", ".intercalate extra))
       let st ← expression c fuel scrutinee env m
       let mut arms : List (String × ATerm) := []
       for (pattern, b) in branches do
@@ -2240,7 +2329,7 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
   if let .function _ [] resultType _ := d then
     if (trimStr resultType).startsWith "Activity<" then
       fail ("refused (nullary-activity): " ++ key ++ " has no parameters, so it is a shared lazy value; an Activity needs a parameter, e.g. (start: {})")
-  let value ← match d with
+  let value ← inDecl key <| match d with
     | .reexport _ target => do
       let some (alias, name) := qualifiedName target | fail ("invalid export target " ++ target)
       let some origin := importOf m alias | fail ("unknown export import alias " ++ target)
@@ -2285,6 +2374,7 @@ knot by key, so these are exactly the declarations the term can reach (every oth
 partial def knotNames (t : ATerm) (acc : Array String) : Array String :=
   match t with
   | .get target name => knotNames target (acc.push name)
+  | .located _ t => knotNames t acc
   | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ => acc
   | .lam _ b | .reflect b | .metadata b | .project b | .unary _ b | .inject _ _ _ b | .perform _ _ b
   | .done _ _ b | .toData _ b => knotNames b acc
@@ -2435,13 +2525,16 @@ def context (modules : List Module) : Except String Ctx := do
       if map.contains key then map else map.insert key value) {}
   return { modules, decls, records, sums, declIndex := index decls, recordIndex := index records, sumIndex := index sums }
 
-/-- Elaborate every declaration of a closure once. -/
-def elaboratePackage (modules : List Module) : Except String Elaborated := do
-  let c ← context modules
+/-- Elaborate every declaration of a closure once; a refusal says where it was raised. -/
+def elaboratePackageLocated (modules : List Module) : Except Refusal Elaborated := do
+  let c ← (context modules).mapError fun message => ({ message } : Refusal)
   let ((fields, rowFields, unresolved), state) ← (elaboratePackageM c).run {}
   let references := fields.foldl (fun (map : Std.HashMap String (Array String)) (key, value) =>
     map.insert key (knotNames value #[])) {}
   return ⟨c, fields, references, rowFields, unresolved, state⟩
+
+def elaboratePackage (modules : List Module) : Except String Elaborated :=
+  (elaboratePackageLocated modules).mapError (·.message)
 
 def elaborate (modules : List Module) (entryModule : Nat) (entryDefinition : String) (args : Json) (mode : String) :
     Except String Output := do
@@ -2458,6 +2551,7 @@ structure Annotation where
 
 mutual
 def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String (List Annotation)
+  | .located _ t, path => annotate bounds t path
   | .lam p b, path => do
     let some d := p.domain | throw (p.reason.getD "unresolved lambda type")
     let some cod := p.codomain | throw (p.reason.getD "unresolved lambda type")

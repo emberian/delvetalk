@@ -613,4 +613,41 @@ fixture recorded by the foundation binary).
   a refusing law's name is total. It already behaved so; it is now so by construction.
   Test: the `#guard` in `Package.lean` compiles a module with `law small "stays small"`
   and `law plain` and checks the artifact's `laws` and `readings` (`lake build` runs it).
+- Located refusals. Every refusal of an elaborated package now names `definition`,
+  `module` and `span` (the surface node), and a type refusal `expected` and `found` in
+  surface syntax, with a `hint` when one applies (`Diagnostic` gained `definition`,
+  `expected`, `found`; JSON keys of the same names). How:
+  - The elaborator's core `Expr`/`Body` keep the surface span on every node as an
+    IMPLICIT constructor field (`{span}`: patterns never mention it, so no match changed;
+    a construction must pass `(span := ...)`, the compiler finds each). `Body.cases`
+    also keeps `armSpans`.
+  - `withLoc` (around `expression`, `tail`, `body`) sets `St.here` and wraps the result
+    in `ATerm.located loc t`, which is transparent everywhere: `json`, `erase`, `depth`,
+    `annotate`, `mapTypes`, `knotNames` see through it (`decode_json` has its case;
+    `coerceGo` peels and re-wraps). No packet moved (pins: 0 recompiled differently).
+    `St.declKey` (`inDecl` in `emitDecl`/`templateLayer`) names the declaration.
+  - `M`'s error is now `Refusal {message, loc, hint, expected, found}` (`Coe String`);
+    `fail` takes `St.here`. `elaboratePackageLocated` keeps it; `elaboratePackage`
+    still answers a string (CompileProfile).
+  - `Compiler/ObjectiveBendBlame.lean`: `explain` re-walks a refused term as `infer`
+    does (same positions, same fuel), descends into the first child that does not
+    infer, and names the failing premise with its types; `locate` maps a position to
+    the innermost `located` mark; `Naming.render` prints `Ty` with declared names
+    (`namingOf` resolves every record and sum in a copy of the final state, aliases as
+    the refusing module imports them). Diagnostics only: acceptance is `check`'s.
+  - `ObjectiveBendFrontEnd.blameDiagnostic` is the explainer of `checkDirect` (closure
+    check), `checkTemplate` and `accept`; generic instances are placed at their generic
+    declaration (`Origins`, from the instance table, `Delvetalk.FrontEnd.originsOf`), and
+    the instance list is appended only to an unlocated refusal. The message keeps its
+    prefix ("the checker refused the front end's typed packet: ...").
+  - Hints for checker refusals (`blameHint`): a record where one of its fields' type was
+    expected ("its String field is `object`: write `c.object.object`"), a function still
+    waiting for arguments, too many arguments, a missing field (lists the fields), an
+    unknown case (lists the cases). §10's "never for a typed-packet checker refusal" no
+    longer holds; `Hints.hintFor` still never fires there (the blame's hint is kept by
+    `withHint`).
+  - Tests: `tests/test_located.py` (the objects lane's `textConcat(c.object, ...)`,
+    too few and too many arguments, an arm and a constructor naming no case; each on
+    check-package and compile, which must agree). Garden compile time unchanged
+    (95 vs 96 ms fresh-process, three entries).
 
