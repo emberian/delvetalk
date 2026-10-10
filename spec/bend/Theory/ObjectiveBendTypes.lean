@@ -1,4 +1,5 @@
 import Lean
+import Theory.AxiomPin
 namespace Minidregg.Theory.ObjectiveBendTypes
 set_option autoImplicit false
 
@@ -35,6 +36,64 @@ inductive Ty where
   elimination (the host decodes it against a callee's declared type). -/
   | data
   deriving Repr, DecidableEq
+
+/-- Structural equality of types that answers at once on two subtrees that are one object in
+memory, at every depth (the derived `==` walks shared subtrees whole). Its value is equality
+(`Ty.eqSharedCore`'s property). -/
+def Ty.eqSharedCore : (a b : Ty) → {r : Bool // r = true ↔ a = b}
+  | .arrow r q d c, .arrow r' q' d' c' =>
+    let d₁ := withPtrEq d d' (fun _ => (Ty.eqSharedCore d d').1) (fun h => (Ty.eqSharedCore d d').2.mpr h)
+    let c₁ := withPtrEq c c' (fun _ => (Ty.eqSharedCore c c').1) (fun h => (Ty.eqSharedCore c c').2.mpr h)
+    ⟨r == r' && q == q' && d₁ && c₁, by
+      simp only [d₁, c₁, withPtrEq, Bool.and_eq_true, beq_iff_eq, (Ty.eqSharedCore d d').2,
+        (Ty.eqSharedCore c c').2, Ty.arrow.injEq, and_assoc]⟩
+  | .field n m t, .field n' m' t' =>
+    let m₁ := withPtrEq m m' (fun _ => (Ty.eqSharedCore m m').1) (fun h => (Ty.eqSharedCore m m').2.mpr h)
+    let t₁ := withPtrEq t t' (fun _ => (Ty.eqSharedCore t t').1) (fun h => (Ty.eqSharedCore t t').2.mpr h)
+    ⟨n == n' && m₁ && t₁, by
+      simp only [m₁, t₁, withPtrEq, Bool.and_eq_true, beq_iff_eq, (Ty.eqSharedCore m m').2,
+        (Ty.eqSharedCore t t').2, Ty.field.injEq, and_assoc]⟩
+  | .specification m e, .specification m' e' =>
+    let m₁ := withPtrEq m m' (fun _ => (Ty.eqSharedCore m m').1) (fun h => (Ty.eqSharedCore m m').2.mpr h)
+    let e₁ := withPtrEq e e' (fun _ => (Ty.eqSharedCore e e').1) (fun h => (Ty.eqSharedCore e e').2.mpr h)
+    ⟨m₁ && e₁, by
+      simp only [m₁, e₁, withPtrEq, Bool.and_eq_true, (Ty.eqSharedCore m m').2,
+        (Ty.eqSharedCore e e').2, Ty.specification.injEq]⟩
+  | .prototype s t, .prototype s' t' =>
+    let s₁ := withPtrEq s s' (fun _ => (Ty.eqSharedCore s s').1) (fun h => (Ty.eqSharedCore s s').2.mpr h)
+    let t₁ := withPtrEq t t' (fun _ => (Ty.eqSharedCore t t').1) (fun h => (Ty.eqSharedCore t t').2.mpr h)
+    ⟨s₁ && t₁, by
+      simp only [s₁, t₁, withPtrEq, Bool.and_eq_true, (Ty.eqSharedCore s s').2,
+        (Ty.eqSharedCore t t').2, Ty.prototype.injEq]⟩
+  | .variant r, .variant r' =>
+    ⟨withPtrEq r r' (fun _ => (Ty.eqSharedCore r r').1) (fun h => (Ty.eqSharedCore r r').2.mpr h), by
+      simp only [withPtrEq, (Ty.eqSharedCore r r').2, Ty.variant.injEq]⟩
+  | .computation p r x, .computation p' r' x' =>
+    let p₁ := withPtrEq p p' (fun _ => (Ty.eqSharedCore p p').1) (fun h => (Ty.eqSharedCore p p').2.mpr h)
+    let r₁ := withPtrEq r r' (fun _ => (Ty.eqSharedCore r r').1) (fun h => (Ty.eqSharedCore r r').2.mpr h)
+    let x₁ := withPtrEq x x' (fun _ => (Ty.eqSharedCore x x').1) (fun h => (Ty.eqSharedCore x x').2.mpr h)
+    ⟨p₁ && r₁ && x₁, by
+      simp only [p₁, r₁, x₁, withPtrEq, Bool.and_eq_true, (Ty.eqSharedCore p p').2,
+        (Ty.eqSharedCore r r').2, (Ty.eqSharedCore x x').2, Ty.computation.injEq, and_assoc]⟩
+  | a, b => ⟨decide (a = b), decide_eq_true_iff⟩
+
+def Ty.eqShared (a b : Ty) : Bool :=
+  withPtrEq a b (fun _ => (Ty.eqSharedCore a b).1) (fun h => (Ty.eqSharedCore a b).2.mpr h)
+
+theorem Ty.eqShared_iff {a b : Ty} : Ty.eqShared a b = true ↔ a = b := by
+  simp only [Ty.eqShared, withPtrEq]; exact (Ty.eqSharedCore a b).2
+
+/-- Equality of types as compiled everywhere after this point: `eqShared`. A packet's types
+share subtrees through its type table and inference passes them on unchanged, so most
+comparisons meet one object on both sides long before a leaf. -/
+def Ty.decEqShared (a b : Ty) : Decidable (a = b) := decidable_of_iff _ Ty.eqShared_iff
+
+@[csimp] theorem Ty.decEq_eq_decEqShared : @instDecidableEqTy.decEq = @Ty.decEqShared := by
+  funext a b; exact Subsingleton.elim _ _
+@[csimp] theorem Ty.instDecidableEq_eq_decEqShared : @instDecidableEqTy = @Ty.decEqShared := by
+  funext a b; exact Subsingleton.elim _ _
+
+#assert_axioms Ty.eqShared_iff Ty.decEq_eq_decEqShared Ty.instDecidableEq_eq_decEqShared
 
 /-- A reusable closure is shareable only after its captures have been checked.
 Custody is never hidden by a record/prototype/specification wrapper. -/

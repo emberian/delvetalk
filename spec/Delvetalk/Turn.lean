@@ -34,7 +34,7 @@ namespace Delvetalk.Turn
 /-- Re-address the original annotation table when application wraps its term.
 The argument subtree is annotation-free first-order data, never raw code. -/
 def applyArgument (source : AnnotatedTerm) (argument : Term)
-    (extras : Delvetalk.AnnotationTree := .empty) : AnnotatedTerm :=
+    (extras : AnnotationTree := .empty) : AnnotatedTerm :=
   { source with
     term := .app source.term argument
     annotations := fun position => match position with
@@ -56,7 +56,7 @@ mutual
 (`Data.shapeType`), built bottom-up: each node's shape type is made once from its
 children's, so a long list costs linear time and space (recomputing `shapeType` per
 injection was quadratic). -/
-def shapeTree : Data → Delvetalk.AnnotationTree × Ty
+def shapeTree : Data → AnnotationTree × Ty
   | .variant tag payload =>
     let (tree, payloadShape) := shapeTree payload
     let shape := Ty.variant (.field tag payloadShape .emptyRow)
@@ -65,7 +65,7 @@ def shapeTree : Data → Delvetalk.AnnotationTree × Ty
   | .natural _ => (.empty, .natural)
   | .boolean _ => (.empty, .boolean)
   | .label _ => (.empty, .label)
-def shapeFieldTrees : List (String × Data) → List Delvetalk.AnnotationTree × Ty
+def shapeFieldTrees : List (String × Data) → List AnnotationTree × Ty
   | [] => ([], .emptyRow)
   | (name, value) :: rest =>
     let (tree, shape) := shapeTree value
@@ -81,7 +81,7 @@ at a universal position (`Data`) is wrapped in `toData` and checked at its own s
 the checker: an injection's payload is child 0, a record's field `i` is child `i`,
 the operand of `toData` child 0. The term itself is `Data.term` up to those `toData`
 wrappers. -/
-partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term × Delvetalk.AnnotationTree :=
+partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term × AnnotationTree :=
   if expected == .data then (.toData data.term, .node none #[(shapeTree data).1]) else
   match data with
   | .variant tag payload =>
@@ -107,7 +107,7 @@ partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term �
   | other => (other.term, .empty)
 
 def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
-    Except String (Term × Delvetalk.AnnotationTree) :=
+    Except String (Term × AnnotationTree) :=
   if domain == .data && !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
   else .ok (quoteAt bounds domain v)
 

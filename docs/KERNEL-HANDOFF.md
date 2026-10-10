@@ -353,13 +353,7 @@ rehearsal capture (rebuild it: a wrapper `tee $CAP/$$.jsonl | delvetalk-obend` g
 
 1. Done on lane/kernel7 (§19): checkpoints trim unread environment slots; rehearsal median
    suspension 46.4 KB -> 10.1 KB, of which the kernel's blocks are 5.7 KB.
-2. **Checker quadratic** (PERF item 4, and the host's 57 ms insert into a 1,000-row relation,
-   75% in `CheckedEntry.apply`): `infer` builds `position ++ [i]` and every annotation lookup
-   walks a whole path (`AnnotationTree.lookup`, the packet's `HashMap (List Nat)`), so a
-   function `List Nat → Option LambdaAnnotation` cannot be made incremental: the fix is a
-   checker over an annotation cursor (a tree with O(1) child), `check` on a function kept as
-   the reference and the cursor version proved equal for `tree.lookup`; then the decided
-   examples stay functions. Measure 5,000 items at `Data` (4.4 s) and that insert.
+2. Done on lane/kernel8 (§20): the checker over an annotation tree, and type equality by shared subtrees.
 3. `relationsOf` once per package in the front-end cache (not per method compile).
 4. The artifact's `relations` entries gain `limit` and `retain` from the `Decl`.
 5. `write {f: remove i}` / `amend`: lower to `removeItem {item}` / `amendItem {item, change}`
@@ -499,3 +493,26 @@ seven one-line substitutions. The pins fixture at foundation records `Abi`, `For
   5.7 KB is blocks and 4.4 KB the host's fields (`activity.argument` 1.2 KB,
   `interpretation.utterance` 1.0 KB, inline per entry): run 8's 9.5 KB median is within reach
   only by moving those into blocks, which is the host's file. Packets do not move (pins: 0).
+
+## 20. Checker cost (lane/kernel8, §16 item 2)
+
+- `inferAt`/`inferFieldsAt`/`inferArmsAt` are the checker over any annotation cursor
+  (`here : α → Option LambdaAnnotation`, `child : α → Nat → α`); `infer`/`inferFields`/`inferArms`
+  are it at source positions (`child p i = p ++ [i]`, annotations a function of the whole path)
+  and stay the reference, so `check`, the decided examples and the packet path are unchanged.
+  `inferAt_view`: two cursors related by a map preserving `here` and `child` infer alike.
+  `AnnotationTree` moved from `Entry.lean` into `ObjectiveBendTyping` (`here`, `child` with the
+  empty tree past the children, `subtree`, `lookup := (subtree path).here`); `checkAt term tree`
+  is `check` over the tree, `checkAt_eq : checkAt term tree a c f = check ⟨term, tree.lookup, a⟩ c f`.
+  `CheckedEntry.apply` (every turn argument) calls `checkAt`.
+- Type equality as compiled is by shared subtrees: `Ty.eqSharedCore` (structural, `withPtrEq` at
+  every child, its property `r = true ↔ a = b`) behind `@[csimp]` on both `instDecidableEqTy` and
+  `instDecidableEqTy.decEq` (`ObjectiveBendTypes.lean`), so every `=`/`==` on `Ty` compiled after
+  it stops at one object in memory. `agree` compiles to `agreeFast` (`@[csimp]
+  agree_eq_agreeFast`): equal trees agree at once, and only differing ones pay for canonical forms
+  and both shareability walks. At `Data` an injection's payload type is the rest of the list's
+  shape, so each of these was linear per node.
+- Measured on hbox (turn-start on a held entry, best of three, load 16-33, so noisy):
+  5,000-item list at `Data` 2,320 -> 26 ms; 5,000-item `List<String>`-shaped sum 705 -> 9 ms;
+  1,000 three-column rows 48 -> 7 ms. Packets do not move (pins: 0).
+
