@@ -647,6 +647,16 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    bell handed to the directory by `send` is drafted against the post the author replied to. Tests:
    `test_hub.HandedToTheDirectory`, `test_bridge` (end to end, no longer an expected failure).
 
+40. **viewData and viewDataField (host7).** Plan `viewData {object}` -> `viewedData {version, state: Data}` and
+   `viewDataField {object, field}` -> `viewedField {version, value: Data}` (Plan.obend, appended at the end of `Plan`
+   and `Response` so the existing constructors keep their order): another object's state, or one top-level field of
+   it, as `Data` the reader may pass along or hand to a Plan but not take apart (`view` answers in the reader's own
+   state type, so a Bell could not view the directory). Read authority (`denied` otherwise) and the root as for
+   `view`; a field the state lacks is `refused {clause: field}`. The Plan.obend change moved every source pin, so
+   `tests/fixtures/pins/artifacts.json` is re-recorded (no entry stopped compiling); objects already created keep the
+   library they were compiled under. Tests: `tests/test_view_data.py` (the directory has no `words` field; `words` is a
+   def, so the test reads a fixture object's `words` and `greeted` fields).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
