@@ -156,7 +156,7 @@ def two(n: Nat) -> String:
 """
 
 DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
-  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Lists.List::<O.Knock>.cons({head: {who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()}), observers: Lists.List::<Card.Observer>.nil()}, Card.stranger()))
+  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Lists.List::<O.Knock>.cons({head: {who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()}), watching: Plans.nobody()}, Card.stranger()))
 """
 
 LINES_PROBE = """edition ObjectiveBend 1
@@ -199,8 +199,8 @@ class Objects(unittest.TestCase):
         expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rained"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
-                    ("Card", "notified"): "send", ("Door", "open"): "write", ("Door", "knocked"): "write",
-                    ("Lantern", "lit"): "write", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
+                    ("Card", "notified"): "send", ("Door", "opened"): "write", ("Door", "knock"): "write",
+                    ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
             with open(MODULES[name]) as handle:
                 source = handle.read()
@@ -282,7 +282,7 @@ class Objects(unittest.TestCase):
         door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
         self.assertEqual(door["status"], "finished", door)
         self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
-        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\", litHandle: \"\"}, Card.stranger()))\n")
+        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\", litHandle: \"\", watching: Plans.nobody()}, Card.stranger()))\n")
         self.assertEqual(lantern["value"]["value"], "The lantern is lit by gemini.\n")
         loop = run_pure("Loop", "shown", nat(3), probe=PROBE_HEAD % "Loop" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({count: n}, Card.stranger()))\n")
         self.assertEqual(loop["value"]["value"], "Ticks: 3\n")

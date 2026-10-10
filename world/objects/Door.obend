@@ -4,17 +4,19 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 # Who knocked, with their handle as the host knew it then.
 record Knock:
   who: String
   handle: String
+# watching: the object whose `rung` opens this door (a bell), nobody until `watch`.
 record State:
   open: Bool
   openedBy: String
   openedHandle: String
   knocks: Lists.List<Knock>
-  observers: Card.Observers
+  watching: Plans.Reference
 # What a creator may supply; the host lays it over initial().
 type Seed = {}
 record Edits:
@@ -22,54 +24,48 @@ record Edits:
   openedBy: Plans.Edit<String, {}>
   openedHandle: Plans.Edit<String, {}>
   knocks: Plans.Entries<Knock, {}>
-  observers: Plans.Entries<Card.Observer, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+  watching: Plans.Edit<Plans.Reference, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
-  {open: false, openedBy: "", openedHandle: "", knocks: Lists.List.nil(), observers: Card.Observers.nil()}
+  {open: false, openedBy: "", openedHandle: "", knocks: Lists.List.nil(), watching: Plans.nobody()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {open: Plans.Edit.keep({}), openedBy: Plans.Edit.keep({}), openedHandle: Plans.Edit.keep({}), knocks: Plans.Entries.keep({}), observers: Plans.Entries.keep({})}
-# Who opened it is the turn's principal (for a bell's send, the bell ringer's).
-def unlatched(context: Abi.Context) -> Edits:
-  extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: context.principal}), openedHandle: Plans.Edit.set({value: context.handle})})
-def latch(state: State, context: Abi.Context) -> Edits:
-  if state.open then keep() else unlatched(context)
-# The method a bell's observer entry names: open the door and tell its observers.
-def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: unlatched(context)}))
-  Card.broadcast(state.observers, Plans.nothing(), 0n, fn(sent: Nat) -> Bool: true)
+  {open: Plans.Edit.keep({}), openedBy: Plans.Edit.keep({}), openedHandle: Plans.Edit.keep({}), knocks: Plans.Entries.keep({}), watching: Plans.Edit.keep({})}
+# Who opened it: the knocker, or the object whose change opened it (its id, no handle).
+def unlatched(who: String, handle: String) -> Edits:
+  extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: who}), openedHandle: Plans.Edit.set({value: handle})})
+def latch(context: Abi.Context, state: State) -> Edits:
+  if state.open then keep() else unlatched(context.principal, context.handle)
 # A knock is retained; a knock on a closed door opens it.
-def knocked<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context), {knocks: Plans.Entries.append({item: {who: context.principal, handle: context.handle}})})}))
-  if state.open then then(true) else Card.broadcast(state.observers, Plans.nothing(), 0n, fn(sent: Nat) -> T: then(true))
-def knock(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  knocked(state, context, fn(opened: Bool) -> Bool: opened)
-def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
-  changed(Card.observing(state.observers, input), context)
-def unobserve(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
-  changed(Card.unobserving(state.observers, input), context)
-def changed(change: Card.Change, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
-  match change:
-    case edit(e): observed(change, e.entries, context)
-    case _: change
-def observed(change: Card.Change, entries: Plans.Entries<Card.Observer, {}>, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {observers: entries})}))
-  change
+def knock(state: State, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = world.write(extend(latch(context, state), {knocks: Plans.Entries.append({item: {who: context.principal, handle: context.handle}})}))
+  true
+# Watch an object's `rung` (a bell's): the host delivers each write of it to `changed`.
+def watch(state: State, input: {object: String}, context: Abi.Context) -> Activity<String>:
+  let object = {world: context.world, object: input.object}
+  match world.subscribe({object: object, field: "rung", method: "changed"}):
+    case subscribed(_): watched(object)
+    case denied(_): "denied"
+    case refused(r): r.clause
+def watched(object: Plans.Reference) -> Activity<String>:
+  let written(_) = write {watching: set object}
+  "watching"
+# A change of the watched object's `rung` to true opens the door; the change is delivered by
+# the host (the watched object is the caller), so nobody else's turn opens it this way.
+def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Bool>, retracted: Lists.List<Bool>}, context: Abi.Context) -> Activity<Bool>:
+  if context.caller == state.watching.object && Plans.same(input.object, state.watching) && input.field == "rung" && Lists.any(input.inserted, fn(rung: Bool) -> Bool: rung) && state.open == false then opened(context.caller) else state.open
+def opened(by: String) -> Activity<Bool>:
+  let written(_) = world.write(unlatched(by, ""))
+  true
 form knock:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: knockForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
   {word: "door", blurb: "Knock; a bell can open it too."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match routed:
-    case act(a): knocked(state, context, fn(opened: Bool) -> Card.Replied: Card.Replied.done({action: a.action}))
-    case _: Card.answerPlan(routed, context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def knockLine(knock: Knock) -> Document.Document:
   Document.text("knock: {Card.shown(knock.who, knock.handle, Card.stranger())}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

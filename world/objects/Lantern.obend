@@ -1,44 +1,60 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
+import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
+# watching: the object whose `open` lights the lantern (a door), nobody until `watch`.
 record State:
   lit: Bool
   litBy: String
   litHandle: String
+  watching: Plans.Reference
 # What a creator may supply; the host lays it over initial().
 type Seed = {}
 record Edits:
   lit: Plans.Edit<Bool, {}>
   litBy: Plans.Edit<String, {}>
   litHandle: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+  watching: Plans.Edit<Plans.Reference, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
-  {lit: false, litBy: "", litHandle: ""}
+  {lit: false, litBy: "", litHandle: "", watching: Plans.nobody()}
 def initial() -> State:
   seeded(defaultSeed())
-# Light the lantern and remember who did: the turn's principal.
-def lit<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit.set({value: true}), litBy: Plans.Edit.set({value: context.principal}), litHandle: Plans.Edit.set({value: context.handle})}}))
-  then(true)
-def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  lit(state, context, fn(done: Bool) -> Bool: done)
+def keep() -> Edits:
+  {lit: Plans.Edit.keep({}), litBy: Plans.Edit.keep({}), litHandle: Plans.Edit.keep({}), watching: Plans.Edit.keep({})}
+# Light the lantern and remember who did: the turn's principal, or the object whose change
+# lit it (its id, no handle).
+def light(state: State, context: Abi.Context) -> Activity<Bool>:
+  lit(context.principal, context.handle)
+def lit(by: String, handle: String) -> Activity<Bool>:
+  let written(_) = write {lit: set true, litBy: set by, litHandle: set handle}
+  true
+# Watch an object's `open` (a door's): the host delivers each write of it to `changed`.
+def watch(state: State, input: {object: String}, context: Abi.Context) -> Activity<String>:
+  let object = {world: context.world, object: input.object}
+  match world.subscribe({object: object, field: "open", method: "changed"}):
+    case subscribed(_): watched(object)
+    case denied(_): "denied"
+    case refused(r): r.clause
+def watched(object: Plans.Reference) -> Activity<String>:
+  let written(_) = write {watching: set object}
+  "watching"
+# The watched door opening lights the lantern (the host delivers the change; the door is the
+# caller, so nobody else's turn lights it this way).
+def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Bool>, retracted: Lists.List<Bool>}, context: Abi.Context) -> Activity<Bool>:
+  if context.caller == state.watching.object && Plans.same(input.object, state.watching) && input.field == "open" && Lists.any(input.inserted, fn(open: Bool) -> Bool: open) then lit(context.caller, "") else state.lit
 form light:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: lightForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
   {word: "lantern", blurb: "Light it, or let a door light it."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match routed:
-    case act(a): lit(state, context, fn(done: Bool) -> Card.Replied: Card.Replied.done({action: a.action}))
-    case _: Card.answerPlan(routed, context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(if state.lit then "The lantern is lit by {Card.shown(state.litBy, state.litHandle, context)}{Card.mine(state.litBy, context)}.\n" else "The lantern is dark.\n")

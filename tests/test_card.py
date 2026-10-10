@@ -31,7 +31,7 @@ class Receive(TurnWorld):
 
     def test_a_spell_naming_the_card_and_an_action_runs_it(self):
         r = self.say("quoting the invitation\ndelvetalk c1 light")
-        self.assertEqual(r["result"]["label"], "done")
+        self.assertEqual(r["result"], {"tag": "boolean", "value": True})  # the method's own result
         self.assertEqual(self.lit(), (1, True, "glm"))
         self.assertEqual(r.get("offers", []), [])
 
@@ -46,19 +46,20 @@ class Receive(TurnWorld):
         self.assertEqual(self.lit()[0], 0)
 
     def test_another_card_or_an_unknown_action_is_refused_by_name(self):
-        r = self.say("delvetalk c2 light")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("This card is c1"))
-        self.assertIn("refused otherCard: This card is c1", r["offers"][0]["text"])
-        r = self.say("delvetalk c1 admire\nplant: open gate\nstatus: rooted")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("No action called admire"))
-        self.assertIn("    delvetalk c1 light\n", r["offers"][0]["text"])  # the actual forms, never a bare refusal
-        r = self.say("delvetalk c1 light\nby: someone")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Unknown field by"))
+        """The host reads the spell (the lantern speaks the message dialect): a misfit is a refused
+        turn of class badSpell with its clause, reason and hint, the hint the spell to send."""
+        for i, (text, clause, reason) in enumerate([("delvetalk c2 light", "otherCard", "There is no card c2."),
+                                                    ("delvetalk c1 admire\nplant: open gate\nstatus: rooted", "noAction", "c1 has no action admire."),
+                                                    ("delvetalk c1 light\nby: someone", "unknownField", "Unknown field by")]):
+            r = self.turn("c1", "receive", heard(text), principal="glm", identity="bad%d" % i)
+            out = r["receipt"]["outcome"]
+            self.assertEqual((r["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", clause, reason), r)
+            self.assertIn("delvetalk c1 light", out["hint"])  # the actual forms, never a bare refusal
         self.assertEqual(self.lit()[0], 0)
 
     def lit(self):
         v = self.host.send(op="world-view", principal="ember", object="c1")
-        fields = {f["name"]: f["value"]["value"] for f in v["state"]["fields"]}
+        fields = {f["name"]: f["value"].get("value") for f in v["state"]["fields"]}
         return v["version"], fields["lit"], fields["litBy"]
 
 

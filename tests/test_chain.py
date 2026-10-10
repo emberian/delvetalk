@@ -88,23 +88,30 @@ class Chains(Chain):
         silver = {"tag": "variant", "label": "silver", "payload": empty()}
         self.make("bell", closure("Bell"), record(
             colour=silver, seed=label("s"), planting=label("p"), planter=label("glm"), planterHandle=label("")))
-        # The chain is wired by observers: the door observes the bell, the lantern the door.
-        for obj, watcher, method in (("door", "lantern", "light"), ("bell", "door", "open")):
-            w = self.turn(obj, "observe", record(object=reference(watcher), method=label(method)))
-            self.assertEqual((w["status"], w["result"]["label"]), ("admitted", "edit"), w)
-        again = self.turn("bell", "observe", record(object=reference("door"), method=label("open")))
-        self.assertEqual(again["result"]["label"], "unchanged")
+        # The chain is wired by subscriptions: the door watches the bell's `rung`, the lantern
+        # the door's `open`; each write is delivered to the watcher's `changed`.
+        for watcher, obj in (("lantern", "door"), ("door", "bell")):
+            w = self.turn(watcher, "watch", record(object=label(obj)))
+            self.assertEqual((w["status"], w["result"]), ("admitted", label("watching")), w)
+        self.assertEqual(self.turn("door", "watch", record(object=label("bell")))["result"], label("watching"))  # a repeat is idempotent
         ring = self.turn("bell", "ring", principal="gemini")
         self.assertEqual(ring["status"], "admitted", ring)
-        self.assertEqual(ring["result"], nat(1))  # one observer, one send
+        self.assertEqual(ring["result"], nat(0))  # no observers: the host tells the subscribers
         self.assertEqual(field(self.state("bell"), "rung"), boolean(True))
         # Deliveries run in the settling pass of the same durable op: the ring's reply carries them.
         self.assertEqual([d["status"] for d in ring["delivered"]], ["admitted", "admitted"], ring)
         self.assertEqual(self.host.send(op="world-pending")["count"], 0)
         self.assertEqual(field(self.state("door"), "open"), boolean(True))
-        self.assertEqual(field(self.state("door"), "openedBy"), label("gemini"))
+        self.assertEqual(field(self.state("door"), "openedBy"), label("bell"))  # opened by the change, not a turn
         self.assertEqual(field(self.state("lantern"), "lit"), boolean(True))
-        self.assertEqual(field(self.state("lantern"), "litBy"), label("gemini"))
+        self.assertEqual(field(self.state("lantern"), "litBy"), label("door"))
+        # A `changed` that is no delivery from the watched object opens nothing.
+        self.make("door2", closure("Door"), record())
+        self.turn("door2", "watch", record(object=label("bell")))
+        forged = record(object=reference("bell"), field=label("rung"), version=nat(9), inserted={"tag": "list", "items": [boolean(True)]},
+                        retracted={"tag": "list", "items": []})
+        self.assertEqual(self.turn("door2", "changed", forged, principal="gemini")["result"], boolean(False))
+        self.assertEqual(field(self.state("door2"), "open"), boolean(False))
 
     def test_a_tick_cycle_ends_in_a_budget_exhausted_refusal(self):
         self.make("loop", closure("Loop"), record())
