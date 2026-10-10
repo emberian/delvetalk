@@ -633,6 +633,14 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    (the Garden's `seed` 1..80, not the type's 0..1400). `expected` is built only for a refusal
    (`expectedNow`). Test: `tests/test_form_bounds.py` `ExpectedForm`.
 
+83. **Public but unoffered methods (host11).** A `methods()` entry written `~name` makes `name` public
+   (any turn, call or delivery its law admits may run it) but offered to nobody: its row is marked
+   `unoffered: true` (`markHelpers`; a layer keeps it, `declaredRows`), and `isActionRow` and
+   `offeredRows` leave it out of `?` usage, `forms`, the spell fitter, `world-inspect`'s `methods`
+   and `world-objects {methods}`, so transport's `_actions` never show it. For a method a bridge or
+   another object calls (Env's `mention`; the objects lane writes `~mention`). Test:
+   `tests/test_public_methods.py` `Unoffered`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

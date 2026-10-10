@@ -23,7 +23,7 @@ from tests.test_changes import Receivers
 from tests.test_objects import closure
 from tests.test_reflection import Reflection
 from tests.test_table import NORTH, OPENING, SOUTH
-from tests.test_turn_world import FIXTURE_HEAD, label, nat, record
+from tests.test_turn_world import FIXTURE_HEAD, declared, label, nat, record
 from tests.test_places import avatar_seed
 
 KIM = "did:plc:kimik3"
@@ -171,6 +171,53 @@ class HelperReceivers(Reflection):
 
 
 del Receivers
+
+# `~ping` in methods(): public, so any turn its law admits may run it, but offered to nobody.
+UNOFFERED = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./World.obend as World
+record State:
+  n: Nat
+record Binding:
+  name: String
+  value: String
+def initial() -> State:
+  {n: 0n}
+def tune(state: State, input: {level: Nat}, context: Abi.Context) -> Activity<Nat>:
+  1n
+def ping(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  2n
+def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:
+  3n
+""", "tune", "~ping")
+
+
+class Unoffered(Reflection):
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        r = self.host.send(op="world-create", principal="ember", identity="mk", object="relay", modules=[{"name": "Probe", "source": UNOFFERED}],
+                           entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+
+    def say(self, text, identity=None):
+        return self.turn("relay", "receive", record(text=label(text), post=label("")), principal="glm", identity=identity)
+
+    def test_an_unoffered_method_runs_but_is_offered_nowhere(self):
+        r = self.turn("relay", "ping", record(text=label("hello")), principal="bridge")
+        self.assertEqual((r["status"], r["result"]), ("admitted", {"tag": "natural", "value": "2"}), r)
+        usage = self.say("delvetalk relay ?")
+        self.assertIn("delvetalk relay tune", usage["text"])
+        self.assertNotIn("ping", usage["text"])
+        inspected = self.host.send(op="world-inspect", principal="glm", object="relay", source=False)
+        self.assertNotIn("ping", [m["name"] for m in inspected["methods"]])
+        self.assertNotIn("'ping'", str(inspected["forms"]))
+        listed = self.host.send(op="world-objects", principal="glm", prefix="relay", methods=True)
+        self.assertNotIn("ping", listed["methods"]["relay"])
+        out = self.say("delvetalk relay ping\ntext: hi", identity="p1")["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["clause"]), ("badSpell", "noAction"), out)
+
 
 if __name__ == "__main__":
     unittest.main()

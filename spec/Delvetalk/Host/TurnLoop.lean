@@ -2310,7 +2310,7 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
 /-- The method table as `principal` reads it: each method a turn can run (it takes a context) with
     `admits` (`methodAdmits`). -/
 def methodsFor (w : World) (o : Object) (principal : String) : Json :=
-  Json.arr ((((publicRows o.methods).getArr?.toOption).getD #[]).map fun m =>
+  Json.arr ((((offeredRows o.methods).getArr?.toOption).getD #[]).map fun m =>
     match (m.getObjValAs? Bool "context").toOption, (m.getObjValAs? String "name").toOption with
     | some true, some name => m.setObjVal! "admits" (methodAdmits w o principal name)
     | _, _ => m)
