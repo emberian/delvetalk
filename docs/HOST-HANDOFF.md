@@ -693,6 +693,13 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    before host12 journals no `lawText` and is not compared. Test: `tests/test_snapshot.py`
    `test_a_snapshot_whose_law_is_not_the_journals_is_refused`.
 
+91. **A supervisor offers `ended` (host12; codex host 6).** A `createUnder` naming another object
+   than the creator as supervisor is refused `supervisor` unless that object offers `ended` (in
+   `methods()`, `~ended` too); `world-create {supervisor}` likewise is a request error "supervisor <s>
+   does not take ended: …". The creator chose the supervisor, so only one that took `ended` (or the
+   creator itself) is told; the delivery's helper exemption (5.62) stands for those. Test:
+   `tests/test_supervisors.py` `test_a_supervisor_must_offer_ended`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

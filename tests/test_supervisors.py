@@ -128,6 +128,19 @@ class Supervisors(Reflection):
         self.turn("kid", "deep")
         self.assertEqual(self.boss(), ("2", "broken", "evaluation", "kid"))
 
+    def test_a_supervisor_must_offer_ended(self):
+        # codex host 6: a creator naming another object supervisor would reach its private `ended`.
+        quiet = SUPERVISOR.replace('Lists.List::<String>.cons({head: "ended", tail: Lists.List::<String>.nil({})})',
+                                   'Lists.List::<String>.nil({})')
+        self.assertNotEqual(quiet, SUPERVISOR)
+        self.make("victim", quiet, record(count=nat(0), how=label(""), **{"class": label("")}, who=label("")))
+        r = self.turn("free", "spawn", record(id=label("kid"), supervisor=label("victim")))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(0)), r)
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="kid")["status"], "unknown")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-y", object="y", source=WORKER,
+                           entry="initial", seed=record(count=nat(0)), supervisor="victim")
+        self.assertEqual(r["status"], "error", r)
+
     def test_a_supervisor_that_is_not_an_object_is_a_request_error(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="x", source=WORKER,
                            entry="initial", seed=record(count=nat(0)), supervisor="ghost")

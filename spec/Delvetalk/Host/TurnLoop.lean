@@ -1470,7 +1470,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       refusedWith bounds responseType "requiredAbsence"
     else if s.creates.length ≥ Limits.createsPerTurn || s.absent.length ≥ Limits.maxRoots then
       refusedWith bounds responseType "capacity"
-    else if !supervisor.isEmpty && !s.world.objects.contains supervisor && supervisor != self then
+    -- A supervisor other than the creator itself must offer `ended`: the creator chooses it, not
+    -- the object told (codex host 6).
+    else if !supervisor.isEmpty && supervisor != self &&
+        !((s.world.objects[supervisor]?).map (·.offers "ended")).getD false then
       refusedWith bounds responseType "supervisor"
     else
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
@@ -2177,7 +2180,8 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   let method ← d.getObjValAs? String "method"
   let senderId := (d.getObjValAs? String "sender").toOption.getD ""
   -- A change goes to the receiver its subscriber named; an activity's end to the supervisor its
-  -- object was created under. Either may be a helper: the receiving object chose it.
+  -- object was created under, which offered `ended` or was the creator. Either may be a helper then:
+  -- the receiving object chose it.
   let receiver := (d.getObjVal? "field").toOption.isSome ||
     (method == "ended" && ((w.objects[senderId]?).map (·.supervisor)) == some to)
   let how : TurnMeta :=

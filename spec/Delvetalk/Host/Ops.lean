@@ -2445,6 +2445,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1) law
   let supervisor := (← optText j "supervisor").getD ""
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
+  unless supervisor.isEmpty || ((w.objects[supervisor]?).map (·.offers "ended")).getD false do
+    throw s!"supervisor {supervisor} does not take ended: a supervisor's package declares it"
   let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   discard <| pure sources
