@@ -153,16 +153,20 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
 
 ### Wholeness migration: where it stands (lane/objects7 stopped here; a successor starts from this)
 
-Measured against foundation d55a8c6 (host9 merged: typed receivers, words for sum cases, model
-replies fitted, lens `set`, the deletion pass). Full hbox run at lane/objects7's last commit: 1042
-tests, 0 failed classes; two expected failures name the host gap below.
+Measured against foundation a57f27c (host9 merged: typed receivers, words for sum cases, model
+replies fitted, lens `set`, the deletion pass). Full hbox run at lane/objects7's last commit: 1043
+tests, 0 failed classes; four expected failures name the host gap below.
 
 **Done, one commit each.** Step 0: Card's message-dialect helpers beside the Plan ones (below);
 World.obend's `subscribe`/`unsubscribe` take `method`; `world/lib/Rows.obend` (Rain, Sensed,
 Greeting, Proposal with its Status, Trace, Subscription; no object imports it yet: each takes its
 row type from there when it moves, and Wake imports it); every object's directory line is
 `blurb()`. Migrated: Counter, Loop, Cistern, Seat, Appointment and Appointments, Deal, Commons,
-Door and Lantern (watching by subscription). Also: the directory learns only forms (rehearsal 10
+Door and Lantern (watching by subscription), Table (only `resolve` plays), Tide (rows
+`Rows.Subscription`), Anthology (rows `Rows.Proposal`; `admit {number}` is the one admit).
+Objects with public actions that have no form declare `def methods() -> Lists.List<String>`
+(Table: resolve, publishPage; Tide, Anthology: publishPage) for the host's declared-methods
+rule, landing in parallel; add it to every door object as it moves. Also: the directory learns only forms (rehearsal 10
 finding 2), and every test reply dropped `slot`.
 
 **The message dialect, as written here.**
@@ -196,7 +200,9 @@ finding 2), and every test reply dropped `slot`.
 the Directory *calls* (its `passOn`: spells under the hub naming another card, field lines routed
 to a door, the model's proposals) or an Avatar *sends* (scoped resolution) reaches a
 message-dialect card unparsed and without `fields`, refused typeMismatch: test_hub
-`SpellsPassedOn` and test_places `Scoped` are expectedFailure with that reason. Migrating a door
+`SpellsPassedOn` and test_places `Scoped` are expectedFailure with that reason, and so are the
+two hub cases where the model's submit reaches the Anthology (`AnthologyReachable`'s
+field-line-and-model case, `HandedToTheDirectory`). Migrating a door
 (Anthology, Tide, Scene/rooms, Table/play, Workshop) or Bell before this closes breaks the hub
 flows the rehearsal runs. Two ways out, both wanted: (a) host: read a called or delivered
 `receive {text, post}` to a message-dialect card as a direct one is read (parse, fit, run; no
@@ -211,10 +217,9 @@ fields}` does not fit (host5.61: `receiveArgument` stays until transport stops).
 1. Directory (`interpreting`/`readBack` become a `world.interpret::<Data>` whose `proposal
    {method, argument}` it calls; `door()` is `blurb()` already; words from each door's `forms()`
    once it can `viewDerived::<Card.Forms>` a `forms` view or the host lists only activities).
-2. The doors and Bell once (a) or 1 lands: Anthology (rows from Rows.Proposal), Tide
-   (Rows.Subscription), Scene, Table (`north(state, context)` is still a method that skips
-   `resolve`'s winner check: reorder it), Workshop, Bell (Rows.Rain; `rang` writes `rung` and ends;
-   observers and `notifyRows` go).
+2. The rest of the doors and Bell (the coordinator accepts expectedFailure for the forwarded
+   cases until (a) lands): Scene, Workshop, Bell (Rows.Rain; `rang` writes `rung` and ends;
+   observers and `notifyRows` go; Garden, still the Plan dialect, imports Bell for `Colour`).
 3. Env and Wake: Env's buffer rows are Rows.Sensed; Wake subscribes with typed receivers
    (`changedRains` over `List<Rows.Rain>`, and the like) instead of `observe`/`rows`.
 4. Garden (interpretation as the Directory's; `plant {colour: Bell.Colour}` now that the host
