@@ -445,8 +445,6 @@ structure Lowering where
   /-- The selected term after projections: what the core and the packet carry. -/
   term : ATerm
   sourceEntry : String
-  argumentCodec : String
-  mode : String
   modules : List SourceModule
   limits : Json
   typeFuel : Nat
@@ -463,36 +461,17 @@ structure Lowering where
   packetIs : packet = packetOf proposal term sourceEntry modules typeFuel
 
 /-- Assemble a lowering, building its proposal and packet once. -/
-def Lowering.make (output : Output) (term : ATerm) (sourceEntry argumentCodec mode : String)
+def Lowering.make (output : Output) (term : ATerm) (sourceEntry : String)
     (modules : List SourceModule) (limits : Json) (typeFuel : Nat)
     (laws : List (String × ObjectiveBendLaw.LawExpr)) : Lowering :=
   let proposal := ObjectiveBendElaborate.proposalJson { output with term := term }
-  ⟨output, term, sourceEntry, argumentCodec, mode, modules, limits, typeFuel, laws, proposal,
+  ⟨output, term, sourceEntry, modules, limits, typeFuel, laws, proposal,
     packetOf proposal term sourceEntry modules typeFuel, rfl, rfl⟩
 
-def project (term : ATerm) (projections : List Json) : Except Diagnostic ATerm :=
-  projections.foldlM (init := term) fun t p => do
-    let t := match (p.getObjValAs? String "field").toOption with
-      | some field => if field.isEmpty then t else ATerm.get t field
-      | none => t
-    match p.getObjVal? "argument" with
-    | .ok (.str n) =>
-      if ObjectiveBendElaborate.isCanonicalNat n then pure (ATerm.app t (.nat n))
-      else throw (elaborationRefusal "projection argument must be canonical Nat")
-    | .ok _ => throw (elaborationRefusal "projection argument must be canonical Nat")
-    | .error _ => pure t
-
-/-- Selection mode, projections and limits: `limits` carries `heap`/`stack`/`ticks` (canonical
-positive, at most 1000000) and an optional `typeFuel` (at most 16384, default 4096) that
-travels in the packet. Returns the projections and the type fuel. -/
-def options (projections limits : Json) (mode : String) : Except Diagnostic (List Json × Nat) := do
-  if mode != "application" && mode != "definition" then
-    throw (elaborationRefusal "selection mode must be application or definition")
-  let projectionList ← match projections.getArr? with
-    | .ok a => pure a.toList
-    | .error _ => throw (elaborationRefusal "projections must be an array")
-  if mode == "definition" && !projectionList.isEmpty then
-    throw (elaborationRefusal "definition mode forbids result projections")
+/-- Limits: `limits` carries `heap`/`stack`/`ticks` (canonical positive, at most 1000000) and an
+optional `typeFuel` (at most 16384, default 4096) that travels in the packet. Returns the type
+fuel. -/
+def options (limits : Json) : Except Diagnostic Nat := do
   for key in ["heap", "stack", "ticks"] do
     if (positive ((limits.getObjVal? key).toOption.getD .null) 1000000).isNone then
       throw (elaborationRefusal "preview limits must be canonical positive decimal strings ≤1000000")
@@ -501,57 +480,42 @@ def options (projections limits : Json) (mode : String) : Except Diagnostic (Lis
     | .ok v => match positive v 16384 with
       | some n => pure n
       | none => throw (elaborationRefusal "typeFuel must be a canonical positive decimal string ≤16384")
-  return (projectionList, typeFuel)
+  return typeFuel
 
-/-- The front end on an elaborated closure: select the entry and project. Templates are
+/-- The front end on an elaborated closure: select the entry. Templates are
 checked here unless the caller already checked every template of the closure. -/
 def lowerElaborated (modules : List SourceModule) (decoded : List ObjectiveBendElaborate.Module)
     (elaborated : ObjectiveBendElaborate.Elaborated) (templatesChecked : Bool)
-    (entryModule : Nat) (entryDefinition : String) (args projections limits : Json) (mode : String) :
-    Except Diagnostic Lowering := do
-  let (projectionList, typeFuel) ← options projections limits mode
+    (entryModule : Nat) (entryDefinition : String) (limits : Json) : Except Diagnostic Lowering := do
+  let typeFuel ← options limits
   if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
-  let output ← match elaborated.select entryModule entryDefinition args mode with
+  let output ← match elaborated.select entryModule entryDefinition with
     | .ok o => pure o
     | .error e => throw (elaborationRefusal e)
-  let term ← project output.term projectionList
+  let term := output.term
   let some entry := modules[entryModule]? | throw (elaborationRefusal "missing selected entry")
-  let argumentCodec := if mode == "definition" then "unapplied-definition"
-    else match args with
-      | .arr _ => "legacy-canonical-nat-bool-record"
-      | _ => "dregg.objective-bend.argument-values.v1"
   unless templatesChecked do checkTemplates output typeFuel
   for (m, index) in decoded.zipIdx do
     if index != entryModule && !m.laws.isEmpty then
       throw (elaborationRefusal ("a law belongs to the package's entry module; " ++ m.name ++
         " is imported and declares " ++ toString m.laws.length ++ " law(s)"))
   let laws := (decoded[entryModule]?.map (·.laws)).getD []
-  return Lowering.make output term (entry.name ++ "." ++ entryDefinition) argumentCodec mode modules limits typeFuel laws
+  return Lowering.make output term (entry.name ++ "." ++ entryDefinition) modules limits typeFuel laws
 
-/-- The front end on parsed, checked modules: elaborate the selected declaration and project. -/
+/-- The front end on parsed, checked modules: elaborate the selected declaration. -/
 def lowerDecoded (modules : List SourceModule) (decoded : List ObjectiveBendElaborate.Module)
-    (entryModule : Nat) (entryDefinition : String) (args projections limits : Json) (mode : String) :
-    Except Diagnostic Lowering := do
-  discard <| options projections limits mode
+    (entryModule : Nat) (entryDefinition : String) (limits : Json) : Except Diagnostic Lowering := do
+  discard <| options limits
   if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
   let elaborated ← (ObjectiveBendElaborate.elaboratePackageLocated decoded).mapError (locatedRefusal fun _ => none)
-  lowerElaborated modules decoded elaborated false entryModule entryDefinition args projections limits mode
+  lowerElaborated modules decoded elaborated false entryModule entryDefinition limits
 
-/-- The whole front end on read modules: options, parse and check every module, elaborate,
-project. -/
+/-- The whole front end on read modules: options, parse and check every module, elaborate. -/
 def lower (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
-    (args projections limits : Json) (mode : String) : Except Diagnostic Lowering := do
-  discard <| options projections limits mode
+    (limits : Json) : Except Diagnostic Lowering := do
+  discard <| options limits
   let decoded ← modules.mapM parseModule
-  lowerDecoded modules decoded entryModule entryDefinition args projections limits mode
-
-def Lowering.core (l : Lowering) : Json :=
-  Json.mkObj [("schema", toJson "dregg.objective-bend.core.v2"), ("edition", toJson "objective-bend-1"),
-    ("term", l.term.json), ("sourceEntry", toJson l.sourceEntry), ("argumentCodec", toJson l.argumentCodec),
-    ("selectionMode", toJson l.mode), ("sourceModules", Json.arr (l.modules.map SourceModule.binding).toArray),
-    ("status", toJson "elaborated executable term; typing is checked by the actual checker, adequacy in ObjectiveBendFrontEndAdequacy"),
-    ("limits", l.limits)]
-
+  lowerDecoded modules decoded entryModule entryDefinition limits
 
 /-! ## Acceptance: the checker on the front end's own packet -/
 
@@ -635,7 +599,7 @@ declaration as one closed term. An entry's packet then carries only what it reac
 (`Elaborated.select`) without any declaration going unchecked. -/
 def checkClosure (modules : List SourceModule) (elaborated : ObjectiveBendElaborate.Elaborated)
     (limits : Json) (origins : Origins := fun _ => none) : Except Diagnostic Unit := do
-  let (_, typeFuel) ← options (.arr #[]) limits "definition"
+  let typeFuel ← options limits
   let whole := elaborated.whole
   let explainer : Explainer := blameDiagnostic origins modules (namingOf elaborated)
   checkTemplates whole typeFuel explainer

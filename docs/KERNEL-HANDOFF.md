@@ -11,7 +11,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - Needed first: ops (section 2), `Bounds` limits (section 4), tariff (section 5), `Data` universal type, `textJoin`, `refuse`, `form` blocks, `write {…}`, string interpolation, `layer over` (section 8).
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
-- Checkpoints: edition v2 for new suspensions, v1 still decodes (`decodeStateAny`).
+- Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
 - Tests: 896 `def test_` across `tests/test_*.py`. Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
 - Open: section 9.
@@ -56,7 +56,7 @@ Proof obligations by change:
 - Schema/compact codec: `PackageDataSchemaProofs.lean`. Native cells: `ObjectiveBendNativeDataSimulation.lean`, `ObjectiveBendFiniteDataTyping.lean`.
 
 Proved:
-- `state_roundTrip : decodeState (encodeState s) = some s` (v1 codec); `stateV2_roundTrip` for every dictionary and state; `refusal_roundTrip`; `encodeTerm_injective`.
+- `plainV2_roundTrip` and `stateV3_roundTrip` for every dictionary and state (the v1 and v2 state codecs and their round trips are deleted, §21); the token codec round trips of terms, values, data, frames and controls (`ObjectiveBendCheckpointRoundTrip`); `refusal_roundTrip`; `encodeTerm_injective`.
 - `settle_resume_segment` and the agreement lemmas on the hosted runner (`agree_forceHostedFrom`, `agree_materializeWith`, `agree_yieldedPlanWith`, `agree_completeWith`). `typed_settle` is not ported (no state-typing judgment).
 - Collector (`DemandCollectProofs`): `related_collect`, `related_stepRaw`, `related_forceHostedFrom` (exact under `ExactRoom`, which `limitsPast` gives), `checkpoint_resume_segment`: resuming `checkpoint s = collect (settle s)` decides the same verdict, spends the same ticks and extracts the same Plan/result Data as resuming `s`.
 - `conformsUnder_iff : d.conformsUnder bounds ty = true ↔ HasType bounds d ty` (`ObjectiveBendDataConformance.lean`); fuel is never a false negative.
@@ -73,7 +73,7 @@ Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"e
 | `compile` | `modules:[{name,source}]` or `source`, `entry`, `limits?`, `library?` | `{status:"compiled", artifact}`; artifact = `{schema, modules, sourcesSha256 (CID), entry, genericInstances, limits, packet, packetSha256 (CID), type, methods, law, laws?}`. Compiler refusals: error message is the diagnostic JSON text. |
 | `check-package` | as compile | `{status:"checked", artifact}` or `{status:"refused", diagnostic}`. `Package.checkPackage` is the pure entry. Spanless refusals are localized by `localize` (recompiles each function alone; first with the same stage+message wins). |
 | `run` | `artifact`, `arguments`, `limits` | `{status:"finished", value, type, ticksUsed, heapCells, nodesUsed}` or `{status:"refused", failure, …}`. Entry type must be first-order data ("package result must have first-order data type"). |
-| `turn-start` | `artifact`, `arguments`, `limits?`, `object`, `principal`, `intent`, `roots` (all required) | `finished`, `yielded {plan, planType, responseType, checkpoint, ticksUsed}`, `exhausted {resource, ticksUsed}` (resource: ticks heap stack nodes bytes), or `error`. The entry must type as `Activity<P,R,A>` with P a sum, R and A data. |
+| `turn-start` | `artifact`, `arguments`, `limits?`, `object`, `principal`, `intent`, `roots` (all required) | `finished`, `yielded {plan, planType, responseType, checkpoint, ticksUsed}`, `exhausted {resource, ticksUsed}` (resource: ticks heap stack nodes bytes), or `error`. The entry must type as `Activity<A>` (plan `World.Message`, a record of data; response `Data`; each yield resumes at its site's type, §17). |
 | `turn-resume` | `artifact`, `checkpoint`, `response`, `limits?`, same binding | same replies. Checks in order: entry is an activity; `packetSha256`; digest; object; principal; intent; roots ("checkpoint belongs to another package / digest mismatch / another object / another principal / another intent / was taken under different roots"); decode ("checkpoint does not decode"); response conforms; control is yielded. The response type is re-derived from the artifact. |
 | `evaluate-term` | `term` (array wire), `responses?`, `ticks?` | `{schema, result:{status: value\|yield\|exhausted\|stuck, shape, plans}}`. Pure reference for conformance. |
 | `render-document` | `document` (Data wire) | `{status:"rendered", text, lines, bytes}`. |
@@ -141,8 +141,8 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 
 ## 7. Checkpoints
 
-- Tokens: `.nat n | .text s` (v1 JSON `{"n":"3"}` / `{"s":"x"}`); v1 edition `dregg.objective-bend.checkpoint.v1`. Term tags 24 (`toData`), 25 (`textJoin`), 26 (`refuse`, `[26, text]`); join frames 14-17; a refusal is `encodeRefusal` (`[8, text]` for `program`). Only additions: old checkpoints decode unchanged; a checkpoint using a new tag does not decode on an older binary.
-- v2 (`ObjectiveBendCheckpointV2.lean`, edition `…checkpoint.v2`): written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. JSON is bare (`3`, `"x"`, `-(i+1)`). Every reference is emitted only after a check that it names exactly the value, so `stateV2_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
+- Tokens: `.nat n | .text s | .str i`, JSON bare (`3`, `"x"`, `-(i+1)`). Term tags 24 (`toData`), 25 (`textJoin`), 26 (`refuse`, `[26, text]`); join frames 14-17; a refusal is `encodeRefusal` (`[8, text]` for `program`). Only additions: a checkpoint using a new tag does not decode on an older binary.
+- Edition v3 (`ObjectiveBendCheckpointV2.lean`, `…checkpoint.v3`, §14): the dictionary encoding below of the state with every address relative to its holder. Written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. Every reference is emitted only after a check that it names exactly the value, so `stateV3_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
 - Collector: `collect` numbers live cells by `canonicalOrder` (depth first from the roots; a list spine put off to the next round), so a reading that walks further does not renumber every later cell. `orderValid` checks the order; otherwise `collectByAddress` (the allocation-order collector) is used.
 - Host side: `resumeOne` rebuilds the `Checkpoint` from journaled tokens plus the activity's object/principal/intent/roots; changing `Checkpoint` fields stops older journals resuming. Block encoding of tokens is the host's (HOST-HANDOFF 5.6); v2 strings are bare or `str` references, so an utterance is no longer cut into its own leaf.
 - Measured at the kernel lane (Garden prose suspension, `tests.test_policy` scenario): v1 248,006 bytes, v2 6,984 bytes.
@@ -152,12 +152,12 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 - `Data` (`Ty.data`, `Term.toData`, `Data.of::<T>(value)`): any well-formed first-order data (`Data.wellFormed`), produced only by `toData`; no elimination (`data_not_eliminated`). Runtime: `toData` is its value. Turn arguments are quoted by their declared type at every depth (`Turn.quoteAt`). Implicit injection (`coerceAt`/`coerceArgs`/`coerceGo`): where `Data` is expected and the expression has type `T`, the term is wrapped `toData T`; a value whose type holds an arrow or computation is refused by name ("refused (data-injection): …"). `Plan.obend`'s `call`/`send`/`create` payloads are `Data`. The typed-data schema has `Schema.data`; admission charges `admissionWork` and refuses "typed data value at Data repeats a record field".
 - `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing `Ty.isTextList`, meaning `textJoinExpansion`.
 - Type-argument inference (`Generics.lean`, `inferArguments`, `synthI`): a call of a generic without `::<…>` gets the arguments its explicit spelling names, then is rewritten exactly as that spelling (instance numbers and packets agree; the generics pass visits children in the old JSON's sorted-key order, and changing that order moves every pin with a generic instance). A parameter left unbound is refused: "cannot infer the type argument U of Lists.kept …; write Lists.kept::<T, Rain>(…)". `maxInferenceSteps` bounds it. `world/` uses no `::<` and no `Data.of`.
-- `let label(x) = perform(P)` then the rest of the block: lowers to `match perform(P): case label(x): …` plus a `Pattern.unexpected` branch expanded to `case l(_): refuse("unexpected response l")` per other label. The scrutinee must be a `perform` ("refused (let-response)").
+- `let label(x) = world.METHOD(arg)` then the rest of the block: lowers to `match world.METHOD(arg): case label(x): …` plus a `Pattern.unexpected` branch expanded to `case l(_): refuse("unexpected response l")` per other label. The scrutinee must be a world call ("refused (let-response)").
 - `Term.refuse (reason)`, surface `refuse("why")`: stands only where an activity finishes ("refused (refuse-outside-tail)", "refused (refuse-outside-activity)"). Typing rule `PartialTyping.refuse`; machine `control := .refused (.program r)`, `Turn.refusalText` = "turn refused: <reason>". `evaluate-term` reports `stuck`.
 - Law readings: `law NAME "reading": EXPR`; `Surface.Decl.law name source reading`.
 - String interpolation (`interpolationPieces`/`joinPieces`): `{expr}` in a string; up to four pieces lower to nested `textConcat`, more to `textJoin(TextPieces…, "")`. `{{`/`}}` are literal braces; a lone `}`, an unclosed `{` and two expressions in one pair of braces are refused by name. Document templates quote braces as `{`/`}`.
-- `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | a | b | c` declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
-- `write {field: op value, …}`: the Plan `Plan.write({object: P.self(context), edits: extend(keep(), {…})})` with ops `add`, `set`, `append`, `remove`, `removeItem`. Needs a local `type Plan`, a nullary `keep()`, a parameter named `context`; `P` is the module's alias of Plan.obend (placeholder `$plans`, replaced by `Surface.Decl.mapVars`).
+- `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax` 16,384 characters and fills from a reply's ```obend fence; Form.obend's `source: {}` case is the objects lane's) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
+- `write {field: op value, …}`: the world call `world.write(extend(keep(), {…}))` with ops `add`, `set`, `append`, `remove`, `removeItem`, `insert`, `upsert`, `retract`. Needs a nullary `keep()`; `P` is the module's alias of Plan.obend (placeholder `$plans`, replaced by `Surface.Decl.mapVars`).
 - `layer over ./X.obend` must be a module's first line (else refused "…is the module's first line"); it imports `X` as `Super`. Every declaration is a field of one knot, so a layer's `L.f` overrides `B.f`: `B.f` holds `self.L.f`, the old body moves to a hygienic `B.f#below`, and a layer's `Super.f` resolves to the key below. `checkOverrides` refuses a retyped override ("refused (layer-override): L.f is …, but it overrides B.f, which is …"). Unlayered packets are byte-identical. `Elaborated.select` takes an entry the top layer lacks from the topmost layer defining it. Tests: `test_layers`.
 - Located refusals: every refusal of an elaborated package names `definition`, `module`, `span`; a type refusal `expected` and `found` in surface syntax, with `hint` (`blameHint`: a record where its field was expected, a function waiting for arguments, too many arguments, a missing field, an unknown case). Core `Expr`/`Body` carry the surface span as an implicit `{span}` field; `ATerm.located` is transparent to `json`, `erase`, `annotate`, `mapTypes`, `knotNames`. Generic instances are placed at their generic declaration (`Origins`, `FrontEnd.originsOf`). Test: `test_located`.
 - Dialect hints (`Delvetalk/Hints.lean`, `Diagnostic.hint`): only on refusals, at the named line for a parse refusal, at the Surface declaration holding the named line otherwise. `Hints.hintFor` never fires on a typed-packet checker refusal; `blameHint` does. Test: `test_hints`.
@@ -178,22 +178,6 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
 
 ## 14. Surface types (lane/kernel5 after foundation 99c6dff)
 
-- Typed foreign views. `P.view::<S>({object})` (P the object's Plan alias; S any type its
-  closure names) is lowered by the generics pass (`rewriteExpr`, `Generics.State.typedViews`)
-  to `P.viewAs({object, as: "viewed:M.S"})`, and a match on that perform has its `viewed`
-  arm renamed to `viewed:M.S` (also through `let viewed(v) = ...`). At the end of the pass
-  the package's instances of the Plan sum gain `viewAs: View with {as: String}` and its
-  module's `Response` instances gain `viewed:M.S: {version: Nat, state: S}` per viewed type,
-  so the arm is typed by S everywhere it reaches and the activity's response type (which the
-  host re-derives from the artifact) holds it. One activity's response type has one arm per
-  viewed type; no core rule changed (no per-perform response types). A package without
-  typed views is untouched (pins: 0 recompiled). Plan.obend is unchanged: the untyped
-  `view`/`viewed` (the viewer's own state) and `viewData` stay. For the host lane: answer
-  `viewAs {object, as}` by looking `as` up in the activity's response row, checking the
-  object's state with `conformsUnder` against that arm's `state` type, and answering the
-  variant `as` {version, state}, `typeMismatch` when it does not conform (the kernel
-  refuses a non-conforming response anyway: "response does not conform"). Test:
-  `tests/test_typed_view.py`.
 - Protocols. `protocol P:` (a declaration, indented `name: TYPE` lines; `(A, B) -> R` is
   read `A -> B -> R`, `() -> R` as `R`) and `implements P` (or `implements Alias.P`; `P`
   alone is looked up in the module, the import aliased `P`, then any import). State, Plan
@@ -310,8 +294,8 @@ as a leaf holding no address (as `native`): `cellAddresses (.stored _) = []`,
 `related_stepRaw` gains the enter case (control changes, heap does not);
 `supply` needs its own lemma `related_supply` (heap agreement after overwriting one
 cell with the same Data on both sides), the shape of `related_resume`.
-`checkpoint_resume_segment` stays true for any fixed `fetch` (both runs ask the same function): its proof gains a parameter, not an idea. `stateV2/V3_roundTrip` gain one
-codec case each. `state_roundTrip` (v1) is untouched: v1 never holds a stored cell.
+`checkpoint_resume_segment` stays true for any fixed `fetch` (both runs ask the same function): its proof gains a parameter, not an idea. `stateV3_roundTrip` gains one
+codec case each.
 
 **Across a suspension.** A yield happens only at a `perform`, never at `awaitingStore`
 (the runner answers before continuing), so a checkpoint never stops mid-fetch. A turn
@@ -353,13 +337,7 @@ rehearsal capture (rebuild it: a wrapper `tee $CAP/$$.jsonl | delvetalk-obend` g
 
 1. Done on lane/kernel7 (§19): checkpoints trim unread environment slots; rehearsal median
    suspension 46.4 KB -> 10.1 KB, of which the kernel's blocks are 5.7 KB.
-2. **Checker quadratic** (PERF item 4, and the host's 57 ms insert into a 1,000-row relation,
-   75% in `CheckedEntry.apply`): `infer` builds `position ++ [i]` and every annotation lookup
-   walks a whole path (`AnnotationTree.lookup`, the packet's `HashMap (List Nat)`), so a
-   function `List Nat → Option LambdaAnnotation` cannot be made incremental: the fix is a
-   checker over an annotation cursor (a tree with O(1) child), `check` on a function kept as
-   the reference and the cursor version proved equal for `tree.lookup`; then the decided
-   examples stay functions. Measure 5,000 items at `Data` (4.4 s) and that insert.
+2. Done on lane/kernel8 (§20): the checker over an annotation tree, and type equality by shared subtrees.
 3. `relationsOf` once per package in the front-end cache (not per method compile).
 4. The artifact's `relations` entries gain `limit` and `retain` from the `Decl`.
 5. `write {f: remove i}` / `amend`: lower to `removeItem {item}` / `amendItem {item, change}`
@@ -389,6 +367,8 @@ seven one-line substitutions. The pins fixture at foundation records `Abi`, `For
 `test_artifact_pins` fails three shards at foundation until it is re-recorded.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
+
+Day 4 (§21) deleted every sum-Plan half described below: what stands is the message dialect.
 
 - Day 1. `Ty.isPlanUnder` admits a record row of data (a message) beside a variant;
   `Ty.performResponse plan T` is `Data` for a record plan, else `T`, and
@@ -499,3 +479,64 @@ seven one-line substitutions. The pins fixture at foundation records `Abi`, `For
   5.7 KB is blocks and 4.4 KB the host's fields (`activity.argument` 1.2 KB,
   `interpretation.utterance` 1.0 KB, inline per entry): run 8's 9.5 KB median is within reach
   only by moving those into blocks, which is the host's file. Packets do not move (pins: 0).
+
+## 20. Checker cost (lane/kernel8, §16 item 2)
+
+- `inferAt`/`inferFieldsAt`/`inferArmsAt` are the checker over any annotation cursor
+  (`here : α → Option LambdaAnnotation`, `child : α → Nat → α`); `infer`/`inferFields`/`inferArms`
+  are it at source positions (`child p i = p ++ [i]`, annotations a function of the whole path)
+  and stay the reference, so `check`, the decided examples and the packet path are unchanged.
+  `inferAt_view`: two cursors related by a map preserving `here` and `child` infer alike.
+  `AnnotationTree` moved from `Entry.lean` into `ObjectiveBendTyping` (`here`, `child` with the
+  empty tree past the children, `subtree`, `lookup := (subtree path).here`); `checkAt term tree`
+  is `check` over the tree, `checkAt_eq : checkAt term tree a c f = check ⟨term, tree.lookup, a⟩ c f`.
+  `CheckedEntry.apply` (every turn argument) calls `checkAt`.
+- Type equality as compiled is by shared subtrees: `Ty.eqSharedCore` (structural, `withPtrEq` at
+  every child, its property `r = true ↔ a = b`) behind `@[csimp]` on both `instDecidableEqTy` and
+  `instDecidableEqTy.decEq` (`ObjectiveBendTypes.lean`), so every `=`/`==` on `Ty` compiled after
+  it stops at one object in memory. `agree` compiles to `agreeFast` (`@[csimp]
+  agree_eq_agreeFast`): equal trees agree at once, and only differing ones pay for canonical forms
+  and both shareability walks. At `Data` an injection's payload type is the rest of the list's
+  shape, so each of these was linear per node.
+- Measured on hbox (turn-start on a held entry, best of three, load 16-33, so noisy):
+  5,000-item list at `Data` 2,320 -> 26 ms; 5,000-item `List<String>`-shaped sum 705 -> 9 ms;
+  1,000 three-column rows 48 -> 7 ms. Packets do not move (pins: 0).
+
+## 21. Day 4: the message dialect alone (lane/kernel8, §16 item 6)
+
+- Refused by name: `Activity<Plan, Response, Result>` ("refused (old-dialect): ... is withdrawn",
+  at the declaration in `emitDecl` and in `sourceType`), surface `perform(...)` ("refused
+  (perform): surface perform is withdrawn", `isSurfacePerform`). `isPerform` is a world call
+  only. `write {…}` parses straight to `world.write(extend(keep(), {…}))`: `writeMarker`,
+  `writeLowered` and the `object`/`context` requirement are gone.
+- Deleted: the typed-view rewrite (`typedViews`, `viewAs`, `viewed:M.S` arms; `world.view::<S>` is
+  the facility); the generics pass's `perform` handling and `Site.result`; the dead
+  JSON-argument path (`legacyArgument`, `typedArgument`, `exactKeys`, the
+  `argument-values.v1` envelope, `argumentCodec`, selection `mode`, projections,
+  `Lowering.core`): `Elaborated.select e module entry`, `lower* … limits`, `options limits`.
+- Types: `Ty.isPlanUnder` is a record of data only; `Ty.performResponse` is gone and
+  `PartialTyping.perform` concludes `computation plan .data T`. The decided activity examples
+  are restated over a message Plan (`doneSignature` for `done`), `sum_plan_refused` added,
+  `message_then_sum_plan_refused`/`sum_plan_response_unchanged` deleted.
+- Checkpoints: v1 `encodeState`/`decodeState`/`encodeCell`/`decodeCell`/`roundTrips`/
+  `checkpointEdition`/`tokenJson` and `state_roundTrip`/`cell_roundTrip`; v2
+  `encodeStateV2`/`decodeStateV2`/`checkpointEditionV2` and `stateV2_roundTrip` deleted;
+  `decodeCheckpoint` (v3) replaces `decodeStateAny`. The v1 module stays as the token codec v3
+  builds on. `Turn`: tokens JSON is bare only, `writeToken` has no v1 form, a checkpoint with
+  no site prefix does not resume.
+- Host (this one item, at the coordinator's request): `messagePlan` returns `Except`
+  (anything not a message is `noMethod`), the sum-Plan pass-through in `drive`, the
+  `viewData`/`viewDataField` arm, `isMessageDialect` and the sum-Plan branch of
+  `interpretVerdict` deleted; `speaksMessages` is "its `receive` compiles".
+- Tests: `tests/fixtures/obend/Variant.obend` and `tests/test_typed_view.py` deleted; 34 test
+  files moved to the message dialect (two helpers, reviewed). `def test_` count 1,058 at
+  foundation 17b1767 -> 1,052: deleted as old-dialect-only: writing another object
+  (`notSelf`, three tests: `world.write` names no object), a non-Plan sum as the Plan, the
+  `denied` interpretation (World's `Interpreted` has no `denied`; the host still answers it:
+  a host/objects decision), the two typed-view tests; added: the two refusals above.
+  `test_tariff` bump: 56 + 10 -> 73 + 10 ticks (a `Message` record and a `Data` injection
+  where a sum injection was).
+- Pins re-recorded once (`tests/fixtures/pins/artifacts.json`): every world source had moved
+  with the objects lane's deletion pass; 44 modules, 1,207 -> 1,132 defs (Card, Deal,
+  Directory and Spell lost defs in that pass), every def compiles.
+

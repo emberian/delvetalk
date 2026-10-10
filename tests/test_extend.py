@@ -19,19 +19,19 @@ from tests.test_turn_world import declared
 BASE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def add(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: n})}})):
+def add(context: Abi.Context, n: Nat) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n})})):
     case _: n
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   add(context, 1n)
 def peek(state: State, context: Abi.Context) -> State:
   {count: state.count}
@@ -40,11 +40,9 @@ def peek(state: State, context: Abi.Context) -> State:
 LAYER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 type State = Super.State
-type Plan = Super.Plan
-type Response = Super.Response
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   Super.add(context, 10n)
-def triple(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def triple(state: State, context: Abi.Context) -> Activity<Nat>:
   Super.add(context, 3n)
 """)
 
@@ -52,11 +50,9 @@ SECOND = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Main.obend as Base
 type State = Base.State
-type Plan = Base.Plan
-type Response = Base.Response
-def triple(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def triple(state: State, context: Abi.Context) -> Activity<Nat>:
   Super.triple(state, context)
-def zero(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def zero(state: State, context: Abi.Context) -> Activity<Nat>:
   Base.add(context, 0n)
 """)
 
@@ -64,17 +60,17 @@ def zero(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 FORGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {note: Plans.Edit.keep({})}
 def initial() -> State:
   {note: ""}
-def graft(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.extend({object: {world: "", object: input.target}, package: input.package, migration: ""})):
+def graft(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<String>:
+  match world.extend({object: {world: "", object: input.target}, package: input.package, migration: ""}):
     case reprogrammed(r): "grafted"
     case refused(r): r.clause
     case _: "other"

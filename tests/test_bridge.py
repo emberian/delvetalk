@@ -25,30 +25,34 @@ CARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   seen: Nat
 record Edits:
   seen: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {seen: Plans.Edit.keep({})}
 %s
 def initial() -> State:
   {seen: 5n}
-def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def act(context: Abi.Context) -> Activity<Nat>:
 %s
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Nat>:
+  act(context)
+def plant(state: State, input: {seed: String, colour: String}, context: Abi.Context) -> Activity<Nat>:
+  act(context)
 """)
-OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", context.principal))})):
+OFFERING = """  match world.offer({to: "", document: Document.text(textConcat("hello ", context.principal))}):
     case offered(_): 1n
     case _: 0n"""
-REFUSING = """  match perform(Plan.write({object: Plans.self(context), edits: {seen: Plans.Edit::<Nat, Nat>.set({value: 0n})}})):
+REFUSING = """  match world.write(extend(keep(), {seen: Plans.Edit::<Nat, Nat>.set({value: 0n})})):
     case written(_): 1n
     case _: 0n"""
 
 
 def modules(body, law=''):
     out, seen = [], set()
-    for m in closure('Document') + closure('Variant') + [{'name': 'Card', 'source': CARD % (law, body)}]:
+    for m in closure('Document') + closure('World') + [{'name': 'Card', 'source': CARD % (law, body)}]:
         if m['name'] not in seen:
             seen.add(m['name'])
             out.append(m)

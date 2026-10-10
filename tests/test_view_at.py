@@ -15,26 +15,21 @@ from tests.test_turn_world import label, nat, record, declared
 COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-sum Plan:
-  write: {object: Plans.Reference, edits: Edits}
-  viewAt: {object: Plans.Reference, version: Nat}
-sum Response:
-  viewed: {version: Nat, state: State}
-  written: {}
-  denied: {}
-  refused: {clause: String}
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): state.count + 1n
     case _: 0n
-def at(state: State, input: {target: String, version: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.viewAt({object: {world: "", object: input.target}, version: input.version})):
+def at(state: State, input: {target: String, version: Nat}, context: Abi.Context) -> Activity<Nat>:
+  match world.viewAt::<State>({object: {world: "", object: input.target}, version: input.version}):
     case viewed(v): v.state.count * 100n + v.version
     case refused(_): 999999n
     case denied(_): 888888n

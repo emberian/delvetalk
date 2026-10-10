@@ -18,23 +18,37 @@ from pathlib import Path
 from tests.test_chain import garden_state
 from tests.test_turn_world import BINARY, closure, counter_modules, declared, label, nat, record
 
+PLANS = """edition ObjectiveBend 1
+import ./World.obend as World
+record Edit:
+  field: Nat
+  before: Nat
+  after: Nat
+def bump(count: Nat) -> Activity<Nat>:
+  match world.write({field: 0n, before: count, after: count + 1n}):
+    case written(_): count + 1n
+    case refused(_): count
+def pure(n: Nat) -> Nat:
+  n + 1n
+"""
+
 REPL_COUNTER = declared('''edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: state.count + 1n
 ''')
-from tests.test_turn import PLANS, variant
+from tests.test_turn import variant
 from transport import delve, identity
 from tests.host import HostdCase, serve, start_hostd, stop_hostd
 from tests.test_turn_world import declared
@@ -119,7 +133,7 @@ class FrontCase(HostdCase):
 
     def heap_create(self, tok, name='h1'):
         # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
-        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('Variant') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
+        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
                                                              'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
 
     @property
@@ -342,7 +356,7 @@ class Repl(FrontCase):
 
     def test_repl_runs_a_pure_entry_and_passes_errors_through(self):
         tok = self.login()
-        mods = [{'name': 'Package', 'source': PLANS}]
+        mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
         s, r = self.repl(tok, modules=mods, entry='pure', arguments=[nat(1)])
         self.assertEqual((s, r['status'], r['value']), (200, 'finished', nat(2)), r)
         s, e = self.repl(tok, modules=mods, entry='nope')
@@ -362,13 +376,13 @@ class Repl(FrontCase):
                              immediatelyPrevious={'tag': 'boolean', 'value': False}, post={'tag': 'label', 'value': ''}))
         # The REPL takes at most MAX_BODY: Counter's closure with Card exceeds it, so the REPL
         # runs the bare counter activity.
-        s, r = self.repl(tok, modules=closure('Variant') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
+        s, r = self.repl(tok, modules=closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
                          arguments=[record(count=nat(2)), context])
         self.assertEqual((s, r['status']), (200, 'yielded'), r)
 
     def test_repl_activity_round_trip_with_checkpoint(self):
         tok = self.login()
-        mods = [{'name': 'Package', 'source': PLANS}]
+        mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
         s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         s, done = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)

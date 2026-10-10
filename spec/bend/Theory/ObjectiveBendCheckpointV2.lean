@@ -16,8 +16,9 @@ rebuilds from the program alone (the packet's term, which the host holds by pin)
 
 Every reference is emitted only after checking that it names exactly the value (the hints
 that find candidates are unverified accelerators), so the round trip
-(`ObjectiveBendCheckpointV2RoundTrip.stateV2_roundTrip`) holds for every dictionary and
-every state. v1 checkpoints keep decoding with `ObjectiveBendCheckpoint.decodeState`. -/
+(`ObjectiveBendCheckpointV2RoundTrip.plainV2_roundTrip`, then `stateV3_roundTrip`) holds for
+every dictionary and every state. The written edition is v3 (below): this encoding of the
+state with every address relative to its holder; the v1 and v2 editions no longer decode. -/
 import Theory.ObjectiveBendCheckpoint
 import Std.Data.HashMap
 namespace Minidregg.Theory.ObjectiveBendCheckpoint
@@ -427,8 +428,6 @@ def envTable (s : State) : Array Environment × Std.HashMap Environment Nat :=
 
 /-! ## The checkpoint -/
 
-def checkpointEditionV2 : String := "dregg.objective-bend.checkpoint.v2"
-
 /-- The tokens a v2 checkpoint holds before its strings are interned: the environment table
 and the body. -/
 def encodePlainV2 (d : Dictionary) (s : State) : Tokens :=
@@ -444,16 +443,13 @@ def localStrings (d : Dictionary) (plain : Tokens) : Array String :=
 
 /-- `plain` with its strings interned: the edition, the strings the dictionary does not
 hold, then the tokens with every string a reference into the dictionary's and those. -/
-def internAll (d : Dictionary) (plain : Tokens) (edition : String := checkpointEditionV2) : Tokens :=
+def internAll (d : Dictionary) (plain : Tokens) (edition : String) : Tokens :=
   let locals := localStrings d plain
   let table := d.strings ++ locals
   let localIndex : Std.HashMap String Nat :=
     locals.foldl (fun (m, i) x => (m.insert x i, i + 1)) ({}, d.strings.size) |>.1
   let find := fun (x : String) => (d.stringHint[x]?).orElse fun _ => localIndex[x]?
   .text edition :: .nat locals.size :: (locals.toList.map .text ++ plain.map (internString table find))
-
-/-- A v2 checkpoint. -/
-def encodeStateV2 (d : Dictionary) (s : State) : Tokens := internAll d (encodePlainV2 d s)
 
 /-- The environment table and the body, decoded. -/
 def decodePlainV2 (terms : Array Term) (nameLists : Array (List String)) (plain : Tokens) : Option State :=
@@ -474,11 +470,6 @@ def decodeStrings (edition : String) (strings : Array String) (tokens : Tokens) 
     if locals.length != count then none
     some ((rest.drop count).map (resolveString (strings ++ locals.toArray)))
   | _ => none
-
-/-- Decode a v2 checkpoint against the program's terms, strings and name lists. -/
-def decodeStateV2 (terms : Array Term) (strings : Array String) (nameLists : Array (List String))
-    (tokens : Tokens) : Option State :=
-  (decodeStrings checkpointEditionV2 strings tokens).bind (decodePlainV2 terms nameLists)
 
 /-! ## v3: addresses relative to their holders
 
@@ -561,13 +552,8 @@ def decodeStateV3 (terms : Array Term) (strings : Array String) (nameLists : Arr
     (tokens : Tokens) : Option State :=
   ((decodeStrings checkpointEditionV3 strings tokens).bind (decodePlainV2 terms nameLists)).map absoluteState
 
-/-- Decode a checkpoint of any edition: v2 and v3 against the program's dictionary. -/
-def decodeStateAny (d : Dictionary) (tokens : Tokens) : Option State :=
-  match tokens with
-  | .text edition :: _ =>
-    if edition == checkpointEditionV3 then decodeStateV3 d.terms d.strings d.nameLists tokens
-    else if edition == checkpointEditionV2 then decodeStateV2 d.terms d.strings d.nameLists tokens
-    else decodeState tokens
-  | _ => none
+/-- Decode a checkpoint against the program's dictionary: edition v3 only. -/
+def decodeCheckpoint (d : Dictionary) (tokens : Tokens) : Option State :=
+  decodeStateV3 d.terms d.strings d.nameLists tokens
 
 end Minidregg.Theory.ObjectiveBendCheckpoint

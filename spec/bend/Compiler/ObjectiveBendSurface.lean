@@ -74,7 +74,7 @@ inductive Pattern where
   | bool (value : Bool)
   | ctor (label binder : String)
   /-- Every label no other arm names, each arm refusing the turn by name
-  (`refuse("unexpected response <label>")`). Written by `let label(x) = perform(...)`. -/
+  (`refuse("unexpected response <label>")`). Written by `let label(x) = world.METHOD(...)`. -/
   | unexpected
   deriving Inhabited, Repr, BEq
 
