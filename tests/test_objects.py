@@ -199,7 +199,7 @@ def joined(n: Nat) -> String:
 
 CISTERN_PROBE = PROBE_HEAD % "Cistern" + """import ./Relation.obend as Relations
 def one(n: Nat) -> String:
-  Document.plain(O.render({entries: Relations.Relation.rows({items: Lists.List::<O.Kept>.cons({head: {at: 7n, slot: {principal: "glm", intent: "plant"}, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<O.Kept>.nil()})})}, Card.stranger()))
+  Document.plain(O.render({entries: Relations.Relation.rows({items: Lists.List::<O.Kept>.cons({head: {at: 7n, slot: {principal: "glm", intent: "plant"}, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<O.Kept>.nil()})}), level: 3n}, Card.stranger()))
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
@@ -229,7 +229,7 @@ class Objects(unittest.TestCase):
     def test_methods_perform_the_plans_they_claim(self):
         expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rain"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
-                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
+                    ("Cistern", "retain"): "write", ("Cistern", "poured"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
                     ("Door", "opened"): "write", ("Door", "knock"): "write",
                     ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
@@ -280,6 +280,7 @@ class Objects(unittest.TestCase):
                     self.assertLess(text.index("kimik3: first"), text.index("gemini: second"))
                 if name == "Cistern":
                     self.assertIn("refused required-absence", reply["value"]["value"])
+                    self.assertTrue(reply["value"]["value"].startswith("Cistern, level 3. Pour: delvetalk cistern pour / amount: <1 to 20>.\n"), reply)
                 if name == "Anthology":
                     self.assertIn("[proposed] glm: moths", reply["value"]["value"])
 

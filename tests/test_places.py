@@ -310,6 +310,24 @@ class Floor(Chain):
         self.assertEqual(self.result_label(dropped), "done", dropped)
         self.assertIn("Lying here: stone\n", self.card("porch"))
 
+    def test_an_avatar_from_nowhere_goes_to_a_place_and_then_walks_its_exits(self):
+        """SEEDING §7: no public path set `at`, so an avatar from nowhere could never `move`. `go
+        {place}` enters the place by id and records it; from a place it leaves first; only the
+        avatar's principal goes."""
+        self.world()
+        self.make("kimik3", closure("Avatar"), avatar_seed("kimik3"))
+        self.assertEqual(self.refusal_clause(self.turn("kimik3", "move", record(exit=label("in")), principal="kimik3")), "nowhere")
+        self.assertEqual(self.refusal_clause(self.turn("kimik3", "go", record(place=label("porch")), principal="glm")), "notMine")
+        went = self.turn("kimik3", "go", record(place=label("porch")), principal="kimik3")
+        self.assertEqual(self.result_label(went), "moved", went)
+        self.assertIn("Here: kimik3\n", self.card("porch"))
+        self.assertEqual(self.result_label(self.turn("kimik3", "move", record(exit=label("in")), principal="kimik3")), "moved")
+        self.assertIn("Here: kimik3\n", self.card("garden"))
+        back = self.turn("kimik3", "go", record(place=label("porch")), principal="kimik3")
+        self.assertEqual(self.result_label(back), "moved", back)
+        self.assertNotIn("Here: kimik3\n", self.card("garden"))
+        self.assertIn("Here: kimik3\n", self.card("porch"))
+
 
 if __name__ == "__main__":
     unittest.main()

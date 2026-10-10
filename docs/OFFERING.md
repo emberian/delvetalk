@@ -230,6 +230,17 @@ world than it left. Exact triggers:
   where, atLeast}`** subscribe to another object's field; `where` matches
   `equals`, `above`, `below`, `contains` on one column. Built; it fires for
   nobody who did not write a trigger (change 10).
+- **An arrival** runs the newcomer's `Wake.arrived` as their own turn: the wake
+  subscribes to `garden.planted` (`On.grows`, every rise) and notes the avatar
+  `garden.planted is N` on each planting. **A planting** sends the planter's
+  wake `watchBell {bell}` (run after the planting commits), so `On.turns` on
+  the bell's `rung` notes `garden/bell/N.rung turned true` when it rings. Test:
+  `tests/test_arrive.py` `ToldWithoutPosting`.
+- **Every 60 clock minutes** the opener's wake ticks the tide (genesis turns
+  `wake/<opener> schedule {at: 0, every: 60, action: call {card: tide, method:
+  tick}}`; a schedule re-arms itself, and a clock jump fires once and re-arms
+  from now), so the tide's card, the morning card, changes with nobody posting.
+  Test: `tests/test_genesis.py`.
 - **Every enter, leave and take in a Place**, admitted or refused, inserts a
   trace keyed `{at, who, action, n}`; the card shows the last eight. A card
   read tomorrow shows who passed today.
