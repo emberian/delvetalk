@@ -81,13 +81,12 @@ def minted() -> Plans.Reference:
   {world: "", object: ""}
 def chosen(context: Abi.Context, name: String) -> Plans.Reference:
   {world: "", object: "{context.object}/{name}"}
-# The post that plants is what the bell's strike later awaits (awaitPost): a spell's turn is
-# the reply that carries it, its intent that post (the bridge names a turn by its post);
-# planting directly leaves the bell nothing to await. The planter is the turn's principal,
+# The post that plants is what the bell's strike later awaits (awaitPost): the reply a spell
+# came in (`inputOrigin.post`); planting directly leaves the bell nothing to await. The planter is the turn's principal,
 # never anything the caller wrote. A typed planting plants (it settles whatever the speaker
 # had waiting).
 def plant(state: State, input: Planting, context: Abi.Context) -> Activity<Reply>:
-  settled(input.colour, input.seed, if context.inputOrigin.kind == "spell" then context.intent else "", false, heldBy(context.principal, state), context, state)
+  settled(input.colour, input.seed, context.inputOrigin.post, false, heldBy(context.principal, state), context, state)
 # One cistern per garden: the second create finds garden/cistern occupied. Its name is what
 # the digger calls it (`cistern: a stone cistern for refused proposals`).
 def cistern(state: State, input: {name: String}, context: Abi.Context) -> Activity<Reply>:

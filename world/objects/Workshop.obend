@@ -35,9 +35,6 @@ sum Verdict:
   reprogrammed: {pin: String}
   refused: {reason: String}
   silent: {}
-sum Block:
-  none: {}
-  some: {source: String}
 def defaultSeed() -> Seed:
   {title: "Workshop"}
 def seeded(seed: Seed) -> State:
@@ -46,20 +43,6 @@ def keep() -> Edits:
   {title: Plans.Edit.keep({}), held: Plans.Entries.keep({}), next: Plans.Edit.keep({})}
 def initial() -> State:
   seeded(defaultSeed())
-# The first ```obend fenced block of a reply: from the line after the opening
-# fence to the next ```. Positions are found with break and span, and the text is
-# taken once, so the cost is linear in the block.
-def fenced(text: String) -> Block:
-  let at = textBreak(text, "`")
-  let rest = textDrop(text, at)
-  if rest == "" then Block.none({}) else if textTake(rest, 8n) == "```obend" then opened(textDrop(rest, 8n)) else fenced(textDrop(rest, textSpan(rest, "`")))
-def opened(after: String) -> Block:
-  closing(textDrop(after, textBreak(after, "\n") + 1n), "")
-def closing(body: String, before: String) -> Block:
-  if body == "" then Block.none({}) else closed(body, before, textBreak(body, "`"))
-def closed(body: String, before: String, at: Nat) -> Block:
-  let rest = textDrop(body, at)
-  if rest == "" then Block.none({}) else if textTake(rest, 3n) == "```" then Block.some({source: "{before}{textTake(body, at)}"}) else closing(textDrop(rest, 1n), "{before}{textTake(body, at)}`")
 def cat(left: String, right: String) -> String:
   "{left}{right}"
 # The host's check answers "<module>:<line>: <stage>: <message>", and, when the
@@ -155,52 +138,43 @@ def withdraw(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Ve
 def withdrawn(held: Held) -> Activity<Verdict>:
   let written(_) = write {held: removeItem held}
   Card.tell(Verdict.refused({reason: "withdrawn"}), Document.text("✾ WORKSHOP\n\nWithdrew #{natText(held.n)}.\n"))
-# The code is a `source: <<BEND` field (a block value the host reads), else the first fenced
-# ```obend block of the reply, which no spell field can carry: a check or proposal with a
-# fenced block lacks `source`, so the host hands it to receive with the fields it has.
+# The code is the `source` field: a `source: <<BEND` block, or the reply's ```obend block,
+# which the host reads as that field.
 def check(state: State, input: {target: String, source: String}, context: Abi.Context) -> Activity<Verdict>:
-  checking(input.target, if input.source != "" then Block.some({source: input.source}) else Block.none({}), context)
-def checking(target: String, block: Block, context: Abi.Context) -> Activity<Verdict>:
-  match block:
-    case some(b): runCheck(b.source)
-    case none(_): if target != "" then checkTarget(target, context) else Card.tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
+  checking(input.target, input.source, context)
+def checking(target: String, source: String, context: Abi.Context) -> Activity<Verdict>:
+  if source != "" then runCheck(source) else if target != "" then checkTarget(target, context) else Card.tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
 def propose(state: State, input: {target: String, migration: String, source: String}, context: Abi.Context) -> Activity<Verdict>:
-  proposing(input.target, input.migration, if input.source != "" then Block.some({source: input.source}) else Block.none({}), context, state)
-def proposing(target: String, migration: String, block: Block, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match block:
-    case some(b): if target == "" then Card.tell(Verdict.refused({reason: "Name a target to propose to."}), usage()) else runPropose(target, b.source, migration, context, state)
-    case none(_): Card.tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
+  proposing(input.target, input.migration, input.source, context, state)
+def proposing(target: String, migration: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
+  if source == "" then Card.tell(Verdict.refused({reason: "Include a fenced obend block."}), usage()) else if target == "" then Card.tell(Verdict.refused({reason: "Name a target to propose to."}), usage()) else runPropose(target, source, migration, context, state)
 # `create / like: <thing>` asks the thing for a copy of itself (its `copy`, under the asker):
 # the thing refuses by name when its owner made it not copyable, and offers the result.
 def create(state: State, input: {like: String}, context: Abi.Context) -> Activity<Verdict>:
   match world.send({object: {world: context.world, object: input.like}, method: "copy", argument: Plans.nothing()}):
     case delivery(_): Verdict.clean({})
     case refused(r): refusing("No copy of {input.like}: {r.clause}")
-# A reply that ran no method: a check or proposal missing fields (a fenced block, or a target
-# alone) is completed from the reply's fields and its block; anything else is the card's
-# default (a blank reply gets the usage card, prose goes on to the directory). The spell's
-# action is read from the text before the first backtick, so a long block after it is not
-# scanned; a spell placed after the block costs a second pass.
+# A reply that ran no method: a check or proposal missing fields (a target alone, or a source
+# without a target) is completed from the reply's fields; anything else is the card's default
+# (a blank reply gets the usage card, prose goes on to the directory).
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Verdict>:
-  completing(spellOf(input.text), input, context, state)
-def spellOf(text: String) -> String:
-  orWhole(Card.spellAction(textTake(text, textBreak(text, "`"))), text)
-def orWhole(action: String, text: String) -> String:
-  if action == "" then Card.spellAction(text) else action
+  completing(Card.spellAction(input.text), input, context, state)
 def completing(action: String, input: Card.Reply, context: Abi.Context, state: State) -> Activity<Verdict>:
-  if action == "check" then checking(Spell.valueOf(input.fields, "target"), withFence(input.fields, input.text), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), withFence(input.fields, input.text), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
-def withFence(fields: Spell.Bindings, text: String) -> Block:
-  if Spell.valueOf(fields, "source") != "" then Block.some({source: Spell.valueOf(fields, "source")}) else fenced(text)
+  if action == "check" then checking(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "source"), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), Spell.valueOf(input.fields, "source"), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
 def answered(replied: Card.Replied) -> Verdict:
   match replied:
     case silent(_): Verdict.silent({})
     case _: Verdict.refused({reason: "Reply with a workshop spell."})
-# The workshop's actions carry a fenced block, which a form cannot describe: its card is the
-# usage text, and its actions are declared as methods.
+# `check` and `propose` take Bend source (`Form.Kind.source`): a `source: <<BEND` block or the
+# reply's ```obend block, which the host reads as the field.
+def checkForm() -> Form.Form:
+  {card: "", action: "check", fields: Lists.append(Lists.append(Form.Fields.nil(), {name: "target", kind: Form.Kind.text({min: 0n, max: 128n})}), {name: "source", kind: Form.Kind.source({})})}
+def proposeForm() -> Form.Form:
+  {card: "", action: "propose", fields: Lists.append(Lists.append(Lists.append(Form.Fields.nil(), {name: "target", kind: Form.Kind.text({min: 1n, max: 128n})}), {name: "migration", kind: Form.Kind.text({min: 0n, max: 1400n})}), {name: "source", kind: Form.Kind.source({})})}
 def forms() -> Card.Forms:
-  Card.Forms.nil()
+  Lists.append(Lists.append(Card.Forms.nil(), checkForm()), proposeForm())
 def methods() -> Lists.List<String>:
-  Card.wordList("check propose adopt withdraw create")
+  Card.wordList("adopt withdraw create")
 def blurb() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

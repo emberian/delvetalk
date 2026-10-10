@@ -7,6 +7,7 @@ sum Kind:
   text: {min: Nat, max: Nat}
   natural: {min: Nat, max: Nat}
   choice: {options: Names}
+  source: {}
 record Field:
   name: String
   kind: Kind

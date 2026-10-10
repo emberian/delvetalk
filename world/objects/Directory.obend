@@ -54,8 +54,7 @@ sum Answer:
 # refused with clause owner); anyone's summons only inserts into greeted (clause greeted). A law in source means a Directory is made with
 # world-create, never by a creator that imports it.
 law owner "only the owner changes its doors, owner or policy; anyone's summons only adds to who was greeted": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(doors) and unchanged(policy) and writeOnce(words) and writeOnce(fields))
-# Past 4,096 greeted the host would drop the oldest row and insertOnly refuse the write, so
-# the greeting stops at 4,096 in Bend (`greet`).
+# Past 4,096 greeted the host drops the oldest row, and insertOnly counts a dropped row as kept.
 law greeted "anyone's summons only adds to who was greeted": request.subject == new.owner or insertOnly(greeted)
 def defaultSeed() -> Seed:
   {owner: "", policy: Plans.nobody()}
@@ -385,11 +384,8 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Heard>:
   match world.card({object: to}):
     case carded(c): Card.tell(Heard.door({object: to.object}), c.document)
     case _: Card.tell(Heard.refused({reason: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
-# The menu once per principal: the greeting is remembered (at most 4,096 principals; past
-# that the menu goes out without being remembered).
+# The menu once per principal: the greeting is remembered (the newest 4,096 principals).
 def greeting(context: Abi.Context, state: State) -> Activity<Heard>:
-  if Relations.count(state.greeted) >= 4096n then Card.tell(Heard.menu({}), render(state, context)) else greeted(context, state)
-def greeted(context: Abi.Context, state: State) -> Activity<Heard>:
   let written(_) = write {greeted: insert {principal: context.principal}}
   Card.tell(Heard.menu({}), render(state, context))
 # The directory's mention scan (it alone reads prose for door words, before any model call).

@@ -154,6 +154,7 @@ def kindText(kind: Form.Kind) -> String:
     case text(t): "text of {natText(t.min)} to {natText(t.max)} characters"
     case natural(n): "a natural number from {natText(n.min)} to {natText(n.max)}"
     case choice(c): "one of {Spell.joined(c.options)}"
+    case source(_): "Bend source of 1 to 16384 characters, as a <<BEND block or the reply's ```obend block"
 def fieldLine(field: Form.Field) -> String:
   "  {field.name}: {kindText(field.kind)}\n"
 def formParts(form: Form.Form) -> Lists.List<String>:

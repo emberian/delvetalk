@@ -19,20 +19,10 @@ PROBE = """edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Workshop.obend as Workshop
-def kind(block: Workshop.Block) -> String:
-  match block:
-    case none(_): "none"
-    case some(s): textConcat("some:", s.source)
-def found(text: String) -> String:
-  kind(Workshop.fenced(text))
 def card(diagnostics: String) -> String:
   Document.plain(Workshop.checkedCard(lines(diagnostics)))
 def lines(text: String) -> Lists.List<String>:
   if text == "" then Lists.List::<String>.nil() else Lists.List::<String>.cons({head: textTake(text, textBreak(text, "|")), tail: lines(textDrop(text, textBreak(text, "|") + 1n))})
-def size(text: String) -> Nat:
-  match Workshop.fenced(text):
-    case none(_): 0n
-    case some(s): textLength(s.source)
 """
 BLOCK = "edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> State:\n  {count: 0n}\n"
 
@@ -45,40 +35,6 @@ def run(entry, text, limits=None):
     if limits:
         request["limits"] = limits
     return check(request)
-
-
-class Fenced(unittest.TestCase):
-    def found(self, text):
-        out = run("found", text)
-        self.assertEqual(out["status"], "finished", out)
-        return out["value"]["value"]
-
-    def test_the_first_obend_block_is_extracted_without_its_fences(self):
-        self.assertEqual(self.found("delvetalk workshop check\n```obend\n%s```\nthanks" % BLOCK), "some:" + BLOCK)
-
-    def test_blocks_of_other_languages_and_unterminated_blocks_are_none(self):
-        self.assertEqual(self.found("```python\nprint(1)\n```"), "none")
-        self.assertEqual(self.found("```obend\nedition ObjectiveBend 1\n"), "none")
-        self.assertEqual(self.found("no fence here"), "none")
-        self.assertEqual(self.found(""), "none")
-
-    def test_a_python_block_before_the_obend_block_is_skipped(self):
-        self.assertEqual(self.found("```python\nx = 1\n```\n```obend\n%s```" % BLOCK), "some:" + BLOCK)
-
-    def test_stray_backticks_inside_the_block_stay_in_it(self):
-        source = "# a `quoted` word and ``two`` ticks\n" + BLOCK
-        self.assertEqual(self.found("```obend\n%s```" % source), "some:" + source)
-
-    def test_a_32_kib_block_is_extracted_under_the_turn_budget(self):
-        """426,751 ticks: over the 100,000 a bare run allows, under the host turn's 1,000,000."""
-        source = ("def f(n: Nat) -> Nat:\n  n + 1n\n" * 1100)[:32768]
-        self.assertEqual(len(source.encode()), 32768)
-        text = "delvetalk workshop check\n```obend\n%s\n```\n" % source
-        out = run("size", text, limits={"ticks": "1000000"})
-        print("\n  32 KiB fenced block: %s ticks" % out.get("ticksUsed"))
-        self.assertEqual(out["status"], "finished", out)
-        self.assertEqual(out["value"]["value"], str(32768 + 1))
-        self.assertLess(out["ticksUsed"], 1000000)
 
 
 class Hints(unittest.TestCase):
