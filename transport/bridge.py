@@ -72,7 +72,8 @@ def cite(object_, version, origin=None):
 
 
 def receipt_line(receipt, origin=None):
-    root = (receipt.get('roots') or [{}])[0]
+    """`receipt <slug>: <object> v<n> at height <h>`: the version the turn wrote, else the one it read."""
+    root = ((receipt.get('outcome') or {}).get('writes') or receipt.get('roots') or [{}])[0]
     text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
     name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
     return f"{name}: {text} at height {receipt.get('height')}{link}\n"
@@ -102,8 +103,8 @@ def draft_text(reply, origin=None):
         lines = [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
         return '\n'.join(lines) + '\n'
     offers = [o['text'] for o in reply.get('offers') or []]
-    if offers:
-        return '\n'.join(offers)
+    if offers:  # every reply ends with its receipt's spoken name
+        return '\n'.join(offers).rstrip('\n') + '\n' + receipt_line(receipt, origin)
     if receipt.get('offers'):
         return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin)
     return ''  # no offer, no draft
@@ -128,10 +129,11 @@ def awaiting_path(state, uri):
     return Path(state) / 'awaiting' / f'{uri_hash(uri)}.json'
 
 
-def offer_drafts(state, host):
+def offer_drafts(state, host, origin=None):
     """Draft what resumed turns offered. A suspended turn leaves an `awaiting` record; once its interpretation
     settles the resumed entry's offer is in the host's outbox for the author, under the turn's identity (the
-    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft."""
+    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft. The draft ends
+    with the receipt of the author's turn on that post, as the host names it (`world-receipt`)."""
     outbox = Path(state) / 'outbox'
     waiting = [json.loads(p.read_text()) for p in sorted((Path(state) / 'awaiting').glob('*.json'))]
     drafted = []
@@ -154,11 +156,13 @@ def offer_drafts(state, host):
             if any(outbox.glob(f'*-off-{key}.json')):
                 continue
             w = mine[(principal, uri)]
+            rc = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri}).get('receipt')
+            text = '\n'.join(o['text'] for o in offers).rstrip('\n') + ('\n' + receipt_line(rc, origin) if rc else '')
             write_atomic(outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
-                'text': '\n'.join(o['text'] for o in offers), 'posted': False})
+                'text': text, 'posted': False})
             drafted.append(uri)
     return drafted
 
@@ -368,7 +372,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         if not host.send({'op': 'world-pending'}).get('count'):
             break
         host.send({'op': 'world-deliver', 'limit': 16})
-    offered = offer_drafts(state, host)
+    offered = offer_drafts(state, host, origin)
     published, problem = publication_drafts(state, host)
     if problem:
         failed.append({'publications': problem})

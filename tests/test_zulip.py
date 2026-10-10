@@ -172,7 +172,7 @@ class Bridging(ZulipCase):
         self.assertEqual(len(got['posted']), 2, got)
         mine = self.zulip.mine()
         self.assertEqual(sorted(m['subject'] for m in mine), ['alice garden', 'bob garden'])
-        self.assertTrue(all(m['content'].endswith('garden-1 says zulip:' + {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]) for m in mine), mine)
+        self.assertTrue(all(f"garden-1 says zulip:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\nreceipt " in m['content'] for m in mine), mine)
         self.assertTrue(mine[0]['content'].startswith('@**Alice**\n'))
         arrivals = self.host.send({'op': 'world-objects', 'principal': OPENER})['ids']
         self.assertIn('env/zulip:1000', arrivals)

@@ -163,7 +163,7 @@ class Bridging(BridgeCase):
             self.assertFalse(d['posted'])
             self.assertFalse(d['principalVerified'])
             self.assertEqual((d['principal'], d['replyHandle']), (DID, 'talkie.delve.town'))
-            self.assertEqual(d['text'], 'hello ' + DID)
+            self.assertEqual(d['text'], f"hello {DID}\n{bridge.receipt_line(d['receipt'])}")
         self.assertEqual(self.run_bridge(), {'turns': [], 'failed': []})
         self.assertEqual(len(self.drafts()), 3)
 
@@ -231,7 +231,9 @@ class Bridging(BridgeCase):
         self.assertEqual(r['status'], 'created', r)
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])
-        self.assertIn('planted', self.drafts()[0]['text'])
+        (d,) = self.drafts()
+        self.assertIn('planted', d['text'])
+        self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1 at height {d['receipt']['height']}\n"), d['text'])
 
     def test_smoke_bound_two_hundred_observations_bridge_in_under_a_minute(self):
         """The transport's one wall-clock smoke bound, generous: measured about 3 s on hbox."""
@@ -538,7 +540,8 @@ class RealOffers(test_outbound.TellerWorld):
                     return outer.host.send(**req)
             self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
             (draft,) = list((Path(d) / "outbox").glob("*.json"))
-            self.assertEqual(json.loads(draft.read_text())["text"], "hello")
+            slug = self.host.send(op="world-receipt", principal="ann", identity="t-1")["receipt"]["slug"]
+            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\nreceipt {slug}: teller v\d+ at height \d+\n$")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
