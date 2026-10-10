@@ -62,7 +62,7 @@ def spell_post(n, card, ts):
 
 
 def summon_post(n, ts):
-    p = mk(n, '@livedelvetalk.delve.town hi #gsb')
+    p = mk(n, '@livedelvetalk.delve.town hi, which way to the garden #gsb')  # a summons naming a door
     p['record']['createdAt'] = ts
     return p
 
@@ -153,6 +153,9 @@ class Bridging(BridgeCase):
         self.make('directory')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:03Z'), summon_post(2, '2026-10-09T10:00:01Z'),
                       spell_post(3, 'garden-1', '2026-10-09T10:00:02Z')])
+        real = self.host.send  # this directory is an echo card with no doors: give it the garden's
+        self.host.send = lambda req: {'status': 'viewed', 'state': {'doors': [{'label': 'garden', 'to': {'object': 'garden-1'}}]}} \
+            if req['op'] == 'world-view' and req['object'] == 'directory' else real(req)
         first = self.run_bridge()
         order = [u[-6:] for u in first['turns']]
         self.assertEqual(order, ['000002', '000003', '000001'])
@@ -287,11 +290,32 @@ class Stub:
         if op == 'spell-parse':  # the host's parser, reduced to these tests' spells: the last `delvetalk <card> <action>` line
             lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]
             return {'status': 'parsed', **({'spell': {'card': lines[-1][1], 'action': lines[-1][2], 'fields': []}} if lines else {'notASpell': {}})}
+        if op == 'world-view' and req['object'] == 'directory':
+            return {'status': 'viewed', 'state': {'doors': [{'label': 'garden', 'to': {'object': 'garden-1'}}]}}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
             return {'status': 'publications', 'publications': [], 'more': False}
         return {'status': 'ok'}
+
+
+class ReplyScoped(BridgeCase):
+    """Prose reaches a card only in a reply in its thread, or in a summons that names a door (GROUND.md 6, change 3)."""
+    def turns(self, *posts):
+        stub = Stub({f'at://{DID}/town.delve.feed.post/card': {'status': 'addressee', 'object': 'garden-1'}})
+        self.observe(list(posts))
+        bridge.run(self.state, stub)
+        return [o['object'] for o in stub.ops if o['op'] == 'world-turn']
+
+    def test_a_summons_with_only_field_words_is_observed_and_not_turned(self):
+        p = mk(1, '@livedelvetalk.delve.town I planted a fern, what colour is it #gsb')
+        self.assertEqual(self.turns(p), [])
+        self.assertIn(p['uri'], bridge.skipped(self.state))
+
+    def test_a_summons_naming_a_door_and_a_reply_in_a_cards_thread_are_read(self):
+        self.assertEqual(self.turns(mk(1, '@livedelvetalk.delve.town take me to the Garden #gsb'),
+                                    mk(2, 'I planted a fern, what colour is it', parent=f'at://{DID}/town.delve.feed.post/card')),
+                         ['directory', 'garden-1'])
 
 
 class Usage(BridgeCase):

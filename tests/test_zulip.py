@@ -238,11 +238,19 @@ class Bridging(ZulipCase):
         zulip.post_drafts(self.state, self.host, client, 'delvetalk', topic='mobo')
         self.assertEqual(sent, [('delvetalk', 'mobo')])
 
-    def test_a_mention_of_the_bot_summons_the_directory(self):
-        self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** what is here?')
-        got = self.bridge()
+    def test_a_mention_of_the_bot_is_read_when_it_names_a_door_and_only_observed_when_it_has_field_words(self):
+        from unittest import mock
+        real = HostClient.send
+        doors = {'status': 'viewed', 'state': {'doors': [{'label': 'garden', 'to': {'object': 'garden-1'}}]}}
+        with mock.patch.object(HostClient, 'send', lambda h, req: doors if req.get('op') == 'world-view' and req.get('object') == 'directory' else real(h, req)):
+            self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** I planted a fern, what colour is it?')
+            self.assertEqual((self.bridge()['turns'], self.zulip.mine()), ([], []))  # observed, not turned: no miss card
+            self.zulip.say('other', 'Dana', f'@**{BOT["full_name"]}** which way to the garden?')
+            got = self.bridge()
         self.assertEqual(len(got['posted']), 1, got)
         self.assertIn('directory says', self.zulip.mine()[0]['content'])
+        self.zulip.say('other', 'Dana', 'I planted a fern, what colour is it?')  # in the card's topic: read
+        self.assertEqual(len(self.bridge()['turns']), 1)
 
     def test_a_zulip_run_has_no_hourly_cap_so_the_seventeenth_draft_posts(self):
         self.assertEqual(self.host.send({'op': 'world-status'})['postQuota'], 16)  # the host has one; Zulip ignores it
