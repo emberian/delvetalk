@@ -112,6 +112,24 @@ class TwoTier(Reflection):
         self.assertEqual((r["status"], self.clause(r)), ("refused", "lawReads"), r)
         self.assertEqual(self.turn("v", "bump", record(n=nat(1)))["status"], "admitted")
 
+    def test_a_law_reading_too_many_objects_is_refused_capacity_and_the_journal_replays(self):
+        # codex host 4: 64 law reads beside the object's own root made an admitted entry of 65 roots,
+        # which replay's root bound refuses: the journal would not reopen.
+        names = [f"o{i}" for i in range(64)]
+        for n in names:
+            self.make(n, GATE, record(open=nat(0)))
+        listed = "Lists.List::<String>.nil({})"
+        for n in reversed(names):
+            listed = 'Lists.List::<String>.cons({head: "%s", tail: %s})' % (n, listed)
+        wide = GUARD.replace('Lists.List::<String>.cons({head: "gate", tail: Lists.List::<String>.nil({})})', listed).replace(
+            "if opened(request.reads) then", "if true then")
+        self.assertNotEqual(wide, GUARD)
+        self.make("wide", wide, record(count=nat(0)))
+        r = self.turn("wide", "bump", record(n=nat(1)))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "capacity"), r)
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="wide")["version"], 0)
+
     def test_a_bend_laws_reading_is_the_refusals_reason(self):
         # WORLD-REVIEW finding 8: `refused {clause, reading}` reaches the receipt and the public projection.
         self.make("r", READING, record(count=nat(0)))
@@ -127,6 +145,18 @@ class TwoTier(Reflection):
         self.make("s", SPIN, record(count=nat(0)))
         r = self.turn("s", "bump", record(n=nat(1)))
         self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]), ("budget", "the turn ran out of law ticks; make it smaller, or send it again later."), r)
+
+    def test_an_exhausted_law_reads_is_transient_budget(self):
+        # codex host 14: a lawReads() out of ticks bound the identity as a permanent lawRefused.
+        spinning = GUARD.replace("""def lawReads() -> Lists.List<String>:
+  Lists.List::<String>.cons""", """def spun(n: Nat) -> Bool:
+  spun(n + 1n)
+def lawReads() -> Lists.List<String>:
+  if spun(0n) then Lists.List::<String>.nil({}) else Lists.List::<String>.cons""")
+        self.assertNotEqual(spinning, GUARD)
+        self.make("sr", spinning, record(count=nat(0)))
+        r = self.turn("sr", "bump", record(n=nat(1)))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "budget"), r)
 
     def test_a_law_refusing_every_write_cannot_seal_out_reprogram_or_amend(self):
         version = self.host.send(op="world-view", principal="ember", object="g")["version"]

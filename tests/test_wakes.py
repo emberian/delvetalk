@@ -305,8 +305,10 @@ class Wakes(Chain):
         self.assertEqual((poured["result"]["label"], get(poured["result"]["payload"], "level")), ("poured", nat(46)))
         self.assertTrue(poured["offers"][0]["text"].startswith("Cistern, level 46. Pour: delvetalk cistern pour / amount: <1 to 20>.\n"), poured["offers"])
         self.assertEqual(self.inbox(OWNER), [(OWNER, "cistern.level is 41")])
+        # 21 is past the pour form's declared 1..20: the host refuses it as the spell path does (codex host 12).
         big = self.turn("cistern", "pour", record(amount=nat(21)), principal="did:plc:zero", identity="big")
-        self.assertEqual((big["result"]["label"], get(big["result"]["payload"], "clause")), ("refused", label("badAmount")))
+        self.assertEqual((big["status"], big["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), big)
+        self.assertIn("amount takes 1 to 20", big["receipt"]["outcome"]["reason"])
         version = self.host.send(op="world-view", principal="ember", object="cistern")["version"]
         drained = self.host.send(op="world-propose", principal="ember", identity="drain", roots=[{"object": "cistern", "version": version}],
                                  writes=[{"object": "cistern", "edits": [record(entries={"tag": "variant", "label": "keep", "payload": record()},

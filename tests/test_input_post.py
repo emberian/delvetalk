@@ -79,6 +79,18 @@ def sown(input: {seed: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = world.write(""")
 
 
+# A `plant` that waits twice: its second suspension must still say it was a spell (codex host 15).
+TWICE = GARDEN.replace("""def plant(state: State, input: {seed: String}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write(""", """def plant(state: State, input: {seed: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: "glm", intent: "later"}, patience: 4n}):
+    case _:
+      match world.await({slot: {principal: "glm", intent: "again"}, patience: 4n}):
+        case _: sownTwice(input, context)
+def sownTwice(input: {seed: String}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write(""").replace('textConcat(input.seed, textConcat("@", context.inputOrigin.post))',
+                                            'textConcat(input.seed, textConcat("@", context.inputOrigin.kind))', 1)
+
+
 class InputPost(Reflection):
     def setUp(self):
         super().setUp()
@@ -133,6 +145,17 @@ class InputPost(Reflection):
         self.assertEqual(self.turn("garden", "note", record(), principal="glm", identity="later")["status"], "admitted")
         self.assertEqual(self.field("planted"), label("fern@at://glm/wait"))
         self.assertEqual(self.field("noted"), label("at://glm/wait"))
+
+    def test_a_second_suspension_keeps_the_spells_origin(self):
+        self.create("garden", TWICE)
+        self.assertEqual(self.say("garden", "delvetalk garden plant\nseed: fern", "at://glm/w2", "plant-2")["status"], "suspended")
+        self.assertEqual(self.turn("garden", "note", record(), principal="glm", identity="later")["status"], "admitted")
+        suspended = [e for e in self.entries() if e.get("outcome", {}).get("tag") == "suspended"]
+        self.assertEqual(len(suspended), 2, suspended)
+        self.assertEqual([x["outcome"]["activity"].get("origin") for x in suspended], ["spell", "spell"])
+        self.assertEqual(suspended[-1]["outcome"]["activity"].get("command"), suspended[0]["outcome"]["activity"].get("command"))
+        self.assertEqual(self.turn("garden", "note", record(), principal="glm", identity="again")["status"], "admitted")
+        self.assertEqual(self.field("planted"), label("fern@spell"))
 
 
 if __name__ == "__main__":

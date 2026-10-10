@@ -505,6 +505,23 @@ def declaredForms (o : Object) : M (List (String × List (String × Data)) × Li
   return (forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => (declaredKind k).map (n, ·)),
           forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => match k with | .variant "source" _ => some n | _ => none))
 
+/-- Why `argument` misfits the form the card declares for `method` (`declaredForms`), judged as a
+    spell's field is (`Spell.judge`): a text's length, a natural's range, a choice's options (a
+    word, or the case a sum-typed field took). Fields no form declares keep their type's freedom. -/
+def declaredMisfit (method : String) (argument : Data) (declared : List (String × List (String × Data))) : Option String := do
+  let given ← declared.lookup method
+  let form ← Spell.Form.ofData (.record [("card", .label ""), ("action", .label method),
+    ("fields", listData (given.map fun (n, k) => Data.record [("name", .label n), ("kind", k)]))])
+  let .record values := argument | none
+  form.fields.findSome? fun f => do
+    let shown ← match values.lookup f.name with
+      | some (.label t) => some t
+      | some (.natural n) => some (toString n)
+      | some (.variant l _) => some l
+      | _ => none
+    let (_, reason) ← Spell.judge f shown
+    return (if reason.endsWith "." then reason.dropRight 1 else reason)
+
 /-- An object's forms (`methodForms`) with the kinds its `forms()` declares: a spell is judged by the
     card's own bounds, and the type's default holds only for a field no form names. -/
 def formsOf (id : String) (o : Object) : M (List Data) := do
@@ -990,6 +1007,11 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
   unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some (← expectedNow)))
+  -- A direct turn's argument is held to the card's declared form bounds as a spell is (codex host
+  -- 12, agent 3): one advertised action, one bound, whichever way it is asked.
+  if depth == 0 && s.direct then
+    if let some why := declaredMisfit method argument (← declaredForms obj).1 then
+      throw (.refused "typeMismatch" why (some (← expectedNow)))
   match r with
   | .computation .. =>
     let b ← budgetsNow
@@ -1339,6 +1361,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       else
         let shown := [("pin", Data.label o.pin), ("law", .label o.lawText), ("source", .label (entrySource o))]
         let id := ((f.lookup "object").bind referenceId).getD ""
+        -- What the turn learnt (pin, law, source) is the object's now: a root (codex host 11).
+        recordRoot id o.version
         respond bounds responseType "inspected"
           [.record (shown ++ [("methods", listData (← formsOf id o))]), .record shown]
   | .variant "objects" (.record f) =>
@@ -1395,6 +1419,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         | .record fields => fields.any (·.1 == name)
         | _ => false
       if !has then refusedWith bounds responseType "field" else
+      -- A subscription checked the field: a root on it (codex host 11), so a migration that drops
+      -- it, or any write of it, makes a waiting turn's subscription stale.
+      if !ending then recordFieldRoot id name o.version
+      let s ← get
       let x : Subscription := { subscriber := self, principal := s.subject, object := id, field := name, method := receiver }
       let standing := ((s.world.subscriptions.getD id #[]).toList.filter (!s.unsubscribes.contains ·))
       let mine := (standing ++ s.subscribes).filter x.sameAs
@@ -1914,6 +1942,9 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
     dialect is read as a spell first (`spellTurn`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   let req := { req with object := resolveCard req.principal req.object }
+  -- A retry is answered from the identity before its spell is read again: new code may route the
+  -- same words elsewhere (codex host 13).
+  if let some r := retainedTurn w req then .ok (w, r) else
   match spellTurn w req with
   | some r => r
   | none => runTurnWith w req {}
@@ -2091,6 +2122,10 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList
       checks := ← activityNat act "checks"
       post := (act.getObjValAs? String "post").toOption.getD ""
+      -- A spell's origin and command go on with it, so a second suspension journals them and a
+      -- stale re-run of that one runs as the spell it was (codex host 15).
+      origin := (act.getObjValAs? String "origin").toOption.getD "request"
+      command := (act.getObjValAs? String "command").toOption.getD ""
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do
     let s ← get

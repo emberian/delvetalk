@@ -85,6 +85,46 @@ def later(state: State, input: {other: String, slot: String}, context: Abi.Conte
 """)
 
 
+INSPECTOR = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  got: Nat
+def initial() -> State:
+  {got: 0n}
+def later(state: State, input: {other: String, slot: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.inspect({object: {world: "", object: input.other}}):
+    case inspected(_):
+      match world.await({slot: {principal: "ann", intent: input.slot}, patience: 50n}):
+        case reply(_):
+          let written(_) = world.write::<Edits>({got: Plans.Edit.set({value: 1n})})
+          1n
+        case _: 0n
+    case _: 0n
+""")
+
+WAITING_WATCHER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  seen: Nat
+def initial() -> State:
+  {seen: 0n}
+def watchLater(state: State, input: {target: String, slot: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.subscribe({object: {world: "", object: input.target}, field: "rung", method: "changed"}):
+    case subscribed(_):
+      match world.await({slot: {principal: "ann", intent: input.slot}, patience: 50n}):
+        case reply(_): 1n
+        case _: 0n
+    case _: 0n
+def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Data, retracted: Data}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write::<Edits>({seen: Plans.Edit.add({delta: 1n})})
+  state.seen + 1n
+""")
+
+
 class Changes(Reflection):
     def setUp(self):
         super().setUp()
@@ -186,6 +226,24 @@ class Changes(Reflection):
         self.assertEqual(whole(self.host, stale)["result"], nat(1), stale)
         self.reopen()
         self.assertEqual((self.get("r", "got"), self.get("r2", "got")), (nat(100), nat(101)))
+
+    def test_an_inspected_object_is_a_root_of_the_turn(self):
+        # codex host 11: a turn that inspected bell and waited commits only on the bell it read.
+        self.make2("i", INSPECTOR)
+        self.assertEqual(self.turn("i", "later", record(other=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
+        [resumed] = self.turn("bell", "ring", record(), principal="ann", identity="go1")["resumed"]
+        self.assertIn("rerunOf", resumed, resumed)
+
+    def test_a_subscription_reads_its_field(self):
+        # codex host 11: a staged subscription commits only on the field it checked.
+        self.make2("ww", WAITING_WATCHER)
+        self.assertEqual(self.turn("ww", "watchLater", record(target=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
+        [resumed] = self.turn("bell", "ring", record(), principal="ann", identity="go1")["resumed"]
+        self.assertIn("rerunOf", resumed, resumed)
+        self.make2("ww2", WAITING_WATCHER)
+        self.assertEqual(self.turn("ww2", "watchLater", record(target=label("bell"), slot=label("go2")), identity="w2")["status"], "suspended")
+        [other] = self.turn("bell", "name", record(who=label("kim")), principal="ann", identity="go2")["resumed"]
+        self.assertNotIn("rerunOf", other, other)
 
 
 RECEIVER_PROTOCOL = ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed",

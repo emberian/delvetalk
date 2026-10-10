@@ -238,6 +238,21 @@ def initial() -> State:
         self.assertEqual(outcome(self.edit("retract", record(author=label("kim"), at=nat(2)), who="kim", name="r")),
                          ("refused", "grow"))
 
+    def test_insert_only_counts_a_proposed_retraction_from_a_full_relation(self):
+        # codex host 8: retract one row then insert another leaves the relation full with the missing
+        # row's key below the kept ones; no retention dropped it, so insertOnly refuses.
+        source = PACKAGE.replace("LIMIT", "2n").replace("def relations()", "law grow: insertOnly(rains)\ndef relations()")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-r", object="r", source=source,
+                           entry="initial", seed=record(rains=relation(rain("ember", 1, "a"), rain("ember", 2, "b"))))
+        self.assertEqual(r["status"], "created", r)
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        gone = record(count=keep, rains={"tag": "variant", "label": "retract", "payload": record(key=key("ember", 1))})
+        new = record(count=keep, rains={"tag": "variant", "label": "insert", "payload": record(row=rain("ember", 3, "c"))})
+        r = self.host.send(op="world-propose", principal="ember", identity="p1", roots=[{"object": "r", "version": 0}],
+                           writes=[{"object": "r", "edits": [gone, new]}])
+        self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "grow"), r)
+        self.assertEqual([at for _, at, _ in self.rows("r")], [1, 2])
+
 
 def key(author, at):
     return record(author=label(author), at=nat(at))
@@ -274,6 +289,19 @@ class Moved(RelationCase):
         resumed = self.pair("laterInsert", rain("ann", 2, "a"), "insert", rain("ann", 2, "a"))
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(self.rows(), [("old", 0, "o"), ("ann", 2, "a")])
+
+    def test_a_retract_of_a_key_retention_evicted_meanwhile_is_stale(self):
+        # codex host 10: ann's insert into the full relation evicts kim's key; kim's waiting retract
+        # of it is stale, not an untouched key.
+        self.assertEqual(self.make_bell(record(rains=relation(rain("old", 1, "o"), rain("old", 2, "p"))), name="l", limit=2)["status"], "created")
+        self.assertEqual(self.edit("laterRetract", key("old", 1), who="kim", ident="w", name="l")["status"], "suspended")
+        r = self.edit("insert", rain("ann", 3, "a"), ident="go", name="l")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual([at for _, at, _ in self.rows("l")], [2, 3])
+        [resumed] = r["resumed"]
+        self.assertIn("rerunOf", resumed, resumed)
+        self.reopen()
+        self.assertEqual([at for _, at, _ in self.rows("l")], [2, 3])
 
     def test_two_inserts_of_one_key_with_different_rests_the_second_is_key_taken(self):
         resumed = self.pair("laterInsert", rain("ann", 2, "mine"), "insert", rain("ann", 2, "theirs"))

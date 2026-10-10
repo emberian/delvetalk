@@ -346,9 +346,10 @@ def Subscription.sameAs (x y : Subscription) : Bool :=
   x.subscriber == y.subscriber && x.object == y.object && x.field == y.field
 
 /-- One admitted write of an object, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
-    version it produced and, for an ordinary write (kind 0 only) whose steps decode, every edit
-    other than `keep` as `(field, edit)` in step order; none otherwise. Derived by `record` from
-    `writes[].edits`, so replay and snapshot resume rebuild it and nothing is journaled twice. -/
+    version it produced and, for a write of edits (kinds 0 and 3, `Law.editKind`) whose steps decode,
+    every edit other than `keep` as `(field, edit)` in step order, then a `retract` of each key the
+    declared retention evicted (the write's `evicted`); none otherwise. Derived by `record` from
+    `writes[]`, so replay and snapshot resume rebuild it and nothing is journaled twice. -/
 structure Touch where
   version : Nat
   edits : Option (List (String × Data))

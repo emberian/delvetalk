@@ -262,6 +262,19 @@ class FixedFields(Reflection):
         self.assertEqual(r["receipt"]["outcome"]["tag"], "admitted", r)
         self.assertEqual((self.field("mood"), self.field("name")), (label("calm"), label("Moth")))
 
+    def test_an_unchanged_spell_retry_after_a_reprogram_is_the_retained_receipt(self):
+        # codex host 13: the retry was routed again, met the new code's refusal, and was answered
+        # duplicateIdentity instead of the receipt the identity already holds.
+        spell = "delvetalk lamp set\nname: Moth"
+        first = self.say(spell, identity="s1")
+        self.assertEqual(first["status"], "admitted", first)
+        gone = FIXED.replace("def lenses()", "def unusedLenses()")
+        r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="lamp", version=1, package=gone)
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertNotEqual(self.say(spell, identity="s2")["status"], "admitted")
+        again = self.say(spell, identity="s1")
+        self.assertEqual((again["status"], again["receipt"]["hash"]), ("admitted", first["receipt"]["hash"]), again)
+
     def test_a_reprogram_cannot_unfix_a_fixed_field(self):
         # codex host 5 / docs 1: code that no longer fixes `mood` would let a migration, or any later
         # write, move it.

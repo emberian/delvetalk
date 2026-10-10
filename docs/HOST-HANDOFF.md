@@ -721,6 +721,61 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    objects lane's, `tests/test_deal.py` marker). Tests: `tests/test_law.py` `Proposed`; `test_world`,
    `test_authority`, `test_places` updated (a stranger's proposal is the owner clause's to refuse).
 
+94. **Law reads within the root bound (host12; codex host 4).** `commit` adds the objects the written
+   objects' `lawReads()` name to the roots only when the total (object and field roots) stays within
+   `Limits.maxRoots`, the bound replay's `parseRoots` holds every entry to; past it the turn is refused
+   `capacity` ("maxRoots") on the roots it read itself, so no admitted entry is one replay refuses.
+   Test: `tests/test_law.py` `test_a_law_reading_too_many_objects_is_refused_capacity_and_the_journal_replays`.
+
+95. **Retention evictions are facts of the write (host12; codex host 8, 10).** `applyEditsEvicting`
+   returns, beside the state, the rows the declared retention dropped to make room for an insert or
+   upsert (`canonicalRowsDropping`). `judge` gives them to the law as `Law.Facts.evicted`, and
+   `insertOnly` exempts exactly those rows (5.74's inference from a full relation and key order is
+   gone: retract-then-insert into a full relation is refused). The admitted write journals their keys
+   as `evicted: [{field, key}]` when there are any (replay re-derives and compares them), and
+   `touchesOf` indexes each as a `retract` of its key, so a waiting upsert or retract of an evicted key
+   is `staleRoot` and re-run. Tests: `tests/test_relation.py`
+   `test_insert_only_counts_a_proposed_retraction_from_a_full_relation`,
+   `test_a_retract_of_a_key_retention_evicted_meanwhile_is_stale`; `#guard`s in `Law.lean`.
+
+96. **Creations spend storage (host12; codex host 9).** `commit` hands `onAdmit` the created objects
+   beside the updated ones, so `childLedger` lowers the storage a turn's sends and changes inherit by
+   each created object's whole state as well as by its writes' growth; a factory chain cannot allocate
+   past its ledger. Test: `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`.
+
+97. **`inspect` and `subscribe` read roots (host12; codex host 11).** The `inspect` Plan records the
+   inspected object as a root at its version, so a turn that inspected, waited and commits after the
+   object moved (a reprogram, a write) is `staleRoot` and re-run; `subscribe` records a field root on
+   the subscribed field (as `viewField`), so a waiting subscription is stale after a write or a
+   migration of that field and not after another field's. Tests: `tests/test_changes.py`
+   `test_an_inspected_object_is_a_root_of_the_turn`, `test_a_subscription_reads_its_field`.
+
+98. **A direct turn keeps the card's declared bounds (host12; codex host 12, agent 3).** After the type
+   check, a direct turn's argument is judged against the form the card's `forms()` declares for the
+   method (`declaredMisfit`, by `Spell.judge`: a text's length, a natural's range, a choice's options,
+   a word or the case a sum field took); a misfit is refused `typeMismatch` with the spell path's reason
+   ("seed takes 1 to 80 characters; reply delvetalk garden ? …") and `expected.form`. Fields no form
+   declares keep their type's freedom; calls and deliveries are not judged (their sender is an object).
+   Tests: `tests/test_form_bounds.py` `test_a_direct_turn_is_held_to_the_declared_bounds`;
+   `test_places` (an `until` of 0) and `test_wakes` (a pour of 21) now meet the host's refusal first.
+
+99. **A retry before the spell is read (host12; codex host 13).** `runTurn` answers a direct turn from
+   its identity (`retainedTurn`) before routing it as a spell, so an identical retry after a reprogram
+   that changed what the words route to gets the retained receipt, not `duplicateIdentity` against the
+   new route's proposal. Test: `tests/test_spell_turns.py`
+   `test_an_unchanged_spell_retry_after_a_reprogram_is_the_retained_receipt`.
+
+100. **An exhausted `lawReads()` is budget (host12; codex host 14).** `lawReadsOf` keeps the kernel's
+   `budget` apart from a failure, and `bendLaw` refuses it class `budget` ("law ticks"), transient as
+   the Bend law's own exhaustion is, so a retry after the program is fixed runs again; any other
+   failure stays `lawRefused`, clause `lawReads`. Test: `tests/test_law.py`
+   `test_an_exhausted_law_reads_is_transient_budget`.
+
+101. **A resumed spell stays a spell (host12; codex host 15).** `resumeSegment` restores `origin` and
+   `command` beside `post` from the journaled activity, so an activity that suspends again journals
+   them again and its stale re-run (`resumeOne`) runs with `inputOrigin.kind = "spell"`. Test:
+   `tests/test_input_post.py` `test_a_second_suspension_keeps_the_spells_origin`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

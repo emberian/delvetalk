@@ -120,6 +120,16 @@ class ExpectedForm(Chain):
         fields = {f["name"]: f["kind"] for f in out["expected"]["form"]["fields"]}
         self.assertEqual((fields["seed"]["min"], fields["seed"]["max"]), (1, 80), fields)
 
+    def test_a_direct_turn_is_held_to_the_declared_bounds(self):
+        # codex host 12 / agent 3: the spell path refused an 81-character seed; a direct turn took it.
+        from tests.test_chain import garden_seed
+        self.make("garden", closure("Garden"), garden_seed())
+        for seed in ("", "s" * 81):
+            r = self.turn("garden", "plant", record(colour=label("amber"), seed=label(seed)), principal="glm")
+            out = r["receipt"]["outcome"]
+            self.assertEqual((r["status"], out["class"]), ("refused", "typeMismatch"), r)
+            self.assertIn("seed takes 1 to 80 characters", out["reason"])
+
 
 # A form block and no hand-written forms() or methods(): the kernel derives forms() and lists it in
 # the artifact's `declares`, so `jot` is public and judged by its block's bound.
