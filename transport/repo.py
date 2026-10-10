@@ -24,7 +24,8 @@ XRPC_ERRORS = {'RecordNotFound': (400, 'the host knows no such record'), 'Denied
                'AmbiguousSlug': (400, 'the slug names more than one receipt: use the CID'), 'InvalidRequest': (400, 'a parameter, or a write'),
                'RepoNotFound': (400, 'this server holds one repository'), 'HandleNotFound': (400, 'this server resolves one handle'),
                'RepoNotServed': (400, 'no MST, no signed commit'), 'InvalidToken': (401, 'unverified or revoked credential'),
-               'MethodNotImplemented': (501, 'not served here'), 'RateLimitExceeded': (429, 'over the rate limit')}
+               'MethodNotImplemented': (501, 'not served here'), 'RateLimitExceeded': (429, 'over the rate limit'),
+               'HostUnavailable': (503, 'hostd is not answering'), 'HostTimeout': (504, 'hostd did not answer in time')}
 NOT_SERVED = 'the chain is served entry by entry, not as a signed MST: page com.atproto.repo.listRecords?collection=' \
              'town.delvetalk.receipt, and fetch each entry\'s block with com.atproto.sync.getRecord'
 
@@ -38,7 +39,8 @@ class Refusal(Exception):
 
 def refused(reply):
     """A host reply that is not a record, as the XRPC error that carries it."""
-    code, error = ERRORS.get(reply.get('status'), (400, 'InvalidRequest'))
+    host = {'hostUnavailable': 'HostUnavailable', 'hostTimeout': 'HostTimeout'}.get(reply.get('class'))
+    code, error = (XRPC_ERRORS[host][0], host) if host else ERRORS.get(reply.get('status'), (400, 'InvalidRequest'))
     return Refusal(code, error, reply.get('message') or reply.get('status') or 'no reply', reply)
 
 

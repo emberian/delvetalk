@@ -154,8 +154,8 @@ class HttpFront(FrontCase):
     def test_unknown_route_points_at_guide(self):
         s, body = self.call('GET', '/nope')
         self.assertEqual(s, 404)
-        self.assertEqual(body['status'], 'error')
-        self.assertIn('/AGENTS.md', body['message'])
+        self.assertEqual((body['status'], body['class']), ('error', 'unknownRoute'))
+        self.assertIn('/AGENTS.md/api', body['hint'])
 
     def test_full_journey(self):
         tok = self.login()
@@ -184,10 +184,10 @@ class HttpFront(FrontCase):
     def test_host_refusal_passes_through_verbatim(self):
         tok = self.login()
         s, v = self.call('GET', '/AGENTS.md/world/nope', token=tok)
-        self.assertEqual(bare(v), self.host.send({'op': 'world-view', 'principal': HANDLE, 'object': 'nope'}))
+        self.assertEqual((s, v['status'], v['class'], v['object']), (404, 'refused', 'unknown', 'nope'))
         s, e = self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': 7, 'intent': 'bad'}, tok)
         self.assertEqual(s, 400)
-        self.assertEqual(bare(e), self.host.send({'op': 'world-turn', 'principal': HANDLE, 'object': 'c1',
+        self.assertEqual({k: v for k, v in bare(e).items() if k != 'class'}, self.host.send({'op': 'world-turn', 'principal': HANDLE, 'object': 'c1',
                                             'method': 'bump', 'argument': 7, 'identity': 'bad'}))
 
     def test_principal_cannot_be_forged_through_the_body(self):
@@ -471,9 +471,9 @@ class HttpFront(FrontCase):
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h1', token=a)[1]['version'], 1)
         s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=b)
-        self.assertEqual((s, v['status']), (404, 'unknown'))
+        self.assertEqual((s, v['status'], v['class']), (404, 'refused', 'unknown'))
         self.assertEqual(self.call('GET', '/AGENTS.md/world/h1', token=a)[0], 404)  # the shared world never sees it
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('status'), 'unknown')
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('class'), 'unknown')
 
     def test_pool_eviction_reopens_by_replay(self):
         names = ['glm.delve.town', 'mimo.delve.town', 'selene.delve.town']

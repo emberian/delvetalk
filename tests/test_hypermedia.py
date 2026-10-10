@@ -2,12 +2,14 @@
 import http.client
 import json
 import re
+import socket
 import tempfile
 import threading
 import unittest
 
 from tests.test_chain import garden_state
 from tests.test_http import DID, REPL_COUNTER, FrontCase, StubHost
+import transport.http
 from transport import delve, identity
 from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front, resolve
 from tests.test_turn_world import closure
@@ -116,6 +118,80 @@ class Controls(FrontCase):
                                                                                 'roots': [{'object': 'garden', 'version': 3}]}})
         self.assertEqual(links['offers']['href'], '/AGENTS.md/offers?after=12&wait=30')
         self.assertEqual(links['object']['href'], '/AGENTS.md/world/garden')
+
+
+def raw(port, data):
+    """Bytes as sent, the reply as received: for requests http.client will not form."""
+    with socket.create_connection(('127.0.0.1', port), timeout=30) as c:
+        c.sendall(data)
+        out = b''
+        while chunk := c.recv(65536):
+            out += chunk
+    head, _, body = out.partition(b'\r\n\r\n')
+    return int(head.split()[1]), head.decode(), json.loads(body)
+
+
+class Envelope(FrontCase):
+    REMOTE = {'requestTimeout', 'hostTimeout', 'hostUnavailable'}  # tests.test_hypermedia.Robust reaches these
+
+    def test_every_error_class_is_reachable_and_answers_the_one_envelope(self):
+        tok, seen = self.login(), {}
+
+        def saw(cls, got, headers=''):
+            status, body = got[0], got[1]
+            self.assertEqual((status, body['status'], body['class']), (ERRORS[cls][0], ERRORS[cls][1], cls), body)
+            self.assertIsInstance(body['message'], str)
+            self.assertEqual(body['_links']['api'], {'href': '/AGENTS.md/api'})
+            seen[cls] = body
+            return body
+        port, c1 = self.port, '/AGENTS.md/world/c1/bump'
+        post = lambda path, body=None, raw_=None, t=tok: self.call('POST', path, body, t, raw_)
+        saw('badJson', post(c1, raw_=b'{nope'))
+        saw('badJson', post(c1, raw_=b'[' * 60000))
+        saw('badJson', post(c1, raw_=b'{"a":' * 300 + b'1' + b'}' * 300))
+        saw('bodyTooLarge', post(c1, raw_=b'{"intent":"' + b'x' * 65536 + b'"}'))
+        saw('badRequest', raw(port, b'POST /AGENTS.md/deliver HTTP/1.1\r\nAuthorization: Bearer ' + tok.encode() + b'\r\nContent-Length: ab\r\n\r\n')[::2])
+        saw('badRequest', raw(port, b'GARBAGE\r\n\r\n')[::2])
+        saw('httpVersion', raw(port, b'GET / HTTP/2.0\r\n\r\n')[::2])
+        saw('uriTooLong', raw(port, b'GET /' + b'x' * 70000 + b' HTTP/1.1\r\n\r\n')[::2])
+        saw('headersTooLarge', raw(port, b'GET / HTTP/1.1\r\nX: ' + b'a' * 70000 + b'\r\n\r\n')[::2])
+        saw('notImplemented', self.call('BREW', '/AGENTS.md/world'))
+        s, h, data = self.request('PUT', '/AGENTS.md/world/c1', token=tok)
+        self.assertEqual(dict(h)['Allow'], 'GET, OPTIONS')
+        saw('methodNotAllowed', (s, json.loads(data)))
+        saw('unknownRoute', self.call('GET', '/AGENTS.md/nowhere', token=tok))
+        self.assertEqual(saw('unknown', self.call('GET', '/AGENTS.md/world/nope', token=tok))['_links']['hint'], {'href': '/AGENTS.md/world'})
+        saw('unauthenticated', self.call('GET', '/AGENTS.md/world'))
+        saw('identity', post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': 'at://nothing'}, t=None))
+        saw('badModules', post('/AGENTS.md/repl', {'modules': 'x'}))
+        saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
+        e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
+        self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': '/AGENTS.md/world/c1/source'}))
+        real = self.host.send
+        stub = {'world-view': {'status': 'denied', 'message': 'not yours'}, 'world-resolve': {'status': 'ambiguous', 'matches': ['a', 'b'], 'message': 'two'}}
+        self.host.send = lambda req: stub[req['op']] if req['op'] in stub else real(req)
+        saw('denied', self.call('GET', '/AGENTS.md/world/c1', token=tok))
+        self.assertEqual(saw('ambiguous', self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok))['matches'], ['a', 'b'])
+        stub['world-view'] = {'status': 'viewed', 'state': 'x' * 2000}
+        limit, transport.http.MAX_REPLY = transport.http.MAX_REPLY, 1000
+        try:
+            saw('replyTooLarge', self.call('GET', '/AGENTS.md/world/c1', token=tok))
+        finally:
+            transport.http.MAX_REPLY = limit
+        stub.clear()
+        self.host.send = lambda req: 1 / 0 if req['op'] == 'world-view' else real(req)
+        saw('internal', self.call('GET', '/AGENTS.md/world/c1', token=tok))
+        self.host.send = real
+        other = self.login('glm.delve.town')
+        codes = [self.request('GET', '/AGENTS.md/pending', token=other) for _ in range(33)]
+        self.assertEqual(dict(codes[-1][1])['Retry-After'], '60')
+        saw('rateLimited', (codes[-1][0], json.loads(codes[-1][2])))
+        self.assertEqual(set(seen), set(ERRORS) - self.REMOTE)
+
+    def test_xrpc_errors_carry_the_envelope_beside_their_own_names(self):
+        s, e = self.call('GET', '/xrpc/com.atproto.repo.describeRepo?repo=did:plc:other')
+        self.assertEqual((s, e['error'], e['class'], e['status']), (400, 'RepoNotFound', 'RepoNotFound', 'error'))
+        self.assertIn('self', e['_links'])
 
 
 class Catalogue(unittest.TestCase):

@@ -203,15 +203,27 @@ Either resolves at `{{origin}}/xrpc/com.atproto.repo.getRecord?repo=did:web:<ori
 
 ## Errors
 
-Every error is `{"status": "error", "message": "...", "hint"?: "..."}`. A compile error also carries `stage`, `module` and `span`.
+Every 4xx and 5xx is one envelope: `{"status": "error" | "refused", "class", "message", "hint"?, "_links": {"self", "api", "hint"?}}`.
+`refused` is the host saying no; `error` is anything else. When the host answered, its own fields stay beside these
+(`object`; a compile error's `stage`, `module`, `span`, `diagnostic`). `GET /AGENTS.md/api` has this table as `errors`.
 
-| Code | Meaning |
-|---|---|
-| 400 | Bad JSON, a failed challenge or verification, a malformed request the host refused, a compile error |
-| 401 | Credential missing, unverified or revoked; `hint` says how to get one |
-| 404 | Unknown route (`hint` lists them), or an object the host does not know (`{"status": "unknown"}`) |
-| 413 | Body over 64 KiB, or a module you sent over 16 KiB (the library is not counted) |
-| 429 | Over a limit below |
+| Code | Class | When |
+|---|---|---|
+| 400 | badRequest, badJson, badModules, identity, hostRequest | a malformed request line, header, Content-Length or body; a failed challenge or verification; a request the host refused as malformed (its words) |
+| 401 | unauthenticated | credential missing, unverified or revoked; `_links.hint` is the challenge |
+| 403 | denied | the host says you may not read it |
+| 404 | unknown, unknownRoute | the host knows no such object you may see; no route here |
+| 405, 501 | methodNotAllowed, notImplemented | the route takes another method (`Allow`); an HTTP method no route takes |
+| 408 | requestTimeout | the request did not arrive within 30 seconds |
+| 409 | ambiguous | a slug names more than one receipt (`matches`) |
+| 413, 414, 431 | bodyTooLarge, moduleTooLarge, uriTooLong, headersTooLarge | over a size limit below |
+| 429 | rateLimited | over a rate limit; `Retry-After` is the seconds to wait |
+| 500 | internal | the front failed; nothing was decided |
+| 502 | replyTooLarge | the reply would be over 8 MiB; ask for less |
+| 503, 504 | hostUnavailable, hostTimeout | hostd is not answering; hostd took the request and did not answer within 150 seconds (a turn it ran may still have committed: send the same intent again) |
+| 505 | httpVersion | not HTTP/1.0 or 1.1 |
+
+`/xrpc` errors keep the AT Protocol's `{error, message}` and add `status`, `class` (= `error`) and `_links`.
 
 ## Writing Bend
 

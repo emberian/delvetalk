@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -238,6 +239,16 @@ ERRORS = {'badRequest': (400, 'error', 'the request line or a header is malforme
           'httpVersion': (505, 'error', 'the HTTP version is not 1.0 or 1.1')}
 
 
+def depth(value):
+    """How deep a JSON value nests, counted without recursion; stops past MAX_DEPTH."""
+    stack, deepest = [(value, 1)], 0
+    while stack and deepest <= MAX_DEPTH:
+        v, d = stack.pop()
+        deepest = max(deepest, d)
+        stack += [(x, d + 1) for x in (v.values() if isinstance(v, dict) else v if isinstance(v, list) else ())]
+    return deepest
+
+
 def link(href, **more):
     return {'href': href, **more}
 
@@ -315,6 +326,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
+        self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
         self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
@@ -335,11 +347,12 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
 
     def limited(self, key, rate=RATE):
+        """0 when under the limit, else the seconds until the oldest counted request leaves the window."""
         with self.hits_lock:  # read, test and append as one step
             now = self.clock()
             hits = [t for t in self.hits.get(key, []) if now - t < WINDOW]
             self.hits[key] = hits + [now]
-        return len(hits) >= rate
+        return max(1, int(hits[-rate] + WINDOW - now + 0.999)) if len(hits) >= rate else 0
 
     def record_handle(self, did, handle):
         """Tell the host a verified account has arrived (the clock principal alone may), so cards name them by handle.
@@ -380,8 +393,15 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def setup(self):
+        self.timeout = self.server.request_timeout  # a client that stalls sending its request is dropped after this
+        super().setup()
+
     def reply(self, code, body, ctype='application/json', headers=()):
         raw = body.encode() if isinstance(body, str) else body
+        if len(raw) > MAX_REPLY and code < 400:
+            return self.fail('replyTooLarge', hint='?compact=1, a page (after, limit), or the receipt alone')
+        self.replied = True
         self.send_response(code)
         self.send_header('Content-Type', ctype + ('; charset=utf-8' if ctype.startswith(('text/', 'application/json')) else ''))
         self.send_header('Content-Length', str(len(raw)))
@@ -391,8 +411,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def fail(self, code, message, hint=None):
-        self.reply(code, canonical({'status': 'error', 'message': message, **({'hint': hint} if hint else {})}))
+    def fail(self, cls, message=None, hint=None, links=None, more=None, acts=None, headers=()):
+        """The one error envelope: {status, class, message, hint?, _links} over the host's own fields, if any (`more`)."""
+        code, status, when = ERRORS[cls]
+        body = {**(more or {}), 'status': status, 'class': cls, 'message': message or when, **({'hint': hint} if hint else {}),
+                '_links': {'self': link(self.path), 'api': link(PREFIX + '/api'), **(links or {})}, **({'_actions': acts} if acts else {})}
+        self.reply(code, canonical(body), headers=headers)
+
+    def send_error(self, code, message=None, explain=None):
+        """http.server's own refusals (a bad request line, a long URI or header, an unknown method), in the envelope."""
+        self.close_connection = True
+        cls = {408: 'requestTimeout', 414: 'uriTooLong', 431: 'headersTooLarge', 501: 'notImplemented', 505: 'httpVersion'}.get(code, 'badRequest')
+        if not hasattr(self, 'path'):  # the request line did not parse
+            self.path = ''
+        if self.request_version == 'HTTP/0.9':  # unparsed: answer with a status line all the same
+            self.request_version = 'HTTP/1.0'
+        self.fail(cls, message)
 
     def body(self):
         """-> dict, or None after replying with the refusal. JSON, or a urlencoded form."""
@@ -401,18 +435,23 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             n = -1
         if n < 0:
-            return self.fail(400, 'bad Content-Length')
+            return self.fail('badRequest', 'Content-Length is not a number')
         if n > MAX_BODY:
-            return self.fail(413, f'body exceeds {MAX_BODY} bytes')
-        raw = self.rfile.read(n)
+            return self.fail('bodyTooLarge')
+        try:
+            raw = self.rfile.read(n)
+        except TimeoutError:
+            return self.fail('requestTimeout')
         # curl -d labels JSON as a form; a browser's form body never starts with '{'
         if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
             return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace')).items()}
         try:
             data = json.loads(raw or b'{}')
-        except ValueError:
-            return self.fail(400, 'body is not valid JSON')
-        return data if isinstance(data, dict) else self.fail(400, 'body must be a JSON object')
+        except (ValueError, RecursionError):
+            return self.fail('badJson', 'the body is not JSON')
+        if not isinstance(data, dict):
+            return self.fail('badJson', 'the body must be a JSON object')
+        return data if depth(data) <= MAX_DEPTH else self.fail('badJson', f'the body nests deeper than {MAX_DEPTH}')
 
     def answer(self, reply, keep=(), links=None, acts=None):
         """The host's reply, rendered, with its controls: a diagnostic carried as JSON text in `message` is lifted, its `hint`
@@ -427,8 +466,11 @@ class Handler(BaseHTTPRequestHandler):
             reply = {**reply, 'hint': reply['diagnostic']['hint']}
         full = 'full' in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         body = reply if full else brief(terse(reply, keep))
-        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200,
-                   canonical({**body, '_links': {'self': link(self.path), **(links or {})}, **({'_actions': acts} if acts else {})}))
+        cls = reply.get('class') if reply.get('class') in ('hostUnavailable', 'hostTimeout') else \
+            {'error': 'hostRequest', 'unknown': 'unknown', 'denied': 'denied', 'ambiguous': 'ambiguous'}.get(status)
+        if cls:  # the host said no, or was not there: the envelope, over the host's own words
+            return self.fail(cls, reply.get('message'), reply.get('hint'), links, body, acts)
+        self.reply(200, canonical({**body, '_links': {'self': link(self.path), **(links or {})}, **({'_actions': acts} if acts else {})}))
 
     def cookie(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
@@ -447,16 +489,33 @@ class Handler(BaseHTTPRequestHandler):
             return None
 
     def do_GET(self):
-        self.route('GET')
+        self.dispatch('GET')
 
     def do_POST(self):
-        self.route('POST')
+        self.dispatch('POST')
+
+    do_PUT = do_DELETE = do_PATCH = do_HEAD = lambda self: self.dispatch(self.command)
+
+    def dispatch(self, method):
+        """Route, and turn whatever escapes into a named envelope: a client gone is dropped, anything else is `internal`."""
+        self.replied = False
+        try:
+            self.route(method) if method != 'OPTIONS' else self.options()
+        except (ConnectionError, TimeoutError):
+            self.close_connection = True
+        except Exception:
+            traceback.print_exc()
+            if not self.replied:
+                self.fail('internal')
 
     def route(self, method):
         path = urllib.parse.urlsplit(self.path).path
         name, p = resolve(method, path)
         if name is None:
-            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}/api', ROUTE_HINT)
+            allow = [m for m in ('GET', 'POST') if resolve(m, path)[0]]
+            if allow:
+                return self.fail('methodNotAllowed', f'{path} takes {" and ".join(allow)}', headers=[('Allow', ', '.join(allow + ['OPTIONS']))])
+            return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
         if name == 'guide' and 'application/json' not in (self.headers.get('Accept') or ''):
             return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
         if name in ('guide', 'api'):
@@ -479,11 +538,14 @@ class Handler(BaseHTTPRequestHandler):
         return self.agents(name, p['heap'], p['object'], p['method'])
 
     def do_OPTIONS(self):
+        self.dispatch('OPTIONS')
+
+    def options(self):
         """The catalogue entries of the routes at this path, one per method."""
         path = urllib.parse.urlsplit(self.path).path
         names = [n for n in (resolve(m, path)[0] for m in ('GET', 'POST')) if n]
         if not names:
-            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}/api')
+            return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
         entries = [e for n in names for e in CATALOGUE if e['name'] == n]
         allow = ', '.join(sorted({e['method'] for e in entries}) + ['OPTIONS'])
         self.reply(200, canonical({'status': 'route', 'routes': entries, '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}),
@@ -496,9 +558,12 @@ class Handler(BaseHTTPRequestHandler):
         credential = auth[7:] if auth.startswith('Bearer ') else ''
         who = self.principal(credential)
         if who is None:
-            return self.fail(401, 'missing, unverified or revoked credential', 'POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>')
-        if self.server.limited(credential):
-            return self.fail(429, f'more than {RATE} requests per {WINDOW} seconds')
+            return self.fail('unauthenticated', hint='POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>',
+                             links={'hint': link(PREFIX + '/challenge')})
+        wait = self.server.limited(credential)
+        if wait:
+            return self.fail('rateLimited', f'more than {RATE} requests per {WINDOW} seconds', links={'hint': link(PREFIX + '/me')},
+                             headers=[('Retry-After', str(wait))])
         if kind == 'me':
             return self.me(credential, who)
         if kind == 'revoke':
@@ -531,7 +596,7 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
             links = {**at(obj), 'world': link(base + '/world'), 'offers': link(base + '/offers')}
             return self.answer(r, keep=('pin',) if kind == 'source' else (), links=links if r.get('status') != 'unknown' else
-                               {'world': link(base + '/world')}, acts=acts)  # `pin`: the program's name, in source
+                               {'world': link(base + '/world'), 'hint': link(base + '/world')}, acts=acts)  # `pin`: the program's name, in source
         if kind == 'receipt':
             if SLUG.fullmatch(obj):  # a proquint slug names a receipt; any other text is the intent
                 found = host.send({'op': 'world-resolve', 'principal': principal, 'slug': obj})
@@ -580,22 +645,32 @@ class Handler(BaseHTTPRequestHandler):
         credential = auth[7:] if auth.startswith('Bearer ') else ''
         who = self.principal(credential) if credential else {}
         if who is None:
-            return self.reply(401, canonical({'error': 'InvalidToken', 'message': 'unverified or revoked credential'}))
-        if self.server.limited(credential or 'xrpc:' + self.client_ip()):
-            return self.reply(429, canonical({'error': 'RateLimitExceeded', 'message': f'more than {RATE} requests per {WINDOW} seconds'}))
-        if nsid == 'did.json' and method == 'GET':
+            return self.xrpc_reply(401, {'error': 'InvalidToken', 'message': 'unverified or revoked credential'})
+        wait = self.server.limited(credential or 'xrpc:' + self.client_ip())
+        if wait:
+            return self.xrpc_reply(429, {'error': 'RateLimitExceeded', 'message': f'more than {RATE} requests per {WINDOW} seconds'},
+                                   [('Retry-After', str(wait))])
+        if nsid == 'did.json':
             return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
         code, body, ctype = self.server.repo.serve(self.server.host, method, nsid, q, who.get('did'))
-        self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype)
+        self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype) if code < 400 else self.xrpc_reply(code, body)
+
+    def xrpc_reply(self, code, body, headers=()):
+        """XRPC's {error, message}, with the envelope's status, class and links beside it. A record or a page is the
+        AT Protocol's shape, verbatim: its `cursor` is its control."""
+        error = {'status': 'refused' if code == 403 else 'error', 'class': body['error'],
+                 '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}
+        self.reply(code, canonical({**body, **error}), headers=headers)
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
         return forwarded if self.server.trust_proxy and forwarded else self.client_address[0]
 
     def identify(self, which):
-        if self.server.limited('ip:' + self.client_ip(), OPEN_RATE):
-            return self.fail(429, f'more than {OPEN_RATE} requests per {WINDOW} seconds')
+        wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
+        if wait:
+            return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
         data = self.body()
         if data is None:
             return
@@ -607,7 +682,7 @@ class Handler(BaseHTTPRequestHandler):
                                   headers=self.login_cookie(out['credential']))
             out = self.server.identity.verify(text('handle'), text('uri'))
         except IdentityError as err:
-            return self.fail(400, err.code)
+            return self.fail('identity', err.code, links={'hint': link(PREFIX + '/challenge')})
         self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
         links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
@@ -627,10 +702,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         modules = data['modules'] if 'modules' in data else [{'name': 'Package', 'source': data.get('source', '')}]
         if not isinstance(modules, list) or len(modules) > MAX_MODULES:
-            return self.fail(400, f'modules must be a list of at most {MAX_MODULES}')
+            return self.fail('badModules')
         for m in modules:
             if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
-                return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
+                return self.fail('moduleTooLarge' if isinstance(m, dict) else 'badModules', hint='import the library by name (./Plan.obend); it is not sent')
         if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
             checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'},
