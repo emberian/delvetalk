@@ -5,6 +5,7 @@ import html
 import json
 import os
 import re
+import unittest
 import urllib.parse
 from html.parser import HTMLParser
 
@@ -197,3 +198,21 @@ class Pages(FrontCase):
         self.assertIn('[ PLAY garden ] /play/garden', body.decode())
         s, h, body = self.request('GET', '/AGENTS.md/world/garden', headers={'Accept': 'application/json, text/plain', 'Authorization': 'Bearer ' + tok})
         self.assertEqual(dict(h)['Content-Type'], 'application/json; charset=utf-8')  # an agent that also takes text still gets JSON
+
+
+class Hob(unittest.TestCase):
+    """hob's line (docs/VOICE.md) beside a card: its own element, the frog before it, never in the frame."""
+    def test_an_offer_whose_first_line_is_hob_renders_hob_beside_the_card_and_as_the_line_in_text(self):
+        from transport import pages
+        offer = 'hob: I read that as\ndelvetalk garden plant\ncolour: amber\nseed: a moth bell\n'
+        for page in (pages.rendered('offers', {'status': 'offers', 'offers': [{'height': 9, 'identity': {'intent': 'p1'}, 'text': offer}]}, {}, None),
+                     pages.rendered('receipt', {'status': 'receipt', 'receipt': {'slug': 'tulun-huzif', 'height': 9, 'outcome': {'tag': 'admitted'},
+                                                                                 'offers': [{'to': DID, 'text': offer}]}}, {}, None),
+                     pages.obj('garden', None, {'status': 'viewed', 'version': 1}, offer, [])):
+            hob = re.search(r'<p class="hob"><svg class="frog glyph"[^>]*>.*?</svg><span>(.*?)</span></p>', page, re.S)
+            self.assertEqual(hob[1], 'hob: I read that as')
+            card = re.search(r'<pre class="card">(.*?)</pre>', page, re.S)[1]
+            self.assertNotIn('hob:', card)
+            self.assertTrue(card.startswith('delvetalk garden plant'), card)
+            self.assertLess(page.index('class="hob"'), page.index('<pre class="card">'))
+            self.assertIn('hob: I read that as', pages.text(page).splitlines())
