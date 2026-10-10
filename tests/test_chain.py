@@ -52,6 +52,23 @@ def garden_state(planted=0, owner="ember"):
                   pending=relation(), children=relation(), pageCheckpoint=label(""))
 
 
+def town_kinds(send, owner="ember", names=("bell", "cistern")):
+    """kind/bell and kind/cistern as genesis makes them (deploy/genesis.py KINDS): a Kind created under its law,
+    then shaped, so a garden plants and digs through them. `send(**request)` is the host's."""
+    from deploy import genesis
+    from tests.test_objects import closure as module_closure
+    for name, of, form, head, law, body in genesis.KINDS:
+        if name not in names or send(op="world-view", principal=owner, object="kind/" + name).get("status") == "viewed":
+            continue
+        made = send(op="world-create", principal=owner, identity="mk-kind-" + name, object="kind/" + name, modules=module_closure("Kind"),
+                    entry="initial", seed=record(owner=label(owner), name=label(name), of=label(of), form=label(form), head=label(head),
+                                                 law=label(law), body=label(genesis.body_of(body))), law=genesis.KIND_LAW)
+        assert made["status"] == "created", made
+        shaped = send(op="world-turn", principal=owner, object="kind/" + name, method="shape", argument=record(object=label("kind/" + name)),
+                      identity="shape-kind-" + name)
+        assert shaped["status"] == "admitted", shaped
+
+
 def field(state, name):
     return [f["value"] for f in state["fields"] if f["name"] == name][0]
 

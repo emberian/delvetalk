@@ -8,6 +8,9 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Text.obend as Text
+# A test fixture: the world's cistern is made by kind/cistern, a Record with
+# world/bodies/cistern.obend. This package stays for the host's tests that retain receipts
+# (test_await, test_outbound, test_replay, test_wakes).
 # A retained receipt, keyed {at, slot}: `at` is the receipt's height, so key order is the order
 # of the turns, and past 256 the host drops the oldest.
 record Kept:

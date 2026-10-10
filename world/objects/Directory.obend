@@ -82,9 +82,13 @@ def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Ans
     case some(_): answerRefused("doorTaken", "There is already a door called {input.door.label}")
     case none(_): standing(extend(input.door, {place: nextPlace(state)}), context)
 def standing(door: Listed, context: Abi.Context) -> Activity<Answer>:
-  if Plans.isNobody(door.to) || Menu.receiverOf(door.watch) == "" then added(door) else if door.watch == "ticks" then tickCount(door, context) else rowCount(door, context)
+  if Plans.isNobody(door.to) || Menu.receiverOf(door.watch) == "" then added(door) else if door.watch == "ticks" then tickCount(door, context) else if door.watch == "count" then madeCount(door, context) else rowCount(door, context)
 def tickCount(door: Listed, context: Abi.Context) -> Activity<Answer>:
   match world.viewField::<Nat>({object: door.to, field: "ticks"}):
+    case viewed(v): watched(door, v.state, context)
+    case _: added(door)
+def madeCount(door: Listed, context: Abi.Context) -> Activity<Answer>:
+  match world.viewField::<Nat>({object: door.to, field: "count"}):
     case viewed(v): watched(door, v.state, context)
     case _: added(door)
 def rowCount(door: Listed, context: Abi.Context) -> Activity<Answer>:
@@ -107,7 +111,7 @@ def changedChildren(state: State, input: {object: Plans.Reference, field: String
 def changedLines(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Line>, retracted: Lists.List<Rows.Line>}, context: Abi.Context) -> Activity<Answer>:
   moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(l: Rows.Line) -> String: "#{natText(l.n)}")), context, state)
 def changedHeld(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Held>, retracted: Lists.List<Rows.Held>}, context: Abi.Context) -> Activity<Answer>:
-  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(h: Rows.Held) -> String: "#{natText(h.n)} for {h.target}")), context, state)
+  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(h: Rows.Held) -> String: if h.target == "" then "#{natText(h.n)}, {h.name}" else "#{natText(h.n)} for {h.target}")), context, state)
 def changedPresence(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Presence>, retracted: Lists.List<Rows.Presence>}, context: Abi.Context) -> Activity<Answer>:
   moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), "", context, state)
 def moved(card: String, field: String, added: Nat, dropped: Nat, newest: String, context: Abi.Context, state: State) -> Activity<Answer>:

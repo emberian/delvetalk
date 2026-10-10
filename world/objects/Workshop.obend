@@ -14,10 +14,12 @@ import ./Rows.obend as Rows
 # proposer to withdraw. Keyed {n}, numbered in order, so past twelve the host drops the
 # oldest.
 type Held = Rows.Held
+# policy: the interpreter's teaching, which `make` asks for a draft (nobody: no drafts).
 record State:
   title: String
   held: Relations.Relation<Held>
   next: Nat
+  policy: Plans.Reference
 # What the workshop did, as data: nothing is a silent default (`silent` is prose handed on
 # to the directory). `held` names the clause the target's law refused.
 sum Verdict:
@@ -26,6 +28,7 @@ sum Verdict:
   reprogrammed: {pin: String}
   held: {n: Nat, clause: String}
   withdrawn: {n: Nat}
+  made: {object: String}
   usage: {}
   refused: Card.Refusal
   silent: {}
@@ -33,7 +36,7 @@ sum Verdict:
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
 def initial() -> State:
-  {title: "Workshop", held: Relations.empty(), next: 1n}
+  {title: "Workshop", held: Relations.empty(), next: 1n, policy: Plans.nobody()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "held", key: Text.words("n"), limit: 12n})
 def heldKey(held: Held) -> {n: Nat}:
@@ -63,7 +66,7 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
 def reprogrammedCard(target: String, version: Nat) -> Document.Document:
   Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a ```obend block under:\n\n    delvetalk workshop check\n\nor as a block field (source: <<BEND … BEND). To read what a card runs now:\n\n    delvetalk workshop check\n    target: garden/bell/1\n\nTo offer a checked block to a card; its owner's law decides, and a refusal is held for the owner to adopt:\n\n    delvetalk workshop propose\n    target: garden/bell/1\n    migration: how the old state becomes the new, or blank\n\nTo copy a thing, unless its owner said no:\n\n    delvetalk workshop create\n    like: stone\n")
+  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a ```obend block under:\n\n    delvetalk workshop check\n\nor as a block field (source: <<BEND … BEND). To read what a card runs now:\n\n    delvetalk workshop check\n    target: garden/bell/1\n\nTo offer a checked block to a card; its owner's law decides, and a refusal is held for the owner to adopt:\n\n    delvetalk workshop propose\n    target: garden/bell/1\n    migration: how the old state becomes the new, or blank\n\nTo copy a thing, unless its owner said no:\n\n    delvetalk workshop create\n    like: stone\n\nMake a thing from words; hob drafts the Bend, the checker reads it, and it is held as #n for you to adopt:\n\n    delvetalk workshop make\n    name: lamp\n    description: a lamp anyone lights; it remembers who lit it\n")
 def verdictOf(diagnostics: Form.Names) -> Verdict:
   match diagnostics:
     case nil(_): Verdict.clean({})
@@ -105,7 +108,7 @@ def faultReading(clause: String, reading: String, target: String) -> String:
 def reprogramming(target: String, was: Nat, package: String, migration: String, context: Abi.Context, state: State) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: target}, package: package, migration: migration}):
     case reprogrammed(r): Card.tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was))
-    case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, r.reading, target)) else holding({n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle}, r.clause, r.reading, state)
+    case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, r.reading, target)) else holding({n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle, name: "", intent: context.intent}, r.clause, r.reading, state)
 # Held: the law refused the proposer's reprogram, so it waits for the target's owner. When
 # twelve are held, the host drops the oldest as this one comes, and the card says which.
 # The law's reading, when the host gives one, says why before the card says what is held.
@@ -121,11 +124,11 @@ def heldNumbered(n: Nat, state: State) -> Lists.Maybe<Held>:
   Relations.lookup(state.held, {n: n}, heldKey)
 # Adopt: the reprogram runs under the adopter, so the target's law judges it as theirs; the
 # owner's adoption applies it, anyone else's is refused by name, and a fault of the package
-# met now (the target moved on) is named as that.
+# met now (the target moved on) is named as that. A held draft is its describer's to adopt.
 def adopt(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
   match heldNumbered(input.n, state):
     case none(_): refusing("noHeld", "No held proposal #{natText(input.n)}")
-    case some(h): adoptRun(h.value, context)
+    case some(h): if h.value.target == "" then making(h.value, context) else adoptRun(h.value, context)
 def adoptRun(held: Held, context: Abi.Context) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: held.target}, package: held.package, migration: held.migration}):
     case reprogrammed(r): adoptWritten(held, r.pin, context)
@@ -133,6 +136,44 @@ def adoptRun(held: Held, context: Abi.Context) -> Activity<Verdict>:
 def adoptWritten(held: Held, pin: String, context: Abi.Context) -> Activity<Verdict>:
   let written(_) = write {held: retract heldKey(held)}
   Card.tell(Verdict.reprogrammed({pin: pin}), Document.text("✾ WORKSHOP\n\nAdopted #{natText(held.n)} from {Card.shown(held.proposer, held.proposerHandle, context)}: {held.target} is reprogrammed.\n"))
+# `make / name / description`: hob is asked for Bend from the description (the policy's prompt,
+# offering `draft`); the draft it answers is checked and held, as a `draft` spell's is. Words
+# that bring no Bend are refused by name, with the spell that sends source directly.
+form make:
+  name: text 1..32
+  description: text 1..1400
+form draft:
+  name: text 1..32
+  source: source
+def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
+  if Plans.isNobody(state.policy) then refusing("noInterpreter", "Nobody reads words here; send the source: delvetalk workshop draft / name: {input.name} / source: <<BEND … BEND") else asked(input.name, input.description, context, state)
+def asked(name: String, description: String, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match world.interpret::<{name: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(draftForm(), context.object), tail: Lists.List.nil()}), policy: state.policy, model: ""}):
+    case proposal(p): drafting(name, p.argument.source, context, state)
+    case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND")
+def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:
+  drafting(input.name, input.source, context, state)
+# A clean draft is held for its describer as #n; a flawed one is answered with its problems.
+def drafting(name: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match world.check({package: source}):
+    case checked(c): if Lists.length(c.diagnostics) == 0n then heldDraft({n: state.next, target: "", package: source, migration: "", proposer: context.principal, proposerHandle: context.handle, name: name, intent: context.intent}, state, context) else Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), checkedCard(c.diagnostics))
+    case refused(r): refusing(r.clause, "The workshop could not check it.")
+def heldDraft(held: Held, state: State, context: Abi.Context) -> Activity<Verdict>:
+  let written(_) = write {held: insert held, next: add 1n}
+  Card.tellTo(Verdict.held({n: held.n, clause: "draft"}), context.principal, Document.text("✾ WORKSHOP\n\nChecked: it compiles. Held as #{natText(held.n)}; adopt it to make {held.name}:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n» {held.name}, yours, made from #{natText(held.n)}\n{dropping(state)}"))
+# The describer's adoption makes the thing under their authority, at its name, with its lineage:
+# the workshop and the receipt of the turn that held it. That receipt is the entry's hash, which
+# no Plan answers Bend yet (an await's Receipt has slot, height and outcome), so the lineage
+# names it by "" and the host refuses `madeFrom` until the await's Receipt carries `hash`.
+def making(held: Held, context: Abi.Context) -> Activity<Verdict>:
+  if held.proposer != context.principal then refusing("notDescriber", "Only its describer, {Card.shown(held.proposer, held.proposerHandle, context)}, adopts #{natText(held.n)}") else made(held, "", context)
+def made(held: Held, receipt: String, context: Abi.Context) -> Activity<Verdict>:
+  match world.make({package: held.package, seed: Plans.nothing(), law: "", requireAbsent: {world: context.world, object: held.name}, madeFrom: {object: Plans.self(context), receipt: receipt}}):
+    case created(c): madeWritten(held, c.object.object, context)
+    case refused(r): refusing(r.clause, if r.reading == "" then "{held.name} was not made ({r.clause})" else r.reading)
+def madeWritten(held: Held, id: String, context: Abi.Context) -> Activity<Verdict>:
+  let written(_) = write {held: retract heldKey(held)}
+  Card.tell(Verdict.made({object: id}), Document.text("✾ WORKSHOP\n\nMade {id} from #{natText(held.n)}; it is yours.\n"))
 # Withdraw: the proposer's alone.
 def withdraw(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
   match heldNumbered(input.n, state):
@@ -186,4 +227,6 @@ def blurb() -> Card.Door:
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: usage(), tail: heldLines(context, state)})})
 def heldLines(context: Abi.Context, state: State) -> Document.Documents:
-  if Relations.count(state.held) == 0n then Document.Documents.nil() else Document.Documents.cons({head: Document.text("\nHeld for their targets' owners (adopt / n, or withdraw / n by the proposer):\n"), tail: Card.clipped(Lists.map(Relations.rows(state.held), fn(h: Held) -> Document.Document: Document.text("#{natText(h.n)} for {h.target} from {Card.shown(h.proposer, h.proposerHandle, context)}\n")), 8n)})
+  if Relations.count(state.held) == 0n then Document.Documents.nil() else Document.Documents.cons({head: Document.text("\nHeld (owner or describer: adopt / n; proposer: withdraw / n):\n"), tail: Card.clipped(Lists.map(Relations.rows(state.held), fn(h: Held) -> Document.Document: Document.text(heldLine(h, context))), 8n)})
+def heldLine(h: Held, context: Abi.Context) -> String:
+  if h.target == "" then "#{natText(h.n)} makes {h.name}, described by {Card.shown(h.proposer, h.proposerHandle, context)}\n" else "#{natText(h.n)} for {h.target} from {Card.shown(h.proposer, h.proposerHandle, context)}\n"

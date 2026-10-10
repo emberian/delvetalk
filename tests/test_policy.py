@@ -14,7 +14,7 @@ import unittest
 from tests.host import as_owner
 
 from tests.test_replay import rows
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference
+from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record, declared
@@ -221,7 +221,7 @@ class PolicyObject(Chain):
         self.garden("policy", confirm=False)
         fired = self.say("moth for the lost ones.")
         self.assertEqual((fired["status"], fired["result"]["label"]), ("admitted", "planted"), fired)
-        self.assertIn("Planted for glm: a violet bell, “a bell for the lost ones”.", fired["offers"][0]["text"])
+        self.assertIn("Planted, glm: a violet bell, “a bell for the lost ones”, at garden/bell/1", fired["offers"][0]["text"])
         two = self.say("a silver bell for the night walkers please", identity="two")
         self.assertEqual((two["status"], two["result"]["label"]), ("admitted", "planted"), two)
         self.assertIn("a silver bell, “a bell for the night walkers”", two["offers"][0]["text"])
@@ -285,6 +285,7 @@ class PolicyObject(Chain):
 
     def garden(self, policy, confirm=True):
         self.make("garden", closure("Garden"), garden_seed(policy, confirm=confirm))
+        town_kinds(self.host.send)
 
     def say(self, text, principal="glm", identity=None):
         return self.turn("garden", "receive", record(text=label(text), post=label("at://glm/p/1")), principal=principal,
@@ -349,10 +350,10 @@ class PolicyObject(Chain):
         planted = self.say("  Yes \n")
         self.assertEqual(planted["status"], "admitted", planted["receipt"]["outcome"])
         self.assertEqual(planted["result"]["label"], "planted", planted)
-        self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
+        self.assertIn("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1", planted["offers"][0]["text"])
         self.assertEqual(rows(self.pending()), [])
         # The bell awaits a reply to the post that said yes (codex objects 12).
-        planting = [f["value"] for f in self.state("garden/bell/1")["fields"] if f["name"] == "planting"][0]
+        planting = [f["value"] for f in self.state("garden/bell/1")["fields"] if f["name"] == "post"][0]
         self.assertEqual(planting, label("at://glm/p/1"))
 
     def test_the_common_answers_confirm_or_drop_without_a_model(self):
@@ -454,7 +455,7 @@ class PolicyObject(Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(resumed["result"]["label"], "planted", resumed)
-        self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", resumed["receipt"]["offers"][0]["text"])
+        self.assertIn("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1", resumed["receipt"]["offers"][0]["text"])
         # The verdict replays: a fresh process reaches the same garden.
         before = self.state("garden")
         self.reopen()

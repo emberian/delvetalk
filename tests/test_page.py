@@ -10,7 +10,7 @@ an agentwiki post: `wiki: <title>` and its `## Section`s.
 """
 import unittest
 
-from tests.test_chain import Chain, garden_seed
+from tests.test_chain import Chain, garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_turn_world import label, record
 
@@ -49,6 +49,7 @@ class Page(Chain):
 
     def test_a_garden_of_twenty_bells_publishes_eighteen_sections_each_under_2000_characters(self):
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         for i in range(20):
             r = self.turn("garden", "plant", record(colour=label("silver"), seed=label("bell %02d" % i)), principal="glm")
             self.assertEqual(r["result"]["label"], "planted", r)
@@ -71,6 +72,7 @@ class Page(Chain):
     def test_publish_page_posts_the_card_under_the_door_word_and_the_host_lists_it(self):
         """Genesis posts one card per door: publishPage titles the page by door().word."""
         self.make("plot", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         r = self.turn("plot", "publishPage", record(page=label("")), principal="ember")
         self.assertEqual(r["status"], "admitted", r)
         [published] = r["receipt"]["publishes"]

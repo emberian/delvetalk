@@ -16,7 +16,10 @@ import ./Text.obend as Text
 # by a tab, is quotation, taken only when the post has no other; a `>` line is never one, nor
 # a line inside a fence with an info string (```bend); a delvetalk line whose card or action
 # is malformed is not one either. A card name is [a-z0-9:/.-]+, at most 160 bytes; an action
-# is [a-z0-9-]+ or `?`.
+# is [a-z0-9-]+ or `?`. As the host reads them (HOST-HANDOFF 119): `delvetalk`, the action and
+# field names in any case, folded to lower case, one trailing `.` or `:` trimmed from the
+# action; an action written with capitals is one only when nothing but inline fields follows it
+# (`Delvetalk Garden Plant` is a spell, "delvetalk Is The word" a sentence); the card as written.
 record Binding:
   name: String
   value: String
@@ -60,7 +63,10 @@ def fallback(quoted: Candidate) -> Parsed:
     case at(a): spelled(a.card, a.action, inline(a.tail))
     case none(_): Parsed.notASpell({reason: "No delvetalk line; the spell is the last unquoted one."})
 def isSpellAt(text: String, indent: Nat) -> Bool:
-  textTake(textDrop(text, indent), 10n) == "delvetalk " || textTake(textDrop(text, indent), 10n) == "delvetalk\t"
+  let head = textTake(textDrop(text, indent), 10n)
+  if textSpan(head, "dD") == 0n then false else spellWord(Text.lower(head))
+def spellWord(head: String) -> Bool:
+  head == "delvetalk " || head == "delvetalk\t"
 def isQuote(text: String) -> Bool:
   textSpan(textTake(text, 4n), " ") == 4n || textTake(text, 1n) == "\t"
 # A fence with an info string (```bend, ```json) opens code: its lines are never a spell. A
@@ -79,8 +85,16 @@ def heading(line: String) -> Candidate:
   let card = textTake(afterBlanks, cardEnd)
   let afterCard = Text.trimStart(textDrop(afterBlanks, cardEnd))
   let actionEnd = textBreak(afterCard, " \t")
-  let action = textTake(afterCard, actionEnd)
-  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else Candidate.at({card: card, action: action, tail: Text.trimStart(textDrop(afterCard, actionEnd))})
+  let written = textTake(afterCard, actionEnd)
+  let action = unmarked(Text.lower(written))
+  let tail = Text.trimStart(textDrop(afterCard, actionEnd))
+  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else if Text.lower(written) == written then Candidate.at({card: card, action: action, tail: tail}) else capitalled(card, action, tail)
+def capitalled(card: String, action: String, tail: String) -> Candidate:
+  if tail == "" || textTake(tail, 1n) == "/" || looksLikeField(tail) then Candidate.at({card: card, action: action, tail: tail}) else Candidate.none({})
+# A word with one trailing `.` or `:` trimmed (`delvetalk garden plant.`).
+def unmarked(word: String) -> String:
+  let size = textLength(word)
+  if size > 1n && textSpan(textDrop(word, size - 1n), ".:") == 1n then textTake(word, size - 1n) else word
 # Fields on the spell line are separated by ` / ` (`delvetalk tide subscribe / every: 1 /
 # note: first light`) or by commas; a slash or comma only separates when what follows it
 # looks like `name:`, so a value may hold either.
@@ -106,10 +120,10 @@ def piece(tail: String) -> Fields:
   startField(Text.trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
 def looksLikeField(value: String) -> Bool:
   let colon = textBreak(value, ":")
-  colon > 0n && textTake(value, colon) != value && isIdentifier(textTake(value, colon))
+  colon > 0n && textTake(value, colon) != value && isIdentifier(Text.lower(textTake(value, colon)))
 def startField(value: String, rest: String) -> Fields:
   let colon = textBreak(value, ":")
-  if looksLikeField(value) then continued(textTake(value, colon), Text.trimStart(textDrop(value, colon + 1n)), rest) else Fields.bad({reason: "Not a field: {textTake(value, 40n)}"})
+  if looksLikeField(value) then continued(Text.lower(textTake(value, colon)), Text.trimStart(textDrop(value, colon + 1n)), rest) else Fields.bad({reason: "Not a field: {textTake(value, 40n)}"})
 def continued(name: String, value: String, rest: String) -> Fields:
   if rest == "" then consed(name, Text.trimEnd(value), Fields.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
 def more(name: String, value: String, stop: Nat, rest: String) -> Fields:

@@ -335,7 +335,10 @@ class BendReading(unittest.TestCase):
                       "Could we plant a fern?",
                       "delvetalk garden-1 plant now",
                       "> delvetalk garden-1 plant / seed: fern",
-                      "```json\ndelvetalk garden-1 plant\n```"):
+                      "```json\ndelvetalk garden-1 plant\n```",
+                      "Delvetalk Garden-1 Plant / Seed: fern / colour: silver",
+                      "delvetalk garden-1 plant. / seed: fern",
+                      "delvetalk Is The word"):
             with self.subTest(reply=reply):
                 self.assertEqual(bend_parse(reply), parse(reply))
 

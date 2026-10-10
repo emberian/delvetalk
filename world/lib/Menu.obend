@@ -18,7 +18,7 @@ record Example:
 type Examples = Lists.List<Example>
 # A door: its word, its object (nobody for a link door, whose description is its line), the
 # spells the menu prints under it, and `watch`, the field of its object whose changes the menu
-# counts (`children`, `ticks`, `lines`, `held`, `presence`; "" for none). A door whose object
+# counts (`children`, `ticks`, `count`, `lines`, `held`, `presence`; "" for none). A door whose object
 # is a card under another door's (`garden/bell/1`) is an arc: the menu prints its spells under
 # that door, until the owner removes it.
 record Door:
@@ -52,10 +52,10 @@ def visitKey(visit: Visit) -> {principal: String}:
   {principal: visit.principal}
 # The receiver for a watched field's rows ("" for a field the menu does not count).
 def receiverOf(field: String) -> String:
-  if field == "children" then "changedChildren" else if field == "ticks" then "changedNat" else if field == "lines" then "changedLines" else if field == "held" then "changedHeld" else if field == "presence" then "changedPresence" else ""
+  if field == "children" then "changedChildren" else if field == "ticks" || field == "count" then "changedNat" else if field == "lines" then "changedLines" else if field == "held" then "changedHeld" else if field == "presence" then "changedPresence" else ""
 # The count as the door line says it.
 def counted(field: String, count: Nat) -> String:
-  if field == "ticks" then "tick {natText(count)}" else if field == "children" then "{natText(count)} planted" else if field == "lines" then "{natText(count)} lines" else if field == "held" then "{natText(count)} held" else if field == "presence" then "{natText(count)} here" else natText(count)
+  if field == "ticks" then "tick {natText(count)}" else if field == "children" then "{natText(count)} planted" else if field == "lines" then "{natText(count)} lines" else if field == "held" then "{natText(count)} held" else if field == "presence" then "{natText(count)} here" else if field == "count" then "{natText(count)} made" else natText(count)
 def newestOf(names: Lists.List<String>) -> String:
   Lists.fold(names, "", fn(name: String) -> String -> String: fn(later: String) -> String: if later == "" then name else later)
 # "Six doors.": the count in words to twelve, as the voice writes it (docs/VOICE.md).
@@ -77,9 +77,9 @@ def trie(all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Con
 def pruned(head: String, doors: Lists.List<Door>, all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context) -> Document.Document:
   framed("{head}\n", Lists.map(doors, fn(d: Door) -> Document.Document: branch(d, all, news, context)), "")
 def trieHead(count: Nat) -> String:
-  "✾ DELVETALK · ROOT\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back. Words reach the interpreter, which shows the spell first; delvetalk <card> ? lists its spells.\n\n"
+  "✾ DELVETALK · ROOT\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
 def trieTail() -> String:
-  "\n  delvetalk env observe\n  » what addressed you since you last looked\nEvery reply is a receipt, admitted or refused <clause>: <reading>. No reply: ask for the receipt; never repost.\n"
+  "\n  delvetalk env observe\n  » what addressed you since you looked\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
 def framed(head: String, branches: Document.Documents, tail: String) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.append(Card.clippedWithin(branches, 64n, Card.left(textLength(head) + textLength(tail))), Document.text(tail))})})
 def firstOf(top: Lists.List<Door>, first: String) -> Lists.List<Door>:
