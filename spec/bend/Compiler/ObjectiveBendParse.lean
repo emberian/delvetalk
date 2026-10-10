@@ -457,6 +457,22 @@ def joinPieces (pieces : List Expr) (span : Span) : Expr :=
 `Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
 def writePlansAlias : String := "$plans"
 
+/-- The marker a `write {f: remove v}` stands as until the module's `State` says whether `f`
+is a relation (`lowerRemove`). Not an identifier a source can spell. -/
+def removeMarker : String := "$remove"
+
+/-- `remove` by the field's type in the module's `State` record: on a relation
+(`Relation<…>`) `remove KEY` is `retract {key}`, on a list `remove ITEM` is
+`removeItem {item}`. -/
+def lowerRemove (plans : String) (relations : List String) : Expr → Expr
+  | .call (.var m vs) [.str field fs, value] span =>
+    if m == removeMarker then
+      let lib := fun (name : String) => Expr.member (.member (.var plans vs) "Entries" vs) name vs
+      if relations.contains field then .call (lib "retract") [.record [("key", value)] span] span
+      else .call (lib "removeItem") [.record [("item", value)] span] span
+    else .call (.var m vs) [.str field fs, value] span
+  | e => e
+
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -521,8 +537,9 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
     -- `write {field: op value, ...}`: the world call that writes the running object's edits,
     -- every other field kept. Lowers to `world.write(extend(keep(), {field: E, ...}))`
     -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
-    -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
-    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem), and for a relation
+    -- `Plans.Entries.append({item: v})` (append), `remove v` (`removeItem({item: v})`, or on
+    -- a relation `retract({key: v})`; `lowerRemove`), `amend v with c`
+    -- (`amendItem({item: v, change: c})`), `Plans.Entries.removeItem({item: v})` (removeItem), and for a relation
     -- `Plans.Entries.insert({row: v})` (insert), `Plans.Entries.upsert({row: v})` (upsert),
     -- `Plans.Entries.retract({key: v})` (retract); `Plans` is the module's
     -- alias of Plan.obend (`writePlansAlias`, resolved after parsing) and the type
@@ -539,17 +556,30 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         discard <| take env (some ":")
         let op ← take env
         let (value, _) ← parseExpr env fuel 0
-        let (type, ctor, payload) ← match tokenText op with
-          | "add" => pure ("Edit", "add", "delta")
-          | "set" => pure ("Edit", "set", "value")
-          | "append" => pure ("Entries", "append", "item")
-          | "remove" => pure ("Entries", "remove", "index")
-          | "removeItem" => pure ("Entries", "removeItem", "item")
-          | "insert" => pure ("Entries", "insert", "row")
-          | "upsert" => pure ("Entries", "upsert", "row")
-          | "retract" => pure ("Entries", "retract", "key")
-          | other => throw ("Error: write {field: op value} takes add, set, append, remove, removeItem, insert, upsert or retract, not " ++ other)
-        edits := edits.push (tokenText name, .call (lib type ctor) [.record [(payload, value)] span] span)
+        let field := tokenText name
+        if tokenText op == "remove" || tokenText op == "amend" then
+          if let .record [("index", _)] _ := value then
+            throw ("Error: write {" ++ field ++ ": " ++ tokenText op ++ " {index: ...}} names a position, and edits name items: " ++
+              "write `" ++ field ++ ": remove ITEM` (`retract KEY` on a relation) or `" ++ field ++ ": amend ITEM with CHANGE`")
+        let edit ← if tokenText op == "remove" then
+            pure (Expr.call (.var removeMarker span) [.str field span, value] span)
+          else if tokenText op == "amend" then do
+            let w ← take env
+            if tokenText w != "with" then throw ("Error: write {" ++ field ++ ": amend ITEM with CHANGE} expects `with`")
+            let (change, _) ← parseExpr env fuel 0
+            pure (Expr.call (lib "Entries" "amendItem") [.record [("item", value), ("change", change)] span] span)
+          else do
+            let (type, ctor, payload) ← match tokenText op with
+              | "add" => pure ("Edit", "add", "delta")
+              | "set" => pure ("Edit", "set", "value")
+              | "append" => pure ("Entries", "append", "item")
+              | "removeItem" => pure ("Entries", "removeItem", "item")
+              | "insert" => pure ("Entries", "insert", "row")
+              | "upsert" => pure ("Entries", "upsert", "row")
+              | "retract" => pure ("Entries", "retract", "key")
+              | other => throw ("Error: write {field: op value} takes add, set, append, remove, amend, removeItem, insert, upsert or retract, not " ++ other)
+            pure (Expr.call (lib type ctor) [.record [(payload, value)] span] span)
+        edits := edits.push (field, edit)
         let next ← take env
         if tokenText next == "}" then break
         if tokenText next != "," then throw "Error: expected , or } in write {...}"
@@ -1210,6 +1240,11 @@ def parseObjective (source : String) : Except Diagnostic Module := do
   -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
   let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
   let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
+  -- `remove`/`amend` in `write {...}` by whether the State's field is a relation.
+  let relations := decls.foldl (fun acc d => match d with
+    | .record "State" _ fields _ => acc ++ (fields.filter fun f => (f.type.splitOn "Relation<").length > 1).map (·.name)
+    | _ => acc) []
+  let decls := decls.map (·.mapExpr (lowerRemove plans relations))
   -- A layer imports the module it layers over as `Super` (unless it already does).
   let imports := match layer with
     | some (path, span) =>

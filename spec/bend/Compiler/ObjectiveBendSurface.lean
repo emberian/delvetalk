@@ -419,6 +419,53 @@ def Decl.mapVars (f : String → String) : Decl → Decl
   | .function sig ps b s => .function sig ps (b.mapVars f) s
   | d => d
 
+/-! ## Bottom-up rewriting (the parser's `write` markers) -/
+
+mutual
+/-- `f` at every node, children first. -/
+def Expr.mapExpr (f : Expr → Expr) : Expr → Expr
+  | .record fs s => f (.record (mapFieldExprs f fs) s)
+  | .extend i fs s => f (.extend (i.mapExpr f) (mapFieldExprs f fs) s)
+  | .member t n s => f (.member (t.mapExpr f) n s)
+  | .call c args s => f (.call (c.mapExpr f) (mapListExprs f args) s)
+  | .compose specs s => f (.compose (mapListExprs f specs) s)
+  | .fix spec inherited s => f (.fix (spec.mapExpr f) (inherited.mapExpr f) s)
+  | .lambda ps r b s => f (.lambda ps r (b.mapExpr f) s)
+  | .extensionValue ps t b s => f (.extensionValue ps t (b.mapExpr f) s)
+  | .binary op l r s => f (.binary op (l.mapExpr f) (r.mapExpr f) s)
+  | .ite c t e s => f (.ite (c.mapExpr f) (t.mapExpr f) (e.mapExpr f) s)
+  | .letE n t v b s => f (.letE n t (v.mapExpr f) (b.mapExpr f) s)
+  | .specialize t types s => f (.specialize (t.mapExpr f) types s)
+  | .dataOf t v s => f (.dataOf t (v.mapExpr f) s)
+  | .worldCall m i r a s => f (.worldCall m i r (a.mapExpr f) s)
+  | e => f e
+def mapFieldExprs (f : Expr → Expr) : List (String × Expr) → List (String × Expr)
+  | [] => []
+  | (n, v) :: rest => (n, v.mapExpr f) :: mapFieldExprs f rest
+def mapListExprs (f : Expr → Expr) : List Expr → List Expr
+  | [] => []
+  | e :: rest => e.mapExpr f :: mapListExprs f rest
+end
+
+mutual
+def Body.mapExpr (f : Expr → Expr) : Body → Body
+  | .expr e s => .expr (e.mapExpr f) s
+  | .cases sc branches s => .cases (sc.mapExpr f) (mapBranchExprs f branches) s
+  | .letB n t v b s => .letB n t (v.mapExpr f) (b.mapExpr f) s
+def mapBranchExprs (f : Expr → Expr) : List (Pattern × Body × Span) → List (Pattern × Body × Span)
+  | [] => []
+  | (p, b, s) :: rest => (p, b.mapExpr f, s) :: mapBranchExprs f rest
+end
+
+def Decl.mapExpr (f : Expr → Expr) : Decl → Decl
+  | .spec sp =>
+    let methods := sp.methods.map fun m => { m with body := m.body.mapExpr f }
+    let claims := sp.claims.map fun c => { c with body := c.body.mapExpr f }
+    .spec { sp with methods, claims }
+  | .extension n ps t b binders s => .extension n ps t (b.mapExpr f) binders s
+  | .function sig ps b s => .function sig ps (b.mapExpr f) s
+  | d => d
+
 def Module.mapSpans (f : Span → Span) (m : Module) : Module :=
   let imports := m.imports.map fun i => { i with span := f i.span }
   let decls := m.decls.map fun x => x.mapSpans f
