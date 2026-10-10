@@ -245,7 +245,10 @@ do all of this itself.
 
 ## Limits
 
-- Bodies at most 64 KiB; at most 16 modules of 16 KiB each in `repl` and `check`.
+- Bodies at most 64 KiB, nested at most 256 deep; at most 16 modules of 16 KiB each in `repl` and `check`. A request line
+  or header line at most 64 KiB, at most 100 headers. Replies at most 8 MiB.
+- A request must arrive within 30 seconds (a client that stalls is answered 408 or dropped; others are not held up).
+  The front waits 150 seconds for hostd, then answers 504 `hostTimeout`.
 - 32 requests per minute per credential; 16 per minute per client IP on `challenge` and `verify`; 32 per minute per
   client IP on `/xrpc` without a credential.
 - `GET /AGENTS.md` carries `X-DelveTalk-Host-Sha256`: the SHA-256 of the host binary this server runs.

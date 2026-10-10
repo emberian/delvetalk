@@ -1,16 +1,21 @@
 """The front's controls: `_links` on every JSON reply, `_actions` projected from the host's method table and forms."""
 import http.client
 import json
+import random
 import re
 import socket
 import tempfile
 import threading
+import time
 import unittest
+import urllib.parse
+from pathlib import Path
 
 from tests.test_chain import garden_state
-from tests.test_http import DID, REPL_COUNTER, FrontCase, StubHost
+from tests.test_http import DID, PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
 from transport import delve, identity
+from transport.hostproc import HostClient
 from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front, resolve
 from tests.test_turn_world import closure
 
@@ -192,6 +197,101 @@ class Envelope(FrontCase):
         s, e = self.call('GET', '/xrpc/com.atproto.repo.describeRepo?repo=did:plc:other')
         self.assertEqual((s, e['error'], e['class'], e['status']), (400, 'RepoNotFound', 'RepoNotFound', 'error'))
         self.assertIn('self', e['_links'])
+
+
+class Robust(FrontCase):
+    def test_hostd_absent_or_mute_is_a_named_error_within_the_timeout(self):
+        tok = self.login()
+        self.front.host = HostClient(Path(self.tmp.name) / 'nobody.sock')
+        s, e = self.call('GET', '/AGENTS.md/world', token=tok)
+        self.assertEqual((s, e['class']), (503, 'hostUnavailable'), e)
+        with socket.socket(socket.AF_UNIX) as mute:  # takes the connection, never answers
+            mute.bind(str(Path(self.tmp.name) / 'mute.sock'))
+            mute.listen(64)
+            self.front.host = HostClient(Path(self.tmp.name) / 'mute.sock', timeout=1)
+            t0 = time.time()
+            s, e = self.call('GET', '/AGENTS.md/world', token=tok)
+            self.assertEqual((s, e['status'], e['class']), (504, 'error', 'hostTimeout'), e)
+            s, x = self.call('GET', '/xrpc/com.atproto.repo.listRecords?repo=did:web:delvetalk.fg-goose.online&collection=town.delvetalk.receipt')
+            self.assertEqual((s, x['error'], x['class']), (504, 'HostTimeout', 'HostTimeout'), x)
+            self.assertLess(time.time() - t0, 5)
+
+    def test_a_stalled_client_holds_only_its_own_connection_and_only_until_the_timeout(self):
+        tok = self.login()
+        self.front.request_timeout = 1
+        stalled = socket.create_connection(('127.0.0.1', self.port))  # headers sent, the body promised and never sent
+        stalled.sendall(f'POST /AGENTS.md/world/c1/bump HTTP/1.1\r\nAuthorization: Bearer {tok}\r\nContent-Length: 100\r\n\r\n'.encode())
+        half = socket.create_connection(('127.0.0.1', self.port))  # headers never finished
+        half.sendall(b'GET /AGENTS.md/world HTTP/1.1\r\nHost: x\r\n')
+        t0 = time.time()
+        for _ in range(5):
+            self.assertEqual(self.call('GET', '/AGENTS.md/api')[0], 200)
+        self.assertEqual(self.turn(tok, 'beside')[1]['status'], 'admitted')
+        self.assertLess(time.time() - t0, 1)
+        stalled.settimeout(10)
+        out = b''
+        while chunk := stalled.recv(65536):
+            out += chunk
+        head, _, body = out.partition(b'\r\n\r\n')
+        self.assertEqual((head.split()[1], json.loads(body)['class']), (b'408', 'requestTimeout'))
+        half.settimeout(10)
+        self.assertEqual(half.recv(65536), b'')  # dropped, nothing to answer
+        self.assertLess(time.time() - t0, 5)
+        stalled.close(), half.close()
+
+    def test_a_burst_of_fifty_mixed_clients(self):
+        toks = [self.login(h) for h in PEOPLE]
+        height = self.host.send({'op': 'world-status'})['height']
+        kinds = [('POST', '/AGENTS.md/world/c1/bump', None, 200), ('GET', '/AGENTS.md/world/c1', None, 200),
+                 ('GET', '/AGENTS.md/api', None, 200), ('POST', '/AGENTS.md/world/c1/bump', b'{nope', 400), ('GET', '/AGENTS.md/world/nope', None, 404)]
+        gate, got, errors = threading.Barrier(50), {}, []
+
+        def client(i):
+            method, path, raw_, want = kinds[i % 5]
+            try:
+                gate.wait()
+                body = {'intent': f'burst-{i}'} if raw_ is None and method == 'POST' else None
+                s, r = self.call(method, path, body, toks[i % 4], raw_)
+                got[i] = (s, r.get('status'), '_links' in r)
+                assert s == want, (i, s, r)
+            except BaseException as e:
+                errors.append(repr(e))
+        threads = [threading.Thread(target=client, args=(i,)) for i in range(50)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        self.assertEqual(errors, [])
+        self.assertEqual(len(got), 50)
+        self.assertTrue(all(links for _, _, links in got.values()))
+        self.assertEqual(sorted(got[i][1] for i in range(0, 50, 5)), ['admitted'] * 10)
+        self.assertEqual(self.host.send({'op': 'world-status'})['height'], height + 10)  # ten turns, each journaled once
+        counted = [i for i in range(50) if i % 5 != 2]  # the catalogue needs no credential and spends none
+        self.assertEqual([len(self.front.used(t)) for t in toks], [sum(1 for i in counted if i % 4 == k) for k in range(4)])
+        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=toks[0])[1]['version'], 10)
+
+    def test_malformed_input_on_every_route_answers_a_named_envelope_never_a_crash(self):
+        rnd, tok = random.Random(7), self.login()
+        ids = ['\u2603', 'a%2F..%2F..', '%00', '%ED%A0%80', 'x' * 300, '..', 'garden/../c1', '%', '%zz', '<i>', '\u00b2']
+        bodies = [b'', b'\x00\xff' * 50, bytes(rnd.randrange(256) for _ in range(300)), b'[' * 5000, b'{"a":' * 400 + b'1' + b'}' * 400,
+                  json.dumps({'intent': '\ud800\u2603', 'spell': '\ud800', 'object': '\u2603/\ud800', 'handle': '\ud800'}).encode(),
+                  b'{"modules": [1, "x", null], "source": 5, "entry": [], "arguments": {}, "fields": [1], "spell": 7, "seed": [[[]]], "checkpoint": "x"}',
+                  b'{"handle": ["x"], "uri": {"a": 1}, "argument": {"tag": "record", "fields": "no"}, "intent": {"a": 1}}',
+                  b'"string"', b'null', b'1e999999', b'{"intent": 123456789012345678901234567890, "fields": {"a": 1e308}}']
+        queries = ['', '?after=%C2%B2&wait=%C2%B2&prefix=%E2%98%83&full=1&compact=1', '?cursor=%C2%B2&limit=%C2%B2&repo=x&collection=%00',
+                   '?object=%ED%A0%80&after=-1&wait=99999999999999999999']
+        crashes, n = [], 0
+        for e in CATALOGUE:
+            for oid in rnd.sample(ids, 4):
+                path = re.sub(r'\{(\w+)\}', lambda m: urllib.parse.quote(oid, safe='/%') if m[1] == 'object' else urllib.parse.quote(oid, safe=''), e['href'])
+                for method in ('GET', 'POST'):
+                    for body in (rnd.sample(bodies, 4) if method == 'POST' else [None]):
+                        self.now[0] += 4  # under every rate limit: the fuzz is of input, not of the limiter
+                        n += 1
+                        s, h, data = self.request(method, path + rnd.choice(queries), token=tok, raw=body)
+                        kind = dict(h).get('Content-Type', '')
+                        if s >= 500 or (s >= 400 and kind.startswith('application/json') and 'class' not in json.loads(data)):
+                            crashes.append((method, path, body and body[:60], s, data[:200]))
+        self.assertEqual(crashes, [])
+        self.assertGreater(n, 300)
 
 
 class Catalogue(unittest.TestCase):

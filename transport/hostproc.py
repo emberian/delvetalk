@@ -76,7 +76,7 @@ class Host:
                 except (HostDied, ValueError):
                     self.close()
                     if attempt:
-                        return {'status': 'error', 'message': 'host unavailable'}
+                        return {'status': 'error', 'class': 'hostUnavailable', 'message': 'host unavailable'}
 
     def close(self):
         if self.proc is not None:
@@ -117,8 +117,8 @@ class Heaps:
 class HostClient:
     """Same send() as Host, over hostd's socket. heap=<did> addresses a private heap; stateless=True the REPL process."""
 
-    def __init__(self, path, heap=None, stateless=False):
-        self.path, self.heap, self.stateless = str(path), heap, stateless
+    def __init__(self, path, heap=None, stateless=False, timeout=HOST_TIMEOUT + 30):
+        self.path, self.heap, self.stateless, self.timeout = str(path), heap, stateless, timeout
 
     def send(self, request):
         envelope = dict(request)
@@ -128,13 +128,15 @@ class HostClient:
             envelope['stateless'] = True
         try:
             with socket.socket(socket.AF_UNIX) as s:
-                s.settimeout(HOST_TIMEOUT + 30)
+                s.settimeout(self.timeout)
                 s.connect(self.path)
                 s.sendall((json.dumps(envelope) + '\n').encode())
                 line = s.makefile('rb').readline()
             return json.loads(line)
+        except TimeoutError:  # hostd took the request and did not answer; a turn it ran may still commit
+            return {'status': 'error', 'class': 'hostTimeout', 'message': f'hostd did not answer within {self.timeout} seconds'}
         except (OSError, ValueError):
-            return {'status': 'error', 'message': 'hostd unavailable'}
+            return {'status': 'error', 'class': 'hostUnavailable', 'message': 'hostd unavailable'}
 
     def close(self):
         pass

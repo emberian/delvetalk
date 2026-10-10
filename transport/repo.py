@@ -127,11 +127,11 @@ class Repo:
         self.repo(q)
         collection, cursor, reverse = self.collection(q), q.get('cursor'), q.get('reverse') == 'true'
         limit = q.get('limit', str(LIMIT))
-        if not limit.isdigit() or not 1 <= int(limit) <= MAX_LIMIT:
+        if not (limit.isascii() and limit.isdigit()) or not 1 <= int(limit) <= MAX_LIMIT:
             raise Refusal(400, 'InvalidRequest', f'limit must be 1..{MAX_LIMIT}')
         if collection in PAGED:
             op, field, key, cid = PAGED[collection]
-            if cursor is not None and not cursor.isdigit():
+            if cursor is not None and not (cursor.isascii() and cursor.isdigit()):
                 raise Refusal(400, 'InvalidRequest', 'the cursor is a journal height')
             page = {'before' if reverse else 'after': int(cursor)} if cursor else {}
             reply = host.send({'op': op, 'principal': who, 'limit': int(limit), **page, **({'reverse': True} if reverse else {})})
@@ -163,7 +163,7 @@ class Repo:
         elif collection == 'object':
             new = None if '/' in rkey else NEW_KEY.fullmatch(rkey)
             oid, _, version = (new[1].replace('~', '/'), '', new[2]) if new else rkey.rpartition('/')  # <object>/<version>: one release
-            if not oid or not version.isdigit():
+            if not oid or not (version.isascii() and version.isdigit()):
                 raise Refusal(400, 'InvalidRequest', 'an object record key is <object with / as ~>.<version>')
             item = self.object(host, oid, int(version), who)
             cid, rkey = item.get('stateCid'), object_key(oid, version)

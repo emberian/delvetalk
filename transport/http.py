@@ -239,6 +239,10 @@ ERRORS = {'badRequest': (400, 'error', 'the request line or a header is malforme
           'httpVersion': (505, 'error', 'the HTTP version is not 1.0 or 1.1')}
 
 
+def digits(text):
+    return text.isascii() and text.isdigit()
+
+
 def depth(value):
     """How deep a JSON value nests, counted without recursion; stops past MAX_DEPTH."""
     stack, deepest = [(value, 1)], 0
@@ -398,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
         super().setup()
 
     def reply(self, code, body, ctype='application/json', headers=()):
-        raw = body.encode() if isinstance(body, str) else body
+        raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
         if len(raw) > MAX_REPLY and code < 400:
             return self.fail('replyTooLarge', hint='?compact=1, a page (after, limit), or the receipt alone')
         self.replied = True
@@ -579,7 +583,7 @@ class Handler(BaseHTTPRequestHandler):
                         'source': link(f'{base}/world/{oid(o)}/source')}
         send = lambda req, links=None: self.answer(host.send(req), links=links)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
-        after = {'after': int(q['after']) if q['after'].isdigit() else q['after']} if 'after' in q else {}
+        after = {'after': int(q['after']) if digits(q['after']) else q['after']} if 'after' in q else {}
         if kind == 'world':
             reply = host.send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
             ids = reply.get('ids') or []
@@ -610,7 +614,7 @@ class Handler(BaseHTTPRequestHandler):
             r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
             return self.answer(r, links=receipt_links(base, r))
         if kind == 'offers':
-            wait = min(int(q['wait']), WAIT_MAX) if q.get('wait', '').isdigit() else 0
+            wait = min(int(q['wait']), WAIT_MAX) if digits(q.get('wait', '')) else 0
             for waited in range(0, wait + 1, WAIT_STEP):
                 reply = host.send({'op': 'world-offers', 'principal': principal, **after})
                 if reply.get('status') != 'offers' or reply.get('offers') or waited + WAIT_STEP > wait:
