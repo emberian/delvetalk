@@ -310,49 +310,6 @@ checkpoint taken at a message yield is prefixed `[siteEdition, i]`, `i` the site
 in `messageSites`; resuming reads the type there. The prefix is inside the digest, so it
 is bound like the state; a sum-Plan checkpoint carries none and is unchanged. -/
 
-/-- Whether an activity's Plan type is a message (a record), not a sum. -/
-def isMessagePlan : Ty → Bool
-  | .field _ _ _ | .emptyRow => true
-  | _ => false
-
-/-- Every perform of `term` with its annotation's codomain, in preorder, at the positions
-`infer` gives children (`app` [0] [1], record field `i`, `extend`/`case` [1, i], ...). -/
-partial def performsOf (annotations : Annotations) (position : List Nat) (term : Term)
-    (acc : Array (Term × Option Ty)) : Array (Term × Option Ty) :=
-  let at_ := fun (i : Nat) (t : Term) (acc : Array (Term × Option Ty)) => performsOf annotations (position ++ [i]) t acc
-  let fields := fun (base : List Nat) (fs : List (String × Term)) (acc : Array (Term × Option Ty)) =>
-    fs.zipIdx.foldl (fun acc ((_, t), i) => performsOf annotations (base ++ [i]) t acc) acc
-  match term with
-  | .perform plan => at_ 0 plan (acc.push (plan, (annotations position).map (·.codomain)))
-  | .lam b | .reflect b | .metadata b | .project b | .unary _ b | .get b _ | .inject _ b
-  | .done b | .toData b => at_ 0 b acc
-  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b
-  | .textJoin a b => at_ 1 b (at_ 0 a acc)
-  | .ifZero a b c | .ifBool a b c => at_ 2 c (at_ 1 b (at_ 0 a acc))
-  | .record fs => fields position fs acc
-  | .extend a fs => fields (position ++ [1]) fs (at_ 0 a acc)
-  | .case a arms => fields (position ++ [1]) arms (at_ 0 a acc)
-  | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ => acc
-
-/-- The call sites of a message activity's entry: each distinct plan term with its result
-type. Refused when two performs build the same plan term at different result types (the
-machine could not tell which one yielded). -/
-def messageSites (source : AnnotatedTerm) : Except String (Array (Term × Ty)) := do
-  let mut sites : Array (Term × Ty) := #[]
-  for (plan, type?) in performsOf source.annotations [] source.term #[] do
-    let some type := type? | throw "a world call has no annotated result type"
-    match sites.find? (fun (t, _) => Minidregg.Theory.ObjectiveBendCheckpoint.termEq t plan) with
-    | some (_, other) =>
-      if other != type then
-        throw ("refused (world-call-site): two world calls of this entry build the same message at different " ++
-          "result types, so a response could not be told apart; give one of them a different argument")
-    | none => sites := sites.push (plan, type)
-  return sites
-
-/-- The sites of an activity entry: `some` for a message activity, `none` for a sum Plan. -/
-def sitesFor (source : AnnotatedTerm) (plan : Ty) : Except String (Option (Array (Term × Ty))) :=
-  if isMessagePlan plan then some <$> messageSites source else pure none
-
 /-- The edition marker a message checkpoint's site index follows. -/
 def siteEdition : String := "delvetalk.checkpoint.site.v1"
 
@@ -515,7 +472,7 @@ def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding
     (dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none) :
     Except String Delvetalk.Turn.Outcome := do
   let (applied, plan, response, result) ← prepareStartEntry entry arguments
-  let sites ← sitesFor entry.source plan
+  let sites := entry.sites
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
@@ -534,7 +491,7 @@ def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint
   unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
   unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
-  let (response, tokens) ← resumeType (← sitesFor entry.source plan) response checkpoint.tokens
+  let (response, tokens) ← resumeType entry.sites response checkpoint.tokens
   let some state := decodeStateAny (dictionary.getD (Dictionary.ofProgram entry.source.term)) tokens
     | throw "checkpoint does not decode"
   unless value.conformsUnder assumptions.bounds response do throw "turn refused: response does not conform to the response type"
@@ -549,7 +506,7 @@ def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (bind
     Except String Delvetalk.Turn.Outcome := do
   let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
   let (bounds, plan, response, result, state, resumed) ← prepareResumeEntry entry checkpoint binding value (some dictionary)
-  let sites ← sitesFor entry.source plan
+  let sites := entry.sites
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
