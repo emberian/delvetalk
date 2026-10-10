@@ -68,7 +68,8 @@ class Floor(Chain):
         """The card is what receive offers for an empty reply, here to someone not in the room."""
         reply = self.turn(name, "receive", record(text=label(""), post=label(""), slot=label("")), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
-        return reply["offers"][0]["text"]
+        # The card without the spells it teaches (a place's are say, emote and whisper).
+        return reply["offers"][0]["text"].split("\nReply with a spell:")[0]
 
     def version(self, name):
         return self.host.send(op="world-view", principal="ember", object=name)["version"]
@@ -252,7 +253,7 @@ class Floor(Chain):
 
     def test_thing_inspect_offers_its_card(self):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
-        card = self.card("stone")
+        card = self.turn("stone", "receive", record(text=label(""), post=label(""), slot=label("")), principal="visitor")["offers"][0]["text"]
         self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n(give is now offer"), card)
         self.assertIn("\nReply with a spell:\n\n    delvetalk stone acquire\n", card)
 
@@ -371,3 +372,32 @@ class Scoped(Chain):
         self.assertEqual(self.say("bump counter")["result"]["label"], "done")
         self.deliver_all()
         self.assertEqual([f["value"] for f in self.state("counter")["fields"] if f["name"] == "count"][0], nat(1))
+
+
+class Talk(Chain):
+    """say and emote offer a line to every avatar present; whisper to one; only someone here talks."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def setUp(self):
+        super().setUp()
+        self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
+
+    def say(self, text, who):
+        r = self.turn("porch", "receive", record(text=label(text), post=label("at://x/1")), principal=who)
+        self.assertEqual(r["status"], "admitted", r)
+        return r
+
+    def test_say_emote_and_whisper(self):
+        said = self.say("delvetalk porch say / line: the lamp is lit", "glm")
+        self.assertEqual(said["result"]["label"], "done", said)
+        # The newest arrival first; each avatar's principal gets the line.
+        offers = [(o["to"], o["text"]) for o in said["receipt"]["offers"]]
+        self.assertEqual(offers, [("kimik3", "glm: the lamp is lit\n"), ("glm", "glm: the lamp is lit\n")])
+        emoted = self.say("delvetalk porch emote / line: waves", "kimik3")
+        self.assertEqual([o["text"] for o in emoted["receipt"]["offers"]], ["* kimik3 waves\n", "* kimik3 waves\n"])
+        whispered = self.say("delvetalk porch whisper / to: kimik3 / line: psst", "glm")
+        self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]], [("kimik3", "glm whispers: psst\n")])
+        stranger = self.say("delvetalk porch say / line: hello?", "zero")
+        self.assertEqual(stranger["result"]["label"], "refused")
+        self.assertEqual(stranger["offers"][0]["text"], "Not done: only someone here can say.\n")

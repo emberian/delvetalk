@@ -128,13 +128,43 @@ def hereLine(state: State, context: Abi.Context) -> Document.Documents:
   match Plans.indexOf(state.present, person(context)):
     case some(_): Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()})
     case none(_): Document.Documents.nil()
-# A room is entered and left by an avatar's move, and things take and put themselves:
-# its card offers no spell of its own.
+# A room is entered and left by an avatar's move, and things take and put themselves; its
+# own spells are talk: `say` and `emote` offer a line, under the speaker's handle, to every
+# avatar present (the newest arrivals first, at most as many as one turn may send to), and
+# `whisper` to one of them. Only someone here talks.
+form say:
+  line: text 1..280
+form emote:
+  line: text 1..280
+form whisper:
+  to: text 1..160
+  line: text 1..280
 def forms() -> Card.Forms:
-  Card.Forms.nil()
+  Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
+def talking(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  if Lists.any(state.present, fn(p: Plans.Reference) -> Bool: p.object == context.principal) == false then Card.tell(Card.Reply.refused({clause: "notPresent", reading: "Only someone here can {action}."}), Document.text("Not done: only someone here can {action}.\n")) else if action == "whisper" then whispered(state, Card.text(fields, "to"), Card.text(fields, "line"), context) else told(Lists.take(Lists.reverse(state.present), 32n), spoken(action, speaker(context), Card.text(fields, "line")), action)
+def spoken(action: String, who: String, line: String) -> String:
+  if action == "emote" then "* {who} {line}\n" else "{who}: {line}\n"
+def speaker(context: Abi.Context) -> String:
+  Card.name(context.principal, context)
+def told(present: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Reply>:
+  match present:
+    case nil(_): Card.Reply.done({action: action})
+    case cons(c): toldOne(c.head, c.tail, line, action)
+def toldOne(to: Plans.Reference, rest: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.offer({to: to.object, document: Document.text(line)})):
+    case _: told(rest, line, action)
+def whispered(state: State, to: String, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match Lists.find(state.present, fn(p: Plans.Reference) -> Bool: p.object == to || Card.handle(p.object) == to):
+    case some(p): told(Lists.List.cons({head: p.value, tail: Lists.List.nil()}), "{speaker(context)} whispers: {line}\n", "whisper")
+    case none(_): Card.tell(Card.Reply.refused({clause: "notHere", reading: "{to} is not here."}), Document.text("Not done: {to} is not here.\n"))
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answerLensed(Card.routeHeard(input, context, forms()), context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))
+  heard(state, Card.routeHeard(input, context, forms()), context)
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case act(a): talking(state, a.action, a.fields, context)
+    case _: Card.answerLensed(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))
 def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})

@@ -160,6 +160,10 @@ the library).
   `delvetalk <id> <action>` with the rest of the line in the form's first field (a send,
   not a call: the callee's result would have to fit the avatar's Response R). Two of a name
   are answered "Which one: …?"; `look` offers `Place.render` for the reader.
+* **Talk in a place** (objects5): Place forms `say {line}`, `emote {line}`, `whisper {to,
+  line}`; the line is offered under the speaker's name to every avatar present (newest
+  arrivals first, at most 32), a whisper to one; someone not present is refused by name.
+  The place card's "Here:" lines and the avatar card's "is at" line are the who and where.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for
