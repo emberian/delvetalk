@@ -174,6 +174,17 @@ def skipped(state):
 
 
 MAX_HOPS = 32
+FIELD_LINE = re.compile(r'^\s*[\w-]+:\s*\S', re.M)
+
+
+def addressed(obs):
+    """Was the observation spoken to the system: a spell or summon, or text with a `delvetalk` line or `name: value` field lines."""
+    text = obs['text']
+    return obs['kind'] in KINDS or 'delvetalk' in text.lower() or bool(FIELD_LINE.search(text))
+
+
+def refused(reply):
+    return reply.get('status') == 'refused' or reply['receipt'].get('outcome', {}).get('tag') == 'refused'
 MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
 
 
@@ -322,7 +333,8 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'text': draft_text(reply, origin), 'posted': False})  # offerless: text '', hidden from outbox
+            'receipt': reply['receipt'], 'posted': False,  # unaddressed chatter that was refused is journaled, never drafted
+            'text': '' if refused(reply) and not addressed(obs) else draft_text(reply, origin)})  # offerless: text '', hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
         done.append(obs['uri'])
