@@ -1633,7 +1633,7 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
     shows a reader its read policy permits. -/
 def inspectOp (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   | some o =>
@@ -1647,7 +1647,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
 def cardOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let id := resolveCard principal (← j.getObjValAs? String "object")
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]

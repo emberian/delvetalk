@@ -44,6 +44,16 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
 
+/-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
+def publicReader : String := "anonymous"
+
+/-- A reader principal: 1..128 bytes, or the public reader (`anonymous` or "", public objects only),
+    returned as "". Every read op takes its reader through this. -/
+def readerOf (j : Json) : Except String String := do
+  let p ← j.getObjValAs? String "principal"
+  if p.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  return if p == publicReader then "" else p
+
 /-- One field's edit, in the wire shape of `world/lib/Plan.obend`:
     `keep {}`, `set {value}`, `add {delta}`, `append {item}`, `amend {index, change}`. -/
 inductive EditKind where
@@ -592,8 +602,7 @@ def requestModules (j : Json) : Except String (List (String × String)) := do
     "" anonymously, since the library is the world's public code. A package that declares laws
     compiles, as it would at `world-create`. The answer is `check-package`'s plus `library`. -/
 def worldCheck (w : World) (j : Json) : Except String Json := do
-  if (← j.getObjValAs? String "principal").utf8ByteSize > Limits.maxPrincipalBytes then
-    throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  discard <| readerOf j
   let entry ← j.getObjValAs? String "entry"
   let own ← requestModules j
   let modules ← match w.library with
@@ -2294,7 +2303,7 @@ def listIds (w : World) (reader pfx after : String) : List String × Bool :=
 
 /-- `world-objects {principal, prefix?, after?}`. -/
 def objectsOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let text := fun (k : String) => match j.getObjVal? k with
     | .ok (.str s) => pure s
     | .ok _ => throw s!"{k} must be text"
@@ -2304,7 +2313,7 @@ def objectsOp (w : World) (j : Json) : Except String Json := do
 
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   | some o =>
@@ -2344,8 +2353,7 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object, version, or
     a version only a write from before host7 made). -/
 def stateCidOp (w : World) (j : Json) : Except String Json := do
-  let reader ← j.getObjValAs? String "principal"
-  if reader.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
   let version ← natField j "version"
   let answer := fun (status : String) (more : List (String × Json)) =>
@@ -2450,7 +2458,7 @@ def slugTargets (w : World) (reader : String) : Array (String × String) := Id.r
     receipt as `world-receipt` renders it to that reader when it names one; `{status: "ambiguous",
     matches}` when it names two or more CIDs; `{status: "unknown"}` when none. -/
 def resolveOp (w : World) (j : Json) : Except String Json := do
-  let reader ← j.getObjValAs? String "principal"
+  let reader ← readerOf j
   let slug ← j.getObjValAs? String "slug"
   if (Slug.decode slug).isNone then throw s!"{slug} is not a slug: two proquint words, like lusab-babad"
   let hits := (slugTargets w reader).foldl (fun (acc : Array (String × String)) (cid, kind) =>
@@ -2466,11 +2474,6 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
   | many => return Json.mkObj [("status", toJson "ambiguous"), ("slug", toJson slug), ("matches", toJson many.length),
       ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
-/-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
-def readerOf (j : Json) : Except String String := do
-  let p ← j.getObjValAs? String "principal"
-  if p.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
-  return p
 
 /-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
     reader, `identity`), projected under the reader's authority. -/
@@ -2524,7 +2527,7 @@ def originOf (w : World) (entry : Json) : Json := Id.run do
     after journal height `after`; one page. Each offer carries `from`, the turn it answers (`originOf`). The publisher also gets the `publications`
     (`{height, ordinal, id, object, page, section, text}`) to post. -/
 def offersOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let after := (← optNat j "after").getD 0
   let all := (w.outbox.getD principal #[]).filter fun (index, _) => index + 1 > after
   let page := all.extract 0 Limits.maxHistoryLimit
@@ -2563,7 +2566,7 @@ def pagePosts (w : World) : Std.HashMap String (Nat × String) :=
     journal height `after`, one page: `{height, ordinal, id, object, page, section, body}`, and
     `replyTo` for a section edit when a post of its whole page is recorded (the newest). -/
 def publicationsOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let after := (← optNat j "after").getD 0
   if principal != publisher w then return Json.mkObj [("status", toJson "denied")]
   let all := w.published.filter fun (index, _) => index + 1 > after

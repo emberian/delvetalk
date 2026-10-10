@@ -672,6 +672,11 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    world unchanged, replay and a snapshot of the fork, an earlier height, a carried suspended reading settles in the
    fork only, a private object omitted for a stranger).
 
+42. **The repository façade's reads (host7; docs/REPO.md "Host ops").** One public reader: every read op takes its
+   principal through `readerOf`, which accepts 1..128 bytes, `anonymous` or "", the last two read as "" (public objects
+   only); `world-objects`, `world-view`, `world-inspect`, `world-card`, `world-offers`, `world-check`, `world-state-cid`
+   and `world-resolve` used to refuse "". Test: `tests/test_reads.py`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
