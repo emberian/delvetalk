@@ -4,10 +4,8 @@
 Only the GET endpoints in READS exist. Non-GET methods are refused here unless
 a caller constructs the client with allow_write=True (only post.py does).
 """
-import argparse
 import json
 import re
-import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -148,39 +146,3 @@ class Client:
 
     def describe_repo(self, repo):
         return self.get('com.atproto.repo.describeRepo', repo=repo)
-
-
-def main(argv=None, transport=None, out=None):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='delve.py', description='read-only delve.town client')
-    ap.add_argument('--mock', metavar='DIR', help='serve fixtures from DIR instead of the network')
-    sub = ap.add_subparsers(dest='cmd', required=True)
-    for name in ('read-feed', 'search'):
-        p = sub.add_parser(name)
-        p.add_argument('--limit', type=int, default=50)
-        p.add_argument('--cursor')
-        if name == 'search':
-            p.add_argument('--q', required=True)
-    sub.add_parser('thread').add_argument('uri')
-    sub.add_parser('record').add_argument('at_uri')
-    a = ap.parse_args(argv)
-    t = transport or (FixtureTransport(a.mock) if a.mock else http_transport)
-    c = Client(t)
-    try:
-        if a.cmd == 'read-feed':
-            data = c.feed(a.limit, a.cursor)
-        elif a.cmd == 'search':
-            data = c.search(a.q, a.limit, a.cursor)
-        elif a.cmd == 'thread':
-            data = c.thread(a.uri)
-        else:
-            data = c.record(a.at_uri)
-    except Failure as f:
-        print(canonical({'error': f.code, 'detail': f.detail}), file=sys.stderr)
-        return 1
-    out.write(canonical(data) + '\n')
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

@@ -6,14 +6,13 @@ Carries bytes and a verified principal; it validates nothing but size and JSON
 well-formedness. Host replies pass through verbatim.
 """
 import argparse
-import collections
 import hashlib
 import html
 import json
 import os
 import re
 import secrets
-import subprocess
+import socket
 import sys
 import threading
 import time
@@ -22,7 +21,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import bridge, hand, pages, post
+from transport import bridge, hand, oauth, pages, post
 from transport.hostd import CLOCK
 from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
@@ -40,6 +39,7 @@ PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
+WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
@@ -259,12 +259,13 @@ def receipt_links(base, reply, intent=None):
     """Where a turn's or receipt's reply leads: the receipt by slug, the object it read or made, the offers it left,
     and for a refusal the relation its class names (REFUSALS)."""
     rc, out = reply.get('receipt') or {}, {}
-    outcome = rc.get('outcome') or {}
+    # Someone else's refusal is the host's public projection, flat: {status: refused, class, root, slug}.
+    outcome = rc.get('outcome') or ({'tag': 'refused', 'class': rc.get('class')} if rc.get('status') == 'refused' else {})
     if rc.get('slug'):
         out['receipt'] = link(f"{base}/receipt/{rc['slug']}")
     elif intent and reply.get('class') == 'duplicateIdentity':
         out['receipt'] = link(f'{base}/receipt/{urllib.parse.quote(str(intent), safe="")}')
-    roots = rc.get('roots') or []
+    roots = rc.get('roots') or ([rc['root']] if isinstance(rc.get('root'), dict) else [])
     o = outcome.get('object') if outcome.get('tag') == 'created' or not roots else roots[0].get('object')  # a refusal may name no root
     if o:
         out.update({'object': link(f'{base}/world/{oid(o)}'), 'source': link(f'{base}/world/{oid(o)}/source')})
@@ -280,6 +281,11 @@ def receipt_links(base, reply, intent=None):
     elif refusal == 'unknownObject':
         out['hint'] = link(base + '/world')
     return out
+
+
+_busy = canonical({'status': 'error', 'class': 'busy', 'message': API['errors']['busy']['when']}).encode()
+BUSY = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; charset=utf-8\r\nRetry-After: 1\r\n'
+        b'Connection: close\r\nContent-Length: %d\r\n\r\n' % len(_busy)) + _busy
 
 
 class AccessLog:
@@ -306,12 +312,15 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS):
         super().__init__(address, Handler)
+        self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
+        threading.Thread(target=self.reap, daemon=True).start()
         self.access = access
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
+        self.oauth = oauth.OAuth(origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
@@ -319,6 +328,35 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
         self.host_timeout = getattr(host, "timeout", HOST_TIMEOUT + 30)
         self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
+            try:
+                request.settimeout(1)
+                request.sendall(BUSY)
+            except OSError:
+                pass
+            return self.shutdown_request(request)
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
+
+    def reap(self):
+        """The absolute deadline: a request not received `request_timeout` seconds after its connection opened has its
+        reading side shut, however steadily its bytes trickle in (a reply already under way is unaffected)."""
+        while self.socket.fileno() != -1:
+            time.sleep(0.25)
+            with self.receiving_lock:
+                late = [c for c, t in self.receiving.items() if time.monotonic() - t > self.request_timeout]
+            for c in late:
+                try:
+                    c.shutdown(socket.SHUT_RD)
+                except OSError:
+                    pass
 
     def sync_library(self, force=False):
         """Re-read hostd-info when hostd's pid changed (it restarted, maybe with a new library), or when forced."""
@@ -350,10 +388,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data."""
         return {'status': 'catalogue', 'origin': self.origin, **API,
                 'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': MAX_SOURCE, 'modules': MAX_MODULES, 'bodyDepth': MAX_DEPTH,
-                           'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'hostSeconds': self.host_timeout,
+                           'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
                            'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
-                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
+                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'ratePerAddressOnPagesWithoutLogin': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
                 '_links': {'self': link(here), 'guide': link(PREFIX), 'examples': link(PREFIX + '/examples'),
                            'challenge': link(PREFIX + '/challenge')}}
 
@@ -382,8 +420,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def setup(self):
         self.timeout = self.server.request_timeout  # a client that stalls sending its request is dropped after this
+        with self.server.receiving_lock:
+            self.server.receiving[self.request] = time.monotonic()  # and one that trickles, by the reaper
         super().setup()
         self.wfile = Counted(self.wfile)
+
+    def finish(self):
+        with self.server.receiving_lock:
+            self.server.receiving.pop(self.request, None)
+        super().finish()
 
     def send_response(self, code, message=None):
         self.status = code
@@ -453,10 +498,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             raw = self.rfile.read(n)
         except TimeoutError:
+            raw = b''
+        if len(raw) < n:  # stalled, or cut at the deadline
             return self.fail('requestTimeout')
         # curl -d labels JSON as a form; a browser's form body never starts with '{'
         if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
-            return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace')).items()}
+            return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace'), keep_blank_values=True).items()}  # a blank field is a value
         try:
             data = json.loads(raw or b'{}')
         except (ValueError, RecursionError):
@@ -526,12 +573,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def route(self, method):
         path = urllib.parse.urlsplit(self.path).path
-        if path.split('/')[1:2] == ['hand'] and self.server.hand:  # the owner's console, not in the catalogue; without --hand-token an unknown route
+        if self.server.hand:  # the owner's console, on its own loopback listener and nothing else there; never in the catalogue
+            if path.split('/')[1:2] != ['hand']:
+                return self.fail('unknownRoute', f'no route at {path}')
             form = self.body() if method == 'POST' else None
             if method == 'POST' and form is None:
                 return
             code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form)
             return self.html(code, body, headers)
+        if path.split('/')[1:2] == ['oauth']:
+            return oauth.route(self, method, path)
         name, p = resolve(method, path)
         if name is None:
             allow = [m for m in ('GET', 'POST') if resolve(m, path)[0]]
@@ -552,6 +603,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
+        if name in ('home', 'page'):  # pages ask the host: limited per account, or per address, before they do
+            key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
+            wait = self.server.limited(key)
+            if wait:
+                return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds', headers=[('Retry-After', str(wait))])
         if name == 'home':
             return self.home()
         if name == 'specimen':
@@ -601,7 +657,7 @@ class Handler(BaseHTTPRequestHandler):
         principal = who['did']  # the principal the host sees; the handle is display only
         base = PREFIX + ('/heap' if heap else '')
         if self.browser() and kind in ('object', 'card', 'source') and not heap:
-            return self.object_page(obj)
+            return self.object_page(obj, who)
         at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
                         'source': link(f'{base}/world/{oid(o)}/source')}
         send = lambda req, links=None: self.answer(host.send(req), links=links)
@@ -658,7 +714,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if kind == 'deliver':
             return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT}, {'pending': link(base + '/pending')})
-        if kind == 'create':
+        if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
+            name = data.get('object')
+            read = host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}
+            if read.get('status') == 'parsed' and (read.get('spell') or {}).get('card') != name:
+                return self.fail('unspellable', f'the host does not read `delvetalk {name} ?` as a spell; choose a name a spell can address')
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
             return self.answer(reply, links=receipt_links(base, reply))
@@ -710,6 +770,8 @@ class Handler(BaseHTTPRequestHandler):
         data = self.body()
         if data is None:
             return
+        auth = self.headers.get('Authorization') or ''  # the challenge answered is the requester's own when it holds its credential
+        mine = auth[7:] if auth.startswith('Bearer ') else self.cookie()
         try:
             text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
@@ -719,10 +781,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
                                   headers=self.login_cookie(out['credential']))
             # An agent that has the post's URI gives it; a person presses "I posted it" and the account's newest posts are read.
-            out = self.server.identity.verify(text('handle'), text('uri')) if text('uri') else self.server.identity.claim(text('handle'))
+            ident = self.server.identity
+            out = ident.verify(text('handle'), text('uri'), mine) if text('uri') else ident.claim(text('handle'), mine)
         except IdentityError as err:
             line = CLAIM_LINES.get(err.code)
-            waiting = self.server.identity.pending(text('handle')) if err.code in ('no_post_yet', 'posts_hidden') else None
+            waiting = self.server.identity.pending(text('handle'), mine) if err.code in ('no_post_yet', 'posts_hidden') else None
             if self.browser() and waiting:  # the word is still good: show it again with what went wrong
                 return self.html(200, pages.challenged(text('handle'), waiting['text'], line.format(handle=text('handle'))))
             return self.fail('identity', line.format(handle=text('handle')) if line else err.code, links={'hint': link(PREFIX + '/challenge')})
@@ -829,9 +892,10 @@ class Handler(BaseHTTPRequestHandler):
         ids = host.send({'op': 'world-objects', 'principal': who['did'] if who else 'anonymous'}).get('ids') or []
         self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did']))
 
-    def object_page(self, name):
-        """An object as anyone may read it: its card as the reader sees it, its ledger; logged in, a link to play it."""
-        who = self.principal(self.cookie())
+    def object_page(self, name, who=None):
+        """An object as its reader may read it (the authenticated `who`, else the cookie's login, else anyone): its card as
+        the reader sees it, its ledger; logged in, a link to play it."""
+        who = who or self.principal(self.cookie())
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
@@ -868,23 +932,25 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
-    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once); for an ssh forward, never public')
+    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once) on --hand-bind:--hand-port only')
+    ap.add_argument('--hand-bind', default='127.0.0.1', help='the hand\'s listener: loopback, reached by an ssh forward')
+    ap.add_argument('--hand-port', type=int, default=8766)
     ap.add_argument('--credentials', default=post.CREDENTIALS, help='the Delve credentials file the hand posts with')
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
     sock = a.host_socket or Path(a.state) / 'host.sock'
     host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
-    front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy,
-                  hand=hand.Hand(a.state, host, a.hand_token, a.credentials) if a.hand_token else None,
-                  access=AccessLog(Path(a.state) / 'access.log'))
+    ident = Identity(a.state, Client(http_transport), a.origin)
+    front = Front((a.bind, a.port), host, ident, a.origin, heaps=heaps, repl=repl, trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'))
+    if a.hand_token:  # never on the public port: its own listener, which serves /hand/ and nothing else
+        console = Front((a.hand_bind, a.hand_port), host, ident, a.origin, hand=hand.Hand(a.state, host, a.hand_token, a.credentials))
+        threading.Thread(target=console.serve_forever, daemon=True).start()
     try:
         front.serve_forever()
     finally:
         front.host.close()
         front.heaps.close()
         front.repl.close()
-
 
 if __name__ == '__main__':
     sys.exit(main())

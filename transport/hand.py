@@ -118,7 +118,7 @@ class Hand:
         r = d.get('receipt')
         line = f'receipt {r.get("slug")}: {outcome_of(r)}' if r else 'usage' if d.get('usage') else 'by hand' if d.get('hand') else 'a publication'
         state = 'posted' if d['posted'] else 'skipped' if d.get('skipped') else 'waiting'
-        return {'id': i, 'object': d.get('object'), 'receipt': line, 'slug': (r or {}).get('slug') or 'by hand', 'height': (r or {}).get('height'),
+        return {'id': i, 'object': post.draft_object(d), 'receipt': line, 'slug': (r or {}).get('slug') or 'by hand', 'height': (r or {}).get('height'),
                 'outcome': outcome_of(r) if r else 'drafted', 'text': d['text'], 'state': state,
                 **({'original': d['original']} if d.get('original') else {}), **({'reason': d['reason']} if d.get('reason') else {})}
 
@@ -260,7 +260,7 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
     common.add_argument('--json', action='store_true', help='one JSON document instead of text')
     ap = argparse.ArgumentParser(prog='hand.py', description='the owner\'s console, command-line face')
     sub = ap.add_subparsers(dest='verb', required=True)
-    spec = {'inbox': [('--since', dict(type=int)), ('--kind', dict(choices=('spell', 'summon', 'reply', 'post')))],
+    spec = {'inbox': [('--since', dict(type=int)), ('--kind', dict(choices=('summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge')))],
             'outbox': [('--all', dict(action='store_true'))], 'show': [('draft', {})],
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],

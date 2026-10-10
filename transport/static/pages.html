@@ -12,10 +12,11 @@
 <span class="yours">(yours)</span>
 <!-- enter -->
 <p class="doors"><a class="door" href="/play/"><span class="kind" data-id="directory"></span>ENTER THE WORLD</a></p>
-<!-- login: claiming a handle, in two steps -->
+<!-- login: claiming a handle: delve.town vouches for you, or you post one word -->
 <section><h2>Claim your handle</h2>
-<p>Type your delve.town handle and we give you one word.</p>
-<form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button>Give me a word</button></form></section>
+<form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button formmethod="get" formaction="/oauth/start">Log in with delve.town</button>
+<p class="hint">Nothing is posted.</p>
+<p>No login from delve.town? Type your delve.town handle and we give you one word.</p><button>Give me a word</button></form></section>
 <!-- challenged: the word, and the button -->
 <h1 class="title">Post this one word<small>as a public post from {handle}, within 15 minutes; it is harmless in public</small></h1>
 <figure class="frame"><pre class="card">{text}</pre></figure>{note}

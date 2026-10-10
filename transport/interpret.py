@@ -5,13 +5,13 @@ Host contract (the host2 lane adds these ops):
   world-interpretations            -> {status: "interpretations", pending: [{id, object, policy: {model, system, examples}, utterance, offers}]}
   world-interpretation {id, reply} -> settles; the host checks the reply against the offered forms.
 `reply` is exactly model.py's result object. Python decides nothing. A receipt file per request id is
-written before settling, so a crash re-settles the saved reply and never calls the model twice.
+written before settling, so a crash re-settles the saved reply and never calls the model twice; a request the host
+lists is pending whatever the file says (a restored journal), and its saved reply is submitted again.
 Run as `python3 -m transport.interpret run --state DIR --journal J --once`.
 """
 import argparse
 import hashlib
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -42,9 +42,7 @@ def run(state, host, ask=model.ask, now=time.time):
     settled, failed, retrying = [], [], []
     for item in listed.get('pending') or []:
         path = receipt_path(state, item['id'])
-        saved = json.loads(path.read_text()) if path.exists() else None
-        if saved and saved['settled']:
-            continue
+        saved = json.loads(path.read_text()) if path.exists() else None  # settled or not: the host listing it is the fact
         if saved is None or saved.get('retry'):
             if saved and saved['next'] > now():
                 retrying.append(item['id'])

@@ -155,6 +155,27 @@ class Hand(HandCase):
             post.post_draft(path, self.state, self.host, creds, reader=w, client=w)
 
 
+class Listener(unittest.TestCase):
+    def test_the_hand_is_served_on_a_loopback_listener_never_on_the_public_port(self):
+        from unittest import mock
+        from transport import http as front
+        made, stub = [], StubHost()
+        stub.close = lambda: None
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(front, 'HostClient', lambda *a, **k: stub), \
+                mock.patch.object(front, 'RemoteHeaps', lambda *a, **k: stub), mock.patch.object(Front, 'serve_forever', lambda self, *a: made.append(self)):
+            front.main(['--state', d, '--bind', '127.0.0.2', '--port', '0', '--hand-token', TOKEN, '--hand-port', '0'])
+        for f in made:
+            self.addCleanup(f.server_close)
+            threading.Thread(target=super(Front, f).serve_forever, daemon=True).start()
+            self.addCleanup(f.shutdown)
+        hand_at = {f.server_address[0]: f for f in made}
+        self.assertEqual(set(hand_at), {'127.0.0.2', '127.0.0.1'})
+        get = lambda f, path: (lambda c: (c.request('GET', path), c.getresponse().status)[1])(http.client.HTTPConnection(*f.server_address[:2]))
+        self.assertEqual(get(hand_at['127.0.0.2'], '/hand/?token=' + TOKEN), 404)  # the public port has no hand
+        self.assertEqual(get(hand_at['127.0.0.1'], '/hand/?token=' + TOKEN), 302)
+        self.assertEqual(get(hand_at['127.0.0.1'], '/AGENTS.md'), 404)  # and the hand's listener nothing else
+
+
 class Writer:
     """The delve.town side of post.post_draft: createSession and createRecord."""
     def __init__(self): self.sent = []
@@ -185,7 +206,7 @@ class Cli(HandCase):
 
     def test_reading_verbs_print_text_and_json_that_parses(self):
         rows = self.js('inbox')
-        self.assertEqual([r['kind'] for r in rows], ['spell', 'spell'])
+        self.assertEqual([r['kind'] for r in rows], ['post', 'post'])  # a spell is the host's reading, not a kind
         fates = {r['uri']: r['fate'] for r in rows}
         self.assertEqual(fates[self.uri], 'garden-1 / bofab-lukid / admitted')
         self.assertEqual(self.js('inbox', '--kind', 'summon'), [])

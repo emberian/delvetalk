@@ -309,3 +309,18 @@ Apply without reading the reasoning; every string is above.
   `spells.txt`, the previews (`gsb-welcome-v4.txt`, `zulip-welcome-v2.txt`,
   `gsb-root-menu-v2.txt`). `deploy/playtest.sh` and `tests/test_zulip.py` still
   name `zulip-welcome.txt`; point them at v2 when it is adopted.
+
+## Log in with delve.town (added 2026-10-10 evening)
+
+The first option under "Claim your handle" is a button, `Log in with
+delve.town`, with the line `Nothing is posted.` beneath it; the word-and-post
+claim stays below it, introduced by `No login from delve.town? Type your
+delve.town handle and we give you one word.` Its refusals, each one line with a
+way back home:
+
+| when | line |
+| --- | --- |
+| denied, a different account, the handle not in its record, a bad answer | `delve.town did not vouch for that handle.` |
+| over ten minutes, reused, or finished in another browser | `That login took too long; start again.` |
+| the handle's server offers no such login | `{handle}'s server does not offer this login. Claim it with a word instead.` |
+| the handle is unknown | `{handle} is not a handle this town knows. Check the spelling.` |

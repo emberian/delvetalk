@@ -183,6 +183,18 @@ class Controls(FrontCase):
                                'heap': ('created', 'admitted', {'tag': 'natural', 'value': '1'}),
                                'repl': ('finished', {'tag': 'natural', 'value': '42'})})
 
+    def test_a_strangers_read_of_a_refused_receipt_by_slug_keeps_its_object_and_recovery_links(self):
+        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-kept', 'object': 'kept', 'entry': 'initial',
+                            'modules': [{'name': 'Kept', 'source': LAWFUL}], 'seed': {'tag': 'record', 'fields': []}})
+        self.assertEqual(r['status'], 'created', r)
+        s, t = self.call('POST', '/AGENTS.md/world/kept/bump', {'intent': 'no'}, self.tok)
+        self.assertEqual((s, t['class']), (200, 'lawRefused'), t)
+        for reader in (self.tok, self.login('glm.delve.town')):  # mine, then someone else's public view of it
+            s, got = self.call('GET', f"/AGENTS.md/receipt/{t['receipt']['slug']}", token=reader)
+            links = {k: v['href'] for k, v in got['_links'].items() if k in ('object', 'source', 'hint')}
+            self.assertEqual((s, links), (200, {'object': '/AGENTS.md/world/kept', 'source': '/AGENTS.md/world/kept/source',
+                                                'hint': '/AGENTS.md/world/kept/source'}), got)
+
     def test_host_ops_wanted_project_when_the_host_answers_them(self):
         """Stubs of docs/AGENTS-API.md "Host ops wanted": `admits` per method, `methods` per listed id."""
         real = self.host.send
@@ -220,7 +232,7 @@ def raw(port, data):
 
 
 class Envelope(FrontCase):
-    REMOTE = {'requestTimeout', 'hostTimeout', 'hostUnavailable'}  # tests.test_hypermedia.Robust reaches these
+    REMOTE = {'requestTimeout', 'hostTimeout', 'hostUnavailable', 'busy'}  # tests.test_hypermedia.Robust and test_http.Slow reach these
 
     def test_every_error_class_is_reachable_and_answers_the_one_envelope(self):
         tok, seen = self.login(), {}
@@ -252,6 +264,7 @@ class Envelope(FrontCase):
         saw('unauthenticated', self.call('GET', '/AGENTS.md/world'))
         saw('identity', post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': 'at://nothing'}, t=None))
         saw('badModules', post('/AGENTS.md/repl', {'modules': 'x'}))
+        saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'Coin_box', 'intent': 'mk-cb'}))
         saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
         self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))
@@ -328,6 +341,7 @@ class Robust(FrontCase):
         kinds = [('POST', f'/AGENTS.md/world/{self.c}/bump', None, 200), ('GET', f'/AGENTS.md/world/{self.c}', None, 200),
                  ('GET', '/AGENTS.md/api', None, 200), ('POST', f'/AGENTS.md/world/{self.c}/bump', b'{nope', 400), ('GET', '/AGENTS.md/world/nope', None, 404)]
         gate, got, errors = threading.Barrier(50), {}, []
+        self.front.slots = threading.BoundedSemaphore(50)  # past the default 48 a client is told `busy` (test_http.Slow)
 
         def client(i):
             method, path, raw_, want = kinds[i % 5]

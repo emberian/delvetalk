@@ -4,6 +4,7 @@ request it would send and exits 2 without reading credentials or touching the ne
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import sys
@@ -19,6 +20,7 @@ FLAG = '--i-am-ember-and-authorize-posting'
 COLLECTION = 'town.delve.feed.post'
 MAX_TEXT = 64 * 1024
 LIMIT, WINDOW = 16, 3600
+TID = '234567abcdefghijklmnopqrstuvwxyz'
 CREDENTIALS = '~/.config/delvetown/credentials.json'
 
 
@@ -78,6 +80,11 @@ def slot_record(text):
     return {'principal': principal, 'intent': intent}
 
 
+def draft_object(d):
+    """The object a draft addresses: a reply's `object`, a publication's `publication.object`."""
+    return d.get('object') or (d.get('publication') or {}).get('object')
+
+
 def record_posted(host, result, obj, slot=None, target=None):
     """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?, page?, section?},
     as the clock principal hostd opens the world with (the only one that may confirm posts).
@@ -122,18 +129,63 @@ def take_slot(state, now, limit=LIMIT):
         f.write(json.dumps(stamps + [now]))
 
 
-def send(request, intent, state, credentials, client=None, limit=LIMIT):
-    """Network write. Credentials go only to the fixed PDS via Client."""
-    client = client or Client(http_transport, allow_write=True)
-    take_slot(state, time.time(), limit)
+def ledger(state, intent):
+    """The posting ledger, one file per intent: what was fixed before the network was touched (the record key, or Zulip's
+    anchor) and what came back. A retry reads it, so an intent is posted at most once and its quota slot taken once."""
+    path = Path(state) / 'posting' / (hashlib.sha256(intent.encode()).hexdigest()[:24] + '.json')
+    return path, (json.loads(path.read_text()) if path.exists() else None)
+
+
+def tid(micros, clock):
+    """An AT Protocol TID: 53 bits of microseconds and 10 of clock id, base32-sortable."""
+    n, out = (micros << 10) | (clock & 1023), ''
+    for _ in range(13):
+        out, n = TID[n & 31] + out, n >> 5
+    return out
+
+
+def send(request, intent, state, credentials, client=None, limit=LIMIT, now=time.time):
+    """Network write, at most once per intent: the record key is fixed in the ledger before the first attempt, and a
+    retry that finds a record under it adopts that record. Credentials go only to the fixed PDS via Client."""
+    from transport.bridge import write_atomic
+    path, got = ledger(state, intent)
+    if got and got.get('result'):
+        return got['result']
+    client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
+    if fresh:
+        take_slot(Path(state), now(), limit)
+        got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16))}
+        write_atomic(path, got)
     cred = json.loads(Path(credentials).expanduser().read_text())
     session = client.write('com.atproto.server.createSession',
                            {'identifier': cred['identifier'], 'password': cred['password']})
-    body = dict(request['body'], repo=session['did'])
-    result = client.write('com.atproto.repo.createRecord', body, token=session['accessJwt'])
-    with open(state / 'post-log.jsonl', 'a') as log:
-        log.write(canonical({'intent': intent, 'uri': result.get('uri'), 'cid': result.get('cid')}) + '\n')
+    if not fresh:  # an earlier attempt may have landed with its reply lost
+        try:
+            found = client.record(f"at://{session['did']}/{COLLECTION}/{got['rkey']}")
+        except Failure as f:
+            if 'RecordNotFound' not in f.detail:
+                raise
+    if found is None:
+        found = client.write('com.atproto.repo.createRecord', dict(request['body'], repo=session['did'], rkey=got['rkey']),
+                             token=session['accessJwt'])
+    result = {'uri': found['uri'], 'cid': found['cid']}
+    write_atomic(path, dict(got, result=result))
     return result
+
+
+def record_sent(state, host):
+    """Tell the host of every posted draft it has not confirmed: registration is retried on its own, never by posting
+    again. -> the drafts recorded now."""
+    from transport.bridge import write_atomic
+    done = []
+    for path in sorted((Path(state) / 'outbox').glob('*.json')):
+        d = json.loads(path.read_text())
+        obj = draft_object(d)
+        if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
+            got = record_posted(host, d['sent'], obj, slot_record(d['slot']) if d.get('slot') else None, wiki_target(d['text']))
+            write_atomic(path, dict(d, recorded=got))
+            done += [path.name] if got.get('status') != 'error' else []
+    return done
 
 
 def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=None, client=None, intent=None, object=None):
@@ -149,11 +201,13 @@ def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=Non
     request = build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body))
     limit, _ = quota_limit(host)
     result = send(request, intent or f'draft-{path.stem}', Path(state), credentials, client=client, limit=limit)
-    object = object or d.get('object')
-    if object:
-        result['recorded'] = record_posted(host, result, object, slot, wiki_target(body))
     from transport.bridge import write_atomic
-    write_atomic(path, dict(d, text=body, posted=True, **({} if body == d['text'] else {'original': d.get('original', d['text'])})))
+    d = dict(d, text=body, posted=True, sent=result, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
+    write_atomic(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
+    object = object or draft_object(d)
+    if object:
+        result = dict(result, recorded=record_posted(host, result, object, slot, wiki_target(body)))
+        write_atomic(path, dict(d, recorded=result['recorded']))
     return result
 
 
@@ -182,7 +236,7 @@ def main(argv=None, out=None, client=None):
             d = json.loads(Path(a.draft).read_text())
             if d.get('posted'):
                 raise Failure('draft_already_posted')
-            a.reply_to, a.record, a.slot = a.reply_to or d.get('replyTo'), a.record or d.get('object'), a.slot or d.get('slot')
+            a.reply_to, a.record, a.slot = a.reply_to or d.get('replyTo'), a.record or draft_object(d), a.slot or d.get('slot')
         if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) + bool(a.draft) != 1 or (not (a.text_file or a.draft) and not a.body_file):
             raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
         if a.draft:

@@ -76,7 +76,7 @@ if [[ -n $handle ]]; then
     req GET /AGENTS.md/me "" "$credential"
     if [[ $code == 401 ]]; then pass "an unverified credential is 401"; else fail "unverified /me answered $code"; fi
     if [[ -n $proof ]]; then
-      req POST /AGENTS.md/verify "{\"handle\":\"$handle\",\"uri\":\"$proof\"}"
+      req POST /AGENTS.md/verify "{\"handle\":\"$handle\",\"uri\":\"$proof\"}" "$credential"
       if [[ $code == 200 && $(json "d['status']") == verified ]]; then pass "verified $(json "d['did']")"; else fail "verify: $code $(cat "$work/body")"; fi
       req GET "/AGENTS.md/world/$object" "" "$credential"
       if [[ $code == 200 && $(json "d['status']") == viewed ]]; then pass "viewed $object at version $(json "d['version']") pin $(json "d.get('pin')")"; else fail "view $object: $code $(cat "$work/body")"; fi

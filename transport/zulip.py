@@ -11,6 +11,7 @@ decides anything: routing, quota and admission stay with the bridge and the host
 """
 import argparse
 import configparser
+import hashlib
 import json
 import re
 import sys
@@ -22,7 +23,7 @@ from pathlib import Path
 from transport.bridge import unposted, write_atomic
 from transport.delve import Failure, canonical, http_transport
 from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import quota_limit, record_posted, slot_record, take_slot, wiki_target
+from transport.post import draft_object, ledger, quota_limit, record_posted, slot_record, take_slot, wiki_target
 
 STREAM = 'delvetalk'
 BATCH = 100
@@ -93,6 +94,19 @@ class Client:
     def send(self, stream, topic, content):
         return self.call('POST', 'messages', {'type': 'stream', 'to': stream, 'topic': topic, 'content': content})
 
+    def newest(self, stream):
+        """The id of the stream's newest message (0 for none): the anchor a delivery is persisted with before it is sent."""
+        got = self.call('GET', 'messages', {'anchor': 'newest', 'num_before': 1, 'num_after': 0, 'apply_markdown': 'false',
+                                            'narrow': json.dumps([{'operator': 'channel', 'operand': stream}])})
+        return max([m['id'] for m in got.get('messages') or []] or [0])
+
+    def sent_after(self, stream, topic, content, after):
+        """Our own message with this content in the topic after the anchor, or None: a send whose reply was lost."""
+        narrow = [{'operator': 'channel', 'operand': stream}, {'operator': 'topic', 'operand': topic}, {'operator': 'sender', 'operand': self.email}]
+        got = self.call('GET', 'messages', {'anchor': after, 'include_anchor': 'false', 'num_before': 0, 'num_after': BATCH,
+                                            'narrow': json.dumps(narrow), 'apply_markdown': 'false'})
+        return next((m['id'] for m in got.get('messages') or [] if m['content'].strip() == content.strip()), None)
+
 
 def created_at(message):
     """Zulip stamps seconds; the message id fills the microseconds so that order within a second is the stream's order."""
@@ -118,10 +132,10 @@ class ZulipObserver(Observer):
         mentions = [{'did': None, 'handle': n} for n in names]
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
-        kind, wiki, spell = classify(text, parent, mentions, tags, summon=bot)
+        kind, wiki = classify(text, parent, mentions, tags, summon=bot)
         return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + str(m['sender_id']), 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
-                'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki, 'spell': spell}
+                'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
 
     def store(self, m, me):
         """Fold one message into its topic; observe it unless it is ours. True if new."""
@@ -171,14 +185,20 @@ class ZulipObserver(Observer):
                 return
 
 
-def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=None):
-    """Post `text` to stream>topic within the host's hourly budget, then tell the host the post exists for `obj`
-    (world-posted), so replies in the topic route to it. -> {uri, cid, recorded}. Raises Failure('rate_limited')."""
-    limit, _ = quota_limit(host)
-    take_slot(Path(state), time.time() if now is None else now, limit)
-    sent = client.send(stream, topic, text)
-    result = {'uri': uri_of(stream, topic, sent['id']), 'cid': str(sent['id'])}
-    return {**result, 'recorded': record_posted(host, result, obj, slot, wiki_target(text)) if obj else None}
+def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=None, intent=None):
+    """Post `text` to stream>topic once per intent within the host's hourly budget, then tell the host the post exists for
+    `obj` (world-posted), so replies in the topic route to it. The stream's newest id is persisted before the send; a retry
+    adopts our message with this text after it rather than sending again. -> {uri, cid, recorded}. Raises Failure."""
+    path, got = ledger(state, intent or f'zulip:{stream}/{topic}/' + hashlib.sha256(text.encode()).hexdigest()[:16])
+    if got is None:
+        got = {'after': client.newest(stream)}
+        take_slot(Path(state), time.time() if now is None else now, quota_limit(host)[0])
+        write_atomic(path, got)
+    if not got.get('result'):
+        mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
+        got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
+        write_atomic(path, got)
+    return {**got['result'], 'recorded': record_posted(host, got['result'], obj, slot, wiki_target(text)) if obj else None}
 
 
 def post_drafts(state, host, client, stream, now=None, topic=None):
@@ -187,12 +207,6 @@ def post_drafts(state, host, client, stream, now=None, topic=None):
     (a section edit waits until its page is recorded and the bridge has given it the page post to reply to).
     With `topic` the playtest lives in that one topic: a page publication goes there too, and nothing is posted elsewhere."""
     sent, held = [], []
-    for path in sorted((Path(state) / 'outbox').glob('*.json')):  # posted, but the host has not yet been told
-        d = json.loads(path.read_text())
-        obj = d.get('object') or (d.get('publication') or {}).get('object')
-        if d['posted'] and obj and ((d.get('sent') or {}).get('recorded') or {}).get('status') == 'error':
-            again = record_posted(host, d['sent'], obj, slot_record(d['slot']) if d.get('slot') else None, wiki_target(d['text']))
-            write_atomic(path, dict(d, sent=dict(d['sent'], recorded=again)))
     for path, d in unposted(state):
         if not d['text']:
             continue
@@ -207,15 +221,17 @@ def post_drafts(state, host, client, stream, now=None, topic=None):
             continue
         if target is None:
             continue
-        obj = d.get('object') or (d.get('publication') or {}).get('object')
+        obj = draft_object(d)
         try:
-            got = deliver(state, host, client, target[0], target[1], text, obj, slot_record(d['slot']) if d.get('slot') else None, now)
+            got = deliver(state, host, client, target[0], target[1], text, obj, slot_record(d['slot']) if d.get('slot') else None, now,
+                          intent=f'zulip-{path.stem}')
         except Failure as f:
             held.append({'file': path.name, 'reason': f.code})
             if f.code == 'rate_limited':
                 break
             continue
-        write_atomic(path, dict(d, posted=True, sent=got))
+        recorded = got.pop('recorded')
+        write_atomic(path, dict(d, posted=True, sent=got, **({'recorded': recorded} if recorded else {})))
         sent.append(got['uri'])
     return {'posted': sent, **({'held': held} if held else {})}
 

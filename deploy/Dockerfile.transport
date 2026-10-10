@@ -8,6 +8,8 @@ FROM python:3.13-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6
 RUN groupadd -g 10425 delvetalk && useradd -u 10425 -g 10425 -d /nonexistent -M -s /usr/sbin/nologin delvetalk
 COPY --from=host /usr/local/bin/delvetalk-obend /usr/local/bin/delvetalk-obend
 WORKDIR /app
+COPY deploy/requirements-transport.txt ./deploy/
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r deploy/requirements-transport.txt
 COPY transport ./transport
 COPY docs/AGENTS-API.md docs/AGENTS-EXAMPLES.md ./docs/
 COPY world ./world
