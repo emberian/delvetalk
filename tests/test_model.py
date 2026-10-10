@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 from transport import interpret, model
-from transport.hostproc import Host
+
+from deploy.serve import Pipe
 
 REQ = {'system': 'You interpret utterances.', 'user': 'plant a fern'}
 
@@ -93,7 +94,7 @@ class Interpret(unittest.TestCase):
         stub = d / 'stub'
         stub.write_text(STUB % (sys.executable, str(d / 'pending.json'), str(self.log)))
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-        self.host = Host(None, str(stub))
+        self.host = Pipe(str(stub))
         self.addCleanup(self.host.close)
         self.state = d / 'state'
         self.calls = []
@@ -119,7 +120,7 @@ class Interpret(unittest.TestCase):
         d = Path(self.tmp.name)
         it = dict(item(1), policy={'model': 'claude-haiku-5-5', 'system': 'forms...\n\nParticipant: plant 1'})
         (d / 'pending.json').write_text(json.dumps({'pending': [it]}))
-        host = Host(None, str(d / 'stub'))
+        host = Pipe(str(d / 'stub'))
         self.addCleanup(host.close)
         interpret.run(self.state, host, self.ask)
         sent = self.calls[0]
@@ -146,7 +147,7 @@ class Interpret(unittest.TestCase):
         interpret.run(self.state, self.host, self.ask)
         d = Path(self.tmp.name)  # the journal restored from before i1 settled, its receipt file from after
         (d / 'pending.json').write_text(json.dumps({'pending': [item(1)]}))
-        restored = Host(None, str(d / 'stub'))
+        restored = Pipe(str(d / 'stub'))
         self.addCleanup(restored.close)
         again = interpret.run(self.state, restored, self.ask)
         self.assertEqual((again['settled'], len(self.calls)), (['i1'], 2))

@@ -12,11 +12,15 @@
 # names, so the Caddy route needs no change; the old systemd
 # delvetalk-proxy.socket listens on the same address and must be stopped first.
 #
-# ONE WRITER PER JOURNAL. `delvetalk-hostd` is the only program that spawns the
-# host and opens the journal. It holds /data/journal.lock for its life (exit 75
-# if taken) and serves the HTTP front, the bridge and the interpreter over one
-# unix socket, /data/state/host.sock, so they are plain clients and may start,
-# stop and restart without touching the world.
+# ONE WRITER PER DIRECTORY. `delvetalk-host` is `delvetalk-obend serve`, the
+# only process that opens a journal. It holds /data/state/journal.lock for its
+# life (exit 75 if taken), keeps every world's journal in /data/state
+# (`town.journal`, `<world>.journal`, heaps/) and serves the HTTP front, the
+# bridge and the interpreter over /data/state/host.sock, so they are plain
+# clients and may start, stop and restart without touching the world. The
+# opener's ops and world-root take the root socket, /run/delvetalk-root/root.sock,
+# a separate host directory mounted into delvetalk-host, delvetalk-ops and the
+# hand (compose.hand.yml) and into nothing else: the opener's authority is a mount.
 #
 # Every shell `$` in this file would be compose's; there are no shell bodies.
 
@@ -36,26 +40,30 @@ x-service: &service
   environment:
     DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}  # .env names the portal for every program (transport/identity.py ORIGIN)
   volumes:
-    # One directory: world.journal, journal.lock, state/ (identity.sqlite,
-    # heaps/, outbox/, observe.sqlite, interpretations/, pid files). A host
-    # path, not a named volume, as the edge keeps /var/lib/dregg/<service>:
-    # it is what deploy/backup.sh reads.
-    - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
+    # The clients (front, bridge, interpreter) mount state/ only: serve's
+    # directory (town.journal, journal.lock, heaps/, library/, host.sock) and
+    # their own files (identity.sqlite, outbox/, observe.sqlite, interpretations/,
+    # pid files). The host and ops mount all of /data. A host path, not a named
+    # volume, as the edge keeps /var/lib/dregg/<service>: it is what
+    # deploy/backup.sh reads.
+    - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "5" }
 
 services:
-  # The single writer: the host process, the world journal, every private heap.
-  delvetalk-hostd:
+  # The single writer: every world's journal and every private heap, in one process.
+  delvetalk-host:
     <<: *service
-    command: ["python3", "-m", "transport.hostd", "--state", "/data/state", "--journal", "/data/world.journal", "--lock", "/data/journal.lock"]
-    environment:
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}  # the world's opener: ember
-    # Replay on start recompiles every created object (~0.2 to 1 s each), and up
-    # to 8 private heaps run as their own host processes. The old systemd unit's
-    # measured need was a 4 GiB address space and about 62 MiB RSS for a tiny world.
+    command: ["delvetalk-obend", "serve", "--state", "/data/state", "--root-socket", "/run/delvetalk-root/root.sock",
+              "--opener", "${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}", "--library", "/app/world/lib"]
+    network_mode: none  # unix sockets only: the host never opens a network connection
+    volumes:
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
+      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
+    # Replay at a world's first op recompiles every created object (~0.2 to 1 s
+    # each); a world idle ten minutes is closed and reopened by replay. The old
+    # systemd unit's measured need was about 62 MiB RSS for a tiny world.
     mem_limit: 2g
     mem_reservation: 256m
     cpus: 1.0
@@ -63,7 +71,7 @@ services:
     healthcheck:
       # The question only a live host can answer: its journal height from world-status
       # (the host has no height when world-open refused the journal).
-      test: ["CMD", "python3", "-c", "import sys; from transport.hostproc import HostClient; sys.exit(not isinstance(HostClient('/data/state/host.sock').send({'op': 'world-status'}).get('height'), int))"]
+      test: ["CMD", "python3", "-c", "import sys; from transport.host import HostClient; sys.exit(not isinstance(HostClient('/data/state/host.sock').send({'op': 'world-status'}).get('height'), int))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -96,7 +104,7 @@ services:
     ports:
       - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"
     depends_on:
-      delvetalk-hostd: { condition: service_healthy }
+      delvetalk-host: { condition: service_healthy }
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 64
@@ -119,7 +127,7 @@ services:
     <<: *service
     command: ["python3", "-m", "transport.bridge", "run", "--state", "/data/state", "--poll", "60"]
     depends_on:
-      delvetalk-hostd: { condition: service_healthy }
+      delvetalk-host: { condition: service_healthy }
     mem_limit: 1g
     cpus: 0.5
     pids_limit: 64
@@ -152,14 +160,22 @@ services:
       retries: 3
       start_period: 180s
 
-  # Operator commands, never started by `up`:
-  #   docker compose run --rm delvetalk-ops python3 -m deploy.seed ...
+  # Operator commands, never started by `up`; the root socket is mounted here:
+  #   docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
   #   docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
   delvetalk-ops:
     <<: *service
     profiles: ["ops"]
     restart: "no"
     command: ["python3", "-c", "print('give a command')"]
+    environment:
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
+      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
+      DELVETALK_STATE: /data/state
+      DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
+    volumes:
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
+      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
 
 secrets:
   repo_key:

@@ -49,6 +49,20 @@ def slip(x, did=None):
                             note=T['note'].format(clause=e(f"{out.get('class')}: {clause}" if clause else str(out.get('class')))) if out.get('tag') == 'refused' else '')
 
 
+A_DID = re.compile(r'did:plc:[a-z2-7]{24}')
+
+
+def named(markup, names):
+    """A page as a person reads it: each DID in its text as the handle the host's registry gave its avatar, else `a
+    stranger` and the DID's last four (VOICE: a DID is never shown to a person). Never in a tag, where an href keeps the
+    id, nor in a <pre>: a card, a law and a source are verbatim."""
+    out, verbatim = [], 0
+    for part in re.split(r'(<[^>]*>)', markup):
+        verbatim += part.startswith('<pre') - part.startswith('</pre')
+        out.append(part if part.startswith('<') or verbatim else A_DID.sub(lambda m: e(names.get(m[0]) or f'a stranger …{m[0][-4:]}'), part))
+    return ''.join(out)
+
+
 def framed(text, kind='offer'):
     """A card's text in its frame (T[kind]); the `hob:` lines at its head or tail are hob's own, beside the frame, never in it."""
     lines = text.split('\n')
@@ -60,15 +74,23 @@ def framed(text, kind='offer'):
     return hob(lines[:head]) + (T[kind].format(text=e(card)) if card.strip() else '') + hob(lines[tail:])
 
 
-def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=()):
+BRIEF = 5  # receipts the brief text view keeps
+
+
+def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=(), brief=None):
     """An object: its card (sacred text), its doors, a way to play it, its actions as forms from the method table, its law and
-    source as code, its receipts as slips."""
+    source as code, its receipts as slips. `brief` (the text view's default, the href of the whole page): the card, the
+    doors, the actions as spell templates and the newest BRIEF receipts; the law, the source and the rest are a link away."""
     shown = framed(card, 'card') if card else T['state'].format(state=dl(view.get('state')))
     play = T['playlink'].format(href=e(quote(name, safe='/:')), id=e(name)) if who else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),
                                 lines=len((seen.get('source') or '').splitlines())) if seen else ''
     forms = ''.join(form(name, a) for a in acts if a['name'] != 'receive')
+    if brief:
+        spells = ''.join(T['spell'].format(spell=e(a['spell'])) for a in acts if a.get('spell'))
+        forms, source, entries = '', T['whole'].format(href=e(brief)), entries[:BRIEF]
+        play += T['spells'].format(spells=spells, id=e(name)) if acts else ''
     return page(name, who, T['object'].format(id=e(name), version=e(str(view.get('version'))), yours=yours(name, did), shown=shown, play=play,
                                               doors=door_nav(doors), actions=T['actions'].format(forms=forms, href=e(quote(name, safe='/:')), id=e(name)) if forms else '', source=source,
                                               ledger=T['ledger'].format(slips=''.join(slip(x, did) for x in entries)) if entries else ''))

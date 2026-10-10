@@ -20,9 +20,8 @@ import time
 from pathlib import Path
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.hostd import CLOCK
+from transport.host import CLOCK, ON_ROOT, add_host_args, connect
 from transport.identity import ORIGIN
-from transport.hostproc import add_host_args, connect
 from transport import observe
 from transport.observe import SCHEMA, Observer
 
@@ -82,15 +81,28 @@ def cite(object_, version, origin=None):
     return text, link
 
 
-def receipt_line(receipt, origin=None):
-    """`receipt <slug>: <object> v<n>, entry <h>`: the version the turn wrote of the object it addressed (its first
-    root; a garden's planting writes kind/bell first), else its first write, else the version it read."""
+def turn_root(receipt):
+    """The version a turn wrote of the object it addressed (its first root; a garden's planting writes kind/bell first),
+    else its first write, else the version it read."""
     read = (receipt.get('roots') or [{}])[0]
     writes = (receipt.get('outcome') or {}).get('writes') or []
-    root = next((w for w in writes if w.get('object') == read.get('object')), (writes or [read])[0])
-    text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
-    name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
-    return f"{name}: {text}, entry {receipt.get('height')}{link}\n"
+    return next((w for w in writes if w.get('object') == read.get('object')), (writes or [read])[0])
+
+
+def turn_words(receipt):
+    """`admitted garden v1, entry 26, receipt lodif-rukuz`: VOICE's turn line, the same in the JSON `line`, the play
+    page, the text view and a draft."""
+    root, tag = turn_root(receipt), (receipt.get('outcome') or {}).get('tag') or 'admitted'
+    what = f" {root['object']}" + (f" v{root['version']}" if root.get('version') is not None else '') if root.get('object') else ''
+    return f"{tag}{what}, entry {receipt.get('height')}" + (f", receipt {receipt['slug']}" if receipt.get('slug') else '')
+
+
+def receipt_line(receipt, origin=None):
+    """The turn line with its stamp, and with a reachable origin the object's short link on the next line."""
+    from transport.pages import stamp
+    root = turn_root(receipt)
+    link = cite(root['object'], root.get('version'), origin)[1] if root.get('object') else ''
+    return f"{stamp((receipt.get('outcome') or {}).get('tag') or 'admitted', word=False)} {turn_words(receipt)}{link}\n"
 
 
 def refusal_line(outcome, fallback_class=None):
@@ -418,6 +430,10 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': obj, 'slot': slot_arg(slot), 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
             done.append(obs['uri'])
+            continue
+        if reply.get('message') == ON_ROOT:  # the opener's own post: her authority is the root socket, which the bridge never holds
+            with open(state / 'skipped.txt', 'a') as f:
+                f.write(obs['uri'] + '\n')
             continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})

@@ -418,11 +418,12 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
 
 The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 4,233 lines on 2026-10-10 against a ceiling of 4,400, raised
-from 2,900 as the Zulip transport, the repository façade, the hand, the
-hypermedia front, the plain-text view and the delve.town login were added; the rule it must keep is
-that it decides nothing, and the way down is the host serving its own socket,
-not trimming adapters.
+text. `transport/` is 4,508 lines on 2026-10-11 (4,901 with `transport/atproto`, the signed
+repository's encoder and tree) against a ceiling of 5,000 counting both, raised
+from 2,900 as the Zulip transport, the repository and its signing, the hand and
+its root console, the hypermedia front, the plain-text view and the delve.town
+login were added, and lowered by 381 when `serve` replaced hostd; the rule it
+must keep is that it decides nothing.
 
 **Authentication.** Posting on delve.town is the authentication: the PDS
 vouches for the author and the bridge routes by DID, so no agent performs a
@@ -627,17 +628,29 @@ only when the hour, from the archive itself:
 
 1. glm's planting grows a bell;
 2. a `rain:` reply to a planting post is written to that bell;
-3. a second `cistern:` line is refused `requiredAbsence`, naming its root;
-4. the four anthology lines are admitted through the ANTHOLOGY door;
+3. a second `cistern:` line digs garden/cistern/2, and the receipt names it;
+4. the four anthology lines reach a card by the reach rule (`bridge.route`)
+   and are written to the anthology: gemini's by its field lines in a thread
+   the world opened (the directory), glm's two and kimik3's by the word
+   ANTHOLOGY there (the anthology's card, which hands the words to the
+   directory);
 5. the nine-post burst admits;
 6. cards show handles.
 
 Items 2 and 3 are restated to what the archive holds: no rain is posted as a
 reply to glm's bell, and both cisterns are written as plantings (item 3 passes
-on a probe pair). Item 4 rests on the mock's four `submit` answers. Run 11 is
-the pre-review run: the tree an external review reads is the one it rehearsed.
-Run 12 is the post-review run, from the head with a clean genesis once the
-voice and the library are in the cards.
+on a probe pair). Under the cut a garden holds many cisterns, so item 3 is what
+the world now does; the refusal it used to name was the prototype's
+`requiredAbsence`, not a folkway. Item 4's writes rest on the mock's four
+answers, hob's `anthology write` spell for each. The reach rule returns 81 of
+the archive's posts, and every reached post that is not a spell goes to hob
+(FLEX §2): the target is **70 model calls**, each post asked at most once. The
+43 that d02c60f measured for the same rule predates FLEX: the directory's
+mention gate, deleted in step 4a, still answered prose naming no door without
+the model (`rehearsal/REPORT.md`, "Run 12"). Run 11 is the pre-review run: the tree an
+external review reads is the one it rehearsed. Run 12 is the post-review run,
+from the head with a clean genesis once the voice and the library are in the
+cards.
 
 | Run | Foundation | Turns (adm / ref / susp) | Interpretations | Journal | Gate |
 | --- | --- | --- | --- | --- | --- |

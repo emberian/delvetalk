@@ -27,17 +27,18 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.host import serve, start_hostd, stop_hostd
+from tests.host import serve, served
 from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, Provider
-from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
+from tests.test_turn_world import closure, counter_modules, label, nat, record
 from transport import delve, identity
+from deploy.serve import LIBRARY
 from transport.atproto import sign
 from transport.atproto.cbor import CID, block, decode, encode, read_car
 from transport.atproto.mst import Tree, common_prefix, layer
 from transport.repo import Repo
-from transport.hostproc import LIBRARY, HostClient
-from transport.http import Front, RemoteHeaps
+from transport.host import HostClient
+from transport.http import Front
 from transport.identity import ORIGIN
 
 HOST = urllib.parse.urlsplit(ORIGIN).netloc
@@ -104,13 +105,13 @@ class Repository(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.provider = Provider()
-        cls.hostd = start_hostd(cls.tmp.name, BINARY, opener=DID, library=LIBRARY)
-        sock = Path(cls.tmp.name) / 'host.sock'
+        cls.hostd = served(cls.tmp.name, opener='did:plc:' + 'o' * 24, library=LIBRARY)  # DID is a resident the front logs in
+        sock = cls.hostd.sock
         cls.host = HostClient(sock)
         cls.now, cls.token = [1000.0], None
         ident = identity.Identity(cls.tmp.name, delve.Client(cls.provider), clock=lambda: cls.now[0])
         cls.front = Front(('127.0.0.1', 0), cls.host, ident, clock=lambda: cls.now[0],
-                          heaps=RemoteHeaps(sock, Path(cls.tmp.name) / 'heaps'), repl=HostClient(sock, stateless=True))
+                          heaps=Path(cls.tmp.name) / 'heaps', repl=HostClient(sock, stateless=True))
         cls.port = cls.front.server_address[1]
         serve(cls.front)
         send = cls.host.send
@@ -131,7 +132,7 @@ class Repository(unittest.TestCase):
     def tearDownClass(cls):
         cls.front.shutdown()
         cls.front.server_close()
-        stop_hostd(cls.hostd)
+        cls.hostd.stop()
         cls.tmp.cleanup()
 
     def get(self, path, token=None, raw=False):

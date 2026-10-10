@@ -4,7 +4,7 @@
 #   deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--no-welcome] [--port 8765] [--dir DIR]
 #   deploy/playtest.sh --stop [--dir DIR]
 #
-# Starts hostd on a FRESH journal (DIR/run-<stamp>/, DIR/current points at it; older runs are left in place),
+# Starts `delvetalk-obend serve` over a FRESH directory (DIR/run-<stamp>/state, the town's journal state/town.journal; DIR/current points at it; older runs are left in place),
 # runs genesis, posts docs/previews/zulip-welcome-v3.txt (STUDIO pointing at the local front on --port) to the stream's `welcome` topic (or --topic NAME, the only topic then observed and answered in) and records it against
 # `directory`, then runs the local front, the bridge (--source zulip: observe, turn, post drafts back automatically) and the
 # interpreter, each every --poll seconds. The bot is the .zuliprc's user; it must be subscribed to the stream.
@@ -29,7 +29,7 @@ done
 if [[ -n $stop ]]; then
   [[ -L $dir/current ]] || { echo "playtest: nothing running under $dir" >&2; exit 1; }
   state=$(cd "$dir/current" && pwd -P)/state
-  for name in bridge interpret front hostd; do  # the host last: the clients are its tenants
+  for name in bridge interpret front hostd; do  # the host last (serve writes hostd.pid itself): the clients are its tenants
     pidfile=$state/$name.pid
     [[ -f $pidfile ]] || continue
     pid=$(cat "$pidfile")
@@ -49,11 +49,12 @@ ln -sfn "$run" "$dir/current"
 export PYTHONPATH=$PWD
 log() { echo "$run/$1.log"; }
 
-python3 -m transport.hostd --state "$state" --journal "$run/world.journal" --opener "$(python3 -c 'from deploy.genesis import OPENER; print(OPENER)')" >"$(log hostd)" 2>&1 &
-for _ in $(seq 100); do [[ -S $state/host.sock ]] && break; sleep 0.2; done
-[[ -S $state/host.sock ]] || { echo "playtest: hostd did not come up; see $(log hostd)" >&2; exit 1; }
+nohup "${DELVETALK_OBEND:-delvetalk-obend}" serve --state "$state" --opener "$(python3 -c 'from deploy.genesis import OPENER; print(OPENER)')" \
+  --library world/lib >"$(log host)" 2>&1 &
+for _ in $(seq 600); do [[ -S $state/host.sock && -S $state/root/root.sock ]] && break; sleep 0.2; done
+[[ -S $state/root/root.sock ]] || { echo "playtest: serve did not come up; see $(log host)" >&2; exit 1; }
 
-python3 -m deploy.genesis --host-socket "$state/host.sock"
+python3 -m deploy.genesis --root-socket "$state/root/root.sock"
 if [[ -z $nowelcome ]]; then
 sed "s#http://127.0.0.1:8765#http://127.0.0.1:$port#" docs/previews/zulip-welcome-v3.txt >"$run/welcome.txt"
 python3 -m transport.zulip post --state "$state" --zuliprc "$rc" --stream "$stream" --topic "${topic:-welcome}" \
@@ -62,7 +63,7 @@ else  # the stream already holds the welcome and the page cards: make the page d
   python3 - "$state" <<'PY'
 import sys
 from transport.bridge import mark_posted, publication_drafts, unposted
-from transport.hostproc import HostClient
+from transport.host import HostClient
 state = sys.argv[1]
 publication_drafts(state, HostClient(f'{state}/host.sock'))
 for path, d in unposted(state):

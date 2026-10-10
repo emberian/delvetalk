@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Per-op round trip across the transport boundary, in medians: world-status x1000 and Counter bumps x200 through
-(a) hostd's socket with a connection per op, (b) one persistent connection (transport.hostproc.HostClient), (c) the raw pipe to the host process.
+(a) serve's socket with a connection per op, (b) one persistent connection (transport.host.HostClient), (c) the raw pipe to a host process.
 
   DELVETALK_OBEND=/path/to/delvetalk-obend python3 deploy/bench-boundary.py
 """
@@ -16,11 +16,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from deploy.seed import closure, modules_on_disk  # noqa: E402
-from transport.hostd import Hostd  # noqa: E402
-from transport.hostproc import BINARY, Host, HostClient  # noqa: E402
-import threading  # noqa: E402
+from deploy.serve import Pipe, Served  # noqa: E402
+from transport.host import HostClient  # noqa: E402
 
-OWNER = 'did:plc:bench'
+OWNER = 'bench'  # a resident, not the opener: the public socket takes its turns
 EMPTY = {'tag': 'record', 'fields': []}
 
 
@@ -52,13 +51,12 @@ def median_ms(send, make, n):
 
 def main():
     with tempfile.TemporaryDirectory(prefix='dt-bench-') as tmp:
-        d = Hostd(tmp, str(Path(tmp) / 'world.journal'), BINARY, opener=OWNER)
-        threading.Thread(target=d.serve_forever, daemon=True).start()
-        sock = Path(tmp) / 'host.sock'
+        d = Served(Path(tmp) / 'state')
+        sock = d.sock
         made = PerOp(sock).send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
                                  'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})
         assert made['status'] == 'created', made
-        raw = Host(str(Path(tmp) / 'raw.journal'), BINARY, clock='transport', opener=OWNER)
+        raw = Pipe(journal=Path(tmp) / 'raw.journal', clock='transport')
         assert raw.send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
                          'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})['status'] == 'created'
         status = lambda i: {'op': 'world-status'}
@@ -70,8 +68,7 @@ def main():
         for name, send, tag in (('(a) socket per op', PerOp(sock).send, 'a'), ('(b) persistent socket', HostClient(sock).send, 'b'),
                                 ('(c) raw pipe', raw.send, 'c')):
             rows.append((name, median_ms(send, status, 1000), median_ms(send, bump(tag), 200)))
-        d.shutdown()
-        d.close()
+        d.stop()
         raw.close()
     print(f"{'':24}{'world-status x1000':>22}{'Counter bump x200':>22}")
     for name, s, b in rows:
