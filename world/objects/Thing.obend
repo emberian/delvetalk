@@ -44,9 +44,9 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {name: Plans.Edit::<String, {}>.keep({}), description: Plans.Edit::<String, {}>.keep({}), holder: Plans.Edit::<Plans.Reference, {}>.keep({}), location: Plans.Edit::<Plans.Reference, {}>.keep({}), offer: Plans.Edit::<Offer, {}>.keep({})}
+  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), holder: Plans.Edit.keep({}), location: Plans.Edit.keep({}), offer: Plans.Edit.keep({})}
 # Anyone moves a thing (its own code checks who holds it); only its owner renames it.
-law owner: request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description))
+law owner "only the owner renames or redescribes it; anyone moves it": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description))
 # The second tier: custody moves from one holder to another only by an accepted offer:
 # the new holder is the offer's `to`, the turn is that avatar's own call (context.caller),
 # and the clock (context.clock) is before `until`. Picking up (from nobody) and putting down (to
@@ -58,15 +58,14 @@ def transferable(offer: Offer, holder: Plans.Reference, context: Abi.Context) ->
     case none(_): Abi.Verdict.refused({clause: "noOffer"})
     case open(o): if Plans.same(holder, o.to) == false || context.caller != o.to.object then Abi.Verdict.refused({clause: "notOffered"}) else if context.clock >= o.until then Abi.Verdict.refused({clause: "expired"}) else Abi.Verdict.admitted({})
 def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Reference) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holder: Plans.Edit::<Plans.Reference, {}>.set({value: holder}), location: Plans.Edit::<Plans.Reference, {}>.set({value: location})})})):
-    case written(_): Place.Done.done({})
-    case _: Place.Done.refused({reason: "The write was not answered."})
+  let written(_) = perform(write {holder: set holder, location: set location})
+  Place.Done.done({})
 # Pick the thing up from its place: view the place, have it release the thing,
 # then record the holder. Only an unheld thing can be acquired.
 def person(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.principal}
 def acquire(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.isNobody(state.holder) == false then Place.Done.refused({reason: textConcat("Already held by ", state.holder.object)}) else look(state, person(context), context)
+  if Plans.isNobody(state.holder) == false then Place.Done.refused({reason: "Already held by {state.holder.object}"}) else look(state, person(context), context)
 def look(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.view({object: state.location})):
     case viewed(v): lying(state, by, context, v.state)
@@ -109,11 +108,11 @@ def offered(state: State, to: Plans.Reference, until: Nat, context: Abi.Context)
   if Plans.same(state.holder, person(context)) == false then Place.Done.refused({reason: "You are not holding it."}) else offerFrom(state, to, until, context)
 def offerFrom(state: State, to: Plans.Reference, until: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match state.offer:
-    case open(o): Place.Done.refused({reason: textConcat("Already offered to ", textConcat(Card.name(o.to.object, context), textConcat(" until ", textConcat(natText(o.until), "; withdraw it first."))))})
-    case none(_): if until <= context.clock then Place.Done.refused({reason: textConcat("until must be after the clock, now ", natText(context.clock))}) else if to.object == "" then Place.Done.refused({reason: "Offer it to someone."}) else offerWritten(Offer.open({to: to, until: until}), context)
+    case open(o): Place.Done.refused({reason: "Already offered to {Card.name(o.to.object, context)} until {natText(o.until)}; withdraw it first."})
+    case none(_): if until <= context.clock then Place.Done.refused({reason: "until must be after the clock, now {natText(context.clock)}"}) else if to.object == "" then Place.Done.refused({reason: "Offer it to someone."}) else offerWritten(Offer.open({to: to, until: until}), context)
 def offerWritten(offer: Offer, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {offer: Plans.Edit::<Offer, {}>.set({value: offer})})})):
-    case _: Place.Done.done({})
+  let written(_) = perform(write {offer: set offer})
+  Place.Done.done({})
 def offer(state: State, input: {to: Plans.Reference, until: Nat}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   offered(state, input.to, input.until, context)
 # give is offer, open for 1,000 clock units, for one release.
@@ -132,24 +131,34 @@ def withdrawing(state: State, context: Abi.Context) -> Activity<Plan, Response, 
 def transfer(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match state.offer:
     case none(_): Place.Done.refused({reason: "Nothing is offered."})
-    case open(o): if context.caller != o.to.object || context.principal != o.to.object then Place.Done.refused({reason: textConcat("It is offered to ", Card.name(o.to.object, context))}) else if context.clock >= o.until then Place.Done.refused({reason: textConcat("expired: the offer ran until clock ", natText(o.until))}) else releasing(state, o.to, context)
+    case open(o): if context.caller != o.to.object || context.principal != o.to.object then Place.Done.refused({reason: "It is offered to {Card.name(o.to.object, context)}"}) else if context.clock >= o.until then Place.Done.refused({reason: "expired: the offer ran until clock {natText(o.until)}"}) else releasing(state, o.to, context)
 def releasing(state: State, to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.call({object: state.holder, method: "release", argument: Plans.nothing()})):
     case _: transferred(to, context)
 def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holder: Plans.Edit::<Plans.Reference, {}>.set({value: to}), offer: Plans.Edit::<Offer, {}>.set({value: Offer.none({})})})})):
-    case _: Place.Done.done({})
+  let written(_) = perform(write {holder: set to, offer: set Offer.none({})})
+  Place.Done.done({})
 def holding(state: State, context: Abi.Context) -> String:
-  if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else textConcat("Held by ", textConcat(Card.name(state.holder.object, context), "."))
+  if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.name(state.holder.object, context)}."
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat(state.name, textConcat("\n", textConcat(state.description, textConcat("\n", textConcat(holding(state, context), textConcat("\n", textConcat(offerLine(state.offer, context), "(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n"))))))))
+  Document.text("{state.name}\n{state.description}\n{holding(state, context)}\n{offerLine(state.offer, context)}(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n")
 def offerLine(offer: Offer, context: Abi.Context) -> String:
   match offer:
     case none(_): ""
-    case open(o): textConcat("Offered to ", textConcat(Card.name(o.to.object, context), textConcat(if Card.reads(o.to.object, context) then " (you): accept it from your avatar" else "", textConcat(" until clock ", textConcat(natText(o.until), ".\n")))))
+    case open(o): offeredTo(o.to, o.until, context)
+def offeredTo(to: Plans.Reference, until: Nat, context: Abi.Context) -> String:
+  let yours = if Card.reads(to.object, context) then " (you): accept it from your avatar" else ""
+  "Offered to {Card.name(to.object, context)}{yours} until clock {natText(until)}.\n"
+form acquire:
+form offer:
+  to: text 1..128
+  until: natural 1..1000000000
+form withdraw:
+form give:
+  to: text 1..128
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "acquire", fields: Form.Fields.nil()}, tail: Card.Forms.cons({head: {card: "", action: "offer", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.cons({head: {name: "until", kind: Form.Kind.natural({min: 1n, max: 1000000000n})}, tail: Form.Fields.nil()})})}, tail: Card.Forms.cons({head: {card: "", action: "withdraw", fields: Form.Fields.nil()}, tail: Card.Forms.cons({head: {card: "", action: "give", fields: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})})})
+  Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.cons({head: giveForm(), tail: Card.Forms.nil()})})})})
 def door() -> Card.Door:
   {word: "thing", blurb: "Pick it up, put it down, offer it to someone who accepts."}
 # A spell's `to` names the recipient's avatar, which is the recipient's DID.
@@ -158,7 +167,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match routed:
     case act(a): if a.action == "acquire" then acquire(state, context) else if a.action == "withdraw" then withdraw(state, context) else if a.action == "offer" then offered(state, {world: context.world, object: Card.text(a.fields, "to")}, Card.natural(a.fields, "until"), context) else give(state, {to: {world: context.world, object: Card.text(a.fields, "to")}}, context)
-    case _: Card.answerLensedAs::<Edits, Place.State, Place.Done, Place.Done>(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else textConcat("Only the thing's owner changes it; that is ", Card.name(state.owner, context)), render(state, context), done)
+    case _: Card.answerLensedAs(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the thing's owner changes it; that is {Card.name(state.owner, context)}", render(state, context), done)
 def done(reply: Card.Reply) -> Place.Done:
   match reply:
     case done(_): Place.Done.done({})
@@ -167,4 +176,4 @@ def done(reply: Card.Reply) -> Place.Done:
     case usage(_): Place.Done.refused({reason: "Reply with a spell."})
     case silent(_): Place.Done.refused({reason: "not addressed"})
 def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})
+  Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})
