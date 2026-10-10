@@ -51,9 +51,22 @@ def entryArrowDepth : Nat := 64
 def maxModules : Nat := 64
 /-- One module's source text. -/
 def maxModuleBytes : Nat := 524288
-/-- All source text of a package offered to the import scan. (The host's
-    `maxPackageBytes`, 32 KiB, is a tighter host-only bound on `reprogram`.) -/
+/-- All source text of a package offered to the import scan. -/
 def maxPackageSourceBytes : Nat := 1048576
+/-- The source of one module offered as a program: what `reprogram`, `extend`, a `create` of
+source, a `check` Plan and a form's `source` field take (the host reads it as
+`Host.Limits.maxPackageBytes` and `formSourceMax`). Set by two measurements on persvati
+(lane/kernel13, 2026-10-10). Compile cost: Garden's entry module grown with copies of Card's
+declarations, compiled as the host does (`initial`, then all ten methods, one process): 32 KiB
+0.34 s, 64 KiB 0.35 s, 128 KiB 0.42 s, 256 KiB 0.64 s, 106 to 127 MB resident; Card copies alone,
+`check-package`: 0.09, 0.11, 0.15, 0.27 s. Every size compiles under a second. The scale rule
+(FOUNDATION §9) then decides: a program is also data, held whole in one state cell (a kind's body,
+a Workshop draft, a form's reply), and a cell is `maxCellBytes`; 128 KiB is the largest power of
+two that leaves its row the other half. -/
+def maxPackageBytes : Nat := 131072
+/-- One request line of the package driver (`PackageMain`): a compile request carries its
+sources, a run its whole artifact (an entry reaching 1,024 generic instances is about 2.6 MB). -/
+def maxFrameBytes : Nat := 16777216
 /-- A session's cache of prepared closures (parsed, specialized, elaborated, checked
 whole), bounded by the source bytes of the closures it holds. -/
 def frontCacheSourceBytes : Nat := 8388608

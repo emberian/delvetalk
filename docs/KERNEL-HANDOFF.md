@@ -112,9 +112,9 @@ Digests:
 
 Per machine segment (default / ceiling): `ticks` 100,000 / 1,000,000; `heap` 100,000 / 1,000,000 (cells); `stack` 10,000 / 100,000 (frames); `nodes` 100,000 / 1,000,000 (Data nodes materialized for a result or Plan); `bytes` 1 MiB / 16 MiB (the canonical DAG-CBOR size of a result or Plan, `Data.canonicalBytes`, `#guard`ed against `Canonical.encode` in Canonical.lean; and the largest single text-primitive reserve per step). Materialization spends each scalar's canonical bytes as it is reached and checks the whole value's size once it is whole (a list's cells cost nothing but its array head); before kernel10 it charged a legacy decimal-length encoding, so `true` needed 2 bytes (`test_tariff.CanonicalBytes`). `lawTicks` 100,000. `typeFuelDefault` 16384.
 
-Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64. Packages: `maxModules` 64, `maxModuleBytes` 512 KiB, `maxPackageSourceBytes` 1 MiB (import scan only), `frontCacheSourceBytes` 8 MiB, `entryCacheBytes` 64 MiB. Documents: `documentDepth` 64, `documentNodes` 65,536, `documentOutputBytes` 1 MiB, `offersPerTurn` 16 (their text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases that `TurnLoop.lean` reads.
+Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64, `maxFrameBytes` 16 MiB (a driver request line). Packages: `maxModules` 64, `maxModuleBytes` 512 KiB, `maxPackageSourceBytes` 1 MiB (import scan only), `maxPackageBytes` 128 KiB (one module offered as a program: reprogram, extend, create of source, a `check` Plan, a form's `source`; the host's `maxPackageBytes`/`formSourceMax` read it, §25), `frontCacheSourceBytes` 8 MiB, `entryCacheBytes` 64 MiB. Each refusal names its bound and number ("module M exceeds maxModuleBytes (524288 bytes)"). Documents: `documentDepth` 64, `documentNodes` 65,536, `documentOutputBytes` 1 MiB, `offersPerTurn` 16 (their text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases that `TurnLoop.lean` reads.
 
-Outside `Limits.lean`: `PackageMain` 16 MiB line frame; `EvaluateTerm` nesting 4096, default 200,000 ticks, `go 64` yields cap; `Canonical` reuses `nodesMax`/`bytesMax`; the host's own `Host.Limits` (`dataDepth` 8192, `plainDepth` 64, `maxTurnTicks` 1,000,000, `maxPackageBytes` 32768 …). Fuel parameters that are not budgets: `Typing.check` fuel, `Ty.dataFuel`, `termNestingCapacity` 4096, `conformsFuel`, `peelArrows`. A fuel exhaustion is a refusal, never a wrong answer, but it looks like a type error.
+Outside `Limits.lean`: `PackageMain` 16 MiB line frame; `EvaluateTerm` nesting 4096, default 200,000 ticks, `go 64` yields cap; `Canonical` reuses `nodesMax`/`bytesMax`; the host's own `Host.Limits` (`dataDepth` 8192, `plainDepth` 64, `maxTurnTicks` 1,000,000, `maxPackageBytes` 32768 until the host reads `Bounds.maxPackageBytes` …). Fuel parameters that are not budgets: `Typing.check` fuel, `Ty.dataFuel`, `termNestingCapacity` 4096, `conformsFuel`, `peelArrows`. A fuel exhaustion is a refusal, never a wrong answer, but it looks like a type error.
 
 ## 5. Tariff
 
@@ -805,3 +805,40 @@ fragment (`kindNumber`, `parse_kind_names`).
 No pinned tick count and no packet moved (pins: 0 recompiled). The three evaluators and the
 conformance generator needed nothing: no term form or primitive meaning changed, and conformance
 compares values, never costs. Full suite on hbox at the end: 1,148 tests, 0 failed.
+
+## 25. Honest bounds (lane/kernel13, after foundation 2cb6fd5)
+
+Measured on persvati (24 cores, load ~9, best of two or three; scripts `kernel13.sh`,
+`k13_gen*.py`, `k13_many.py` in the lane's scratchpad, the packages are generated):
+
+| package | instances | host-shaped compile (`initial` + 10 methods, one process) | resident |
+|---|---|---|---|
+| Garden, 31.7 KB | 140 | 0.34 s | 114 MB |
+| Garden + Card, 61 KB | 161 | 0.35 s | 116 MB |
+| Garden + Card + 2 copies, 117 KB | 203 | 0.42 s | 106 MB |
+| Garden + Card + 7 copies, 258 KB | 308 | 0.64 s (refused at 256 instances before item 2) | 127 MB |
+
+Card's declarations alone (one entry module, `check-package`, 20 entries in one process): 30 KB
+0.09 s / 0.17 s, 58 KB 0.11 / 0.24, 114 KB 0.15 / 0.27, 255 KB 0.27 / 0.54 s, 93-112 MB.
+
+1. The package bound. `Bounds.maxPackageBytes` = 128 KiB: every measured size compiles under a
+   second, so compile cost does not decide; the scale rule does. A program is also data held whole
+   in one state cell (a kind's body, a Workshop draft, a form's reply), a cell is `maxCellBytes`
+   (256 KiB), and 128 KiB leaves its row the other half. Every bound a package meets: the host's
+   `maxPackageBytes` (reprogram, extend, create of source, `check`; host request below) and
+   `formSourceMax` (a form's `source` field, 16,384 characters), the kernel's `maxModuleBytes`
+   (512 KiB a module), `maxPackageSourceBytes` (1 MiB, the import scan), `maxFrameBytes` (16 MiB a
+   driver line, which holds the artifact a `run` sends back: 1 MB for the 258 KB Garden, 2.6 MB for an
+   entry reaching 1,024 instances), `frontCacheSourceBytes` and `entryCacheBytes` (caches: a closure
+   or artifact larger than its cache is compiled and not held, never refused). Each kernel refusal
+   names its bound. `tests/test_package_bounds.py`: a 131,072-byte module checks, compiles and runs;
+   the module and import-scan bounds refuse by name.
+   Host request (lane/host15; `spec/Delvetalk/Host/Store.lean`): `def maxPackageBytes : Nat :=
+   Bounds.maxPackageBytes` and `def formSourceMax : Nat := Bounds.maxPackageBytes`; the four
+   refusals (TurnLoop `creationInputs` and `buildCreated`, Ops `checkSource` and `prepareProgram`)
+   read "package source exceeds maxPackageBytes (131072 bytes)". Then `tests/test_form_bounds.py`
+   (16384), `world/lib/Card.obend` and `world/objects/Policy.obend` ("1 to 16384 characters", objects
+   lane) follow. Until the per-cell bound (§15 step 4) replaces `maxStateBytes`, the Workshop's
+   `held` (12 drafts) cannot hold 12 full-size packages in 256 KiB: `test_relation_limits` fills it
+   with 16,384-byte packages and must keep doing so until that switch.
+

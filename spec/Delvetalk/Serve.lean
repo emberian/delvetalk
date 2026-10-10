@@ -244,7 +244,7 @@ def main (args : List String) : IO UInt32 := do
     let line := (got.drop ((parts.headD "").length + (parts.getD 1 "").length + 2)).toString
     IO.FS.writeFile pidfile (toString (← IO.Process.getPID))
     let request : Except String Json := do
-      if line.utf8ByteSize > 16777216 then throw "package frame exceeds 16 MiB"
+      if line.utf8ByteSize > Delvetalk.Bounds.maxFrameBytes then throw s!"package frame exceeds maxFrameBytes ({Delvetalk.Bounds.maxFrameBytes} bytes)"
       if !Delvetalk.scalarEscapesText line then throw "malformed Unicode escape"
       Json.parse line
     let (next, out) ← match request with
