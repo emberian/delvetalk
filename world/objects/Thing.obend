@@ -57,6 +57,50 @@ def transferable(offer: Offer, holder: Plans.Reference, context: Abi.Context) ->
   match offer:
     case none(_): Abi.Verdict.refused({clause: "noOffer"})
     case open(o): if Plans.same(holder, o.to) == false || context.caller != o.to.object then Abi.Verdict.refused({clause: "notOffered"}) else if context.clock >= o.until then Abi.Verdict.refused({clause: "expired"}) else Abi.Verdict.admitted({})
+# Why a thing refuses: each arm is a clause, `why` its reading (names already shown).
+sum Why:
+  alreadyHeld: {by: String}
+  placeHidden: {}
+  placeSilent: {}
+  notInPlace: {}
+  notHolding: {}
+  notHolder: {}
+  alreadyOffered: {to: String, until: Nat}
+  tooLate: {now: Nat}
+  noRecipient: {}
+  nothingOffered: {}
+  notOffered: {to: String}
+  expired: {until: Nat}
+def why(w: Why) -> String:
+  match w:
+    case alreadyHeld(a): "Already held by {a.by}"
+    case placeHidden(_): "The place is not visible."
+    case placeSilent(_): "The place did not answer."
+    case notInPlace(_): "It is not lying in its place."
+    case notHolding(_): "You are not holding it."
+    case notHolder(_): "Only its holder withdraws an offer."
+    case alreadyOffered(a): "Already offered to {a.to} until {natText(a.until)}; withdraw it first."
+    case tooLate(t): "until must be after the clock, now {natText(t.now)}"
+    case noRecipient(_): "Offer it to someone."
+    case nothingOffered(_): "Nothing is offered."
+    case notOffered(n): "It is offered to {n.to}"
+    case expired(e): "The offer ran until clock {natText(e.until)}"
+def clause(w: Why) -> String:
+  match w:
+    case alreadyHeld(_): "alreadyHeld"
+    case placeHidden(_): "placeHidden"
+    case placeSilent(_): "placeSilent"
+    case notInPlace(_): "notInPlace"
+    case notHolding(_): "notHolding"
+    case notHolder(_): "notHolder"
+    case alreadyOffered(_): "alreadyOffered"
+    case tooLate(_): "tooLate"
+    case noRecipient(_): "noRecipient"
+    case nothingOffered(_): "nothingOffered"
+    case notOffered(_): "notOffered"
+    case expired(_): "expired"
+def refused(w: Why) -> Place.Done:
+  Place.Done.refused({clause: clause(w), reading: why(w)})
 def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Reference) -> Activity<Plan, Response, Place.Done>:
   let written(_) = perform(write {holder: set holder, location: set location})
   Place.Done.done({})
@@ -65,20 +109,20 @@ def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Referenc
 def person(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.principal}
 def acquire(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.isNobody(state.holder) == false then Place.Done.refused({reason: "Already held by {state.holder.object}"}) else look(state, person(context), context)
+  if Plans.isNobody(state.holder) == false then refused(Why.alreadyHeld({by: state.holder.object})) else look(state, person(context), context)
 def look(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.view({object: state.location})):
     case viewed(v): lying(state, by, context, v.state)
-    case denied(_): Place.Done.refused({reason: "The place is not visible."})
-    case _: Place.Done.refused({reason: "The place did not answer."})
+    case denied(_): refused(Why.placeHidden({}))
+    case _: refused(Why.placeSilent({}))
 def lying(state: State, by: Plans.Reference, context: Abi.Context, place: Place.State) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(place.things, Plans.self(context)):
-    case none(_): Place.Done.refused({reason: "It is not lying in its place."})
+    case none(_): refused(Why.notInPlace({}))
     case some(_): lift(state, by, context)
 def lift(state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.call({object: state.location, method: "take", argument: Plans.nothing()})):
     case returned(r): taken(r.result, state, by, context)
-    case _: Place.Done.refused({reason: "The place did not answer."})
+    case _: refused(Why.placeSilent({}))
 def taken(result: Place.Done, state: State, by: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match result:
     case done(_): carried(state, by, context)
@@ -89,11 +133,11 @@ def carried(state: State, by: Plans.Reference, context: Abi.Context) -> Activity
     case _: held(context, by, state.location)
 # Put the thing down where the holder stands (at): the place must accept it.
 def drop(state: State, input: {at: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.same(state.holder, person(context)) == false then Place.Done.refused({reason: "You are not holding it."}) else setDown(state, person(context), input.at, context)
+  if Plans.same(state.holder, person(context)) == false then refused(Why.notHolding({})) else setDown(state, person(context), input.at, context)
 def setDown(state: State, by: Plans.Reference, at: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.call({object: at, method: "put", argument: Plans.nothing()})):
     case returned(r): placed(r.result, by, at, context)
-    case _: Place.Done.refused({reason: "The place did not answer."})
+    case _: refused(Why.placeSilent({}))
 def placed(result: Place.Done, by: Plans.Reference, at: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match result:
     case done(_): dropped(by, at, context)
@@ -105,11 +149,11 @@ def dropped(by: Plans.Reference, at: Plans.Reference, context: Abi.Context) -> A
 # DID) until a clock time (context.clock, which world-advance moves); custody does
 # not move. One offer is open at a time.
 def offered(state: State, to: Plans.Reference, until: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.same(state.holder, person(context)) == false then Place.Done.refused({reason: "You are not holding it."}) else offerFrom(state, to, until, context)
+  if Plans.same(state.holder, person(context)) == false then refused(Why.notHolding({})) else offerFrom(state, to, until, context)
 def offerFrom(state: State, to: Plans.Reference, until: Nat, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match state.offer:
-    case open(o): Place.Done.refused({reason: "Already offered to {Card.name(o.to.object, context)} until {natText(o.until)}; withdraw it first."})
-    case none(_): if until <= context.clock then Place.Done.refused({reason: "until must be after the clock, now {natText(context.clock)}"}) else if to.object == "" then Place.Done.refused({reason: "Offer it to someone."}) else offerWritten(Offer.open({to: to, until: until}), context)
+    case open(o): refused(Why.alreadyOffered({to: Card.name(o.to.object, context), until: o.until}))
+    case none(_): if until <= context.clock then refused(Why.tooLate({now: context.clock})) else if to.object == "" then refused(Why.noRecipient({})) else offerWritten(Offer.open({to: to, until: until}), context)
 def offerWritten(offer: Offer, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   let written(_) = perform(write {offer: set offer})
   Place.Done.done({})
@@ -119,10 +163,10 @@ def offer(state: State, input: {to: Plans.Reference, until: Nat}, context: Abi.C
 def give(state: State, input: {to: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   offered(state, input.to, context.clock + 1000n, context)
 def withdraw(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if Plans.same(state.holder, person(context)) == false then Place.Done.refused({reason: "Only its holder withdraws an offer."}) else withdrawing(state, context)
+  if Plans.same(state.holder, person(context)) == false then refused(Why.notHolder({})) else withdrawing(state, context)
 def withdrawing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match state.offer:
-    case none(_): Place.Done.refused({reason: "Nothing is offered."})
+    case none(_): refused(Why.nothingOffered({}))
     case open(_): offerWritten(Offer.none({}), context)
 # The offered avatar's accept calls this: the caller is the avatar the offer names and
 # its own principal is acting; before `until`, custody moves to it and the offer closes,
@@ -130,8 +174,8 @@ def withdrawing(state: State, context: Abi.Context) -> Activity<Plan, Response, 
 # way (tier two). An offer past its clock time answers expired, by name, and stays.
 def transfer(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match state.offer:
-    case none(_): Place.Done.refused({reason: "Nothing is offered."})
-    case open(o): if context.caller != o.to.object || context.principal != o.to.object then Place.Done.refused({reason: "It is offered to {Card.name(o.to.object, context)}"}) else if context.clock >= o.until then Place.Done.refused({reason: "expired: the offer ran until clock {natText(o.until)}"}) else releasing(state, o.to, context)
+    case none(_): refused(Why.nothingOffered({}))
+    case open(o): if context.caller != o.to.object || context.principal != o.to.object then refused(Why.notOffered({to: Card.name(o.to.object, context)})) else if context.clock >= o.until then refused(Why.expired({until: o.until})) else releasing(state, o.to, context)
 def releasing(state: State, to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.call({object: state.holder, method: "release", argument: Plans.nothing()})):
     case _: transferred(to, context)
@@ -171,9 +215,9 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
 def done(reply: Card.Reply) -> Place.Done:
   match reply:
     case done(_): Place.Done.done({})
-    case refused(r): Place.Done.refused({reason: r.reason})
-    case unclear(u): Place.Done.refused({reason: Card.reason(Card.Routed.unclear({action: "", needs: u.needs}))})
-    case usage(_): Place.Done.refused({reason: "Reply with a spell."})
-    case silent(_): Place.Done.refused({reason: "not addressed"})
+    case refused(r): Place.Done.refused(r)
+    case unclear(u): Place.Done.refused({clause: "unclear", reading: Card.reason(Card.Routed.unclear({action: "", needs: u.needs}))})
+    case usage(_): Place.Done.refused({clause: "usage", reading: "Reply with a spell."})
+    case silent(_): Place.Done.refused({clause: "notAddressed", reading: "not addressed"})
 def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})

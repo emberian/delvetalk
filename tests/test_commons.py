@@ -52,7 +52,7 @@ record Edits:
   crossings: Plans.Edit<Nat, Nat>
 sum Done:
   moved: {from: String, to: String}
-  refused: {reason: String}
+  refused: {clause: String, reading: String}
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, Done>
 def initial() -> State:
@@ -65,7 +65,7 @@ def cross(state: State, input: {to: String}, context: Abi.Context) -> Activity<P
 def told(done: Done) -> String:
   match done:
     case moved(m): textConcat("moved to ", m.to)
-    case refused(r): r.reason
+    case refused(r): r.reading
 """
 
 
@@ -80,7 +80,7 @@ class Commons(TurnWorld):
         r = self.turn("commons", method, record(**{k: label(v) for k, v in fields.items()}), principal=who)
         self.assertEqual(r["status"], "admitted", r)
         res = r["result"]
-        return res["label"] if res["label"] == "moved" else get(res["payload"], "reason")["value"]
+        return res["label"] if res["label"] == "moved" else get(res["payload"], "reading")["value"]
 
     def where(self):
         state = self.host.send(op="world-view", principal=OWNER, object="commons")["state"]
@@ -150,7 +150,7 @@ class Commons(TurnWorld):
                            seed=seed(paths=[path("porch", "cellar")]))
         self.assertEqual(r["status"], "created", r)
         r = self.turn("bad", "enter", record(place=label("porch")), principal=GLM)
-        self.assertEqual(get(r["result"]["payload"], "reason")["value"], "The commons is misconfigured: a path names a place that is not here")
+        self.assertEqual(get(r["result"]["payload"], "reading")["value"], "The commons is misconfigured: a path names a place that is not here")
 
 
 if __name__ == "__main__":

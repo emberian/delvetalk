@@ -73,10 +73,10 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submitted(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
     case _: Card.answer(routed, context, forms(), render(state, context))
 def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if context.principal != state.owner then Card.Reply.refused({reason: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(state.proposals, number - 1n), number, context)
+  if context.principal != state.owner then Card.Reply.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(state.proposals, number - 1n), number, context)
 def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match found:
-    case none(_): Card.Reply.refused({reason: "No line numbered {natText(number)}"})
+    case none(_): Card.Reply.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
     case some(s): admittedReply(context, s.proposal)
 def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Reply>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}}))

@@ -58,7 +58,21 @@ sum Done:
   subscribed: {since: Nat}
   ticked: {tick: Nat, sent: Nat}
   tooSoon: {next: Nat}
-  refused: {reason: String}
+  refused: Card.Refusal
+# Why a subscription is refused: each arm a clause, `why` its reading.
+sum Why:
+  everyZero: {}
+  full: {}
+def why(w: Why) -> String:
+  match w:
+    case everyZero(_): "every is at least 1."
+    case full(_): "The tide holds sixty-four subscribers."
+def clause(w: Why) -> String:
+  match w:
+    case everyZero(_): "everyZero"
+    case full(_): "full"
+def refused(w: Why) -> Done:
+  Done.refused({clause: clause(w), reading: why(w)})
 # One subscription per principal: subscribing again replaces it.
 # Every subscribe and tick ends by offering what happened and the Tide's card as the
 # write leaves it (a refusal shows the card as read), refusals included.
@@ -69,13 +83,13 @@ def doneLine(done: Done) -> String:
     case subscribed(s): "Subscribed, from tick {natText(s.since)}.\n\n"
     case ticked(t): "Tick {natText(t.tick)}: {natText(t.sent)} {if t.sent == 1n then \"note\" else \"notes\"} sent.\n\n"
     case tooSoon(t): "Too soon: the next tick may come at clock {natText(t.next)}.\n\n"
-    case refused(r): "Not done: {r.reason}\n\n"
+    case refused(r): "refused {r.clause}: {r.reading}\n\n"
 def subscribed<T>(state: State, every: Nat, note: String, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  if every == 0n then told(Done.refused({reason: "every is at least 1."}), card, then) else subscribing(state, Lists.find(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks}, context, card, then)
+  if every == 0n then told(refused(Why.everyZero({})), card, then) else subscribing(state, Lists.find(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks}, context, card, then)
 def subscribing<T>(state: State, found: Lists.Maybe<Sub>, sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match found:
     case some(s): subWritten(Plans.Entries.amendItem({item: s.value, change: sub}), sub.since, context, render(extend(state, {subs: Lists.map(state.subs, fn(old: Sub) -> Sub: if old.who == sub.who then sub else old)}), context), then)
-    case none(_): if Lists.length(state.subs) < 64n then subWritten(Plans.Entries.append({item: sub}), sub.since, context, render(extend(state, {subs: Lists.append(state.subs, sub)}), context), then) else told(Done.refused({reason: "The tide holds sixty-four subscribers."}), card, then)
+    case none(_): if Lists.length(state.subs) < 64n then subWritten(Plans.Entries.append({item: sub}), sub.since, context, render(extend(state, {subs: Lists.append(state.subs, sub)}), context), then) else told(refused(Why.full({})), card, then)
 def subWritten<T>(edit: Plans.Entries<Sub, Sub>, since: Nat, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {subs: edit})}))
   told(Done.subscribed({since: since}), card, then)
@@ -114,8 +128,8 @@ def door() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def doneReply(done: Done) -> Card.Reply:
   match done:
-    case tooSoon(t): Card.Reply.refused({reason: "tooSoon: the next tick may come at clock {natText(t.next)}"})
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case tooSoon(t): Card.Reply.refused({clause: "tooSoon", reading: "the next tick may come at clock {natText(t.next)}"})
+    case refused(r): Card.Reply.refused(r)
     case subscribed(_): Card.Reply.done({action: "subscribe"})
     case ticked(_): Card.Reply.done({action: "tick"})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:

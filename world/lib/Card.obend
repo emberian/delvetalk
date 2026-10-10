@@ -27,13 +27,19 @@ record Door:
   word: String
   blurb: String
 type Forms = Lists.List<Form.Form>
+# A refusal names its clause (an object's `Why` arm, or the protocol's own: otherCard,
+# noAction, oneField, spell, notSettable, noField, notOwner, badValue, noPost) and gives its
+# reading; a card shows it as `refused <clause>: <reading>`.
+record Refusal:
+  clause: String
+  reading: String
 # The typed fields of an acted spell.
 type Fields = Spell.Entries
 sum Routed:
   act: {action: String, fields: Fields}
   usage: {}
   unclear: {action: String, needs: Form.Names}
-  refused: {reason: String}
+  refused: Refusal
   set: {field: String, value: String}
   help: {}
   quiet: {}
@@ -42,7 +48,7 @@ sum Reply:
   done: {action: String}
   usage: {}
   unclear: {needs: Form.Names}
-  refused: {reason: String}
+  refused: Refusal
   silent: {}
 def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
@@ -75,7 +81,7 @@ def bareFor(found: Lists.Maybe<Form.Form>, bindings: Spell.Bindings, card: Strin
 def routeParsed(parsed: Spell.Parsed, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
     case notASpell(_): Routed.usage({})
-    case spell(s): if names(s.card, context) == false then Routed.refused({reason: "This card is {context.object}"}) else chosen(parsed, s.card, s.action, s.fields, Lists.find(forms, fn(form: Form.Form) -> Bool: form.action == s.action), context)
+    case spell(s): if names(s.card, context) == false then Routed.refused({clause: "otherCard", reading: "This card is {context.object}"}) else chosen(parsed, s.card, s.action, s.fields, Lists.find(forms, fn(form: Form.Form) -> Bool: form.action == s.action), context)
 # A spell names this card by its id, or, for the speaker's own env/<did> and wake/<did>,
 # by the bare word the town writes (`delvetalk env subscribe`).
 def names(card: String, context: Abi.Context) -> Bool:
@@ -85,17 +91,17 @@ def own(card: String, context: Abi.Context) -> String:
 # An object's own form wins; otherwise `set` and `?` are the protocol's.
 def chosen(parsed: Spell.Parsed, card: String, action: String, bindings: Spell.Bindings, found: Lists.Maybe<Form.Form>, context: Abi.Context) -> Routed:
   match found:
-    case none(_): if action == "set" then setting(bindings) else if action == "?" then Routed.help({}) else Routed.refused({reason: "No action called {action}"})
+    case none(_): if action == "set" then setting(bindings) else if action == "?" then Routed.help({}) else Routed.refused({clause: "noAction", reading: "No action called {action}"})
     case some(f): fitted(action, Spell.fit(parsed, named(f.value, card)))
 def setting(bindings: Spell.Bindings) -> Routed:
   match bindings:
-    case cons(c): if Lists.length(c.tail) == 0n then Routed.set({field: c.head.name, value: c.head.value}) else Routed.refused({reason: "set takes one field: value line."})
-    case nil(_): Routed.refused({reason: "set takes one field: value line."})
+    case cons(c): if Lists.length(c.tail) == 0n then Routed.set({field: c.head.name, value: c.head.value}) else Routed.refused({clause: "oneField", reading: "set takes one field: value line."})
+    case nil(_): Routed.refused({clause: "oneField", reading: "set takes one field: value line."})
 def fitted(action: String, fit: Spell.Fit) -> Routed:
   match fit:
     case proposal(p): Routed.act({action: action, fields: p.bindings})
     case unclear(u): Routed.unclear({action: action, needs: u.needs})
-    case refused(r): Routed.refused({reason: r.reason})
+    case refused(r): Routed.refused({clause: "spell", reading: r.reason})
 # Typed field values of an acted spell; a field the form does not have is "" or 0.
 def text(fields: Spell.Entries, name: String) -> String:
   match Lists.find(fields, fn(entry: Spell.Entry) -> Bool: entry.name == name):
@@ -136,16 +142,17 @@ def why(routed: Routed) -> String:
   match routed:
     case act(a): ""
     case usage(_): ""
+    case refused(r): "\nrefused {r.clause}: {r.reading}\n"
     case _: "\nNot done: {reason(routed)}\n"
 def replyOf(routed: Routed) -> Reply:
   match routed:
     case act(a): Reply.done({action: a.action})
     case unclear(u): Reply.unclear({needs: u.needs})
-    case refused(r): Reply.refused({reason: r.reason})
+    case refused(r): Reply.refused(r)
     case usage(_): Reply.usage({})
     case help(_): Reply.usage({})
     case quiet(_): Reply.silent({})
-    case set(_): Reply.refused({reason: "Nothing here can be set."})
+    case set(_): Reply.refused({clause: "notSettable", reading: "Nothing here can be set."})
 def answered(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why(routed)), tail: Document.Documents.cons({head: usage(context.object, forms), tail: Document.Documents.nil()})})})})
 def answer<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
@@ -169,7 +176,7 @@ def reason(routed: Routed) -> String:
     case act(a): ""
     case usage(_): "Reply with a spell."
     case unclear(u): "Almost. I still need: {Spell.joined(u.needs)}."
-    case refused(r): r.reason
+    case refused(r): "refused {r.clause}: {r.reading}"
     case help(_): ""
     case set(_): "Nothing here can be set."
     case quiet(_): ""
@@ -190,18 +197,18 @@ def answerLensedAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Form
     case set(s): putting(s.field, s.value, lensNamed(lenses, s.field), guard, context, forms, card, as)
     case help(_): tell(as(Reply.usage({})), help(context.object, forms, lenses))
     case _: answerAs(routed, context, forms, card, as(replyOf(routed)))
-def refusing<E, S, R, T>(reason: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  answerAs(Routed.refused({reason: reason}), context, forms, card, as(Reply.refused({reason: reason})))
+def refusing<E, S, R, T>(refusal: Refusal, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  answerAs(Routed.refused(refusal), context, forms, card, as(Reply.refused(refusal)))
 def putting<E, S, R, T>(field: String, value: String, found: Lists.Maybe<Form.Lens<E>>, guard: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match found:
-    case none(_): refusing("No field called {field} can be set here.", context, forms, card, as)
-    case some(f): if guard != "" then refusing(guard, context, forms, card, as) else judgedPut(f.value, value, context, forms, card, as)
+    case none(_): refusing({clause: "noField", reading: "No field called {field} can be set here."}, context, forms, card, as)
+    case some(f): if guard != "" then refusing({clause: "notOwner", reading: guard}, context, forms, card, as) else judgedPut(f.value, value, context, forms, card, as)
 def judgedPut<E, S, R, T>(lens: Form.Lens<E>, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match lens:
     case lens(l): verdictPut(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card, as)
 def verdictPut<E, S, R, T>(verdict: Spell.Verdict, edits: E, field: String, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match verdict:
-    case wrong(w): refusing(w.reason, context, forms, card, as)
+    case wrong(w): refusing({clause: "badValue", reading: w.reason}, context, forms, card, as)
     case fine(_): put(edits, field, value, context, as)
 def put<E, S, R, T>(edits: E, field: String, value: String, context: Abi.Context, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   let written(_) = perform(Plans.Plan.write({object: Plans.self(context), edits: edits}))
@@ -300,8 +307,8 @@ def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
 def isMerge(text: String) -> Bool:
   let rest = textDrop(text, textSpan(text, " \n\t\r"))
   textTake(rest, 5n) == "merge" && textSpan(textDrop(rest, 5n), " \n\t\r") == textLength(rest) - 5n
-def merge<E, S, R, T>(post: String, owner: String, context: Abi.Context, put: String -> E, done: T, refused: String -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  if owner == "" || context.principal != owner then tell(refused(notOwner(owner)), Document.text("Not merged: {notOwner(owner)}\n")) else if post == "" then tell(refused("A merge names the post it answers."), Document.text("Not merged: a merge names the post it answers.\n")) else checkpointed(post, put(post), context, done)
+def merge<E, S, R, T>(post: String, owner: String, context: Abi.Context, put: String -> E, done: T, refused: Refusal -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  if owner == "" || context.principal != owner then tell(refused({clause: "notOwner", reading: notOwner(owner)}), Document.text("Not merged: {notOwner(owner)}\n")) else if post == "" then tell(refused({clause: "noPost", reading: "A merge names the post it answers."}), Document.text("Not merged: a merge names the post it answers.\n")) else checkpointed(post, put(post), context, done)
 def notOwner(owner: String) -> String:
   if owner == "" then "This page has no owner to merge it." else "Only the page's owner, {handle(owner)}, merges it."
 def checkpointed<E, S, R, T>(post: String, edits: E, context: Abi.Context, done: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:

@@ -57,11 +57,31 @@ def keep() -> Edits:
 sum Done:
   watching: {id: Nat}
   fired: {count: Nat}
-  refused: {reason: String}
+  refused: Card.Refusal
+# Why a wake refuses: each arm a clause, `why` its reading.
+sum Why:
+  notOwner: {owner: String}
+  full: {}
+  noTrigger: {id: Nat}
+  early: {}
+def why(w: Why) -> String:
+  match w:
+    case notOwner(n): "Only its owner sets these triggers; that is {n.owner}"
+    case full(_): "Thirty-two triggers is the most a wake holds."
+    case noTrigger(n): "No trigger {natText(n.id)}"
+    case early(_): "The schedule was answered before its time."
+def clause(w: Why) -> String:
+  match w:
+    case notOwner(_): "notOwner"
+    case full(_): "full"
+    case noTrigger(_): "noTrigger"
+    case early(_): "early"
+def refused(w: Why) -> Done:
+  Done.refused({clause: clause(w), reading: why(w)})
 def notOwner(state: State) -> Done:
-  Done.refused({reason: "Only its owner sets these triggers; that is {Card.handle(state.owner)}"})
+  refused(Why.notOwner({owner: Card.handle(state.owner)}))
 def watched<T>(state: State, event: On, action: Action, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n then added(state, event, action, context, then) else then(Done.refused({reason: "Thirty-two triggers is the most a wake holds."}))
+  if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n then added(state, event, action, context, then) else then(refused(Why.full({})))
 def added<T>(state: State, event: On, action: Action, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {triggers: Plans.Entries.append({item: {id: state.nextId, event: event, action: action}}), nextId: Plans.Edit.add({delta: 1n})}}))
   then(Done.watching({id: state.nextId}))
@@ -74,7 +94,7 @@ def unwatched<T>(state: State, id: Nat, context: Abi.Context, then: Done -> T) -
   if context.principal != state.owner then then(notOwner(state)) else removing(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == id), id, context, then)
 def removing<T>(found: Lists.Maybe<Trigger>, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match found:
-    case none(_): then(Done.refused({reason: "No trigger {natText(id)}"}))
+    case none(_): then(refused(Why.noTrigger({id: id})))
     case some(s): removed(s.value, id, context, then)
 def removed<T>(trigger: Trigger, id: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {triggers: removeItem trigger})
@@ -89,7 +109,7 @@ def schedule(state: State, input: {every: Nat, action: Action}, context: Abi.Con
 def waited(state: State, every: Nat, action: Action, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match perform(Plan.await({slot: {principal: context.object, intent: "schedule/{context.intent}"}, patience: every})):
     case timedOut(_): act(state, action, "scheduled every {natText(every)}", 0n)
-    case _: Done.refused({reason: "The schedule was answered before its time."})
+    case _: refused(Why.early({}))
 # The event that woke a trigger, as a line.
 def woke(event: Events.Event) -> String:
   "{event.kind} from {Card.handle(event.actor)}: {event.text}"
@@ -141,7 +161,7 @@ def door() -> Card.Door:
   {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
 def doneReply(done: Done) -> Card.Reply:
   match done:
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
     case _: Card.Reply.done({action: "watch"})
 # From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:

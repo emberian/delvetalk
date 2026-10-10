@@ -45,9 +45,9 @@ class Merge(test_chain.Chain):
     def test_a_merge_from_anyone_else_or_without_a_post_is_refused_by_name(self):
         r = self.turn("garden", "receive", heard("merge"), principal="glm")
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "refused"), r)
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the page's owner, ember, merges it."))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the page's owner, ember, merges it."))
         r = self.turn("garden", "receive", heard("merge", post=""), principal="ember")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("A merge names the post it answers."))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("A merge names the post it answers."))
         self.assertEqual((self.version(), self.field("pageCheckpoint")), (0, ""))
         # "merge" inside prose is prose, not a merge.
         r = self.turn("garden", "receive", heard("merge this please"), principal="ember")

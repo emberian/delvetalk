@@ -43,7 +43,9 @@ GATE = [
 
 
 def why(reply):
-    return reply["result"]["payload"]["fields"][0]["value"]["value"]
+    """A refusal as `clause: reading`."""
+    fields = {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}
+    return "%s: %s" % (fields["clause"], fields["reading"])
 
 
 def plain(item):
@@ -120,7 +122,7 @@ class Scenes(test_chain.Chain):
                 self.assertEqual(self.view(), before)
         r = self.say("delvetalk scene choose\nchoice: Knock")
         print("--- refused card ---\n" + r["offers"][0]["text"])
-        self.assertIn("Not done: notOffered", r["offers"][0]["text"])
+        self.assertIn("refused notOffered: ", r["offers"][0]["text"])
         # A principal who never entered has no passage to choose from.
         r = self.say("delvetalk scene choose\nchoice: Open", principal=KIM)
         self.assertTrue(why(r).startswith("notHere"), why(r))

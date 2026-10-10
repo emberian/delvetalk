@@ -45,21 +45,50 @@ def keep() -> Edits:
 law owner "only the owner teaches it; anyone may describe": (request.kind == 0 and request.method == "describe") or request.subject == new.owner
 sum Taught:
   taught: {count: Nat}
-  refused: {reason: String}
+  refused: Card.Refusal
+# Why the policy refuses: each arm a clause, `why` its reading.
+sum Why:
+  notOwner: {owner: String}
+  examplesFull: {}
+  lexiconFull: {}
+  macrosFull: {}
+  macroIncomplete: {}
+  macroHole: {}
+  macroTooLong: {}
+def why(w: Why) -> String:
+  match w:
+    case notOwner(n): "Only the policy's owner may teach it; that is {n.owner}"
+    case examplesFull(_): "The policy holds sixteen examples, the most a model call carries."
+    case lexiconFull(_): "The lexicon holds sixteen words."
+    case macrosFull(_): "The policy holds sixteen macros."
+    case macroIncomplete(_): "A macro needs a name, a pattern and an expansion."
+    case macroHole(_): "A macro's pattern starts with a word, not a hole."
+    case macroTooLong(_): "A macro's name takes 64 characters, its pattern 280 and its expansion 560."
+def clause(w: Why) -> String:
+  match w:
+    case notOwner(_): "notOwner"
+    case examplesFull(_): "examplesFull"
+    case lexiconFull(_): "lexiconFull"
+    case macrosFull(_): "macrosFull"
+    case macroIncomplete(_): "macroIncomplete"
+    case macroHole(_): "macroHole"
+    case macroTooLong(_): "macroTooLong"
+def refusal(w: Why) -> Card.Refusal:
+  {clause: clause(w), reading: why(w)}
 # At most this many examples go into every model call.
 def exampleCap() -> Nat:
   16n
 def edited<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if context.principal != state.owner then then(Taught.refused({reason: "Only the policy's owner may teach it; that is {Card.name(state.owner, context)}"})) else written(state, edits, context, then)
+  if context.principal != state.owner then then(Taught.refused(refusal(Why.notOwner({owner: Card.name(state.owner, context)})))) else written(state, edits, context, then)
 def written<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: edits}))
   then(Taught.taught({count: Lists.length(state.examples)}))
 def same(taught: Taught) -> Taught:
   taught
 def taught<T>(state: State, example: Example, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if Lists.length(state.examples) < exampleCap() then edited(state, extend(keep(), {examples: Plans.Entries.append({item: example})}), context, then) else then(Taught.refused({reason: "The policy holds sixteen examples, the most a model call carries."}))
+  if Lists.length(state.examples) < exampleCap() then edited(state, extend(keep(), {examples: Plans.Entries.append({item: example})}), context, then) else then(Taught.refused(refusal(Why.examplesFull({}))))
 def defined<T>(state: State, term: Term, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if Lists.length(state.lexicon) < exampleCap() then edited(state, extend(keep(), {lexicon: Plans.Entries.append({item: term})}), context, then) else then(Taught.refused({reason: "The lexicon holds sixteen words."}))
+  if Lists.length(state.lexicon) < exampleCap() then edited(state, extend(keep(), {lexicon: Plans.Entries.append({item: term})}), context, then) else then(Taught.refused(refusal(Why.lexiconFull({}))))
 # Teach it a phrase and the spell that phrase means.
 def teach(state: State, input: {example: Example}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
   taught(state, input.example, context, same)
@@ -93,7 +122,7 @@ def door() -> Card.Door:
 def taughtReply(taught: Taught) -> Card.Reply:
   match taught:
     case taught(_): Card.Reply.done({action: "teach"})
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match Spell.parse(input.text):
     case spell(s): if s.action == "macro" && Card.names(s.card, context) then macroTaught(state, s.fields, context) else heard(state, Card.route(input.text, context, forms()), context)
@@ -103,21 +132,21 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 # expansion line joins it as ` / field: value`. A macro of the same name is replaced; the
 # pattern must start with a literal word (a pattern of holes alone would take all prose).
 def macroTaught(state: State, fields: Spell.Bindings, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if Spell.valueOf(fields, "expansion") == "" then macroRefused(state, "A macro needs a name, a pattern and an expansion.", context) else macroWith(state, {name: Spell.valueOf(fields, "name"), pattern: Spell.valueOf(fields, "pattern"), expansion: expansionOf(fields)}, context)
+  if Spell.valueOf(fields, "expansion") == "" then macroRefused(state, Why.macroIncomplete({}), context) else macroWith(state, {name: Spell.valueOf(fields, "name"), pattern: Spell.valueOf(fields, "pattern"), expansion: expansionOf(fields)}, context)
 def expansionOf(fields: Spell.Bindings) -> String:
   textJoin(Lists.List.cons({head: Spell.valueOf(fields, "expansion"), tail: Lists.map(Lists.filter(fields, fn(b: Spell.Binding) -> Bool: b.name != "name" && b.name != "pattern" && b.name != "expansion"), fn(b: Spell.Binding) -> String: "{b.name}: {b.value}")}), " / ")
 def macroWith(state: State, macro: Macro, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if macro.name == "" || macro.pattern == "" then macroRefused(state, "A macro needs a name, a pattern and an expansion.", context) else if textTake(Spell.trimStart(macro.pattern), 1n) == "{{" then macroRefused(state, "A macro's pattern starts with a word, not a hole.", context) else if textLength(macro.expansion) > 560n || textLength(macro.pattern) > 280n || textLength(macro.name) > 64n then macroRefused(state, "A macro's name takes 64 characters, its pattern 280 and its expansion 560.", context) else macroPlaced(state, macro, Lists.find(state.macros, fn(m: Macro) -> Bool: m.name == macro.name), context)
+  if macro.name == "" || macro.pattern == "" then macroRefused(state, Why.macroIncomplete({}), context) else if textTake(Spell.trimStart(macro.pattern), 1n) == "{{" then macroRefused(state, Why.macroHole({}), context) else if textLength(macro.expansion) > 560n || textLength(macro.pattern) > 280n || textLength(macro.name) > 64n then macroRefused(state, Why.macroTooLong({}), context) else macroPlaced(state, macro, Lists.find(state.macros, fn(m: Macro) -> Bool: m.name == macro.name), context)
 def macroPlaced(state: State, macro: Macro, found: Lists.Maybe<Macro>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match found:
     case some(f): edited(state, extend(keep(), {macros: Plans.Entries.amendItem({item: f.value, change: macro})}), context, macroReply)
-    case none(_): if Lists.length(state.macros) < exampleCap() then edited(state, extend(keep(), {macros: Plans.Entries.append({item: macro})}), context, macroReply) else macroRefused(state, "The policy holds sixteen macros.", context)
+    case none(_): if Lists.length(state.macros) < exampleCap() then edited(state, extend(keep(), {macros: Plans.Entries.append({item: macro})}), context, macroReply) else macroRefused(state, Why.macrosFull({}), context)
 def macroReply(taught: Taught) -> Card.Reply:
   match taught:
     case taught(_): Card.Reply.done({action: "macro"})
-    case refused(r): Card.Reply.refused({reason: r.reason})
-def macroRefused(state: State, reason: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.Routed.refused({reason: reason}), context, forms(), render(state, context))
+    case refused(r): Card.Reply.refused(r)
+def macroRefused(state: State, w: Why, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  Card.answer(Card.Routed.refused(refusal(w)), context, forms(), render(state, context))
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "teach" then taught(state, {utterance: Card.text(a.fields, "utterance"), spell: Card.text(a.fields, "spell")}, context, taughtReply) else defined(state, {word: Card.text(a.fields, "word"), meaning: Card.text(a.fields, "meaning")}, context, taughtReply)

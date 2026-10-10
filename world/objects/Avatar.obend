@@ -98,16 +98,16 @@ def observeWritten(change: Card.Change, entries: Plans.Entries<Card.Observer, {}
 sum Mailed:
   sent: {count: Nat}
   followed: {object: Plans.Reference}
-  refused: {reason: String}
+  refused: Card.Refusal
 def mailedReply(action: String) -> Mailed -> Card.Reply:
   fn(mailed: Mailed) -> Card.Reply: mailedAs(action, mailed)
 def mailedAs(action: String, mailed: Mailed) -> Card.Reply:
   match mailed:
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
     case _: Card.Reply.done({action: action})
 # The avatar's principal sends a line to every observer, each by the method it named.
 def sent<T>(state: State, text: String, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
-  if mine(context) == false then then(Mailed.refused({reason: "Only the avatar's own principal sends from it."})) else if Lists.length(state.observers) > sendsPerTurn() then then(Mailed.refused({reason: "More observers than one turn may send to."})) else Card.broadcast(state.observers, {text: text}, 0n, fn(count: Nat) -> T: then(Mailed.sent({count: count})))
+  if mine(context) == false then then(Mailed.refused({clause: "notMine", reading: "Only the avatar's own principal sends from it."})) else if Lists.length(state.observers) > sendsPerTurn() then then(Mailed.refused({clause: "tooManyObservers", reading: "More observers than one turn may send to."})) else Card.broadcast(state.observers, {text: text}, 0n, fn(count: Nat) -> T: then(Mailed.sent({count: count})))
 def send(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Mailed>:
   sent(state, input.text, context, fn(m: Mailed) -> Mailed: m)
 # Subscribe to an object: ask it (a send: its observe runs in its own turn, under its
@@ -116,21 +116,21 @@ def send(state: State, input: {text: String}, context: Abi.Context) -> Activity<
 def methodFor(object: Plans.Reference) -> String:
   if textTake(object.object, 4n) == "did:" then "note" else "notice"
 def subscribed<T>(state: State, object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
-  if mine(context) == false then then(Mailed.refused({reason: "Only the avatar's own principal subscribes it."})) else if Lists.any(state.following, fn(f: Plans.Reference) -> Bool: Plans.same(f, object)) then then(Mailed.refused({reason: "Already following {object.object}"})) else if Lists.length(state.following) >= sendsPerTurn() then then(Mailed.refused({reason: "Following thirty-two is the most."})) else asking(object, context, then)
+  if mine(context) == false then then(Mailed.refused({clause: "notMine", reading: "Only the avatar's own principal subscribes it."})) else if Lists.any(state.following, fn(f: Plans.Reference) -> Bool: Plans.same(f, object)) then then(Mailed.refused({clause: "alreadyFollowing", reading: "Already following {object.object}"})) else if Lists.length(state.following) >= sendsPerTurn() then then(Mailed.refused({clause: "followingFull", reading: "Following thirty-two is the most."})) else asking(object, context, then)
 def asking<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.send({object: object, method: "observe", argument: {object: Plans.self(context), method: methodFor(object)}})):
     case delivery(_): following(object, context, then)
-    case _: then(Mailed.refused({reason: "Could not ask {object.object}"}))
+    case _: then(Mailed.refused({clause: "noAnswer", reading: "Could not ask {object.object}"}))
 def following<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {following: append object})
   then(Mailed.followed({object: object}))
 def subscribe(state: State, input: {object: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Mailed>:
   subscribed(state, input.object, context, fn(m: Mailed) -> Mailed: m)
 def unsubscribed<T>(state: State, object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
-  if mine(context) == false then then(Mailed.refused({reason: "Only the avatar's own principal unsubscribes it."})) else unfollowing(Lists.find(state.following, fn(f: Plans.Reference) -> Bool: Plans.same(f, object)), object, context, then)
+  if mine(context) == false then then(Mailed.refused({clause: "notMine", reading: "Only the avatar's own principal unsubscribes it."})) else unfollowing(Lists.find(state.following, fn(f: Plans.Reference) -> Bool: Plans.same(f, object)), object, context, then)
 def unfollowing<T>(found: Lists.Maybe<Plans.Reference>, object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
   match found:
-    case none(_): then(Mailed.refused({reason: "Not following {object.object}"}))
+    case none(_): then(Mailed.refused({clause: "notFollowing", reading: "Not following {object.object}"}))
     case some(s): unasking(s.value, context, then)
 def unasking<T>(object: Plans.Reference, context: Abi.Context, then: Mailed -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.send({object: object, method: "unobserve", argument: {object: Plans.self(context), method: methodFor(object)}})):
@@ -147,7 +147,7 @@ def unsubscribe(state: State, input: {object: Plans.Reference}, context: Abi.Con
 def thing(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.caller}
 def hold(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if context.caller == "" then Place.Done.refused({reason: "Only a thing can be held."}) else holdThing(state, context)
+  if context.caller == "" then Place.Done.refused({clause: "notAThing", reading: "Only a thing can be held."}) else holdThing(state, context)
 def holdThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(state.holding, thing(context)):
     case some(_): Place.Done.done({})
@@ -158,7 +158,7 @@ def held(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
 def gift(context: Abi.Context) -> Plans.Entries<Note, {}>:
   if mine(context) then Plans.Entries.keep({}) else Plans.Entries.append({item: {from: context.principal, text: "gave you {context.caller}"}})
 def release(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if context.caller == "" then Place.Done.refused({reason: "Only a thing can be released."}) else releaseThing(state, context)
+  if context.caller == "" then Place.Done.refused({clause: "notAThing", reading: "Only a thing can be released."}) else releaseThing(state, context)
 def releaseThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match Plans.indexOf(state.holding, thing(context)):
     case none(_): Place.Done.done({})
@@ -169,24 +169,24 @@ def released(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
 # Accept what someone offered: the thing's transfer (judged by its own law) moves custody
 # to this avatar, and this avatar records it in its own holding, in the same turn.
 def acceptedReply(state: State, thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if mine(context) == false then Card.Reply.refused({reason: "Only the avatar's own principal accepts for it."}) else acceptingReply(thing, context)
+  if mine(context) == false then Card.Reply.refused({clause: "notMine", reading: "Only the avatar's own principal accepts for it."}) else acceptingReply(thing, context)
 def acceptingReply(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match perform(Plan.call({object: thing, method: "transfer", argument: Plans.nothing()})):
     case returned(r): acceptedAs(r.result, thing, context)
-    case _: Card.Reply.refused({reason: "No answer from {thing.object}"})
+    case _: Card.Reply.refused({clause: "noAnswer", reading: "No answer from {thing.object}"})
 def acceptedAs(result: Place.Done, thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match result:
     case done(_): recordedAs(thing, context)
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
 def recordedAs(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   let written(_) = perform(write {holding: append thing})
   Card.Reply.done({action: "accept"})
 def accept(state: State, input: {thing: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if mine(context) == false then Place.Done.refused({reason: "Only the avatar's own principal accepts for it."}) else accepting(input.thing, context)
+  if mine(context) == false then Place.Done.refused({clause: "notMine", reading: "Only the avatar's own principal accepts for it."}) else accepting(input.thing, context)
 def accepting(thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.call({object: thing, method: "transfer", argument: Plans.nothing()})):
     case returned(r): accepted(r.result, thing, context)
-    case _: Place.Done.refused({reason: "No answer from {thing.object}"})
+    case _: Place.Done.refused({clause: "noAnswer", reading: "No answer from {thing.object}"})
 def accepted(result: Place.Done, thing: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match result:
     case done(_): recorded(thing, context)
@@ -222,7 +222,7 @@ def leaving<T>(state: State, to: Plans.Reference, context: Abi.Context, then: Mo
 def left<T>(result: Place.Done, to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
   match result:
     case done(_): entering(to, context, then)
-    case refused(r): then(Moved.refused({reason: r.reason}))
+    case refused(r): then(Moved.refused({reason: r.reading}))
 def entering<T>(to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.call({object: to, method: "enter", argument: Plans.nothing()})):
     case returned(r): entered(r.result, to, context, then)
@@ -230,7 +230,7 @@ def entering<T>(to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> 
 def entered<T>(result: Place.Done, to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
   match result:
     case done(_): arrived(to, context, then)
-    case refused(r): then(Moved.refused({reason: r.reason}))
+    case refused(r): then(Moved.refused({reason: r.reading}))
 def arrived<T>(to: Plans.Reference, context: Abi.Context, then: Moved -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {at: set to})
   then(Moved.moved({to: to}))
@@ -253,7 +253,7 @@ def door() -> Card.Door:
 def movedReply(moved: Moved) -> Card.Reply:
   match moved:
     case moved(_): Card.Reply.done({action: "move"})
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused({clause: "notMoved", reading: r.reason})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:

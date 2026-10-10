@@ -93,17 +93,17 @@ def gateCheck(found: Lists.Maybe<Gate>, context: Abi.Context) -> String:
     case some(g): crossing(g.value.rule, context)
 sum Done:
   moved: {from: String, to: String}
-  refused: {reason: String}
+  refused: Card.Refusal
 def same(done: Done) -> Done:
   done
-def no(reason: String) -> Done:
-  Done.refused({reason: reason})
+def no(clause: String, reading: String) -> Done:
+  Done.refused({clause: clause, reading: reading})
 def entered<T>(state: State, place: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if problem(state) != "" then then(no("The commons is misconfigured: {problem(state)}")) else entering(state, here(state, context), place, context, then)
+  if problem(state) != "" then then(no("misconfigured", "The commons is misconfigured: {problem(state)}")) else entering(state, here(state, context), place, context, then)
 def entering<T>(state: State, found: Lists.Maybe<Presence>, place: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match found:
-    case some(p): then(no("Already here, at {p.value.at}"))
-    case none(_): if Lists.any(state.entries, fn(e: String) -> Bool: e == place) == false then then(no("{place} is not a way in")) else if Lists.length(state.presence) >= presenceMax() then then(no("Sixteen are here already.")) else arrive(place, context, then)
+    case some(p): then(no("alreadyHere", "Already here, at {p.value.at}"))
+    case none(_): if Lists.any(state.entries, fn(e: String) -> Bool: e == place) == false then then(no("noWayIn", "{place} is not a way in")) else if Lists.length(state.presence) >= presenceMax() then then(no("full", "Sixteen are here already.")) else arrive(place, context, then)
 def arrive<T>(place: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {presence: append {who: context.principal, at: place}})
   then(Done.moved({from: "", to: place}))
@@ -111,10 +111,10 @@ def enter(state: State, input: {place: String}, context: Abi.Context) -> Activit
   entered(state, input.place, context, same)
 def walked<T>(state: State, to: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match here(state, context):
-    case none(_): then(no("Enter first."))
+    case none(_): then(no("notHere", "Enter first."))
     case some(p): stepping(state, p.value, to, context, then)
 def stepping<T>(state: State, me: Presence, to: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if pathFrom(state, me.at, to) == false then then(no("No path from {me.at} to {to}")) else if gateCheck(gateOn(state, me.at, to), context) != "" then then(no("Gated: {gateCheck(gateOn(state, me.at, to), context)}")) else crossed(me, to, context, then)
+  if pathFrom(state, me.at, to) == false then then(no("noPath", "No path from {me.at} to {to}")) else if gateCheck(gateOn(state, me.at, to), context) != "" then then(no("gated", "Gated: {gateCheck(gateOn(state, me.at, to), context)}")) else crossed(me, to, context, then)
 def crossed<T>(me: Presence, to: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries.amendItem({item: me, change: {who: me.who, at: to}})})}))
   then(Done.moved({from: me.at, to: to}))
@@ -122,7 +122,7 @@ def move(state: State, input: {to: String}, context: Abi.Context) -> Activity<Pl
   walked(state, input.to, context, same)
 def departed<T>(state: State, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match here(state, context):
-    case none(_): then(no("Not here."))
+    case none(_): then(no("notHere", "Not here."))
     case some(p): departing(p.value, context, then)
 def departing<T>(me: Presence, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {presence: removeItem me})
@@ -131,15 +131,15 @@ def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   departed(state, context, same)
 # The owner lets one more principal through a members gate.
 def allow(state: State, input: {from: String, to: String, principal: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.principal != state.owner then no("Only the owner changes a gate; that is {Card.name(state.owner, context)}") else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
+  if context.principal != state.owner then no("notOwner", "Only the owner changes a gate; that is {Card.name(state.owner, context)}") else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
 def allowedOn(found: Lists.Maybe<Gate>, principal: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match found:
-    case none(_): no("No gate on that path.")
+    case none(_): no("noGate", "No gate on that path.")
     case some(g): allowing(g.value, principal, context)
 def allowing(gate: Gate, principal: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match gate.rule:
-    case members(m): if Lists.length(m.names) >= 16n then no("A gate knows sixteen names.") else if Lists.any(m.names, fn(n: String) -> Bool: n == principal) then no("Already allowed.") else regated(gate, extend(gate, {rule: Rule.members({names: Lists.append(m.names, principal)})}), context)
-    case _: no("Only a members gate lists who may cross.")
+    case members(m): if Lists.length(m.names) >= 16n then no("gateFull", "A gate knows sixteen names.") else if Lists.any(m.names, fn(n: String) -> Bool: n == principal) then no("alreadyAllowed", "Already allowed.") else regated(gate, extend(gate, {rule: Rule.members({names: Lists.append(m.names, principal)})}), context)
+    case _: no("notMembersGate", "Only a members gate lists who may cross.")
 def regated(gate: Gate, next: Gate, context: Abi.Context) -> Activity<Plan, Response, Done>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {gates: Plans.Entries.amendItem({item: gate, change: next})})}))
   Done.moved({from: next.from, to: next.to})
@@ -156,7 +156,7 @@ def doneReply(action: String) -> Done -> Card.Reply:
   fn(done: Done) -> Card.Reply: replied(action, done)
 def replied(action: String, done: Done) -> Card.Reply:
   match done:
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
     case moved(_): Card.Reply.done({action: action})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)

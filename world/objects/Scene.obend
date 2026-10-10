@@ -52,7 +52,7 @@ sum Done:
   entered: {at: String}
   moved: {to: String}
   left: {}
-  refused: {reason: String}
+  refused: Card.Refusal
 def same(done: Done) -> Done:
   done
 def here(state: State, context: Abi.Context) -> Lists.Maybe<Presence>:
@@ -65,43 +65,43 @@ sum Verdict:
   enter: {at: String}
   move: {me: Presence, choice: Choice, vars: Plans.Entries<Var, Var>}
   leave: {me: Presence}
-  no: {reason: String}
-def refuse(reason: String) -> Verdict:
-  Verdict.no({reason: reason})
+  no: Card.Refusal
+def no(clause: String, reading: String) -> Verdict:
+  Verdict.no({clause: clause, reading: reading})
 def enterVerdict(state: State, context: Abi.Context) -> Verdict:
   match here(state, context):
-    case some(_): refuse("alreadyHere: you are already in this scene.")
-    case none(_): if Lists.length(state.presence) >= 16n then refuse("sceneFull: sixteen readers are already here.") else if Lists.any(state.passages, fn(p: Passage) -> Bool: p.id == state.start) then Verdict.enter({at: state.start}) else refuse("noStart: this scene has no start passage.")
+    case some(_): no("alreadyHere", "You are already in this scene.")
+    case none(_): if Lists.length(state.presence) >= 16n then no("sceneFull", "Sixteen readers are already here.") else if Lists.any(state.passages, fn(p: Passage) -> Bool: p.id == state.start) then Verdict.enter({at: state.start}) else no("noStart", "This scene has no start passage.")
 def leaveVerdict(state: State, context: Abi.Context) -> Verdict:
   match here(state, context):
-    case none(_): refuse("notHere: you are not in this scene.")
+    case none(_): no("notHere", "You are not in this scene.")
     case some(p): Verdict.leave({me: p.value})
 def chooseVerdict(state: State, choice: String, context: Abi.Context) -> Verdict:
   match here(state, context):
-    case none(_): refuse("notHere: enter the scene first.")
+    case none(_): no("notHere", "Enter the scene first.")
     case some(p): standing(state, p.value, choice)
 def standing(state: State, me: Presence, choice: String) -> Verdict:
   match passageAt(state, me.at):
-    case none(_): refuse("noPassage: your passage is gone.")
+    case none(_): no("noPassage", "Your passage is gone.")
     case some(ps): offered(state, me, Lists.find(ps.value.choices, fn(c: Choice) -> Bool: c.label == choice), choice)
 def offered(state: State, me: Presence, found: Lists.Maybe<Choice>, choice: String) -> Verdict:
   match found:
-    case none(_): refuse("notOffered: {me.at} does not offer {choice}")
+    case none(_): no("notOffered", "{me.at} does not offer {choice}")
     case some(c): arriving(state, me, c.value)
 def arriving(state: State, me: Presence, c: Choice) -> Verdict:
   match passageAt(state, c.to):
-    case none(_): refuse("noPassage: {c.to} is not in this scene")
+    case none(_): no("noPassage", "{c.to} is not in this scene")
     case some(_): varied(state, me, c)
 def varied(state: State, me: Presence, c: Choice) -> Verdict:
   if c.key == "" then Verdict.move({me: me, choice: c, vars: Plans.Entries.keep({})}) else setting(me, c, Lists.find(state.vars, fn(v: Var) -> Bool: v.name == c.key), Lists.length(state.vars))
 def setting(me: Presence, c: Choice, found: Lists.Maybe<Var>, count: Nat) -> Verdict:
   match found:
     case some(v): Verdict.move({me: me, choice: c, vars: Plans.Entries.amendItem({item: v.value, change: {name: c.key, value: c.value}})})
-    case none(_): if count >= 16n then refuse("varsFull: sixteen variables are already set.") else Verdict.move({me: me, choice: c, vars: Plans.Entries.append({item: {name: c.key, value: c.value}})})
+    case none(_): if count >= 16n then no("varsFull", "Sixteen variables are already set.") else Verdict.move({me: me, choice: c, vars: Plans.Entries.append({item: {name: c.key, value: c.value}})})
 # Performs a verdict (writing only when it admits) and finishes with `then` of the outcome.
 def done<T>(verdict: Verdict, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match verdict:
-    case no(n): then(Done.refused({reason: n.reason}))
+    case no(n): then(Done.refused(n))
     case enter(e): entering(e.at, context, then)
     case move(m): moving(m.me, m.choice, m.vars, context, then)
     case leave(l): departing(l.me, context, then)
@@ -130,7 +130,7 @@ def door() -> Card.Door:
   {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave."}
 def doneReply(done: Done) -> Card.Reply:
   match done:
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
     case entered(_): Card.Reply.done({action: "enter"})
     case moved(_): Card.Reply.done({action: "choose"})
     case left(_): Card.Reply.done({action: "leave"})
@@ -140,14 +140,14 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
   match routed:
     case act(a): acted(state, a.action, Card.text(a.fields, "choice"), context)
     case _: Card.answer(routed, context, forms(), render(state, context))
-# A refusal offers the reader's card with the reason ("Not done: notOffered: ...").
+# A refusal offers the reader's card with its clause ("refused notOffered: ...").
 def acted(state: State, action: String, choice: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   judged(state, verdictFor(state, action, choice, context), context)
 def verdictFor(state: State, action: String, choice: String, context: Abi.Context) -> Verdict:
   if action == "enter" then enterVerdict(state, context) else if action == "choose" then chooseVerdict(state, choice, context) else leaveVerdict(state, context)
 def judged(state: State, verdict: Verdict, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match verdict:
-    case no(n): Card.answer(Card.Routed.refused({reason: n.reason}), context, forms(), render(state, context))
+    case no(n): Card.answer(Card.Routed.refused(n), context, forms(), render(state, context))
     case _: done(verdict, context, doneReply)
 def choiceLine(c: Choice) -> Document.Document:
   Document.text("  * {c.label}\n")

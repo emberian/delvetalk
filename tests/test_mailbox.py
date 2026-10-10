@@ -73,11 +73,11 @@ class Mailbox(test_chain.Chain):
 
     def test_strangers_neither_send_nor_add_others(self):
         r = self.say(GLM, "delvetalk %s send\ntext: forged" % GLM, KIM)
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the avatar's own principal sends from it."))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the avatar's own principal sends from it."))
         r = self.turn(GLM, "observe", observer("did:plc:victim"), principal="did:plc:mallory")
         self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("An observer adds only itself."))
         twice = self.say(KIM, "delvetalk %s subscribe\nto: %s" % (KIM, GLM), GLM)
-        self.assertEqual(twice["result"]["payload"]["fields"][0]["value"], label("Only the avatar's own principal subscribes it."))
+        self.assertEqual(twice["result"]["payload"]["fields"][1]["value"], label("Only the avatar's own principal subscribes it."))
         self.assertEqual(items(get(self.state(GLM), "observers")), [])
 
     def test_thirty_two_observers_and_one_send_to_all_of_them(self):

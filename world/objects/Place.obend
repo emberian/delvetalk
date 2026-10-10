@@ -18,10 +18,36 @@ record State:
   exits: Lists.List<Exit>
   present: Lists.List<Plans.Reference>
   things: Lists.List<Plans.Reference>
-# Every method that can refuse answers with this sum.
+# Every method that can refuse answers with this sum; a refusal names its clause (a Why
+# arm here, Thing's for a thing) and its reading.
 sum Done:
   done: {}
-  refused: {reason: String}
+  refused: Card.Refusal
+sum Why:
+  alreadyHere: {}
+  notHere: {}
+  notAThing: {doing: String}
+  notPresent: {doing: String}
+  notLying: {}
+  alreadyLying: {}
+def why(w: Why) -> String:
+  match w:
+    case alreadyHere(_): "Already here."
+    case notHere(_): "Not here."
+    case notAThing(n): "Only a thing can {n.doing}."
+    case notPresent(n): "Only someone here can {n.doing}."
+    case notLying(_): "That is not lying here."
+    case alreadyLying(_): "That is already lying here."
+def clause(w: Why) -> String:
+  match w:
+    case alreadyHere(_): "alreadyHere"
+    case notHere(_): "notHere"
+    case notAThing(_): "notAThing"
+    case notPresent(_): "notPresent"
+    case notLying(_): "notLying"
+    case alreadyLying(_): "alreadyLying"
+def refused(w: Why) -> Done:
+  Done.refused({clause: clause(w), reading: why(w)})
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   owner: String
@@ -58,35 +84,35 @@ def caller(context: Abi.Context) -> Plans.Reference:
 # Join the people here. Law decides whether the subject may enter.
 def enter(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, actor(context)):
-    case some(_): Done.refused({reason: "Already here."})
+    case some(_): refused(Why.alreadyHere({}))
     case none(_): written(context, extend(keep(), {present: Plans.Entries.append({item: actor(context)})}))
 def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, actor(context)):
-    case none(_): Done.refused({reason: "Not here."})
+    case none(_): refused(Why.notHere({}))
     case some(_): written(context, extend(keep(), {present: Plans.Entries.removeItem({item: actor(context)})}))
 # A thing leaves the floor into the hands of the principal, who must be here. Only
 # the thing itself (the calling object) takes itself off the floor.
 def person(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.principal}
 def take(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller == "" then Done.refused({reason: "Only a thing can take itself."}) else takeFrom(state, context)
+  if context.caller == "" then refused(Why.notAThing({doing: "take itself"})) else takeFrom(state, context)
 def takeFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, person(context)):
-    case none(_): Done.refused({reason: "Only someone here can take things."})
+    case none(_): refused(Why.notPresent({doing: "take things"}))
     case some(_): takeThing(state, context)
 def takeThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.things, caller(context)):
-    case none(_): Done.refused({reason: "That is not lying here."})
+    case none(_): refused(Why.notLying({}))
     case some(_): written(context, extend(keep(), {things: Plans.Entries.removeItem({item: caller(context)})}))
 def put(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller == "" then Done.refused({reason: "Only a thing can put itself down."}) else putFrom(state, context)
+  if context.caller == "" then refused(Why.notAThing({doing: "put itself down"})) else putFrom(state, context)
 def putFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.present, person(context)):
-    case none(_): Done.refused({reason: "Only someone here can put things down."})
+    case none(_): refused(Why.notPresent({doing: "put things down"}))
     case some(_): putThing(state, context)
 def putThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   match Plans.indexOf(state.things, caller(context)):
-    case some(_): Done.refused({reason: "That is already lying here."})
+    case some(_): refused(Why.alreadyLying({}))
     case none(_): written(context, extend(keep(), {things: Plans.Entries.append({item: caller(context)})}))
 def line(prefix: String, suffix: String) -> Document.Document:
   Document.text("{prefix}{suffix}\n")

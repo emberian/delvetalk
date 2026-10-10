@@ -218,7 +218,7 @@ class AnthologyReachable(test_chain.Chain):
         lines = [get(p, "line")["value"] for p in items(get(self.state("anthology"), "proposals"))]
         self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
-        self.assertEqual(refused["result"]["payload"]["fields"][0]["value"], label("Only the anthology's owner admits; that is ember"))
+        self.assertEqual(refused["result"]["payload"]["fields"][1]["value"], label("Only the anthology's owner admits; that is ember"))
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
         card = self.say("anthology", "", GLM)["offers"][0]["text"]

@@ -22,7 +22,7 @@ def heard(text):
 
 
 def why(reply):
-    return reply["result"]["payload"]["fields"][0]["value"]["value"]
+    return reply["result"]["payload"]["fields"][1]["value"]["value"]
 
 
 class Lenses(test_chain.Chain):
@@ -65,17 +65,17 @@ class Lenses(test_chain.Chain):
     def test_a_stranger_a_bad_value_two_fields_and_an_unlensed_field_change_nothing(self):
         self.policy()
         cases = [
-            ("delvetalk policy set\nmodel: evil", "glm", "Only the policy's owner may teach it; that is ember"),
-            ("delvetalk policy set\nmodel: " + "m" * 65, "ember", "model takes 1 to 64 characters."),
-            ("delvetalk policy set\nmodel: a\nescalate: b", "ember", "set takes one field: value line."),
-            ("delvetalk policy set\nowner: glm", "ember", "No field called owner can be set here."),
-            ("delvetalk policy set", "ember", "set takes one field: value line."),
+            ("delvetalk policy set\nmodel: evil", "glm", "notOwner", "Only the policy's owner may teach it; that is ember"),
+            ("delvetalk policy set\nmodel: " + "m" * 65, "ember", "badValue", "model takes 1 to 64 characters."),
+            ("delvetalk policy set\nmodel: a\nescalate: b", "ember", "oneField", "set takes one field: value line."),
+            ("delvetalk policy set\nowner: glm", "ember", "noField", "No field called owner can be set here."),
+            ("delvetalk policy set", "ember", "oneField", "set takes one field: value line."),
         ]
-        for text, who, reason in cases:
+        for text, who, clause, reason in cases:
             with self.subTest(text=text[:40]):
                 r = self.say(text, principal=who)
                 self.assertEqual((r["result"]["label"], why(r)), ("refused", reason))
-                self.assertIn("Not done: " + reason, r["offers"][0]["text"])
+                self.assertIn("refused %s: %s" % (clause, reason), r["offers"][0]["text"])
         self.assertEqual((self.version(), self.field("model"), self.field("owner")), (0, "claude-haiku", "ember"))
 
     def test_the_usage_card_lists_every_form_and_every_lens(self):
@@ -145,7 +145,7 @@ class OwnedLenses(test_chain.Chain):
         usage = self.say("garden", "delvetalk garden ?", "glm")["offers"][0]["text"]
         self.assertIn("    delvetalk garden set\n    confirm: <yes, no>\n", usage)
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the garden's owner sets it; that is ember"))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember"))
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "ember")
         self.assertEqual(r["result"]["label"], "changed", r)
         self.assertFalse(self.field("garden", "confirm"))
@@ -157,7 +157,7 @@ class OwnedLenses(test_chain.Chain):
         from tests.test_places import place_seed
         self.make("porch", closure("Place"), place_seed("Porch"))
         r = self.say("porch", "delvetalk porch set\nname: Back Porch", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the room's owner changes it; that is ember"))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the room's owner changes it; that is ember"))
         self.assertEqual(self.say("porch", "delvetalk porch set\ndescription: moths at the lamp", "ember")["result"]["label"], "done")
         self.assertEqual(self.say("porch", "delvetalk porch set\nname: Back Porch", "ember")["result"]["label"], "done")
         self.assertEqual((self.field("porch", "name"), self.field("porch", "description")), ("Back Porch", "moths at the lamp"))
@@ -166,7 +166,7 @@ class OwnedLenses(test_chain.Chain):
         from tests.test_places import thing_seed
         self.make("stone", closure("Thing"), thing_seed("stone"))
         r = self.say("stone", "delvetalk stone set\nname: pebble", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Only the thing's owner changes it; that is ember"))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the thing's owner changes it; that is ember"))
         self.assertEqual(self.say("stone", "delvetalk stone set\ndescription: warm from the sun", "ember")["result"]["label"], "done")
         self.assertEqual(self.field("stone", "description"), "warm from the sun")
         set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}

@@ -49,7 +49,27 @@ sum Done:
   signed: {remaining: Nat}
   atRest: {}
   withdrawn: {}
-  refused: {reason: String}
+  refused: Card.Refusal
+# Why a deal refuses: each arm a clause, `why` its reading.
+sum Why:
+  withdrawn: {}
+  notParty: {act: String}
+  alreadySigned: {}
+  atRest: {}
+def why(w: Why) -> String:
+  match w:
+    case withdrawn(_): "The deal was withdrawn."
+    case notParty(n): "Only a party {n.act}."
+    case alreadySigned(_): "Already countersigned."
+    case atRest(_): "The deal is at rest."
+def clause(w: Why) -> String:
+  match w:
+    case withdrawn(_): "withdrawn"
+    case notParty(_): "notParty"
+    case alreadySigned(_): "alreadySigned"
+    case atRest(_): "atRest"
+def refused(w: Why) -> Done:
+  Done.refused({clause: clause(w), reading: why(w)})
 def party(state: State, who: String) -> Bool:
   Lists.any(state.parties, fn(p: String) -> Bool: p == who)
 def hasSigned(state: State, who: String) -> Bool:
@@ -60,7 +80,7 @@ def atRest(state: State) -> Bool:
   unsigned(state) == 0n && state.withdrawn == ""
 # A party countersigns once, citing its post; the last signature puts the deal at rest.
 def countersigned<T>(state: State, post: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if state.withdrawn != "" then then(Done.refused({reason: "The deal was withdrawn."})) else if party(state, context.principal) == false then then(Done.refused({reason: "Only a party countersigns."})) else if hasSigned(state, context.principal) then then(Done.refused({reason: "Already countersigned."})) else signing(state, {principal: context.principal, post: post}, context, then)
+  if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing(state, {principal: context.principal, post: post}, context, then)
 def signing<T>(state: State, signature: Signature, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {signatures: append signature})
   if unsigned(state) == 1n then then(Done.atRest({})) else then(Done.signed({remaining: unsigned(state) - 1n}))
@@ -68,7 +88,7 @@ def countersign(state: State, input: {post: String}, context: Abi.Context) -> Ac
   countersigned(state, input.post, context, fn(done: Done) -> Done: done)
 # A party withdraws before rest; the withdrawal names who withdrew.
 def withdrew<T>(state: State, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if party(state, context.principal) == false then then(Done.refused({reason: "Only a party withdraws."})) else if atRest(state) then then(Done.refused({reason: "The deal is at rest."})) else if state.withdrawn != "" then then(Done.refused({reason: "The deal was withdrawn."})) else withdrawing(context, then)
+  if party(state, context.principal) == false then then(refused(Why.notParty({act: "withdraws"}))) else if atRest(state) then then(refused(Why.atRest({}))) else if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else withdrawing(context, then)
 def withdrawing<T>(context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {withdrawn: set context.principal, closed: set 1n})
   then(Done.withdrawn({}))
@@ -82,7 +102,7 @@ def door() -> Card.Door:
   {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
 def doneReply(done: Done) -> Card.Reply:
   match done:
-    case refused(r): Card.Reply.refused({reason: r.reason})
+    case refused(r): Card.Reply.refused(r)
     case withdrawn(_): Card.Reply.done({action: "withdraw"})
     case _: Card.Reply.done({action: "countersign"})
 # A countersign by post cites that post: the reply is the signature.

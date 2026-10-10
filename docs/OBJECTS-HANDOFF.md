@@ -103,6 +103,16 @@ the library).
   NAME]:` blocks (default name `ACTIONForm`). Strings are interpolated (`"{expr}"`, a
   literal brace `{{`); an `if` inside a string is a `let` first. Every law has a reading:
   `law owner "only …": …`.
+* **Refusals are sums** (objects5). `Card.Refusal {clause, reading}` is the payload of
+  `Card.Reply.refused` and `Card.Routed.refused`; a card shows `refused <clause>: <reading>`.
+  The protocol's own clauses: otherCard, noAction, oneField, spell, notSettable, noField,
+  notOwner (a lens guard, a merge), badValue, noPost. An object keeps a `sum Why` (one arm
+  per refusal, payload what the reading needs), `why(w) -> String` (the reading), `clause(w)
+  -> String` (the arm's name) and a `refused(w)`/`refusal(w)` builder: Thing, Place (its
+  Done is Thing's and Avatar's), Garden (`world {clause}` keeps a host clause such as
+  requiredAbsence), Tide, Wake, Deal, Policy. Scene, Commons, Avatar, Anthology and
+  Appointments give a clause at each site (no Why sum yet); Directory's `Heard.refused`,
+  Bell, Seat, Workshop's `Verdict` and the observers' `Card.Change` still carry `{reason}`.
 * **Observers / mailbox.** `Card.observing` (16) and `Card.observingUpTo(…, cap)`;
   `Card.broadcast`. An Avatar's mailing list holds 32, the host's `sendsPerTurn` (a turn
   past it is refused whole, "turn exceeds the send capacity"); its inbox keeps 64.

@@ -65,9 +65,9 @@ class Cards(Chain):
     def test_refusals_are_one_line_cards_and_write_nothing(self):
         self.garden()
         cases = {
-            "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted: colour is one of: amber, violet, silver\n",
-            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted: Unknown field smell\n",
-            "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted: This card offers garden plant\n",
+            "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted, refused badSpell: colour is one of: amber, violet, silver\n",
+            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted, refused badSpell: Unknown field smell\n",
+            "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted, refused badSpell: This card offers garden plant\n",
         }
         for spell, expected in cases.items():
             with self.subTest(spell=spell[:40]):
@@ -117,7 +117,7 @@ def planted(context: Abi.Context) -> String:
         self.assertTrue(4000 <= len(reply.encode()) <= 4096, len(reply.encode()))
         out = self.say(reply)
         print("\n  dense %d-byte reply through Garden.receive: %s ticks" % (len(reply.encode()), out["ticksUsed"]))
-        self.assertEqual(self.card(out), "Not planted: Unknown field f00\n")
+        self.assertEqual(self.card(out), "Not planted, refused badSpell: Unknown field f00\n")
         self.assertLess(out["ticksUsed"], 1000000)
 
     def version(self, name):

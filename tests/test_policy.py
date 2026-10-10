@@ -117,7 +117,7 @@ class PolicyObject(Chain):
         stranger = self.turn("policy", "teach", example, principal="glm")
         self.assertEqual(stranger["status"], "admitted", stranger)
         self.assertEqual(stranger["result"]["label"], "refused")
-        self.assertIn("Only the policy's owner", stranger["result"]["payload"]["fields"][0]["value"]["value"])
+        self.assertIn("Only the policy's owner", stranger["result"]["payload"]["fields"][1]["value"]["value"])
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="policy")["version"], 0)
         # The same write proposed directly is judged by the law in the source.
         proposed = self.host.send(op="world-propose", principal="glm", identity="forged",
@@ -141,14 +141,14 @@ class PolicyObject(Chain):
         self.policy()
         stranger = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="glm")
         self.assertEqual(stranger["result"]["label"], "refused", stranger)
-        self.assertIn("Only the policy's owner may teach it", stranger["result"]["payload"]["fields"][0]["value"]["value"])
+        self.assertIn("Only the policy's owner may teach it", stranger["result"]["payload"]["fields"][1]["value"]["value"])
         taught = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
         self.assertEqual((taught["status"], taught["result"]["label"]), ("admitted", "done"), taught)
         [macro] = [f["value"] for f in self.state("policy")["fields"] if f["name"] == "macros"][0]["items"]
         self.assertEqual({f["name"]: f["value"]["value"] for f in macro["fields"]},
                          {"name": "moth-bell", "pattern": "moth for {who}", "expansion": "garden plant / colour: violet / seed: a bell for {who}"})
         holes = self.turn("policy", "receive", record(text=label("delvetalk policy macro / name: all / pattern: {x} / expansion: garden plant"), post=label("")), principal="ember")
-        self.assertIn("starts with a word", holes["result"]["payload"]["fields"][0]["value"]["value"])
+        self.assertIn("starts with a word", holes["result"]["payload"]["fields"][1]["value"]["value"])
         card = self.card("policy")
         print("\n--- policy card with a macro ---\n" + card)
         self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
@@ -287,7 +287,7 @@ class PolicyObject(Chain):
         self.say("a green one", identity="green")
         green = self.interpret(self.planting("green", "a fern"))
         self.assertEqual(green["result"]["label"], "refused")
-        self.assertEqual(green["offers"][0]["text"], "Not planted: colour is one of: amber, violet, silver\n")
+        self.assertEqual(green["offers"][0]["text"], "Not planted, refused badColour: colour is one of: amber, violet, silver\n")
 
     def test_an_unclear_interpretation_offers_its_needs(self):
         self.policy()

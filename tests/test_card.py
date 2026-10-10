@@ -41,13 +41,13 @@ class Receive(TurnWorld):
 
     def test_another_card_or_an_unknown_action_is_refused_by_name(self):
         r = self.say("delvetalk c2 light")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("This card is c1"))
-        self.assertIn("Not done: This card is c1", r["offers"][0]["text"])
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("This card is c1"))
+        self.assertIn("refused otherCard: This card is c1", r["offers"][0]["text"])
         r = self.say("delvetalk c1 admire\nplant: open gate\nstatus: rooted")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("No action called admire"))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("No action called admire"))
         self.assertIn("    delvetalk c1 light\n", r["offers"][0]["text"])  # the actual forms, never a bare refusal
         r = self.say("delvetalk c1 light\nby: someone")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("Unknown field by"))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Unknown field by"))
         self.assertEqual(self.lit()[0], 0)
 
     def lit(self):

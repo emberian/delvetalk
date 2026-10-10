@@ -80,6 +80,11 @@ class Floor(Chain):
     def refusal_reason(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["result"]["label"], "refused", reply)
+        fields = reply["result"]["payload"]["fields"]
+        return fields[-1]["value"]["value"]
+
+    def refusal_clause(self, reply):
+        """A refusal names its clause (Thing.Why, Place.Why) beside its reading."""
         return reply["result"]["payload"]["fields"][0]["value"]["value"]
 
     # --- paths that do not need remove -------------------------------------------------
@@ -170,7 +175,8 @@ class Floor(Chain):
     def test_the_holder_withdraws_and_nobody_else_does(self):
         self.holders()
         self.offer()
-        self.assertEqual(self.refusal_reason(self.turn("stone", "withdraw", principal="kimik3")), "Only its holder withdraws an offer.")
+        refused = self.turn("stone", "withdraw", principal="kimik3")
+        self.assertEqual((self.refusal_clause(refused), self.refusal_reason(refused)), ("notHolder", "Only its holder withdraws an offer."))
         self.assertEqual(self.result_label(self.turn("stone", "withdraw", principal="glm")), "done")
         self.assertEqual(self.stone("offer")["label"], "none")
         self.assertEqual(self.refusal_reason(self.accept()), "Nothing is offered.")
@@ -187,7 +193,7 @@ class Floor(Chain):
         self.host.send(op="world-advance", height=until - 1)
         self.assertEqual(self.stone("offer")["label"], "open")
         self.host.send(op="world-advance", height=until)
-        self.assertEqual(self.refusal_reason(self.accept()), "expired: the offer ran until clock %d" % until)
+        self.assertEqual(self.refusal_reason(self.accept()), "The offer ran until clock %d" % until)
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
 
     def test_a_stale_transfer_leaves_the_offer_and_a_retry_takes_it(self):
