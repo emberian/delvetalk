@@ -196,7 +196,7 @@ class Library(unittest.TestCase):
 
 class Objects(unittest.TestCase):
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bumped"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
+        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rained"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
                     ("Card", "notified"): "send", ("Door", "open"): "write", ("Door", "knocked"): "write",
@@ -207,7 +207,7 @@ class Objects(unittest.TestCase):
             found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
             self.assertIsNotNone(found, (name, entry))
             body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue(any(form % plan in body for form in ("perform(Plan.%s(", "perform(Plans.Plan.%s(", "perform(%s {")), (name, entry))
+            self.assertTrue(any(form % plan in body for form in ("perform(Plan.%s(", "perform(Plans.Plan.%s(", "perform(%s {", "world.%s(", "= %s {")), (name, entry))
 
     def test_garden_bell_cistern_and_anthology_cards_render_their_text(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))

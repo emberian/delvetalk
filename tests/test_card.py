@@ -3,7 +3,7 @@ addressed to nobody gets nothing.
 
 Evidence for FOUNDATION §5 (layer: objects).
 
-The uniform card protocol (world/lib/Card.obend): receive {text, post, slot} routes a spell
+The uniform card protocol (world/lib/Card.obend): receive {text, post} routes a spell
 naming the object to one of its forms, and answers anything else with the card and its
 forms. Lantern is the smallest object that follows it.
 """
@@ -14,7 +14,7 @@ from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 
 def heard(text, post="at://glm/p/1"):
-    return record(text=label(text), post=label(post), slot=label(""))
+    return record(text=label(text), post=label(post))
 
 
 class Receive(TurnWorld):
@@ -77,7 +77,7 @@ class CounterCard(TurnWorld):
 
     def test_a_bump_spell_bumps_an_empty_reply_shows_the_count_and_prose_gets_nothing(self):
         r = self.turn("k", "receive", heard("delvetalk k bump"), principal="glm")
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
+        self.assertEqual((r["status"], r["result"], r.get("offers", [])), ("admitted", nat(1), []), r)
         r = self.turn("k", "receive", heard(""), principal="glm")
         self.assertEqual(r["offers"][0]["text"], "Count: 1\nReply with a spell:\n\n    delvetalk k bump\n")
         self.assertEqual(self.turn("k", "receive", heard("how many?"), principal="glm").get("offers", []), [])

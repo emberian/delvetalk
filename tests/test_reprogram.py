@@ -12,8 +12,8 @@ from tests.test_turn_world import ON_DISK, TurnWorld, closure, label, nat, recor
 with open(ON_DISK["Counter"]) as handle:
     COUNTER = handle.read()
 
-assert "delta: 1n" in COUNTER and "state.count + 1n" in COUNTER
-ADDS_TWO = COUNTER.replace("delta: 1n", "delta: 2n").replace("state.count + 1n", "state.count + 2n")
+assert "add 1n" in COUNTER and "state.count + 1n" in COUNTER
+ADDS_TWO = COUNTER.replace("add 1n", "add 2n").replace("state.count + 1n", "state.count + 2n")
 EMBER_ONLY = 'law counter: request.subject == "ember"'
 BOTH = 'law counter: request.subject == "ember" or request.subject == "kimik3"'
 
@@ -243,7 +243,7 @@ class Restart(Reprogram):
         with open(self.path) as f:
             text = f.read()
         with open(self.path, "w") as f:
-            f.write(text.replace("delta: 2n", "delta: 9n", 1))
+            f.write(text.replace("add 2n", "add 9n", 1))
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")

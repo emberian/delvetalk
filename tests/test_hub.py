@@ -28,7 +28,7 @@ from tests.test_chain import garden_seed, reference
 from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
 from tests.test_replay import get, items, rows
-from tests.test_turn_world import label, record
+from tests.test_turn_world import label, nat, record
 from transport.identity import ORIGIN
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
@@ -315,6 +315,25 @@ class LinkDoors(test_chain.Chain):
         self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md\n")
         planted = say("plant: a lamp for moths\ncolour: amber")
         self.assertEqual(planted["result"]["label"], "passed", planted)
+
+
+class SpellsPassedOn(test_chain.Chain):
+    """A spell under the directory's post naming another card is passed on by call to its
+    `receive` (Directory.passOn). The host reads spells only on a direct turn (HOST-HANDOFF
+    5.49), so a card in the message dialect gets the call unparsed and without `fields`, and
+    refuses it `typeMismatch`. Expected to fail until the host reads a `receive` call or
+    delivery to a message-dialect card as it reads a direct one (or the Directory moves, when
+    the host retargets the turn itself)."""
+
+    @unittest.expectedFailure
+    def test_a_spell_under_the_directory_runs_on_a_message_dialect_card(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("")))
+        self.assertEqual(r["status"], "created", r)
+        self.make("k", closure("Counter"), record())
+        r = self.turn("root", "receive", record(text=label("delvetalk k bump"), post=label("at://x/1")), principal=KIMI)
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
+        self.assertEqual(get(self.state("k"), "count"), nat(1))
 
 
 class HandedToTheDirectory(test_chain.Chain):
