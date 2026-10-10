@@ -1624,6 +1624,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
     if !o.read.permits principal then
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
+      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")),
       ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
       ("supervisor", toJson o.supervisor),
       ("forms", dataJson (listData (methodForms id o.methods)))]

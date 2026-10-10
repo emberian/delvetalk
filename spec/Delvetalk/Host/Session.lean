@@ -234,6 +234,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
       | "world-state-cid" => return (session, stateCidOp s.world request)
+      | "world-resolve" => return (session, resolveOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),

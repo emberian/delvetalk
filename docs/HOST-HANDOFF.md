@@ -59,6 +59,16 @@ compiled before it. `tests/fixtures/pins/artifacts.json` (kernel lane) still key
 packet digests; the shape the rule asks for keys each entry by its source pin and keeps the packet digest
 informational.
 
+**Slugs are names for people; CIDs are names for machines; a post carries slugs, never CIDs (host7).** A slug
+(`Host/Slug.lean`: `ofCid`, `decode`) is the proquint of the first 32 bits of a CID's multihash digest, two
+five-letter words (`lusab-babad`). Replies show every receipt with `slug` beside `hash` (`slugged`; the journal stores
+only the hash), `world-inspect` shows `pinSlug`, a public refusal carries its receipt's `slug`. `world-resolve
+{principal, slug}` (`resolveOp`, over `slugTargets`: every entry hash, and the pins and journal-named state CIDs of
+objects the reader may view) answers `{status: "resolved", slug, kind: receipt | pin | state, cid, receipt?}` (the
+receipt as `world-receipt` renders it to that reader), `{status: "ambiguous", matches, message}` when the slug names two
+or more CIDs ("ambiguous: N matches; cite the object and version"), or `{status: "unknown", message}`. Tests:
+`tests/test_slug.py` (a fixed slug, round trips, a pinned 32-bit collision of two states).
+
 Signatures a newcomer calls (all pure unless noted):
 
 ```lean
@@ -92,7 +102,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-resolve {principal, slug}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,

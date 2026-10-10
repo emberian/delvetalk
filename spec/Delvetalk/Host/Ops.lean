@@ -4,6 +4,7 @@
 import Delvetalk.Host.Store
 import Delvetalk.Host.Journal
 import Delvetalk.Host.Law
+import Delvetalk.Host.Slug
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -1505,8 +1506,15 @@ def statusOf (entry : Json) : String :=
   | .ok tag => tag
   | .error _ => "unknown"
 
+/-- A receipt as a reply shows it: the entry with `slug` beside `hash`, the name a person cites
+    (`Slug`); the journal holds only the hash. -/
+def slugged (entry : Json) : Json :=
+  match (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid with
+  | some s => entry.setObjVal! "slug" (toJson s)
+  | none => entry
+
 def reply (entry : Json) : Json :=
-  Json.mkObj [("status", toJson (statusOf entry)), ("receipt", entry)]
+  Json.mkObj [("status", toJson (statusOf entry)), ("receipt", slugged entry)]
 
 def duplicate (principal intent : String) (entry : Json) : Json :=
   Json.mkObj [("status", toJson "refused"), ("class", toJson "duplicateIdentity"),
@@ -2368,7 +2376,9 @@ def publicRefusal (entry : Json) : Json :=
   let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
   -- A law's reading is the package's public text about the clause, never state.
   let reading := if cls == "lawRefused" then (outcome.getObjValAs? String "reason").toOption else none
+  let slug := (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
+    (slug.map fun x => [("slug", toJson x)]).getD [] ++
     (reading.map fun r => [("reason", toJson r)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
@@ -2380,11 +2390,11 @@ def publicRefusal (entry : Json) : Json :=
     is elided and counted. Results, offers, sends, sources and checkpoints never show. -/
 def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
   let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
-  if owner == reader && !reader.isEmpty then entry
+  if owner == reader && !reader.isEmpty then slugged entry
   else if tagOf entry == "refused" then
     (publicRefusal entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)
       |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
-  else
+  else slugged <|
     let objectOf := fun (x : Json) => (x.getObjValAs? String "object").toOption.getD ""
     let arr := fun (x : Option Json) => ((x.bind (·.getArr?.toOption)).getD #[])
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -2399,6 +2409,57 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
        ("outcome", Json.mkObj ([("tag", toJson (tagOf entry))] ++
          (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
        ("elided", toJson elided)])
+
+/-- Everything a slug may name, as `(cid, kind)`: every entry's hash (`receipt`); every pin an
+    entry gave an object `reader` may view (`pin`); the state CIDs the journal names for such an
+    object: a created seed, a write's `cid` (`state`). -/
+def slugTargets (w : World) (reader : String) : Array (String × String) := Id.run do
+  let mut out : Array (String × String) := #[]
+  let seen := fun (id : String) => viewable w reader id
+  for entry in w.entries do
+    if let .ok h := entry.getObjValAs? String "hash" then out := out.push (h, "receipt")
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let object := fun (j : Json) => (j.getObjValAs? String "object").toOption.getD ""
+    match tagOf entry with
+    | "created" =>
+      if seen (object outcome) then
+        if let .ok p := outcome.getObjValAs? String "pin" then out := out.push (p, "pin")
+        if let .ok seed := outcome.getObjVal? "seed" then out := out.push (Journal.bodyHash seed, "state")
+    | "admitted" =>
+      for c in arr "creates" do
+        if seen (object c) then
+          if let .ok p := c.getObjValAs? String "pin" then out := out.push (p, "pin")
+          if let .ok seed := c.getObjVal? "seed" then out := out.push (Journal.bodyHash seed, "state")
+      for r in arr "reprograms" do
+        if seen (object r) then
+          if let .ok p := r.getObjValAs? String "newPin" then out := out.push (p, "pin")
+      for x in arr "writes" do
+        if seen (object x) then
+          if let .ok c := x.getObjValAs? String "cid" then out := out.push (c, "state")
+    | _ => pure ()
+  return out
+
+/-- `world-resolve {principal, slug}`: the one CID the slug names among what `principal` may see
+    (`slugTargets`): `{status: "resolved", slug, kind: receipt | pin | state, cid, receipt?}`, with the
+    receipt as `world-receipt` renders it to that reader when it names one; `{status: "ambiguous",
+    matches}` when it names two or more CIDs; `{status: "unknown"}` when none. -/
+def resolveOp (w : World) (j : Json) : Except String Json := do
+  let reader ← j.getObjValAs? String "principal"
+  let slug ← j.getObjValAs? String "slug"
+  if (Slug.decode slug).isNone then throw s!"{slug} is not a slug: two proquint words, like lusab-babad"
+  let hits := (slugTargets w reader).foldl (fun (acc : Array (String × String)) (cid, kind) =>
+    if Slug.ofCid cid == some slug && !acc.any (·.1 == cid) then acc.push (cid, kind) else acc) #[]
+  match hits.toList with
+  | [] => return Json.mkObj [("status", toJson "unknown"), ("slug", toJson slug),
+      ("message", toJson s!"unknown: no receipt, pin or state here is named {slug}")]
+  | [(cid, kind)] =>
+    let receipt := if kind != "receipt" then none else
+      (w.entries.find? fun e => (e.getObjValAs? String "hash").toOption == some cid).map (projectEntry w reader)
+    return Json.mkObj ([("status", toJson "resolved"), ("slug", toJson slug), ("kind", toJson kind),
+      ("cid", toJson cid)] ++ (receipt.map fun r => [("receipt", r)]).getD [])
+  | many => return Json.mkObj [("status", toJson "ambiguous"), ("slug", toJson slug), ("matches", toJson many.length),
+      ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
 /-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
 def readerOf (j : Json) : Except String String := do
