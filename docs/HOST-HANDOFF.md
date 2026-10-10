@@ -543,88 +543,47 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ## 7. Open
 
-- Forms for sum inputs: `methodForms` lists only text, natural and closed empty-payload sums; a sum held as a bounds variable has none. Closes when a sum held as a bounds variable yields a choice or form (resolve variables through the packet's `bounds`).
-- Handlers over nested frames and activities: `run` offers only the callee's own frame's plans to a pure `handle`.
+- Handlers over nested frames and activities: `run` offers only the callee's own frame's plans to a pure
+  `handle`. The smallest change: `drive` looks up the innermost handler at a depth at or below the frame's
+  (the `handlers` stack), not the one at exactly `depth`.
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
-- `tests/test_bridge.py` `test_end_to_end_clock_and_addressee_against_the_real_host` is still `@unittest.expectedFailure` with a comment that `world-addressee` is missing; the op exists (`Session.lean`). Remove the decorator and run it.
 - `world-reprogram`/`amend` are gated only by the object's law.
+- Closed by host10, not by code: "forms for sum inputs held as bounds variables". A closed sum of empty
+  payloads is never recursive, so it is never a bounds variable; a named one is an inline variant and
+  forms a choice (probed on hbox with `test_sum_words`'s garden); declared forms (5.69) cover the rest.
+- `tests/test_bridge.py`'s stale `expectedFailure` is gone (foundation).
 
-### Queue for the next host lane, in order (from lane/host9)
+### Queue for the next host lane, in order (from lane/host10)
 
-host9 landed 5.52 to 5.61, one commit each: words for sums at the boundary; typed receivers for
-`subscribe` and `spell` out of the world's methods; model replies fitted as spells and lens `set`;
-`admits` per method, `world-objects {methods}`, `world-inspect {source: false}`; in-process yields
-resuming from the held machine state (KERNEL-HANDOFF §18); compile caches carried across the worlds a
-process opens; `interpretQuota`; the deletion pass. Full `tests.run` on hbox at lane/host9's last
-code commit: 1040 tests in 253 classes, 0 failed.
+host10 landed 5.62 to 5.70, one commit each (plus the world `methods()` lines, 9c85454, and two
+foundation merges): declared methods (the public-method hole); called and delivered `receive` read
+as spells; an interpretation's proposal names its card; `receiveArgument` and the old item labels
+deleted; the on-disk compile cache; a Bend law's reading; the host's default page; a card's own form
+bounds and the `source` kind; suspension fields by block. Full `tests.run` on hbox at lane/host10's
+last code commit (load ~18): 1063 tests in 262 classes, one failed class (`test_pages`, the
+garden's and tide's declared bounds), fixed in the commit that rewrote this section.
 
-1. **The on-disk compile cache** (the open half of host9's item 4): the design points (key naming the
-   binary, prefetch around the pure compile paths, a `LawExpr` codec, `DELVETALK_COMPILE_CACHE`, the
-   cache dir in the TCB) and the measurement (82 ms compile against 10 ms from packet) are below as
-   item 4.
-2. **Delete `receiveArgument`** once transport stops sending `slot` (5.61 says what to change).
-3. **`amend {item}`/`remove {item}`** under the old labels: delete when no object writes them
-   (`world/` writes `amendItem`/`removeItem`).
-4. The rest of host8's queue, below: rows as roots, the rehearsal wall, the older open items.
-
-host8's queue as host9 left it:
-
-
-host8 landed, one commit each (5.46 to 5.51 and the commits on lane/host8): compile caches kept across
-turns and card reads; a migration made canonical (test); the relational law atoms denoted; relations read
-once per build from the entry module only; relations day 2 (inserts commute, keyed row rebase,
-`movedRootAdmits`); state bytes counted without printing; the per-object write index (`World.touches`);
-`viewDerived`; `viewAt`; the world object (message dispatch, `world` reserved); `viewField`; Host/Spell.lean
-and `spell-parse`; spells read by the host for message-dialect cards (`badSpell`); subscriptions and
-`changed`; field roots. Build and test on hbox in your own directory with `swarm-build`; narrow suites, then
-the full `tests.run` once (1011 tests green at lane/host8's last commit).
-
-1. Done on lane/host9 (5.52).
-2. Done on lane/host9 (5.54).
-3. Done on lane/host9 (5.55 to 5.57).
-4. Per-process half done on lane/host9 (5.59). **The on-disk half is open:** heaps are separate
-   processes. Measured on hbox: compiling a package's `initial` 82 ms (Place), running it from its
-   packet (decode, Mini re-check, run) 10 ms, so a packet cache saves about 85%. Design points found:
-   (a) the key must also name the compiler: pins are sources and replay "recompiles with the current
-   compiler", so a disk cache keyed by inputs alone would serve an old binary's packet after an upgrade;
-   the binary is 129 MB, too big to hash per process in Lean, so use a stamp (size and mtime of
-   `IO.appPath`) as the cache's subdirectory, and say the operator removes old ones; (b) the compile
-   paths are pure (`compileObject`, `compileEntryIn`, `compiledMethod`): either Session prefetches the
-   keys a step will need (a `world-create`'s `buildKey`; the defs of objects the journal names, at
-   open) and writes new keys after `durable`, or the cache read is an `implemented_by` memo; the
-   prefetch is the clean one and misses only methods first compiled in a session; (c) `Built.laws` is
-   `LawExpr`, which has no codec: add one in `Law.lean` (encode, decode, `#guard` round trip) or
-   re-derive from the entry module's law lines; `Compiled` comes back from `CheckedEntry.ofPacket`
-   (re-checked by Mini, so a damaged file fails closed to a compile); (d) gate it on
-   `DELVETALK_COMPILE_CACHE=<dir>` (hostd's children inherit it), default off; (e) the cache dir is in
-   the TCB as the binary is: a forged packet type-checks but need not be its source's.
-5. Done on lane/host9 (5.60).
-6. Done on lane/host9 (5.61).
-7. **Rows as roots, the rest** (WHOLENESS §3a): per-row roots need the kernel's lazy cells (KERNEL-HANDOFF
-   §15); when `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`.
-8. **Rehearsal wall.** foundation at 6fe2740 runs the rehearsal in 32 to 36 s wall on hbox at load 14 to 50
-   (host CPU 16 to 18 s); the 50 s target holds. Measure on a quiet box before quoting a number.
-9. Older open items (above): forms for sum inputs held as bounds variables, handlers over nested frames,
-   foreign worlds, `tests/test_bridge.py`'s stale `expectedFailure` (check it is still there).
+1. **WORLD-REVIEW finding 22**, waiting on the review lane: when its commit deletes the seven unused
+   variants (`quote`, `reference`, `offer`, `fields`, `source`, `result`, `continuation`) and
+   Phrasebook from `world/lib/document/Document.obend`, delete the same cases from
+   `spec/Delvetalk/Document.lean` and the kinds from `tests/test_document.py`'s generator, one commit.
+2. **Suspension size to under 7 KB** (5.70): the host's fields are now ~3 KB of a 7.6 KB median; the
+   rest is the kernel's checkpoint blocks (median 4.7 KB fresh) and the `tokenTree` root names (~1 KB,
+   up to 16 CIDs). Ask the kernel lane, or fold the roots into one inner block only if that block
+   recurs (it does not today).
+3. **Handlers over nested frames** (above).
+4. **Rows as roots** (WHOLENESS §3a): blocked on the kernel's lazy cells (KERNEL-HANDOFF §15): when
+   `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`.
+5. **Rehearsal wall**: 23.0 s and 32.6 s on hbox at load ~17 (two runs of 5.70's binary); the 50 s
+   target holds. Measure on a quiet box before quoting a number.
 
 Requests to other lanes (not the host's files):
-- Objects (from host9): World.obend's `subscribe` line gains `method: String` ("" = `changed`), with
-  shared row types in `world/lib/Rows.obend` so a receiver's `inserted: List<Rows.Rain>` types; a
-  message-dialect card with lenses declares `def lenses() -> Lists.List<Form.Field>` and a method
-  `set(state, input: {field: String, value: Form.Value}, context)` (5.54).
-- Transport (from host9): `transport/http.py:113` stops sending `slot: ""` in `receive`, and the bridge and
-  zulip test objects stop declaring `slot`, so `receiveArgument` can go (5.61).
-- Kernel: (a) in-turn yields encode, hash and decode the whole checkpoint for every Plan the host answers at
-  once (`Turn.conclude` -> `Checkpoint.makeFor` -> `checkpointDigest`, then `prepareResumeEntry` re-hashes and
-  decodes): ~45% of host CPU in the rehearsal profile. A yielded outcome that carries the machine state and a
-  lazily built checkpoint, plus a resume from that state, would remove it for every non-suspending Plan.
-  (b) `CheckedEntry.apply` (Entry.lean) re-infers the quoted state argument with `ObjectiveBendTyping.infer`,
-  quadratic in rows through `inferFields`' list append: ~75% of a 1000-row relation insert turn (57 ms). A
-  typing derivation from `conformsUnder` (or a linear `inferFields`) would make the per-turn cost the edit's.
-  (c) `Package.compileEntryFrom` compiles and runs `relations()` on every method compile; the artifact's
-  `relations` lacks `limit`/`retain`, so the host compiles it once per build itself (`Built.relations`).
-- Objects: World.obend's protocol may now declare `spell`, `subscribe`/`unsubscribe` (with a `Subscribed`
-  sum: `subscribed {} | denied {} | refused {clause}`), `viewDerived`, `viewAt`: the host answers them
-  (tests append these lines to a library copy until then).
-- Measured limit: a 2,000-row relation cannot be seeded: `maxStateBytes` (262,144) counts wire JSON, about
-  150 bytes a row. Decide whether the bound should count canonical CBOR (about 25 bytes a row) instead.
+- Objects: `Form.obend`'s `Kind` gains `source: {}`, and the Workshop declares forms whose `source`
+  fields are of that kind (then a 6 KB block is admitted and a 20 KB one refused `badValue` by name;
+  `tests/test_form_bounds.py` shows it with a fixture). `Abi.Verdict.refused` may carry `reading`
+  (5.67). The five pasted `publishPage` methods may go (5.68). Fixtures the rule touched declare their
+  methods with `tests.test_turn_world.declared`; world objects declare theirs with `methods()`
+  (Card.wordList).
+- Kernel: the `form` block grammar (`ObjectiveBendParse.lean`) gains `name: source` for
+  `Form.Kind.source`. `Package.lawShape` was widened by host10 to accept `refused {clause, reading}`
+  (two lines in the kernel's file, at the coordinator's request).
