@@ -319,6 +319,20 @@ class HttpFront(unittest.TestCase):
         s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
 
+    def test_a_created_reply_shows_one_hash_by_default_and_all_of_them_with_full(self):
+        import re
+        tok = self.login()
+        body = {'intent': 'mk-hash', 'object': 'h1', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}], 'entry': 'initial', 'seed': {'count': 1}}
+        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects', body, tok)
+        self.assertEqual(s, 200, raw)
+        self.assertEqual(re.findall(rb'bafy\w+', raw), [json.loads(raw)['receipt']['hash'].encode()], raw)
+        body['intent'], body['object'] = 'mk-hash-2', 'h2'
+        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects?full=1', body, tok)
+        self.assertGreater(len(re.findall(rb'bafy\w+', raw)), 3)
+        s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=tok)
+        self.assertNotIn('pin', v)
+        self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/h1/source', token=tok)[1])
+
     def test_check_asks_the_world_and_sends_only_the_callers_modules(self):
         tok = self.login()
         seen, real = [], self.host.send
@@ -401,7 +415,7 @@ class HttpFront(unittest.TestCase):
         held = {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended', 'activity': {'checkpoint': {'digest': 'd', 'tokens': [{'n': '1'}] * 5}}}}}
         self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
         s, r = self.call('GET', '/AGENTS.md/receipt/x', token=tok)
-        self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'digest': 'd', 'tokens': {'elided': 5}})
+        self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'tokens': {'elided': 5}})  # the digest is a hash: omitted by default
         self.assertEqual(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1], held)
 
     # ---- heaps

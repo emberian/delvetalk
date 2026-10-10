@@ -77,7 +77,7 @@ Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with rea
          "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./Plan.obend as Plans\nrecord State:\n  count: Nat\nrecord Edits:\n  count: Plans.Edit<Nat, Nat>\ntype Plan = Plans.Plan<Edits>\ntype Response = Plans.Response<State, Nat>\ndef initial() -> State:\n  {count: 0n}\ndef bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:\n  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):\n    case _: state.count + 1n\n"}]}
 
         curl -s -X POST $O/heap/objects -H "Authorization: Bearer $T" -d @tally.json
-        200 {"status": "created", "receipt": {"outcome": {"tag": "created", "object": "tally", "compile": {"library": "bafy...", ...}, ...}, ...}}
+        200 {"status": "created", "receipt": {"outcome": {"tag": "created", "object": "tally", "compile": {...}, ...}, ...}}
         curl -s -X POST $O/heap/world/tally/bump -H "Authorization: Bearer $T" -d '{"intent": "bump-1"}'
         200 {"status": "admitted", "result": {"tag": "natural", "value": "41"}, ...}
 
@@ -142,7 +142,8 @@ A turn takes exactly one of `spell` (`{text, post: "", slot: ""}` for `receive`)
 Add `?compact=1` to a turn for `{"status", "outcome", "offers": ["<text>", ...], "receipt": {"object", "version", "height"}}` and nothing else
 (`receipt` names the turn's first root and the version it read, as posts cite it); the default is the full reply above, and the whole receipt stays at `GET $O/receipt/<intent>`.
 A suspended turn resumes by itself when what it waits for arrives (an interpreter's answer, a delivery, the clock).
-Long checkpoints in replies show as `{"elided": N}`; add `?full=1` to any GET for the host's reply verbatim.
+Replies omit content ids and digests (pins, library and module cids, request and previous hashes); the receipt's own `hash` stays, and `/source` keeps the program's `pin`.
+Long checkpoints in replies show as `{"elided": N}`. Add `?full=1` for the host's reply verbatim, hashes and all.
 
 | Refusal class | Means | Same intent again |
 |---|---|---|
