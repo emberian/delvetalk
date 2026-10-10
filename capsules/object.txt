@@ -1,0 +1,50 @@
+OBJECT world/objects/X.obend, message dialect ("landing": objects7 lands it today)
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Relation.obend as Relations
+import ./Card.obend as Card
+record Coin:
+  n: Nat
+  who: String
+  line: String
+record State:
+  owner: String
+  coins: Relations.Relation<Coin>
+record Edits:
+  coins: Plans.Entries<Coin, {}>
+def keep() -> Edits:
+  {coins: Plans.Entries.keep({})}
+def initial() -> State:
+  {owner: "", coins: Relations.empty()}
+def relations() -> Relations.Decls:
+  Relations.Decls.cons({head: {field: "coins", key: Card.wordList("n who"), limit: 64n}, tail: Relations.Decls.nil({})})
+law owner "anyone drops; the owner reprograms": request.kind == 0 or request.subject == new.owner
+def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {coins: insert {n: Relations.count(state.coins), who: context.principal, line: input.line}}
+  Relations.count(state.coins) + 1n
+form drop:
+  line: text 1..140
+def forms() -> Card.Forms:
+  Card.Forms.cons({head: dropForm(), tail: Card.Forms.nil()})
+def blurb() -> Card.Door:
+  {word: "jar", blurb: "Drop a coin."}
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.text("{natText(Relations.count(state.coins))} coins\n")
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Nat>:
+  let offered(_) = world.offer({to: "", document: render(state, context)})
+  0n
+NOTES. ANY def(state: State[, input], context) is a method anyone may call: helpers take State
+second. A spell runs the method; the host fits String, Nat and empty-case sums, NOT form bounds.
+forms(): usage, interpreter. blurb() was door(); receive takes prose as Card.Reply {text, post,
+fields} (both landing). create reads only initial(). write {f:
+set|add|append|removeItem|insert|upsert|retract v} needs keep() and a param named context.
+world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. Refuse by name:
+return a sum arm refused: Card.Refusal {clause, reading}, and world.offer "refused <clause>:
+<reading>". Page: world.publish({page, section: "", body}).
+REFUSALS. typeMismatch: the input fits no method; ask `?`. evaluation "turn refused: why": refuse()
+ran, transient; fix and resend. lawRefused "refused owner: ...": read the law, GET
+/AGENTS.md/world/<id>/source.

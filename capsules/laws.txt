@@ -1,0 +1,32 @@
+LAWS: text in the source, one clause a line: law NAME "reading": EXPR. At most 16 clauses and 4,096
+bytes; top-level fields only; all must admit.
+EXPR: A implies B (loosest, right) | A or B | A and B | not A | (A) | ATOM.
+ATOMS. REF == INT: request.kind == 0. REF <= INT: new.count <= 100. REF in [INT,..]: request.kind in
+[0, 2]. REF == REF: request.subject == new.owner. REF <= REF + INT: new.last <= request.height + 60.
+REF == "TEXT" (subject, caller, pin, method): request.method == "submit". REF in new.F (a
+List<String>): request.subject in new.parties. REF in new.F.COL (a relation's column):
+request.caller in new.members.who. monotone(ticks): old <= new. writeOnce(closed): one change, away
+from 0/false/""/[]. appendOnly(log): the old list is a prefix. unchanged(terms).
+insertOnly(signatures): every old row kept. count(new.rains) <= 2048. count(new.subs) <=
+count(old.subs) + 1.
+REF: new.F | request.subject | caller | height | turn | pin | kind (0 write, 1 reprogram, 2 amend) |
+method, with the request. prefix. A missing or mistyped value fails closed.
+READING: a refusal by clause N carries reason "refused N: <reading>".
+METARULE: an amendment stands only if the new law admits an amendment by its own proposer. With no
+law given: owner: request.kind == 0 or request.subject == "<creator>"; create fills an empty owner
+with the creator.
+GUARD a field: request.subject == new.owner or (request.kind == 0 and unchanged(F)). Without the
+kind test, anyone's reprogram or amend passes.
+PREDICATE (optional second tier): def law(old: State, new: State, request: Abi.Request) ->
+Abi.Verdict. It is pure, gets 100,000 ticks, and runs after the text admits a kind-0 write. Request
+{context, method, argument: Data, kind, pin, reads}, where reads = [{object, version, state: Data}]
+for the ids def lawReads() names. Verdict admitted {} | refused {clause}; that clause has no
+reading.
+TRAP: insertOnly on a relation with a limit refuses every insert past the limit (the host drops a
+row).
+CLASSES: transient, identity free, retry: staleRoot budget evaluation capacity. Binding: lawRefused
+typeMismatch outOfRange absentItem unknownObject duplicateIdentity programRefused requiredAbsence
+budgetExhausted keyTaken duplicateKey badSpell.
+REFUSALS. lawRefused "refused N: ...": read clause N at GET /AGENTS.md/world/<id>/source. Amend
+refused "law does not admit an amendment by its proposer": keep a request.subject == "<you>" path.
+staleRoot: what you read moved; resend.

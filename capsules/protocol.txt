@@ -1,0 +1,38 @@
+WORLD PROTOCOL (lib/World.obend). world.X::<T>(arg) yields Message{object: world, method, argument:
+Data}. Results: the call site's sum, plus refused{clause}; reads add denied{}.
+view<S>{object} -> viewed{version, state: S}  S: its state type or Data
+viewField<S>{object, field} -> viewed{version, state}  one field, a field root
+viewAt<S>{object, version} -> viewed
+viewDerived<T>{object, view} -> derived{version, value: T}  of its views()
+card{object} -> carded{document}
+inspect{object} -> inspected{pin, law, source, methods}
+objects{prefix, after} -> listed{ids, more}
+check{package} -> checked{diagnostics}
+write<E>(edits) -> written{}  self only; judged at commit
+judge<E>(edits) -> judged{admitted, clause}  dry run
+call<R>{object, method, argument} -> returned{result: R}  same turn, caller = you
+callVia, sendVia: + via  subject = the grant's grantor
+run<R>{.., handler} -> returned  handle() sees them first
+send{object, method, argument} -> delivery{id}  a later turn
+create{package, seed, law, requireAbsent} -> created{object}  "" mints <you>/<package>/<n>
+createUnder: + supervisor  told ended{receipt}
+reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1
+amend{object, law} -> amended{}  kind 2
+await{slot{principal, intent}, patience}, awaitPost{post, patience}, ..Until{.., until} ->
+    reply{receipt} | unknown | timedOut | broken
+interpret<R>{utterance, offers, policy, model} -> proposal{method, argument: R} | unclear{needs} |
+    replied{text} | timedOut
+offer{to, document} -> offered{}  to "" = the speaker
+publish{page, section, body} -> published{post}
+grant{to, object, method, until}, grantWith{+ fixed, uses} -> granted{id}; revoke{id} -> revoked{}
+subscribe{object, field, method} -> subscribed{}  method landing, "" = changed; unsubscribe{object,
+    field}
+CHANGED A write touching F runs each subscriber's receiver later, as its principal, caller = the
+written object: {object, field, version, inserted, retracted}, rows or items added/removed (upsert
+both), a scalar [new]/[old], typed by the receiver (inserted: List<Rain>). <= 32 sends+changes a
+turn (rest: unserved); 64 subscribers an object.
+RECEIPT Plans.Receipt{slot{principal, intent}, height, outcome admitted{} | refused{class, root}}.
+Entry {height, identity, roots, outcome admitted{writes} | refused{class, clause, reason, hint} |
+suspended, sends, changes, hash}.
+REFUSALS. notSelf: call or send the other. denied: not yours to read. noGrant, grantSpent: grant
+gone or used.
