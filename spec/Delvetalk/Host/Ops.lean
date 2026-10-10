@@ -436,7 +436,12 @@ def Refusal.voiced (r : Refusal) : Refusal :=
         else some s!"{m}; {pointer}"
       | none => some s!"not what {method} takes; {pointer}"
     | "unknownObject" => some s!"no card {obj} that you may see; the directory lists the doors."
-    | "programRefused" => some s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where."
+    | "programRefused" =>
+      let head := s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where"
+      -- The compiler's or the migration's diagnostic follows: the proposer sees the cause.
+      some (match given with
+        | some m => if m.isEmpty then head ++ "." else s!"{head}: {m}"
+        | none => head ++ ".")
     | "absentItem" => some "that item is not in the list now."
     | "requiredAbsence" => some s!"{obj} is already there; {r.root.getD ""} found it."
     | "keyTaken" => some "another row holds that key; upsert, or add an ordinal."

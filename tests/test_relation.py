@@ -182,7 +182,9 @@ class Relations(RelationCase):
         dup = self.reprogram(migrate(cons("ann", 2, cons("ann", 2, "Lists.List.nil({})"))) + "# again\n", "rp2")
         self.assertEqual((dup["receipt"]["outcome"]["class"], dup["receipt"]["outcome"].get("clause")),
                          ("programRefused", "migration"), dup)
-        self.assertEqual(dup["receipt"]["outcome"]["reason"], "the package was refused at migration; the workshop's check shows where.")
+        reason = dup["receipt"]["outcome"]["reason"]
+        self.assertTrue(reason.startswith("the package was refused at migration; the workshop's check shows where: "), reason)
+        self.assertIn("duplicateKey", reason)
         self.assertEqual(self.rows(), [("ann", 2, "m"), ("kim", 5, "m"), ("ann", 9, "m")])
 
     def test_only_the_entry_modules_relations_count(self):
