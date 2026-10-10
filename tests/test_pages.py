@@ -6,7 +6,7 @@ import os
 import re
 import urllib.parse
 
-from tests.test_turn_world import ROOT, declared
+from tests.test_turn_world import ROOT, closure, declared
 from tests.test_http import DID, FORM, FrontCase, browser_login
 from transport.hostproc import HostClient
 
@@ -14,7 +14,7 @@ HTML = {'Accept': 'text/html,application/xhtml+xml'}
 PICKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 sum Colour:
   amber: {}
   violet: {}
@@ -22,12 +22,12 @@ record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def pick(state: State, input: {colour: Colour}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def pick(state: State, input: {colour: Colour}, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: state.count + 1n
 """)
 
@@ -42,7 +42,7 @@ class Pages(FrontCase):
         made, refusal = genesis.run(HostClient(cls.socket), cls.OPENER)
         assert refusal is None, refusal
         r = HostClient(cls.socket).send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
-                                         'modules': [{'name': 'Variant', 'source': open(os.path.join(ROOT, 'tests', 'fixtures', 'obend', 'Variant.obend')).read()}, {'name': 'Picker', 'source': PICKER}], 'entry': 'initial', 'seed': {'tag': 'record', 'fields': []}})
+                                         'modules': closure('World') + [{'name': 'Picker', 'source': PICKER}], 'entry': 'initial', 'seed': {'tag': 'record', 'fields': []}})
         assert r['status'] == 'created', r
 
     def setUp(self):

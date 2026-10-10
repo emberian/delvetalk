@@ -261,7 +261,7 @@ and packet once, check it. -/
 def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
   let prepared := request.prepared
   let modules := prepared.modules
-  let lowered ← prepared.lower (modules.length - 1) entry (.arr #[]) (.arr #[]) request.limits "definition"
+  let lowered ← prepared.lower (modules.length - 1) entry request.limits
   let accepted ← (accept lowered).mapError (FrontEnd.instancesNote prepared.instances)
   let packet := lowered.packet
   let entryModule := modules.getLast!

@@ -87,29 +87,27 @@ DIRECTORY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Document.obend as Document
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
 def joined(ids: Lists.List<String>, tail: String) -> String:
   match ids:
     case nil(_): tail
     case cons(c): textConcat(textConcat(c.head, ","), joined(c.tail, tail))
-def listing(state: State, input: {prefix: String, after: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.objects({prefix: input.prefix, after: input.after})):
+def listing(state: State, input: {prefix: String, after: String}, context: Abi.Context) -> Activity<String>:
+  match world.objects({prefix: input.prefix, after: input.after}):
     case listed(l): said(context, joined(l.ids, if l.more then "+" else "."))
     case _: said(context, "other")
-def show(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.card({object: {world: "", object: input.target}})):
+def show(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.card({object: {world: "", object: input.target}}):
     case carded(c): said(context, Document.plain(c.document))
     case denied(_): said(context, "denied")
     case refused(r): said(context, r.clause)
@@ -188,20 +186,18 @@ class Cards(Catalogue):
 WAITER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def wait(state: State, input: {until: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: input.until})):
+def wait(state: State, input: {until: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: input.until}):
     case timedOut(_): said(context, "timedOut")
     case _: said(context, "other")
 """)
@@ -231,7 +227,7 @@ class Time(Reflection):
 TELLER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Document.obend as Document
 record Said:
   text: String
@@ -239,38 +235,36 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def offered(to: String, text: String, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.offer({to: to, document: Document.text(text)})):
+def offered(to: String, text: String, context: Abi.Context) -> Activity<String>:
+  match world.offer({to: to, document: Document.text(text)}):
     case _: said(context, "told")
-def tell(state: State, input: {to: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+def tell(state: State, input: {to: String, text: String}, context: Abi.Context) -> Activity<String>:
   offered(input.to, input.text, context)
-def echo(state: State, input: Said, context: Abi.Context) -> Activity<Plan, Response, String>:
+def echo(state: State, input: Said, context: Abi.Context) -> Activity<String>:
   offered("", input.text, context)
-def relay(state: State, input: {target: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: "echo", argument: Data.of::<Said>({text: input.text})})):
+def relay(state: State, input: {target: String, text: String}, context: Abi.Context) -> Activity<String>:
+  match world.send({object: {world: "", object: input.target}, method: "echo", argument: Data.of::<Said>({text: input.text})}):
     case _: said(context, "sent")
-def waitAndTell(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.await({slot: {principal: "glm", intent: "x"}, patience: 10n})):
+def waitAndTell(state: State, context: Abi.Context) -> Activity<String>:
+  match world.await({slot: {principal: "glm", intent: "x"}, patience: 10n}):
     case _: offered("", "woken", context)
-def page(state: State, input: {section: String, body: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.publish({page: "", section: input.section, body: input.body})):
+def page(state: State, input: {section: String, body: String}, context: Abi.Context) -> Activity<String>:
+  match world.publish({page: "", section: input.section, body: input.body}):
     case published(p): said(context, p.post)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def stamp(state: State, input: Said, context: Abi.Context) -> Activity<Plan, Response, String>:
+def stamp(state: State, input: Said, context: Abi.Context) -> Activity<String>:
   said(context, input.text)
-def pokeOther(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: "secret-xyz"})}})):
+def pokeOther(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: "secret-xyz"})}):
     case _: poked(input.target)
-def poked(target: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: target}, method: "stamp", argument: Data.of::<Said>({text: "stamped"})})):
+def poked(target: String) -> Activity<String>:
+  match world.call::<String>({object: {world: "", object: target}, method: "stamp", argument: Data.of::<Said>({text: "stamped"})}):
     case returned(r): r.result
     case _: "other"
 """)
@@ -528,21 +522,19 @@ class Projection(Reflection):
 HANDLED = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Document.obend as Document
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
-def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.handle})}})):
+def who(state: State, context: Abi.Context) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: context.handle})}):
     case _: context.handle
-def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
+def when(state: State, context: Abi.Context) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}):
     case _: natText(context.clock)
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat("seen by ", context.handle))
@@ -599,24 +591,22 @@ class Handles(Reflection):  # and the clock
 POST_WAITER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
-def noted(text: String, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def noted(text: String, context: Abi.Context) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def waitFor(state: State, input: {post: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.awaitPost({post: input.post, patience: 5n})):
+def waitFor(state: State, input: {post: String}, context: Abi.Context) -> Activity<String>:
+  match world.awaitPost({post: input.post, patience: 5n}):
     case reply(r): noted(textConcat("answered by ", r.receipt.slot.intent), context)
     case timedOut(_): noted("timed out", context)
     case _: noted("other", context)
-def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<String>:
   noted(input.text, context)
 """)
 OLD_RECEIVE = POST_WAITER.replace("input: {text: String, post: String}", "input: {text: String, post: String, slot: String}").replace(
@@ -690,31 +680,29 @@ class ReplyIsAddress(PostWaiterWorld):
 MINTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Child.obend as Child
 record State:
   made: Nat
 record Edits:
   made: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {made: 0n}
-def made(target: Plans.Reference) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: target})):
+def made(target: Plans.Reference) -> Activity<String>:
+  match world.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: target}):
     case created(c): c.object.object
     case refused(r): r.clause
     case _: "no answer"
-def spawn(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, String>:
+def spawn(state: State, input: {}, context: Abi.Context) -> Activity<String>:
   made(Plans.nobody())
-def named(state: State, input: {id: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+def named(state: State, input: {id: String}, context: Abi.Context) -> Activity<String>:
   made({world: "", object: input.id})
-def spawnThenWait(state: State, input: {}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: Plans.nobody()})):
+def spawnThenWait(state: State, input: {}, context: Abi.Context) -> Activity<String>:
+  match world.create({package: "Child", seed: Data.of::<{}>({}), law: "", requireAbsent: Plans.nobody()}):
     case created(c): waited(c.object.object)
     case _: "no answer"
-def waited(id: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: 5n})):
+def waited(id: String) -> Activity<String>:
+  match world.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: 5n}):
     case _: id
 """)
 
@@ -754,20 +742,18 @@ class MintedIds(Reflection):
 WHO = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
-def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: context.principal})}})):
+def who(state: State, context: Abi.Context) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: context.principal})}):
     case _: context.principal
-def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
+def when(state: State, context: Abi.Context) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}):
     case _: natText(context.clock)
 """)
 

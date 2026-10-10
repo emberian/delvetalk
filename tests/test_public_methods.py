@@ -91,15 +91,15 @@ class Appointments(Chain):
         self.assertEqual(status["label"], "booked")
 
 
-BARE = FIXTURE_HEAD + """def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+BARE = FIXTURE_HEAD + """def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   addSelf(context, 1n)
-def poke(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()})):
+def poke(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.call::<Nat>({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()}):
     case returned(_): 1n
     case refused(r): if r.clause == "noMethod" then 7n else 2n
     case _: 3n
-def post(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()})):
+def post(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()}):
     case delivery(_): 1n
     case refused(r): if r.clause == "noMethod" then 7n else 2n
     case _: 3n
@@ -112,7 +112,7 @@ class Bare(Chain):
     def setUp(self):
         super().setUp()
         from tests.test_turn_world import closure as world_closure, declared
-        plan = world_closure("Variant")
+        plan = world_closure("World")
         self.make("bare", plan + [{"name": "Bare", "source": BARE}], record())
         self.make("caller", plan + [{"name": "Caller", "source": declared(BARE, "poke", "post")}], record())
 
@@ -137,7 +137,7 @@ class Bare(Chain):
         from tests.test_turn_world import closure as world_closure
         source = BARE + "def methods() -> Nat:\n  1n\n"
         r = self.host.send(op="world-create", principal="ember", identity="mk-bad", object="bad",
-                           modules=world_closure("Variant") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
+                           modules=world_closure("World") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
         self.assertNotEqual(r.get("status"), "created", r)
         self.assertIn("methods()", r.get("message", "") + str(r.get("receipt", "")), r)
 

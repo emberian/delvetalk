@@ -1,4 +1,4 @@
-"""An activity yields Plans and resumes from a checkpoint bound to its package, object, principal,
+"""An activity yields world-call Messages and resumes from a checkpoint bound to its package, object, principal,
 intent and roots; a tampered or foreign checkpoint is refused by name, exhaustion is a named
 silence.
 
@@ -21,24 +21,38 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import binary
 BINARY = binary()
 
-PLANS = """edition ObjectiveBend 1
-record Edit:
+# A message-dialect package carries a module named World: the Message an activity yields, the result
+# sum of each world call, and the `protocol world:` that types the calls.
+MESSAGE = """record Reference:
+  world: String
+  object: String
+record Message:
+  object: Reference
+  method: String
+  argument: Data
+"""
+
+PLANS_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """record Edit:
   field: Nat
   before: Nat
   after: Nat
-sum Plan:
-  write: Edit
-sum Reply:
+sum Written:
   written: {}
   refused: {}
-def bump(count: Nat) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.write({field: 0n, before: count, after: count + 1n})):
+protocol world:
+  write(Edit) -> Written
+"""
+
+PLANS = """edition ObjectiveBend 1
+import ./World.obend as World
+def bump(count: Nat) -> Activity<Nat>:
+  match world.write({field: 0n, before: count, after: count + 1n}):
     case written(_): count + 1n
     case refused(_): count
-def twice(count: Nat) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.write({field: 0n, before: count, after: count + 1n})):
+def twice(count: Nat) -> Activity<Nat>:
+  match world.write({field: 0n, before: count, after: count + 1n}):
     case written(_):
-      match perform(Plan.write({field: 1n, before: count + 1n, after: count + 2n})):
+      match world.write({field: 1n, before: count + 1n, after: count + 2n}):
         case written(_): count + 2n
         case refused(_): count + 1n
     case refused(_): count
@@ -47,19 +61,24 @@ def pure(n: Nat) -> Nat:
 """
 
 
-def wide_source():
+def wide_world():
     fields = "\n".join(f"  f{i}: Nat" for i in range(63))
-    values = ", ".join(f"f{i}: {i}n" for i in range(63))
-    return f"""edition ObjectiveBend 1
-record Wide:
+    return "edition ObjectiveBend 1\n" + MESSAGE + f"""record Wide:
   text: String
 {fields}
-sum Plan:
-  big: Wide
-sum Reply:
+sum Ok:
   ok: {{}}
-def wide(text: String) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.big({{text: text, {values}}})):
+protocol world:
+  big(Wide) -> Ok
+"""
+
+
+def wide_source():
+    values = ", ".join(f"f{i}: {i}n" for i in range(63))
+    return f"""edition ObjectiveBend 1
+import ./World.obend as World
+def wide(text: String) -> Activity<Nat>:
+  match world.big({{text: text, {values}}}):
     case ok(_): 1n
 """
 
@@ -96,37 +115,41 @@ def with_tokens(checkpoint, tokens, fix_digest):
     return redigest(c) if fix_digest else c
 
 
-LISTS = """edition ObjectiveBend 1
-sum List<T>:
-  nil: {}
-  cons: {head: T, tail: List<T>}
-sum Plan:
-  put: List<Nat>
-sum Reply:
-  names: List<String>
+LISTS_WORLD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\n" + MESSAGE + """sum Reply:
+  names: Lists.List<String>
   none: {}
-def range(n: Nat) -> List<Nat>:
+protocol world:
+  put(Lists.List<Nat>) -> Reply
+"""
+
+LISTS = """edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./World.obend as World
+def range(n: Nat) -> Lists.List<Nat>:
   match n:
-    case 0n: List::<Nat>.nil({})
-    case 1n+p: List::<Nat>.cons({head: n, tail: range(p)})
-def count(items: List<String>) -> Nat:
+    case 0n: Lists.List::<Nat>.nil({})
+    case 1n+p: Lists.List::<Nat>.cons({head: n, tail: range(p)})
+def count(items: Lists.List<String>) -> Nat:
   match items:
     case nil(_): 0n
     case cons(c): 1n + count(c.tail)
-def collect(n: Nat) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.put(range(n))):
+def collect(n: Nat) -> Activity<Nat>:
+  match world.put(range(n)):
     case names(items): count(items)
     case none(_): 0n
 """
 
+DOCUMENTS_WORLD = "edition ObjectiveBend 1\nimport ./Document.obend as Doc\n" + MESSAGE + """sum Reply:
+  back: Doc.Document
+protocol world:
+  offer(Doc.Document) -> Reply
+"""
+
 DOCUMENTS = """edition ObjectiveBend 1
 import ./Document.obend as Doc
-sum Plan:
-  offer: Doc.Document
-sum Reply:
-  back: Doc.Document
-def show(label: String) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.offer(Doc.concat(Doc.text(label), Doc.concat(Doc.text("a"), Doc.text("b"))))):
+import ./World.obend as World
+def show(label: String) -> Activity<Nat>:
+  match world.offer(Doc.concat(Doc.text(label), Doc.concat(Doc.text("a"), Doc.text("b")))):
     case back(d): Doc.size(d)
 """
 
@@ -134,13 +157,12 @@ WORLD_LIB = os.path.join(ROOT, "world", "lib")
 
 
 def library_modules(*names):
-    """Library modules (imports first) read from world/lib and tests/fixtures/obend, as supplied modules."""
+    """Library modules (imports first) read from world/lib, as supplied modules."""
     found = {}
-    for root in (WORLD_LIB, os.path.join(ROOT, "tests", "fixtures", "obend")):
-        for directory, _, files in os.walk(root):
-            for f in files:
-                if f.endswith(".obend"):
-                    found[f[:-6]] = os.path.join(directory, f)
+    for directory, _, files in os.walk(WORLD_LIB):
+        for f in files:
+            if f.endswith(".obend"):
+                found[f[:-6]] = os.path.join(directory, f)
     out, seen = [], set()
 
     def visit(name):
@@ -174,6 +196,11 @@ def to_list(data):
     return data["items"]
 
 
+def message_argument(plan):
+    """The argument of a yielded Message (the data the world call carries)."""
+    return plan_field(plan, "argument")
+
+
 def plan_field(plan, name):
     for f in plan["fields"]:
         if f["name"] == name:
@@ -193,9 +220,11 @@ class Host:
         assert line, "host closed its output (crash)"
         return json.loads(line)
 
-    def compile(self, source, entry, library=()):
+    def compile(self, source, entry, library=(), world=None):
+        """`world` is the source of the package's World module (message dialect), placed after the library."""
+        supplied = [{"name": "World", "source": world}] if world else []
         reply = self.send({"op": "compile", "entry": entry,
-                           "modules": library_modules(*library) + [{"name": "Package", "source": source}]})
+                           "modules": library_modules(*library) + supplied + [{"name": "Package", "source": source}]})
         assert reply["status"] == "compiled", reply
         return reply["artifact"]
 
@@ -243,41 +272,62 @@ class TurnCase(unittest.TestCase):
         return h
 
 
+class OldDialectTests(TurnCase):
+    """The three-argument Activity and surface perform are refused by name; the message dialect is the only one."""
+
+    def check(self, source):
+        reply = self.host().send({"op": "check-package", "entry": "a",
+                                  "modules": [{"name": "Package", "source": source}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        return reply["diagnostic"]["message"]
+
+    def test_the_three_argument_activity_is_refused_as_the_old_dialect(self):
+        message = self.check("edition ObjectiveBend 1\nsum Plan:\n  w: Nat\nsum Reply:\n  ok: {}\n"
+                             "def a(n: Nat) -> Activity<Plan, Reply, Nat>:\n  n\n")
+        self.assertIn("refused (old-dialect)", message)
+        self.assertIn("Activity<Plan, Response, Result> is withdrawn", message)
+
+    def test_surface_perform_is_refused_by_name(self):
+        message = self.check("edition ObjectiveBend 1\nsum Plan:\n  w: Nat\nsum Reply:\n  ok: {}\n"
+                             "def a(n: Nat) -> Nat:\n  match perform(Plan.w(n)):\n    case ok(_): n\n")
+        self.assertIn("refused (perform): surface perform is withdrawn", message)
+
+
 class TurnTests(TurnCase):
     def test_bump_yields_write_then_written_finishes_after_value(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         self.assertEqual(y["status"], "yielded", y)
-        self.assertEqual(plan_field(y["plan"]["payload"], "before"), nat(3))
-        self.assertEqual(plan_field(y["plan"]["payload"], "after"), nat(4))
-        self.assertEqual(y["plan"]["label"], "write")
+        self.assertEqual(plan_field(message_argument(y["plan"]), "before"), nat(3))
+        self.assertEqual(plan_field(message_argument(y["plan"]), "after"), nat(4))
+        self.assertEqual(plan_field(y["plan"], "method"), label("write"))
         done = h.resume(art, y["checkpoint"], variant("written"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(4)), done)
 
     def test_bump_refused_response_finishes_with_unchanged_value(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         done = h.resume(art, y["checkpoint"], variant("refused"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(3)), done)
 
     def test_activity_that_performs_twice_yields_twice_then_finishes(self):
         h = self.host()
-        art = h.compile(PLANS, "twice")
+        art = h.compile(PLANS, "twice", world=PLANS_WORLD)
         first = h.start(art, [nat(10)])
         self.assertEqual(first["status"], "yielded", first)
-        self.assertEqual(plan_field(first["plan"]["payload"], "after"), nat(11))
+        self.assertEqual(plan_field(message_argument(first["plan"]), "after"), nat(11))
         second = h.resume(art, first["checkpoint"], variant("written"))
         self.assertEqual(second["status"], "yielded", second)
-        self.assertEqual(plan_field(second["plan"]["payload"], "field"), nat(1))
-        self.assertEqual(plan_field(second["plan"]["payload"], "after"), nat(12))
+        self.assertEqual(plan_field(message_argument(second["plan"]), "field"), nat(1))
+        self.assertEqual(plan_field(message_argument(second["plan"]), "after"), nat(12))
         done = h.resume(art, second["checkpoint"], variant("written"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(12)), done)
 
     def test_nonconforming_response_is_refused_and_checkpoint_stays_usable(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         for bad in (variant("nonsense"), nat(1), variant("written", nat(1)),
                     {"tag": "record", "fields": []}):
@@ -289,12 +339,13 @@ class TurnTests(TurnCase):
 
     def test_tampered_checkpoint_is_refused_by_name(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         cp = y["checkpoint"]
         toks = cp["tokens"]
         self.assertGreater(len(toks), 10)
-        # v2 tokens are bare: numbers, strings, and negative numbers for string references.
+        # the checkpoint is a site checkpoint (edition v3): a header string, then bare numbers and strings.
+        self.assertEqual(toks[0], "delvetalk.checkpoint.site.v1")
         edition = copy.deepcopy(toks); edition[0] = "other.edition"
         swapped = copy.deepcopy(toks); swapped[1] = "x"  # the local string count is a natural
         variants = [edition, toks[:-1], toks + [0], swapped, []]
@@ -315,7 +366,7 @@ class TurnTests(TurnCase):
 
     def test_token_edit_that_still_decodes_is_refused_by_the_digest(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         cp = y["checkpoint"]
         toks = cp["tokens"]
@@ -337,8 +388,8 @@ class TurnTests(TurnCase):
 
     def test_checkpoint_from_package_a_is_refused_by_package_b(self):
         h = self.host()
-        a = h.compile(PLANS, "bump")
-        b = h.compile(PLANS, "twice")  # same sources, different entry: different packet
+        a = h.compile(PLANS, "bump", world=PLANS_WORLD)
+        b = h.compile(PLANS, "twice", world=PLANS_WORLD)  # same sources, different entry: different packet
         self.assertNotEqual(a["packetSha256"], b["packetSha256"])
         y = h.start(a, [nat(3)])
         r = h.resume(b, y["checkpoint"], variant("written"))
@@ -347,7 +398,7 @@ class TurnTests(TurnCase):
 
     def test_tick_exhaustion_is_a_named_silence_not_a_crash(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         r = h.resume(art, y["checkpoint"], variant("written"), ticks=1)
         self.assertEqual((r["status"], r["resource"]), ("exhausted", "ticks"), r)
@@ -359,28 +410,28 @@ class TurnTests(TurnCase):
 
     def test_checkpoint_from_one_process_resumes_in_a_fresh_process(self):
         first = Host()
-        art = first.compile(PLANS, "twice")
+        art = first.compile(PLANS, "twice", world=PLANS_WORLD)
         y = first.start(art, [nat(5)])
         first.close()
         self.assertEqual(y["status"], "yielded", y)
         second = self.host()
-        art2 = second.compile(PLANS, "twice")
+        art2 = second.compile(PLANS, "twice", world=PLANS_WORLD)
         self.assertEqual(art, art2)
         mid = second.resume(art2, y["checkpoint"], variant("written"))
         self.assertEqual(mid["status"], "yielded", mid)
         third = Host()
-        art3 = third.compile(PLANS, "twice")
+        art3 = third.compile(PLANS, "twice", world=PLANS_WORLD)
         done = third.resume(art3, mid["checkpoint"], variant("refused"))
         third.close()
         self.assertEqual((done["status"], done["value"]), ("finished", nat(6)), done)
 
     def test_pure_entry_given_to_turn_start_is_refused_by_name(self):
         h = self.host()
-        art = h.compile(PLANS, "pure")
+        art = h.compile(PLANS, "pure", world=PLANS_WORLD)
         r = h.start(art, [nat(1)])
         self.assertEqual(r["status"], "error", r)
         self.assertIn("entry is not an activity", r["message"])
-        other = h.compile(PLANS, "bump")
+        other = h.compile(PLANS, "bump", world=PLANS_WORLD)
         cp = h.start(other, [nat(1)])["checkpoint"]
         r = h.resume(art, cp, variant("written"))
         self.assertEqual(r["status"], "error", r)
@@ -388,7 +439,7 @@ class TurnTests(TurnCase):
 
     def test_resume_of_a_checkpoint_whose_control_is_not_yielded_is_refused(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         cp = copy.deepcopy(y["checkpoint"])
         toks = cp["tokens"]
@@ -405,18 +456,18 @@ class TurnTests(TurnCase):
 
     def test_recursive_list_in_a_plan_with_100_elements_yields_and_resumes(self):
         h = self.host()
-        art = h.compile(LISTS, "collect")
+        art = h.compile(LISTS, "collect", library=("List",), world=LISTS_WORLD)
         y = h.start(art, [nat(100)])
         self.assertEqual(y["status"], "yielded", y)
-        self.assertEqual(y["plan"]["label"], "put")
-        self.assertEqual([x["value"] for x in to_list(y["plan"]["payload"])],
+        self.assertEqual(plan_field(y["plan"], "method"), label("put"))
+        self.assertEqual([x["value"] for x in to_list(message_argument(y["plan"]))],
                          [str(n) for n in range(100, 0, -1)])
         done = h.resume(art, y["checkpoint"], variant("none"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(0)), done)
 
     def test_recursive_list_response_conforms_and_a_malformed_cons_is_refused(self):
         h = self.host()
-        art = h.compile(LISTS, "collect")
+        art = h.compile(LISTS, "collect", library=("List",), world=LISTS_WORLD)
         y = h.start(art, [nat(2)])
         good = variant("names", from_list([label("a"), label("b"), label("c")]))
         done = h.resume(art, y["checkpoint"], good)
@@ -438,11 +489,11 @@ class TurnTests(TurnCase):
 
     def test_document_in_a_plan_round_trips_through_the_response(self):
         h = self.host()
-        art = h.compile(DOCUMENTS, "show", library=("Document",))
+        art = h.compile(DOCUMENTS, "show", library=("Document",), world=DOCUMENTS_WORLD)
         y = h.start(art, [label("hello")])
         self.assertEqual(y["status"], "yielded", y)
-        self.assertEqual(y["plan"]["label"], "offer")
-        document = y["plan"]["payload"]
+        self.assertEqual(plan_field(y["plan"], "method"), label("offer"))
+        document = message_argument(y["plan"])
         self.assertEqual(document["label"], "sequence")
         done = h.resume(art, y["checkpoint"], variant("back", document))
         # size = len("hello") + len("a") + len("b")
@@ -454,27 +505,30 @@ class TurnTests(TurnCase):
 
     def test_maximum_plan_record_and_long_label_round_trip(self):
         h = self.host()
-        art = h.compile(wide_source(), "wide")
+        art = h.compile(wide_source(), "wide", world=wide_world())
         text = "é" * 2048  # 4096 UTF-8 bytes
         self.assertEqual(len(text.encode()), 4096)
         y = h.start(art, [label(text)])
         self.assertEqual(y["status"], "yielded", y)
-        self.assertEqual(y["plan"]["label"], "big")
-        fields = y["plan"]["payload"]["fields"]
-        self.assertEqual(len(fields), 64)
-        self.assertEqual(plan_field(y["plan"]["payload"], "text"), label(text))
-        self.assertEqual(plan_field(y["plan"]["payload"], "f62"), nat(62))
+        self.assertEqual(plan_field(y["plan"], "method"), label("big"))
+        wide = message_argument(y["plan"])
+        self.assertEqual(len(wide["fields"]), 64)
+        self.assertEqual(plan_field(wide, "text"), label(text))
+        self.assertEqual(plan_field(wide, "f62"), nat(62))
         done = h.resume(art, y["checkpoint"], variant("ok"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(1)), done)
 
 
-BYTES = """edition ObjectiveBend 1
-sum Plan:
-  put: Nat
-sum Reply:
+BYTES_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """sum Reply:
   ok: {}
-def cat(t: String) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.put(textLength(textConcat(t, t)))):
+protocol world:
+  put(Nat) -> Reply
+"""
+
+BYTES = """edition ObjectiveBend 1
+import ./World.obend as World
+def cat(t: String) -> Activity<Nat>:
+  match world.put(textLength(textConcat(t, t))):
     case ok(_): 1n
 """
 
@@ -482,7 +536,7 @@ def cat(t: String) -> Activity<Plan, Reply, Nat>:
 class BindingTests(TurnCase):
     def test_a_checkpoint_resumes_only_for_the_same_object_principal_intent_and_roots(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         cp = y["checkpoint"]
         self.assertEqual(h.resume(art, cp, variant("written"))["status"], "finished")
@@ -499,7 +553,7 @@ class BindingTests(TurnCase):
 
     def test_editing_the_claimed_binding_inside_the_checkpoint_breaks_the_digest(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         for field, value in (("object", "other"), ("principal", "kimik3"), ("intent", "t2"),
                              ("rootsDigest", "0" * 64)):
@@ -509,7 +563,7 @@ class BindingTests(TurnCase):
 
     def test_the_binding_is_required_by_both_ops(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         for missing in ("object", "principal", "intent", "roots"):
             binding = {k: v for k, v in BINDING.items() if k != missing}
             r = h.send({"op": "turn-start", "artifact": art, "arguments": [nat(3)], **binding})
@@ -520,17 +574,24 @@ class BindingTests(TurnCase):
         self.assertEqual(r["status"], "error", r)
 
 
-NOTED = """edition ObjectiveBend 1
-import ./Abi.obend as Abi
-sum Plan:
-  note: {who: String, why: String, at: String}
+NOTED_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """record Note:
+  who: String
+  why: String
+  at: String
 sum Reply:
   ok: {}
-def bump(n: Nat, context: Abi.Context) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.note({who: context.principal, why: context.intent, at: context.object})):
+protocol world:
+  note(Note) -> Reply
+"""
+
+NOTED = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./World.obend as World
+def bump(n: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.note({who: context.principal, why: context.intent, at: context.object}):
     case ok(_): n + 1n
-def plain(n: Nat, m: Nat) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.note({who: "", why: "", at: ""})):
+def plain(n: Nat, m: Nat) -> Activity<Nat>:
+  match world.note({who: "", why: "", at: ""}):
     case ok(_): n + m
 """
 
@@ -552,10 +613,10 @@ class ContextTests(TurnCase):
 
     def test_the_binding_fills_a_trailing_context(self):
         h = self.host()
-        art = h.compile(NOTED, "bump", library=("Abi",))
+        art = h.compile(NOTED, "bump", library=("Abi",), world=NOTED_WORLD)
         y = h.start(art, [nat(3)])
         self.assertEqual(y["status"], "yielded", y)
-        payload = y["plan"]["payload"]
+        payload = message_argument(y["plan"])
         self.assertEqual([plan_field(payload, k) for k in ("who", "why", "at")],
                          [label("glm"), label("t1"), label("counter")])
         done = h.resume(art, y["checkpoint"], variant("ok"))
@@ -563,14 +624,14 @@ class ContextTests(TurnCase):
 
     def test_an_explicit_context_is_still_accepted(self):
         h = self.host()
-        art = h.compile(NOTED, "bump", library=("Abi",))
+        art = h.compile(NOTED, "bump", library=("Abi",), world=NOTED_WORLD)
         y = h.start(art, [nat(3), context_data("someone", "i9", "elsewhere")])
         self.assertEqual(y["status"], "yielded", y)
-        self.assertEqual(plan_field(y["plan"]["payload"], "who"), label("someone"))
+        self.assertEqual(plan_field(message_argument(y["plan"]), "who"), label("someone"))
 
     def test_a_missing_argument_that_is_not_a_context_is_not_filled(self):
         h = self.host()
-        art = h.compile(NOTED, "plain", library=("Abi",))
+        art = h.compile(NOTED, "plain", library=("Abi",), world=NOTED_WORLD)
         r = h.start(art, [nat(3)])
         self.assertNotEqual(r["status"], "yielded", r)
 
@@ -578,9 +639,9 @@ class ContextTests(TurnCase):
 class ExhaustionTests(TurnCase):
     def test_each_budgeted_resource_is_a_named_silence_on_start(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
-        wide = h.compile(wide_source(), "wide")
-        cat = h.compile(BYTES, "cat")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
+        wide = h.compile(wide_source(), "wide", world=wide_world())
+        cat = h.compile(BYTES, "cat", world=BYTES_WORLD)
         cases = [
             ("ticks", h.start(art, [nat(3)], ticks=1)),
             ("heap", h.start(art, [nat(3)], heap=2)),
@@ -596,15 +657,15 @@ class ExhaustionTests(TurnCase):
 
     def test_each_budgeted_resource_is_a_named_silence_on_resume(self):
         h = self.host()
-        art = h.compile(PLANS, "twice")
+        art = h.compile(PLANS, "twice", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         for resource, limits in (("ticks", {"ticks": 1}), ("stack", {"stack": 1}), ("heap", {"heap": 0})):
             with self.subTest(resource=resource):
                 r = h.resume(art, y["checkpoint"], variant("written"), **limits)
                 self.assertEqual((r["status"], r["resource"]), ("exhausted", resource), r)
-        cat = h.compile(BYTES, "cat")
+        cat = h.compile(BYTES, "cat", world=BYTES_WORLD)
         # a plan too large for the node budget, reached after a resume
-        wide = h.compile(wide_source(), "wide")
+        wide = h.compile(wide_source(), "wide", world=wide_world())
         yw = h.start(wide, [label("x")])
         self.assertEqual(yw["status"], "yielded")
         done = h.resume(wide, yw["checkpoint"], variant("ok"))
@@ -613,7 +674,7 @@ class ExhaustionTests(TurnCase):
 
     def test_ordinary_refusals_stay_errors(self):
         h = self.host()
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         r = h.start(art, [label("not a number")])
         self.assertEqual(r["status"], "error", r)
 

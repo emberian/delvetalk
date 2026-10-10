@@ -457,11 +457,6 @@ def joinPieces (pieces : List Expr) (span : Span) : Expr :=
 `Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
 def writePlansAlias : String := "$plans"
 
-/-- The callee a `write {...}` names until the generics pass decides its dialect: in an
-`Activity<Plan, Response, R>` the Plan `Plan.write({object, edits})`, in an `Activity<R>`
-the world call `world.write(edits)`. Not an identifier a source can spell. -/
-def writeMarker : String := "$write"
-
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -523,10 +518,8 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
           (.lambda parameters (String.ofList resultType) closureBody span, span)
         else
           (.extensionValue parameters (String.ofList resultType) closureBody span, span)
-    -- `write {field: op value, ...}`: the Plan that writes the running object's edits,
-    -- every other field kept (in an `Activity<R>`, the world call `world.write(edits)`;
-    -- the generics pass chooses, `writeMarker`). Lowers to
-    -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
+    -- `write {field: op value, ...}`: the world call that writes the running object's edits,
+    -- every other field kept. Lowers to `world.write(extend(keep(), {field: E, ...}))`
     -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
     -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
     -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem), and for a relation
@@ -560,10 +553,8 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         let next ← take env
         if tokenText next == "}" then break
         if tokenText next != "," then throw "Error: expected , or } in write {...}"
-      let object := Expr.call (.member plans "self" span) [.var "context" span] span
       let changes := Expr.extend (.call (.var "keep" span) [] span) edits.toList span
-      result := (.call (.var writeMarker span)
-        [.record [("object", object), ("edits", changes)] span] span, span)
+      result := (.call (.member (.var "world" span) "write" span) [changes] span, span)
     else if firstText == "{" then
       let mut fields : Array (String × Expr) := #[]
       if (← peek env) != some "}" then
@@ -874,11 +865,14 @@ def cap (s : List Char) (caps : Caps) (i : Nat) : String := String.ofList ((capt
       colour: amber | violet | silver
       seed: text 1..80
       count: natural 1..1000
+      program: source
 
 declares `def planting() -> F.Form` (default name `plantForm`) whose body is the Form
 record the library uses, `F` being the module's alias of `Form.obend`:
 `{card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind:
-F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`. -/
+F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`.
+`source` is `F.Kind.source({})`: Bend source, which the host reads as text of 1 to
+`Host.Limits.formSourceMax` characters and fills from a reply's fenced `obend` block. -/
 def formRe : Re := seqs [str "form", many1 space, group 1 ident,
   opt (seqs [many1 space, str "as", many1 space, group 2 ident]), many space, chr ':', .done]
 def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 space,
@@ -890,6 +884,7 @@ def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
   let span := line.span
   let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
   let trimmed := String.ofList spec |>.trimAscii |>.toString
+  if trimmed == "source" then return .call (lib "Kind" "source") [.record [] span] span
   if let some (_, caps) ← matchAt line rangeKindRe trimmed.toList then
     let kind := cap trimmed.toList caps 1
     let low := natValue ((capture trimmed.toList caps 2).getD [])
@@ -897,7 +892,7 @@ def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
     return .call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
   let options := (trimmed.splitOn "|").map fun o => o.trimAscii.toString
   if options.length < 2 || options.any (fun o => !isIdent o.toList) then
-    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX` or `name: a | b | c`"
+    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX`, `name: source` or `name: a | b | c`"
   let names := options.foldr (fun o acc =>
       Expr.call (lib "Names" "cons") [.record [("head", .str o span), ("tail", acc)] span] span)
     (.call (lib "Names" "nil") [.record [] span] span)

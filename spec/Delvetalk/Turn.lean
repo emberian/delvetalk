@@ -27,14 +27,14 @@ open Minidregg.Theory.ObjectiveBendTypes
 open Minidregg.Theory.ObjectiveBendDemandMachine
 open Minidregg.Theory.ObjectiveBendDemandData
 open Minidregg.Compiler.ObjectiveBendDataWire
-open Minidregg.Theory.ObjectiveBendCheckpoint (Dictionary encodeStateV3 decodeStateAny)
+open Minidregg.Theory.ObjectiveBendCheckpoint (Dictionary encodeStateV3 decodeCheckpoint)
 
 namespace Delvetalk.Turn
 
 /-- Re-address the original annotation table when application wraps its term.
 The argument subtree is annotation-free first-order data, never raw code. -/
 def applyArgument (source : AnnotatedTerm) (argument : Term)
-    (extras : Delvetalk.AnnotationTree := .empty) : AnnotatedTerm :=
+    (extras : AnnotationTree := .empty) : AnnotatedTerm :=
   { source with
     term := .app source.term argument
     annotations := fun position => match position with
@@ -56,7 +56,7 @@ mutual
 (`Data.shapeType`), built bottom-up: each node's shape type is made once from its
 children's, so a long list costs linear time and space (recomputing `shapeType` per
 injection was quadratic). -/
-def shapeTree : Data → Delvetalk.AnnotationTree × Ty
+def shapeTree : Data → AnnotationTree × Ty
   | .variant tag payload =>
     let (tree, payloadShape) := shapeTree payload
     let shape := Ty.variant (.field tag payloadShape .emptyRow)
@@ -65,7 +65,7 @@ def shapeTree : Data → Delvetalk.AnnotationTree × Ty
   | .natural _ => (.empty, .natural)
   | .boolean _ => (.empty, .boolean)
   | .label _ => (.empty, .label)
-def shapeFieldTrees : List (String × Data) → List Delvetalk.AnnotationTree × Ty
+def shapeFieldTrees : List (String × Data) → List AnnotationTree × Ty
   | [] => ([], .emptyRow)
   | (name, value) :: rest =>
     let (tree, shape) := shapeTree value
@@ -81,7 +81,7 @@ at a universal position (`Data`) is wrapped in `toData` and checked at its own s
 the checker: an injection's payload is child 0, a record's field `i` is child `i`,
 the operand of `toData` child 0. The term itself is `Data.term` up to those `toData`
 wrappers. -/
-partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term × Delvetalk.AnnotationTree :=
+partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term × AnnotationTree :=
   if expected == .data then (.toData data.term, .node none #[(shapeTree data).1]) else
   match data with
   | .variant tag payload =>
@@ -107,7 +107,7 @@ partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term �
   | other => (other.term, .empty)
 
 def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
-    Except String (Term × Delvetalk.AnnotationTree) :=
+    Except String (Term × AnnotationTree) :=
   if domain == .data && !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
   else .ok (quoteAt bounds domain v)
 
@@ -135,7 +135,7 @@ def activityShape (assumptions : Assumptions) (type : Ty) : Except String (Ty ×
   let isData := fun (t : Ty) => t.isDataUnder bounds rigid Ty.dataFuel []
   match type with
   | .computation plan response result =>
-      if !plan.isPlanUnder bounds rigid then .error "turn refused: Plan type is not a first-order sum"
+      if !plan.isPlanUnder bounds rigid then .error "turn refused: Plan type is not a message (a record of first-order data)"
       else if !isData response then .error "turn refused: response type is not first-order data"
       else if !isData result then .error "turn refused: result type is not first-order data"
       else .ok (plan, response, result)
@@ -162,22 +162,16 @@ def budgets (limits : Json) : Except String Budgets := do
     ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax⟩
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
-/-- A v2 token as itself: a natural a JSON number, a text a JSON string, a string
+/-- A token as itself: a natural a JSON number, a text a JSON string, a string
 reference a negative number (`-(i+1)`). -/
-def tokenJsonV2 : Token → Json
+def tokenJson : Token → Json
   | .nat n => toJson n
   | .text s => toJson s
   | .str i => toJson (-((i : Int) + 1))
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
-/-- The JSON of a checkpoint's tokens: a v1 checkpoint's as before (`{"n"}`/`{"s"}` objects,
-so its digest is unchanged), any other as bare numbers and strings. -/
-def tokensJson (tokens : Tokens) : Json :=
-  match tokens with
-  | .text edition :: _ =>
-    if edition == checkpointEdition then Json.arr (tokens.map tokenJson).toArray
-    else Json.arr (tokens.map tokenJsonV2).toArray
-  | _ => Json.arr (tokens.map tokenJsonV2).toArray
+/-- The JSON of a checkpoint's tokens: bare numbers and strings. -/
+def tokensJson (tokens : Tokens) : Json := Json.arr (tokens.map tokenJson).toArray
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
 def tokensOfJson (json : Json) : Except String Tokens := do
@@ -189,14 +183,7 @@ def tokensOfJson (json : Json) : Except String Tokens := do
       if n.exponent != 0 then throw "checkpoint does not decode"
       let i := n.mantissa
       if i < 0 then return Token.str (-i - 1).toNat else return Token.nat i.toNat
-    | _ =>
-    match item.getObjVal? "n" with
-    | .ok n =>
-        let text ← n.getStr?
-        let some value := text.toNat? | throw "checkpoint does not decode"
-        if toString value != text then throw "checkpoint does not decode"
-        return Token.nat value
-    | .error _ => return Token.text (← item.getObjValAs? String "s")
+    | _ => throw "checkpoint does not decode"
 
 /-- Digests are CIDs of canonical bytes (Canonical.lean). -/
 def packetDigest (packet : Json) : String := Delvetalk.Canonical.cidJson packet
@@ -242,16 +229,12 @@ structure Checkpoint where
   digest : String
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
-/-- A token's canonical CBOR, as `Canonical.writeJson` writes its `tokensJson` form: a v1
-token a one-key map (`{"n": decimal}`, `{"s": text}`, `{"r": decimal}`), any other a natural,
+/-- A token's canonical CBOR, as `Canonical.writeJson` writes its `tokensJson` form: a natural,
 a text, or a string reference as the negative integer `-(i+1)`. -/
-def writeToken (v1 : Bool) (out : ByteArray) : Token → ByteArray
-  | .nat n => if v1 then Canonical.text (Canonical.text (Canonical.head out 5 1) "n") (toString n)
-    else Canonical.natural out n
-  | .text t => if v1 then Canonical.text (Canonical.text (Canonical.head out 5 1) "s") t
-    else Canonical.text out t
-  | .str i => if v1 then Canonical.text (Canonical.text (Canonical.head out 5 1) "r") (toString i)
-    else Canonical.head out 1 i
+def writeToken (out : ByteArray) : Token → ByteArray
+  | .nat n => Canonical.natural out n
+  | .text t => Canonical.text out t
+  | .str i => Canonical.head out 1 i
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
 /-- The canonical CBOR of the checkpoint's digest preimage, written straight from the tokens:
@@ -260,14 +243,11 @@ DAG-CBOR order (by byte length, then bytes: intent, object, tokens, principal, r
 packetSha256), the bytes `Canonical.encodeJson` writes for the same map with `tokensJson`
 (checked below), without building that `Json`. -/
 def checkpointPreimage (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : ByteArray :=
-  let v1 := match tokens with
-    | .text edition :: _ => edition == checkpointEdition
-    | _ => false
   let out := Canonical.head (ByteArray.emptyWithCapacity (64 * tokens.length + 256)) 5 6
   let out := Canonical.text (Canonical.text out "intent") intent
   let out := Canonical.text (Canonical.text out "object") object
   let out := Canonical.head (Canonical.text out "tokens") 4 tokens.length
-  let out := tokens.foldl (writeToken v1) out
+  let out := tokens.foldl writeToken out
   let out := Canonical.text (Canonical.text out "principal") principal
   let out := Canonical.text (Canonical.text out "rootsDigest") rootsDigest
   Canonical.text (Canonical.text out "packetSha256") packetSha256
@@ -285,11 +265,10 @@ def checkpointDigestJson (packetSha256 object principal intent rootsDigest : Str
     ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)])
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
--- v1 tokens (one-key maps), v2/v3 tokens (naturals past 2^64, negative string references,
--- non-ASCII text), and an empty list, each against the `Json` definition.
+-- v3 tokens (naturals past 2^64, negative string references, non-ASCII text), site-prefixed
+-- tokens and an empty list, each against the `Json` definition.
 #guard
   let cases : List Tokens := [
-    [.text checkpointEdition, .nat 3, .text "x", .nat 0, .str 2],
     [.text "dregg.objective-bend.checkpoint.v3", .nat 17, .nat 18446744073709551616, .nat 255,
       .nat 65536, .str 0, .str 23, .str 24, .str 70000, .text "", .text "Grüße ✾"],
     [.text "delvetalk.checkpoint.site.v1", .nat 4, .text "dregg.objective-bend.checkpoint.v3", .nat 1],
@@ -359,7 +338,7 @@ settles it. An entry in which two performs build the same plan term at different
 types is refused at compile (`messageSites`), so the plan term names exactly one type. A
 checkpoint taken at a message yield is prefixed `[siteEdition, i]`, `i` the site's index
 in `messageSites`; resuming reads the type there. The prefix is inside the digest, so it
-is bound like the state; a sum-Plan checkpoint carries none and is unchanged. -/
+is bound like the state; a checkpoint without one names no site and does not resume. -/
 
 /-- The edition marker a message checkpoint's site index follows. -/
 def siteEdition : String := "delvetalk.checkpoint.site.v1"
@@ -379,12 +358,9 @@ def splitSite : Tokens → Option Nat × Tokens
   | .text edition :: .nat i :: rest => if edition == siteEdition then (some i, rest) else (none, .text edition :: .nat i :: rest)
   | tokens => (none, tokens)
 
-/-- The response type a yield resumes at: the activity's for a sum Plan, the site's for a
-message. -/
-def resumeTypeAt (sites : Option (Array (Term × Ty))) (response : Ty) : Option Nat → Except String Ty
-  | none => match sites with
-    | none => .ok response
-    | some _ => .error "checkpoint names no call site of this entry"
+/-- The response type a yield resumes at: its site's. -/
+def resumeTypeAt (sites : Option (Array (Term × Ty))) (_response : Ty) : Option Nat → Except String Ty
+  | none => .error "checkpoint names no call site of this entry"
   | some i => match sites with
     | some s => match s[i]? with
       | some (_, t) => .ok t
@@ -530,7 +506,7 @@ def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) 
   unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   let (response, tokens) ← resumeType (← sitesFor decoded.source plan) response checkpoint.tokens
-  let some state := decodeStateAny (Dictionary.ofProgram decoded.source.term) tokens
+  let some state := decodeCheckpoint (Dictionary.ofProgram decoded.source.term) tokens
     | throw "checkpoint does not decode"
   unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
@@ -595,7 +571,7 @@ def checkpointState (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (
   unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   let (site, tokens) := splitSite checkpoint.tokens
-  let some state := decodeStateAny dictionary tokens | throw "checkpoint does not decode"
+  let some state := decodeCheckpoint dictionary tokens | throw "checkpoint does not decode"
   return (state, site)
 
 /-- A yielded state resumed with `value`: its activity shape, the response type of its site,

@@ -63,7 +63,7 @@ def entryCacheBytes : Nat := 67108864
 
 /-! ## Documents rendered by the host -/
 
-/-- Nesting of documents (a sequence's items and a quote's body are one deeper). -/
+/-- Nesting of documents (a sequence's items are one deeper). -/
 def documentDepth : Nat := 64
 /-- Documents plus list cells visited. -/
 def documentNodes : Nat := 65536

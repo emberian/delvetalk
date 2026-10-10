@@ -3,7 +3,7 @@ denied.
 
 Evidence for FOUNDATION §3 (layer: host).
 
-viewData / viewDataField: a card reads another object's state, or one field of it, as `Data` it may pass
+view::<Data> / viewField::<Data>: a card reads another object's state, or one field of it, as `Data` it may pass
 along but not take apart (a Bell's `view` of the directory could not carry the directory's state type).
 Read authority and the root are `view`'s. Refuted by a value other than the field's, a field read without
 recording the root, or a private object answered.
@@ -18,23 +18,23 @@ from tests.test_turn_world import label, nat, record, declared
 READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {note: Plans.Edit.keep({})}
 def initial() -> State:
   {note: ""}
-def field(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<Plan, Response, Data>:
-  match perform(Plan.viewDataField({object: {world: "", object: input.target}, field: input.field})):
-    case viewedField(v): v.value
+def field(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<Data>:
+  match world.viewField::<Data>({object: {world: "", object: input.target}, field: input.field}):
+    case viewed(v): v.state
     case refused(r): Data.of::<String>(r.clause)
     case _: Data.of::<String>("other")
-def whole(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Data>:
-  match perform(Plan.viewData({object: {world: "", object: input.target}})):
-    case viewedData(v): v.state
+def whole(state: State, input: {target: String}, context: Abi.Context) -> Activity<Data>:
+  match world.view::<Data>({object: {world: "", object: input.target}}):
+    case viewed(v): v.state
     case denied(_): Data.of::<String>("denied")
     case _: Data.of::<String>("other")
 """)
@@ -64,7 +64,7 @@ class ViewData(Reflection):
         self.target("directory")
         r = self.turn("reader", "field", record(target=label("directory"), field=label("words")))
         self.assertEqual((r["status"], r["result"]), ("admitted", label("GARDEN · ROOMS")), r)
-        self.assertIn({"object": "directory", "version": 0}, r["receipt"]["roots"])
+        self.assertIn({"object": "directory", "version": 0, "field": "words", "key": "*"}, r["receipt"]["roots"])
         listed = self.turn("reader", "field", record(target=label("directory"), field=label("greeted")))
         self.assertEqual(listed["result"], {"tag": "list", "items": [label("glm")]}, listed)
         missing = self.turn("reader", "field", record(target=label("directory"), field=label("nope")))
