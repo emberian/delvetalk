@@ -8,7 +8,8 @@ The section 10 hour, from the archive itself: glm's planting grows a bell and it
 for it; a reply to a planting post rains on that bell; the four anthology lines reach a card by the
 reach rule and are written; the nine-post burst admits; every card shows handles, stays within the
 clip and cites no hash; no program fails. The reach rule returns 81 posts, each asked of the model
-at most once; the recorded target is 43 model calls (d02c60f).
+at most once; the recorded target is 43 model calls (d02c60f). The journal reopened from a snapshot
+holds what its straight replay holds.
 """
 import json
 import os
@@ -92,6 +93,40 @@ class Archive(unittest.TestCase):
         (rehearsal/REPORT.md, run 12 section)."""
         over = [(d['text'].split('\n')[0], d['chars']) for d in self.r['drafts'] if d['outcome'] == 'publication' and d['chars'] > 1400]
         self.assertEqual(over, [])
+
+    def test_a_reopen_from_a_snapshot_written_on_replay_holds_what_the_straight_replay_holds(self):
+        """Four cuts of the journal: each prefix opened, snapshotted, the whole journal put back; the reopen
+        resumes from that snapshot and holds the straight replay's height, head, clock, posts, pending work,
+        and every object's state CID at every version, pin, law and readings."""
+        cuts = {n: c for n, c in self.r['snapshotReplay']['cases'].items() if n.startswith('cut')}
+        self.assertEqual(len(cuts), 4)
+        for name, c in cuts.items():
+            self.assertEqual((c['snapshot']['resumed'], c['snapshot']['refused'], c['same']), (c['written']['height'], [], True), (name, c))
+
+    @unittest.expectedFailure
+    def test_the_runs_own_snapshot_agrees_with_replay(self):
+        """The snapshot written live at height 1,000 carries law readings for the seven objects a turn created
+        with a law text (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3); replay rebuilds
+        them without, because a creation journals `renderLaw`'s text, which drops the readings. `verify`
+        refuses that snapshot, and a reopen from it differs from the straight replay in exactly those readings."""
+        cases = self.r['snapshotReplay']['cases']
+        self.assertEqual((cases['verify']['snapshot']['refused'], cases['run']['same']), ([], True), cases['run']['differs'])
+
+    def settling(self):
+        [(name, c)] = [(n, c) for n, c in self.r['snapshotReplay']['cases'].items() if n.startswith('settling')]
+        return int(name[len('settling'):]), c
+
+    def test_a_reopen_inside_a_settling_finishes_it_as_the_run_did(self):
+        """A journal cut between two deliveries of one settling is finished on reopen: the snapshot then
+        written is past the cut, and the reopen from it holds the straight replay's state."""
+        cut, c = self.settling()
+        self.assertTrue(c['same'] and c['written']['openedAt'] > cut and c['snapshot']['resumed'] == c['written']['height'], c)
+
+    @unittest.expectedFailure
+    def test_a_reopen_inside_a_settling_prints_no_panic(self):
+        """`world-open {clock}` attaches the settled turns to settingsOp's `null` answer (Session.lean `durable`),
+        and Lean prints `PANIC at Lean.Json.setObjVal!` on stderr."""
+        self.assertEqual(self.settling()[1]['stderr'], '')
 
     def test_the_reach_rule_returns_the_recorded_posts_and_each_is_asked_at_most_once(self):
         self.assertEqual(len(self.r['reached']), REACHED)

@@ -117,6 +117,68 @@ Also seen on ad785ec, not gate items:
 - ember's leak refused `evaluation`;
 - ten `staleRoot` refusals, each re-run.
 
+### Replay from a snapshot (run 11's item 7, cracks L3)
+
+hostd has no snapshot interval, and `snapshotEvery` is a constant (1,000), not a `world-open`
+setting. So `rehearse.py` tests replay from a snapshot after every run, on copies of the journal
+(`snapshot_replay`):
+- **straight:** the whole journal reopened with no snapshot, so every entry is replayed;
+- **run:** the journal reopened with the run's own snapshot (written live at 1,000, since the
+  check runs pass 1,000 again);
+- **cut:** four cuts at a fifth, two fifths, three fifths and four fifths of the journal. Each
+  prefix is opened and `world-snapshot` is taken; then the whole journal is put back beside the
+  snapshot and reopened, so the reopen resumes and replays the tail;
+- **settling:** one cut between two deliveries that one post caused, as a crash between two
+  appends of one durable write leaves the journal;
+- **verify:** `world-open {verify: true}` with the run's snapshot and two cut snapshots.
+
+Each reopen is compared with the straight replay on:
+- height, head, clock, posts and quota, pending deliveries and interpretations;
+- every object's state CID at every version (808 versions over 244 objects);
+- every object's pin, law and law readings.
+
+| Reopen | Snapshot written (the prefix opened at) | Resumed; refused | Same as straight replay |
+| --- | --- | --- | --- |
+| run | 1,000, written live | 1,000; none | **no:** law readings on 7 objects (below) |
+| cut 271, 543, 1,086 | 271, 543, 1,086 | the same; none | yes |
+| cut 814 | 873 (873) | 873; none | yes, with a Lean PANIC on stderr |
+| settling, cut 29 | 30 (30) | 30; none | yes, with a Lean PANIC on stderr |
+| verify | | 0; **1,000 refused: "it disagrees with replay at its height"** | yes (full replay) |
+
+Two host defects, for the host lane (spec/ is not this lane's):
+
+**1. A creation's law readings are lost to replay** (`spec/Delvetalk/Host/Ops.lean`, `makeObject`).
+- Objects a turn creates with a law text carry its readings live. These are
+  kind/record, kind/bell, kind/cistern and kind/place (made by `kinds make`, with Kind's and
+  Record's `lawText()`) and garden/bell/1 to 3. Example: `kept`, "a line is only added; only the
+  keeper admits".
+- `makeObject` sets `lawText := renderLaw laws`, which drops readings.
+  `createRecJson` journals that text as `creates[].law`, so `rebuildCreates` replays the object
+  without its readings.
+- So after a restart by full replay, those objects lose their readings in refusal reasons
+  (Ops.lean 946, `refused {name}: {reading}`) and in `inspect`. A restart that resumes from a
+  live snapshot keeps them, and `verify` refuses that snapshot.
+- Objects made with `world-create` (the anthology) are not affected.
+- Fix: in `makeObject`, `lawText := lawText.getD (renderLaw laws)`. A creation then keeps the text
+  as given, readings included, as `world-amend` keeps an amendment's (Ops.lean 2044). Old
+  journals replay as before, since their recorded text is what replay is handed.
+- Check: `tests/test_archive.py` `test_the_runs_own_snapshot_agrees_with_replay` (an expected
+  failure until then).
+
+**2. A reopen inside a settling panics** (`spec/Delvetalk/Host/Session.lean`, `durable`, and
+`Ops.lean` `settingsOp`).
+- A journal cut between two deliveries of one settling is finished on `world-open`, entry for
+  entry as the run wrote it. Cut 814 appends heights 815 to 873, identical to the run's lines.
+- But when the open names `clock` (hostd, `Host`, and this harness do), the settings step is
+  `durable`, and `settingsOp` answers `Json.null` for a journal already settled.
+  `durable` then runs the pending settling and calls `r0.setObjVal! "delivered"` on that null:
+  `PANIC at Lean.Json.setObjVal!: not an object`. The op goes on and the reply is discarded, so
+  only stderr shows it.
+- Fix: `settingsOp` answers `Json.mkObj []` where it now answers `Json.null` (its two early
+  returns).
+- Check: test_archive `test_a_reopen_inside_a_settling_prints_no_panic` (an expected failure
+  until then).
+
 ## Runs
 
 | | 1. First run | 2. Rerun on foundation, rehearsal unchanged | 3. Interleaved, hubs recorded | 4. Partial seeds, opener, owners | 5. Final | 6. Objects and host6 landed | 7. Restated gate | 8. Hand-on, arrival, mentions | 9. Objects5, arrival at observation | 10. Relations, offered-form words | 11. Message dialect, host-read spells, the voice |

@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -340,6 +341,125 @@ def handle_probe(host):
             'showsHandle': handle in offer, 'showsFragment': did.split(':')[-1] in offer}
 
 
+class Opened:
+    """One host process holding one journal, opened as `world-open` opens it; its reply (with the
+    snapshot report) is kept. Nothing here is the rehearsal's own journal: every path is a copy."""
+
+    def __init__(self, binary, journal, verify=False):
+        self.err = tempfile.TemporaryFile(mode='w+')
+        self.proc = subprocess.Popen([binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err, text=True, bufsize=1)
+        started = time.time()
+        self.opened = self.send({'op': 'world-open', 'path': str(journal), 'clock': 'transport', 'sync': 'none',
+                                 **({'verify': True} if verify else {})})
+        self.seconds = round(time.time() - started, 2)
+
+    def send(self, request):
+        self.proc.stdin.write(json.dumps(request) + '\n')
+        self.proc.stdin.flush()
+        return json.loads(self.proc.stdout.readline() or 'null') or {'status': 'error', 'message': 'the host closed its output'}
+
+    def close(self):
+        """Ends the process; answers what it wrote to stderr (a Lean PANIC is printed there and the op goes on)."""
+        self.proc.stdin.close()
+        self.proc.wait(timeout=120)
+        self.err.seek(0)
+        return self.err.read()
+
+
+def world_state(host):
+    """Everything a reopen must reproduce: height, head, clock, objects, posts, pending deliveries and
+    interpretations, and for every object every version's state CID (the current one computed from the
+    store, the earlier ones from the journal's index the open rebuilt), its pin, law and law readings."""
+    status = host.send({'op': 'world-status'})
+    ids, after = [], ''
+    while True:
+        got = host.send({'op': 'world-objects', 'principal': OWNER, 'after': after})
+        ids += got.get('ids') or []
+        if not got.get('more'):
+            break
+        after = ids[-1]
+    cids = {}
+    for i in ids:
+        v = host.send({'op': 'world-view', 'principal': OWNER, 'object': i})
+        if v.get('version') is None:
+            cids[i] = v.get('status')
+            continue
+        record = host.send({'op': 'world-object', 'principal': OWNER, 'object': i}).get('record') or {}
+        cids[i] = {'cids': [host.send({'op': 'world-state-cid', 'principal': OWNER, 'object': i, 'version': n}).get('cid')
+                            for n in range(v['version'] + 1)],
+                   **{k: record.get(k) for k in ('pin', 'law', 'readings')}}
+    return {'status': {k: status.get(k) for k in ('height', 'head', 'clock', 'objects', 'posts', 'postQuota')},
+            'pending': host.send({'op': 'world-pending'}).get('count'),
+            'interpretations': len(host.send({'op': 'world-interpretations'}).get('pending') or []),
+            'cids': cids}
+
+
+def snapshot_replay(out, binary, cuts=4):
+    """Replay from a snapshot, against the straight replay of the same journal (REPORT run 11 item 7). A copy
+    of the journal is reopened with no snapshot (every entry replayed), then with the run's own snapshots,
+    then once per cut: the journal's first `height` lines are opened, `world-snapshot` writes
+    `<journal>.snapshot.<height>.cbor`, the whole journal is put back beside it, and the reopen resumes
+    from that snapshot and replays the tail. Each reopen must report the snapshot it resumed, refuse none,
+    and hold the straight replay's height, head, clock, posts, pending work and every object's state CID
+    at every version. Last, `world-open {verify: true}` replays everything and checks each snapshot."""
+    src = out / 'state' / 'world.journal'
+    lines = src.read_bytes().splitlines(keepends=True)
+    base = out / 'snapshot'
+    shutil.rmtree(base, ignore_errors=True)
+
+    def reopen(name, prefix=None, snapshots=(), verify=False):
+        d = base / name
+        d.mkdir(parents=True)
+        j = d / 'world.journal'
+        snapped = None
+        stderr = ''
+        if prefix:
+            j.write_bytes(b''.join(lines[:prefix]))
+            h = Opened(binary, j)
+            snapped = dict(h.send({'op': 'world-snapshot'}), openedAt=h.opened.get('height'))
+            stderr += h.close()
+        for f in snapshots:
+            shutil.copy(f, d / f.name)
+        j.write_bytes(b''.join(lines))
+        h = Opened(binary, j, verify=verify)
+        try:
+            got = {'opened': h.opened.get('status'), 'snapshot': h.opened.get('snapshot'), 'seconds': h.seconds,
+                   'written': snapped, 'state': world_state(h) if h.opened.get('status') == 'opened' else h.opened}
+        finally:
+            stderr += h.close()
+        return dict(got, stderr=stderr.strip()[:300])
+
+    straight = reopen('straight')
+    own = sorted((out / 'state').glob('world.journal.snapshot.*.cbor'))
+    cases = {'run': reopen('run', snapshots=own)} if own else {}
+    for k in range(1, cuts + 1):
+        at = len(lines) * k // (cuts + 1)
+        cases[f'cut{at}'] = reopen(f'cut{at}', prefix=at)
+    # And one cut inside a settling: between two deliveries in a row that one post caused, as a crash between
+    # two appends of one durable write leaves it. The open finishes the settling; it must append the entries
+    # the run wrote, and the snapshot it writes then is at the settling's end.
+    entries = [json.loads(l) for l in lines]
+    origin = lambda e: ((e.get('delivery') or {}).get('from') or {}).get('intent')
+    inside = next((i for i in range(2, len(entries)) if origin(entries[i]) and origin(entries[i]) == origin(entries[i - 1])), None)
+    if inside:
+        cases[f'settling{inside}'] = reopen(f'settling{inside}', prefix=inside)
+    cases['verify'] = reopen('verify', snapshots=own + sorted(base.glob('cut*/world.journal.snapshot.*.cbor'))[-2:], verify=True)
+    report = {'height': len(lines), 'straight': {k: straight[k] for k in ('opened', 'snapshot', 'seconds', 'stderr')}, 'cases': {}}
+    for name, c in cases.items():
+        same = c['state'] == straight['state']
+        theirs = (c['state'] or {}).get('cids', {})
+        diff = [] if same else sorted(
+            f"{i}: {', '.join(k for k in ('cids', 'pin', 'law', 'readings') if (straight['state']['cids'].get(i) or {}).get(k) != (theirs.get(i) or {}).get(k))}"
+            for i in set(straight['state']['cids']) | set(theirs) if straight['state']['cids'].get(i) != theirs.get(i))[:40]
+        report['cases'][name] = {'opened': c['opened'], 'snapshot': c['snapshot'], 'seconds': c['seconds'], 'stderr': c['stderr'],
+                                 'written': c['written'], 'same': same, 'differs': diff,
+                                 'status': None if same else {'straight': straight['state']['status'], 'this': (c['state'] or {}).get('status')}}
+    report['objects'] = len(straight['state']['cids'])
+    report['versions'] = sum(len(v['cids']) for v in straight['state']['cids'].values() if isinstance(v, dict))
+    shutil.rmtree(base, ignore_errors=True)
+    return report
+
+
 def journal_stats(path):
     lines = [l for l in open(path, 'rb') if l.strip()]
     entries = [json.loads(l) for l in lines]
@@ -451,6 +571,7 @@ def main(argv=None):
     finally:
         r.stop_hostd()
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
+    results['snapshotReplay'] = snapshot_replay(r.out, str(Path(a.binary).resolve()))
     entries, tags, classes, reasons = journal_stats(r.state / 'world.journal')
     results['journal'] = {'height': len(entries), 'bytes': (r.state / 'world.journal').stat().st_size,
                           'sha256': __import__('hashlib').sha256((r.state / 'world.journal').read_bytes()).hexdigest(),

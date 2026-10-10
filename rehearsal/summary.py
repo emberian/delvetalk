@@ -162,6 +162,20 @@ def main(path):
         w('### Handle probe\n')
         w(f"world-principal: {h['recorded']}; plant: {h['status']}; the offer names the handle: {h['showsHandle']}; a DID fragment: {h['showsFragment']}.\n")
         w(fence(h['offer']))
+    sr = r.get('snapshotReplay')
+    if sr:
+        w('### Replay from a snapshot\n')
+        w(f"A copy of the journal ({sr['height']} entries, {sr['objects']} objects, {sr['versions']} object versions) reopened "
+          f"with no snapshot ({sr['straight']['seconds']} s), against each reopen below: same means the same height, head, "
+          f"clock, posts, pending work, and every object's state CID at every version, pin, law and readings.\n")
+        w('| Reopen | Snapshot written (opened at) | Resumed; refused | Seconds | Same | Differs | Host stderr |\n| --- | --- | --- | --- | --- | --- | --- |')
+        for name, c in sr['cases'].items():
+            wr = c.get('written') or {}
+            snap = c.get('snapshot') or {}
+            refused = '; '.join(f"{x.get('height')}: {x.get('reason')}" for x in snap.get('refused') or []) or 'none'
+            w(f"| {name} | {wr.get('height', '-')} ({wr.get('openedAt', '-')}) | {snap.get('resumed')}; {refused} | {c['seconds']} | "
+              f"{c['same']} | {', '.join(c['differs'][:6]) or '-'}{' …' if len(c['differs']) > 6 else ''} | {(c.get('stderr') or '-')[:90].replace(chr(10), ' ')} |")
+        w('')
     w('### Cards at the end\n')
     for obj, c in r['cards'].items():
         w(f"**{obj}** ({c['status']}, {c['chars']} characters)\n")
