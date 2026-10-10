@@ -264,6 +264,7 @@ class Envelope(FrontCase):
         saw('unauthenticated', self.call('GET', '/AGENTS.md/world'))
         saw('identity', post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': 'at://nothing'}, t=None))
         saw('badModules', post('/AGENTS.md/repl', {'modules': 'x'}))
+        saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'Coin_box', 'intent': 'mk-cb'}))
         saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
         self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))

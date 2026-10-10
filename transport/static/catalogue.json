@@ -316,6 +316,11 @@
    "status": "error",
    "when": "the host refused the request as malformed; `message` (and a compile error's stage, module, span, hint) are the host's"
   },
+  "unspellable": {
+   "code": 400,
+   "status": "error",
+   "when": "the object name is one no spell can address: the host's parser does not read `delvetalk <name> ?`"
+  },
   "unauthenticated": {
    "code": 401,
    "status": "error",

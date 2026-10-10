@@ -711,7 +711,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if kind == 'deliver':
             return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT}, {'pending': link(base + '/pending')})
-        if kind == 'create':
+        if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
+            name = data.get('object')
+            read = host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}
+            if read.get('status') == 'parsed' and (read.get('spell') or {}).get('card') != name:
+                return self.fail('unspellable', f'the host does not read `delvetalk {name} ?` as a spell; choose a name a spell can address')
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
             return self.answer(reply, links=receipt_links(base, reply))

@@ -110,6 +110,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
     A method is a definition whose first parameter is the State, and only the ones the package declares run from outside:
     a `form` block's action, a name `methods()` returns, or a card's conventional `receive`, `render`, `set`. `write {count: add 1n}`
     needs no `Edits`: the compiler derives them from `State`. `seed` is a partial state laid over `initial()`, typed or plain JSON.
+    Name it so a spell can address it (`delvetalk <name> ?` must parse; lowercase today): another name is refused `unspellable`.
     The body, `tally.json`, carries the source as one JSON string:
 
         {"intent": "mk-tally", "object": "tally", "entry": "initial", "seed": {"count": 40}, "modules": [{"name": "Tally", "source": "<the source above, as a JSON string>"}]}
@@ -270,7 +271,7 @@ Every 4xx and 5xx is one envelope: `{"status": "error" | "refused", "class", "me
 
 | Code | Class | When |
 |---|---|---|
-| 400 | badRequest, badJson, badModules, identity, hostRequest | a malformed request line, header, Content-Length or body; a failed challenge or verification; a request the host refused as malformed (its words) |
+| 400 | badRequest, badJson, badModules, identity, hostRequest, unspellable | a malformed request line, header, Content-Length or body; a failed challenge or verification; a request the host refused as malformed (its words); a heap object named so no spell can address it (`delvetalk <name> ?` is not a spell to the host's parser) |
 | 401 | unauthenticated | credential missing, unverified or revoked; `_links.hint` is the challenge |
 | 403 | denied | the host says you may not read it |
 | 404 | unknown, unknownRoute | the host knows no such object you may see; no route here |

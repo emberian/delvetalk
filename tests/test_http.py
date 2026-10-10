@@ -625,6 +625,14 @@ class Heaps(FrontCase):
         self.assertNotIn('pin', v)
         self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/hash1/source', token=tok)[1])
 
+    def test_a_heap_object_no_spell_can_address_is_refused_before_it_is_created(self):
+        tok = self.login()
+        s, e = self.heap_create(tok, 'Coin_box')  # creation's alphabet takes it; the spell grammar's card name does not
+        self.assertEqual((s, e['class']), (400, 'unspellable'), e)
+        self.assertIn('delvetalk Coin_box ?', e['message'])
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/Coin_box', token=tok)[0], 404)
+        self.assertEqual(self.heap_create(tok, 'coin-box')[0], 200)
+
     def test_a_heap_object_is_one_module_importing_the_library(self):
         tok = self.login()
         s, r = self.call('POST', '/AGENTS.md/heap/objects', {'object': 'tally', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}],
