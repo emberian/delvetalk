@@ -56,6 +56,8 @@
 <a class="door" href="/play/{href}" title="{description}"><span class="kind" data-id="{id}"></span>{label}</a>
 <!-- said: the turn the reply ran, and what came back to you -->
 <ol class="ledger"><li class="slip {cls} fresh"><span class="line">{line}</span></li></ol>{offers}
+<!-- usage: the host's answer to `?`, as a card -->
+<figure class="frame usage"><pre class="card">{text}</pre></figure>
 <!-- offer -->
 <figure class="frame offer"><pre class="card">{text}</pre></figure>
 <!-- quiet -->
@@ -93,7 +95,7 @@
 <!-- source: the program, as the host shows it to you -->
 <section><h2>Law</h2><pre class="listing law">{law}</pre><h2>Source <span class="code">{pin}</span></h2><details><summary>{lines} lines of Objective Bend</summary><pre class="listing">{source}</pre></details></section>
 <!-- actions -->
-<section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}</section>
+<section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}<form method="post" action="/play/{href}"><input type="hidden" name="text" value="delvetalk {id} ?"><button class="ask">? usage</button></form></section>
 <!-- action -->
 <details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form>{spell}</details>
 <!-- spell: the same call as a spell, for a reply -->
