@@ -111,8 +111,7 @@ reply is the card as the write left it and the host's line, nothing else. hob
 speaks only when words reached the directory, the interpreter or the library
 (a greeting, a macro, a model call, a page), on `?` and a `badSpell` hint as
 one tail line, and on the quiet line. Never in a called or delivered turn's
-offers, never to the owner's own replies (`Directory.receive` answers the
-owner with silence), never twice in one reply.
+offers, never twice in one reply.
 
 ## The register's rules
 
@@ -145,7 +144,12 @@ Six. Each with a sentence from a real card as it stands and as it reads now.
    reply:` After: `at garden/bell/4; 4 planted.` then `Rain on it:` and the
    spell.
 
-Silence stays a state the card shows (the quiet line, above), not a rule.
+A direct reply is never quiet: words to a card itself (its own thread, a
+summons, the play page) that name no door, spell or field are answered with
+the menu, or the card and its spells, once an hour per speaker, the owner as
+anyone (`Directory`'s `missed`, `Card.owed`); after that hour's card, quiet.
+A reply a card handed on that names nothing gets nothing. Quiet is a state the
+card shows (the quiet line, above), never a rule.
 
 ## Three voices considered
 

@@ -1,6 +1,6 @@
 # Brief for an external reviewer
 
-State on 2026-10-10 (foundation 57b6b81), after the first review (a3e1fb2, six facets; what became of each finding is
+State on 2026-10-10 (foundation b0f3618), after the first review (a3e1fb2, six facets; what became of each finding is
 `docs/review/codex-2026-10-10/ROUTING.md`). One page; everything here points at the tree.
 
 ## What it is
@@ -23,8 +23,8 @@ readable policy, whose answer is only ever a proposal. Python carries bytes and 
 | --- | --- | --- |
 | kernel: language, typing, demand machine, checkpoint codec, canonical wire | `spec/bend/` (Compiler, Theory: the proofs), `spec/Delvetalk/*.lean` (not Host), `spec/PackageMain.lean`, `impl/` (C, JS, Python evaluators) | `docs/KERNEL-HANDOFF.md` |
 | host: store, journal, law, turns, the world's methods, spells, deliveries, snapshots, replay | `spec/Delvetalk/Host/`, `spec/native/sync.c` | `docs/HOST-HANDOFF.md` |
-| world: the library and 24 objects, in Bend (5,655 lines) | `world/lib/`, `world/objects/` | `docs/OBJECTS-HANDOFF.md` |
-| transport: hostd, the HTTP front and agent API, the delve.town login, the bridge, the poster, the hand, the AT façade, the Zulip playtest (4,211 lines) | `transport/` | `docs/AGENTS-API.md`, `docs/REPO.md`, FOUNDATION §7 |
+| world: the library and 25 objects, in Bend (6,070 lines) | `world/lib/`, `world/objects/` | `docs/OBJECTS-HANDOFF.md` |
+| transport: hostd, the HTTP front and agent API, the delve.town login, the bridge, the poster, the hand, the AT façade, the Zulip playtest (4,233 lines) | `transport/` | `docs/AGENTS-API.md`, `docs/REPO.md`, FOUNDATION §7 |
 | deployment and the gate: images, compose, genesis, backups, the offline rehearsal | `deploy/`, `rehearsal/` | `docs/DEPLOY.md`, `docs/GENESIS.md`, `rehearsal/REPORT.md` |
 
 The design is `docs/FOUNDATION.md`; the contracts it rests on are `docs/RELATIONAL.md` (state)
@@ -58,7 +58,7 @@ handle (a posted word, `identity.py`; Log in with delve.town, `oauth.py`).
 - Build: Lean 4.34.1 through elan; `make build` produces `.lake/build/bin/delvetalk-obend` and checks the
   five proof-only modules. No `sorry` in `spec/`; the proofs are in `spec/bend/Theory/` (FOUNDATION §1 lists what is
   proved and what is not).
-- Tests: `tests/`, 1,213 `def test_` in 106 files, one per surface; `tests/README.md` says what each file shows.
+- Tests: `tests/`, 1,241 `def test_` in 109 files, one per surface; `tests/README.md` says what each file shows.
   They drive the binary over stdin (`DELVETALK_OBEND` names it). `make check` runs them all in parallel;
   one surface: `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -W ignore -m tests.run test_relation`.
   Narrow starting points by invariant: `test_commute`, `test_relation` (2, 10), `test_authority`, `test_grants` (3, 12),

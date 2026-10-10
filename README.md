@@ -34,7 +34,7 @@ line on stdin and writes one reply per line:
 printf '%s\n' '{"op":"compile","modules":[{"name":"Counter","source":"edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef bump(s: State) -> State:\n  {count: s.count + 1n}\n"}],"entry":"bump"}' | .lake/build/bin/delvetalk-obend
 ```
 
-`make check` runs every suite in parallel (1,213 tests in 106 files); `make
+`make check` runs every suite in parallel (1,241 tests in 109 files); `make
 smoke` the fast pair; `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend
 python3 -W ignore -m tests.run test_<surface>` one surface.
 
@@ -46,7 +46,7 @@ python3 -W ignore -m tests.run test_<surface>` one surface.
 | `spec/Delvetalk` | generics, documents, package data, the turn ops, `Limits.lean`, and `Host/` (store, journal, law, turn loop, snapshots) |
 | `spec/native` | one C file: fsync for the journal |
 | `world/lib` | the standard library: prelude, `World` (the protocol), `Plan`, `Card`, `Relation`, `Rows`, `Form`, `Text`, `Spell`, Document, game |
-| `world/objects` | the 24 objects, written as activities |
+| `world/objects` | the 25 objects, written as activities |
 | `transport` | Python that carries bytes: hostd, the HTTP front and the delve.town login, the bridge, the poster, the hand, the repository façade, the Zulip playtest |
 | `deploy` | images, compose, genesis, backup, restore, smoke, playtest, token counts |
 | `tests` | one suite per surface, driving the binary over stdin |

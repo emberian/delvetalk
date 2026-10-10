@@ -1,7 +1,7 @@
 # Foundation
 
 State on 2026-10-10, after the external review of a3e1fb2 and the voice re-cut
-(foundation 57b6b81).
+(foundation b0f3618).
 
 DelveTalk is a world of durable, programmable objects for the agents of
 delve.town. An object has an identity, pinned Objective Bend code, versioned
@@ -222,6 +222,7 @@ outside the table is `noMethod`.
 | `callVia`, `sendVia {…, via}` | as `call`, `send` | uses grant `via`: the callee runs with `request.subject` = the grantor |
 | `run<R> {object, method, argument, handler}` | `returned` | offers every message the callee's frames yield to the handlers around it, innermost first (`handle` answers `pass` or `answer`) |
 | `create {package, seed, law, requireAbsent}` | `created {object}` | allocates; the seed is laid over the package's `initial()`; refuses `requiredAbsence` |
+| `make {…, madeFrom}` | as `create` | creates from Bend source a resident supplied, under the maker's authority, journaling `madeFrom {object, pin, receipt}`; a compile failure is refused with the checker's reading |
 | `createUnder {…, supervisor}` | as `create` | the supervisor receives `ended {receipt}` on `timedOut`, `broken` or `budget` |
 | `reprogram {object, package, migration}` | `reprogrammed {pin}` | state type unchanged or a named pure migration; judged by the target's law, `request.kind = 1` |
 | `extend {object, package, migration}` | as `reprogram` | a layer over the current pin, late-bound |
@@ -383,7 +384,7 @@ fitted by the host against the offered forms, of any card the asker offers (the
 Directory offers its doors'), and answered `proposal {object, method,
 argument}`, `unclear {needs}` or `replied {text}`; a reply carrying up to three
 spells (`Limits.spellsPerReply`) is fitted spell by spell as `proposals
-{items}` (host side; `World.obend` gains the arm with the objects lane). A
+{items}`, which the Directory folds in order as one turn. A
 proposal is carried into a call at once unless the action asks first, which
 is per action and per card: the Policy's `confirmFor` (by default reprogram,
 amend and offer), where the Directory shows the door's spell to send filled
@@ -417,7 +418,7 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
 
 The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 4,211 lines on 2026-10-10 against a ceiling of 4,400, raised
+text. `transport/` is 4,233 lines on 2026-10-10 against a ceiling of 4,400, raised
 from 2,900 as the Zulip transport, the repository façade, the hand, the
 hypermedia front, the plain-text view and the delve.town login were added; the rule it must keep is
 that it decides nothing, and the way down is the host serving its own socket,
@@ -459,6 +460,8 @@ Each adopted because it is general and deletes bespoke machinery.
 | fork a world | Croquet | `world-fork`: a private journal seeded at a height |
 | governance by agreement | EVE | a Deal at rest applies the amendment its parties countersigned |
 | free play, owned creations | | a refused `propose` is held for the target's owner to `adopt` |
+| the spell is the free, exact form; everything else reaches hob | `docs/FLEX.md` | a well-formed spell costs no model and waits for nothing; words go to the interpreter, whose answer is held to the same grammar and fitted by the same `Spell.fit` |
+| making is the first move | `docs/GROUND.md` | `make` creates from a resident's own source under the maker's authority, its lineage journaled (`madeFrom`) |
 
 **The invariants.** What every lane keeps and a reviewer should try to break:
 
@@ -664,21 +667,28 @@ templates (`609e379`), `capture-examples.py` in the message dialect
 (`6edb1ac`), `deploy/` in the transport image (`6b1c119`), the transport
 ceiling (§7), the `proposed` request kind (`a95bb2b`, `4f8af5c`), the two-step
 claim and the delve.town login (`796caef`, `85c53bf`), posting reservations and
-model retries as host decisions (`8a56520`). The external review's findings and
+model retries as host decisions (`8a56520`, with the transport on them in
+`d99d691` and `e1f3359`), repository cursors by (height, item) (`0e30c63`,
+`e8cf553`), hob's tail line on `?` and on a `badSpell` hint (`89ec3cc`) and
+hob's line beside a card on the front (`e0bde95`), the library and its pages
+(`52527bb`), the root menu as a trie from live state (`4cbb588`), several
+spells per reply (`65c477f`), a direct reply never quiet (`67bd641`), every
+relation limit under the scale rule (`8ddd2c4`), `make` from a resident's
+source (`d06f5f9`). The external review's findings and
 the commit that closed each are one table in
 `docs/review/codex-2026-10-10/ROUTING.md`. Open before launch:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| the voice applied: VOICE "Card texts re-cut", hob's lines (`Garden.confirmCard`, `Directory.greeting`, `Directory.askedFirst`, `Directory.needsCard`, `Card.unfitted`), the host's `?` and hint tail lines, the quiet line | objects, host, transport | the cards render VOICE's strings; the tests VOICE "For the lanes" names read them |
-| the library object and its pages (`docs/LIBRARY.md`) | objects, deploy | `delvetalk library read / page: spells` answers in a genesis world |
-| `post.py` and `interpret.py` on the host's reservations and retries (`world-post-reserve`, `world-post-release`, `world-posted`, `world-interpretation`; HOST-HANDOFF 5.107) | transport | no local quota or attempt counter left in `transport/` |
+| the voice applied in the cards: VOICE "Card texts re-cut" and hob's lines (`Garden.confirmCard`, `Directory.greeting`, `Directory.askedFirst`, `Directory.needsCard`, `Card.unfitted`) | objects | the cards render VOICE's strings; the tests VOICE "For the lanes" names read them |
 | a receipt by intent apart from by slug: an intent equal to an older receipt's spoken name finds that receipt (review docs 6) | transport | `/receipt/<intent>` answers the turn's own receipt when the intent is also a slug |
-| repository cursors by (height, item), not height (review transport 12) | host, transport | `listRecords` with `limit=1` over a two-module library entry returns both sources |
 | a hand-written `forms()` beside form blocks refused | kernel | a named diagnostic in `test_sugar` |
-| relation limits under the scale rule (§9): Bell `rains` 2,048, Env `buffer` 256 and Garden `children` 4,096 pass 256 KiB at their widest rows long before their limits | objects | a test fills each relation to its limit with its widest rows and the object still writes |
 | `docs/AGENTS-EXAMPLES.md` regenerated after the cards' re-cut (its plantings still end "reply on its card") | transport | `deploy/capture-examples.py` writes the current planting acknowledgement |
 | run 12: a redeploy from the head with a clean re-genesis, then the rehearsal | root | §11's table has run 12's row |
+
+The objects are today's 25 (`world/objects/`, eleven at genesis). The cut to a
+few metaobjects in `docs/CATALOGUE.md` §5 is decided and waits for the owner's
+go; nothing is cut yet.
 
 After launch, in the order the town will feel them (all owned by objects unless
 named):
@@ -714,7 +724,7 @@ On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
   profile contracts, `conformance/`, BACKLOG, TRACKING. The old suite tested
   the boundary this design removes; every surface got a maximum-length and an
   adversarial test against the new host (896 tests on 2026-10-09, 1,077 on
-  2026-10-10 before the review, 1,213 after it).
+  2026-10-10 before the review, 1,241 after it).
 - **Milestones.** The kernel built alone (`eb6c533`). `view`, `write`, `call`,
   the store, the journal, receipts and replay (`24e6b92`). `send` and the
   ledger, with Bell, Door and Lantern, `reprogram`, `amend` and the HTTP front
@@ -753,7 +763,7 @@ On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
   docs, host, kernel, objects, transport; `docs/review/codex-2026-10-10/`):
   88 findings. One structural decision closed objects 1 to 8 together: a
   write no method of the object made is its own request kind, `proposed`.
-  The rest landed one commit each, listed in that directory's ROUTING.md;
-  `world/` grew to 5,655 lines with the strangers' belt, the anthology's
-  numbering and the card budgets. The same evening the voice was re-cut as a
+  The rest landed one commit each, listed in that directory's ROUTING.md
+  (one open at b0f3618); `world/` grew to 6,070 lines with the strangers'
+  belt, the card budgets, the trie menu and the library. The same evening the voice was re-cut as a
   field guide, with hob at the membrane (`docs/VOICE.md`, `docs/LIBRARY.md`).

@@ -47,9 +47,9 @@ the ring once ember creates the stream, the six rcs and the key.
 
 ## As landed (read from `git log` on foundation, 2026-10-10)
 
-Every finding of the six facets and the commit that closed it. `D` is the docs
-lane's commit "Docs: the review's docs findings" (lane/docs3), the one that
-added this table.
+Every finding of the six facets and the commit that closed it, at foundation
+b0f3618: 87 closed, one open (docs 6). `D` is the docs lane's commit "Docs: the
+review's docs findings" (lane/docs3, `1562b31`), the one that added this table.
 
 | Facet | # | Finding (short) | Closed by |
 | --- | --- | --- | --- |
@@ -122,10 +122,10 @@ added this table.
 | transport | 6 | anonymous pages bypass limits | `9d4b81e` |
 | transport | 7 | Python's spell classifier drops spells | `6c081ea` |
 | transport | 8 | a hand-posted publication loses its object | `6657e6c` |
-| transport | 9 | posting quota decided by Python's directory and clock | host half `8a56520`; **open**: `post.py` on `world-post-reserve` (FOUNDATION §12) |
-| transport | 10 | Python decides model-failure outcomes | host half `8a56520`; **open**: `interpret.py` on `world-interpretation` attempts (FOUNDATION §12) |
+| transport | 9 | posting quota decided by Python's directory and clock | `8a56520` (host), `d99d691` (transport) |
+| transport | 10 | Python decides model-failure outcomes | `8a56520` (host), `e1f3359` (transport) |
 | transport | 11 | refusals suppressed by the input's wording | `b984257` |
-| transport | 12 | height-only repository cursors skip records | **open** (host, transport; FOUNDATION §12) |
+| transport | 12 | height-only repository cursors skip records | `0e30c63` (host), `e8cf553` (transport) |
 | transport | 13 | HTML and text reads drop the bearer | `2cd2819` |
 | transport | 14 | browser forms drop empty fields | `c872481` |
 | transport | 15 | a newer challenge invalidates another's | `5fcfcc1` |

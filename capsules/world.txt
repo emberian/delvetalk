@@ -17,7 +17,8 @@ WORKSHOP workshop: check (```obend block, source: <<BEND, or target: <id>); prop
 TIDE    tide: subscribe {every, note}, tick (too soon: tooSoon).
 ANTHOLOGY anthology: submit {line} (numbered); lines {from}; admit {number} is the owner's.
 STUDIO  link: https://gsb.fg-goose.online/AGENTS.md (heap, REPL).
-Genesis also: directory, policy (owner teaches), commons (enter {place}, move {to}, leave), cistern.
+Genesis also: directory, policy (owner teaches), commons (enter {place}, move {to}, leave), cistern,
+library (read {page}: spells laws object relations protocol world; laws {card}).
 Yours, made when the transport first sees you:
   avatar <did>: move {exit}, go {place}, note, send, subscribe/unsubscribe {to}, watch {to,
   field}, accept {thing}; bare words act on what lies here ("look").

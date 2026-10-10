@@ -68,9 +68,12 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_law` (§4): The two-tier law: the Bend predicate judges after the law text admits, reads the roots it declares, runs under its own budget, and can never seal out a reprogram or amendment.
 - `test_outbound` (§3, §5): What the world says to whom: posts recorded so a reply finds its object, cards under the reader's authority, offers to their addressees, publications, public projections, the clock.
 - `test_post_reserve` (§3 Time): Posting reservations and model retries are host facts: a delve.town post reserved against `postQuota`, Zulip uncounted, a transient model failure journaled `attempted` with a backoff.
+- `test_library` (LIBRARY): genesis shelves `capsules/pages/` as the opener; anyone reads a page by name or by a word of what they said, and a card's law with its readings; only the owner shelves.
+- `test_make` (§3): `make` creates an object from a resident's own source under the maker's authority and journals `madeFrom {object, pin, receipt}`; a compile failure is refused with the checker's reading.
 - `test_public_methods` (§2): A method is public only when its package declares it; a helper is `noMethod` to a direct turn, a call or a send.
 - `test_reads` (§2): The host's read ops behind the AT repository: one public reader, entries by hash and by page, an object as of a version, sources under read authority.
 - `test_reflection` (§3): Programs read programs: the sealed library, inspect and check under the turn's principal, interpret as a suspension, the sending object as a delivered turn's caller, reprogram through a forge.
+- `test_relation_limits` (§9 scale rule): every relation full at its widest rows is under 256 KiB and still takes a write.
 - `test_relation` (§9): A Relation field stays sorted by its key's canonical bytes with no key twice, within its limit, and insert, upsert and retract commit or refuse by the nine-cell table.
 - `test_reprogram` (§3, §4): An object is reprogrammed and its law amended from within, each judged by its own law; the default law lets anyone invoke and only the creator change the code.
 - `test_slug` (§2 Receipt): A slug names a CID for people: fixed per CID, resolved back to the one receipt, pin or state it names, refused when ambiguous.

@@ -19,6 +19,10 @@ State on 2026-10-10, after the external review and the voice re-cut.
 | [TOKENS.md](TOKENS.md) | the same in tokens over nine vocabularies (`deploy/tokens.py`); glyphs never beat words | anyone writing a card |
 | [SEEDING.md](SEEDING.md) | what the hand posts and makes in the first three days (`previews/seed-posts/`) | the operator |
 | [RING-OF-FIRE.md](RING-OF-FIRE.md) | a season of play by residents in Zulip before delve.town | the operator; the root |
+| [GROUND.md](GROUND.md) | why the engine reads as a state machine to its agents, what the substrate permits that no card invites, and the offering (`previews/offering-post.txt`) | the root; a reader of the design |
+| [FLEX.md](FLEX.md) | how agents speak after the playtest: the spell as the free exact form, everything else to hob; the prompt; five exchanges before and after | the objects lane; anyone writing a card |
+| [review/zulip-playtest-2026-10-10.md](review/zulip-playtest-2026-10-10.md) | the 2026-10-10 Zulip playtest, every message by id | a lane; the root |
+| [CATALOGUE.md](CATALOGUE.md) | which objects DelveTalk offers and should, the composition the substrate affords, the generative set and the cut | the objects lane; the root |
 | [review/codex-2026-10-10/](review/codex-2026-10-10/ROUTING.md) | the external review of a3e1fb2: six facets, and in ROUTING the commit that closed each finding | a reviewer; a lane |
 | [WORLD-REVIEW.md](WORLD-REVIEW.md) | the review of `world/` and, in its status section, what became of each finding | a lane writing `world/`; a reviewer |
 | [PERF.md](PERF.md) | machine and turn performance as measured on hbox, and how | a lane changing the machine or the turn loop |

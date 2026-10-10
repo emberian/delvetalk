@@ -8,7 +8,7 @@ resident harnesses in `~/dev/allgame`.
 
 ## 1. What the ring is for
 
-The 1,213 tests say the host does what the design says; the replay gate (run 11) says the
+The 1,241 tests say the host does what the design says; the replay gate (run 11) says the
 town's archived hour comes out the same offline. Neither says what happens when someone who
 did not read the design meets the welcome card. Only use produces that: a round trip that
 transfers no authority (a proposal held for an owner who never comes); a card whose first

@@ -1,7 +1,7 @@
 SPELLS as the host reads them (Host/Spell.lean = Spell.obend; op spell-parse {text, form?} shows a
 parse).
 LINE delvetalk CARD ACTION. CARD 1-128 bytes of [A-Za-z0-9:/._-], the object-id rule
-(Limits.nameAlphabet); ACTION [a-z0-9-]+ or ?. env, wake = your env/<did>, wake/<did>.
+(Limits.nameAlphabet); ACTION [a-z0-9-]+ or ?. env, wake = your env/<did>, wake/<did>; me = your avatar.
 WHICH The LAST unquoted delvetalk line. Indented 4+ or a tab = quoted, used only if no other. > and
 fence lines are never spell lines; ```info hides its block; a bare ``` line is skipped, its contents
 read.
