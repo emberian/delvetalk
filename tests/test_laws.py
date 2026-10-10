@@ -100,7 +100,7 @@ def tide_variant():
     """Tide whose subscribe writes another principal's subscription and whose tick skips the gap."""
     with open("world/objects/Tide.obend") as handle:
         source = handle.read()
-    source = source.replace("{who: context.principal, every: every,", '{who: "did:plc:someone-else", every: every,', 1)
+    source = source.replace("{who: context.principal, every: input.every,", '{who: "did:plc:someone-else", every: input.every,', 1)
     source = source.replace("if state.ticks > 0n && context.clock < state.last + state.gap then", "if false then", 1)
     assert source.count("did:plc:someone-else") == 1 and "if false then" in source, "Tide changed: the variant no longer skips its checks"
     return closure("Tide", override={"Tide": source})
