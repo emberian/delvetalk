@@ -93,7 +93,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
@@ -523,6 +523,18 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    type. A REPL caller passes only the method's own input. A request that sends the Context too is as before (for one
    release); `turn-resume` needs nothing (the checkpoint holds it). Tests: `test_turn.ContextTests`.
 
+28. **Checks against the sealed library (host7).** `world-check {principal, modules | source, entry, limits?}` compiles the
+   modules over the world's library (`overLibrary`: the library modules they import, in library order, then their own
+   modules minus those that are the library's own bytes; another module of a library name is refused "shadows"), journals
+   nothing, and answers `check-package`'s shape plus `library` (`checkModules`: `{status: "checked", artifact}` or
+   `{status: "refused", diagnostic}` with module, span and hint). Any principal ("" anonymous) may ask; a package with
+   laws compiles, as at `world-create`. Stateless `check-package` and `compile` take `library: <pin>` instead of the
+   library's modules (`PackageSession.overLibrary`): resolved among the open world's libraries, then those this process
+   sealed with `library-load {path}` (answers `{status: "library", pin, modules}`; at most 4 kept, newest first); an
+   unknown pin is a request error naming it. The pure profile still refuses laws. `overLibrary` also lets a package be a
+   library module named by itself (all own modules the library's: the last is the entry and stays); `attachLibrary` keeps
+   it, which `world-arrive` (5.31) needs. Tests: `test_reflection.LibraryCheck`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -627,7 +639,8 @@ now holds lexicon, examples, forms and the utterance), call `world-principal` at
 with `opener`; `transport/model.py`'s comment ("the host fits raw") is now the object's fitting; Env.obend's comment
 quotes the old metarule message.
 
-lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27).
+lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
+`world-check`, `library: <pin>` and `library-load` (5.28).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

@@ -514,6 +514,20 @@ def libraryClosure (lib : Library) (sources : List String) : List (String × Str
     (sources.flatMap importsOf).eraseDups
   lib.modules.filter fun (n, _) => wanted.contains n
 
+/-- A package's own modules over a library, as the compiler is given them: the library modules
+    they import (transitively, in library order), then the own modules that are not the library's
+    own bytes. A module of a library module's name with other bytes is refused. When every own
+    module is the library's (a package named from the library: `world-arrive`, a check of a
+    library module), the last of them is the entry and stays, after the library modules it imports. -/
+def overLibrary (lib : Library) (own : List (String × String)) : Except String (List (String × String)) := do
+  for (n, src) in own do
+    if let some libSrc := lib.modules.lookup n then
+      unless libSrc == src do throw s!"module {n} shadows the library module of that name"
+  let mine := own.filter fun (n, _) => (lib.modules.lookup n).isNone
+  match mine, own.getLast? with
+  | [], some entry => return libraryClosure lib [entry.2] ++ [entry]
+  | _, _ => return libraryClosure lib (mine.map (·.2)) ++ mine
+
 /-- Compile inputs with the library modules prepended; inputs without `"library"` are as given.
     The result is for the compiler only; the object keeps the inputs it was given. -/
 def resolveInputs (w : World) (inputs : Json) : Except String Json := do
@@ -522,11 +536,7 @@ def resolveInputs (w : World) (inputs : Json) : Except String Json := do
   let own ← match inputs.getObjVal? "modules" with
     | .ok m => parseModules m
     | .error _ => pure [("Main", ← inputs.getObjValAs? String "source")]
-  for (n, src) in own do
-    if let some libSrc := lib.modules.lookup n then
-      unless libSrc == src do throw s!"module {n} shadows the library module of that name"
-  let own := own.filter fun (n, _) => (lib.modules.lookup n).isNone
-  let modules := libraryClosure lib (own.map (·.2)) ++ own
+  let modules ← overLibrary lib own
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) =>
     k != "library" && k != "source" && k != "modules"
   return Json.mkObj (("modules", modulesJson modules) :: fields)
@@ -538,7 +548,10 @@ def attachLibrary (w : World) (inputs : Json) : Except String Json := do
   let own ← match inputs.getObjVal? "modules" with
     | .ok m => parseModules m
     | .error _ => pure [("Main", ← inputs.getObjValAs? String "source")]
-  let own := own.filter fun (n, src) => lib.modules.lookup n != some src
+  -- A package named from the library keeps its entry module (`overLibrary`).
+  let own := match own.filter (fun (n, src) => lib.modules.lookup n != some src), own.getLast? with
+    | [], some entry => [entry]
+    | mine, _ => mine
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) =>
     k != "source" && k != "modules" && k != "library"
   let attached := Json.mkObj (("modules", modulesJson own) :: ("library", toJson lib.pin) :: fields)
@@ -579,6 +592,44 @@ def checkSource (w : World) (source : String) : List String :=
         let at_ := s!"{d.sourceModule.getD "Checked"}:{(d.span.map (·.line)).getD 0}"
         -- The kernel's dialect hint, when it has one, is the next line at the same place.
         [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
+
+/-- A dry-run compile of `modules` (dependency order, library modules included) for `entry`:
+    `{status: "checked", artifact}`, or `{status: "refused", diagnostic}` with the kernel's stage,
+    message, module, span and hint (`Package.localize`). `lawful` accepts a package that declares
+    laws (a world's objects do); the stateless profile refuses them, as `check-package` always has. -/
+def checkModules (modules : List (String × String)) (entry : String) (limits : Json) (lawful : Bool) : Json :=
+  let request := Json.mkObj [("entry", toJson entry), ("limits", limits), ("modules", modulesJson modules)]
+  let refused := fun (d : Package.Diagnostic) => Json.mkObj [("status", toJson "refused"), ("diagnostic", d.json)]
+  match Package.compileStructured request with
+  | .ok (artifact, _, laws) =>
+    if !lawful && !laws.isEmpty then
+      refused (Package.requestRefusal "package laws require a host law adapter; this pure profile refuses them")
+    else Json.mkObj [("status", toJson "checked"), ("artifact", artifact)]
+  | .error d => refused (Package.localize modules limits d)
+
+/-- A request's own modules: `modules`, or one `source` as the module `Package`. -/
+def requestModules (j : Json) : Except String (List (String × String)) := do
+  match j.getObjVal? "modules" with
+  | .ok m => parseModules m
+  | .error _ => return [("Package", ← j.getObjValAs? String "source")]
+
+/-- `world-check {principal, modules | source, entry, limits?}`: compile the modules over the
+    world's sealed library (the modules they import, as `overLibrary` resolves them; a world
+    without a library compiles them alone), journalling nothing. A read: any principal may ask,
+    "" anonymously, since the library is the world's public code. A package that declares laws
+    compiles, as it would at `world-create`. The answer is `check-package`'s plus `library`. -/
+def worldCheck (w : World) (j : Json) : Except String Json := do
+  if (← j.getObjValAs? String "principal").utf8ByteSize > Limits.maxPrincipalBytes then
+    throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  let entry ← j.getObjValAs? String "entry"
+  let own ← requestModules j
+  let modules ← match w.library with
+    | some lib => overLibrary lib own
+    | none => pure own
+  let answer := checkModules modules entry (Package.getLimits j) true
+  return match w.library with
+    | some lib => answer.setObjVal! "library" (toJson lib.pin)
+    | none => answer
 
 /-- The metarule's refusal, naming the proposer it was checked against and the clause that
     refused (a law must admit an amendment by its own proposer). -/

@@ -327,6 +327,56 @@ def interpreter_world(test):
     test.make("probe", PROBE, probe_seed())
 
 
+LAWFUL = PACKAGE + "law small: new.count <= 5\n"
+
+
+class LibraryCheck(Reflection):
+    """world-check and `library: <pin>` compile against the world's sealed library without the caller
+    sending it; refuted if a check journals, if the library is read from the request, or if a
+    stateless process cannot resolve the pin."""
+
+    def test_world_check_compiles_over_the_sealed_library_and_journals_nothing(self):
+        opened = self.open_library()
+        before = self.host.send(op="world-status")["height"]
+        r = self.host.send(op="world-check", principal="", modules=[{"name": "Tally", "source": PACKAGE}], entry="bump")
+        self.assertEqual((r["status"], r["library"]), ("checked", opened["library"]), r)
+        self.assertIn("Plan", [m["name"] for m in r["artifact"]["modules"]])
+        self.assertEqual(self.host.send(op="world-status")["height"], before)
+
+    def test_world_check_names_the_module_and_line_of_a_refusal(self):
+        self.open_library()
+        r = self.host.send(op="world-check", principal="glm", source=BROKEN, entry="initial")
+        self.assertEqual(r["status"], "refused", r)
+        self.assertEqual((r["diagnostic"]["module"], r["diagnostic"]["span"]["line"]), ("Package", 3), r)
+        self.assertIn("missing", r["diagnostic"]["message"])
+
+    def test_world_check_accepts_a_package_with_laws_as_world_create_does(self):
+        self.open_library()
+        r = self.host.send(op="world-check", principal="glm", source=LAWFUL, entry="initial")
+        self.assertEqual(r["status"], "checked", r)
+
+    def test_stateless_check_and_compile_resolve_the_pin_from_the_open_world(self):
+        opened = self.open_library()
+        pin = opened["library"]
+        checked = self.host.send(op="check-package", library=pin, modules=[{"name": "Tally", "source": PACKAGE}], entry="bump")
+        self.assertEqual(checked["status"], "checked", checked)
+        compiled = self.host.send(op="compile", library=pin, source=PACKAGE, entry="bump")
+        self.assertEqual(compiled["status"], "compiled", compiled)
+        unknown = self.host.send(op="compile", library="bafy-not-a-pin", source=PACKAGE, entry="bump")
+        self.assertEqual(unknown["status"], "error", unknown)
+        self.assertIn("unknown library pin", unknown["message"])
+
+    def test_a_stateless_process_seals_the_library_once_and_names_it_by_pin(self):
+        opened = self.open_library()
+        repl = self.spawn()
+        loaded = repl.send(op="library-load", path=LIBRARY)
+        self.assertEqual((loaded["status"], loaded["pin"]), ("library", opened["library"]), loaded)
+        r = repl.send(op="check-package", library=loaded["pin"], source=PACKAGE, entry="bump")
+        self.assertEqual(r["status"], "checked", r)
+        lawful = repl.send(op="check-package", library=loaded["pin"], source=LAWFUL, entry="initial")
+        self.assertEqual(lawful["status"], "refused", lawful)
+
+
 class Interpret(Reflection):
     def setUp(self):
         super().setUp()
