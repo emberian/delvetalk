@@ -159,6 +159,8 @@ structure CreateRec where
   sources : String
   /-- The final state, on the wire. -/
   seed : Json
+  /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
+  madeFrom : Option Json := none
 
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
@@ -1526,7 +1528,10 @@ def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
-    if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)
+    (if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)) |> fun j =>
+    match c.madeFrom with
+    | some m => j.setObjVal! "madeFrom" m
+    | none => j
 
 structure Judged where
   updates : List (String × Object)
@@ -2034,11 +2039,18 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
 /-- Card names that mean the acting principal's own object: a turn or card naming `env` or
     `wake` runs `env/<principal>` or `wake/<principal>`. No object may take these ids, so no one
     can stand in for another's own. -/
-def ownCards : List String := ["env", "wake"]
+def ownCards : List String := ["env", "wake", "me"]
 
-/-- The object a principal means by `object`: its own for a name in `ownCards`. -/
+/-- The card name for the speaker's own avatar (docs/GROUND.md §6 change 2): the object an arrival
+    makes under the principal's own id (`arrivals`), so a card may print `delvetalk me watch` and
+    never a DID. -/
+def meCard : String := "me"
+
+/-- The object a principal means by `object`: its own for a name in `ownCards` (`me` is its avatar,
+    the object named by the principal itself). -/
 def resolveCard (principal object : String) : String :=
-  if ownCards.contains object then s!"{object}/{principal}" else object
+  if object == meCard then principal
+  else if ownCards.contains object then s!"{object}/{principal}" else object
 
 /-- The principal under which a settled interpretation is journaled. -/
 def interpretationPrincipal : String := "interpretation"
@@ -2504,7 +2516,9 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if let some r := retained w principal intent digest then return (w, r)
   unless validObjectId id do throw s!"object id {id} is not one: {objectIdRule}"
   if id == "self" then throw "object id self is reserved for the running object"
-  if ownCards.contains id then throw s!"object id {id} is reserved: it names each principal's own {id}/<principal>"
+  if ownCards.contains id then
+    throw (if id == meCard then "object id me is reserved: it names each principal's own avatar"
+      else s!"object id {id} is reserved: it names each principal's own {id}/<principal>")
   -- The opener of the world may create an object for its owner: the law (the default law
   -- names the owner) and the metarule are the owner's, the creator is the opener.
   let owner ← optText j "owner"
@@ -2986,7 +3000,7 @@ def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     w := w'
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
-    creates := creates ++ [(id, ({ object := o, sources, seed } : CreateRec))]
+    creates := creates ++ [(id, ({ object := o, sources, seed, madeFrom := (r.getObjVal? "madeFrom").toOption } : CreateRec))]
   return (w, creates)
 
 def replayEntry (w : World) (entry : Json) : Except String World := do
@@ -3418,6 +3432,14 @@ def lawClauses (text : String) : List (String × Option String × String) :=
     let expr ← after.dropPrefix? ":"
     return (name, reading, expr.toString.trimAscii.toString)
 
+/-- An object's law as clauses with their readings, every kind of law text alike: a reading the
+    text gives, else the one the package gave the clause while it stands (`Object.readings`). What
+    `world-inspect` answers as `laws` and the library's `law {card}` page reads. -/
+def lawRows (o : Object) : Json :=
+  Json.arr ((lawClauses o.lawText).toArray.map fun (name, reading, expr) =>
+    Json.mkObj ([("name", toJson name), ("clause", toJson expr)] ++
+      ((reading.orElse fun _ => o.readings.lookup name).map fun r => [("reading", toJson r)]).getD []))
+
 /-- The pin and law text `id` had at `version`: its current ones, with each later reprogram and
     amendment undone (newest first), as the admitted entries that made later versions record them. -/
 def pinAndLawAt (w : World) (o : Object) (id : String) (version : Nat) : String × String := Id.run do
@@ -3465,21 +3487,44 @@ def objectOp (w : World) (j : Json) : Except String Json := do
 
 /-- A page of `(height, item)` pairs, ascending by height: after `after` (exclusive), or with
     `reverse: true` descending below `before` (exclusive; from the newest when absent); at most `limit`
-    (1..100, default 100). The items and whether more follow. -/
-def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array Json × Bool) := do
+    (1..100, default 100). A `cursor` (`"<height>.<n>"`, the `n`th item of that height, as a page's
+    reply names its last item) continues exactly where a page stopped, in either order, so items
+    sharing a height are never skipped (codex transport 12); `after`/`before` page by whole heights.
+    The items, whether more follow, and the cursor of the last item shown when they do. -/
+def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array Json × Bool × Option String) := do
   let limit := (← optNat j "limit").getD Limits.maxHistoryLimit
   if limit == 0 || limit > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   let reverse ← match j.getObjVal? "reverse" with
     | .ok (.bool b) => pure b
     | .ok _ => throw "reverse must be true or false"
     | .error _ => pure false
+  -- Each item's place: its height and its ordinal among the items of that height.
+  let placed : Array ((Nat × Nat) × Json) := (items.foldl (fun (acc : Array ((Nat × Nat) × Json) × Nat × Nat) (h, x) =>
+    let (out, lastH, n) := acc
+    let k := if h == lastH && !out.isEmpty then n + 1 else 0
+    (out.push ((h, k), x), h, k)) (#[], 0, 0)).1
+  let lt := fun (a b : Nat × Nat) => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
+  let cursor ← match (j.getObjValAs? String "cursor").toOption with
+    | none => pure none
+    | some c => match c.splitOn "." with
+      | [h, k] => match h.toNat?, k.toNat? with
+        | some h, some k => pure (some (h, k))
+        | _, _ => throw "cursor must be <height>.<n>"
+      | _ => throw "cursor must be <height>.<n>"
   let chosen ← if reverse then do
       let before ← optNat j "before"
-      pure (items.reverse.filter fun (h, _) => before.all (h < ·))
+      pure (placed.reverse.filter fun (p, _) => before.all (p.1 < ·) && cursor.all (lt p ·))
     else do
       let after := (← optNat j "after").getD 0
-      pure (items.filter fun (h, _) => h > after)
-  return ((chosen.extract 0 limit).map (·.2), decide (chosen.size > limit))
+      pure (placed.filter fun (p, _) => p.1 > after && cursor.all (lt · p))
+  let shown := chosen.extract 0 limit
+  let more := decide (chosen.size > limit)
+  let last := if more then shown.back?.map fun ((h, k), _) => s!"{h}.{k}" else none
+  return (shown.map (·.2), more, last)
+
+/-- A page reply's paging fields: `more`, and `cursor` when more follow. -/
+def pageFields (more : Bool) (cursor : Option String) : List (String × Json) :=
+  [("more", toJson more)] ++ (cursor.map fun c => [("cursor", toJson c)]).getD []
 
 /-- Every source the journal carries, as `(height, record {cid, name, text, height})`: an entry's `sources`
     (named as the compile inputs that introduced it name it) and a library entry's modules, each once,
@@ -3539,8 +3584,8 @@ def sourceOp (w : World) (j : Json) : Except String Json := do
 def sourcesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let readable := readableSources w reader
-  let (shown, more) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
-  return Json.mkObj [("status", toJson "sources"), ("sources", Json.arr shown), ("more", toJson more)]
+  let (shown, more, cursor) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
+  return Json.mkObj ([("status", toJson "sources"), ("sources", Json.arr shown)] ++ pageFields more cursor)
 
 /-- `world-grants {principal, after?, before?, reverse?, limit?}`: every grant an admitted entry made whose
     object the reader may view, as it stands now (`revoked`, `uses` left), with the `height` and `hash` of
@@ -3557,8 +3602,8 @@ def grantsOp (w : World) (j : Json) : Except String Json := do
       unless viewable w reader now.object do continue
       items := items.push (i + 1, (now.json.setObjVal! "revoked" (toJson now.revoked)).setObjVal! "height" (toJson (i + 1))
         |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
-  let (shown, more) ← pageByHeight j items
-  return Json.mkObj [("status", toJson "grants"), ("grants", Json.arr shown), ("more", toJson more)]
+  let (shown, more, cursor) ← pageByHeight j items
+  return Json.mkObj ([("status", toJson "grants"), ("grants", Json.arr shown)] ++ pageFields more cursor)
 
 /-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it
     (`projectEntry`), and with `bytes: true` the lowercase hex of its canonical DAG-CBOR without `hash`
@@ -3580,9 +3625,9 @@ def entryOp (w : World) (j : Json) : Except String Json := do
     see it, paged by height (`pageByHeight`). -/
 def entriesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
-  let (shown, more) ← pageByHeight j (w.entries.zipIdx.map fun (e, i) => (i + 1, e))
-  return Json.mkObj [("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader))),
-    ("more", toJson more)]
+  let (shown, more, cursor) ← pageByHeight j (w.entries.zipIdx.map fun (e, i) => (i + 1, e))
+  return Json.mkObj ([("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader)))] ++
+    pageFields more cursor)
 
 /-- Everything a slug may name, as `(cid, kind)`: every entry's hash (`receipt`); every pin an
     entry gave an object `reader` may view (`pin`); the state CIDs the journal names for such an
@@ -3747,8 +3792,8 @@ def publicationsOp (w : World) (j : Json) : Except String Json := do
       ("id", (p.getObjVal? "id").toOption.getD Json.null), ("object", toJson object), ("page", toJson title),
       ("section", toJson part), ("body", toJson body),
       ("hash", (entry.getObjVal? "hash").toOption.getD Json.null)] ++ replyTo))
-  let (shown, more) ← pageByHeight j items
-  return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr shown), ("more", toJson more)]
+  let (shown, more, cursor) ← pageByHeight j items
+  return Json.mkObj ([("status", toJson "publications"), ("publications", Json.arr shown)] ++ pageFields more cursor)
 
 end Delvetalk.Host
 

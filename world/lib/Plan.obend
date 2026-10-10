@@ -52,6 +52,11 @@ sum Entries<D, U>:
   upsert: {row: D}
   retract: {key: Data}
 # The identity of a turn, (principal, intent): what an await names.
+# Where a made object came from (docs/GROUND.md §6 change 6): the object and the receipt that held its
+# source; the host adds the pin the object runs.
+record MadeFrom:
+  object: Reference
+  receipt: String
 record Slot:
   principal: String
   intent: String

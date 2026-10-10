@@ -16,7 +16,7 @@ import tempfile
 import unittest
 
 from tests.host import HostCase, ROOT
-from tests.test_turn_world import declared, nat, record
+from tests.test_turn_world import declared, label, nat, record
 
 DID = "did:plc:abcdefghijklmnopqrstuvwx"
 OBJECTS = os.path.join(ROOT, "world", "objects")
@@ -45,6 +45,29 @@ class Arrive(HostCase):
         v = self.host.send(op="world-view", principal=who, object=obj)
         self.assertEqual(v["status"], "viewed", v)
         return v["state"]
+
+    def say(self, text, who=DID, identity="s1"):
+        return self.host.send(op="world-turn", principal=who, object="me", method="receive", identity=identity,
+                              argument=record(text=label(text), post=label("")))
+
+    def test_me_is_the_speakers_own_avatar(self):
+        # docs/GROUND.md §6 change 2: a card may print `delvetalk me note` without a DID.
+        self.assertEqual(self.arrive()["status"], "arrived")
+        usage = self.say("delvetalk me ?", identity="u1")
+        self.assertEqual(usage["status"], "usage", usage)
+        self.assertIn("delvetalk me note", usage["text"])
+        self.assertNotIn(DID, usage["text"])
+        noted = self.say("delvetalk me note\ntext: a moth", identity="n1")
+        self.assertEqual(noted["status"], "admitted", noted)
+        self.assertEqual([w["object"] for w in noted["receipt"]["outcome"]["writes"]], [DID])
+        stranger = "did:plc:zzzzzzzzzzzzzzzzzzzzzzzz"
+        out = self.say("delvetalk me note\ntext: a moth", who=stranger, identity="n2")["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["clause"]), ("badSpell", "noAvatar"), out)
+        self.assertIn("arriv", out["reason"])
+        made = self.host.send(op="world-create", principal="ember", identity="mk-me", object="me",
+                              source="edition ObjectiveBend 1\nrecord State:\n  n: Nat\ndef initial() -> State:\n  {n: 0n}\n",
+                              entry="initial", seed=record())
+        self.assertEqual(made["status"], "error", made)
 
     def test_an_arrival_creates_the_newcomers_three_objects_owned_by_the_did(self):
         before = self.host.send(op="world-status")["height"]

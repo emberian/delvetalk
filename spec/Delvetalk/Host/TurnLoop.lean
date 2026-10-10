@@ -240,7 +240,9 @@ def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads
   evaluation s!"response type cannot carry {label}"
 
 def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M Data :=
-  respond bounds responseType "refused" [.record [("clause", .label clause)], emptyRecord]
+  -- A result whose refusal carries a reading (`Created`, `Programmed`, `Amended`) hears an empty one.
+  respond bounds responseType "refused" [.record [("clause", .label clause)],
+    .record [("clause", .label clause), ("reading", .label "")], emptyRecord]
 
 /-- `refused {clause, reading}` where the call site's result carries a reading (World's `call`
     since run 11), the refusal's voiced reason (`Refusal.voiced`); `{clause}` otherwise. -/
@@ -692,7 +694,7 @@ def helperOf (w : World) (self id method : String) : Bool :=
     not one: the host's spell path runs a card's methods directly (WHOLENESS, second root decisions, 5). -/
 def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
-   "sendVia", "create", "createUnder", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
+   "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
    "objects", "card", "subscribe", "unsubscribe"]
 
@@ -944,6 +946,9 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
+/-- Why `me` names nothing yet. -/
+def noAvatarReason : String := "You have no avatar here yet; your first arrival in the town makes one, and then me is it."
+
 /-- What a spell naming `card` and `action` with `fields` asks of card `self` (`o`), read for
     `principal`. `retarget`: a direct turn goes to the card the spell names; a call or a delivery
     reads only spells naming the card it was sent to (another is `otherCard`), since its sender chose
@@ -957,7 +962,10 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let here := usageForms w self o principal (spellForms w self o)
   let unknown := if here.isEmpty then s!"no card named {card}; reply to the directory for the doors"
     else spellUsage self here
-  let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
+  let some target := w.objects[id]?
+    | if card == meCard then
+        return .refuse self "noAvatar" noAvatarReason unknown
+      else return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
   unless target.read.permits principal && (retarget || id == self) do
     return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
   let forms := spellForms w id target
@@ -1514,8 +1522,27 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     set { s with checks := s.checks + 1 }
     respond bounds responseType "checked"
       [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
-  | .variant "create" (.record f) | .variant "createUnder" (.record f) =>
+  | .variant "create" (.record f) | .variant "createUnder" (.record f) | .variant "make" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
+    -- `make` (docs/GROUND.md §6 changes 1 and 6): the create, from source a resident supplied, with
+    -- its lineage `madeFrom {object, receipt}`, to which the host adds the pin `object` runs now; the
+    -- object and the receipt must be the journal's.
+    let (madeFrom, unmade) ← (match plan with
+      | .variant "make" _ => do
+        let some (.record m) := f.lookup "madeFrom" | evaluation "malformed make plan"
+        let some fromId := (m.lookup "object").bind referenceId | evaluation "malformed make plan"
+        let some receipt := (m.lookup "receipt").bind labelOf | evaluation "malformed make plan"
+        let s ← get
+        match s.world.objects[fromId]? with
+        | none => pure (none, some s!"there is no object {fromId} to have been made from")
+        | some fromObj =>
+          if !(s.world.entries.any fun e => (e.getObjValAs? String "hash").toOption == some receipt) then
+            pure (none, some s!"there is no receipt {receipt} in the journal")
+          else do
+            recordRoot fromId fromObj.version
+            pure (some (Json.mkObj [("object", toJson fromId), ("pin", toJson fromObj.pin), ("receipt", toJson receipt)]), none)
+      | _ => pure (none, none) : M (Option Json × Option String))
+    if let some reason := unmade then refusedReading bounds responseType "madeFrom" reason else
     -- `createUnder` names the child's supervisor; it must be an object now.
     let supervisor := ((f.lookup "supervisor").bind referenceId).getD ""
     let some seed := f.lookup "seed" | evaluation "malformed create plan"
@@ -1543,9 +1570,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     else
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
       match buildCreated s.world creator package seed lawArg s.principal (s.world.height + 1) with
-      | .error (clause, _) => refusedWith bounds responseType clause
+      -- The checker's diagnostic goes back with the clause, where the call site's result has `reading`.
+      | .error (clause, message) => refusedReading bounds responseType clause message
       | .ok (made, built) =>
-        let made := { made with object := { made.object with supervisor } }
+        let made := { made with object := { made.object with supervisor }, madeFrom }
         set { note s with creates := s.creates ++ [(id, made)], world := cacheBuild s.world made.object.inputs built }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) | .variant "sendVia" (.record f) =>
@@ -1960,6 +1988,17 @@ def refuseSpell (w : World) (req : TurnRequest) (object clause reason hint : Str
     (some { cls := "badSpell", clause := some clause, object := some object, reason := some reason, hint := some hint })
   return (w', turnReply w' r)
 
+/-- hob's one tail line (docs/VOICE.md "hob") under `?` usage or a badSpell hint of a direct turn,
+    when a `library` card the speaker may see exists: the page that says how a spell is read. Never
+    in a refusal's reason, never twice. -/
+def hobTail (w : World) (principal text line : String) : String :=
+  match w.objects["library"]? with
+  | some lib => if lib.read.permits principal && !text.isEmpty then s!"{text.trimAsciiEnd}\n\n{line}" else text
+  | none => text
+
+def hobUsageLine : String := "hob: how a spell is read: delvetalk library read / page: spells"
+def hobHintLine : String := "hob: the page on this: delvetalk library read / page: spells"
+
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
   match routeSpell w req.principal req.object req.method req.argument true with
@@ -1971,14 +2010,19 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
                             command := (if command.isEmpty then req.command else command) }
     some (runTurnWith w asked {})
   | .usage object text =>
-    some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object), ("text", toJson text)]))
-  | .refuse object clause reason hint => some (refuseSpell w req object clause reason hint)
+    some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
+      ("text", toJson (hobTail w req.principal text hobUsageLine))]))
+  | .refuse object clause reason hint => some (refuseSpell w req object clause reason (hobTail w req.principal hint hobHintLine))
 
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
     `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message
     dialect is read as a spell first (`spellTurn`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+  let asked := req.object
   let req := { req with object := resolveCard req.principal req.object }
+  -- `me` before the speaker has an avatar: refused by name, saying what makes one.
+  if asked == meCard && !w.objects.contains req.object && (retainedTurn w req).isNone then
+    refuseSpell w req meCard "noAvatar" noAvatarReason "" else
   -- A retry is answered from the identity before its spell is read again: new code may route the
   -- same words elsewhere (codex host 13).
   if let some r := retainedTurn w req then .ok (w, r) else
@@ -2458,7 +2502,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       | .ok _ => throw "source must be true or false"
       | .error _ => pure true
     return Json.mkObj ([("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
-      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
+      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText),
+      -- The law's clauses with their readings, and whether a Bend `law(old, new, request)` judges after it.
+      ("laws", lawRows o), ("bendLaw", toJson o.predicate)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
       -- Its size against `Limits.maxStateBytes`, as the host counts it (`stateBytes`).
