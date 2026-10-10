@@ -110,8 +110,27 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'and (unchanged(admitted) or request.subject == new.keeper)')
 
 
+# The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
+# Kind.lawText() (tests/test_kinds.py compares the two).
+KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nlaw: text 0..4096\nbody: text 0..16384'
+KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head or the body; anyone makes": '
+            'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(form) and unchanged(law) '
+            'and unchanged(head) and unchanged(body)))')
+
+
 # The law each package's objects are created with, where its source declares none.
-LAWS = {'Cistern': cistern_law, 'Record': lambda _: RECORD_LAW}
+LAWS = {'Cistern': cistern_law, 'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
+
+
+# The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's bell and
+# cistern, whose bodies are world/bodies/<name>.obend, layers over Record.obend grafted on each instance.
+KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
+         ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW, 'bell'),
+         ('cistern', 'record', '', '', RECORD_LAW, 'cistern')]
+
+
+def body_of(name):
+    return (ROOT / 'world' / 'bodies' / (name + '.obend')).read_text() if name else ''
 
 
 def seeds(opener):
@@ -123,6 +142,7 @@ def seeds(opener):
             ('garden', 'Garden', rec(owner=lab(opener), ownerHandle=lab(HANDLE), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM))),  # shaped, then makes KINDS
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
             ('cistern', 'Cistern', rec(level=nat(0))),  # created with cistern_law(opener)
@@ -169,6 +189,13 @@ def run(host, opener=OPENER):
                                'identity': 'genesis-' + method}).get('status')
                     for method, argument in (('arrived', rec()),
                                              ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
+    # `kinds` is given its make (`shape`), then makes the root kinds and the town's (docs/CATALOGUE.md §5).
+    kinds = next(m for m in made if m['object'] == 'kinds')
+    kinds['shape'] = host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'shape', 'argument': rec(object=lab('kinds')),
+                                'identity': 'genesis-kinds-shape'}).get('status')
+    kinds['made'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'make', 'identity': 'genesis-kind-' + name,
+                                'argument': rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law), body=lab(body_of(body)))}).get('status')
+                     for name, of, form, head, law, body in KINDS]
     library = next(m for m in made if m['object'] == 'library')
     library['pages'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve', 'identity': 'genesis-shelve-' + name,
                                    'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),

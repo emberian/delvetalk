@@ -37,14 +37,14 @@ class Genesis(unittest.TestCase):
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
                          (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)]), made)
         o = genesis.OPENER
-        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + [o, 'env/' + o, 'wake/' + o]))
+        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + [o, 'env/' + o, 'wake/' + o]))
         # the opener arrived first: another reader sees their handle, not a DID fragment
         avatar = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': o})
         self.assertIn('ember.delve.town, at', json.dumps(avatar))
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 9))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 10))
         made_names = {m['object'] for m in made}
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if not to], ['STUDIO'])
@@ -85,6 +85,12 @@ class Genesis(unittest.TestCase):
         self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-cistern-law'}).get('status'), 'receipt')
         record = self.host.send({'op': 'world-object', 'principal': genesis.OPENER, 'object': 'cistern'})
         self.assertIn('the level only rises', str(record['record']['readings']))
+
+    def test_kinds_is_shaped_and_makes_the_root_and_town_kinds(self):
+        kinds = next(m for m in self.made if m['object'] == 'kinds')
+        self.assertEqual((kinds['shape'], kinds['made']), ('admitted', ['admitted'] * len(genesis.KINDS)), kinds)
+        for name, *_ in genesis.KINDS:
+            self.assertEqual(self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/' + name})['status'], 'viewed', name)
 
     def test_the_anthology_carries_the_record_law(self):
         from tests.test_objects import run_pure
