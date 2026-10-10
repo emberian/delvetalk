@@ -607,4 +607,10 @@ fixture recorded by the foundation binary).
   `List<String>` at 2000 starts in 0.35 s. Test:
   `tests.test_data_type ...test_a_long_list_argument_starts_an_activity_at_data_and_at_its_declared_type`
   (2,500 items at `Data`, 6,000 at `Lists.List<String>`).
+- Law readings (`laws[].reading`). The table is now `Package.lawTable`: one entry per
+  ENFORCED law (`EntryCompiled.laws`), in order, reading "" when the source gives none;
+  `lawTable_names` proves its names are exactly the enforced laws', so a host lookup by
+  a refusing law's name is total. It already behaved so; it is now so by construction.
+  Test: the `#guard` in `Package.lean` compiles a module with `law small "stays small"`
+  and `law plain` and checks the artifact's `laws` and `readings` (`lake build` runs it).
 
