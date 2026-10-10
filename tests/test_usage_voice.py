@@ -77,11 +77,15 @@ class UsageVoice(Reflection):
         self.assertIn("delvetalk env tune\nlevel: <a number from 0 to 1000000000>", out["hint"])
         self.assertNotIn(DID, out["hint"] + out["reason"])
 
-    def test_usage_lists_what_the_law_admits_the_speaker(self):
+    def test_usage_lists_what_the_law_admits_the_speaker_and_no_view(self):
         usage = self.say("root", "delvetalk env ?")
         self.assertEqual(usage["status"], "usage", usage)
         self.assertIn("delvetalk env tune", usage["text"])
         self.assertNotIn("reset", usage["text"])
+        self.assertNotIn("count", usage["text"])
+        forms = self.host.send(op="world-inspect", principal="ember", object=f"env/{DID}", source=False)["forms"]
+        self.assertNotIn("'count'", str(forms))
+        self.assertIn("'reset'", str(forms))
 
     def test_a_bad_value_is_a_blank_and_an_unknown_card_points_to_the_directory(self):
         out = self.say("garden", "delvetalk garden plant\ncolour: gold\nseed: fern", identity="b1")["receipt"]["outcome"]

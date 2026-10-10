@@ -776,9 +776,16 @@ def heardFits (w : World) (o : Object) (argument : Data) : Bool :=
     argumentFits c argument || argumentFits c (.record (fs.filter (·.1 != "fields") ++ [("fields", bindingsData [])]))
   | _, _ => false
 
-/-- `formsOf` outside a turn. -/
+/-- `formsOf` outside a turn, without the package's `views()` entries: a derived view is read
+    (`viewDerived`), not cast. -/
 def spellFormsData (w : World) (id : String) (o : Object) : List Data :=
-  ((formsOf id o).run.run (scratchState w)).1.toOption.getD (methodForms id o.methods)
+  let views := ((declaredViews o).run.run (scratchState w)).1.toOption.getD []
+  let forms := ((formsOf id o).run.run (scratchState w)).1.toOption.getD (methodForms id o.methods)
+  forms.filter fun f => match f with
+    | .record fs => match fs.lookup "action" with
+      | some (.label a) => !views.contains a
+      | _ => true
+    | _ => true
 
 /-- The forms a card offers, as the spell grammar reads them. -/
 def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=

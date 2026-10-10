@@ -629,6 +629,11 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    the commit refuses it. Env's `mention` still shows: its law admits anyone and its `methods()`
    lists it (the objects lane's to drop). Test: `tests/test_usage_voice.py`.
 
+81. **Views are no spells (host11; rehearsal run 11 finding 6).** `spellFormsData` leaves out the
+   package's `views()` entries, so `?` usage, spell fitting and `world-inspect`'s `forms` never offer
+   one (`garden byColour`); `viewDerived` still answers it, and the method table still lists it.
+   Test: `tests/test_usage_voice.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
