@@ -929,6 +929,16 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 6. Gotchas
 
+- **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
+  derives; `Journal.sealEntry` writes it as `replay` on every journal's first entry (a fork's genesis
+  too), `world-status` answers it, and `Snapshot.openContent` refuses a journal of another edition
+  before replaying anything: "journal replay edition 1; this host is 2; a world from another host's
+  edition does not reopen: make it again with a new genesis" (a journal without the field is
+  edition 1). **Bump it in the same commit as any change to what replay derives or checks** (a judging
+  rule, a derived index, a journaled field replay compares), and say so in the item. 2 is host12
+  (evictions and changes owed as facts, lineage, reservations, attempts). Test:
+  `tests/test_replay_edition.py`.
+
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
 - `canonicalTy` (Ops): two state types are equal when their canonical forms agree (variables renamed in order of first use, at most 4096 steps, else "type too deep to compare"). Reprogram and extend depend on it.
 - Wire shapes: `world/lib/World.obend`'s `protocol world` is the contract (Plan.obend keeps the shared records: `Reference`, `Edit`, `Slot`, `Receipt`). `write`'s edits are a record with one variant per state field. `respond` picks the first payload that conforms to the call site's result type; a sum lacking the label gives "response type cannot carry <label>".

@@ -20,6 +20,11 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
+/-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
+    first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
+    with every change to what replay derives (judging, a derived field, an index replay checks).
+    1: before host12 (no field); 2: host12 (evictions and changes owed as facts, lineage, reservations). -/
+def replayEdition : Nat := 2
 /-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
     5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
 def interpretAttempts : Nat := 8
