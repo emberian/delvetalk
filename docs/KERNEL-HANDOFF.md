@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-09 (foundation f178383).
+State on 2026-10-10 (lane/kernel8 after foundation 61dd81a; the queue is §16).
 
 ## Summary
 
@@ -13,7 +13,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
-- Tests: 896 `def test_` across `tests/test_*.py`. Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
+- Tests: 1,053 `def test_` across `tests/test_*.py` (lane/kernel8). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
 - Open: section 9.
 
 ## 0. Working rules
@@ -327,44 +327,55 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (lane/kernel6 at 17338e6, after foundation 8a4b141)
+## 16. Queue for the successor (lane/kernel8, after foundation 61dd81a)
 
-Done on lane/kernel6: world calls day 1 and 2 and the per-entry site table (§17), in-process
-yields carrying the state and the token-direct checkpoint digest (§18). Remaining, in the
-coordinator's order; each its own commit, measured with `compile-profile replay` of a
-rehearsal capture (rebuild it: a wrapper `tee $CAP/$$.jsonl | delvetalk-obend` given to
-`rehearsal/rehearse.py --binary`; the 3.5 MB stream is the shared world host's).
+Done: item 1 checkpoint trimming (kernel7, §19); item 2 the checker over an annotation tree and
+type equality by shared subtrees (§20); item 3 `relationsOf` once per prepared package, item 4
+`limit`/`retain` in the artifact's `relations`, item 5 `remove`/`amend` by item and `retract`
+on a relation (§22); item 6 day 4, the message dialect alone (§21); the `source` form kind
+(§8). Remaining, in order:
 
-1. Done on lane/kernel7 (§19): checkpoints trim unread environment slots; rehearsal median
-   suspension 46.4 KB -> 10.1 KB, of which the kernel's blocks are 5.7 KB.
-2. Done on lane/kernel8 (§20): the checker over an annotation tree, and type equality by shared subtrees.
-3. `relationsOf` once per package in the front-end cache (not per method compile).
-4. The artifact's `relations` entries gain `limit` and `retain` from the `Decl`.
-5. `write {f: remove i}` / `amend`: lower to `removeItem {item}` / `amendItem {item, change}`
-   and to `retract {key}` for a declared relation; an index refused by name with a hint
-   (Plan.obend lost the index forms at ffa3e85). Test in `test_sugar`.
-6. Day 4 when the objects lane reports (WHOLENESS §4 and the plan in the lane report):
-   refuse the old dialect, delete `$write`'s Plan branch, the typed-view rewrite, surface
-   `perform`, the dead JSON-argument path of `Elaborated.select` (`legacyArgument`, the
-   `argument-values.v1` envelope, `argumentCodec`: every lowering is `"definition"` with no
-   arguments), the checkpoint v1/v2 decoders and their round-trip theorems (with lane perf2),
-   `isPlanUnder`'s sum case; pins re-recorded once.
-7. `textWords`, only if an object asks.
-8. After day 4 (coordinator, from WORLD-REVIEW's "make the State the schema"): derive `Edits`
-   and `keep()` from an object's `State` declaration (so `write {…}` needs no hand-mirrored edit
-   record); `initial()` the only constructor (the `Seed`/`defaultSeed`/`seeded` ritual goes; the
-   host already lays a partial seed over `initial()`); a method's `form` block IS its input type
-   with its bounds (the method table carries them, the host enforces them on spells and direct
-   turns, `forms()` derived). Lowering only; pins move for objects that change; a test per
-   claim. Write the exact surface here and report it BEFORE implementing (three lanes read it).
+7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
+   native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
+   codecs).
+8. **The State is the schema.** Surface below, reported for the three lanes BEFORE
+   implementing; implement once the root approves it. Lowering only, in the generics pass
+   (types resolved there); pins move for the objects that change; a test per claim.
 
-Host lane (not a kernel item, but blocked on): `drive` (TurnLoop.lean) takes a `Turn.Step`
-from `startEntryStep`, passes `suspension.checkpoint` only to the `await*`/`interpret`
-paths, resumes every other Plan with `Turn.resumeSuspended entry suspension binding
-response b`, and the journaled resume uses `resumeEntryStep`; the patch measured in §18 is
-seven one-line substitutions. The pins fixture at foundation records `Abi`, `Form`, `List`,
-`Policies` and `World` with no entries (recorded at cb6bd26 by the objects lane), so
-`test_artifact_pins` fails three shards at foundation until it is re-recorded.
+   a. *Edits and `keep()` are derived from `State`.* In a module that declares `record State`
+      and imports Plan.obend (alias `P`), and declares neither `Edits` nor `keep`, the kernel
+      adds `record Edits` with one field per State field, in State order, and
+      `def keep() -> Edits` keeping every field:
+      - a field whose type resolves to `List.List<X>` or `Relation.Relation<X>` (the library
+        sums, by module and name, through any alias) is `P.Entries<X, X>` (`amendItem`'s change
+        is a whole new item; today 23 fields say `{}` and never amend, 9 say `X`);
+      - a `Nat` field is `P.Edit<Nat, Nat>` (`add` takes a Nat delta);
+      - any other field is `P.Edit<T, {}>` (`set` and `keep`).
+      `keep()` is `{f: P.Edit::<T, D>.keep({}) | P.Entries::<X, X>.keep({}), ...}`. A module
+      that declares `Edits` or `keep` beside `State` is refused by name ("refused
+      (derived-edits): Edits is derived from State; delete this declaration"), so there is one
+      schema. Without a Plan import the derivation is refused by name when `write {...}` or
+      `keep()` is used. `write {f: op v}` and `world.write(extend(keep(), {...}))` are
+      unchanged; the edits type is `Edits` as before.
+   b. *`initial()` is the only constructor.* Nothing in the kernel: `def initial() -> State`
+      stays the one state constructor the host compiles, and the host already lays a creator's
+      partial seed over it. `Seed`, `defaultSeed()` and `seeded(seed)` are conventions the
+      objects lane deletes; a creator's seed is `Data`.
+   c. *A method's form block is its input type with its bounds.* `form NAME [as VALUE]:`
+      declares, besides the Form value `VALUE()` (default `NAMEForm`, unchanged), the record
+      type `NameInput` (NAME capitalized) of its fields: `text A..B` and `source` are `String`,
+      `natural A..B` is `Nat`, `a | b | c` is a generated closed sum `NameField` (field
+      capitalized) of empty cases `a`, `b`, `c`, and a new kind `T` naming a closed sum of
+      empty cases in scope (`colour: Bell.Colour`) is that sum, offered as a choice of its case
+      labels (so Garden's `Planting` and its form's `amber | violet | silver` stop disagreeing).
+      The method `NAME` takes `input: NameInput` (any other input type for a method with a form
+      block is refused by name, "refused (form-input): plant has a form block, so its input is
+      PlantInput"). Its method-table row gains `form: [{name, kind}]` (each kind the `Form.Kind`
+      as Data, `source` as `{"tag":"variant","label":"source"}`), which the host enforces on
+      spells and direct turns (host lane). `forms()` is derived when the module declares form
+      blocks and no `forms()`: `def forms() -> Lists.List<F.Form>`, the blocks in source order;
+      a hand-written `forms()` beside form blocks is refused by name. A module without form
+      blocks is unchanged (its methods' inputs are their declared types, defaults as today).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
