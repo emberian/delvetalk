@@ -97,5 +97,58 @@ class UsageVoice(Reflection):
         self.assertEqual((out["clause"], out["hint"]), ("otherCard", "no card named forge; reply to the directory for the doors"), out)
 
 
+# Anthology-like: `admit` is the owner's by a clause that reads the state; `door` is the owner's by the
+# card's own `actions(state, context)`, as a Bend guard inside it would be (codex agent 11).
+OWNED = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./World.obend as World
+record State:
+  owner: String
+  n: Nat
+record Binding:
+  name: String
+  value: String
+law owner "only the owner admits": request.subject == new.owner or (request.kind == 0 and (request.method == "tune" or request.method == "door"))
+def initial() -> State:
+  {owner: "", n: 0n}
+def tune(state: State, input: {level: Nat}, context: Abi.Context) -> Activity<Nat>:
+  1n
+def admit(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Nat>:
+  2n
+def door(state: State, input: {to: String}, context: Abi.Context) -> Activity<Nat>:
+  if context.principal == state.owner then 3n else 0n
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner then Lists.List::<String>.cons({head: "tune", tail: Lists.List::<String>.cons({head: "admit", tail: Lists.List::<String>.cons({head: "door", tail: Lists.List::<String>.nil()})})}) else Lists.List::<String>.cons({head: "tune", tail: Lists.List::<String>.cons({head: "admit", tail: Lists.List::<String>.nil()})})
+def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:
+  0n
+""", "tune", "admit", "door")
+
+
+class ReaderActions(Reflection):
+    """codex agent 11: usage and inspect offer a reader only what the card's law (on its state as it
+    stands) and its `actions(state, context)` leave them; one filter for both."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="a",
+                           modules=[{"name": "Owned", "source": OWNED}], entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+
+    def actions(self, who):
+        usage = self.turn("a", "receive", record(text=label("delvetalk a ?"), post=label("")), principal=who)
+        self.assertEqual(usage["status"], "usage", usage)
+        forms = self.host.send(op="world-inspect", principal=who, object="a", source=False)["forms"]
+        offered = sorted(str(f) for f in ("tune", "admit", "door") if f"delvetalk a {f}" in usage["text"])
+        inspected = sorted(f for f in ("tune", "admit", "door") if f"'{f}'" in str(forms))
+        self.assertEqual(offered, inspected, (usage, forms))
+        return offered
+
+    def test_a_stranger_is_offered_neither_the_owners_law_nor_its_guard(self):
+        self.assertEqual(self.actions(DID), ["tune"])
+        self.assertEqual(self.actions("ember"), ["admit", "door", "tune"])
+
+
 if __name__ == "__main__":
     unittest.main()

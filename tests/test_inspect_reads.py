@@ -36,8 +36,8 @@ class Admits(Reflection):
         self.assertEqual(kim["bump2"], {"clause": "owner", "reading": "only ember bumps by two"})
         self.assertEqual(kim["fire"], {"clause": "quiet"})
         self.assertIs(kim["ask"], True)
-        # `cap` reads the state: the current count refuses it, but the change decides.
-        self.assertIs(kim["bump"], True)
+        # `cap` reads the state, and is judged on it as it stands (codex agent 11): count 3 refuses it.
+        self.assertEqual(kim["bump"], {"clause": "cap"})
         ember = self.admits("ember")
         self.assertIs(ember["bump2"], True)
         self.assertEqual(ember["fire"], {"clause": "quiet"})

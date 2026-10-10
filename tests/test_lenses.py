@@ -91,9 +91,14 @@ class Lenses(test_chain.Chain):
     def test_the_usage_card_lists_every_form_and_every_lens(self):
         self.policy()
         # `?` is the host's usage: every form, then every lens (HOST-HANDOFF 5.54).
-        r = self.turn("policy", "receive", record(text=label("delvetalk policy ?"), post=label("")), principal="glm")
+        r = self.turn("policy", "receive", record(text=label("delvetalk policy ?"), post=label("")), principal="ember")
         self.assertEqual(r["status"], "usage", r)
         text = r["text"]
+        # The policy is its owner's (`request.subject == new.owner`): a stranger is offered none of it
+        # (codex agent 11).
+        stranger = self.turn("policy", "receive", record(text=label("delvetalk policy ?"), post=label("")), principal="glm")
+        self.assertNotIn("delvetalk policy teach", stranger.get("text", ""))
+        self.assertNotIn("delvetalk policy set", stranger.get("text", ""))
         for spell in ("delvetalk policy teach\nutterance:", "delvetalk policy macro\nname:", "delvetalk policy confirm\naction:",
                       "delvetalk policy set\nmodel: <text, 1 to 64 characters>", "delvetalk policy set\nescalate-to: <text, 0 to 160 characters>",
                       "delvetalk policy set\nsystem: <text, 1 to 1000 characters>"):

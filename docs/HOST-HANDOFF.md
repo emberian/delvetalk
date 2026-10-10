@@ -784,6 +784,18 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    world's current library too: it served the first library's compile to a later reprogram under
    another (the test found it). Test: `tests/test_extend.py` `ExtensionPins`.
 
+103. **One per-reader action filter (host12; codex agent 11).** `offeredTo w id o reader` decides
+   which actions usage (`?`, the noAction hint), `world-inspect`'s `forms` and the `inspect` Plan's
+   `methods` show a reader: the law admits them on the state as it stands (`methodAdmits` now judges
+   clauses that read the state too, on old = new = the current state: the Anthology's `request.subject
+   == new.owner or (… "submit")` hides `admit` from strangers), and the card's own `def actions(state,
+   context) -> List<String>`, when it has one, lists it (for guards a method keeps in Bend: the Bell's
+   planter-only `door`; the objects lane adds them). `receive` always stands; lenses show only when
+   `set` is offered. A spell for another action is still fitted and the commit judges it.
+   `readerActions` compiles `actions` through `compileDef` (the world's or the disk cache; not warmed
+   yet, a follow-up if it shows in timing). Tests: `tests/test_usage_voice.py` `ReaderActions`;
+   `test_lenses` (a stranger sees none of the owner's policy), `test_inspect_reads` (`cap` on count 3).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
