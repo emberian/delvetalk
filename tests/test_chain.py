@@ -96,7 +96,7 @@ class Chains(Chain):
         self.assertEqual(self.turn("door", "watch", record(object=label("bell")))["result"], label("watching"))  # a repeat is idempotent
         ring = self.turn("bell", "ring", principal="gemini")
         self.assertEqual(ring["status"], "admitted", ring)
-        self.assertEqual(ring["result"], nat(0))  # no observers: the host tells the subscribers
+        self.assertEqual(ring["result"], boolean(True))  # rung; the host tells the subscribers
         self.assertEqual(field(self.state("bell"), "rung"), boolean(True))
         # Deliveries run in the settling pass of the same durable op: the ring's reply carries them.
         self.assertEqual([d["status"] for d in ring["delivered"]], ["admitted", "admitted"], ring)

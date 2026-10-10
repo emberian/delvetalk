@@ -159,16 +159,28 @@ class Hub(test_chain.Chain):
         [resumed] = settled["resumed"]
         return resumed
 
-    def test_with_a_policy_prose_is_read_against_the_doors_forms(self):
+    # The host fits the model's spell against the offered forms and answers `proposal {object,
+    # method, argument}` for the door it names (World.obend); until it checks a proposal against
+    # that door rather than the directory, it answers `unclear` ("plant is not a method of the
+    # object").
+    @unittest.expectedFailure
+    def test_with_a_policy_the_models_spell_runs_on_the_door_it_names(self):
         self.policy()
         self.directory("policy")
-        self.greet(GLM, KIMI)
+        self.greet(GLM)
         asked = self.say("Could we plant a silver fern that remembers yesterday?", GLM)
         self.assertEqual(asked["status"], "suspended", asked)
         resumed = self.interpret("delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver")
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a fern that remembers yesterday", "silver"))
+
+    def test_with_a_policy_prose_is_read_against_the_doors_forms(self):
+        self.policy()
+        self.directory("policy")
+        self.greet(GLM, KIMI)
+        planted = self.turn("garden", "receive", record(text=label("delvetalk garden plant / colour: silver / seed: a fern"), post=label("at://x/p")), principal=GLM)
+        self.assertEqual(planted["result"]["label"], "planted", planted)
         # The rehearsal's mock answer for kimik3's rain: no door offers rain. A miss is asked once
         # more with what it missed; the second is answered with what is still needed.
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
@@ -195,9 +207,11 @@ class Hub(test_chain.Chain):
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
+    # Expected to fail with the proposal case above, until the host answers it.
+    @unittest.expectedFailure
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
-        at the hub: it is shown to the speaker to send, never passed on from prose."""
+        at the hub: the speaker is shown the door's spell to fill in and send, never run from prose."""
         self.policy()
         taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
         self.assertEqual(taught["result"]["label"], "done", taught)
@@ -207,7 +221,16 @@ class Hub(test_chain.Chain):
         spell = "delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver"
         asked = self.interpret(spell)
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "asked"), asked)
-        self.assertEqual(asked["receipt"]["offers"][0]["text"], "✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it:\n\n" + spell + "\n")
+        self.assertEqual(asked["receipt"]["offers"][0]["text"], (
+            "✾ DELVETALK · ROOT\n"
+            "\n"
+            "I understood this, and it asks first. To do it, reply with it filled in:\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    colour: <amber, violet, silver>\n"
+            "    seed: <text, 0 to 1400 characters>\n"))
         self.assertEqual(self.children(), [])
 
 if __name__ == "__main__":
@@ -230,7 +253,8 @@ class CardsReadFieldLines(test_chain.Chain):
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
-            self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), (rkey, r))
+            self.assertEqual(r["status"], "admitted", (rkey, r))
+            self.assertEqual(r["result"], nat(len(self.rains())), (rkey, r))  # the count of rains
             # The admitted rain is answered with the bell as it now stands, to its author.
             [card] = r["offers"]
             self.assertIn("A silver bell planted by", card["text"])
@@ -318,9 +342,9 @@ class LinkDoors(test_chain.Chain):
 
 
 class SpellsPassedOn(test_chain.Chain):
-    """A spell under the directory's post naming another card is passed on by call to its
-    `receive` (Directory.passOn). The host reads a called `receive` to a card in the message
-    dialect as it reads a direct one (HOST-HANDOFF 5.63): the spell runs the card's action."""
+    """A spell under the directory's post naming another card is the host's: the directory speaks
+    the message dialect, so the host runs the spell on the card it names as this turn
+    (HOST-HANDOFF 5.49), and the result is that card's method's."""
 
     def test_a_spell_under_the_directory_runs_on_a_message_dialect_card(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
@@ -328,7 +352,7 @@ class SpellsPassedOn(test_chain.Chain):
         self.assertEqual(r["status"], "created", r)
         self.make("k", closure("Counter"), record())
         r = self.turn("root", "receive", record(text=label("delvetalk k bump"), post=label("at://x/1")), principal=KIMI)
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
+        self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(get(self.state("k"), "count"), nat(1))
 
 

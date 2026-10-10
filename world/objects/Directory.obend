@@ -5,9 +5,11 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Form.obend as Form
 import ./Spell.obend as Spell
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
+import ./Rows.obend as Rows
 record Door:
   label: String
   description: String
@@ -19,8 +21,7 @@ record Listed:
   description: String
   to: Plans.Reference
   place: Nat
-record Greeting:
-  principal: String
+type Greeting = Rows.Greeting
 # doors: the menu, keyed {label}. greeted: the principals the menu has gone to once, keyed
 # {principal} (each later summons gets one line).
 # words, fields: what the directory learned of its doors by inspect (door words, form
@@ -46,10 +47,6 @@ record Edits:
   greeted: Plans.Entries<Greeting, {}>
   words: Plans.Edit<String, {}>
   fields: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-# A spell passed on to another card is answered with that card's own result type: Data. The
-# directory views its policy (Card's interpretation default).
-type Response = Plans.Response<Policies.State, Data>
 sum Answer:
   done: {}
   refused: {reason: String}
@@ -84,26 +81,28 @@ def doors(state: State) -> Lists.List<Door>:
   Relations.project(state.doors, doorOf)
 def menu(state: State) -> Lists.List<Door>:
   Lists.map(Relations.order(state.doors, fn(l: Listed) -> Nat: l.place), doorOf)
-def position(state: State, label: String) -> Lists.Maybe<Listed>:
+def position(label: String, state: State) -> Lists.Maybe<Listed>:
   Relations.lookup(state.doors, {label: label}, listedKey)
-def greetedBefore(state: State, principal: String) -> Bool:
+def greetedBefore(principal: String, state: State) -> Bool:
   match Relations.lookup(state.greeted, greetingKey({principal: principal}), greetingKey):
     case some(_): true
     case none(_): false
-def edited(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Answer>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: edits}))
+def edited(edits: Edits) -> Activity<Answer>:
+  let written(_) = world.write(edits)
   Answer.done({})
 # Adds a door at the end of the menu (one place past the last); a label names one door.
-def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  match position(state, input.door.label):
+def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Answer>:
+  match position(input.door.label, state):
     case some(_): Answer.refused({reason: "There is already a door called {input.door.label}"})
-    case none(_): learnedDoor(state, extend(input.door, {place: nextPlace(state)}), context)
+    case none(_): learnedDoor(extend(input.door, {place: nextPlace(state)}), state)
+# The helpers take the State after their own inputs: a definition whose first parameter is the
+# State is a method any turn may run.
 def nextPlace(state: State) -> Nat:
   Lists.fold(Relations.rows(state.doors), 0n, fn(l: Listed) -> Nat -> Nat: fn(most: Nat) -> Nat: if l.place + 1n > most then l.place + 1n else most)
-def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  match position(state, input.label):
+def remove(state: State, input: {label: String}, context: Abi.Context) -> Activity<Answer>:
+  match position(input.label, state):
     case none(_): Answer.refused({reason: "There is no door called {input.label}"})
-    case some(_): edited(context, extend(keep(), {doors: Plans.Entries.retract({key: {label: input.label}})}))
+    case some(_): edited(extend(keep(), {doors: Plans.Entries.retract({key: {label: input.label}})}))
 def doorLine(door: Door) -> Document.Document:
   Document.text("{door.label}\n{door.description}\n\n")
 # Affordances first, since readers clip near 1,400 characters; then the doors.
@@ -125,27 +124,19 @@ sum Heard:
   refused: {reason: String}
   unclear: {needs: Form.Names}
   asked: {card: String}
-# The hub's reply. A spell naming another card goes on to that card's receive, by call,
-# as this turn (a reply to the hub post reaches the object it names). Otherwise its owner
-# is answered with silence; a door word gets that door's card; the menu goes to each
-# principal once, and anything later that names no door, card or form gets nothing at
-# all (no offer, so no draft: 137 one-line pointers in one rehearsal run were three
-# times the posting quota).
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match Spell.parse(input.text):
-    case spell(s): if s.card != context.object then passOn(s.card, input, context) else summoned(state, input, Spell.bare(input.text), context)
-    case notASpell(n): summoned(state, input, if n.fielded then Spell.bare(textTake(input.text, 2000n)) else Spell.Bindings.nil({}), context)
-# `env` and `wake` are the speaker's own (env/<did>, wake/<did>): a call names the object.
-def passOn(card: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.call({object: {world: context.world, object: if card == "env" || card == "wake" then Card.own(card, context) else card}, method: "receive", argument: input})):
+# The hub's reply. A spell naming another card never reaches here: the host runs it on that
+# card as this turn (a reply to the hub post reaches the object it names). The owner is
+# answered with silence; a door word gets that door's card; the menu goes to each principal
+# once, and anything later that names no door, card or form gets nothing at all (no offer, so
+# no draft: 137 one-line pointers in one rehearsal run were three times the posting quota).
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Heard>:
+  if context.principal == state.owner && context.caller == "" then Heard.silent({}) else worded(input, doorFor(doors(state), trimmed(input.text)), context, state)
+# Calls a door's receive with a reply, as this turn; the door reads it as its own.
+def passOn(card: String, input: {text: String, post: String}, context: Abi.Context) -> Activity<Heard>:
+  match world.call::<Data>({object: {world: context.world, object: card}, method: "receive", argument: input}):
     case returned(_): Heard.passed({card: card})
-    case denied(_): Card.tellPlan(Heard.refused({reason: "Not visible: {card}"}), Document.text("The card {card} is not visible to you.\n"))
-    case refused(r): Card.tellPlan(Heard.refused({reason: r.clause}), Document.text(notPassed(card, r.clause)))
-    case _: Card.tellPlan(Heard.refused({reason: "No answer from {card}"}), Document.text("No answer from {card}.\n"))
-# A card that does not exist is named, with where to look (rehearsal finding 7: "Not passed to
-# forge: unknownObject" told the speaker nothing). The host's refusal carries only its clause.
-def notPassed(card: String, clause: String) -> String:
-  if clause == "unknownObject" then "No card named {card}; reply here for the list of doors.\n" else "Not passed to {card}: {clause}\n"
+    case denied(_): Card.tell(Heard.refused({reason: "Not visible: {card}"}), Document.text("The card {card} is not visible to you.\n"))
+    case refused(r): Card.tell(Heard.refused({reason: r.clause}), Document.text("Not passed to {card}: {r.clause}\n"))
 # A door word is short: only the first 65 scalars are looked at (measuring and trimming a
 # long reply would cost its bytes).
 def trimmed(text: String) -> String:
@@ -156,104 +147,99 @@ def trimTail(text: String) -> String:
   if text == "" then text else if textSpan(textDrop(text, textLength(text) - 1n), " \n\t\r") == 1n then trimTail(textTake(text, textLength(text) - 1n)) else text
 def doorFor(doors: Lists.List<Door>, word: String) -> Lists.Maybe<Door>:
   Lists.find(doors, fn(door: Door) -> Bool: word != "" && (door.label == word || door.to.object == word))
-def summoned(state: State, input: Card.Heard, bindings: Spell.Bindings, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if context.principal == state.owner && context.caller == "" then Heard.silent({}) else worded(state, input, bindings, doorFor(doors(state), trimmed(input.text)), context)
-def worded(state: State, input: Card.Heard, bindings: Spell.Bindings, found: Lists.Maybe<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def worded(input: Card.Reply, found: Lists.Maybe<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
   match found:
     case some(d): if Plans.isNobody(d.value.to) then linkDoor(d.value) else doorCard(d.value.to, context)
-    case none(_): fielded(state, input, bindings, doors(state), context)
+    case none(_): fielded(input, input.fields, doors(state), context, state)
 # Field lines with no delvetalk line (the §10 hour: `plant: … / colour: silver`, `rain: …`):
 # when the first `name: value` line names an action one of the doors offers, the lines
 # become that door's spell (the action line's value fills the form's first field the
 # others leave open) and go to that door's receive. When it names a field of a door's form
 # instead (`colour: violet`, answering "I still need: colour"), the lines go to that door's
 # receive as they are, to complete the spell the door holds for the speaker.
-def fielded(state: State, input: Card.Heard, fields: Spell.Bindings, doors: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def fielded(input: Card.Reply, fields: Spell.Bindings, doors: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
   match fields:
-    case nil(_): unaddressed(state, input, fields, context)
-    case cons(c): doorsFor(state, input, c.head, fields, doors, context)
-def doorsFor(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, doors: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+    case nil(_): unaddressed(input, context, state)
+    case cons(c): doorsFor(input, c.head, doors, context, state)
+def doorsFor(input: Card.Reply, first: Spell.Binding, doors: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
   match doors:
-    case nil(_): unaddressed(state, input, fields, context)
-    case cons(c): if Plans.isNobody(c.head.to) then doorsFor(state, input, first, fields, c.tail, context) else inspecting(state, input, first, fields, c.head.to, c.tail, context)
-def inspecting(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, to: Plans.Reference, rest: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: to})):
-    case inspected(i): offering(state, input, first, fields, to, Lists.find(i.methods, fn(f: Form.Form) -> Bool: f.action == first.name || Card.hasField(f, first.name)), rest, context)
-    case _: doorsFor(state, input, first, fields, rest, context)
-def offering(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, to: Plans.Reference, found: Lists.Maybe<Form.Form>, rest: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+    case nil(_): unaddressed(input, context, state)
+    case cons(c): if Plans.isNobody(c.head.to) then doorsFor(input, first, c.tail, context, state) else inspecting(input, first, c.head.to, c.tail, context, state)
+def inspecting(input: Card.Reply, first: Spell.Binding, to: Plans.Reference, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.inspect({object: to}):
+    case inspected(i): offering(input, first, to, Lists.find(i.methods, fn(f: Form.Form) -> Bool: f.action == first.name || Card.hasField(f, first.name)), rest, context, state)
+    case _: doorsFor(input, first, rest, context, state)
+def offering(input: Card.Reply, first: Spell.Binding, to: Plans.Reference, found: Lists.Maybe<Form.Form>, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
   match found:
-    case some(f): passOn(to.object, {text: if f.value.action == first.name then spellFor(to.object, f.value, first, fields) else input.text, post: input.post}, context)
-    case none(_): doorsFor(state, input, first, fields, rest, context)
+    case some(f): passOn(to.object, {text: if f.value.action == first.name then spellFor(to.object, f.value, input.fields) else input.text, post: input.post}, context)
+    case none(_): doorsFor(input, first, rest, context, state)
 # The spell the field lines mean for a form: the action line as it was written (the
-# door's own Spell.fit gives its value to the form's first open text field) and every
+# door's own fit gives its value to the form's first open text field) and every
 # line naming one of the form's fields.
-def spellFor(card: String, form: Form.Form, first: Spell.Binding, fields: Spell.Bindings) -> String:
-  let lines = textJoin(Lists.map(Lists.filter(fields, fn(b: Spell.Binding) -> Bool: b.name == form.action || isField(form, b.name)), fn(b: Spell.Binding) -> String: "{b.name}: {b.value}"), "\n")
+def spellFor(card: String, form: Form.Form, fields: Spell.Bindings) -> String:
+  let lines = textJoin(Lists.map(Lists.filter(fields, fn(b: Spell.Binding) -> Bool: b.name == form.action || Card.hasField(form, b.name)), fn(b: Spell.Binding) -> String: "{b.name}: {b.value}"), "\n")
   "delvetalk {card} {form.action}\n{lines}"
-def isField(form: Form.Form, name: String) -> Bool:
-  Lists.any(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
 # Prose that names no door, card or field form: the menu once per principal; then, with a
-# policy, the town's model reads it against every door's forms (Card's interpretation
-# default): a spell that fits one goes to the door it names, a miss is asked once more, a
-# second miss offers what is still needed and the policy's escalation copy; `unclear: not
-# addressed` gets nothing at all.
+# policy, the town's model reads it against every door's forms: a proposal goes to the door
+# whose form it fits, a miss is asked once more, a second miss offers what is still needed
+# and the policy's escalation copy; `unclear: not addressed` gets nothing at all.
 # A reply a card handed on (context.caller is that card) gets no menu. Every prose reply,
 # handed on or posted under the hub by someone already greeted, reaches the model only when
 # it names a door word, a form action or a form field of the doors (`judged`).
-def unaddressed(state: State, input: Card.Heard, bindings: Spell.Bindings, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if context.caller != "" then handedOn(state, input, bindings, context) else if greetedBefore(state, context.principal) == false then greeting(state, context) else handedOn(state, input, bindings, context)
-def handedOn(state: State, input: Card.Heard, bindings: Spell.Bindings, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if Plans.isNobody(state.policy) then Heard.silent({}) else if state.words == "" then learningAll(state, input, bindings, doors(state), " ", " ", context) else children(state, input, bindings, doors(state), state.words, state.fields, context)
+def unaddressed(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
+  if context.caller != "" then handedOn(input, context, state) else if greetedBefore(context.principal, state) == false then greeting(context, state) else handedOn(input, context, state)
+def handedOn(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
+  if Plans.isNobody(state.policy) then Heard.silent({}) else if state.words == "" then learningAll(input, doors(state), " ", " ", context, state) else children(input, doors(state), state.words, state.fields, context, state)
 # The kinds of card that live under a door (a garden's bells) are read too: the first object
 # listed under each door, inspected for its actions and fields, as this reply is judged (a
 # bell planted after genesis makes "rain" a town word without a new door).
-def children(state: State, input: Card.Heard, bindings: Spell.Bindings, doors: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def children(input: Card.Reply, doors: Lists.List<Door>, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
   match doors:
-    case nil(_): judgedHandOn(state, input, bindings, words, fields, context)
-    case cons(c): if Plans.isNobody(c.head.to) then children(state, input, bindings, c.tail, words, fields, context) else listing(state, input, bindings, c.head, c.tail, words, fields, context)
-def listing(state: State, input: Card.Heard, bindings: Spell.Bindings, door: Door, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.objects({prefix: "{door.to.object}/", after: ""})):
-    case listed(l): firstChild(state, input, bindings, l.ids, rest, words, fields, context)
-    case _: children(state, input, bindings, rest, words, fields, context)
-def firstChild(state: State, input: Card.Heard, bindings: Spell.Bindings, ids: Document.Names, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+    case nil(_): judgedHandOn(input, words, fields, context, state)
+    case cons(c): if Plans.isNobody(c.head.to) then children(input, c.tail, words, fields, context, state) else listing(input, c.head, c.tail, words, fields, context, state)
+def listing(input: Card.Reply, door: Door, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.objects({prefix: "{door.to.object}/", after: ""}):
+    case listed(l): firstChild(input, l.ids, rest, words, fields, context, state)
+    case refused(_): children(input, rest, words, fields, context, state)
+def firstChild(input: Card.Reply, ids: Document.Names, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
   match ids:
-    case nil(_): children(state, input, bindings, rest, words, fields, context)
-    case cons(c): childForms(state, input, bindings, c.head, rest, words, fields, context)
-def childForms(state: State, input: Card.Heard, bindings: Spell.Bindings, id: String, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: {world: context.world, object: id}})):
-    case inspected(i): children(state, input, bindings, rest, "{words}{formWords(i.methods)}", "{fields}{formFields(i.methods)}", context)
-    case _: children(state, input, bindings, rest, words, fields, context)
+    case nil(_): children(input, rest, words, fields, context, state)
+    case cons(c): childForms(input, c.head, rest, words, fields, context, state)
+def childForms(input: Card.Reply, id: String, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.inspect({object: {world: context.world, object: id}}):
+    case inspected(i): children(input, rest, "{words}{formWords(i.methods)}", "{fields}{formFields(i.methods)}", context, state)
+    case _: children(input, rest, words, fields, context, state)
 # Prose naming none of the doors' words or fields is not read by the model (only the first
 # 2,000 characters are looked at: a 5,142-character post once burned the budget). A reply handed
 # on by a card does not count the words of that card's own family: its own actions and
 # fields, and the door it lives under with that door's (a bell's thread talking of the
 # garden, a cistern or rain is the bell's own business, not a request to another door).
-def judgedHandOn(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if context.caller == "" then judged(state, input, bindings, words, fields, "", context) else ownFamily(state, input, bindings, words, fields, context)
-def ownFamily(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: {world: context.world, object: context.caller}})):
-    case inspected(i): familyDoor(state, input, bindings, words, fields, " {formWords(i.methods)}{formFields(i.methods)}", Lists.find(doors(state), fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && (context.caller == d.to.object || textTake(context.caller, textLength(d.to.object) + 1n) == "{d.to.object}/")), context)
-    case _: judged(state, input, bindings, words, fields, "", context)
-def familyDoor(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, excluded: String, door: Lists.Maybe<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def judgedHandOn(input: Card.Reply, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  if context.caller == "" then judged(input, words, fields, "", context, state) else ownFamily(input, words, fields, context, state)
+def ownFamily(input: Card.Reply, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.inspect({object: {world: context.world, object: context.caller}}):
+    case inspected(i): familyDoor(input, words, fields, " {formWords(i.methods)}{formFields(i.methods)}", Lists.find(doors(state), fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && (context.caller == d.to.object || textTake(context.caller, textLength(d.to.object) + 1n) == "{d.to.object}/")), context, state)
+    case _: judged(input, words, fields, "", context, state)
+def familyDoor(input: Card.Reply, words: String, fields: String, excluded: String, door: Lists.Maybe<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
   match door:
-    case none(_): judged(state, input, bindings, words, fields, excluded, context)
-    case some(d): familyForms(state, input, bindings, words, fields, "{excluded}{doorWords(d.value)}", d.value.to, context)
-def familyForms(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, excluded: String, door: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: door})):
-    case inspected(i): judged(state, input, bindings, words, fields, "{excluded}{formWords(i.methods)}{formFields(i.methods)}", context)
-    case _: judged(state, input, bindings, words, fields, excluded, context)
-def judged(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, excluded: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if Card.mentions(textTake(input.text, 2000n), bindings, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList("{fields}{knownFields()}"), Card.wordList(excluded))) then consulted(state, input, context) else Heard.silent({})
+    case none(_): judged(input, words, fields, excluded, context, state)
+    case some(d): familyForms(input, words, fields, "{excluded}{doorWords(d.value)}", d.value.to, context, state)
+def familyForms(input: Card.Reply, words: String, fields: String, excluded: String, door: Plans.Reference, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.inspect({object: door}):
+    case inspected(i): judged(input, words, fields, "{excluded}{formWords(i.methods)}{formFields(i.methods)}", context, state)
+    case _: judged(input, words, fields, excluded, context, state)
+def judged(input: Card.Reply, words: String, fields: String, excluded: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  if Card.mentions(textTake(input.text, 2000n), input.fields, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList("{fields}{knownFields()}"), Card.wordList(excluded))) then consulted(input, context, state) else Heard.silent({})
 def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.List<String>:
   Lists.filter(words, fn(w: String) -> Bool: Lists.any(excluded, fn(x: String) -> Bool: x == w) == false)
 # Learning: a door's word and object id, and its forms' actions and fields, by inspect.
 def doorWords(door: Door) -> String:
   "{door.label} {door.to.object} "
-# Only what a door offers counts. Inspect lists the method table, which holds the forms,
-# the protocol's own methods (excluded by name) and nothing else when every helper takes its
-# State after another parameter (rehearsal run 10: Scene's `reading` and Table's `played`
-# were methods, and seven readings came of their words). A form without fields, such as
+# Only what a door offers counts: inspect lists the forms of the methods its package declares
+# public, and `receive`, which no reader names as an action. A form without fields, such as
 # ring, is not a word here.
+def offered(form: Form.Form) -> Bool:
+  form.action != "receive"
 def offeredForm(form: Form.Form) -> Bool:
   offered(form) && Lists.length(form.fields) > 0n
 def formWords(forms: Lists.List<Form.Form>) -> String:
@@ -265,81 +251,86 @@ def formFields(forms: Lists.List<Form.Form>) -> String:
 def knownFields() -> String:
   " rain "
 # Adding a door relearns every door (the owner's rare turn; the seeded ones included).
-def learnedDoor(state: State, door: Listed, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  addLearning(door, Lists.append(doors(state), doorOf(door)), " ", " ", context)
-def addLearning(door: Listed, doors: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Answer>:
+def learnedDoor(door: Listed, state: State) -> Activity<Answer>:
+  addLearning(door, Lists.append(doors(state), doorOf(door)), " ", " ")
+def addLearning(door: Listed, doors: Lists.List<Door>, words: String, fields: String) -> Activity<Answer>:
   match doors:
-    case nil(_): addedDoor(door, words, fields, context)
-    case cons(c): if Plans.isNobody(c.head.to) then addLearning(door, c.tail, "{words}{doorWords(c.head)}", fields, context) else addInspecting(door, c.head, c.tail, words, fields, context)
-def addInspecting(door: Listed, next: Door, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  match perform(Plan.inspect({object: next.to})):
-    case inspected(i): addLearning(door, rest, "{words}{doorWords(next)}{formWords(i.methods)}", "{fields}{formFields(i.methods)}", context)
-    case _: addLearning(door, rest, "{words}{doorWords(next)}", fields, context)
-def addedDoor(door: Listed, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Answer>:
-  edited(context, extend(keep(), {doors: Plans.Entries.insert({row: door}), words: Plans.Edit.set({value: words}), fields: Plans.Edit.set({value: fields})}))
+    case nil(_): edited(extend(keep(), {doors: Plans.Entries.insert({row: door}), words: Plans.Edit.set({value: words}), fields: Plans.Edit.set({value: fields})}))
+    case cons(c): if Plans.isNobody(c.head.to) then addLearning(door, c.tail, "{words}{doorWords(c.head)}", fields) else addInspecting(door, c.head, c.tail, words, fields)
+def addInspecting(door: Listed, next: Door, rest: Lists.List<Door>, words: String, fields: String) -> Activity<Answer>:
+  match world.inspect({object: next.to}):
+    case inspected(i): addLearning(door, rest, "{words}{doorWords(next)}{formWords(i.methods)}", "{fields}{formFields(i.methods)}")
+    case _: addLearning(door, rest, "{words}{doorWords(next)}", fields)
 # The first handed-on reply after genesis (doors seeded, nothing learned) learns them all once.
-def learningAll(state: State, input: Card.Heard, bindings: Spell.Bindings, doors: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def learningAll(input: Card.Reply, doors: Lists.List<Door>, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
   match doors:
-    case nil(_): learnedAll(state, input, bindings, words, fields, context)
-    case cons(c): if Plans.isNobody(c.head.to) then learningAll(state, input, bindings, c.tail, "{words}{doorWords(c.head)}", fields, context) else learningDoor(state, input, bindings, c.head, c.tail, words, fields, context)
-def learningDoor(state: State, input: Card.Heard, bindings: Spell.Bindings, door: Door, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: door.to})):
-    case inspected(i): learningAll(state, input, bindings, rest, "{words}{doorWords(door)}{formWords(i.methods)}", "{fields}{formFields(i.methods)}", context)
-    case _: learningAll(state, input, bindings, rest, "{words}{doorWords(door)}", fields, context)
-def learnedAll(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  let written(_) = perform(write {words: set words, fields: set fields})
-  children(state, input, bindings, doors(state), words, fields, context)
-def consulted(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.view({object: state.policy})):
-    case viewed(v): macroOr(state, input, v.state, Card.expanded(input.text, v.state), context)
+    case nil(_): learnedAll(input, words, fields, context, state)
+    case cons(c): if Plans.isNobody(c.head.to) then learningAll(input, c.tail, "{words}{doorWords(c.head)}", fields, context, state) else learningDoor(input, c.head, c.tail, words, fields, context, state)
+def learningDoor(input: Card.Reply, door: Door, rest: Lists.List<Door>, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.inspect({object: door.to}):
+    case inspected(i): learningAll(input, rest, "{words}{doorWords(door)}{formWords(i.methods)}", "{fields}{formFields(i.methods)}", context, state)
+    case _: learningAll(input, rest, "{words}{doorWords(door)}", fields, context, state)
+def learnedAll(input: Card.Reply, words: String, fields: String, context: Abi.Context, state: State) -> Activity<Heard>:
+  let written(_) = write {words: set words, fields: set fields}
+  children(input, doors(state), words, fields, context, state)
+def consulted(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.view::<Policies.State>({object: state.policy}):
+    case viewed(v): macroOr(input, v.state, Card.expanded(input.text, v.state), context, state)
     case _: Heard.silent({})
-# A macro of the policy's that the prose matches goes to the card its spell names, with no
-# model call.
-def macroOr(state: State, input: Card.Heard, policy: Policies.State, expanded: Lists.Maybe<String>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+# A macro of the policy's that the prose matches goes to the card its expansion names (its
+# second word), with no model call.
+def macroOr(input: Card.Reply, policy: Policies.State, expanded: Lists.Maybe<String>, context: Abi.Context, state: State) -> Activity<Heard>:
   match expanded:
-    case some(e): byMacro(Spell.parse(e.value), e.value, input, context)
-    case none(_): gathering(state, input, doors(state), Lists.List.nil(), policy, context)
-def byMacro(parsed: Spell.Parsed, text: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match parsed:
-    case spell(s): if s.card != context.object then passOn(s.card, {text: text, post: input.post}, context) else Heard.silent({})
-    case notASpell(_): Heard.silent({})
-def gathering(state: State, input: Card.Heard, doors: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+    case some(e): byMacro(Card.wordList(e.value), e.value, input, context)
+    case none(_): gathering(input, doors(state), Lists.List.nil(), policy, context, state)
+def byMacro(words: Lists.List<String>, text: String, input: Card.Reply, context: Abi.Context) -> Activity<Heard>:
+  if wordAt(words, 2n) == "" || wordAt(words, 2n) == context.object then Heard.silent({}) else passOn(wordAt(words, 2n), {text: text, post: input.post}, context)
+def gathering(input: Card.Reply, doors: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context, state: State) -> Activity<Heard>:
   match doors:
-    case nil(_): interpreting(state, input, forms, policy, 0n, Form.Names.nil(), context)
-    case cons(c): if Plans.isNobody(c.head.to) then gathering(state, input, c.tail, forms, policy, context) else gathered(state, input, c.head.to, c.tail, forms, policy, context)
-def gathered(state: State, input: Card.Heard, to: Plans.Reference, rest: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: to})):
-    case inspected(i): gathering(state, input, rest, Lists.concat(forms, Lists.filter(i.methods, offered)), policy, context)
-    case _: gathering(state, input, rest, forms, policy, context)
-# A door's methods minus the protocol's own (receive, render and the observers').
-def offered(form: Form.Form) -> Bool:
-  Lists.any(protocolMethods(), fn(m: String) -> Bool: m == form.action) == false
-# Methods every card has by the protocol, which no reader names as an action.
-def protocolMethods() -> Lists.List<String>:
-  Card.wordList("receive render observe unobserve publishPage")
-def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Card.asking(input.text, forms, state.policy, policy, attempt, needs)):
-    case replied(r): readBack(state, input, forms, policy, attempt, r.text, Card.fitting(r.text, forms), context)
+    case nil(_): interpreting(input, forms, policy, 0n, Form.Names.nil(), context, state)
+    case cons(c): if Plans.isNobody(c.head.to) then gathering(input, c.tail, forms, policy, context, state) else gathered(input, c.head.to, c.tail, forms, policy, context, state)
+def gathered(input: Card.Reply, to: Plans.Reference, rest: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.inspect({object: to}):
+    case inspected(i): gathering(input, rest, Lists.concat(forms, Lists.filter(i.methods, offered)), policy, context, state)
+    case _: gathering(input, rest, forms, policy, context, state)
+# The model reads the prose against every door's forms; the host fits its spell and answers
+# the proposal with the door it names, or what the spell lacks.
+def interpreting(input: Card.Reply, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, needs: Form.Names, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.interpret::<Data>(Card.interpretation(input.text, forms, state.policy, policy, attempt, needs)):
+    case proposal(p): proposed(p.object, p.method, p.argument, forms, policy, context)
+    case unclear(u): if Card.silentNeeds(u.needs) then Heard.silent({}) else missed(input, forms, policy, attempt, u.needs, context, state)
+    case replied(r): readBack(input, forms, policy, attempt, Card.prose(r.text), context, state)
     case _: Heard.silent({})
-def readBack(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, text: String, fitted: Card.Fitted, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+# A proposal runs on its door as this turn (the door's own method, under the speaker), unless
+# the policy confirms that action first: then the speaker is shown the door's spell to send,
+# and sending it is the yes.
+def proposed(object: String, method: String, argument: Data, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context) -> Activity<Heard>:
+  if Card.confirms(policy, method) then askedFirst(object, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == object && f.action == method)) else calling(object, method, argument, context)
+def calling(object: String, method: String, argument: Data, context: Abi.Context) -> Activity<Heard>:
+  match world.call::<Data>({object: {world: context.world, object: object}, method: method, argument: argument}):
+    case returned(_): Heard.passed({card: object})
+    case denied(_): Card.tell(Heard.refused({reason: "Not visible: {object}"}), Document.text("The card {object} is not visible to you.\n"))
+    case refused(r): Card.tell(Heard.refused({reason: r.clause}), Document.text("Not done at {object}: {r.clause}\n"))
+def readBack(input: Card.Reply, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, fitted: Card.Fitted, context: Abi.Context, state: State) -> Activity<Heard>:
   match fitted:
-    case hit(h): if Card.confirms(policy, actionOf(h.parsed)) then askedFirst(h.card, text) else passOn(h.card, {text: text, post: input.post}, context)
-    case miss(m): if unoffered(m.needs) then nearest(state, text, forms, m.needs, context) else if attempt == 0n then interpreting(state, input, forms, policy, 1n, m.needs, context) else Card.unfit(policy, input.text, m.needs, context, needsCard(m.needs), Heard.unclear({needs: m.needs}))
-    case silent(_): Heard.silent({})
+    case miss(m): missed(input, forms, policy, attempt, m.needs, context, state)
+    case _: Heard.silent({})
+def missed(input: Card.Reply, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, needs: Form.Names, context: Abi.Context, state: State) -> Activity<Heard>:
+  if unoffered(needs) then nearestFor(missedAction(needs), forms, needs, context, state) else if attempt == 0n then interpreting(input, forms, policy, 1n, needs, context, state) else Card.unfitted(policy, input.text, needs, context, needsCard(needs), Heard.unclear({needs: needs}))
 # A miss that says the action is not offered is not asked again (no attempt can offer it):
 # it is answered once, naming a door only when one offers an action resembling the miss.
 def unoffered(needs: Form.Names) -> Bool:
   Lists.any(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered"))
-# The missed action: the model's spell's, or the first word of its need ("rain is not one of
-# the offered actions"), or the second ("garden water is not offered").
-def missedAction(text: String, needs: Form.Names) -> String:
-  match Spell.parse(text):
-    case spell(s): s.action
-    case notASpell(_): fromNeeds(needs)
-def fromNeeds(needs: Form.Names) -> String:
+# The missed action: the word before "is" in the need ("rain is not one of the offered
+# actions", the host's "garden water is not one of the offered actions").
+def missedAction(needs: Form.Names) -> String:
   match Lists.find(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered")):
-    case some(n): wordAt(Card.wordList(n.value), if Card.contains(n.value, "is not offered") then 2n else 1n)
+    case some(n): beforeIs(Card.wordList(n.value), "")
     case none(_): ""
+def beforeIs(words: Lists.List<String>, last: String) -> String:
+  match words:
+    case nil(_): ""
+    case cons(c): if c.head == "is" then last else beforeIs(c.tail, c.head)
 def wordAt(words: Lists.List<String>, n: Nat) -> String:
   match words:
     case nil(_): ""
@@ -348,26 +339,24 @@ def resembles(action: String, missed: String) -> Bool:
   textLength(missed) >= 3n && (action == missed || Card.contains(action, missed) || Card.contains(missed, action) && textLength(action) >= 3n)
 # The nearest door is one whose forms have an action resembling the miss; else a kind of card
 # under a door that takes it (a garden's bell takes rain); else none is named.
-def nearest(state: State, text: String, forms: Lists.List<Form.Form>, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  nearestFor(state, missedAction(text, needs), forms, needs, context)
-def nearestFor(state: State, missed: String, forms: Lists.List<Form.Form>, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def nearestFor(missed: String, forms: Lists.List<Form.Form>, needs: Form.Names, context: Abi.Context, state: State) -> Activity<Heard>:
   match Lists.find(forms, fn(f: Form.Form) -> Bool: resembles(f.action, missed)):
     case some(f): usageOf(f.value.card, forms, needs)
     case none(_): kinds(doors(state), missed, needs, context)
-def kinds(doors: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+def kinds(doors: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Heard>:
   match doors:
     case nil(_): noDoor(needs, "")
     case cons(c): if Plans.isNobody(c.head.to) || missed == "" then kinds(c.tail, missed, needs, context) else kindListed(c.head, c.tail, missed, needs, context)
-def kindListed(door: Door, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.objects({prefix: "{door.to.object}/", after: ""})):
+def kindListed(door: Door, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Heard>:
+  match world.objects({prefix: "{door.to.object}/", after: ""}):
     case listed(l): kindFirst(l.ids, rest, missed, needs, context)
-    case _: kinds(rest, missed, needs, context)
-def kindFirst(ids: Document.Names, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+    case refused(_): kinds(rest, missed, needs, context)
+def kindFirst(ids: Document.Names, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Heard>:
   match ids:
     case nil(_): kinds(rest, missed, needs, context)
     case cons(c): kindInspected(c.head, rest, missed, needs, context)
-def kindInspected(id: String, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.inspect({object: {world: context.world, object: id}})):
+def kindInspected(id: String, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Heard>:
+  match world.inspect({object: {world: context.world, object: id}}):
     case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == missed) then noDoor(needs, kindLine(id, missed)) else kinds(rest, missed, needs, context)
     case _: kinds(rest, missed, needs, context)
 # "garden/bell/3" is a bell: the next-to-last segment of its id.
@@ -377,35 +366,28 @@ def slashed(id: String) -> Lists.List<String>:
   if id == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(id, textBreak(id, "/")), tail: slashed(textDrop(id, textBreak(id, "/") + 1n))})
 def kindLine(id: String, missed: String) -> String:
   if kindOf(id) == "bell" then " A bell's card takes {missed}: reply to the planting post." else " A {kindOf(id)}'s card takes {missed}: reply to its post."
-def noDoor(needs: Form.Names, kind: String) -> Activity<Plan, Response, Heard>:
-  Card.tellPlan(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}).{kind}\n"))
-def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Plan, Response, Heard>:
-  Card.tellPlan(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
-# An action the policy confirms (a give, an offer, a reprogram) is not passed on from prose:
-# the speaker is shown the spell, and sending it is the yes.
-def actionOf(parsed: Spell.Parsed) -> String:
-  match parsed:
-    case spell(s): s.action
-    case notASpell(_): ""
-def askedFirst(card: String, text: String) -> Activity<Plan, Response, Heard>:
-  Card.tellPlan(Heard.asked({card: card}), Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it:\n\n{text}\n"))
+def noDoor(needs: Form.Names, kind: String) -> Activity<Heard>:
+  Card.tell(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}).{kind}\n"))
+def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Heard>:
+  Card.tell(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
+# An action the policy confirms (a give, an offer, a reprogram) is not run from prose: the
+# speaker is shown the door's spell, and sending it is the yes.
+def askedFirst(card: String, forms: Lists.List<Form.Form>) -> Activity<Heard>:
+  Card.tell(Heard.asked({card: card}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it filled in:\n"), Card.usage(card, forms)))
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text("✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Spell.joined(needs)}.\n")
-# The door words, for a card that lists them.
-def words(state: State) -> String:
-  textJoin(Lists.map(menu(state), fn(door: Door) -> String: door.to.object), ", ")
 # A link door (no object; genesis's STUDIO) answers with its description, which carries the
 # URL; it has no card to ask for and no forms to read.
-def linkDoor(door: Door) -> Activity<Plan, Response, Heard>:
-  Card.tellPlan(Heard.door({object: ""}), Document.text("{door.label}\n{door.description}\n"))
-def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  match perform(Plan.card({object: to})):
-    case carded(c): Card.tellPlan(Heard.door({object: to.object}), c.document)
-    case _: Card.tellPlan(Heard.refused({reason: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
+def linkDoor(door: Door) -> Activity<Heard>:
+  Card.tell(Heard.door({object: ""}), Document.text("{door.label}\n{door.description}\n"))
+def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Heard>:
+  match world.card({object: to}):
+    case carded(c): Card.tell(Heard.door({object: to.object}), c.document)
+    case _: Card.tell(Heard.refused({reason: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
 # The menu once per principal: the greeting is remembered (at most 4,096 principals; past
 # that the menu goes out without being remembered).
-def greeting(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if Relations.count(state.greeted) >= 4096n then Card.tellPlan(Heard.menu({}), render(state, context)) else greeted(state, context)
-def greeted(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  let written(_) = perform(write {greeted: insert {principal: context.principal}})
-  Card.tellPlan(Heard.menu({}), render(state, context))
+def greeting(context: Abi.Context, state: State) -> Activity<Heard>:
+  if Relations.count(state.greeted) >= 4096n then Card.tell(Heard.menu({}), render(state, context)) else greeted(context, state)
+def greeted(context: Abi.Context, state: State) -> Activity<Heard>:
+  let written(_) = write {greeted: insert {principal: context.principal}}
+  Card.tell(Heard.menu({}), render(state, context))
