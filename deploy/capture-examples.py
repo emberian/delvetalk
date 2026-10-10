@@ -36,23 +36,23 @@ PEOPLE = {'moth.delve.town': 'did:plc:uwsco4yctpvu5ki7tiob73s6', 'owl.delve.town
 NOW = 1791591368.0
 TALLY = '''edition ObjectiveBend 1
 import ./Abi.obend as Abi
+import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Text.obend as Text
+import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
-    case _: state.count + 1n
-def lend(state: State, input: {to: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.grant({to: input.to, object: Plans.self(context), method: "bump", until: 100n})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {count: add 1n}
+  state.count + 1n
+def lend(state: State, input: {to: String}, context: Abi.Context) -> Activity<String>:
+  match world.grant({to: input.to, object: Plans.self(context), method: "bump", until: 100n}):
     case granted(g): g.id
     case refused(r): r.clause
-    case _: ""
+def methods() -> Lists.List<String>:
+  Text.words("bump lend")
 '''
 FLIP = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
 HEAD = '''# DelveTalk: four worked sessions
@@ -208,8 +208,10 @@ def forger(cap):
     cap.say('The same change proposed for someone else\'s bell:')
     cap.step('POST', '/world/workshop/receive', {'intent': 'propose-2', 'spell': spell('garden/bell/1')})
     cap.step('GET', '/receipt/propose-2')
-    cap.say('The host judged the change against the bell\'s law before the workshop answered: the offer says "Not done: owner", and the\n'
-            'receipt\'s `outcome` is a `lawRefused` refusal naming the clause `owner` (the bell\'s law is `request.subject == "<its planter>"`).')
+    cap.say("The host dry-ran the change against the bell's law before the workshop answered. The bell carries the default law\n"
+            '(`owner: request.kind == 0 or request.subject == "<its planter>"`: anyone writes, only the planter reprograms), so the dry\n'
+            'run was refused `owner`; the workshop held the proposal for the owner to adopt. The offer says `refused owner: held as #1 …`,\n'
+            "and the receipt is the workshop's own admitted write, the held proposal inserted into its `held` rows.")
     cap.step('GET', '/world/garden/bell/1/source')
 
 

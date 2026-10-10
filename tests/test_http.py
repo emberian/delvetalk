@@ -657,6 +657,24 @@ class Play(FrontCase):
         self.assertIn(b'<figure class="frame usage"><pre class="card">' + html.escape(said['text']).encode() + b'</pre></figure>', asked)
         self.assertNotIn(b'class="slip', asked)  # a usage is no turn: no receipt line
 
+    def test_a_refused_receipt_with_no_roots_answers_on_the_receipt_turn_and_play_routes(self):
+        """A spell with colour: gold, an undeclared method, a non-owner `directory add`: refused before any root was read."""
+        receipt = {'hash': 'h', 'height': 7, 'slug': 'tulun-huzif', 'identity': {'intent': 'x', 'principal': DID},
+                   'outcome': {'tag': 'refused', 'class': 'badSpell', 'clause': 'badValue', 'object': 'garden', 'reason': 'colour is one of: amber, violet, silver'}}
+        refused = {'status': 'refused', 'class': 'badSpell', 'receipt': receipt}
+        real = self.host.send
+        self.host.send = lambda req: {'world-turn': refused, 'world-resolve': {'status': 'resolved', 'receipt': receipt}}.get(req['op']) or real(req)
+        tok = self.cookie.split('=', 1)[1]
+        s, r = self.call('GET', '/AGENTS.md/receipt/tulun-huzif', token=tok)
+        self.assertEqual((s, r['receipt']['slug']), (200, 'tulun-huzif'), r)
+        self.assertEqual(r['_links']['object']['href'], '/AGENTS.md/world/garden')  # the refusal names the object, not a root
+        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'gold-1', 'spell': 'delvetalk garden plant\ncolour: gold\nseed: a'}, tok)
+        self.assertEqual((s, t['status']), (200, 'refused'), t)
+        self.assertEqual(t['_links']['receipt']['href'], '/AGENTS.md/receipt/tulun-huzif')
+        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: gold\nseed: a')
+        self.assertEqual(s, 200)
+        self.assertIn(b'refused badValue: colour is one of: amber, violet, silver', page)
+
     def test_plant_by_spell_and_read_the_receipt(self):
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')
         self.assertEqual(s, 200, page)

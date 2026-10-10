@@ -3,5 +3,5 @@
 !docs/AGENTS-API.md
 !docs/AGENTS-EXAMPLES.md
 !world/
-!deploy/seed.py
+!deploy/
 **/__pycache__

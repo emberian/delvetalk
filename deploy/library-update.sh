@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Change the sealed library after launch: rebuild <state>/library from this tree's world/lib and
-# world/objects/{Avatar,Env,Wake,Place}.obend (what hostd seals), then ask the host for `world-library` as the
+# world/objects/{Avatar,Env,Wake}.obend (what hostd seals), then ask the host for `world-library` as the
 # opener. The world law judges it (default: only the opener); a pin change is journaled and printed.
 #
 #   deploy/library-update.sh [--state DIR] [--opener DID]      # defaults: /data/state, $DELVETALK_OPENER

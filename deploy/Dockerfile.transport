@@ -11,7 +11,7 @@ WORKDIR /app
 COPY transport ./transport
 COPY docs/AGENTS-API.md docs/AGENTS-EXAMPLES.md ./docs/
 COPY world ./world
-COPY deploy/seed.py ./deploy/seed.py
+COPY deploy ./deploy
 ENV DELVETALK_OBEND=/usr/local/bin/delvetalk-obend HOME=/tmp \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LEAN_NUM_THREADS=1
 USER 10425:10425
