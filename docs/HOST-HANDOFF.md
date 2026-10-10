@@ -619,6 +619,16 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    field the new code fixes is refused `programRefused`, clause `fixed`. Tests:
    `tests/test_spell_turns.py` `FixedFields`, `tests/test_appointments.py` (its marker gone).
 
+80. **Usage and hints as the speaker reads them (host11; rehearsal run 11 finding 5).** `castSpell`
+   speaks the card as the speaker wrote it (`env`, never `env/<did>`, though the turn runs on the
+   resolved id) in usage, templates and reasons, and `lensSpell` likewise. A misfit's hint is the
+   spell with a blank where the value did not fit (`blankedTemplate`; what fitted stays). An
+   unknown card's hint is the answering card's usage, or, when it has no spells, "no card named
+   <card>; reply to the directory for the doors". Usage lists only the forms whose method the
+   speaker's law admits (`usageForms` over `methodAdmits`); a spell for another is still fitted and
+   the commit refuses it. Env's `mention` still shows: its law admits anyone and its `methods()`
+   lists it (the objects lane's to drop). Test: `tests/test_usage_voice.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

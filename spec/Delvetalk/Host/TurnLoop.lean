@@ -784,6 +784,27 @@ def spellFormsData (w : World) (id : String) (o : Object) : List Data :=
 def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
   (spellFormsData w id o).filterMap Spell.Form.ofData
 
+/-- The text law's verdict on a kind-0 change by `principal` through `method`, judged on the unchanged
+    state (`Facts {subject: principal, caller: "", kind: 0, method, height, turn, pin}`): `true`, or
+    `{clause, reading?}` naming the first clause that refuses and reads no state field, whose verdict
+    the change cannot alter. A clause that reads the state leaves the verdict to the commit (`true`). -/
+def methodAdmits (w : World) (o : Object) (principal method : String) : Json :=
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, []⟩
+  match o.law.find? fun (_, clause) => clause.fields.isEmpty && !Law.admits facts (some o.state) o.state clause with
+  | none => Json.bool true
+  | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
+
+/-- The forms a card's usage shows `principal`: those whose method the law admits them to run
+    (`methodAdmits`); a spell for another is still fitted, and the commit's law refuses it. -/
+def usageForms (w : World) (o : Object) (principal : String) (forms : List Spell.Form) : List Spell.Form :=
+  forms.filter fun f => methodAdmits w o principal f.action == Json.bool true
+
+/-- A spell's template with blanks for the fields whose value does not fit the form's kind. -/
+def blankedTemplate (card : String) (form : Spell.Form) (given : List Spell.Binding) : String :=
+  spellTemplate card form (given.filter fun b => match form.fields.find? (·.name == b.name) with
+    | some f => (Spell.judge f b.value).isNone
+    | none => false)
+
 /-- The lenses of a card (WHOLENESS §2: a lens is a form): the fields its pure `lenses() ->
     Lists.List<Form.Field>` names, each with the kind of value it takes, when it also has a `set`
     method; none otherwise (also when `lenses()` is the sum dialect's list of `Form.Lens`, which is
@@ -832,17 +853,17 @@ def lensSpell (w : World) (id : String) (argument : Data) (target : Object) (car
   | [] => receiveHeard w id target argument fields
   | [b] =>
     if target.fixed.contains b.name then .refuse id "fixed"
-      s!"{b.name} is fixed; it is set when {id} is made and never after." (spellUsage id [] lenses) else
+      s!"{b.name} is fixed; it is set when {card} is made and never after." (spellUsage card [] lenses) else
     match lenses.find? (·.name == b.name) with
     | none => .refuse id "unknownField"
-        s!"No field {b.name} in this spell; it takes {", ".intercalate (lenses.map (·.name))}." (spellUsage id [] lenses)
+        s!"No field {b.name} in this spell; it takes {", ".intercalate (lenses.map (·.name))}." (spellUsage card [] lenses)
     | some lens =>
       match Spell.judge lens b.value with
-      | some (clause, reason) => .refuse id clause.name reason (lensTemplate id lens b.value)
+      | some (clause, reason) => .refuse id clause.name reason (lensTemplate card lens)
       | none =>
         .run id "set" (.record [("field", .label lens.name), ("value", lensValue (Spell.typed lens.kind b.value))]) (spellLine card "set")
   | _ => .refuse id "unknownField"
-      s!"set takes one field a spell, not {", ".intercalate (fields.map (·.name))}" (spellUsage id [] lenses)
+      s!"set takes one field a spell, not {", ".intercalate (fields.map (·.name))}" (spellUsage card [] lenses)
 
 /-- The first ```obend fenced block of a reply: the lines after the opening fence up to a line that
     starts with ```; none when there is none or it is never closed. -/
@@ -871,25 +892,31 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
 def castSpell (w : World) (principal self : String) (argument : Data) (o : Object) (card action : String)
     (fields : List Spell.Binding) (retarget : Bool) : SpellRoute := Id.run do
   let id := resolveCard principal card
-  let usageHere := spellUsage self (spellForms w self o)
-  let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." usageHere
+  -- The card as the speaker named it (`env`, never `env/<did>`): usage and reasons speak it.
+  let shown := card
+  -- The answering card's own spells when it has some; else where the doors are listed.
+  let here := usageForms w o principal (spellForms w self o)
+  let unknown := if here.isEmpty then s!"no card named {card}; reply to the directory for the doors"
+    else spellUsage self here
+  let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
   unless target.read.permits principal && (retarget || id == self) do
-    return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." usageHere
+    return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
   let forms := spellForms w id target
+  let shownForms := usageForms w target principal forms
   let lenses := declaredLenses w target
-  if action == "?" then return .usage id (spellUsage id forms lenses)
+  if action == "?" then return .usage id (spellUsage shown shownForms lenses)
   -- `set` with one `<field>: <value>` line goes through a lens (`lensSpell`).
   if action == "set" && (!lenses.isEmpty || (hasMethod target "set" && !target.fixed.isEmpty)) && !forms.any (·.action == "set") then
     return lensSpell w id argument target card lenses fields
   let some form := forms.find? (·.action == action)
-    | return .refuse id "noAction" s!"{id} has no spell {action}; it has these:" (spellUsage id forms lenses)
+    | return .refuse id "noAction" s!"{shown} has no spell {action}; it has these:" (spellUsage shown shownForms lenses)
   let fields := withFence w target action argument fields
   match Spell.fit (.spell id action fields) form with
   | .proposal _ _ entries => match spellArgumentFor w target action entries with
     | .ok a => return .run id action a (spellLine card action)
-    | .error reason => return .refuse id "badValue" reason (spellTemplate id form fields)
+    | .error reason => return .refuse id "badValue" reason (blankedTemplate shown form fields)
   | .unclear _ => return receiveHeard w id target argument fields
-  | .refused clause reason => return .refuse id clause.name reason (spellTemplate id form fields)
+  | .refused clause reason => return .refuse id clause.name reason (blankedTemplate shown form fields)
 
 /-- A `receive {text, …}` to `id`, read as a spell by the host when the card speaks the message
     dialect (WHOLENESS §2): a direct turn's, a called one's and a delivered one's alike (`retarget`
@@ -2266,16 +2293,6 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
 
 
 /-! ## Reflection and interpretation as ops -/
-
-/-- The text law's verdict on a kind-0 change by `principal` through `method`, judged on the unchanged
-    state (`Facts {subject: principal, caller: "", kind: 0, method, height, turn, pin}`): `true`, or
-    `{clause, reading?}` naming the first clause that refuses and reads no state field, whose verdict
-    the change cannot alter. A clause that reads the state leaves the verdict to the commit (`true`). -/
-def methodAdmits (w : World) (o : Object) (principal method : String) : Json :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, []⟩
-  match o.law.find? fun (_, clause) => clause.fields.isEmpty && !Law.admits facts (some o.state) o.state clause with
-  | none => Json.bool true
-  | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
 
 /-- The method table as `principal` reads it: each method a turn can run (it takes a context) with
     `admits` (`methodAdmits`). -/

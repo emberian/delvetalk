@@ -97,7 +97,9 @@ class SpellTurns(Reflection):
             out = r["receipt"]["outcome"]
             self.assertEqual((r["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", clause, reason), r)
             self.assertIn("delvetalk", out["hint"])
-        self.assertIn("colour: gold", self.say("delvetalk garden plant\ncolour: gold\nseed: fern", identity="again")["receipt"]["outcome"]["hint"])
+        # The hint is the spell with a blank where the value did not fit; what fitted stays.
+        hint = self.say("delvetalk garden plant\ncolour: gold\nseed: fern", identity="again")["receipt"]["outcome"]["hint"]
+        self.assertIn("colour: <amber, violet, silver>\nseed: fern", hint)
         # Another principal sees the public projection, with the clause and the hint.
         public = self.host.send(op="world-receipt", principal="kim", identity="bad0", of="glm")
         self.assertEqual((public.get("class"), public.get("clause")), ("badSpell", "badValue"), public)
