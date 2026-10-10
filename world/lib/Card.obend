@@ -361,6 +361,19 @@ def needOf(need: String) -> Fitted:
   if need == "" || need == "not addressed" then Fitted.silent({}) else Fitted.miss({needs: one(need)})
 def one(need: String) -> Form.Names:
   Form.Names.cons({head: need, tail: Form.Names.nil()})
+# Completing a spell (the card default): a reply that is only `name: value` lines (blank
+# lines aside) fills the open fields of the spell a card holds for its speaker, so "I still
+# need: colour" is answered by `colour: silver`. spellText is a parsed spell as text again.
+def onlyFields(text: String) -> Bool:
+  Lists.length(Spell.bare(text)) > 0n && fieldLinesOnly(text)
+def fieldLinesOnly(text: String) -> Bool:
+  if text == "" then true else fieldLineAt(Spell.trimStart(Spell.trimEnd(textTake(text, textBreak(text, "\n")))), textDrop(text, textBreak(text, "\n") + 1n))
+def fieldLineAt(line: String, rest: String) -> Bool:
+  (line == "" || textTake(line, 3n) == "```" || Spell.looksLikeField(line)) && fieldLinesOnly(rest)
+def spellText(card: String, action: String, bindings: Spell.Bindings) -> String:
+  textJoin(Lists.List.cons({head: "delvetalk {card} {action}", tail: Lists.map(bindings, fn(b: Spell.Binding) -> String: "{b.name}: {b.value}")}), "\n")
+def completed(held: String, text: String) -> String:
+  "{held}\n{text}"
 # Whether an interpreted proposal of this action waits for the speaker's yes.
 def confirms(policy: Policies.State, action: String) -> Bool:
   Lists.any(policy.confirmFor, fn(a: String) -> Bool: a == action)

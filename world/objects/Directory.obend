@@ -109,7 +109,9 @@ def worded(state: State, input: Card.Heard, found: Lists.Maybe<Door>, context: A
 # Field lines with no delvetalk line (the §10 hour: `plant: … / colour: silver`, `rain: …`):
 # when the first `name: value` line names an action one of the doors offers, the lines
 # become that door's spell (the action line's value fills the form's first field the
-# others leave open) and go to that door's receive.
+# others leave open) and go to that door's receive. When it names a field of a door's form
+# instead (`colour: violet`, answering "I still need: colour"), the lines go to that door's
+# receive as they are, to complete the spell the door holds for the speaker.
 def fielded(state: State, input: Card.Heard, fields: Spell.Bindings, doors: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match fields:
     case nil(_): unaddressed(state, input, context)
@@ -120,11 +122,11 @@ def doorsFor(state: State, input: Card.Heard, first: Spell.Binding, fields: Spel
     case cons(c): inspecting(state, input, first, fields, c.head.to, c.tail, context)
 def inspecting(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, to: Plans.Reference, rest: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.inspect({object: to})):
-    case inspected(i): offering(state, input, first, fields, to, Lists.find(i.methods, fn(f: Form.Form) -> Bool: f.action == first.name), rest, context)
+    case inspected(i): offering(state, input, first, fields, to, Lists.find(i.methods, fn(f: Form.Form) -> Bool: f.action == first.name || Card.hasField(f, first.name)), rest, context)
     case _: doorsFor(state, input, first, fields, rest, context)
 def offering(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, to: Plans.Reference, found: Lists.Maybe<Form.Form>, rest: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match found:
-    case some(f): passOn(to.object, {text: spellFor(to.object, f.value, first, fields), post: input.post}, context)
+    case some(f): passOn(to.object, {text: if f.value.action == first.name then spellFor(to.object, f.value, first, fields) else input.text, post: input.post}, context)
     case none(_): doorsFor(state, input, first, fields, rest, context)
 # The spell the field lines mean for a form: the action line as it was written (the
 # door's own Spell.fit gives its value to the form's first open text field) and every

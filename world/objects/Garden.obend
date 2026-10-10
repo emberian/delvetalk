@@ -9,10 +9,13 @@ import ./Bell.obend as Bell
 import ./Cistern.obend as Cistern
 import ./Card.obend as Card
 import ./Policies.obend as Policies
-# A proposal the garden understood from a principal and is waiting to hear "yes" to.
+# What the garden holds for a principal: a proposal understood from prose waiting for
+# "yes" (needs empty), or a spell missing fields (needs names them) that a reply of only
+# the missing `name: value` lines completes.
 record Pending:
   principal: String
   spell: String
+  needs: Lists.List<String>
 # children: the bells planted here, oldest first, written on each create.
 # confirmFor: the actions whose proposals understood from prose wait for "yes" here, beside
 # the policy's own confirmFor (either asking is enough); empty by default, so a planting
@@ -164,7 +167,7 @@ def plantedCard(context: Abi.Context, who: String, reference: Plans.Reference, c
   Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo plant another, reply:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, parsed: Spell.Parsed) -> Document.Document:
   let again = spell(context.object, filled(parsed, "seed", "<what might grow here, 1 to 80 characters>"), filled(parsed, "colour", "<amber, violet or silver>"))
-  Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Spell.joined(needs)}.\nReply with the spell, filled in:\n\n{again}")
+  Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Spell.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
 def filled(parsed: Spell.Parsed, name: String, hint: String) -> String:
   match parsed:
     case spell(s): if Spell.valueOf(s.fields, name) == "" then hint else Spell.valueOf(s.fields, name)
@@ -214,11 +217,11 @@ def refused(found: Held, context: Abi.Context, w: Why) -> Activity<Plan, Respons
 # by its bytes, so another principal's proposal landing first moves nothing) and its spell.
 sum Held:
   none: {}
-  some: {item: Pending, spell: String}
+  some: {item: Pending, spell: String, needs: Lists.List<String>}
 def heldBy(items: Lists.List<Pending>, principal: String, index: Nat) -> Held:
   match items:
     case nil(_): Held.none({})
-    case cons(c): if c.head.principal == principal then Held.some({item: c.head, spell: c.head.spell}) else heldBy(c.tail, principal, index + 1n)
+    case cons(c): if c.head.principal == principal then Held.some({item: c.head, spell: c.head.spell, needs: c.head.needs}) else heldBy(c.tail, principal, index + 1n)
 # What a reply to a waiting proposal says: yes, no or anything else. Only a short
 # reply is examined; it is one word between blanks, in one of three spellings.
 sum Word:
@@ -240,7 +243,11 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def heard(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match found:
     case none(_): hear(state, input, context, Spell.parse(input.text), found)
-    case some(s): replied(state, input, context, found, s.spell)
+    case some(s): if Lists.length(s.needs) == 0n then replied(state, input, context, found, s.spell) else completing(state, input, context, found, s.spell)
+# A spell missing fields is completed by a reply of only field lines; anything else is
+# heard afresh (and replaces it).
+def completing(state: State, input: Card.Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
+  if Card.onlyFields(input.text) then judged(state, context, input.post, Spell.parse(Card.completed(stored, input.text)), false, found) else hear(state, input, context, Spell.parse(input.text), found)
 # Yes plants what was stored; no drops it; anything else is heard afresh and
 # replaces the stored proposal (or drops it when it proposes nothing).
 def replied(state: State, input: Card.Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
@@ -350,7 +357,7 @@ def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.
 def judged(state: State, context: Abi.Context, post: String, parsed: Spell.Parsed, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
   match Spell.fit(parsed, plantForm(context)):
     case proposal(p): named(state, context, post, found, confirm, Card.text(p.bindings, "colour"), Card.text(p.bindings, "seed"))
-    case unclear(u): told(found, context, Reply.unclear({needs: u.needs}), unclearCard(context, u.needs, parsed))
+    case unclear(u): held(state, context, found, partial(parsed, context), u.needs, unclearCard(context, u.needs, parsed))
     case refused(r): refused(found, context, Why.badSpell({reason: r.reason}))
 def named(state: State, context: Abi.Context, post: String, found: Held, confirm: Bool, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   match colourNamed(colour):
@@ -358,9 +365,26 @@ def named(state: State, context: Abi.Context, post: String, found: Held, confirm
     case none(_): refused(found, context, Why.badColour({}))
 def settled(state: State, context: Abi.Context, post: String, found: Held, confirm: Bool, colour: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
   if confirm then asked(state, context, found, Bell.colourName(colour), seed) else grow(state, context, post, found, colour, seed)
+# The spell as typed so far, to complete with the missing lines.
+def partial(parsed: Spell.Parsed, context: Abi.Context) -> String:
+  match parsed:
+    case spell(s): Card.spellText(context.object, "plant", s.fields)
+    case notASpell(_): Card.spellText(context.object, "plant", Spell.Bindings.nil({}))
+# What the garden holds, one per principal: a new one replaces the old.
+def holding(state: State, found: Held, entry: Pending) -> Lists.Maybe<Plans.Entries<Pending, Pending>>:
+  match found:
+    case some(s): Lists.Maybe.some({value: Plans.Entries.amendItem({item: s.item, change: entry})})
+    case none(_): if Lists.length(state.pending) < 64n then Lists.Maybe.some({value: Plans.Entries.append({item: entry})}) else Lists.Maybe.none({})
+def held(state: State, context: Abi.Context, found: Held, spell: String, needs: Form.Names, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  match holding(state, found, {principal: context.principal, spell: spell, needs: needs}):
+    case some(e): heldWritten(context, e.value, needs, card)
+    case none(_): told(found, context, Reply.unclear({needs: needs}), card)
+def heldWritten(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, needs: Form.Names, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})}))
+  tell(Reply.unclear({needs: needs}), card)
 # The proposal waits, one per principal: a new one replaces the old.
 def asked(state: State, context: Abi.Context, found: Held, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  let entry = {principal: context.principal, spell: spell(context.object, seed, colour)}
+  let entry: Pending = {principal: context.principal, spell: spell(context.object, seed, colour), needs: Lists.List.nil()}
   match found:
     case some(s): remembered(context, Plans.Entries.amendItem({item: s.item, change: entry}), colour, seed)
     case none(_): if Lists.length(state.pending) < 64n then remembered(context, Plans.Entries.append({item: entry}), colour, seed) else tell(Reply.refused(refusal(Why.tooManyWaiting({}))), refusedCard(refusal(Why.tooManyWaiting({}))))

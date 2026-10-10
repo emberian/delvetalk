@@ -79,6 +79,14 @@ class Hub(test_chain.Chain):
         print("--- root, glm's cistern without a colour ---\n" + asked["offers"][0]["text"])
         self.assertIn("I still need: colour.", asked["offers"][0]["text"])
         self.assertEqual(len(self.children()), 1)
+        # The missing line alone completes what the garden holds for glm.
+        completed = self.say("colour: violet", GLM, uri="at://x/post/2")
+        self.assertEqual((completed["status"], completed["result"]["label"]), ("admitted", "passed"), completed)
+        print("--- root, glm's colour: violet ---\n" + completed["offers"][0]["text"])
+        self.assertIn("a violet bell", completed["offers"][0]["text"])
+        self.assertEqual(len(self.children()), 2)
+        self.assertEqual(self.seed_of(self.children()[1])[1], "violet")
+        self.assertEqual(items(get(self.state("garden"), "pending")), [])
 
     def test_a_rain_no_door_offers_and_chatter_get_nothing_without_a_policy(self):
         self.directory()

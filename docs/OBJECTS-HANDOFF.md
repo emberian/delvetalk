@@ -76,6 +76,12 @@ the library).
   instead of passing it on (sending it is the yes). Everything else runs at once and the
   receipt is the answer. Thing's give and offer take a Reference, so no door offers them
   to a model yet.
+* **Completing a spell** (objects5). An unclear spell is held for its speaker (Garden's
+  `Pending {principal, spell, needs}`; needs empty is a proposal waiting for yes); a reply
+  that is only `name: value` lines (`Card.onlyFields`, fences allowed) is appended to the
+  held spell (`Card.completed`) and judged again. Directory passes field-only lines whose
+  first name is a field (not an action) of a door's form to that door as they are, so
+  "colour: violet" under the hub reaches the garden holding glm's cistern.
 * **Macros** (Policy `macros`, taught by the owner with `delvetalk policy macro / name: … /
   pattern: moth for {who} / expansion: garden plant / colour: violet / seed: a bell for
   {who}`; every field after the expansion joins it as ` / field: value`; a same-named macro

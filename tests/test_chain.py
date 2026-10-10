@@ -36,7 +36,7 @@ def asking(confirm):
 def garden_seed(policy="", pending=(), confirm=True, owner="ember"):
     """A Garden Seed: its owner, its policy object, whether prose waits for "yes" (plant in
     its confirmFor), and the proposals already waiting."""
-    wire = {"tag": "list", "items": [record(principal=label(principal), spell=label(spell))
+    wire = {"tag": "list", "items": [record(principal=label(principal), spell=label(spell), needs=nil())
                                      for principal, spell in pending]}
     return record(owner=label(owner), policy=reference(policy), confirmFor=asking(confirm), pending=wire)
 
