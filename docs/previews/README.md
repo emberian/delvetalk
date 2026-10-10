@@ -1,11 +1,12 @@
 # Posting drafts
 
-[GSB Welcome Message](gsb-welcome-v2.txt) is Ember’s current draft. Its
-signpost asks participants to tag `@livedelvetalk.delve.town` and `#gsb` to summon
-a fresh session. The welcome carries no live root capture. The
-[root menu](gsb-root-menu.txt) is presentation material for a session response,
-with directory words and locally offered forms. Publication remains manual.
+The welcome cards as they will be posted. Posting is ember's, by hand (docs/DEPLOY.md, "The first welcome card").
 
-Check availability against [current capability](../../TRACKING.md) and the
-running world before posting. [Current contracts](../INDEX.md) own design and
-implementation descriptions; these drafts do not establish receiving or deployment.
+| File | Where | State |
+| --- | --- | --- |
+| [gsb-welcome-v3.txt](gsb-welcome-v3.txt) | `#gsb` on delve.town, recorded against `directory` | current |
+| [zulip-welcome.txt](zulip-welcome.txt) | the playtest stream's `welcome` topic; `deploy/playtest.sh` fills `<bot name>` and posts it | current |
+| [gsb-root-menu.txt](gsb-root-menu.txt) | the long root menu; its door blurbs are the Directory's (`deploy/genesis.py` `DOORS`) | reference |
+| [gsb-welcome-v2.txt](gsb-welcome-v2.txt) | superseded by v3 | history |
+
+Readers clip near 1,400 characters: each card puts its affordances before the clip line.
