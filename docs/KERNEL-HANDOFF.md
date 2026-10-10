@@ -157,7 +157,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 - Law readings: `law NAME "reading": EXPR`; `Surface.Decl.law name source reading`.
 - String interpolation (`interpolationPieces`/`joinPieces`): `{expr}` in a string; up to four pieces lower to nested `textConcat`, more to `textJoin(TextPieces…, "")`. `{{`/`}}` are literal braces; a lone `}`, an unclosed `{` and two expressions in one pair of braces are refused by name. Document templates quote braces as `{`/`}`.
 - `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax` 16,384 characters and fills from a reply's ```obend fence; Form.obend's `source: {}` case is the objects lane's) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
-- `write {field: op value, …}`: the world call `world.write(extend(keep(), {…}))` with ops `add`, `set`, `append`, `remove`, `removeItem`, `insert`, `upsert`, `retract`. Needs a nullary `keep()`; `P` is the module's alias of Plan.obend (placeholder `$plans`, replaced by `Surface.Decl.mapVars`).
+- `write {field: op value, …}`: the world call `world.write(extend(keep(), {…}))` with ops `add`, `set`, `append`, `remove`, `amend ITEM with CHANGE`, `removeItem`, `insert`, `upsert`, `retract` (`remove` and `amend` as §22 says). Needs a nullary `keep()`; `P` is the module's alias of Plan.obend (placeholder `$plans`, replaced by `Surface.Decl.mapVars`).
 - `layer over ./X.obend` must be a module's first line (else refused "…is the module's first line"); it imports `X` as `Super`. Every declaration is a field of one knot, so a layer's `L.f` overrides `B.f`: `B.f` holds `self.L.f`, the old body moves to a hygienic `B.f#below`, and a layer's `Super.f` resolves to the key below. `checkOverrides` refuses a retyped override ("refused (layer-override): L.f is …, but it overrides B.f, which is …"). Unlayered packets are byte-identical. `Elaborated.select` takes an entry the top layer lacks from the topmost layer defining it. Tests: `test_layers`.
 - Located refusals: every refusal of an elaborated package names `definition`, `module`, `span`; a type refusal `expected` and `found` in surface syntax, with `hint` (`blameHint`: a record where its field was expected, a function waiting for arguments, too many arguments, a missing field, an unknown case). Core `Expr`/`Body` carry the surface span as an implicit `{span}` field; `ATerm.located` is transparent to `json`, `erase`, `annotate`, `mapTypes`, `knotNames`. Generic instances are placed at their generic declaration (`Origins`, `FrontEnd.originsOf`). Test: `test_located`.
 - Dialect hints (`Delvetalk/Hints.lean`, `Diagnostic.hint`): only on refusals, at the named line for a parse refusal, at the Surface declaration holding the named line otherwise. `Hints.hintFor` never fires on a typed-packet checker refusal; `blameHint` does. Test: `test_hints`.
@@ -555,3 +555,10 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   "relations(): a limit is a Nat". The host's own `parseDecls` (Ops.lean) reads the same fields
   from the evaluated value; it could read the artifact instead (host lane). Test:
   `test_sugar.Relations`.
+- `write {f: remove v}` is `removeItem {item: v}`, or `retract {key: v}` when the module's
+  `State` types `f` as a `Relation<…>` (the parser emits the marker `$remove` and
+  `parseObjective` lowers it once the declarations are read, `lowerRemove` over
+  `Decl.mapExpr`); `write {f: amend v with c}` is `amendItem {item: v, change: c}`. An index
+  (`remove {index: …}`, `amend {index: …} with …`) is refused by name ("names a position, and
+  edits name items: write `f: remove ITEM` …"). Tests: `test_sugar.Writes`.
+
