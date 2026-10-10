@@ -96,7 +96,10 @@ class Reads(Reflection):
         odd = self.host.send(op="world-create", principal="ember", identity="mk-odd", object="odd~one", source=PACKAGE,
                              entry="initial", seed=source_seed())
         self.assertEqual(odd["status"], "error", odd)
-        self.assertIn("is not one: an object id is 1..128 bytes of letters, digits and . _ : / - @", odd["message"])
+        self.assertIn("is not one: an object id is 1..128 bytes of letters, digits and . _ : / -", odd["message"])
+        at = self.host.send(op="world-create", principal="ember", identity="mk-at", object="env/a@b", source=PACKAGE,
+                            entry="initial", seed=source_seed())
+        self.assertEqual(at["status"], "error", at)
         fine = self.host.send(op="world-create", principal="ember", identity="mk-env", object="env/did:plc:abc", source=PACKAGE,
                               entry="initial", seed=source_seed())
         self.assertEqual(fine["status"], "created", fine)
