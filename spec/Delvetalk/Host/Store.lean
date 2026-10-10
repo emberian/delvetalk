@@ -301,6 +301,15 @@ structure Built where
   /-- The relations its entry module's `relations()` declares, unchecked against the state type. -/
   relations : List RelDecl := []
 
+/-- One admitted write of an object, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
+    version it produced and, for an ordinary write (kind 0 only) whose steps decode, every edit
+    other than `keep` as `(field, edit)` in step order; none otherwise. Derived by `record` from
+    `writes[].edits`, so replay and snapshot resume rebuild it and nothing is journaled twice. -/
+structure Touch where
+  version : Nat
+  edits : Option (List (String × Data))
+  deriving Inhabited
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -317,6 +326,9 @@ structure World where
   receipts : Std.HashMap String Nat := {}
   /-- Object id to indices of admitted or creating entries touching it. -/
   touched : Std.HashMap String (Array Nat) := {}
+  /-- Per object, its admitted writes in version order (`Touch`): what changed since a version is
+      read from the newest back, never by scanning the journal. -/
+  touches : Std.HashMap String (Array Touch) := {}
   /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
   compiled : Std.HashMap String Compiled := {}
   /-- Undelivered sends in journal order, derived from the journal. -/

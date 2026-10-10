@@ -1469,60 +1469,55 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
-/-- The fields of `id` its ordinary admitted writes changed after version `seen` (edits other
-    than `keep`), from the journal; none when one of its later changes was not an ordinary write
+/-- The edits of `id`'s admitted writes after version `seen`, oldest first, from the per-object
+    index (`World.touches`, newest back to `seen`); none when one of them was not an ordinary write
     (a reprogram or an amendment) or does not decode. -/
-def fieldsChangedSince (w : World) (id : String) (seen : Nat) : Option (List String) := Id.run do
-  let mut fields : List String := []
-  for i in w.touched.getD id #[] do
-    let e := w.entries[i]!
-    if ((e.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "tag" |>.toOption)) != some "admitted" then continue
-    let ws := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
-      |>.bind (·.getArr? |>.toOption)).getD #[]
-    for x in ws do
-      unless (x.getObjValAs? String "object").toOption == some id do continue
-      unless (x.getObjValAs? Nat "version").toOption.getD 0 > seen do continue
-      let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
-      if kinds.any (fun k => k.getNat?.toOption != some 0) then return none
-      for step in ((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[] do
-        match decodeData Limits.dataDepth step with
-        | .ok (.record fs) =>
-          for (f, k) in fs do
-            match k with
-            | .variant "keep" _ => pure ()
-            | _ => fields := f :: fields
-        | _ => return none
-  return some fields.eraseDups
+def editsSince (w : World) (id : String) (seen : Nat) : Option (List (String × Data)) := Id.run do
+  let ts := w.touches.getD id #[]
+  let mut out : List (String × Data) := []
+  let mut i := ts.size
+  while i > 0 do
+    i := i - 1
+    let t : Touch := ts[i]!
+    if t.version ≤ seen then break
+    match t.edits with
+    | some es => out := es ++ out
+    | none => return none
+  return some out
+
+/-- The fields of `id` its ordinary admitted writes changed after version `seen` (edits other
+    than `keep`); none when one of its later changes was not an ordinary write. -/
+def fieldsChangedSince (w : World) (id : String) (seen : Nat) : Option (List String) :=
+  (editsSince w id seen).map fun es => (es.map (·.1)).eraseDups
 
 /-- The keys of relation `d` that ordinary admitted writes of `id` touched after version `seen`
-    (the rows' keys of inserts and upserts, the keys of retracts), from the journal; none when a
-    later change of `id` was not an ordinary write, does not decode, or changed the field by any
-    other edit (a `set` of the whole relation touches every key). -/
-def keysChangedSince (w : World) (id : String) (seen : Nat) (d : RelDecl) : Option (List Data) := Id.run do
-  let mut keys : List Data := []
-  for i in w.touched.getD id #[] do
-    let e := w.entries[i]!
-    if ((e.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "tag" |>.toOption)) != some "admitted" then continue
-    let ws := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
-      |>.bind (·.getArr? |>.toOption)).getD #[]
-    for x in ws do
-      unless (x.getObjValAs? String "object").toOption == some id do continue
-      unless (x.getObjValAs? Nat "version").toOption.getD 0 > seen do continue
-      let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
-      if kinds.any (fun k => k.getNat?.toOption != some 0) then return none
-      for step in ((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[] do
-        let .ok (.record fs) := decodeData Limits.dataDepth step | return none
-        let some k := fs.lookup d.field | continue
-        match parseKind k with
-        | some .keep => pure ()
-        | some (.insert row) | some (.upsert row) => match keyOf d row with
-          | .ok key => keys := key :: keys
-          | .error _ => return none
-        | some (.retract key) => match keyAsDeclared d key with
-          | .ok key => keys := key :: keys
-          | .error _ => return none
-        | _ => return none
-  return some keys
+    (the rows' keys of inserts and upserts, the keys of retracts); none when a later change of `id`
+    was not an ordinary write or changed the field by any other edit (a `set` of the whole relation
+    touches every key). Reads only the writes since `seen` (`editsSince`). -/
+def keysChangedSince (w : World) (id : String) (seen : Nat) (d : RelDecl) : Option (List Data) := do
+  let es ← editsSince w id seen
+  (es.filter (·.1 == d.field)).mapM fun (_, k) => match parseKind k with
+    | some (.insert row) | some (.upsert row) => (keyOf d row).toOption
+    | some (.retract key) => (keyAsDeclared d key).toOption
+    | _ => none
+
+/-- The index entries an admitted entry adds (`World.touches`), from its `writes`. -/
+def touchesOf (entry : Json) : List (String × Touch) :=
+  let ws := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
+    |>.bind (·.getArr? |>.toOption)).getD #[]
+  ws.toList.filterMap fun x => do
+    let id ← (x.getObjValAs? String "object").toOption
+    let version ← (x.getObjValAs? Nat "version").toOption
+    let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    let edits : Option (List (String × Data)) :=
+      if kinds.any (fun k => k.getNat?.toOption != some 0) then none else
+      steps.foldlM (init := []) fun acc step => match decodeData Limits.dataDepth step with
+        | .ok (.record fs) => some (acc ++ fs.filter fun (_, k) => match k with
+            | .variant "keep" _ => false
+            | _ => true)
+        | _ => none
+    return (id, { version, edits })
 
 /-- A root `id` the turn read at `seen` that has moved since may still commit when every change the
     turn makes of it is an ordinary write and each edit either commutes (`EditKind.commutes`), or
@@ -1765,7 +1760,9 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
       | none => w.receipts.insert key index
       | some i => if tagOf w.entries[i]! == "suspended" || isTransient w.entries[i]! then w.receipts.insert key index
           else w.receipts
-    touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched }
+    touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
+    touches := if tagOf entry != "admitted" then w.touches else
+      (touchesOf entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches }
 
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
     World × Json :=
