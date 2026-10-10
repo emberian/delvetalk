@@ -442,6 +442,13 @@ class Suspended(BridgeCase):
 
 
 class Slugs(unittest.TestCase):
+    def test_a_loopback_origin_gives_no_link_and_the_receipt_line_and_slug_stay(self):
+        receipt = {'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}}
+        for origin in ('http://127.0.0.1:8766', 'http://localhost:8765', 'http://[::1]:8765'):
+            self.assertEqual(bridge.receipt_line(receipt, origin), 'receipt babab-dabab: garden v3 at height 9\n')
+        self.assertEqual(bridge.receipt_line(receipt, 'https://gsb.fg-goose.online'),
+                         'receipt babab-dabab: garden v3 at height 9\nhttps://gsb.fg-goose.online/o/garden#v3\n')
+
     def test_a_draft_cites_the_slug_and_carries_no_cid(self):
         import re
         receipt = {'hash': 'bafyrei' + 'a' * 52, 'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}

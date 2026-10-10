@@ -7,6 +7,7 @@ Run as `python3 -m transport.bridge`.
 """
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -65,10 +66,19 @@ def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
 
+def reachable(origin):
+    """An origin someone else can open: not loopback (`localhost`, 127/8, ::1), whose links reach nobody but this machine."""
+    host = urllib.parse.urlsplit(origin or '').hostname or ''
+    try:
+        return bool(host) and host != 'localhost' and not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return bool(host) and host != 'localhost'
+
+
 def cite(object_, version, origin=None):
-    """`<object> v<n>` and, with an origin, its short link on the next line. Posts never carry a hash or a blob."""
+    """`<object> v<n>` and, with a reachable origin, its short link on the next line. Posts never carry a hash or a blob."""
     text = f'{object_} v{version}' if version is not None else str(object_)
-    link = f'\n{origin.rstrip("/")}/o/{urllib.parse.quote(str(object_), safe="")}#v{version}' if origin and version is not None else ''
+    link = f'\n{origin.rstrip("/")}/o/{urllib.parse.quote(str(object_), safe="")}#v{version}' if reachable(origin) and version is not None else ''
     return text, link
 
 
