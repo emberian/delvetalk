@@ -1945,43 +1945,43 @@
  "Lantern": {
   "entries": {
    "defaultSeed": {
-    "packet": "bafyreid3afhvuirku7bupjgsqjywgd6hz6cwcui6uc55hhruw73smrqtvq",
+    "packet": "bafyreie3pz5tgs2ymyeaurvpzrevtqd5rvl2kksvtnskyddvjpzp7czzz4",
     "status": "compiled"
    },
    "door": {
-    "packet": "bafyreif2y452uobswvpeyixydtpratgjmjddfjg5c4xlz43qmwvdqled7q",
+    "packet": "bafyreihsewf3jzmsbg2hq5avk7jltck6e6lyueyltglesh2hcded4pmuxa",
     "status": "compiled"
    },
    "forms": {
-    "packet": "bafyreicj3a2wm2bdnmzywau4u6grxr4kmpvb4hwgrnl3hlvxvllp5chjgi",
+    "packet": "bafyreiejkxjkgeu6dvd4ptibqjqdanpmr27joepqsk7ej3g53vpx2zouli",
     "status": "compiled"
    },
    "heard": {
-    "packet": "bafyreia4gyeg346nulqbl4nofsu5cznid65s52hdb7ekjrvf6fzmqxwg2e",
+    "packet": "bafyreiel6kyoesxqhmlcmd7vkapks5k3ykegnh2ouht26grsz5u4wax6g4",
     "status": "compiled"
    },
    "initial": {
-    "packet": "bafyreidqnhmmwnrj4lq2fgl5h3wpsaqjnwptrxusd6qb3h6rupnbyb2flq",
+    "packet": "bafyreihqql7ykn55f65ximjsznanl5sbt24gi4lfbvk27air73dvvu6fv4",
     "status": "compiled"
    },
    "light": {
-    "packet": "bafyreiclylvjxytuq6pnhmlk3lmck3lqudbu4x3a42jiu64wjprzjdfgxa",
+    "packet": "bafyreif5aumyk7ekt5wkwcsioq45gu7st2vof5fuut4sbde7nxwfmdfzcq",
     "status": "compiled"
    },
    "receive": {
-    "packet": "bafyreihx5bl32cjwjmdqlcf4hqifm2ditdylmxrosai462abtt2iksg5k4",
+    "packet": "bafyreihcqujbhk36nvn2yn67ec2vgj4ybg4rtnpjyemkdsctnmt2bm3sd4",
     "status": "compiled"
    },
    "render": {
-    "packet": "bafyreie2dvjq22ihexxaxszyuz3sv7jgwt6ljjohs5jz4mwijjirxqv4gq",
+    "packet": "bafyreidp6x2sfqtq4fx3cxmpbe35i7p4m7nyfoueflkovczfxzu6sty5w4",
     "status": "compiled"
    },
    "seeded": {
-    "packet": "bafyreifg5n73mltwpvybuzjbmthrqdkuuowwfatdkubte26rqx6efpioza",
+    "packet": "bafyreiciodj5vfqcvyt7vgicqfvqhe2wioknylht2kfmterbzvpyfxbn3u",
     "status": "compiled"
    }
   },
-  "pin": "bafyreiffzkcfs6mosasibkxjlmevb7z76526dzte26qcinfhp24uerviee"
+  "pin": "bafyreig5c3o2xmjj7tnmmev3xwam22peq6trumprkljxo7c2ccxhzwmbsq"
  },
  "List": {
   "entries": {},

@@ -22,20 +22,21 @@ def initial() -> State:
   seeded(defaultSeed())
 # Light the lantern and remember who did: the turn's principal.
 def lit<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit::<Bool, {}>.set({value: true}), litBy: Plans.Edit::<String, {}>.set({value: context.principal})}})):
-    case _: then(true)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit.set({value: true}), litBy: Plans.Edit.set({value: context.principal})}}))
+  then(true)
 def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  lit::<Bool>(state, context, fn(done: Bool) -> Bool: done)
+  lit(state, context, fn(done: Bool) -> Bool: done)
+form light:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "light", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})
+  Card.Forms.cons({head: lightForm(), tail: Card.Forms.nil()})
 def door() -> Card.Door:
   {word: "lantern", blurb: "Light it, or let a door light it."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): lit::<Card.Reply>(state, context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
+    case act(a): lit(state, context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case _: Card.answer(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(if state.lit then textConcat("The lantern is lit by ", textConcat(Card.name(state.litBy, context), textConcat(Card.mine(state.litBy, context), ".\n"))) else "The lantern is dark.\n")
+  Document.text(if state.lit then "The lantern is lit by {Card.name(state.litBy, context)}{Card.mine(state.litBy, context)}.\n" else "The lantern is dark.\n")
