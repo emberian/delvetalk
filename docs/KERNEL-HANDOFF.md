@@ -419,3 +419,24 @@ token stream of a message checkpoint gains two leading tokens.
   Artifact (message activities only): `dialect: "message"`, `world` (methods the entry's
   sites name, first occurrence), `worldProtocol` (the World module's source SHA-256 hex).
   Tests: `tests/test_world_calls.py` `SiteTypes`.
+
+## 18. Turn performance (docs/PERF.md items, lane/kernel6)
+
+- In-process yields carry the state. `concludeStep` returns a `Step` whose yield holds a
+  `Suspension {pin, binding, dictionary, site, state}`: the state as the machine left it,
+  neither collected nor encoded. `Suspension.checkpoint` makes the `Checkpoint`
+  (`encodeStateV3` of `checkpoint state`, site prefix, digest) only when asked.
+  `resumeSuspended entry suspension binding value budgets` resumes it with the same
+  refusals as `resumeEntry` (activity shape, package, binding) and no encode, digest or
+  decode. Invariant, from theorems that exist: resuming `checkpoint state` (what
+  `resumeEntry` decodes, `stateV3_roundTrip`) decides the same verdict, spends the same ticks
+  and extracts the same Plan or result as resuming `state`, each under `limitsPast` of its own
+  heap (`checkpoint_resume_segment`). Runners: `startEntryStep`, `resumeEntryStep`,
+  `resumeSuspended` (Step), with `startEntry`/`resumeEntry` their `Step.outcome`. The host's
+  `drive` switches by taking a `Step`, passing `suspension.checkpoint` only to the `await*`
+  and `interpret` paths, and resuming every other Plan with `resumeSuspended` (the host
+  lane's change). Measured with that change applied on hbox (`compile-profile replay` of
+  the rehearsal stream, directory `receive`, 120 turns, `taskset -c 0-15`, load ~16): 5,102
+  to 5,505 ms before, 2,123 to 2,474 ms after (2.2 to 2.6x); the whole replay's user
+  instructions 322 G to 160 G; ticks identical (12,489,187).
+
