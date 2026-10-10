@@ -5,6 +5,7 @@ import Delvetalk.Host.Store
 import Delvetalk.Host.Journal
 import Delvetalk.Host.Law
 import Delvetalk.Host.Slug
+import Delvetalk.Host.DiskCache
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -1421,12 +1422,27 @@ def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
     c.entry.source.assumptions.rigid, some c.entry,
     some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
+/-- A compiled definition from its packet: decoded and re-checked by Mini (`CheckedEntry.ofPacket`). -/
+def compiledOfPacket (packet : Json) : Option Compiled := do
+  let e ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  return ⟨packet, e.type, e.source.assumptions.bounds, e.source.assumptions.rigid, some e,
+    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
+
+/-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`. -/
+def diskCompiled (key : String) : Option Compiled :=
+  (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map DiskCache.hit
+
+/-- The on-disk form of a compiled definition. -/
+def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
+
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 
-/-- An object's definition `name`, compiled and prepared (from the world's cache when warm). -/
+/-- An object's definition `name`, compiled and prepared (from the world's cache when warm, else
+    the disk's). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
   if let some c := w.compiled[defKey o name]? then return (c, w)
+  if let some c := diskCompiled (defKey o name) then return (c, w)
   let (c, w) ← compileEntryIn w o.inputs name
   return (← compiledOf c, w)
 
@@ -2093,8 +2109,34 @@ def defaultLaw (creator : String) : Except String Law := do
 
 def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
+/-- The on-disk form of a compiled package: its artifact (with the packet), its laws as text, its
+    relations and the methods it declares public. -/
+def builtJson (key : String) (b : Built) : Json :=
+  Json.mkObj [("key", toJson key), ("artifact", b.artifact), ("laws", toJson (renderLaw b.laws)),
+    ("relations", Json.arr (b.relations.toArray.map fun d =>
+      Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)])),
+    ("exposed", toJson b.exposed)]
+
+/-- A compiled package from its on-disk form; the packet is decoded and re-checked by Mini. -/
+def builtOf (j : Json) : Option Built := do
+  let artifact ← (j.getObjVal? "artifact").toOption
+  let packet ← (artifact.getObjVal? "packet").toOption
+  let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  let decoded ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).toOption
+  let laws ← match (j.getObjValAs? String "laws").toOption with
+    | some "" => some []
+    | some text => (parseLawText text).toOption
+    | none => none
+  let relations ← ((j.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).map fun ds => ds.toList.filterMap fun d =>
+    match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
+    | .ok field, .ok key, .ok limit => some ({ field, key, limit } : RelDecl)
+    | _, _, _ => none
+  let exposed ← (j.getObjValAs? (List String) "exposed").toOption
+  return { artifact, ty := entry.type, laws, assumptions := decoded.source.assumptions, relations, exposed }
+
 def compileObject (w : World) (inputs : Json) : Except String Built := do
   if let some b := w.builds[buildKey inputs]? then return b
+  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
   let resolved ← resolveInputs w inputs
   -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
   let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render

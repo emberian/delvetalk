@@ -461,6 +461,26 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    and calls it; a form naming a method its card does not offer is `unclear`). The World.obend line
    and the Directory's `world.call::<Data>({object, method, argument})` are the objects lane's.
 
+65. **`receiveArgument` and the old item labels deleted (host10).** `receive` takes `{text, post}` as sent;
+   `amend {item}`/`remove {item}` are gone (`EditKind.amendItem`/`removeItem` only).
+
+66. **The on-disk compile cache (host10; §7 item 1 of host9).** With `DELVETALK_COMPILE_CACHE=<dir>` in the
+   host's environment (hostd's children inherit it; off by default), compiled packages (`build-<cid>.json`:
+   artifact with packet, laws as text, relations, declared methods; `builtJson`/`builtOf`) and compiled
+   definitions (`def-<cid>.json`: the packet; `compiledJson`/`compiledOfPacket`) are kept under
+   `<dir>/<size>-<mtime sec>-<mtime nsec>` of `IO.appPath`, so another binary never reads them (the
+   operator removes old stamps). Files are named by the CID of the key (`buildKey`, `defKey`) and carry
+   it. Reads (`Host/DiskCache.lean`) are a memo of a pure function (`read` is `none` in the model,
+   `implemented_by` a file read) at the three compile points: `compileObject` (creation, replay),
+   `compileDef` and `compiledMethod`, after the world's own caches. Every packet read is decoded and
+   re-checked by Mini (`CheckedEntry.ofPacket`), so a damaged file compiles again; the directory is in
+   the TCB as the binary is (a forged packet that type-checks need not be its source's). Writes are
+   the session's: after every op `persistCaches` writes each key the process holds that it has not
+   written or seen (to a temporary name, then renamed). `world-status.compileCache {dir, hits, known}`
+   (null when off). Measured on hbox (load ~17), `world-create` of Place, Garden, Directory, Thing in a
+   fresh process: 300/459/265/313 ms off, 70/135/66/86 ms with a warm cache (2.1 MB on disk). Test:
+   `tests/test_compile_cache.py` `DiskCache`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

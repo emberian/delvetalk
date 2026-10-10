@@ -231,8 +231,12 @@ def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M 
 def compiledMethod (obj : Object) (method : String) : M Compiled := do
   let key := obj.inputsKey ++ "/" ++ method
   let s ← get
-  match s.world.compiled[key]? with
-  | some c => return c
+  match s.world.compiled[key]? <|> diskCompiled key with
+  | some c =>
+    unless s.world.compiled.contains key do
+      let cache := if s.world.compiled.size < Limits.maxCompiledPackets then s.world.compiled else {}
+      set { s with world := { s.world with compiled := cache.insert key c } }
+    return c
   | none =>
     -- A method (of a layer stack too: the kernel resolves it with late binding) is compiled from
     -- its package's closure prepared once, and held decoded and checked.
