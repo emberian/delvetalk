@@ -191,11 +191,8 @@ Thing, Avatar** (and Seats/Encounter libraries they use).
   (test_http directory card).
 
 **Remaining, in order.**
-1. Merge the host10 foundation merge, then flip the expectedFailures it answers:
-   test_hub's policy case (now `test_with_a_policy_the_models_spell_runs_on_the_door_it_names`)
-   and its confirm case (expected text: the door's usage template), test_spell_turns
-   `Interpreted` ×2, test_sum_words' proposal case, AnthologyReachable, HandedToTheDirectory,
-   test_places `Scoped`. test_outbound's slot case belongs to that merge.
+1. `git merge foundation` once the host10 merge lands. The expectedFailures it answers are already
+   flipped (df72541, green against its binary); test_outbound's slot case comes with that merge.
 2. Place, Thing, Avatar together (Thing and Avatar import Place's State/Done; WORLD-REVIEW 20
    moves those types to a library so Place can declare `law owner`). Lenses as data plus `set`
    (Place and Thing: name/description; Avatar: handle; Thing: copyable). Avatar's mailing list
