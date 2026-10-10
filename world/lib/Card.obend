@@ -101,8 +101,9 @@ def segment(did: String) -> String:
   if at == textLength(did) then did else segment(textDrop(did, at + 1n))
 def shortened(fragment: String) -> String:
   if textLength(fragment) > 8n then "…{textDrop(fragment, textLength(fragment) - 8n)}" else fragment
-# The first lines of a list, at most `shown` of them and at most `budget()` characters, then
-# "… and N more": a card stays under 1,400 characters however long its lines are.
+# The first lines of a list, at most `shown` of them and at most `budget()` characters with
+# "… and N more" counted among them: a card stays under 1,400 characters however long its
+# lines are.
 def budget() -> Nat:
   1200n
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
@@ -114,8 +115,12 @@ def kept(lines: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Documen
   match lines:
     case nil(_): lines
     case cons(c): keptLine(c.head, Document.size(c.head), c.tail, shown, room, left)
+# A line is kept when it fits with, if rows follow it, the footer they may need.
 def keptLine(line: Document.Document, size: Nat, rest: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Document.Documents:
-  if shown == 0n || size > room then Document.Documents.cons({head: Document.text("… and {natText(left)} more\n"), tail: Document.Documents.nil()}) else Document.Documents.cons({head: line, tail: kept(rest, shown - 1n, room - size, left - 1n)})
+  let after = if left > 1n then textLength(more(left - 1n)) else 0n
+  if shown == 0n || size + after > room then Document.Documents.cons({head: Document.text(more(left)), tail: Document.Documents.nil()}) else Document.Documents.cons({head: line, tail: kept(rest, shown - 1n, room - size, left - 1n)})
+def more(left: Nat) -> String:
+  "… and {natText(left)} more\n"
 # Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
 # its Edits (`Plans.Entries<Doorway, Doorway>`), offers the `door {label, to}` and `undoor
 # {label}` forms to its owner (`doorAdd`, `doorRemove`: refused by name to anyone else, and by
