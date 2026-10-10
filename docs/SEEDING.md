@@ -108,7 +108,7 @@ spells so that each has a planting post for `strike` to await.
 | `orchard` | Place | "The Quiet Orchard"; exits `porch`, `ledger`; no things | ember | mimo's; the place with no trace yet |
 | `clapper` | Thing | name "the clapper"; location `porch`; holder nobody; `copyable: false` | ember | one thing to tend and to give; arc 1's gift |
 | `lamp` | Thing | name "the lamp"; location `ledger`; `copyable: true` | ember | copy as a right: every room gets a lamp |
-| `cistern` (genesis, reprogrammed) | Cistern + §7 | `level: 0`, `pours` empty | ember | arc 2's centre |
+| `cistern` (genesis) | Cistern | `level: 0` (the law `monotone(level)` set at creation) | ember | arc 2's centre |
 | `sluice` | Door | nothing (shut, no watcher) | ember | opened by the flood; unposted until it opens |
 | `lantern` | Lantern | then `world-turn lantern watch {object: "sluice"}` | ember | lights when the sluice opens |
 | `rooms/tube` | Scene | made by post 10's spween block, not by seed | ember | arc 3's unwritten passage |
@@ -182,7 +182,7 @@ it: T2 fires when `level` passes 40 and calls `knock` on `sluice`; the door
 opens, `openedBy` the wake; `lantern`, watching the door's `open`, lights.
 What changes: the sluice's card is posted for the first time ("The door is
 open, opened by …"), the lantern's card is posted, and `delvetalk cistern
-publishPage / page: Cistern` publishes the pours as a page. How it ends: a
+publishPage / page: Cistern` publishes the level as a page. How it ends: a
 door opens once; the cistern keeps filling and the next threshold, if there is
 one, is a new trigger and a new door. If someone finds the sluice by its id
 and knocks before the flood, the door opens to them; the knock is retained
@@ -206,8 +206,9 @@ note saying so.
 
 ## 5. Rhythm
 
-Nothing in the world recurs by itself: a Wake `schedule` fires once, an
-Appointment once, and the Loop only until its causal budget ends. The clock
+A Wake `schedule {at, every}` recurs on its own (at most eight standing per
+Wake; genesis gives the opener's Wake an hourly `tide tick`), an Appointment
+fires once, and the Loop only until its causal budget ends. The clock
 moves every minute (`world-advance` by transport), so every suspended wait
 resumes on time, and every trigger below fires on another's write with nobody
 posting. The hand adds two spells a day.
@@ -261,10 +262,11 @@ posts replying to replies, each ending in one spell.
 
 ## 7. To add before launch
 
-- **Cistern gains a level** (arc 2): reprogram the genesis `cistern` with
-  `level: Nat`, `pours: Relation<Pour {who, handle, text, at, n}>` (256) and
-  `form pour: text 1..140`, which inserts the pour and adds one to the level.
-  Law: `law level "the level only rises": monotone(level)`. `retain` stays.
+- **Cistern has a level** (arc 2, landed): `level: Nat` and `pour {amount:
+  natural 1..20}`, which adds to the level; the card shows the level. Law:
+  `law level "the level only rises": monotone(level)`, produced by
+  `Cistern.lawText(creator)` because an imported module may not carry a law,
+  and set by whoever creates a cistern.
 - **Avatar `go {place}`** (the floor): an avatar whose `at` is nobody cannot
   `move`, since `move` reads the current place's exits; `enter` on a place
   admits the principal but leaves `at` unset. Add `form go: place: text
