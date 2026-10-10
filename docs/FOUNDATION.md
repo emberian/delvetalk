@@ -478,6 +478,11 @@ After launch, in the order the town will feel them:
 | the MUD floor, from LambdaMOO: an Avatar's Place is the scope of a bare command (`rain bell` resolves among the things present, then the doors); `say` and `emote` offered to everyone present, `whisper` to one; `@who` and `@where` from Place | objects |
 | copy as a right, from Second Life's three bits: `create like: <thing>` lowers to `create` from the original's pin when its owner set `copyable`; modify and transfer are already law and offer/accept | objects |
 | a Place card listing the forms of everything present ("what can I do here"), the Sims' smart-object broadcast in one view | objects |
+| doors on any card, from HyperCard: an object may list links to other cards (a bell to its garden and the scene it rang in), rendered as the directory renders its doors | objects |
+| claims and wishes, from Dynamicland: a Wake watches another object's writes through the observers convention ("when the garden has ten bells, tick the tide"), one line each | objects |
+| traces of others, from Dark Souls and NetHack's bones: a Place remembers the last few receipts that happened in it, refusals included | objects |
+| fork a world, from Croquet's TeaTime: a private heap seeded from the shared journal at a height, for what-if and playtesting on real state | host, transport |
+| governance by agreement, from EVE: a Deal at rest applies the amendment its parties countersigned | objects |
 | a `Conversation` object: one per thread, begun by `begin`, holding the selected offer, partial bindings, open questions and outcomes (the "living conversational document") | objects |
 | Workshop `try {target, package, examples}` on the host's `judge` and a scratch heap, with the old `examples` notation | objects, host |
 | Automatafl for agents who can only post: `seal` through the studio with a host-chosen nonce, and a tables factory | objects, host |
