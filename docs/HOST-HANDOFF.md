@@ -1129,6 +1129,60 @@ dropped from this list: `proposed` by name (`4f8af5c`), Deal under kind 3 (`7017
 `proposals` arm and Bell's `actions` (`65c477f`), the Bell's limits under 5.108 (`8ddd2c4`), the
 transport on reservations, retries and cursors (`d99d691`, `e1f3359`, `e8cf553`).
 
+- **`serve` (host13, building; docs/FEDERATION.md §1, §7 row 1).** `delvetalk-obend serve --state DIR
+  [--opener DID] [--library DIR] [--sync none|fsync|full] [--clock P]` is the one process that holds
+  the worlds: it replaces `transport/hostd.py` and `hostproc.py`'s process management.
+  - *Lock and files.* An exclusive `flock` on `DIR/journal.lock` before anything else is touched; a
+    second `serve` on the directory exits 75 saying "second writer" (deploy/one-writer.sh's contract).
+    `DIR/hostd.pid` holds the pid and is rewritten per op (the liveness touch); `DIR/host.sock` and
+    `DIR/owner/owner.sock` are created mode 0600 under umask 0177, the owner socket in a directory the
+    front's and bridge's containers do not mount. The library is sealed as hostd seals it: `DIR/library`
+    rebuilt at start from `--library` plus `world/objects/{Avatar,Env,Wake}.obend` (arrival's packages).
+  - *Worlds.* A world is `DIR/<name>.journal`, `name` `[a-z][a-z0-9-]{0,31}` and not one of `did zulip at
+    world me scratch`. The envelope's `world: <name>` addresses it (absent: `town`); the first op naming
+    it opens it (`world-open` with the clock, opener, library and librarian, sync), so a world that does
+    not exist yet is created by its first op exactly as hostd's journal was. Its name is journaled once, a
+    `named {name}` entry (identity `world/name`; replay sets `World.name` and refuses a second; the
+    snapshot carries it), and a world opened under another name than it holds is refused by name. No
+    replay edition change: a journal without `named` replays as before. A world idle 10 minutes is closed
+    (its store dropped, its file lock released) and reopened by replay on its next op. `heap: <did>`
+    stays (`DIR/heaps/<did>.journal`, librarian the DID) until scratch worlds replace it; `stateless:
+    true` runs on a journal-less session holding the sealed library (compile, check, run).
+  - *The loop.* One thread. A small C shim (`spec/native/serve.c`, beside `sync.c`) listens on both
+    sockets with a backlog of 128, accepts every connection, reads newline-framed JSON from each (16 MiB a
+    line), and hands Lean the next complete line in arrival order (poll order of completion), with the
+    socket it came on; Lean answers it and the shim writes the reply line. So connections are concurrent
+    and ops run one at a time in arrival order, as hostd's `self.order` lock made them. SIGTERM and SIGINT
+    end the loop after the op in hand; the sockets and pid file are removed.
+  - *The owner socket.* The ops only the operator runs (`world-open`, `world-library`, `world-fork`,
+    `world-snapshot`, `library-load`, and ROOT's root ops when they land) are refused on `host.sock`
+    ("<op> is the owner's: the owner socket takes it"); `owner.sock` takes every op. Turns by the
+    opener's principal stay on `host.sock`: the opener is also a resident the bridge speaks for.
+  - *Replies hostd made.* `hostd-info` answers `{status: "hostd", hostSha256, pid, library, replay}`:
+    the binary's SHA-256 cached in `DIR/binary-pin` by path, size and mtime as hostd did, the sealed
+    library's pin, the replay edition. `serve-status` answers `{worlds: [{name, height, objects, clock,
+    open}]}`.
+  - *What goes.* The per-op wall timeout: hostd killed a host that did not answer in 120 s and
+    respawned it by replay. In one process there is nothing to kill without losing every world's store;
+    every op is already bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s own socket
+    timeout still answers `hostTimeout` to a caller. A hung op is a host bug, seen as `hostTimeout`
+    lines in the access log. The clock is unchanged: the bridge's `tick` sends `world-advance` as the
+    clock principal (hostd ran no clock loop).
+  - *Acceptance.* `tests/test_serve.py` runs `tests/test_hostd.py`'s cases against the Lean server
+    (one chain under concurrent clients, the second writer's 75, the private socket and pid touch,
+    replay to the same receipts after a restart, heaps and stateless as separate worlds, the opener and
+    sealed library, arrival's packages, compile by pin, a connection per thread surviving a restart,
+    a write not re-sent on a broken connection) and the owner socket's refusals. The transport lane
+    then points `tests/host.py` and every program at it and deletes hostd.py and hostproc.py's
+    process management.
+- **Streaming open (host13, after `serve`).** Resume from the latest snapshot and read only the
+  entries after it, holding the live state and its indexes rather than every entry; verify the chain
+  as it streams; target on the 18 MB journal of 5.124: peak memory near the live state's size, open
+  under a second from a snapshot. Then `maxJournalBytes` to 4 GiB and the snapshot cadence a
+  `world-open` setting (every N entries, default 1,000); a test opening 20,000 entries past a snapshot
+  within the memory bound. The reads that walk `World.entries` (history, entries, receipts by index,
+  sources, publications) read the journal file by offset instead. Design here first: the replay
+  edition may move.
 - **`world-posted` without `intent`** (host): the transport now reserves every post, so `postedOp`
   can refuse a `posted` naming no intent (one line). Closed by a test in `tests/test_post_reserve.py`.
 - **A receipt by intent apart from by slug** (transport; review docs 6): `/receipt/<x>` resolves a
