@@ -535,3 +535,13 @@ fixture recorded by the foundation binary).
   malformed separator inside a separator was an old divergence the shifted stream
   exposed). 1500-case report: 1445/1500 agree per evaluator, 55 known shared-effect,
   0 unexpected (120 cases hold a `refuse`).
+- Pin fixture keyed by source (after host6 made an object's pin its source closure).
+  `tests/fixtures/pins/artifacts.json` is `{module: {pin, entries: {def: {status,
+  packet?}}}}`: `pin` = the closure's `sourcesSha256` (null for a library module none of
+  whose defs compile alone). `tests/test_artifact_pins.py` fails only when a module's
+  source pin changes or a def that compiled stops compiling; packets that recompile
+  differently are counted and printed ("PinsA: N entries recompiled to a different
+  packet"). Since the pin depends on world sources alone, re-record only when world/
+  changes, with any binary: `DELVETALK_OBEND=... python3 -m tests.test_artifact_pins
+  --record`. Recorded at foundation d547bae by that binary (40 modules, 778 defs); this
+  lane's binary: 0 recompiled differently.
