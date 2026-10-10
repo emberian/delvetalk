@@ -112,28 +112,30 @@ confirmed post, post.py calls the host's `world-posted` for it, so every card po
 is recorded in the same step (replies to it then route to that object). Post a card
 without `--object` only if no object should hear its replies.
 
-## The daily loop
+## Open the hand
 
-The front, the bridge (every 60 s) and the interpreter keep running. One round by hand:
+The front keeps running, and the bridge and interpreter run against hostd (`bridge run --poll`, `interpret run --poll`, or
+`--once` by hand as in "First start"). The owner works the town from the hand, a console the front serves at `/hand/`
+only when it is started with a secret:
 
-    docker compose run --rm delvetalk-bridge python3 -m transport.bridge run --once --observe \
-      --state /data/state
-    docker compose run --rm delvetalk-interpret python3 -m transport.interpret run --once \
-      --state /data/state
-    docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
+    python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
 
-Each draft in the outbox prints its own command. It posts the draft as a reply, records it
-with the host and marks it posted:
+(in compose, add those arguments and the credentials mount to `delvetalk-http`; the front's port is not public, so
+reach it by a forward):
 
-    python3 -m transport.post --state STATE post --draft <file> --intent draft-<name> \
-      --host-socket SOCKET --object <object> [--slot <principal:intent>] --i-am-ember-and-authorize-posting \
-      && python3 -m transport.bridge mark-posted <file>
+    ssh -L 8765:10.10.1.10:8765 root@workhorse     # then open http://127.0.0.1:8765/hand/?token=<secret>
 
-Read the draft, add the credentials mount as above, and run it. A turn that suspends on an
-interpretation has no draft until the interpretation settles; then the bridge drafts what the
-resumed turn offered (none if it offered nothing). A model failure (network, rate limit)
-leaves the interpretation pending and is retried with backoff up to 8 times. Draft
-principals are observed, unverified DIDs.
+The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
+has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
+retries, hostd pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
+the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
+`post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
+draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
+leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
+(what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
+model failure leaves it pending and retried with backoff up to 8 times. Draft principals are observed, unverified DIDs.
+The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own
+`post.py` command.
 
 ## Playtesting in Zulip
 

@@ -376,7 +376,7 @@ def daemon(state, name, interval, step, stop=None, sleep=None):
 def unposted(state):
     for path in sorted((Path(state) / 'outbox').glob('*.json'), key=lambda p: int(p.name.split('-')[0])):
         d = json.loads(path.read_text())
-        if not d['posted']:
+        if not d['posted'] and not d.get('skipped'):
             yield path, d
 
 
