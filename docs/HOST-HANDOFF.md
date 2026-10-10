@@ -1240,6 +1240,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `objects` is no object's id (`validObjectId`). `me ?` already answered the avatar's usage
      (`test_arrive`). Tests: `tests/test_changed.py`.
 
+130. **Two defects rehearsal run 12 found (host15).**
+   - *A creation's law readings:* `makeObject` journaled `renderLaw laws` (no readings), so an object a turn
+     created with a law text lost its readings on full replay (`verify`, a reopen without a snapshot): bare
+     refusals and `inspect`. It keeps the creator's text (`lawText.getD (renderLaw laws)`). Old journals still
+     replay without those readings. Test: `test_law` CreatedReadings.
+   - *An open that journals nothing answers `{}`:* `settingsOp` and `nameOp` answered `Json.null` when the
+     settings or name were already journaled, and `durable`'s settling pass set `delivered` on it (`PANIC at
+     Lean.Json.setObjVal!` on stderr, reopening with a queue left). Test: `test_deliveries` Restart
+     `test_a_reopen_naming_its_settings_settles_the_queue_without_a_panic`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

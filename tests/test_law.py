@@ -9,6 +9,7 @@ package's Bend `law(old, new, request)` judges it under `Bounds.lawTicks`, readi
 
     python3 -W error -m unittest tests.test_law -v
 """
+import os
 import unittest
 
 from tests.test_chain import field
@@ -293,6 +294,59 @@ class Proposed(Reflection):
         r = self.host.send(op="world-reprogram", principal="ember", identity="r2", object="p", version=version,
                            package=PROPOSED + "def migrate(old: State) -> State:\n  {count: 5n}\n", migration="migrate")
         self.assertEqual(r["status"], "admitted", r)
+
+
+class CreatedReadings(Reflection):
+    """Rehearsal run 12: a law given to a turn's `create` was journaled without its readings, so a full
+    replay lost them (refusals and `inspect` bare) and a snapshot written live disagreed with replay."""
+    LAW = 'law cap "at most two": request.method == "bump2" implies new.count <= 2'
+
+    def refused(self):
+        r = self.turn("made", "bump2", record(n=nat(3)))
+        self.assertEqual(r["status"], "refused", r)
+        laws = self.host.send(op="world-inspect", principal="ember", object="made")["laws"]
+        return r["receipt"]["outcome"]["reason"], [(x["name"], x["reading"]) for x in laws]
+
+    def test_a_creators_readings_survive_a_reopen_and_the_snapshot_is_replays(self):
+        from tests.test_objects import closure
+        from tests.test_reflection import PROBE
+        maker = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  n: Nat
+def initial() -> State:
+  {n: 0n}
+def make(state: State, context: Abi.Context) -> Activity<String>:
+  match world.create({package: "Probe", seed: Data.of::<{count: Nat}>({count: 0n}), law: "%s", requireAbsent: {world: "", object: "made"}}):
+    case created(_): "made"
+    case refused(r): r.reading
+""" % self.LAW.replace('"', '\\"'), "make")
+        seen, mods = set(), []
+        for dep in ("Abi", "List", "Form", "Plan", "World"):
+            closure(dep, seen, mods)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-maker", object="maker",
+                           modules=mods + [{"name": "Probe", "source": PROBE}, {"name": "Maker", "source": maker}],
+                           entry="initial", seed=record(n=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+        made = self.turn("maker", "make")
+        self.assertEqual((made["status"], made["result"]), ("admitted", {"tag": "label", "value": "made"}), made)
+        live = self.refused()
+        self.assertIn("at most two", live[0])
+        self.assertEqual(live[1], [("cap", "at most two")])
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        verified = self.host.send(op="world-open", path=self.path, verify=True)
+        self.assertEqual(verified["status"], "opened", verified)
+        self.assertEqual(self.refused(), live)
+        # Replay from the first entry: no snapshot to stand on.
+        self.release()
+        for name in os.listdir(os.path.dirname(self.path)):
+            if ".snapshot." in name:
+                os.remove(os.path.join(os.path.dirname(self.path), name))
+        self.host = self.spawn()
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+        self.assertEqual(self.refused(), live)
 
 
 if __name__ == "__main__":

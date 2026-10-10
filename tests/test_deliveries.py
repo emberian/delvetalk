@@ -221,6 +221,28 @@ class Restart(Deliveries):
         self.assertEqual(len(set(ids)), MAX_DEPTH)
         self.assertEqual(self.fields("loop")["count"], str(MAX_DEPTH))
 
+    def test_a_reopen_naming_its_settings_settles_the_queue_without_a_panic(self):
+        """Rehearsal run 12: an open naming the settings the journal holds answered null, and the
+        settling pass's `delivered` was set on it (`PANIC at Lean.Json.setObjVal!`)."""
+        import json
+        import subprocess
+        from tests.host import binary
+        self.release()
+        self.host = self.spawn()
+        self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
+        self.make("loop")
+        self.turn("loop", "spin", arg("loop"), principal="glm")
+        self.assertEqual(self.pending()["count"], 1)
+        self.release()
+        p = subprocess.run([binary()], input=json.dumps({"op": "world-open", "path": self.path, "clock": "transport",
+                                                         "sync": "none"}) + "\n",
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.stderr, "")
+        self.assertEqual(json.loads(p.stdout.splitlines()[0])["status"], "opened", p.stdout)
+        self.host = self.spawn()
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+        self.assertEqual(self.pending()["count"], 0)       # the open's settling ran the queue
+
     def test_a_created_child_spends_the_storage_its_sends_inherit(self):
         # codex host 9: a creation's state is storage the turn spent; it was not deducted.
         self.make("maker")

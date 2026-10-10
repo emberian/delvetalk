@@ -2618,7 +2618,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
   let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
   let readings := given ++ (artifactReadings b.artifact).filter fun (n, _) =>
     (laws.lookup n).isSome && laws.lookup n == b.laws.lookup n && (given.lookup n).isNone
-  return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty, readings,
+  return ({ pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, state, stateType := b.ty, readings,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet,
             fixed := fixedOf b.artifact, declares := declaresOf b.artifact }, sources)
@@ -2790,18 +2790,19 @@ def libraryOp (w : World) (principal intent : String) (lib : Library) (lawArg : 
 
 The first open that names a clock principal or a posting quota journals a `settings` entry;
 after that both are fixed. `posted` entries record what transport published for an object,
-so a reply to that post can be routed back (`world-addressee`). -/
+so a reply to that post can be routed back (`world-addressee`). An open that journals nothing
+answers `{}`, never null: `durable`'s settling pass sets `resumed`/`delivered` on the answer. -/
 
 def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none)
     (interpretQuota : Option Nat := none) : Except String (World × Json) := do
-  if clock.isNone && quota.isNone && opener.isNone && interpretQuota.isNone then return (w, Json.null)
+  if clock.isNone && quota.isNone && opener.isNone && interpretQuota.isNone then return (w, Json.mkObj [])
   let clockP := clock.getD ""
   let openerP := opener.getD ""
   if w.settled then
     if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) ||
         (opener.isSome && openerP != w.opener) || (interpretQuota.isSome && interpretQuota != some w.interpretQuota) then
       throw s!"the journal records clock {w.clockPrincipal}, postQuota {w.postQuota}, interpretQuota {w.interpretQuota} and opener {w.opener}; the settings differ"
-    return (w, Json.null)
+    return (w, Json.mkObj [])
   if let some c := clock then discard <| boundedText "clock principal" Limits.maxPrincipalBytes c
   if let some o := opener then discard <| boundedText "opener" Limits.maxPrincipalBytes o
   let q := quota.getD 16
@@ -2850,7 +2851,7 @@ def validWorldName (n : String) : Bool :=
 /-- `world-open {name}`: the world's name, journaled once (`named {name}`, identity `world/name`); a
     world that holds another name refuses this one. -/
 def nameOp (w : World) (name : String) : Except String (World × Json) := do
-  if name.isEmpty || name == w.name then return (w, Json.null)
+  if name.isEmpty || name == w.name then return (w, Json.mkObj [])
   if !w.name.isEmpty then throw s!"this journal is the world {w.name}, not {name}"
   unless validWorldName name do
     throw s!"a world's name is a-z, digits and -, starting with a letter, at most 32, and not one of {", ".intercalate reservedWorldNames}"
