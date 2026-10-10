@@ -87,7 +87,7 @@ class PolicyObject(Chain):
                            modules=closure("Policy"), entry="initial",
                            seed=record(owner=label("ember"), model=label("claude-haiku"), system=label("S"),
                                        lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to), macros=nil(),
-                                       confirmFor={"tag": "list", "items": [label(a) for a in ("reprogram", "amend", "give", "offer")]}))
+                                       confirmFor={"tag": "list", "items": [label(a) for a in ("reprogram", "amend", "offer")]}))
         self.assertEqual(r["status"], "created", r)
 
     def card(self, name, principal="glm"):
@@ -109,7 +109,7 @@ class PolicyObject(Chain):
             "✾ INTERPRETATION POLICY\n"
             "\n"
             "Model: claude-sonnet\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, give, offer.\n"
+            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
             "When unsure I escalate to claude-opus.\n"
             "What a card cannot fit twice goes to …r4keeper.\n"
             "\n"
@@ -194,7 +194,7 @@ class PolicyObject(Chain):
             "✾ INTERPRETATION POLICY\n"
             "\n"
             "Model: claude-haiku\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, give, offer.\n"
+            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
             "\n"
             "Only its owner, ember, teaches it.\n"
             "\n"

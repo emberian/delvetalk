@@ -115,7 +115,7 @@ class Resumed(test_chain.Chain):
         self.assertIn("I still need: colour.", missed["receipt"]["offers"][0]["text"])
 
     def test_with_the_default_policy_an_understood_planting_plants_and_the_receipt_answers(self):
-        """Confirmation is per action: the policy's confirmFor (reprogram, amend, give, offer by
+        """Confirmation is per action: the policy's confirmFor (reprogram, amend, offer by
         default) does not name plant, and a garden with an empty confirmFor asks nobody."""
         self.policy()
         self.garden("policy", confirm=False)
@@ -133,7 +133,7 @@ class Resumed(test_chain.Chain):
         _, asked = self.settle(SPELL)
         self.assertEqual(asked["result"]["label"], "confirming", asked)
         card = self.turn("policy", "receive", record(text=label(""), post=label("")), principal="glm")["offers"][0]["text"]
-        self.assertIn("A card asks the speaker first before: reprogram, amend, give, offer, plant.\n", card)
+        self.assertIn("A card asks the speaker first before: reprogram, amend, offer, plant.\n", card)
 
     def test_words_that_are_no_spell_twice_end_with_no_card(self):
         self.policy()
