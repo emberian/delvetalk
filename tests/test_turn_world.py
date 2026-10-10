@@ -64,10 +64,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 5n}
 def addSelf(context: Abi.Context, n: Nat) -> Activity<Nat>:
@@ -307,10 +303,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   names: Lists.List<String>
-record Edits:
-  names: Plans.Entries<String, String>
-def keep() -> Edits:
-  {names: Plans.Entries.keep({})}
 def initial() -> State:
   {names: Lists.List::<String>.nil()}
 def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:

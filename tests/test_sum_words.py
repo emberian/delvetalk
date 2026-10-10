@@ -28,8 +28,6 @@ import ./Form.obend as Form
 import ./World.obend as World
 record State:
   planted: String
-record Edits:
-  planted: Plans.Edit<String, {}>
 sum Colour:
   amber: {}
   violet: {}
@@ -39,8 +37,6 @@ record Planting:
   seed: String
 def initial() -> State:
   {planted: ""}
-def keep() -> Edits:
-  {planted: Plans.Edit.keep({})}
 def colourText(c: Colour) -> String:
   match c:
     case amber(_): "amber"

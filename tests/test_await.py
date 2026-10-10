@@ -32,10 +32,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 law cap: new.count <= 0
 def initial() -> State:
   {count: 0n}
@@ -109,10 +105,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   made: Nat
-record Edits:
-  made: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {made: Plans.Edit.keep({})}
 def initial() -> State:
   {made: 0n}
 def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) -> Activity<String>:
@@ -282,10 +274,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 def wait(state: State, input: {post: String, text: String}, context: Abi.Context) -> Activity<Nat>:

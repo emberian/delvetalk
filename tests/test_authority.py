@@ -32,15 +32,8 @@ record State:
   lastBy: String
   entries: Lists.List<String>
   planting: String
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  lastBy: Plans.Edit<String, {}>
-  entries: Plans.Entries<String, String>
-  planting: Plans.Edit<String, {}>
 def initial() -> State:
   {count: 0n, lastBy: "", entries: Lists.List::<String>.nil(), planting: ""}
-def keep() -> Edits:
-  {count: Plans.Edit::<Nat, Nat>.keep({}), lastBy: Plans.Edit::<String, {}>.keep({}), entries: Plans.Entries::<String, String>.keep({}), planting: Plans.Edit::<String, {}>.keep({})}
 def out(text: String, n: Nat) -> Out:
   {text: text, n: n}
 def commit(context: Abi.Context, edits: Edits, text: String) -> Activity<Out>:

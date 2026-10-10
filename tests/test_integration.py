@@ -27,8 +27,6 @@ import ./World.obend as World
 import ./Form.obend as Form
 record State:
   seen: String
-record Edits:
-  seen: Plans.Edit<String, {}>
 sum Colour:
   silver: {}
   gold: {}

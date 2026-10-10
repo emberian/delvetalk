@@ -2740,6 +2740,33 @@ def checkProtocols (c : Ctx) (fuel : Nat) : M Unit := do
               (some ("give " ++ method ++ " the type protocol " ++ pname ++ " declares (State, Plan and Response are this module's, the same in every method)"))
               (some declared) (found.map typeText)
 
+/-- A method with a form block takes the block's input record (`form plant` declares
+`PlantInput`): its input parameter, between the State and the context, is that type, and a
+method with none has a block without fields. A block whose action names no method is the
+Form value alone. -/
+def checkFormInputs (c : Ctx) (fuel : Nat) : M Unit := do
+  for m in c.modules do
+    for form in m.forms do
+      let key := m.name ++ "." ++ form.action
+      let some (.function _ params _ body, dm) := declOf c key | continue
+      let types := params.map (trimStr ·.type)
+      unless types.head? == some "State" do continue
+      let context := types.length > 1 && (types.getLast?.map (·.endsWith "Context")).getD false
+      let inputs := (params.drop 1).take (params.length - 1 - (if context then 1 else 0))
+      let at_ : Option Loc := some ⟨dm.name, key, body.span⟩
+      let refusal := fun (found : String) =>
+        failAt at_ ("refused (form-input): " ++ form.action ++ " has a form block, so its input is " ++ form.input)
+          (some ("write `" ++ form.action ++ "(state: State, input: " ++ form.input ++ ", ...)`: the form block is the input's type"))
+          (some form.input) (some found)
+      match inputs with
+      | [] => unless form.fields.isEmpty do refusal "no input"
+      | [input] =>
+        -- A block without fields declares `type NameInput = {}` (resolved away by the generics pass).
+        let expected ← if form.fields.isEmpty then pure (some PTy.emptyRow) else sourceType c fuel form.input m.name []
+        let found ← sourceType c fuel input.type dm.name []
+        unless sameTy expected found do refusal ((found.map typeText).getD input.type)
+      | _ => continue
+
 /-- The protocols module `m` claims (each by its declared name) with their methods' names. -/
 def Ctx.claims (c : Ctx) (m : Module) : List (String × List String) :=
   m.implements.filterMap fun (name, _) => (protocolOf c m name).map fun (_, p, methods) => (p, methods.map (·.1))
@@ -2752,6 +2779,7 @@ def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × P
     for d in m.decls do
       fields ← emitDecl c fuel m d fields
   checkProtocols c fuel
+  checkFormInputs c fuel
   let mut rowFields : List (String × PTy) := []
   let mut unresolved : List String := []
   for (name, _) in fields do

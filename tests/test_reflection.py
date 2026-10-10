@@ -41,8 +41,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Nat>:
@@ -75,13 +73,8 @@ record Arg:
 record State:
   count: Nat
   seen: String
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  seen: Plans.Edit<String, {}>
 def initial() -> State:
   {count: 0n, seen: ""}
-def keep() -> Edits:
-  {count: Plans.Edit::<Nat, Nat>.keep({}), seen: Plans.Edit::<String, {}>.keep({})}
 def bump(state: State, context: Abi.Context) -> Activity<String>:
   note(context, 1n, "bumped")
 def bump2(state: State, input: Arg, context: Abi.Context) -> Activity<String>:
@@ -516,8 +509,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<String>:

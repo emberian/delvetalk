@@ -34,43 +34,33 @@ record Decl:
 record Key:
   author: String
   at: Nat
-sum RowEdit:
-  keep: {}
-  insert: {row: Rain}
-  upsert: {row: Rain}
-  retract: {key: Key}
 record State:
   count: Nat
   rains: Relation<Rain>
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  rains: RowEdit
 def relations() -> Lists.List<Decl>:
   Lists.List.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.nil({})})}), limit: LIMIT}, tail: Lists.List.nil({})})
 def initial() -> State:
   {count: 0n, rains: Relation.rows({items: Lists.List.nil({})})}
-def keep() -> Edits:
-  {count: Plans.Edit::<Nat, Nat>.keep({}), rains: RowEdit.keep({})}
-def edit(context: Abi.Context, e: RowEdit) -> Activity<Nat>:
+def edit(context: Abi.Context, e: Plans.Entries<Rain, Rain>) -> Activity<Nat>:
   match world.write(extend(keep(), {rains: e})):
     case written(_): 1n
     case refused(_): 0n
     case _: 2n
 def insert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
-  edit(context, RowEdit.insert({row: input}))
+  edit(context, Plans.Entries.insert({row: input}))
 def upsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
-  edit(context, RowEdit.upsert({row: input}))
+  edit(context, Plans.Entries.upsert({row: input}))
 def retract(state: State, input: Key, context: Abi.Context) -> Activity<Nat>:
-  edit(context, RowEdit.retract({key: input}))
-def later(context: Abi.Context, e: RowEdit) -> Activity<Nat>:
+  edit(context, Plans.Entries.retract({key: input}))
+def later(context: Abi.Context, e: Plans.Entries<Rain, Rain>) -> Activity<Nat>:
   match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
     case _: edit(context, e)
 def laterInsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
-  later(context, RowEdit.insert({row: input}))
+  later(context, Plans.Entries.insert({row: input}))
 def laterUpsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
-  later(context, RowEdit.upsert({row: input}))
+  later(context, Plans.Entries.upsert({row: input}))
 def laterRetract(state: State, input: Key, context: Abi.Context) -> Activity<Nat>:
-  later(context, RowEdit.retract({key: input}))
+  later(context, Plans.Entries.retract({key: input}))
 """)
 
 

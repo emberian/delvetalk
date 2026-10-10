@@ -23,13 +23,8 @@ import ./World.obend as World
 record State:
   got: String
   note: String
-record Edits:
-  got: Plans.Edit<String, {}>
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {got: "", note: ""}
-def keep() -> Edits:
-  {got: Plans.Edit.keep({}), note: Plans.Edit.keep({})}
 def field(name: String, kind: Form.Kind) -> Form.Field:
   {name: name, kind: kind}
 def forms() -> Lists.List<Form.Form>:

@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (foundation 189b534, after lane/kernel9).
+State on 2026-10-10 (foundation after lane/kernel9; the queue is §16).
 
 ## Summary
 
@@ -12,9 +12,10 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`.
 - Relations (§14, §22): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
-- Checkpoints: edition v3 only (`decodeCheckpoint`), with a site prefix; closures trimmed to the slots they read (§19). Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`; `tests/test_artifact_pins.py` guards that world sources keep compiling.
-- Tests: 1,077 `def test_` across 99 `tests/test_*.py` files. Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_world_calls`, `test_protocols`, `test_canonical_compare`, `test_artifact_pins`.
-- Open: §9 and the queue in §16 (the form-input refusal; `textWords` only if asked; lazy state after launch, §15).
+- Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
+- Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
+- Tests: 1,079 `def test_` across `tests/test_*.py` (lane/kernel9). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
+- Open: section 9.
 
 ## 0. Working rules
 
@@ -326,14 +327,23 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (after lane/kernel9)
+## 16. Queue for the successor (lane/kernel9, after foundation 3f743e2)
 
-Done, each in its own section: checkpoint trimming (§19); the checker over an annotation tree and type equality by shared subtrees (§20); day 4, the message dialect alone (§21); `relationsOf` once per package, `limit`/`retain` in the artifact, `remove`/`amend` by item and `retract` on a relation (§22); the `source` form kind (§8); the State is the schema, derived `Edits`/`keep()`, form-block inputs, derived `forms()` and `fixed` fields (§23). Remaining, in order:
+Done: items 1-6 (kernel7, kernel8: §19-§22); item 8, the State is the schema (kernel9, §23):
+`Edits`/`keep()` derived from `State` and a hand-written pair refused, `fixed` State fields, form
+blocks declaring `NameInput` and `forms()` with the method's input enforced, `form` on method
+rows, `fixed` and `declares` in the artifact. Item 8b needed nothing in the kernel. Remaining:
 
-1. **Commit 3 of §23.** Refuse a method whose input type is not its form block's `NameInput` ("refused (form-input): plant has a form block, so its input is PlantInput", `sameTy` after typing, beside `checkProtocols`; drafted as `checkFormInputs`, not in the tree), then refuse a hand-written `Edits`/`keep()` beside a `State` and a hand-written `forms()` beside form blocks. World objects agree already (Deal's `countersign` takes `{}`); every object still hand-writes `forms()`, the objects lane's deletion.
-2. Name a prepared package by its sources CID (§9, first item).
-3. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both codecs).
-4. After launch: lazy state cells (§15), with the host's half of rows as roots.
+7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
+   native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
+   codecs).
+9. Located refusals from the generics pass: the derived-edits, fixed, form-kind and
+   derived-forms refusals are strings (stage `source-specialization`, no span); a
+   `Generics` error type with a span (the State's, the write's, the form block's) would place them.
+10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
+   be `F.Forms` and drop its List.obend requirement (Counter, Loop).
+11. The host reads `declares` (TurnLoop `declaredForms`, Ops `packageDeclares`) and `fixed`
+   (actions, inspect, the Workshop's `set`): host lane.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -537,8 +547,8 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   resolves each State field's type with `typeOf` and writes, for a module declaring `State` (a
   record, or `type State = M.S` naming one) that imports Plan.obend and declares neither `Edits`
   nor `keep`, the source of §16's pair, parsed by `parseObjective` at the State's span. A list or
-  relation is recognised by its instance (`entriesItem`: declaration `List`/`Relation` in a
-  module some import edge names `List.obend`/`Relation.obend`); a type the module did not write
+  relation is recognised by its instance (`entriesItem`: a one-parameter sum named `List` with
+  cases `nil`, `cons`, or `Relation` with the one case `rows`); a type the module did not write
   is spelled through its own imports (`spell`), refused by name when a module it needs is not
   imported ("refused (derived-edits): State.f holds items of a type from a module M does not
   import"). The pair ends its module and is specialized after every module's own declarations,
@@ -546,8 +556,11 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   (pins: 0 recompiled, including Places and Seats, which gain an unused pair). A module with a
   State, no Plan import and a `keep()` call (every `write {…}`) is refused by the parser
   ("refused (derived-edits): write {...} and keep() derive Edits from State through the Plan
-  library"). A hand-written pair is still accepted (refusing it is §16 item 1); no object in world/ writes one since objects10. Tests: `test_sugar.DerivedEdits` (derived
-  = the pair written at the end of the module, for a write, `keep` and `initial`; `keep()` runs
+  library"). Since commit 3 a declared `record Edits` or nullary `keep() -> Edits` beside a State
+  is refused by the parser ("refused (derived-edits): Edits is derived from State; delete this
+  declaration", at the declaration); any other `keep` (a method) only stops the derivation.
+  Tests: `test_sugar.DerivedEdits` (derived = the same module with State renamed, so nothing is
+  derived, and the pair written at its end, for a write, `keep` and `initial`; `keep()` runs
   to a keep per field in State order; `type State = Lib.State`; the two refusals).
 - With every hand-written `record Edits` and `def keep() -> Edits` deleted from world/objects (a
   scratch copy), every module checks except: Appointment (its `keep` is a method, so nothing is
@@ -575,13 +588,12 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   package (bounds are package-wide), so a module that drops its `forms()` moves its packets
   only if nothing else names that list. Tests: `test_sugar.FormInputs`; `test_sugar.Forms`'s
   explicit spellings now include the `forms()` the block derives.
-- Not yet enforced (§16 item 1): "refused (form-input): plant has a form block, so its input is
-  PlantInput", by `sameTy` of the method's input and `NameInput` after typing (drafted as
-  `checkFormInputs`, not in the tree). World objects agree: Deal's `countersign` takes `{}`
-  (objects10), and Garden's `Planting` equals `PlantInput` (`amber | violet | silver` is
-  `Bell.Colour`). Deleting the hand-written `forms()`: Counter and Loop import no List.obend
-  (derived `forms()` refused by name); Cistern, Seat and Table have no form blocks and keep
-  theirs; the Workshop's `forms()` lists exactly its two blocks.
+- Enforced since commit 3 (`checkFormInputs`, after `checkProtocols`): "refused (form-input):
+  plant has a form block, so its input is PlantInput", with `expected`/`found`, by `sameTy` of the
+  method's input parameter (between State and context) and `NameInput`; a block without fields
+  admits no input or `{}`. Structurally Garden's `Planting` equals `PlantInput` (`amber | violet
+  | silver` is `Bell.Colour`). Counter and Loop import no List.obend, so they keep a hand-written
+  `forms()` until they import it.
 - `fixed` State fields (coordinator's addition before commit 3). `colour: fixed Colour` in
   `record State` (`Surface.Field.fixed`; anywhere else "refused (fixed): only a State field is
   fixed") is a field the derived `Edits`/`keep()` omit, set only by `initial()` or a seed.
@@ -590,5 +602,14 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   `write {...}`) naming one: "refused (fixed): colour is fixed; no edit names it". The artifact of
   an entry whose State has fixed fields lists them, `fixed: [names]` in State order (absent
   otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`.
-  Pins: 0 recompiled. Tests: `test_sugar.FixedFields` (the packet equals the module whose
-  hand-written pair omits the fixed fields; both refusals).
+  Pins: 0 recompiled. Tests: `test_sugar.FixedFields` (the packet equals the State-renamed module
+  whose hand-written pair omits the fixed fields; the refusals).
+- Commit 3 moved 36 test files' fixtures off hand-written pairs (deleted; `test_relation`'s own
+  `RowEdit` sum became `Plans.Entries<Rain, Rain>`, `test_protocols`' line moved 19 -> 15,
+  `test_sugar`'s explicit spellings `Entries<X, {}>` -> `Entries<X, X>`). Pins: 0 recompiled.
+- `declares` (for the host, which scanned the entry source for `def forms(` and so never saw a
+  derived `forms()`): every artifact lists which of `Package.conventionalNames` (forms, methods,
+  relations, views, lenses, law, lawReads, initial, render, receive, blurb, page, publishPage,
+  set) the entry module declares, derived declarations included (`declaredNames` over the
+  generics pass's decoded modules), in that order. The host lane switches `declaredForms` and
+  `packageDeclares` to it. Test: `test_sugar.Declares`.

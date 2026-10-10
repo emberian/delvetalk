@@ -29,13 +29,8 @@ record State:
 record Arg:
   target: String
   left: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  lit: Plans.Edit<Bool, {}>
 %(law)sdef initial() -> State:
   {count: 0n, lit: false}
-def keep() -> Edits:
-  {count: Plans.Edit::<Nat, Nat>.keep({}), lit: Plans.Edit::<Bool, {}>.keep({})}
 def sendTo(target: String, method: String, argument: Arg) -> Activity<Nat>:
   match world.send({object: {world: "", object: target}, method: method, argument: Data.of::<Arg>(argument)}):
     case delivery(_): 1n

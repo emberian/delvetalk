@@ -28,10 +28,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   seen: Nat
-record Edits:
-  seen: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {seen: Plans.Edit.keep({})}
 %s
 def initial() -> State:
   {seen: 5n}

@@ -289,6 +289,18 @@ def fixedFields (modules : List SourceModule) (asts : List Minidregg.Compiler.Ob
     | _ => pure ()
   return []
 
+/-- The conventional declarations a host looks for in an entry module. -/
+def conventionalNames : List String :=
+  ["forms", "methods", "relations", "views", "lenses", "law", "lawReads", "initial", "render", "receive",
+    "blurb", "page", "publishPage", "set"]
+
+/-- Which conventional declarations the modules declare, derived ones included (the decoded
+modules are the generics pass's output), in `conventionalNames` order. -/
+def declaredNames (decoded : List Minidregg.Compiler.ObjectiveBendElaborate.Module) (modules : List String) : List String :=
+  let present := modules.flatMap fun name =>
+    ((decoded.find? (·.name == name)).map fun m => m.decls.map (·.name)).getD []
+  conventionalNames.filter present.contains
+
 /-- The world method a message plan term names (`{object, method: "X", argument}`). -/
 def worldMethodOf : Minidregg.Theory.ObjectiveBendOpenRecursion.Term → Option String
   | .record fields => match fields.lookup "method" with
@@ -338,6 +350,9 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
     ("methods", methods), ("law", law)]
+  -- The entry module's conventional declarations, derived ones included (the host reads this,
+  -- not the source text, so it sees a derived `forms()`).
+  let artifact := artifact.setObjVal! "declares" (toJson (declaredNames prepared.decoded [entryModule.name]))
   -- A State with fixed fields lists them (no edit names one); absent otherwise.
   let fixed := fixedFields modules prepared.asts (modules.length - 1)
   let artifact := if fixed.isEmpty then artifact else artifact.setObjVal! "fixed" (toJson fixed)

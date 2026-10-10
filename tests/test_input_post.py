@@ -24,17 +24,11 @@ record State:
   planted: String
   noted: String
   heard: String
-record Edits:
-  planted: Plans.Edit<String, {}>
-  noted: Plans.Edit<String, {}>
-  heard: Plans.Edit<String, {}>
 record Binding:
   name: String
   value: String
 def initial() -> State:
   {planted: "", noted: "", heard: ""}
-def keep() -> Edits:
-  {planted: Plans.Edit.keep({}), noted: Plans.Edit.keep({}), heard: Plans.Edit.keep({})}
 def plant(state: State, input: {seed: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = world.write(extend(keep(), {planted: Plans.Edit.set({value: textConcat(input.seed, textConcat("@", context.inputOrigin.post))})}))
   1n
