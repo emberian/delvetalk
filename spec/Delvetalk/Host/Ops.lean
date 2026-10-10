@@ -159,6 +159,8 @@ structure CreateRec where
   sources : String
   /-- The final state, on the wire. -/
   seed : Json
+  /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
+  madeFrom : Option Json := none
 
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
@@ -1526,7 +1528,10 @@ def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
-    if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)
+    (if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)) |> fun j =>
+    match c.madeFrom with
+    | some m => j.setObjVal! "madeFrom" m
+    | none => j
 
 structure Judged where
   updates : List (String × Object)
@@ -2034,11 +2039,18 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
 /-- Card names that mean the acting principal's own object: a turn or card naming `env` or
     `wake` runs `env/<principal>` or `wake/<principal>`. No object may take these ids, so no one
     can stand in for another's own. -/
-def ownCards : List String := ["env", "wake"]
+def ownCards : List String := ["env", "wake", "me"]
 
-/-- The object a principal means by `object`: its own for a name in `ownCards`. -/
+/-- The card name for the speaker's own avatar (docs/GROUND.md §6 change 2): the object an arrival
+    makes under the principal's own id (`arrivals`), so a card may print `delvetalk me watch` and
+    never a DID. -/
+def meCard : String := "me"
+
+/-- The object a principal means by `object`: its own for a name in `ownCards` (`me` is its avatar,
+    the object named by the principal itself). -/
 def resolveCard (principal object : String) : String :=
-  if ownCards.contains object then s!"{object}/{principal}" else object
+  if object == meCard then principal
+  else if ownCards.contains object then s!"{object}/{principal}" else object
 
 /-- The principal under which a settled interpretation is journaled. -/
 def interpretationPrincipal : String := "interpretation"
@@ -2504,7 +2516,9 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if let some r := retained w principal intent digest then return (w, r)
   unless validObjectId id do throw s!"object id {id} is not one: {objectIdRule}"
   if id == "self" then throw "object id self is reserved for the running object"
-  if ownCards.contains id then throw s!"object id {id} is reserved: it names each principal's own {id}/<principal>"
+  if ownCards.contains id then
+    throw (if id == meCard then "object id me is reserved: it names each principal's own avatar"
+      else s!"object id {id} is reserved: it names each principal's own {id}/<principal>")
   -- The opener of the world may create an object for its owner: the law (the default law
   -- names the owner) and the metarule are the owner's, the creator is the opener.
   let owner ← optText j "owner"
@@ -2986,7 +3000,7 @@ def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     w := w'
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
-    creates := creates ++ [(id, ({ object := o, sources, seed } : CreateRec))]
+    creates := creates ++ [(id, ({ object := o, sources, seed, madeFrom := (r.getObjVal? "madeFrom").toOption } : CreateRec))]
   return (w, creates)
 
 def replayEntry (w : World) (entry : Json) : Except String World := do
