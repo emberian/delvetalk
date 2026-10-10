@@ -132,6 +132,25 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
 
+    def test_the_stateless_process_holds_the_library_and_compiles_by_pin(self):
+        import tempfile as tf
+        from transport.hostproc import LIBRARY
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID, library=LIBRARY)
+            try:
+                sock = Path(d2) / 'host.sock'
+                pin = HostClient(sock).send({'op': 'hostd-info'}).get('library')
+                self.assertTrue(pin)
+                repl = HostClient(sock, stateless=True)
+                checked = repl.send({'op': 'check-package', 'library': pin, 'entry': 'initial', 'modules': [{'name': 'Tally', 'source': TALLY}]})
+                self.assertEqual(checked['status'], 'checked', checked)
+                dd.stateless.proc.kill()  # a respawn loads it again, before the first request
+                dd.stateless.proc.wait()
+                again = repl.send({'op': 'check-package', 'library': pin, 'entry': 'initial', 'modules': [{'name': 'Tally', 'source': TALLY}]})
+                self.assertEqual(again['status'], 'checked', again)
+            finally:
+                stop_hostd(dd)
+
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
         from transport.hostproc import LIBRARY

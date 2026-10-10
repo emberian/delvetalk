@@ -58,9 +58,9 @@ class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock_fd = take_lock(lock or self.state / 'journal.lock')  # before anything else is touched
         self.binary, self.order = binary, threading.Lock()
-        library = sealed_library(library, self.state / 'library') if library else None
+        library = self.library = sealed_library(library, self.state / 'library') if library else None
         self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener)
-        self.stateless = Host(None, binary)
+        self.stateless = Host(None, binary, preload=library)
         self.heaps = Heaps(self.state / 'heaps', binary=binary, library=library)
         self.pidfile = self.state / 'hostd.pid'
         self.pidfile.write_text(str(os.getpid()))
@@ -78,7 +78,9 @@ class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         with self.order:  # one op at a time, in arrival order
             os.utime(self.pidfile)
             if req.get('op') == 'hostd-info':
-                return {'status': 'hostd', 'hostSha256': self.sha}
+                # the pin of the library the stateless process holds, which `library: <pin>` names to compile and check against it
+                pin = self.stateless.send({'op': 'library-load', 'path': str(self.library)}).get('pin') if self.library else None
+                return {'status': 'hostd', 'hostSha256': self.sha, **({'library': pin} if pin else {})}
             heap = req.pop('heap', None)
             if req.pop('stateless', False):
                 return self.stateless.send(req)
