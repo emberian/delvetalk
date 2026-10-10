@@ -23,16 +23,16 @@ In creation order. Seeds are partial: the host lays each over the package's `ini
 
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
-| `policy` | Policy | owner ember, model `claude-haiku-5-5`, the system line, a lexicon of two terms (`colour`, `seed`), two examples; `confirmFor` its default `[reprogram, amend, give, offer]` | `owner`: only the owner teaches it; anyone may `describe` |
-| `directory` | Directory | owner ember, `policy: policy`, six doors with one-line blurbs: GARDEN, ROOMS (`rooms`), WORKSHOP, TIDE, ANTHOLOGY, STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL). CONVERSATIONS waits for a Conversation object | `owner`: only the owner changes doors, owner or policy; a summons only adds to `greeted` |
-| `garden` | Garden | owner ember, `policy: policy`; `confirmFor` empty, so planting runs at once. Offers `plant` and `cistern` (the cistern is a named child, so a second is refused `requiredAbsence`) | `owner`: only the owner changes owner, stance, policy or page checkpoint |
-| `tide` | Tide | `gap: 1` (clock minutes between ticks), no subscribers | `clock`: `monotone(ticks)`; `last`: `monotone(last)` |
+| `policy` | Policy | owner ember, model `claude-haiku-5-5`, the system line, a lexicon of two terms (`colour`, `seed`), two examples; `confirmFor` its default `[reprogram, amend, offer]` | `owner`: only the owner teaches it |
+| `directory` | Directory | owner ember, `policy: policy`, six doors as rows keyed {label} with a `place` for the menu's order: GARDEN, ROOMS (`rooms`), WORKSHOP, TIDE, ANTHOLOGY, STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL). CONVERSATIONS waits for a Conversation object | `owner`: only the owner changes the doors, the owner or the policy; `greeted`: anyone's summons only adds to who was greeted (`insertOnly`) |
+| `garden` | Garden | owner ember, `policy: policy`; `confirmFor` empty, so planting runs at once. Offers `plant` and `cistern` (the cistern is a named child, so a second is refused `requiredAbsence`) | `owner`: only the owner changes the owner, what asks first (`confirmFor`), the policy or the page |
+| `tide` | Tide | `gap: 1` (clock minutes between ticks), no subscribers | `clock`: `monotone(ticks)`; `last`: `monotone(last)`; `gap`: `unchanged(gap)`; a Bend predicate refuses a tick sooner than `gap` (`tooSoon`) and a change to another's subscription (`self`) |
 | `workshop` | Workshop | `title: Workshop` | default |
-| `anthology` | Anthology | owner ember | `owner`: only the owner changes it; anyone submits |
+| `anthology` | Anthology | owner ember, `ownerHandle` `ember.delve.town` | `owner`: only the owner changes it; anyone submits |
 | `cistern` | Cistern | nothing | default |
 | `commons` | Commons | owner ember; no places, paths or gates until the owner adds them | `owner`: only the owner changes it; anyone enters, moves, leaves |
-| `rooms` | Scene | `The Moss Gate`: start `gate`, two passages (`tests/test_scene.py`'s smallest scene), owner ember | `owner`: only the owner reprograms or amends; anyone enters, chooses, leaves |
-| `play` | Table | (not a door; Automatafl stays in the world, found through the studio) nothing: the Automatafl 11x11 opening is the package's default; seats are made when players sit | `rounds`: `monotone(round)`; `owner`: only the owner reprograms or amends |
+| `rooms` | Scene | `The Moss Gate`: start `gate`, two passages (`tests/test_scene.py`'s smallest scene), owner ember | `owner`: only the owner reprograms or amends; anyone enters, chooses, leaves; `fixed`: the owner, title, passages, start, cooldown and requirements never change; a Bend cooldown |
+| `play` | Table | (not a door; Automatafl stays in the world, found through the studio) nothing: the Automatafl 11x11 opening is the package's default; seats are made when players sit | `rounds`: `monotone(round)`; `owner`: only the owner reprograms or amends; `fixed`: the owner, the seats and the board's size never change |
 
 Avatars, Envs and Wakes are not seeded, with one exception: genesis arrives the opener first (`world-arrive` with the handle `ember.delve.town`), so the world holds the ten objects above plus ember's Avatar, Env and Wake. At a principal's first verified
 request or first observed post, transport sends `world-arrive {principal:
@@ -41,8 +41,8 @@ absent, the Avatar (id = the DID), the Env (`env/<did>`) and the Wake
 (`wake/<did>`, watching that Env) from the library modules Avatar, Env and
 Wake, owned by the DID, as ordinary creates by the opener. A second arrival
 creates nothing. Nothing exists for a town member until they knock. The
-library sealed at `world-open` must hold those three modules (and Place, which
-Avatar imports): hostd's `--library` seals world/lib plus world/objects/{Avatar,Env,Wake,Place}.obend.
+library sealed at `world-open` must hold those three modules (the Avatar imports
+`Places.obend`, which is in world/lib): hostd's `--library` seals world/lib plus world/objects/{Avatar,Env,Wake}.obend.
 
 ## Posts recorded at genesis
 
@@ -52,7 +52,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 | Post | Object | Slot |
 | --- | --- | --- |
 | the welcome card (v4) | `directory` | none |
-| each door page genesis drafted (`wiki: GARDEN`, ROOMS, WORKSHOP, ANTHOLOGY) | its door's object | none |
+| each door page genesis drafted (`wiki: Garden`, `Rooms`, `Workshop`, `Tide`, `Anthology`) | its door's object | none |
 | the status thread's root (already posted) | `directory` | none |
 
 ## Operator decisions, with the recommended answer
@@ -70,7 +70,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 
 ## The first hour, in order
 
-1. `docker compose up -d --wait delvetalk-hostd`; the healthcheck shows height 0.
+1. `docker compose up -d --wait delvetalk-hostd`; the healthcheck shows the journal height (the opening entries: settings and the sealed library).
 2. `deploy.genesis` arrives ember and creates the ten objects; five door pages are drafted.
 3. `docker compose --profile town up -d --wait`: the front, the bridge and the interpreter.
 4. ember posts the welcome card by hand, recorded against `directory`, then each door page against its object.
