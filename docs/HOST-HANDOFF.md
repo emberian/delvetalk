@@ -721,6 +721,12 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    objects lane's, `tests/test_deal.py` marker). Tests: `tests/test_law.py` `Proposed`; `test_world`,
    `test_authority`, `test_places` updated (a stranger's proposal is the owner clause's to refuse).
 
+94. **Law reads within the root bound (host12; codex host 4).** `commit` adds the objects the written
+   objects' `lawReads()` name to the roots only when the total (object and field roots) stays within
+   `Limits.maxRoots`, the bound replay's `parseRoots` holds every entry to; past it the turn is refused
+   `capacity` ("maxRoots") on the roots it read itself, so no admitted entry is one replay refuses.
+   Test: `tests/test_law.py` `test_a_law_reading_too_many_objects_is_refused_capacity_and_the_journal_replays`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

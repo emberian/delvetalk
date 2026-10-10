@@ -2197,7 +2197,11 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
   let p := { p with writes := p.writes.map fun (id, ws) =>
     if ((w.objects[id]?).map (·.predicate)).getD false then (id, ws) else (id, ws.map fun x => { x with argument := .record [] }) }
   let w := warmLaws w (p.writes.map (·.1))
-  let p := withLawReads w p
+  -- The law reads join the roots only within the root bound replay holds every entry to (codex
+  -- host 4): past it the turn is refused `capacity` on the roots it read itself.
+  let expanded := withLawReads w p
+  let (p, forced) := if forced.isNone && expanded.roots.length + expanded.fieldRoots.length > Limits.maxRoots
+    then (p, some ({ cls := "capacity", reason := some "maxRoots" } : Refusal)) else (expanded, forced)
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
   | none =>
