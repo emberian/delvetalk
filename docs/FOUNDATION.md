@@ -104,7 +104,26 @@ not change, and replay recompiles from the journaled sources. In the journal:
 `created {pin, compile, seed}`, `creates[] {object, pin, …}`, `reprograms[]
 {object, oldPin, newPin, …}`; no packet digest is journaled, and a packet
 that recompiles differently from a resumed snapshot's only increments
-`world-status.recompiledDifferently`. Durability
+`world-status.recompiledDifferently`.
+
+The hashes the journal stores, after the hash pass (a hash is stored only as a chain link or a
+content name; anything replay derives is derived; older entries' dropped fields are ignored):
+
+| Field | Kind | Names |
+| --- | --- | --- |
+| `hash`, `previous` | chain link | the entry's CID; the previous entry's |
+| `resumes` | chain link | the suspension entry a resumed segment continues |
+| `pin`, `oldPin`, `newPin`, `library.pin`, `inspected.pin`, `request.pin` | content name | a sealed source closure; a library |
+| `sources[].cid`, compile inputs' `{name, cid}` | content name | one module's source |
+| `writes[].cid` | content name | the state an admitted write made (read with `world-state-cid`) |
+| `blocks[].cid`, `tokenTree.roots`, `offersBlock` | content name | a checkpoint block; an interpretation's offered forms |
+| `activity.checkpoint {packetSha256, digest}` | content name | the kernel's binding of a checkpoint to its package and tokens |
+| `request`, `turnRequest` | request digest | the proposal (replay recomputes and compares) and the original turn request (binds a retried identity) |
+| `sends[].id`, grant, publish, interpretation and `ended` ids | derived id | hashes of (principal, intent, ordinal), recomputed and checked on replay |
+
+Roots are `{object, version}`; a refusal's public `root` is `{object, version}`. No packet digest,
+binary pin or root state CID is journaled. Snapshots store `stateCid` per object (checked against
+`writes[].cid` and created seeds) and no binary pin. Durability
 is fsync, not a full barrier: an entry may be lost on power loss within the
 operating system's write-back window, and the chain check on reopen cuts a
 torn tail rather than reading a corrupt one. A preview world does not justify
