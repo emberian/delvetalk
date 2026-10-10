@@ -75,10 +75,10 @@ def resolve(method, path):
         return get, {}
     if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
         return 'static', {'file': parts[1]}
-    if parts[:1] == ['play'] and method == 'GET':
-        return 'play', {'object': '/'.join(parts[1:])}
-    if parts[:1] == ['o'] and len(parts) == 2 + (method == 'POST') and (method == 'GET' or parts[2] == 'spell'):
-        return ('page' if method == 'GET' else 'spell'), {'object': parts[1]}
+    if parts[:1] == ['play'] and method in ('GET', 'POST'):
+        return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
+    if parts[:1] == ['o'] and len(parts) == 2 and method == 'GET':
+        return 'page', {'object': parts[1]}
     return None, None
 
 
@@ -157,6 +157,19 @@ API = json.loads((STATIC / 'catalogue.json').read_text())
 CATALOGUE, ERRORS, REFUSALS = API['routes'], API['errors'], API['refusals']
 PLAY = dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (STATIC / 'play.html').read_text(), re.S))
 
+
+def turn_line(r):
+    """A turn's receipt in one line: `admitted garden v3 at height 9, receipt <slug>`, `refused owner: <reading>`, `suspended at height 9`."""
+    rc = r.get('receipt') or {}
+    out = rc.get('outcome') or {}
+    if r.get('status') == 'admitted':
+        w = (out.get('writes') or [{}])[0]
+        return f"admitted {w.get('object')} v{w.get('version')} at height {rc.get('height')}, receipt {rc.get('slug')}"
+    if r.get('status') == 'refused':
+        why = out.get('reason') or ''
+        line = why if why.startswith('refused ') else f"refused {out.get('clause') or out.get('class') or r.get('class')}: {why or out.get('object', '')}"
+        return line + (f"\nnext at {out['next']}" if 'next' in out else '')
+    return f"suspended at height {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
 
 
 def digits(text):
@@ -444,10 +457,10 @@ class Handler(BaseHTTPRequestHandler):
         if name == 'find':
             found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
             return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
-        if name == 'play':
-            return self.play(p['object'] or 'directory')
-        if name in ('page', 'spell'):
-            return self.object_page(p['object'], spell=name == 'spell')
+        if name in ('play', 'reply'):
+            return self.play(p['object'] or 'directory', name == 'reply')
+        if name == 'page':
+            return self.object_page(p['object'])
         return self.agents(name, p['heap'], p['object'], p['method'])
 
     def options(self):
@@ -649,16 +662,32 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- humans
 
-    def play(self, name):
+    def play(self, name, spoke):
         """The world in a browser as a verified principal (the session cookie verify sets): the card world-card renders, the
         doors in the object's state, a reply box whose text goes to `receive` as a Delve reply would."""
         credential = self.cookie()
-        who = self.principal(credential)
+        who, said = self.principal(credential), ''
         if who is None:
             return self.reply(303, '', 'text/plain', [('Location', '/')])
         if self.server.limited(credential):
             return self.html(429, pages.page('slow down', who['handle'], '<h1>Too many requests</h1>'))
         host, did = self.server.host, who['did']
+        if spoke:
+            data = self.body()
+            if data is None:
+                return
+            intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
+            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': 'receive', 'identity': intent,
+                           'argument': typed({'text': str(data.get('text', '')), 'post': ''})})
+            offers = [o['text'] for o in r.get('offers') or []]
+            for _ in range(WAIT_MAX if r.get('status') == 'suspended' else 0):  # the interpreter answers as an offer to this intent
+                seen = host.send({'op': 'world-offers', 'principal': did, 'after': r['receipt']['height']}).get('offers') or []
+                offers = [o['text'] for o in seen if (o.get('identity') or {}).get('intent') == intent]
+                if offers:
+                    break
+                self.server.sleep(WAIT_STEP)
+            said = PLAY['said'].format(cls='refused' if r.get('status') in ('refused', 'error') else '', line=html.escape(turn_line(r)),
+                                       offers=''.join(PLAY['offer'].format(text=html.escape(t)) for t in offers or ['no reply']))
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card':
             return self.html(404, pages.missing(name, who['handle'], card))
@@ -667,7 +696,7 @@ class Handler(BaseHTTPRequestHandler):
         items = ''.join(PLAY['door'].format(href=html.escape(oid(d['to']['object'])), label=html.escape(d.get('label', '')),
                                             description=html.escape(d.get('description', ''))) for d in doors)
         self.html(200, pages.page(name, who['handle'], PLAY['page'].format(
-            name=html.escape(name), path=html.escape(oid(name)), said='', card=html.escape(card.get('text', '')),
+            name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')),
             doors=PLAY['doors'].format(items=items) if doors else '')))
 
     def html(self, code, body, headers=()):
@@ -677,31 +706,15 @@ class Handler(BaseHTTPRequestHandler):
         who = self.principal(self.cookie())
         self.html(200, pages.home(self.server.host.send({'op': 'world-status'}), who and who['handle']))
 
-    def object_page(self, name, spell=False):
-        credential = self.cookie()
-        who = self.principal(credential)
-        handle = who['handle'] if who else None
-        principal = who['did'] if who else None
-        result = None
-        if spell:
-            data = self.body()
-            if data is None:
-                return
-            if who is None:
-                return self.html(401, pages.page('log in', None, '<h1>Log in first</h1><p><a href="/">home</a></p>'))
-            if self.server.limited(credential):
-                return self.html(429, pages.page('slow down', handle, '<h1>Too many requests</h1>'))
-            stamp = f'web:{principal}:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
-            field = lambda k, v: {'name': k, 'value': {'tag': 'label', 'value': v}}
-            result = self.server.host.send({'op': 'world-turn', 'principal': principal, 'object': name, 'method': 'receive',
-                                            'argument': {'tag': 'record', 'fields': [field('text', data.get('text', '')), field('post', stamp), field('slot', '')]},
-                                            'identity': stamp})
-        host = self.server.host
+    def object_page(self, name):
+        """An object as anyone may read it; logged in, its card and a link to play it (/play/<object>)."""
+        who = self.principal(self.cookie())
+        handle, principal, host = who and who['handle'], who and who['did'], self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
         card = self.card(host, principal, name) if principal else None
-        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), result))
+        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal)))
 
     def card(self, host, principal, name):
         """The object's card as this reader sees it, from the host's world-card (no journaled turn)."""

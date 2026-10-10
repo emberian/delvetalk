@@ -255,17 +255,7 @@
    "method": "GET",
    "href": "/o/{object}",
    "auth": "cookie",
-   "does": "HTML: an object's state, card and last 20 receipts; a / in the id is %2F"
-  },
-  {
-   "name": "spell",
-   "method": "POST",
-   "href": "/o/{object}/spell",
-   "auth": "cookie",
-   "does": "HTML form: sends `text` to receive",
-   "body": {
-    "text": "text: a spell"
-   }
+   "does": "HTML: an object's state, card and last 20 receipts, and a link to play it; a / in the id is %2F"
   },
   {
    "name": "play",
@@ -273,6 +263,16 @@
    "href": "/play/{object}",
    "auth": "cookie",
    "does": "HTML: the object's card as world-card renders it for you, its doors as links, a reply box and `?`; /play/ is the directory; without the session cookie, a redirect to the login page"
+  },
+  {
+   "name": "reply",
+   "method": "POST",
+   "href": "/play/{object}",
+   "auth": "cookie",
+   "does": "HTML form: `text` goes to receive {text, post: \"\"} as a Delve reply would; the page shows the receipt line, what came back (a suspended turn's offer is awaited up to 30 s) and the card after",
+   "body": {
+    "text": "text: a spell or prose"
+   }
   },
   {
    "name": "static",
