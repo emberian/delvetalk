@@ -2275,7 +2275,9 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
         (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))]))
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
-      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
+      -- A creation's state is storage the turn spent, as a write's growth is (codex host 9): the
+      -- ledger its sends inherit counts both (`childLedger`; a created id is new, so all of it).
+      let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit (updates ++ judged.creations) ++
           newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs) ++ onEnd (w.height + 1) outcome)
         (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
       (w', reply entry)
@@ -2738,7 +2740,7 @@ def deliveryId (principal intent : String) (ordinal : Nat) : String :=
   Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson ordinal])
 
 /-- The ledger a turn's sends and changes inherit: depth - 1, work - the ticks it used, storage -
-    the bytes its writes added. -/
+    the bytes its writes added and the whole state of each object it created. -/
 def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (String × Object)) : Ledger :=
   let added := updates.foldl (fun n (id, o) =>
     let before := ((w.objects[id]?).map fun p => stateBytes p.state).getD 0

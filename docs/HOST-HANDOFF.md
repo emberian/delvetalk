@@ -738,6 +738,11 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `test_insert_only_counts_a_proposed_retraction_from_a_full_relation`,
    `test_a_retract_of_a_key_retention_evicted_meanwhile_is_stale`; `#guard`s in `Law.lean`.
 
+96. **Creations spend storage (host12; codex host 9).** `commit` hands `onAdmit` the created objects
+   beside the updated ones, so `childLedger` lowers the storage a turn's sends and changes inherit by
+   each created object's whole state as well as by its writes' growth; a factory chain cannot allocate
+   past its ledger. Test: `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

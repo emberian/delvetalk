@@ -63,6 +63,10 @@ def hopOn(left: Nat, context: Abi.Context) -> Activity<Nat>:
   match left:
     case 0: 1n
     case 1+previous: sendTo(context.object, "hop", {target: "", left: previous})
+def breed(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
+  match world.create({package: "Relay", seed: Data.of::<{count: Nat}>({count: 7n}), law: "", requireAbsent: {world: "", object: input.target}}):
+    case created(_): sendTo(input.target, "light", {target: "", left: 0n})
+    case _: 0n
 def fan(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
   fanOut(input.target, input.left)
 def fanOut(target: String, left: Nat) -> Activity<Nat>:
@@ -243,6 +247,14 @@ class Restart(Deliveries):
         self.assertEqual(len(ids), MAX_DEPTH)
         self.assertEqual(len(set(ids)), MAX_DEPTH)
         self.assertEqual(self.fields("loop")["count"], str(MAX_DEPTH))
+
+    def test_a_created_child_spends_the_storage_its_sends_inherit(self):
+        # codex host 9: a creation's state is storage the turn spent; it was not deducted.
+        self.make("maker")
+        r = self.turn("maker", "breed", arg("kid"))
+        self.assertEqual(r["status"], "admitted", r)
+        [send] = r["receipt"]["sends"]
+        self.assertLess(int(send["ledger"]["storage"]), int(r["receipt"]["ledger"]["storage"]), send)
 
     def test_the_ledger_is_in_the_journal_so_restart_cannot_mint_capacity(self):
         self.make("loop")
