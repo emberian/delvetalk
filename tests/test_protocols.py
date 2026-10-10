@@ -1,4 +1,9 @@
-"""Protocols: `protocol P:` with `name: TYPE` methods in a library module (State, Plan and
+"""A protocol declared in the library is checked against an implementing object at compile: a missing
+or mistyped method is refused by name, located, with a hint.
+
+Evidence for FOUNDATION §8 Surface (layer: kernel).
+
+Protocols: `protocol P:` with `name: TYPE` methods in a library module (State, Plan and
 Response are the implementer's), and `implements P` on an object module, checked at compile:
 a missing or mistyped method is refused by name, located, with a hint naming the protocol.
 The artifact lists `protocols` and each method row names its protocol.

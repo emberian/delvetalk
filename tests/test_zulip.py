@@ -1,4 +1,9 @@
-"""The Zulip transport against a fake Zulip server (users/me, GET and POST messages) on loopback, and a real hostd.
+"""The Zulip playtest transport against a fake Zulip and a real hostd: topics route as threads, the
+hourly quota holds, the welcome is recorded.
+
+Evidence for FOUNDATION §7 (layer: transport).
+
+The Zulip transport against a fake Zulip server (users/me, GET and POST messages) on loopback, and a real hostd.
 
     python3 -W ignore -m tests.run test_zulip
 """
@@ -13,7 +18,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from tests.host import start_hostd, stop_hostd
+from tests.host import serve, start_hostd, stop_hostd
 from tests.test_bridge import CARD, OFFERING
 from tests.test_http import BINARY
 from tests.test_turn_world import nat, record
@@ -67,8 +72,7 @@ class FakeZulip:
             do_GET = lambda self: self.handle_any('GET')
             do_POST = lambda self: self.handle_any('POST')
 
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.server = serve(ThreadingHTTPServer(('127.0.0.1', 0), Handler))
 
     def add(self, topic, email, name, text, stream='delvetalk', sender_id=None):
         mid = len(self.messages) + 1

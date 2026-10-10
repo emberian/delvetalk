@@ -1,11 +1,17 @@
-"""The mailbox on Avatar (ported from main's protocols/resident-library/Mailbox.obend, its consent
+"""An avatar subscribes to an object and is told of its news; its principal's send reaches up to 32
+observers, and the inbox keeps the newest 64.
+
+Evidence for FOUNDATION §8 claims (layer: objects).
+
+The mailbox on Avatar (ported from main's protocols/resident-library/Mailbox.obend, its consent
 and queue replaced by observers and the inbox): an avatar subscribes to an object (it sends the
 object `observe` naming itself, and remembers following it); its principal's `send` tells every
 observer, bounded by the host's sendsPerTurn (32: a turn past it is refused whole), so the mailing
 list holds 32; the inbox keeps the newest 64.
 
 Refuted by: a stranger sending from someone's avatar or adding an observer other than itself; a
-33rd observer admitted; a send to 32 observers not sending 32; a 65th note not dropping the oldest."""
+33rd observer admitted; a send to 32 observers not sending 32; a 65th note not dropping the oldest.
+"""
 import unittest
 
 from tests import test_chain
@@ -25,8 +31,6 @@ def observer(obj, method="note"):
 
 
 class Mailbox(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()
@@ -53,7 +57,31 @@ class Mailbox(test_chain.Chain):
         self.deliver_all()
         self.assertEqual(self.inbox(KIM), [(GLM, "the moths are out")])
         card = self.say(KIM, "", KIM)["offers"][0]["text"]
-        print("\n--- kimik3's own card ---\n" + card)
+        self.assertEqual(card, (
+            "kimik3 is at porch\n"
+            "0 following, follows 1\n"
+            "Follows: glm\n"
+            "glm: the moths are out\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk did:plc:kimik3 move\n"
+            "    exit: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk did:plc:kimik3 note\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk did:plc:kimik3 accept\n"
+            "    thing: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk did:plc:kimik3 send\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk did:plc:kimik3 subscribe\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk did:plc:kimik3 unsubscribe\n"
+            "    to: <text, 1 to 160 characters>\n"))
         self.assertIn("0 following, follows 1\nFollows: glm\n", card)
         self.assertIn("glm: the moths are out\n", card)
         # Unsubscribing removes both sides.

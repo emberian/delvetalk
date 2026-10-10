@@ -1,4 +1,9 @@
-"""Dialect hints: a refused package names the pseudo-Bend habit behind the
+"""A refused package names the pseudo-Bend habit behind the refusal and the real form, and a hint
+never changes what is accepted.
+
+Evidence for FOUNDATION §8 Surface (layer: kernel).
+
+Dialect hints: a refused package names the pseudo-Bend habit behind the
 refusal and states the real form, beside stage/message/module/span. A hint
 never changes what is accepted.
 

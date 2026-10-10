@@ -1,10 +1,16 @@
-"""Render with a point of view (FOUNDATION section 13, row 3): render(state, context) is the
+"""Render with a point of view: the same state shows its owner, its parties and a stranger different
+cards, and names people by handle.
+
+Evidence for FOUNDATION §8 render (layer: objects).
+
+Render with a point of view: render(state, context) is the
 card as the reader in the context sees it. A member sees more than a stranger; the planter sees
 "(yours)". The card a non-acting reply gets is the reader's, so these drive real world-turns
 with an empty reply by different principals, and through world-card, which renders for its reader.
 
 Refuted by: a stranger's card showing an Env's event text, a Wake's triggers or an Avatar's notes;
-the planter's card lacking "(yours)"; a party's card lacking its countersign spell."""
+the planter's card lacking "(yours)"; a party's card lacking its countersign spell.
+"""
 import unittest
 
 from tests import test_chain, test_deal
@@ -26,8 +32,6 @@ def silver():
 
 
 class Views(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def card(self, name, principal):
         reply = self.turn(name, "receive", heard(), principal=principal)
@@ -43,7 +47,38 @@ class Views(test_chain.Chain):
         self.make("bell", closure("Bell"), record(colour=silver(), seed=label("a bell for lost moths"),
                                                   planting=label("p"), planter=label(GLM), planterHandle=label("")))
         mine, theirs = self.card("bell", GLM), self.card("bell", KIM)
-        print("\n--- bell, planter ---\n" + mine + "--- bell, stranger ---\n" + theirs)
+        self.assertEqual(mine, (
+            "A silver bell planted by glm (yours): a bell for lost moths (silent)\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk bell rain\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk bell ring\n"
+            "\n"
+            "    delvetalk bell door\n"
+            "    label: <text, 1 to 32 characters>\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk bell undoor\n"
+            "    label: <text, 1 to 32 characters>\n"))
+        self.assertEqual(theirs, (
+            "A silver bell planted by glm: a bell for lost moths (silent)\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk bell rain\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk bell ring\n"
+            "\n"
+            "    delvetalk bell door\n"
+            "    label: <text, 1 to 32 characters>\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk bell undoor\n"
+            "    label: <text, 1 to 32 characters>\n"))
         self.assertTrue(mine.startswith("A silver bell planted by glm (yours): a bell for lost moths (silent)\n"), mine)
         self.assertTrue(theirs.startswith("A silver bell planted by glm: a bell for lost moths (silent)\n"), theirs)
         self.assertNotIn("(yours)", self.world_card("bell"))
@@ -57,7 +92,25 @@ class Views(test_chain.Chain):
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("env/" + GLM, "publish", record(event=event(text="a secret mention")), principal=GLM)["status"], "admitted")
         mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
-        print("\n--- env, owner ---\n" + mine + "--- env, stranger ---\n" + theirs)
+        self.assertEqual(mine, (
+            "ENV of glm (yours): 1 new since #0\n"
+            "#1 mention from mimo: a secret mention\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk env/did:plc:glm observe\n"
+            "\n"
+            "    delvetalk env/did:plc:glm seen\n"
+            "    at: <a number from 0 to 1000000000>\n"))
+        self.assertEqual(theirs, (
+            "ENV of glm: 1 new since #0\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk env/did:plc:glm observe\n"
+            "\n"
+            "    delvetalk env/did:plc:glm seen\n"
+            "    at: <a number from 0 to 1000000000>\n"))
         self.assertIn("a secret mention", mine)
         self.assertIn("ENV of glm (yours): 1 new since #0\n", mine)
         self.assertNotIn("a secret mention", theirs)
@@ -71,7 +124,54 @@ class Views(test_chain.Chain):
         self.make(GLM, closure("Avatar"), avatar_seed("glm", "porch"))
         self.assertEqual(self.turn(GLM, "note", record(text=label("meet at the gate")), principal=KIM)["status"], "admitted")
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
-        print("\n--- avatar, own ---\n" + mine + "--- avatar, other ---\n" + theirs)
+        self.assertEqual(mine, (
+            "glm is at porch\n"
+            "0 following, follows 0\n"
+            "kimik3: meet at the gate\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk did:plc:glm move\n"
+            "    exit: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm note\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm accept\n"
+            "    thing: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm send\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm subscribe\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm unsubscribe\n"
+            "    to: <text, 1 to 160 characters>\n"))
+        self.assertEqual(theirs, (
+            "glm is at porch\n"
+            "0 following, follows 0\n"
+            "1 note\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk did:plc:glm move\n"
+            "    exit: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm note\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm accept\n"
+            "    thing: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm send\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm subscribe\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk did:plc:glm unsubscribe\n"
+            "    to: <text, 1 to 160 characters>\n"))
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
         self.assertIn("glm is at porch\n0 following, follows 0\n1 note\n", theirs)
@@ -81,7 +181,22 @@ class Views(test_chain.Chain):
         self.make("garden", closure("Garden"), record(policy=reference(""), confirmFor={"tag": "list", "items": [label("plant")]},
                                                       pending=listing([record(principal=label("glm"), spell=label(spell), needs={"tag": "list", "items": []})])))
         mine, theirs = self.card("garden", "glm"), self.card("garden", "kimik3")
-        print("\n--- garden, glm waiting ---\n" + mine)
+        self.assertEqual(mine, (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "glm, this waits for your yes:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: a moth\n"
+            "    colour: violet\n"
+            "\n"
+            "To plant, reply:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    colour: <amber, violet or silver>\n"
+            "\n"
+            "0 planted, newest first:\n"))
         self.assertTrue(mine.startswith("✾ THE NIGHT GARDEN\n\nglm, this waits for your yes:\n\n" + spell + "\nTo plant, reply:\n"), mine)
         self.assertTrue(theirs.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:\n\n    delvetalk garden plant\n"), theirs)
         # Showing the card drops nothing.
@@ -91,8 +206,6 @@ class Views(test_chain.Chain):
 class Handles(test_chain.Chain):
     """Rehearsal finding 8: a card never shows a raw DID. A real did:plc (24 characters after the
     method) shows as "…" and its last eight; a short test DID shows whole."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_a_real_did_is_shown_by_its_last_eight(self):
         did = "did:plc:a5uoyxqts4y3iwo2dk74ygma"
@@ -107,8 +220,6 @@ class Handles(test_chain.Chain):
 class ObservedHandles(test_chain.Chain):
     """A card names its reader by the handle the host's registry holds (context.handle, filled by
     the clock principal with world-principal); anyone else by "…" and the DID's last eight."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     DID = "did:plc:nmjdxe6fex23zslnnbwgruj3"
 
     def test_the_reader_sees_their_handle_and_a_stranger_the_last_eight(self):
@@ -121,7 +232,8 @@ class ObservedHandles(test_chain.Chain):
         self.assertEqual(r["status"], "principal", r)
         mine = self.card("bell", self.DID).split("\n")[0]
         theirs = self.card("bell", KIM).split("\n")[0]
-        print("\n--- bell, its planter with a handle ---\n" + mine + "\n--- a stranger ---\n" + theirs)
+        self.assertEqual(mine, "A silver bell planted by glm.delve.town (yours): moths (silent)")
+        self.assertEqual(theirs, "A silver bell planted by …nbwgruj3: moths (silent)")
         self.assertEqual(mine, "A silver bell planted by glm.delve.town (yours): moths (silent)")
         self.assertEqual(theirs, "A silver bell planted by …%s: moths (silent)" % self.DID[-8:])
 
@@ -136,8 +248,6 @@ class StoredHandles(test_chain.Chain):
     planter. Objects store the handle the host knew beside each principal (planterHandle from the
     planting turn's context.handle, a rain's and an anthology line's handle), and Card.shown
     prefers it."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     GLM, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
 
     def test_strangers_read_the_planter_and_the_rains_by_handle(self):
@@ -149,7 +259,24 @@ class StoredHandles(test_chain.Chain):
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"]["label"], "done")
         card = self.turn("garden/bell/1", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
-        print("\n--- bell, read by a stranger ---\n" + card)
+        self.assertEqual(card, (
+            "An amber bell planted by glm.delve.town: a lamp for moths (silent)\n"
+            "kimik3.delve.town: drizzle\n"
+            "garden: garden\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk garden/bell/1 rain\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk garden/bell/1 ring\n"
+            "\n"
+            "    delvetalk garden/bell/1 door\n"
+            "    label: <text, 1 to 32 characters>\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk garden/bell/1 undoor\n"
+            "    label: <text, 1 to 32 characters>\n"))
         self.assertTrue(card.startswith("An amber bell planted by glm.delve.town: a lamp for moths (silent)\nkimik3.delve.town: drizzle\n"), card)
         r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Anthology"),
                            entry="initial", seed=record(owner=label("ember")))
@@ -159,8 +286,6 @@ class StoredHandles(test_chain.Chain):
 
 
 class PartyViews(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     deal = test_deal.Deals.deal
     sign = test_deal.Deals.sign
 
@@ -169,7 +294,22 @@ class PartyViews(test_chain.Chain):
         def card(who):
             return self.turn("deal", "receive", heard(), principal=who)["offers"][0]["text"]
         mine, theirs = card(GLM), card("did:plc:zero")
-        print("\n--- deal, party ---\n" + mine)
+        self.assertEqual(mine, (
+            "DEAL\n"
+            "\n"
+            "Terms: the like is the placeholder\n"
+            "\n"
+            "Waiting for 2 of the parties.\n"
+            "\n"
+            "You are a party and have not countersigned. Reply:\n"
+            "\n"
+            "    delvetalk deal countersign\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk deal countersign\n"
+            "\n"
+            "    delvetalk deal withdraw\n"))
         self.assertIn("You are a party and have not countersigned. Reply:\n\n    delvetalk deal countersign\n", mine)
         self.assertNotIn("You are a party", theirs)
         self.sign(GLM, "at://glm/p/1")

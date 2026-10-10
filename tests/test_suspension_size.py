@@ -1,4 +1,9 @@
-"""A directory suspension journals only what changed (rehearsal run 6, finding 5; HOST-HANDOFF 5.34):
+"""A directory suspension journals only what changed: nine prose replies stay under a bounded median
+entry size.
+
+Evidence for FOUNDATION §11, §12 (layer: rehearsal).
+
+A directory suspension journals only what changed (rehearsal run 6, finding 5; HOST-HANDOFF 5.34):
 nine prose replies under the hub each suspend on the model's reading. The program's own checkpoint
 tokens and the offered forms are shared blocks, so a suspension after the first adds only what its
 turn changed. Refuted by a median of 12 KB or more for one speaker, or of 32 KB or more when every

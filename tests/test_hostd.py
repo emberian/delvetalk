@@ -1,3 +1,8 @@
+"""hostd is the one writer: a private socket, one lock, concurrent clients in one chain, a respawned
+host replaying to the same receipts, private heaps and the sealed library.
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import io
 import json
 import os
@@ -34,20 +39,28 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 
 
 class Hostd(unittest.TestCase):
+    """One hostd per class (no library); each test bumps a counter of its own."""
+    made = 0
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.state = Path(cls.tmp.name)
+        cls.d = start_hostd(str(cls.state))
+        cls.addClassCleanup(stop_hostd, cls.d)
+        cls.sock = cls.state / 'host.sock'
+
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.state = Path(self.tmp.name)
-        self.d = start_hostd(str(self.state))
-        self.addCleanup(stop_hostd, self.d)
-        self.sock = self.state / 'host.sock'
         self.client = HostClient(self.sock)
-        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk', 'object': 'c1',
+        type(self).made += 1
+        self.c = 'c%d' % self.made
+        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk-' + self.c, 'object': self.c,
                                  'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
         self.assertEqual(made['status'], 'created', made)
 
     def turn(self, client, intent):
-        return client.send({'op': 'world-turn', 'principal': 'e', 'object': 'c1', 'method': 'bump', 'argument': record(), 'identity': intent})
+        return client.send({'op': 'world-turn', 'principal': 'e', 'object': self.c, 'method': 'bump', 'argument': record(), 'identity': self.c + intent})
 
     def test_socket_is_private_and_the_pid_file_is_touched_per_op(self):
         self.assertEqual(stat.S_IMODE(os.stat(self.sock).st_mode), 0o600)
@@ -91,14 +104,14 @@ class Hostd(unittest.TestCase):
         self.d.shared.proc.wait()
         again = [self.turn(self.client, f'k{i}') for i in range(3)]
         self.assertEqual([a['receipt'] for a in again], [f['receipt'] for f in first])
-        self.assertEqual(self.client.send({'op': 'world-view', 'principal': 'e', 'object': 'c1'})['version'], 3)
+        self.assertEqual(self.client.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['version'], 3)
 
     def test_heaps_and_stateless_are_separate_worlds_in_one_daemon(self):
         heap = HostClient(self.sock, heap=DID)
-        self.assertEqual(heap.send({'op': 'world-view', 'principal': 'e', 'object': 'c1'})['status'], 'unknown')
+        self.assertEqual(heap.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'unknown')
         self.assertTrue((self.state / 'heaps' / f'{DID}.journal').exists())
         self.assertEqual(HostClient(self.sock, heap='../../etc/passwd').send({'op': 'world-status'})['status'], 'error')
-        self.assertEqual(HostClient(self.sock).send({'op': 'world-status'})['objects'], 1)
+        self.assertEqual(HostClient(self.sock).send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'viewed')
         self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
 
     def test_the_world_is_opened_with_the_configured_opener(self):
@@ -246,7 +259,7 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
         # without a library the same module names an import nobody supplied
-        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk2', 'object': 't', 'modules': one,
+        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk-t', 'object': 't', 'modules': one,
                                  'entry': 'initial', 'seed': record()})
         self.assertEqual(made['status'], 'error', made)
 

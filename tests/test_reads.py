@@ -1,4 +1,9 @@
-"""The host's read ops for the AT repository façade (docs/REPO.md "Host ops"): one public reader name,
+"""The host's read ops behind the AT repository: one public reader, entries by hash and by page, an
+object as of a version, sources under read authority.
+
+Evidence for FOUNDATION §2 (layer: host).
+
+The host's read ops for the AT repository façade (docs/REPO.md "Host ops"): one public reader name,
 entries by hash and by page, an object as of a version, sources, grants and publications. Each case
 names what would refute it.
 

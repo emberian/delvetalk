@@ -1,4 +1,9 @@
-"""The universal first-order type `Data` (`Data.of::<T>(value)`, no elimination).
+"""Data, the universal first-order type: one Plan carries any payload shape, Data.of checks its
+declared type, nothing takes Data apart, and a malformed value is refused on every admission path.
+
+Evidence for FOUNDATION §3 (layer: kernel).
+
+The universal first-order type `Data` (`Data.of::<T>(value)`, no elimination).
 
 Each test names what would refute it.
 """
@@ -6,7 +11,7 @@ import json
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_turn import Host, nat, label, library_modules, variant
+from tests.test_turn import Host, TurnCase, nat, label, library_modules, variant
 from tests.test_turn_world import closure
 
 CALLER = """edition ObjectiveBend 1
@@ -54,11 +59,7 @@ def record(**fields):
     return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
 
 
-class DataTypeTests(unittest.TestCase):
-    def host(self):
-        h = Host()
-        self.addCleanup(h.close)
-        return h
+class DataTypeTests(TurnCase):
 
     def test_one_activity_calls_two_objects_with_different_argument_shapes(self):
         # Refuted if a single Plan type cannot carry a Nat and a record payload in one activity.
@@ -134,7 +135,7 @@ class DataTypeTests(unittest.TestCase):
         typed = h.send({"op": "compile", "entry": "count", "modules": library_modules("List") + [
             {"name": "Package", "source": LONG_TYPED}]})
         self.assertEqual(typed["status"], "compiled", typed)
-        longer = {"tag": "list", "items": [label("y%d" % i) for i in range(6000)]}
+        longer = {"tag": "list", "items": [label("y%d" % i) for i in range(4500)]}  # past the old four-thousand refusal
         reply = h.start(typed["artifact"], [longer, nat(3)])
         self.assertEqual(reply["status"], "yielded", reply.get("message"))
         self.assertEqual(reply["plan"], variant("say", record(n=nat(3))))
@@ -301,9 +302,10 @@ def touch(state: State) -> State:
 class DataInPackageData(unittest.TestCase):
     """The typed-data schema (run-data-v1, the compact codec) with a Data field."""
 
-    def setUp(self):
-        self.h = Host()
-        self.addCleanup(self.h.close)
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+        cls.addClassCleanup(cls.h.close)
 
     def test_run_data_admits_any_well_formed_value_and_refuses_a_repeated_field_by_name(self):
         art = self.h.compile(STATE_PACKAGE, "touch")

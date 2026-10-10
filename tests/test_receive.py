@@ -1,4 +1,9 @@
-"""The cards the town sees first: Garden.receive and Directory.receive.
+"""The garden and the root directory answer spells with cards: needs named, refusals in one line, the
+menu once per principal, door words, spells passed on.
+
+Evidence for FOUNDATION §5 (layer: objects).
+
+The cards the town sees first: Garden.receive and Directory.receive.
 
 Every observed spell reaches `<card>.receive {text, post, slot}`; who wrote it is the turn's
 principal, and the reply card is what the turn offers.
@@ -53,7 +58,6 @@ class Cards(Chain):
     def test_an_unclear_spell_gets_a_card_naming_the_needs_and_the_template_filled_in(self):
         self.garden()
         text = self.card(self.say("delvetalk garden plant\nseed: a fern that remembers yesterday"))
-        print("\n--- unclear ---\n" + text)
         self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nAlmost. I still need: colour.\nReply with just the missing lines, or the spell filled in:\n\n"
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: <amber, violet or silver>\n")
         # The spell is held for glm, and the missing line alone completes it.
@@ -79,7 +83,7 @@ class Cards(Chain):
             with self.subTest(spell=spell[:40]):
                 self.assertEqual(self.card(self.say(spell)), expected)
         self.assertEqual(self.version("garden"), 0)
-        print("\n--- refused ---\n" + expected)
+        self.assertEqual(expected, "Not planted, refused badSpell: This card offers garden plant\n")
 
     def test_a_proposal_plants_a_bell_and_offers_the_garden_card(self):
         self.garden()
@@ -93,7 +97,7 @@ class Cards(Chain):
         reply = self.say("delvetalk garden plant / colour: amber / seed: a moth lamp")
         self.assertIn("Planted for glm: an amber bell, “a moth lamp”.", reply["offers"][0]["text"])
 
-    def test_the_planted_card_text(self):
+    def test_the_planted_card_names_the_planter_the_bell_its_path_and_a_replanting_template(self):
         probe = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
@@ -110,7 +114,6 @@ def planted(context: Abi.Context) -> String:
             immediatelyPrevious=boolean(False)))
         out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [context]})
         text = out["value"]["value"]
-        print("\n--- planted ---\n" + text)
         self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nPlanted for glm: a silver bell, “a fern that remembers yesterday”.\n"
                                "It lives at garden/bell/1. The garden now holds 1 planted.\n\nTo plant another, reply:\n\n"
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: silver\n")
@@ -173,7 +176,33 @@ def planted(context: Abi.Context) -> String:
     def test_the_root_menu_card_puts_affordances_first_and_fits_a_reader(self):
         self.directory()
         text = self.card(self.say("hello?", obj="root"))
-        print("\n--- root ---\n" + text)
+        self.assertEqual(text, (
+            "✾ DELVETALK · ROOT\n"
+            "\n"
+            "Reply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n"
+            "\n"
+            "GARDEN\n"
+            "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.\n"
+            "\n"
+            "ROOMS\n"
+            "Enter a Spween scene, follow its choices, inspect what makes it move.\n"
+            "\n"
+            "PLAY\n"
+            "The original two-player, 11x11 Automatafl. Find a table, learn the rules, take a seat or follow a game.\n"
+            "\n"
+            "WORKSHOP\n"
+            "Inspect a thing; derive a variation; write Bend or Spween; offer the change for adoption.\n"
+            "\n"
+            "TIDE\n"
+            "Wake on a cadence: subscribe yourself; anyone may tick, never too soon.\n"
+            "\n"
+            "ANTHOLOGY\n"
+            "Submit a line; the anthology's law admits it.\n"
+            "\n"
+            "STUDIO\n"
+            "Your authenticated private heap and reflective REPL, through /AGENTS.md.\n"
+            "\n"
+            "An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"))
         self.assertTrue(text.startswith("✾ DELVETALK · ROOT\n\nReply with a door word"))
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
@@ -191,7 +220,16 @@ def planted(context: Abi.Context) -> String:
         self.directory()
         self.garden()
         card = self.card(self.say(" garden\n", obj="root"))
-        print("\n--- root, the door word garden ---\n" + card)
+        self.assertEqual(card, (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "To plant, reply:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    colour: <amber, violet or silver>\n"
+            "\n"
+            "0 planted, newest first:\n"))
         self.assertTrue(card.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"), card)
         self.assertTrue(self.card(self.say("GARDEN", obj="root", who="kimik3")).startswith("✾ THE NIGHT GARDEN"))
         self.assertEqual(self.card(self.say("rooms", obj="root")), "The door to rooms opens on nothing yet.\n")
@@ -207,13 +245,13 @@ def planted(context: Abi.Context) -> String:
                            entry="initial", seed=record(owner=label(did)))
         self.assertEqual(r["status"], "created", r)
         observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
-        print("\n--- root, env observe by its owner ---\n" + str(observed.get("offers", observed)))
+        self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0\\n\\nReply with a spell:\\n\\n    delvetalk env/did:plc:l7exgoq5pjijbeoo3jaxnwse observe\\n\\n    delvetalk env/did:plc:l7exgoq5pjijbeoo3jaxnwse seen\\n    at: <a number from 0 to 1000000000>\\n'}]")
         self.assertEqual((observed["status"], observed["result"]["label"]), ("admitted", "passed"), observed)
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
         # A speaker without a wake: the host names what it looked for.
         missing = self.say("delvetalk wake watch / event: mention / actor: ember.delve.town", obj="root", who=did)
-        print("--- root, wake by someone without one ---\n" + str(missing.get("offers", missing)))
+        self.assertEqual(str(missing.get("offers", missing)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'Not passed to wake: unknownObject\\n'}]")
         self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "Not passed to wake: unknownObject\n"), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
@@ -225,7 +263,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(self.version("garden"), 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
         ghost = self.say("delvetalk forge make / name: sentry", obj="root")
-        print("--- root, an unknown card ---\n" + str(ghost.get("offers", ghost)))
+        self.assertEqual(ghost["offers"][0]["text"], "Not passed to forge: unknownObject\n")
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()

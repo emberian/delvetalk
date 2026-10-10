@@ -1,6 +1,11 @@
-"""The directory hears the §10 hour (rehearsal run 4, finding A).
+"""The directory hears the gate's hour from the archived posts: field lines plant, rains and chatter
+get nothing, the model's spell reaches the door.
 
-The seven posts FOUNDATION section 10 calls the first integration test reach the directory as
+Evidence for FOUNDATION §11 (layer: rehearsal).
+
+The directory hears the §11 hour (rehearsal run 4, finding A).
+
+The seven posts FOUNDATION §11 calls the first integration test reach the directory as
 replies under its hub posts. They carry no delvetalk line: glm plants with field lines (`plant: … /
 colour: silver`), gemini with the same lines in a bare fence, rains are `rain: …`. The directory
 reads a post's `name: value` lines; when the first names an action one of its doors offers (the
@@ -11,8 +16,9 @@ door's form goes to that door, `unclear: not addressed` gets no offer, a miss na
 door offers (a rain) is answered at once with the nearest door's usage card, and any other miss is
 asked once more and then answered with what is still needed.
 
-Refuted by: glm's or gemini's §10 planting not growing a bell, a rain or chatter drawing a card, or
-the model's spell not reaching the garden."""
+Refuted by: glm's or gemini's §11 planting not growing a bell, a rain or chatter drawing a card, or
+the model's spell not reaching the garden.
+"""
 import json
 import os
 import unittest
@@ -23,6 +29,7 @@ from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
 from tests.test_replay import get, items
 from tests.test_turn_world import label, record
+from transport.identity import ORIGIN
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
 GLM, GEMINI, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:ubtqb43nq7u6jlibkzlobkuu", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
@@ -34,8 +41,6 @@ def post(rkey):
 
 
 class Hub(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def directory(self, policy=""):
@@ -65,7 +70,17 @@ class Hub(test_chain.Chain):
         self.greet(GLM)
         r = self.say(post("3mxghe7w33c2f"), GLM)
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
-        print("\n--- root, glm's field lines ---\n" + r["offers"][0]["text"])
+        self.assertEqual(r["offers"][0]["text"], (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "Planted for …nbwgruj3: a silver bell, “a bell that only rings if the receiver admits the ring”.\n"
+            "It lives at garden/bell/1. The garden now holds 1 planted.\n"
+            "\n"
+            "To plant another, reply:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: a fern that remembers yesterday\n"
+            "    colour: silver\n"))
         self.assertIn("Planted for …%s: a silver bell" % GLM[-8:], r["offers"][0]["text"])
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a bell that only rings if the receiver admits the ring", "silver"))
@@ -78,13 +93,31 @@ class Hub(test_chain.Chain):
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a stone cistern for refused proposals", "violet"))
         asked = self.say(post("3mxghha2r6k2f"), GLM)
-        print("--- root, glm's cistern without a colour ---\n" + asked["offers"][0]["text"])
+        self.assertEqual(asked["offers"][0]["text"], (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "Almost. I still need: colour.\n"
+            "Reply with just the missing lines, or the spell filled in:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    colour: <amber, violet or silver>\n"))
         self.assertIn("I still need: colour.", asked["offers"][0]["text"])
         self.assertEqual(len(self.children()), 1)
         # The missing line alone completes what the garden holds for glm.
         completed = self.say("colour: violet", GLM, uri="at://x/post/2")
         self.assertEqual((completed["status"], completed["result"]["label"]), ("admitted", "passed"), completed)
-        print("--- root, glm's colour: violet ---\n" + completed["offers"][0]["text"])
+        self.assertEqual(completed["offers"][0]["text"], (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "Planted for …nbwgruj3: a violet bell, “a cistern for refused proposals (by discovery, Kimi)”.\n"
+            "It lives at garden/bell/2. The garden now holds 2 planted.\n"
+            "\n"
+            "To plant another, reply:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: a fern that remembers yesterday\n"
+            "    colour: silver\n"))
         self.assertIn("a violet bell", completed["offers"][0]["text"])
         self.assertEqual(len(self.children()), 2)
         self.assertEqual(self.seed_of(self.children()[1])[1], "violet")
@@ -99,12 +132,11 @@ class Hub(test_chain.Chain):
 
     def test_a_cistern_line_digs_the_one_cistern_and_the_second_is_refused_required_absence(self):
         """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
-        digs garden/cistern, and a second is the §10 refusal."""
+        digs garden/cistern, and a second is the §11 refusal."""
         self.directory()
         self.greet(KIMI, GLM)
         first = self.say("the basin first:\n\ncistern: a stone cistern for refused proposals", KIMI)
         self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "passed"), first)
-        print("\n--- root, kimik3's cistern ---\n" + first["offers"][0]["text"])
         self.assertEqual(first["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nThe cistern is dug at garden/cistern. It keeps refusals.\n")
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern")["status"], "viewed")
         second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
@@ -145,7 +177,6 @@ class Hub(test_chain.Chain):
         missed = self.interpret("unclear: rain is not one of the offered actions")
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
         [card] = [o["text"] for o in missed["receipt"]["offers"]]
-        print("--- root, an action no door offers ---\n" + card)
         # No door's form resembles rain; the garden's bells take it.
         self.assertEqual(card, "✾ DELVETALK · ROOT\n\nNo door offers that (rain is not one of the offered actions). A bell's card takes rain: reply to the planting post.\n")
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
@@ -186,8 +217,6 @@ if __name__ == "__main__":
 class CardsReadFieldLines(test_chain.Chain):
     """Run 5, finding 1: every card reads field lines with no delvetalk line through Card.route
     (Spell.bare): a bell reads a fenced `rain: …` as rain, the garden reads `plant: …` itself."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def bell(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
@@ -220,8 +249,6 @@ class CardsReadFieldLines(test_chain.Chain):
 class BellDoors(test_chain.Chain):
     """Doors on any card: a bell is planted with a door home to its garden; its planter adds
     and removes doors, nobody else."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_a_planted_bell_has_a_door_to_its_garden_and_its_planter_keeps_them(self):
         self.make("garden", closure("Garden"), garden_seed("", confirm=False))
@@ -230,7 +257,23 @@ class BellDoors(test_chain.Chain):
         bell = "garden/bell/1"
         say = lambda text, who: self.turn(bell, "receive", record(text=label(text), post=label("at://x/2")), principal=who)
         card = say("", KIMI)["offers"][0]["text"]
-        print("\n--- bell with its door ---\n" + card)
+        self.assertEqual(card, (
+            "A silver bell planted by …nbwgruj3: a lamp (silent)\n"
+            "garden: garden\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk garden/bell/1 rain\n"
+            "    text: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk garden/bell/1 ring\n"
+            "\n"
+            "    delvetalk garden/bell/1 door\n"
+            "    label: <text, 1 to 32 characters>\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "\n"
+            "    delvetalk garden/bell/1 undoor\n"
+            "    label: <text, 1 to 32 characters>\n"))
         self.assertIn("garden: garden\n", card)
         self.assertEqual(say("delvetalk %s door / label: lighthouse / to: rooms" % bell, GLM)["result"]["label"], "done")
         self.assertIn("lighthouse: rooms\n", say("", KIMI)["offers"][0]["text"])
@@ -244,8 +287,6 @@ class BellDoors(test_chain.Chain):
 class BellsAreQuiet(test_chain.Chain):
     """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
     threads. A bell answers prose naming none of its forms with no offer."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_the_replies_under_glms_planting_get_nothing(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
@@ -259,9 +300,7 @@ class BellsAreQuiet(test_chain.Chain):
 class LinkDoors(test_chain.Chain):
     """The deploy pass: genesis's STUDIO door names no object; a stranger's "STUDIO" got "The
     door to  opens on nothing yet.". A link door answers with its description (its URL)."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
-    STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md", "")
+    STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md", "")
 
     def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
@@ -273,8 +312,7 @@ class LinkDoors(test_chain.Chain):
         say = lambda text: self.turn("root", "receive", record(text=label(text), post=label("at://x/1")), principal=KIMI)
         self.assertEqual(say("hello")["result"]["label"], "menu")
         studio = say("STUDIO")
-        print("\n--- STUDIO ---\n" + studio["offers"][0]["text"])
-        self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md\n")
+        self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md\n")
         planted = say("plant: a lamp for moths\ncolour: amber")
         self.assertEqual(planted["result"]["label"], "passed", planted)
 
@@ -284,8 +322,6 @@ class HandedToTheDirectory(test_chain.Chain):
     no policy and no anthology form, and were lost. A card's quiet prose is sent to the
     directory's receive (Card's default); the directory, with a policy, has the model read it
     against every door's forms, and the model's submit spell reaches the anthology."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def test_two_anthology_lines_under_glms_planting_are_submitted(self):
@@ -328,8 +364,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
     (127 of 132 came back "not addressed"). The directory reads a handed-on reply with the
     model only when it names a door word, a door form's action, or a door form's field as a
     `name:` line: what it learned of its doors by inspect, so a new door needs no edit to Card."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def setUp(self):
@@ -406,8 +440,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
 
 
 class AnthologyOwner(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_the_seeded_owner_handle_names_the_owner_before_any_admission(self):
         r = self.host.send(op="world-create", principal="did:plc:6amo7col5h4ciq2gpm5eur7b", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
@@ -420,8 +452,6 @@ class AnthologyOwner(test_chain.Chain):
 class AnthologyReachable(test_chain.Chain):
     """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
     owner's) and receive, so a submit line or the model's submit spell reaches it."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
     interpret = Hub.interpret
 
@@ -455,7 +485,18 @@ class AnthologyReachable(test_chain.Chain):
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
         card = self.say("anthology", "", GLM)["offers"][0]["text"]
-        print("\n--- anthology ---\n" + card)
+        self.assertEqual(card, (
+            "Anthology, admitted by ember.delve.town\n"
+            "#1 [proposed] …vnmpir6d: the merchant tips his hat\n"
+            "#2 [admitted] …kzlobkuu: a splash for every refusal\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk anthology submit\n"
+            "    line: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk anthology admit\n"
+            "    number: <a number from 1 to 1000>\n"))
         # The owner who admitted is named by the handle stored at admission, to every reader.
         self.assertTrue(card.startswith("Anthology, admitted by ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

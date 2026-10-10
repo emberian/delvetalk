@@ -1,4 +1,9 @@
-"""Located refusals: every refusal of an elaborated package names the definition, the span
+"""Every refusal of an elaborated package names its definition, its span, the expected and found
+types in surface syntax, alike from check-package and compile.
+
+Evidence for FOUNDATION §8 Surface (layer: kernel).
+
+Located refusals: every refusal of an elaborated package names the definition, the span
 in the source, the expected and found types in surface syntax, and a hint when one applies,
 on `check-package` and on `compile` alike.
 

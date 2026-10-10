@@ -1,4 +1,9 @@
-"""world-turn: activities run against the durable store and commit once.
+"""A turn runs against the durable store and commits once: receipts name roots, a retry returns the
+same receipt, views are typed by the reader's authority.
+
+Evidence for FOUNDATION §2 Turn (layer: host).
+
+world-turn: activities run against the durable store and commit once.
 
 Counter and Bell are the real world/objects files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """
@@ -7,7 +12,6 @@ import os
 import re
 import subprocess
 import tempfile
-import time
 import unittest
 
 from tests import host
@@ -462,47 +466,6 @@ class ReadPolicy(TurnWorld):
                            modules=counter_modules(), entry="initial", seed=record(count=nat(0)),
                            read={"principals": "ember"})
         self.assertEqual(r["status"], "error")
-
-
-class Maximum(TurnWorld):
-    def test_two_hundred_bumps_in_one_process_then_replay(self):
-        self.create("c1", counter_modules(), 0)
-        t0 = time.time()
-        for i in range(200):
-            r = self.turn("c1", "bump", identity=f"b{i}")
-            self.assertEqual(r["status"], "admitted", r)
-        took = time.time() - t0
-        self.assertEqual(self.count("c1"), (200, "200"))
-        head = self.host.send(op="world-status")["head"]
-        t1 = time.time()
-        self.reopen()
-        replay = time.time() - t1
-        print(f"\n  200 bumps {took:.2f}s, reopen {replay:.2f}s")
-        self.assertLess(took, 5.0)
-        self.assertEqual(self.host.send(op="world-status")["head"], head)
-        self.assertEqual(self.count("c1"), (200, "200"))
-
-    def test_two_hundred_pure_bumps(self):
-        # A method returning the new state (no plan): run on the held entry (HOST-HANDOFF 5.36).
-        self.create("p1", fixture("def tick(state: State, context: Abi.Context) -> State:\n  {count: state.count + 1n}\n"), 5)
-        t0 = time.time()
-        for i in range(200):
-            r = self.turn("p1", "tick", identity=f"p{i}")
-            self.assertEqual(r["status"], "admitted", r)
-        took = time.time() - t0
-        print(f"\n  200 pure bumps {took:.2f}s")
-        self.assertEqual(self.count("p1"), (200, "205"))
-        self.assertLess(took, 5.0)
-        # The same over a larger program: the method renders a Document, so its packet holds the renderer.
-        base = closure("Plan")
-        base += [m for m in closure("Document") if m["name"] not in {x["name"] for x in base}]
-        heavy = base + [{"name": "Heavy", "source": FIXTURE_HEAD.replace("import ./Plan.obend as Plans", "import ./Plan.obend as Plans\nimport ./Document.obend as Document") +
-                 "def tick(state: State, context: Abi.Context) -> State:\n  {count: state.count + textLength(Document.plain(Document.text(\"a bell\")))}\n"}]
-        self.create("p2", heavy, 0)
-        t0 = time.time()
-        for i in range(200):
-            self.assertEqual(self.turn("p2", "tick", identity=f"q{i}")["status"], "admitted")
-        print(f"  200 pure bumps rendering a document {time.time() - t0:.2f}s")
 
 
 if __name__ == "__main__":

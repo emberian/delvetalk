@@ -1,4 +1,9 @@
-"""Delegation as an object: a grant lets a named grantee run one method of one object as the
+"""A grant lets one grantee run one method of one object as its grantor, until a clock height, for a
+number of uses, until revoked; a law naming the grantor admits it.
+
+Evidence for FOUNDATION §4 Capabilities (layer: host).
+
+Delegation as an object: a grant lets a named grantee run one method of one object as the
 principal of the direct turn that made it, until a clock height, until revoked.
 
 Each case is named by the defect that would make it fail. The scheduler is the wake pattern:

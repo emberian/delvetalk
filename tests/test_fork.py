@@ -1,5 +1,10 @@
-"""world-fork: a private journal whose genesis is the shared world's store at a height, chained to the
-entry it forked from, owned by the forking principal (FOUNDATION section 15, from Croquet's TeaTime).
+"""A fork is a private journal seeded from the shared world at a height: its turns never touch the
+shared journal, and private objects stay with their readers.
+
+Evidence for FOUNDATION §8 fork (layer: host).
+
+world-fork: a private journal whose genesis is the shared world's store at a height, chained to the
+entry it forked from, owned by the forking principal (from Croquet's TeaTime).
 Refuted by a fork turn that touches the shared journal, a fork that forgets its origin, a fork at an
 earlier height holding the later state, or a private object carried to a stranger.
 

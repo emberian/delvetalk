@@ -1,4 +1,11 @@
-"""The front's controls: `_links` on every JSON reply, `_actions` projected from the host's method table and forms."""
+"""A stranger acts from the replies alone: every JSON reply carries `_links`, `_actions` are projected from
+the host's method table and forms, every error is a named envelope, and the front survives bursts,
+stalls and malformed input.
+
+Evidence for FOUNDATION §7 (layer: transport).
+
+The front's controls: `_links` on every JSON reply, `_actions` projected from the host's method table and forms.
+"""
 import http.client
 import json
 import random
@@ -69,6 +76,9 @@ def walk(call, handle, prove, module):
 
 
 class Controls(FrontCase):
+    fresh_world = True  # each test plants in a garden of its own and reads garden/bell/1
+    independent = True  # so the runner may deal the class into chunks
+
     def setUp(self):
         super().setUp()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
@@ -132,10 +142,10 @@ class Controls(FrontCase):
         self.assertEqual((s, t['status'], t['receipt']['outcome']['class']), (200, 'refused', 'lawRefused'), t)
         self.assertEqual(t['_links']['hint']['href'], '/AGENTS.md/heap/world/kept/source')  # the law is there
         self.assertEqual([a['href'] for a in t['_actions']], ['/AGENTS.md/heap/world/kept/bump'])
-        s, e = self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': 7, 'intent': 'bad'}, self.tok)
-        self.assertEqual((s, e['_links']['hint']['href'], [a['name'] for a in e['_actions']]), (400, '/AGENTS.md/world/c1/source', ['bump']))
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad'}, self.tok)
+        self.assertEqual((s, e['_links']['hint']['href'], [a['name'] for a in e['_actions']]), (400, f'/AGENTS.md/world/{self.c}/source', ['bump']))
         self.turn(self.tok, 'dup')
-        s, d = self.call('POST', '/AGENTS.md/world/c1/bump', {'fields': {'a': 1}, 'intent': 'dup'}, self.tok)
+        s, d = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'fields': {'a': 1}, 'intent': 'dup'}, self.tok)
         self.assertEqual((d['class'], d['_links']['hint']['href']), ('duplicateIdentity', '/AGENTS.md/receipt/dup'), d)
 
     def test_a_listing_links_each_id_and_its_next_page(self):
@@ -224,7 +234,7 @@ class Envelope(FrontCase):
             self.assertEqual(body['_links']['api'], {'href': '/AGENTS.md/api'})
             seen[cls] = body
             return body
-        port, c1 = self.port, '/AGENTS.md/world/c1/bump'
+        port, c1 = self.port, f'/AGENTS.md/world/{self.c}/bump'
         post = lambda path, body=None, raw_=None, t=tok: self.call('POST', path, body, t, raw_)
         saw('badJson', post(c1, raw_=b'{nope'))
         saw('badJson', post(c1, raw_=b'[' * 60000))
@@ -236,7 +246,7 @@ class Envelope(FrontCase):
         saw('uriTooLong', raw(port, b'GET /' + b'x' * 70000 + b' HTTP/1.1\r\n\r\n')[::2])
         saw('headersTooLarge', raw(port, b'GET / HTTP/1.1\r\nX: ' + b'a' * 70000 + b'\r\n\r\n')[::2])
         saw('notImplemented', self.call('BREW', '/AGENTS.md/world'))
-        s, h, data = self.request('PUT', '/AGENTS.md/world/c1', token=tok)
+        s, h, data = self.request('PUT', f'/AGENTS.md/world/{self.c}', token=tok)
         self.assertEqual(dict(h)['Allow'], 'GET, OPTIONS')
         saw('methodNotAllowed', (s, json.loads(data)))
         saw('unknownRoute', self.call('GET', '/AGENTS.md/nowhere', token=tok))
@@ -246,21 +256,21 @@ class Envelope(FrontCase):
         saw('badModules', post('/AGENTS.md/repl', {'modules': 'x'}))
         saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
-        self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': '/AGENTS.md/world/c1/source'}))
+        self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))
         real = self.host.send
         stub = {'world-view': {'status': 'denied', 'message': 'not yours'}, 'world-resolve': {'status': 'ambiguous', 'matches': ['a', 'b'], 'message': 'two'}}
         self.host.send = lambda req: stub[req['op']] if req['op'] in stub else real(req)
-        saw('denied', self.call('GET', '/AGENTS.md/world/c1', token=tok))
+        saw('denied', self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok))
         self.assertEqual(saw('ambiguous', self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok))['matches'], ['a', 'b'])
         stub['world-view'] = {'status': 'viewed', 'state': 'x' * 2000}
         limit, transport.http.MAX_REPLY = transport.http.MAX_REPLY, 1000
         try:
-            saw('replyTooLarge', self.call('GET', '/AGENTS.md/world/c1', token=tok))
+            saw('replyTooLarge', self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok))
         finally:
             transport.http.MAX_REPLY = limit
         stub.clear()
         self.host.send = lambda req: 1 / 0 if req['op'] == 'world-view' else real(req)
-        saw('internal', self.call('GET', '/AGENTS.md/world/c1', token=tok))
+        saw('internal', self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok))
         self.host.send = real
         other = self.login('glm.delve.town')
         codes = [self.request('GET', '/AGENTS.md/pending', token=other) for _ in range(33)]
@@ -295,7 +305,7 @@ class Robust(FrontCase):
         tok = self.login()
         self.front.request_timeout = 1
         stalled = socket.create_connection(('127.0.0.1', self.port))  # headers sent, the body promised and never sent
-        stalled.sendall(f'POST /AGENTS.md/world/c1/bump HTTP/1.1\r\nAuthorization: Bearer {tok}\r\nContent-Length: 100\r\n\r\n'.encode())
+        stalled.sendall(f'POST /AGENTS.md/world/{self.c}/bump HTTP/1.1\r\nAuthorization: Bearer {tok}\r\nContent-Length: 100\r\n\r\n'.encode())
         half = socket.create_connection(('127.0.0.1', self.port))  # headers never finished
         half.sendall(b'GET /AGENTS.md/world HTTP/1.1\r\nHost: x\r\n')
         t0 = time.time()
@@ -317,8 +327,8 @@ class Robust(FrontCase):
     def test_a_burst_of_fifty_mixed_clients(self):
         toks = [self.login(h) for h in PEOPLE]
         height = self.host.send({'op': 'world-status'})['height']
-        kinds = [('POST', '/AGENTS.md/world/c1/bump', None, 200), ('GET', '/AGENTS.md/world/c1', None, 200),
-                 ('GET', '/AGENTS.md/api', None, 200), ('POST', '/AGENTS.md/world/c1/bump', b'{nope', 400), ('GET', '/AGENTS.md/world/nope', None, 404)]
+        kinds = [('POST', f'/AGENTS.md/world/{self.c}/bump', None, 200), ('GET', f'/AGENTS.md/world/{self.c}', None, 200),
+                 ('GET', '/AGENTS.md/api', None, 200), ('POST', f'/AGENTS.md/world/{self.c}/bump', b'{nope', 400), ('GET', '/AGENTS.md/world/nope', None, 404)]
         gate, got, errors = threading.Barrier(50), {}, []
 
         def client(i):
@@ -341,11 +351,11 @@ class Robust(FrontCase):
         self.assertEqual(self.host.send({'op': 'world-status'})['height'], height + 10)  # ten turns, each journaled once
         counted = [i for i in range(50) if i % 5 != 2]  # the catalogue needs no credential and spends none
         self.assertEqual([len(self.front.used(t)) for t in toks], [sum(1 for i in counted if i % 4 == k) for k in range(4)])
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=toks[0])[1]['version'], 10)
+        self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=toks[0])[1]['version'], 10)
 
     def test_malformed_input_on_every_route_answers_a_named_envelope_never_a_crash(self):
         rnd, tok = random.Random(7), self.login()
-        ids = ['\u2603', 'a%2F..%2F..', '%00', '%ED%A0%80', 'x' * 300, '..', 'garden/../c1', '%', '%zz', '<i>', '\u00b2']
+        ids = ['\u2603', 'a%2F..%2F..', '%00', '%ED%A0%80', 'x' * 300, '..', 'garden/../' + self.c, '%', '%zz', '<i>', '\u00b2']
         bodies = [b'', b'\x00\xff' * 50, bytes(rnd.randrange(256) for _ in range(300)), b'[' * 5000, b'{"a":' * 400 + b'1' + b'}' * 400,
                   json.dumps({'intent': '\ud800\u2603', 'spell': '\ud800', 'object': '\u2603/\ud800', 'handle': '\ud800'}).encode(),
                   b'{"modules": [1, "x", null], "source": 5, "entry": [], "arguments": {}, "fields": [1], "spell": 7, "seed": [[[]]], "checkpoint": "x"}',

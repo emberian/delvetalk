@@ -78,6 +78,7 @@ class Hosts(list):
 
 
 class HostCase(unittest.TestCase):
+    independent = True  # a fresh journal per test: tests share only the process (tests/run.py may split the class)
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -150,18 +151,62 @@ class Stateless:
 atexit.register(lambda: _checker and _checker.alive() and _checker.close())
 
 
-def start_hostd(state, binary_path=None, opener=None, library=None):
-    """A hostd serving <state>/host.sock from a thread, over <state>/world.journal. Stop with stop_hostd."""
+POLL = 0.05  # socketserver's default 0.5 s poll made every daemon's shutdown cost half a second
+
+
+def serve(server):
+    """Serve a socketserver (hostd, the HTTP front, a fake) from a daemon thread; stop with server.shutdown()."""
     import threading
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": POLL}, daemon=True).start()
+    return server
+
+
+def unsynced(process):
+    """A transport.hostproc.Host whose journal opens with `sync: none`. Heaps take no sync option
+    (Hostd passes its own to the shared world only), so their processes are wrapped here."""
+    exchange = process._exchange
+
+    def opening(request):
+        if request.get("op") == "world-open":
+            request = dict(request, sync="none")
+        return exchange(request)
+    process._exchange = opening
+    return process
+
+
+def start_hostd(state, binary_path=None, opener=None, library=None):
+    """A hostd serving <state>/host.sock from a thread, over <state>/world.journal (its journals
+    unsynced). Stop with stop_hostd."""
     from transport.hostd import Hostd
-    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library)
-    threading.Thread(target=d.serve_forever, daemon=True).start()
-    return d
+    if os.environ.get("DELVETALK_SPAWN_LOG"):
+        with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
+            f.write("hostd\n")
+    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library, sync="none")
+    get = d.heaps.get
+    d.heaps.get = lambda did: unsynced(get(did)) if did not in d.heaps.pool else get(did)
+    return serve(d)
 
 
 def stop_hostd(d):
     d.shutdown()
     d.close()
+
+
+class HostdCase(unittest.TestCase):
+    """One hostd per test class, opened by OPENER with the world library sealed; tests share its
+    world, so each names its own objects."""
+    OPENER = "did:plc:" + "a" * 24
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from transport.hostproc import LIBRARY, HostClient
+        cls.hostd_dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.hostd_dir.cleanup)
+        cls.hostd = start_hostd(cls.hostd_dir.name, opener=cls.OPENER, library=LIBRARY)
+        cls.addClassCleanup(stop_hostd, cls.hostd)
+        cls.socket = os.path.join(cls.hostd_dir.name, "host.sock")
+        cls.host = HostClient(cls.socket)
 
 
 def card_texts(reply):

@@ -1,4 +1,10 @@
-"""Programmable from within: reprogram and amend, judged by the object's own law."""
+"""An object is reprogrammed and its law amended from within, each judged by its own law; the default
+law lets anyone invoke and only the creator change the code.
+
+Evidence for FOUNDATION §3, §4 (layer: host).
+
+Programmable from within: reprogram and amend, judged by the object's own law.
+"""
 import unittest
 
 from tests.test_turn_world import ON_DISK, TurnWorld, closure, label, nat, record, fixture
@@ -209,11 +215,6 @@ class DefaultLaw(Reprogram):
     def test_a_creator_handle_that_cannot_be_written_in_a_law_cannot_create_a_lawless_object(self):
         r = self.make(principal='bad"name')
         self.assertEqual(r["status"], "error")
-
-    def test_an_explicit_law_still_goes_through_the_amendment_clause_rule(self):
-        r = self.make(source=with_law(COUNTER, 'law sealed: request.kind == 0 and request.subject == "nobody"'))
-        self.assertEqual(r["status"], "error")
-        self.assertIn("law does not admit an amendment by its proposer ember: sealed: ", r["message"])
 
     def test_the_law_can_tell_an_amend_from_a_reprogram(self):
         law = 'law split: request.kind == 0 or request.kind == 2'

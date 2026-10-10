@@ -1,10 +1,16 @@
-"""The page's merge (FOUNDATION section 4): the garden's human owner replies `merge` to its posted
+"""The owner's `merge` reply checkpoints the garden's page; anyone else's, or a forged write, is
+refused.
+
+Evidence for FOUNDATION §5 (layer: objects).
+
+The page's merge: the garden's human owner replies `merge` to its posted
 page, and receive {text: "merge", post, slot} records that post as pageCheckpoint; the card says
 "page checkpointed at <post>". A merge from anyone else, or naming no post, is refused by name and
 writes nothing; the Garden's law refuses the same write proposed directly. Card.isMerge and
 Card.merge are the default any object with a page uses.
 
-Refuted by: a stranger's merge or forged write moving pageCheckpoint; the owner's not moving it."""
+Refuted by: a stranger's merge or forged write moving pageCheckpoint; the owner's not moving it.
+"""
 import unittest
 
 from tests import test_chain
@@ -20,8 +26,6 @@ def heard(text, post=PAGE):
 
 
 class Merge(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()
@@ -39,7 +43,17 @@ class Merge(test_chain.Chain):
         self.assertEqual(r["offers"][0]["text"], "Page checkpointed at %s.\n" % PAGE)
         self.assertEqual(self.field("pageCheckpoint"), PAGE)
         card = self.turn("garden", "receive", heard(""), principal="glm")["offers"][0]["text"]
-        print("\n--- garden after a merge ---\n" + card)
+        self.assertEqual(card, (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "To plant, reply:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    colour: <amber, violet or silver>\n"
+            "\n"
+            "page checkpointed at at://did:plc:ember/town.delve.feed.post/page1\n"
+            "0 planted, newest first:\n"))
         self.assertIn("page checkpointed at %s\n" % PAGE, card)
 
     def test_a_merge_from_anyone_else_or_without_a_post_is_refused_by_name(self):
