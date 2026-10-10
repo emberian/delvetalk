@@ -233,8 +233,8 @@ if __name__ == "__main__":
 
 
 class CardsReadFieldLines(test_chain.Chain):
-    """Run 5, finding 1: every card reads field lines with no delvetalk line through Card.route
-    (Spell.bare): a bell reads a fenced `rain: …` as rain, the garden reads `plant: …` itself."""
+    """Run 5, finding 1: the host reads field lines with no delvetalk line as the spell of
+    the form they name: a bell reads a fenced `rain: …` as rain, the garden reads `plant: …` itself."""
 
     def bell(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
@@ -451,9 +451,8 @@ class HandedOnlyWhenNamed(test_chain.Chain):
 
     def test_glms_long_reply_under_a_bell_is_cheap_to_hand_on_and_to_judge(self):
         """Run 8: glm's 1,788-character `3mxgtb2dklk2f` under a bell burned 999,861 ticks (a walk
-        of the text for every town word) and was refused budget. The bell's turn now parses the
-        reply once (Spell.parse notes whether any line might be a field line, so Spell.bare runs
-        only then) and hands it on: under 20,000 ticks."""
+        of the text for every town word) and was refused budget. The host now parses the reply (no
+        ticks) and the bell's turn hands it on: under 20,000 ticks."""
         self.add("ANTHOLOGY", "anthology")
         text = post("3mxgtb2dklk2f")
         self.assertEqual(len(text), 1788)

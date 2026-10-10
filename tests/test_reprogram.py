@@ -17,17 +17,25 @@ ADDS_TWO = COUNTER.replace("add 1n", "add 2n").replace("state.count + 1n", "stat
 EMBER_ONLY = 'law counter: request.subject == "ember"'
 BOTH = 'law counter: request.subject == "ember" or request.subject == "kimik3"'
 
+def with_variant(modules):
+    """The Variant fixture beside the object's own modules, so a later package may import it."""
+    first = closure("Variant")
+    names = {m["name"] for m in first}
+    return first + [m for m in modules if m["name"] not in names]
+
+
 TOTALS = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
   total: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
   total: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n, total: 0n}
 def migrate(old: {count: Nat}) -> State:
@@ -57,7 +65,7 @@ def pad(source, size):
 class Reprogram(TurnWorld):
     def make(self, obj="c1", source=COUNTER, principal="ember", count=0):
         r = self.host.send(op="world-create", principal=principal, identity="mk-" + obj, object=obj,
-                           modules=closure("Counter", override={"Counter": source}), entry="initial",
+                           modules=with_variant(closure("Counter", override={"Counter": source})), entry="initial",
                            seed=record(count=nat(count)))
         return r
 

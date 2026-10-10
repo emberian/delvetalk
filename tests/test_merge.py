@@ -7,7 +7,7 @@ The page's merge: the garden's human owner replies `merge` to its posted
 page, and receive {text: "merge", post, slot} records that post as pageCheckpoint; the card says
 "page checkpointed at <post>". A merge from anyone else, or naming no post, is refused by name and
 writes nothing; the Garden's law refuses the same write proposed directly. Card.isMerge and
-Card.merge are the default any object with a page uses.
+Card.checkpointLine are what any object with a page uses.
 
 Refuted by: a stranger's merge or forged write moving pageCheckpoint; the owner's not moving it.
 """

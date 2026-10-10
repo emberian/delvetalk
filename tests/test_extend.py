@@ -19,12 +19,13 @@ from tests.test_turn_world import declared
 BASE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n}
 def add(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
@@ -63,12 +64,13 @@ def zero(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 FORGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {note: ""}
 def graft(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:

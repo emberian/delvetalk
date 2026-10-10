@@ -23,8 +23,8 @@ type Decls = Lists.List<Decl>
 # -> K` gives that record. `compare` answers 0 (less), 1 (equal) or 2 (greater).
 def compare<K>(left: K, right: K) -> Nat:
   canonicalCompare(left, right)
-# A value a pattern names (a Wake's `equals`) or a row's column shows an observer
-# (Card.Column): a natural or a text.
+# A value a pattern names (a Wake's `equals`) or a row's column carries (Rows.Column): a
+# natural or a text.
 sum Cell:
   natural: {value: Nat}
   text: {value: String}
@@ -149,21 +149,6 @@ def paired<A, B, K>(row: A, key: K, right: Lists.List<Keyed<B, K>>, rest: Lists.
   match right:
     case nil(_): rest
     case cons(r): if compare(keyOfKeyed(r.head), key) == 1n then Lists.List.cons({head: Joined.pair({left: row, right: rowOfKeyed(r.head)}), tail: paired(row, key, r.tail, rest)}) else rest
-# Whether `new` only adds rows to `old`: every old row is still there with the same bytes,
-# by one merge in key order. The relational form of appendOnly, for a Bend law predicate.
-# TODO(insertOnly): the law text's `insertOnly(F)` atom says this once the host denotes it (the kernel parses it; Law.lean fails closed).
-def insertedOnly<T, K>(old: Relation<T>, new: Relation<T>, keyOf: T -> K) -> Bool:
-  keptIn(rows(old), rows(new), keyOf)
-def keptIn<T, K>(old: Lists.List<T>, new: Lists.List<T>, keyOf: T -> K) -> Bool:
-  match old:
-    case nil(_): true
-    case cons(o): keptAt(o.head, o.tail, new, keyOf)
-def keptAt<T, K>(row: T, old: Lists.List<T>, new: Lists.List<T>, keyOf: T -> K) -> Bool:
-  match new:
-    case nil(_): false
-    case cons(n): keptStep(compare(keyOf(row), keyOf(n.head)), row, old, n.head, n.tail, keyOf)
-def keptStep<T, K>(order: Nat, row: T, old: Lists.List<T>, first: T, new: Lists.List<T>, keyOf: T -> K) -> Bool:
-  if order == 1n then compare(row, first) == 1n && keptIn(old, new, keyOf) else if order == 2n then keptAt(row, old, new, keyOf) else false
 # The host's edits, applied in Bend to show what a write leaves (a card answering with the
 # state after its own write): insert adds a row whose key is absent and leaves a present
 # key as it is (the host refuses keyTaken when the rows differ), upsert adds or replaces,

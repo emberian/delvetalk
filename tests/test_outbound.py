@@ -87,13 +87,14 @@ DIRECTORY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Document.obend as Document
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
@@ -187,12 +188,13 @@ class Cards(Catalogue):
 WAITER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
@@ -229,6 +231,7 @@ class Time(Reflection):
 TELLER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Document.obend as Document
 record Said:
   text: String
@@ -236,8 +239,8 @@ record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
@@ -525,13 +528,14 @@ class Projection(Reflection):
 HANDLED = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Document.obend as Document
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
 def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
@@ -595,12 +599,13 @@ class Handles(Reflection):  # and the clock
 POST_WAITER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
 def noted(text: String, context: Abi.Context) -> Activity<Plan, Response, String>:
@@ -685,13 +690,14 @@ class ReplyIsAddress(PostWaiterWorld):
 MINTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Child.obend as Child
 record State:
   made: Nat
 record Edits:
   made: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {made: 0n}
 def made(target: Plans.Reference) -> Activity<Plan, Response, String>:
@@ -748,12 +754,13 @@ class MintedIds(Reflection):
 WHO = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
 def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:

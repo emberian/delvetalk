@@ -1,8 +1,10 @@
-"""The host's Lean spell parser (spec/Delvetalk/Host/Spell.lean, op `spell-parse`) agrees with the
-Bend grammar (world/lib/Spell.obend) on every input tests/test_spell.py exercises, plus edge inputs.
+"""The host's spell parser (spec/Delvetalk/Host/Spell.lean, op `spell-parse`) answers every recorded
+input as the fixtures say: parse, bare and fit, with the refusal clause names.
 
-Evidence for WHOLENESS section 2 (layer: host): the host parses spells: parse, bare and fit, with the refusal
-clause names. The Bend parser is the reference; the fixtures are tests/fixtures/spells/*.json.
+Evidence for WHOLENESS section 2 (layer: host): the host parses spells. The fixtures
+(tests/fixtures/spells/*.json) were recorded from the Bend grammar, which the host agreed with on
+every row before world/lib/Spell.obend's parser was deleted (lane/objects9); the host is the
+grammar now, and tests/test_spell.py exercises it case by case.
 
     python3 -m unittest tests.test_host_spell -v
 """
@@ -10,42 +12,15 @@ import json
 import os
 import unittest
 
-from tests.test_objects import check, closure, compile_job
-from tests.test_spell import PROBE, context, text, unique
+from tests.test_objects import check
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "spells")
 CLAUSES = {"otherCard", "noAction", "unknownField", "duplicateField", "badValue", "unclosedBlock", "unclear"}
-
-PROBE2 = PROBE + """def natForm() -> Form.Form:
-  {card: "c", action: "a", fields: Form.Fields.cons({head: {name: "n", kind: Form.Kind.natural({min: 2n, max: 300n})}, tail: Form.Fields.nil()})}
-def natural(text: String) -> String:
-  show(Spell.fit(Spell.parse(text), natForm()))
-def bare(text: String) -> String:
-  bindings(Spell.bare(text))
-"""
 
 
 def fixtures(name):
     with open(os.path.join(FIXTURES, name + ".json"), encoding="utf-8") as handle:
         return json.load(handle)
-
-
-def bend(entry, *arguments):
-    compiled = compile_job(unique(closure("Spell") + closure("Form") + closure("Abi")) + [{"name": "Probe", "source": PROBE2}], entry)
-    assert compiled["status"] == "compiled", compiled
-    out = check({"op": "run", "artifact": compiled["artifact"], "arguments": list(arguments), "limits": {"ticks": "1000000"}})
-    assert out["status"] == "finished", out
-    return out["value"]["value"]
-
-
-def bend_parse(reply):
-    return bend("parse", text(reply))
-
-
-def bend_fit(reply, form):
-    if form["card"] == "c":
-        return bend("natural", text(reply))
-    return bend("propose", text(reply), context(form["card"]))
 
 
 def host(request):
@@ -89,36 +64,27 @@ def clause_for(reason):
     return "noAction"
 
 
-class Agree(unittest.TestCase):
-    def parsed_agrees(self, row, expect=True):
-        out = host({"text": row["text"]})
-        self.assertEqual(show_parsed(out), bend_parse(row["text"]), row["text"])
-        if "notASpell" in out:
-            self.assertEqual(out["notASpell"]["fielded"] is True or out["notASpell"]["fielded"] is False, True)
-        if expect and "expected" in row:
-            self.assertEqual(show_parsed(out), row["expected"], row["text"])
-        return out
-
-    def test_parse_fixtures_agree_with_the_bend_parser(self):
+class Recorded(unittest.TestCase):
+    def test_parse_fixtures(self):
         for row in fixtures("parse"):
             with self.subTest(text=row["text"][:60]):
-                self.parsed_agrees(row)
+                out = host({"text": row["text"]})
+                self.assertEqual(show_parsed(out), row["expected"], row["text"])
+                self.assertEqual(show_bindings(out["bare"]), row["bare"], row["text"])
+                if "notASpell" in out:
+                    self.assertIn(out["notASpell"]["fielded"], (True, False))
 
-    def test_fit_fixtures_agree_with_the_bend_fit(self):
+    def test_fit_fixtures(self):
         for row in fixtures("fit") + fixtures("natural"):
             with self.subTest(text=row["text"][:60]):
-                self.parsed_agrees(row, expect=False)
                 out = host({"text": row["text"], "form": row["form"]})
-                shown = show_fit(out["fit"])
-                self.assertEqual(shown, bend_fit(row["text"], row["form"]), row["text"])
-                if "expected" in row:
-                    self.assertEqual(shown, row["expected"], row["text"])
+                self.assertEqual(show_parsed(out), row["parsed"], row["text"])
+                self.assertEqual(show_fit(out["fit"]), row["expected"], row["text"])
 
-    def test_bare_agrees_with_the_bend_bare(self):
-        for row in fixtures("bare") + fixtures("parse"):
+    def test_bare_fixtures(self):
+        for row in fixtures("bare"):
             with self.subTest(text=row["text"][:60]):
-                out = host({"text": row["text"]})
-                self.assertEqual(show_bindings(out["bare"]), bend("bare", text(row["text"])), row["text"])
+                self.assertEqual(show_bindings(host({"text": row["text"]})["bare"]), row["expected"], row["text"])
 
     def test_the_fielded_flag_is_whether_some_line_may_be_a_field(self):
         self.assertIs(host({"text": "plant: a fern"})["notASpell"]["fielded"], True)

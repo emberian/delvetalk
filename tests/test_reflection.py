@@ -11,6 +11,7 @@ Each case is named by the defect that would make it fail. The library is world/l
 of it); packages import it by name and carry none of it.
 """
 import os
+import atexit
 import re
 import shutil
 import tempfile
@@ -20,17 +21,32 @@ from tests.host import HostCase
 from tests.test_chain import field, nil, reference
 from tests.test_turn_world import ROOT, label, nat, record, declared
 
-LIBRARY = os.path.join(ROOT, "world", "lib")
+WORLD_LIBRARY = os.path.join(ROOT, "world", "lib")
+FIXTURES = os.path.join(ROOT, "tests", "fixtures", "obend")
+
+
+def _library():
+    """The world library with the test-only Variant fixture beside it."""
+    root = tempfile.mkdtemp(prefix="delvetalk-lib-")
+    atexit.register(shutil.rmtree, root, ignore_errors=True)
+    lib = os.path.join(root, "lib")
+    shutil.copytree(WORLD_LIBRARY, lib)
+    shutil.copy(os.path.join(FIXTURES, "Variant.obend"), os.path.join(lib, "Variant.obend"))
+    return lib
+
+
+LIBRARY = _library()
 
 PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -56,6 +72,7 @@ PROBE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Form.obend as Form
 record Arg:
   n: Nat
@@ -65,8 +82,8 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   seen: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Arg>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Arg>
 def initial() -> State:
   {count: 0n, seen: ""}
 def keep() -> Edits:
@@ -511,12 +528,13 @@ class CallerAcrossSend(Reflection):
 FORGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:

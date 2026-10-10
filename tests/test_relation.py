@@ -20,6 +20,7 @@ PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record Rain:
   author: String
   at: Nat
@@ -44,8 +45,8 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   rains: RowEdit
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def relations() -> Lists.List<Decl>:
   Lists.List.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.nil({})})}), limit: LIMIT}, tail: Lists.List.nil({})})
 def initial() -> State:

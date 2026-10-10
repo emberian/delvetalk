@@ -27,14 +27,15 @@ protocol Card:
 THING = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Kit.obend as Kit
 implements Kit.Card
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n}
 def receive(state: State, input: Kit.Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -57,7 +58,7 @@ class Protocols(unittest.TestCase):
         cls.h.close()
 
     def modules(self, thing):
-        return library_modules("Abi", "Plan") + [{"name": "Kit", "source": KIT}, {"name": "Thing", "source": thing}]
+        return library_modules("Abi", "Variant") + [{"name": "Kit", "source": KIT}, {"name": "Thing", "source": thing}]
 
     def check(self, thing, entry="render"):
         return self.h.send({"op": "check-package", "entry": entry, "modules": self.modules(thing)})
@@ -84,7 +85,7 @@ class Protocols(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         d = reply["diagnostic"]
         self.assertIn("implements Card but defines no door", d["message"])
-        self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 5))
+        self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 6))
         self.assertIn("protocol Card", d["hint"])
 
     def test_a_mistyped_method_is_refused_by_name_where_it_is_written(self):
@@ -93,7 +94,7 @@ class Protocols(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         d = reply["diagnostic"]
         self.assertIn("refused (protocol): Thing.render", d["message"])
-        self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 18))
+        self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 19))
         self.assertEqual(d["expected"], "State -> Abi.Context -> String")
         self.assertTrue(d["found"].endswith("-> Nat"), d)
         self.assertIn("protocol Card", d["hint"])

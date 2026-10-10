@@ -25,14 +25,15 @@ BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
   rains: Lists.List<String>
 record Edits:
   count: Plans.Edit<Nat, Nat>
   rains: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 law cap: new.count <= 3
 def initial() -> State:
   {count: 0n, rains: Lists.List::<String>.nil({})}

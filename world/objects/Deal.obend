@@ -42,16 +42,12 @@ record Edits:
   withdrawnHandle: Plans.Edit<String, {}>
   closed: Plans.Edit<Nat, {}>
 # The law: only a party changes the deal; the parties, terms and piece never change; a
-# signature is only ever inserted (the Bend predicate, clause signed); a withdrawal is final (closed goes 0 to 1 once:
-# writeOnce reads naturals only, and passes any text field unjudged). Bend refuses a
-# stranger by name first.
+# signature is only ever inserted; a withdrawal is final (closed goes 0 to 1 once). Bend
+# refuses a stranger by name first.
 law members "a write is a party's": request.kind == 0 implies request.subject in new.parties
 law fixed "the parties, the terms and the piece never change": unchanged(parties) and unchanged(terms) and unchanged(piece) and unchanged(amendment)
 law once "a deal closes once": writeOnce(closed)
-# TODO(insertOnly): `law signed "signatures are only added": insertOnly(signatures)` once
-# the host denotes the atom (it parses; Law.lean fails closed); until then the predicate says it.
-def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Relations.insertedOnly(old.signatures, new.signatures, signedBy) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "signed", reading: "Signatures are only added."})
+law signed "signatures are only added": insertOnly(signatures)
 def defaultSeed() -> Seed:
   {amendment: {object: "", law: ""}, parties: Lists.List.nil(), terms: "", piece: ""}
 def seeded(seed: Seed) -> State:

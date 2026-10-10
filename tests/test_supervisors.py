@@ -19,6 +19,7 @@ from tests.test_turn_world import label, nat, record, declared
 SUPERVISOR = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
   how: String
@@ -29,8 +30,8 @@ record Edits:
   how: Plans.Edit<String, {}>
   class: Plans.Edit<String, {}>
   who: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n, how: "", class: "", who: ""}
 def classOf(outcome: Plans.Outcome) -> String:
@@ -45,12 +46,13 @@ def ended(state: State, input: {receipt: Plans.Receipt, how: String}, context: A
 WORKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:

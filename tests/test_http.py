@@ -21,12 +21,13 @@ from tests.test_turn_world import BINARY, closure, counter_modules, declared, la
 REPL_COUNTER = declared('''edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -81,14 +82,21 @@ class FrontCase(HostdCase):
     def setUpClass(cls):
         if cls.fresh_world:
             return
-        super().setUpClass()
+        unittest.TestCase.setUpClass()
+        from tests.test_reflection import LIBRARY
+        cls.hostd_dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.hostd_dir.cleanup)
+        cls.hostd = start_hostd(cls.hostd_dir.name, opener=cls.OPENER, library=LIBRARY)
+        cls.addClassCleanup(stop_hostd, cls.hostd)
+        cls.socket = os.path.join(cls.hostd_dir.name, "host.sock")
+        cls.host = HostClient(cls.socket)
         cls.hostd.heaps.size = 2
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         if self.fresh_world:
-            from transport.hostproc import LIBRARY
+            from tests.test_reflection import LIBRARY
             self.hostd_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self.hostd_dir.cleanup)
             self.hostd = start_hostd(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
@@ -111,7 +119,7 @@ class FrontCase(HostdCase):
 
     def heap_create(self, tok, name='h1'):
         # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
-        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('Plan') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
+        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('Variant') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
                                                              'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
 
     @property
@@ -354,7 +362,7 @@ class Repl(FrontCase):
                              immediatelyPrevious={'tag': 'boolean', 'value': False}))
         # The REPL takes at most MAX_BODY: Counter's closure with Card exceeds it, so the REPL
         # runs the bare counter activity.
-        s, r = self.repl(tok, modules=closure('Plan') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
+        s, r = self.repl(tok, modules=closure('Variant') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
                          arguments=[record(count=nat(2)), context])
         self.assertEqual((s, r['status']), (200, 'yielded'), r)
 

@@ -1,52 +1,29 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Form.obend as Form
-# The spell grammar of a card reply (docs/FOUNDATION.md section 4).
+# What Bend still reads of a spell. The host parses a reply's spell, fits it to the card's
+# forms and runs the method (spec/Delvetalk/Host/Spell.lean, op `spell-parse`; FOUNDATION
+# section 5 has the grammar); a card's receive gets the reply's `name: value` lines as
+# `Reply.fields`. Two readings stay here: the card and action of the reply's spell line (a
+# card answering a spell the host found missing fields names what it still needs), and the
+# fields on that one line (a policy macro expands to a one-line spell, `garden plant /
+# colour: violet / seed: …`).
 #
-#   delvetalk <card> <action>
-#   <field>: <value>
-#   ...
+#   delvetalk <card> <action> [/ <field>: <value>]...
 #
-# Blank lines and lines starting with # are ignored, and everything after a line
-# that is exactly --- is ignored. A card name is [a-z0-9:/.-]+, at most 160 bytes
-# (so `env/did:plc:…` can be named); action and field names are [a-z0-9-]+, and the
-# action `?` asks for the card's usage. A
-# value is the rest of its line, trimmed, or a block: `field: <<DELIM` then lines up to a
-# line that is exactly DELIM (see valued). The spell is the last delvetalk line that
-# is not quotation (see parse); a reply with no delvetalk line is not a spell: prose
-# needs interpretation, not parsing. The fields may also follow the action on the
-# same line, separated by ` / ` or commas. Fence lines and `>` lines among the field
-# lines are skipped.
-#
-# parse turns text into a Parsed; fit checks a Parsed against the Form the card
-# offered. A Fit is never authority: a proposal is what the host may feed to the
-# object's method, which still runs under the principal's law.
-#
-# A field line is any `name: value` with a non-empty name; a name outside
-# [a-z0-9-]+ cannot match a declared field, so fit refuses it by name instead of
-# parse paying a 37-letter alphabet scan per line.
-#
-# Cost. Text scans are charged by positions examined and by the prefix taken or
-# dropped, and a scan over a large alphabet costs per scalar twice the alphabet
-# size, so only short names are checked against the identifier alphabet; lines
-# are found with a one-scalar alphabet, and the only whole-text operations are
-# one break, one take and one drop per line.
+# The spell line is the post's LAST delvetalk line that is not quotation (agents quote the
+# invitation, and example spells, above their own): a line indented four spaces or more, or
+# by a tab, is quotation, taken only when the post has no other; a `>` line is never one, nor
+# a line inside a fence with an info string (```bend); a delvetalk line whose card or action
+# is malformed is not one either. A card name is [a-z0-9:/.-]+, at most 160 bytes; an action
+# is [a-z0-9-]+ or `?`.
 record Binding:
   name: String
   value: String
 type Bindings = Lists.List<Binding>
 sum Parsed:
   spell: {card: String, action: String, fields: Bindings}
-  notASpell: {reason: String, fielded: Bool}
-type Value = Form.Value
-record Entry:
-  name: String
-  value: Value
-type Entries = Lists.List<Entry>
-sum Fit:
-  proposal: {card: String, action: String, bindings: Entries}
-  unclear: {needs: Form.Names}
-  refused: {reason: String}
+  notASpell: {reason: String}
 def identifier() -> String:
   "abcdefghijklmnopqrstuvwxyz0123456789-"
 def cardAlphabet() -> String:
@@ -56,6 +33,9 @@ def isCardName(value: String) -> Bool:
   size > 0n && size <= 160n && textSpan(value, cardAlphabet()) == size
 def isAction(value: String) -> Bool:
   value == "?" || isIdentifier(value)
+def isIdentifier(value: String) -> Bool:
+  let size = textLength(value)
+  size > 0n && textSpan(value, identifier()) == size
 def blanks() -> String:
   " \t\r"
 def trimStart(value: String) -> String:
@@ -63,187 +43,102 @@ def trimStart(value: String) -> String:
 def trimEnd(value: String) -> String:
   let size = textLength(value)
   if size == 0n then value else if textSpan(textDrop(value, size - 1n), blanks()) == 1n then trimEnd(textTake(value, size - 1n)) else value
-def isIdentifier(value: String) -> Bool:
-  let size = textLength(value)
-  size > 0n && textSpan(value, identifier()) == size
-sum Fields2:
-  found: {bindings: Bindings}
-  bad: {reason: String}
-  again: {text: String}
-  stray: {bindings: Bindings, rest: String}
-# The spell a post means is its LAST delvetalk line that is not quotation (agents quote
-# the invitation, and example spells, above their own): a line indented four spaces or
-# more, or by a tab, is quotation, taken only when the post has no other; a `>` line and a
-# fence line (```) are never a spell line; a delvetalk line whose card or action is
-# malformed is not one either. The search runs once: the first unquoted spell line is
-# parsed, and its field lines hand over to any later unquoted spell line (`again`) or,
-# at a line that is not a field, to the next spell line after it, the spell standing
-# with the fields read so far when there is none (`stray`).
 sum Candidate:
   none: {}
-  at: {card: String, action: String, tail: String, rest: String}
-# A reply that is not a spell says whether some line of it might be a `name: value` field
-# line (`fielded`), noticed in the same walk, so a reader asks Spell.bare only then.
+  at: {card: String, action: String, tail: String}
+# One walk of the lines: the last unquoted spell line wins, else the last quoted one.
 def parse(text: String) -> Parsed:
-  seek(text, Candidate.none({}), "The reply has no delvetalk line.", false)
-def seek(text: String, quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
-  if text == "" then fallback(quoted, reason, fielded) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), quoted, reason, fielded)
-# Whether a line's first 17 scalars (past its indent) begin `name:`: the walk notices a
-# field name of up to 16 letters (every form field and action in world/ is shorter), and
-# a reader asks Spell.bare, which reads any name, only when one was noticed.
-def fieldHead(text: String, indent: Nat, stop: Nat) -> Bool:
-  stop > indent && looksLikeField(textTake(textDrop(text, indent), if stop - indent < 17n then stop - indent else 17n))
+  seek(text, Candidate.none({}), Candidate.none({}))
+def seek(text: String, unquoted: Candidate, quoted: Candidate) -> Parsed:
+  if text == "" then chosen(unquoted, quoted) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), unquoted, quoted)
+def seekLine(text: String, indent: Nat, stop: Nat, unquoted: Candidate, quoted: Candidate) -> Parsed:
+  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), unquoted, quoted) else if indent < stop && isSpellAt(text, indent) then candidate(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), unquoted, quoted) else seek(textDrop(text, stop + 1n), unquoted, quoted)
+def candidate(found: Candidate, quote: Bool, rest: String, unquoted: Candidate, quoted: Candidate) -> Parsed:
+  match found:
+    case none(_): seek(rest, unquoted, quoted)
+    case at(_): if quote then seek(rest, unquoted, found) else seek(rest, found, quoted)
+def chosen(unquoted: Candidate, quoted: Candidate) -> Parsed:
+  match unquoted:
+    case at(a): spelled(a.card, a.action, inline(a.tail))
+    case none(_): fallback(quoted)
+def fallback(quoted: Candidate) -> Parsed:
+  match quoted:
+    case at(a): spelled(a.card, a.action, inline(a.tail))
+    case none(_): Parsed.notASpell({reason: "The reply has no delvetalk line."})
 def isSpellAt(text: String, indent: Nat) -> Bool:
   textTake(textDrop(text, indent), 10n) == "delvetalk " || textTake(textDrop(text, indent), 10n) == "delvetalk\t"
 def isQuote(text: String) -> Bool:
   textSpan(textTake(text, 4n), " ") == 4n || textTake(text, 1n) == "\t"
-# A fence with an info string (```bend, ```json) opens code: its lines are never a
-# spell or a field. A bare fence is skipped as a line and what it holds is read.
+# A fence with an info string (```bend, ```json) opens code: its lines are never a spell. A
+# bare fence is skipped as a line and what it holds is read.
 def tagged(text: String, indent: Nat, stop: Nat) -> Bool:
   stop > indent + 3n && textTake(textDrop(text, indent), 3n) == "```" && textSpan(textDrop(text, indent + 3n), " \t\r") < stop - indent - 3n
 def pastFence(text: String) -> String:
   if text == "" then text else pastFenceLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
 def pastFenceLine(text: String, indent: Nat, stop: Nat) -> String:
   if textTake(textDrop(text, indent), 3n) == "```" then textDrop(text, stop + 1n) else pastFence(textDrop(text, stop + 1n))
-def seekLine(text: String, indent: Nat, stop: Nat, quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
-  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), quoted, reason, fielded) else if indent < stop && isSpellAt(text, indent) then found(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), quoted, reason, fielded) else seek(textDrop(text, stop + 1n), quoted, reason, fielded || fieldHead(text, indent, stop))
 def headingAt(text: String, indent: Nat, stop: Nat) -> Candidate:
-  heading(trimEnd(textDrop(textTake(text, stop), indent + 9n)), textDrop(text, stop + 1n))
-def found(candidate: Candidate, quote: Bool, rest: String, quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
-  match candidate:
-    case none(_): seek(rest, quoted, reason, fielded)
-    case at(a): if quote then seek(rest, candidate, reason, fielded) else spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
-def fallback(quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
-  match quoted:
-    case at(a): spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
-    case none(_): Parsed.notASpell({reason: reason, fielded: fielded})
-def heading(line: String, rest: String) -> Candidate:
+  heading(trimEnd(textDrop(textTake(text, stop), indent + 9n)))
+def heading(line: String) -> Candidate:
   let afterBlanks = trimStart(line)
   let cardEnd = textBreak(afterBlanks, " \t")
   let card = textTake(afterBlanks, cardEnd)
   let afterCard = trimStart(textDrop(afterBlanks, cardEnd))
   let actionEnd = textBreak(afterCard, " \t")
   let action = textTake(afterCard, actionEnd)
-  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else Candidate.at({card: card, action: action, tail: trimStart(textDrop(afterCard, actionEnd)), rest: rest})
-# Fields on one line are separated by ` / ` (the form the town's posts teach: `delvetalk
-# tide subscribe / every: 1 / note: first light`) or by commas; a slash or comma only
-# separates when what follows it looks like `name:`, so a value may hold either. A
-# field line holds one field (its value may contain slashes and commas).
-def inline(tail: String) -> Fields2:
-  if tail == "" then Fields2.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then trimStart(textDrop(tail, 1n)) else tail, true)
-def slashed(before: String, rest: String, commas: Bool) -> Fields2:
+  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else Candidate.at({card: card, action: action, tail: trimStart(textDrop(afterCard, actionEnd))})
+# Fields on the spell line are separated by ` / ` (`delvetalk tide subscribe / every: 1 /
+# note: first light`) or by commas; a slash or comma only separates when what follows it
+# looks like `name:`, so a value may hold either.
+sum Fields:
+  found: {bindings: Bindings}
+  bad: {reason: String}
+def spelled(card: String, action: String, fields: Fields) -> Parsed:
+  match fields:
+    case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
+    case bad(b): Parsed.notASpell({reason: b.reason})
+def inline(tail: String) -> Fields:
+  if tail == "" then Fields.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then trimStart(textDrop(tail, 1n)) else tail)
+def slashed(before: String, rest: String) -> Fields:
   let at = textBreak(rest, "/")
-  if at == textLength(rest) then segment("{before}{rest}", commas) else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n), commas)
-def slashAt(before: String, head: String, after: String, commas: Bool) -> Fields2:
-  if looksLikeField(trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), blanks()) == 1n) then both(segment("{before}{head}", commas), slashed("", trimStart(after), commas)) else slashed("{before}{head}/", after, commas)
-def segment(text: String, commas: Bool) -> Fields2:
-  if trimStart(text) == "" then Fields2.found({bindings: Bindings.nil()}) else piece(trimStart(text))
+  if at == textLength(rest) then segment("{before}{rest}") else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n))
+def slashAt(before: String, head: String, after: String) -> Fields:
+  if looksLikeField(trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), blanks()) == 1n) then both(segment("{before}{head}"), slashed("", trimStart(after))) else slashed("{before}{head}/", after)
+def segment(text: String) -> Fields:
+  if trimStart(text) == "" then Fields.found({bindings: Bindings.nil()}) else piece(trimStart(text))
 # Commas: a comma continues the current value unless what follows it looks like `name:`.
-def piece(tail: String) -> Fields2:
+def piece(tail: String) -> Fields:
   let stop = textBreak(tail, ",")
   startField(trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
 def looksLikeField(value: String) -> Bool:
   let colon = textBreak(value, ":")
   colon > 0n && textTake(value, colon) != value && isIdentifier(textTake(value, colon))
-def startField(value: String, rest: String) -> Fields2:
+def startField(value: String, rest: String) -> Fields:
   let colon = textBreak(value, ":")
-  if looksLikeField(value) then continued(textTake(value, colon), trimStart(textDrop(value, colon + 1n)), rest) else Fields2.bad({reason: "Not a field: {textTake(value, 40n)}"})
-def continued(name: String, value: String, rest: String) -> Fields2:
-  if rest == "" then consed(name, trimEnd(value), Fields2.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
-def more(name: String, value: String, stop: Nat, rest: String) -> Fields2:
+  if looksLikeField(value) then continued(textTake(value, colon), trimStart(textDrop(value, colon + 1n)), rest) else Fields.bad({reason: "Not a field: {textTake(value, 40n)}"})
+def continued(name: String, value: String, rest: String) -> Fields:
+  if rest == "" then consed(name, trimEnd(value), Fields.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
+def more(name: String, value: String, stop: Nat, rest: String) -> Fields:
   let next = trimStart(textTake(rest, stop))
   if looksLikeField(next) then consed(name, trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, "{value},{textTake(rest, stop)}", textDrop(rest, stop + 1n))
-def both(first: Fields2, second: Fields2) -> Fields2:
+def both(first: Fields, second: Fields) -> Fields:
   match first:
     case found(f): sequenced(f.bindings, second)
     case _: first
-def sequenced(bindings: Bindings, second: Fields2) -> Fields2:
+def sequenced(bindings: Bindings, second: Fields) -> Fields:
   match second:
-    case found(g): Fields2.found({bindings: Lists.concat(bindings, g.bindings)})
-    case stray(st): Fields2.stray({bindings: Lists.concat(bindings, st.bindings), rest: st.rest})
+    case found(g): Fields.found({bindings: Lists.concat(bindings, g.bindings)})
     case _: second
-def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
-  match parsed:
-    case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
-    case bad(b): Parsed.notASpell({reason: b.reason, fielded: true})
-    case again(a): parse(a.text)
-    case stray(r): seekAfter(r.rest, Parsed.spell({card: card, action: action, fields: r.bindings}))
-# After a line that is not a field: a later unquoted spell line takes over; without one,
-# the spell stands with the fields read so far (prose may follow a spell).
-def seekAfter(text: String, otherwise: Parsed) -> Parsed:
-  if text == "" then otherwise else seekAfterLine(text, textSpan(text, " \t"), textBreak(text, "\n"), otherwise)
-def seekAfterLine(text: String, indent: Nat, stop: Nat, otherwise: Parsed) -> Parsed:
-  if tagged(text, indent, stop) then seekAfter(pastFence(textDrop(text, stop + 1n)), otherwise) else if indent < stop && isSpellAt(text, indent) && isQuote(text) == false then foundAfter(headingAt(text, indent, stop), textDrop(text, stop + 1n), otherwise) else seekAfter(textDrop(text, stop + 1n), otherwise)
-def foundAfter(candidate: Candidate, rest: String, otherwise: Parsed) -> Parsed:
-  match candidate:
-    case none(_): seekAfter(rest, otherwise)
-    case at(a): spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
-def fieldLines(text: String) -> Fields2:
-  if text == "" then Fields2.found({bindings: Bindings.nil()}) else spellLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
-# A later spell line among the fields: quoted, it is skipped; unquoted, it takes over;
-# one naming no card and action ends the fields, as --- does.
-def spellLine(text: String, indent: Nat, stop: Nat) -> Fields2:
-  if tagged(text, indent, stop) then fieldLines(pastFence(textDrop(text, stop + 1n))) else if indent < stop && isSpellAt(text, indent) then laterSpell(text, isQuote(text), headingAt(text, indent, stop), textDrop(text, stop + 1n)) else fieldLine(text, stop)
-def laterSpell(text: String, quote: Bool, candidate: Candidate, rest: String) -> Fields2:
-  match candidate:
-    case at(_): if quote then fieldLines(rest) else Fields2.again({text: text})
-    case none(_): Fields2.found({bindings: Bindings.nil()})
-# A line is taken once and the rest is dropped once. The drop starts one scalar
-# early, so the line's last scalar is seen for free: only when it is blank is the
-# line trimmed at the end by the slow path.
-def fieldLine(text: String, stop: Nat) -> Fields2:
-  if stop == 0n then fieldLines(textDrop(text, 1n)) else lineParts(textTake(text, stop), textDrop(text, stop - 1n))
-def lineParts(line: String, tail: String) -> Fields2:
-  let rest = textDrop(tail, 2n)
-  let first = textTake(line, 1n)
-  if textSpan(first, blanks()) == 1n then lineParts(trimStart(trimEnd(line)), tail) else classify(if textSpan(textTake(tail, 1n), blanks()) == 1n then trimEnd(line) else line, first, rest)
-# Blank, # and > lines and fence lines are skipped; --- ends the fields.
-def classify(line: String, first: String, rest: String) -> Fields2:
-  if line == "" || first == "#" || first == ">" || first == "`" && textTake(line, 3n) == "```" then fieldLines(rest) else if first == "-" && line == "---" then Fields2.found({bindings: Bindings.nil()}) else binding(line, rest)
-def binding(line: String, rest: String) -> Fields2:
-  let colon = textBreak(line, ":")
-  let name = textTake(line, colon)
-  if colon == 0n || name == line then Fields2.stray({bindings: Bindings.nil(), rest: rest}) else if opens(textTake(textDrop(line, colon + 1n), 3n)) then valued(name, trimStart(textDrop(line, colon + 1n)), rest) else consed(name, trimStart(textDrop(line, colon + 1n)), fieldLines(rest))
-# A value `<<DELIM` (1 to 32 of A-Z 0-9 _) opens a block: the lines after it up to a line
-# that is exactly DELIM, joined with one newline and no trailing newline. A block never
-# closed is refused by name. (Only the scalars after the colon are looked at first, so an
-# ordinary field line pays three.)
-def opens(head: String) -> Bool:
-  textTake(head, 2n) == "<<" || textTake(head, 3n) == " <<"
-def valued(name: String, value: String, rest: String) -> Fields2:
-  if textTake(value, 2n) == "<<" && isDelimiter(trimEnd(textDrop(value, 2n))) then block(name, trimEnd(textDrop(value, 2n)), rest, Bindings.nil()) else consed(name, value, fieldLines(rest))
-def isDelimiter(text: String) -> Bool:
-  textLength(text) >= 1n && textLength(text) <= 32n && textSpan(text, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == textLength(text)
-def block(name: String, delimiter: String, rest: String, lines: Bindings) -> Fields2:
-  if rest == "" then Fields2.bad({reason: "the block <<{delimiter} for {name} is never closed by a line {delimiter}"}) else blockLine(name, delimiter, textTake(rest, textBreak(rest, "\n")), textDrop(rest, textBreak(rest, "\n") + 1n), lines)
-def blockLine(name: String, delimiter: String, line: String, rest: String, lines: Bindings) -> Fields2:
-  if line == delimiter || textTake(line, textLength(line) - 1n) == delimiter && textDrop(line, textLength(line) - 1n) == "\r" then consed(name, textJoin(Lists.reverse(Lists.map(lines, fn(b: Binding) -> String: b.value)), "\n"), fieldLines(rest)) else block(name, delimiter, rest, Bindings.cons({head: {name: "", value: line}, tail: lines}))
-def consed(name: String, value: String, parsed: Fields2) -> Fields2:
-  match parsed:
-    case found(f): Fields2.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
-    case stray(st): Fields2.stray({bindings: Bindings.cons({head: {name: name, value: value}, tail: st.bindings}), rest: st.rest})
-    case _: parsed
-# Field lines with no delvetalk line, as the town writes them (`plant: a fern`, `rain:
-# a drizzle`, fenced or not): every `name: value` line whose name is a field name, outside
-# code fences with an info string and `>` quotation, in order.
-def bare(text: String) -> Bindings:
-  if text == "" then Bindings.nil() else bareLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
-def bareLine(text: String, indent: Nat, stop: Nat) -> Bindings:
-  if tagged(text, indent, stop) then bare(pastFence(textDrop(text, stop + 1n))) else bareField(trimEnd(textDrop(textTake(text, stop), indent)), textDrop(text, stop + 1n))
-def bareField(line: String, rest: String) -> Bindings:
-  if textTake(line, 1n) == ">" || textTake(line, 3n) == "```" || looksLikeField(line) == false then bare(rest) else Bindings.cons({head: {name: textTake(line, textBreak(line, ":")), value: trimStart(textDrop(line, textBreak(line, ":") + 1n))}, tail: bare(rest)})
-sum Verdict:
-  fine: {}
-  wrong: {reason: String}
-sum Looked:
-  none: {}
-  some: {field: Form.Field}
-def lookup(fields: Form.Fields, name: String) -> Looked:
+def consed(name: String, value: String, fields: Fields) -> Fields:
   match fields:
-    case nil(_): Looked.none({})
-    case cons(c): if c.head.name == name then Looked.some({field: c.head}) else lookup(c.tail, name)
-def digit(character: String) -> Nat:
-  textBreak("0123456789", character)
+    case found(f): Fields.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
+    case _: fields
+# A field's value by name, "" when absent.
+def valueOf(bindings: Bindings, name: String) -> String:
+  match bindings:
+    case nil(_): ""
+    case cons(c): if c.head.name == name then c.head.value else valueOf(c.tail, name)
+# A natural in plain digits (no sign, no leading zero, at most 18 digits), or no.
 sum Number:
   no: {}
   yes: {value: Nat}
@@ -251,71 +146,6 @@ def number(value: String) -> Number:
   let size = textLength(value)
   if size == 0n || size > 18n || textSpan(value, "0123456789") != size then Number.no({}) else if size > 1n && textTake(value, 1n) == "0" then Number.no({}) else Number.yes({value: digits(value, 0n)})
 def digits(rest: String, total: Nat) -> Nat:
-  if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + digit(textTake(rest, 1n)))
+  if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + textBreak("0123456789", textTake(rest, 1n)))
 def joined(options: Form.Names) -> String:
   Lists.fold(options, "", fn(option: String) -> String -> String: fn(rest: String) -> String: if rest == "" then option else "{option}, {rest}")
-def judge(field: Form.Field, value: String) -> Verdict:
-  match field.kind:
-    case text(t): if textLength(value) < t.min || textLength(value) > t.max then Verdict.wrong({reason: "{field.name} takes {natText(t.min)} to {natText(t.max)} characters."}) else Verdict.fine({})
-    case natural(n): judgeNumber(field.name, n.min, n.max, number(value))
-    case choice(c): if Lists.any(c.options, fn(option: String) -> Bool: option == value) then Verdict.fine({}) else Verdict.wrong({reason: "{field.name} is one of: {joined(c.options)}"})
-def judgeNumber(name: String, min: Nat, max: Nat, parsed: Number) -> Verdict:
-  match parsed:
-    case no(_): Verdict.wrong({reason: "{name} takes a natural number in plain digits."})
-    case yes(y): if y.value < min || y.value > max then Verdict.wrong({reason: "{name} takes {natText(min)} to {natText(max)}"}) else Verdict.fine({})
-def named(name: String) -> Binding -> Bool:
-  fn(binding: Binding) -> Bool: binding.name == name
-def audit(bindings: Bindings, fields: Form.Fields) -> Verdict:
-  match bindings:
-    case nil(_): Verdict.fine({})
-    case cons(c):
-      match lookup(fields, c.head.name):
-        case none(_): Verdict.wrong({reason: "Unknown field {c.head.name}"})
-        case some(s): if Lists.any(c.tail, named(c.head.name)) then Verdict.wrong({reason: "Duplicate field {c.head.name}"}) else next(judge(s.field, c.head.value), c.tail, fields)
-def next(verdict: Verdict, rest: Bindings, fields: Form.Fields) -> Verdict:
-  match verdict:
-    case fine(_): audit(rest, fields)
-    case wrong(_): verdict
-def valueOf(bindings: Bindings, name: String) -> String:
-  match bindings:
-    case nil(_): ""
-    case cons(c): if c.head.name == name then c.head.value else valueOf(c.tail, name)
-def typed(kind: Form.Kind, value: String) -> Value:
-  match kind:
-    case text(_): Value.text({value: value})
-    case natural(_): natural(number(value))
-    case choice(_): Value.choice({value: value})
-def natural(parsed: Number) -> Value:
-  match parsed:
-    case no(_): Value.natural({value: 0n})
-    case yes(y): Value.natural({value: y.value})
-def entry(bindings: Bindings) -> Form.Field -> Entry:
-  fn(field: Form.Field) -> Entry: {name: field.name, value: typed(field.kind, valueOf(bindings, field.name))}
-def missing(bindings: Bindings, fields: Form.Fields) -> Form.Names:
-  Lists.map(Lists.filter(fields, fn(field: Form.Field) -> Bool: Lists.any(bindings, named(field.name)) == false), fn(field: Form.Field) -> String: field.name)
-def fit(parsed: Parsed, form: Form.Form) -> Fit:
-  match parsed:
-    case notASpell(n): Fit.refused({reason: n.reason})
-    case spell(s): if s.card != form.card || s.action != form.action then Fit.refused({reason: "This card offers {form.card} {form.action}"}) else fitBound(rebound(s.fields, form), form)
-def fitBound(bindings: Bindings, form: Form.Form) -> Fit:
-  decide(bindings, form, audit(bindings, form.fields))
-# A field named as the action (`plant: a fern`, as the town writes) fills the form's first
-# text field the other lines leave open.
-def rebound(bindings: Bindings, form: Form.Form) -> Bindings:
-  if Lists.any(bindings, named(form.action)) then renamed(bindings, form.action, Lists.find(form.fields, fn(f: Form.Field) -> Bool: isText(f.kind) && Lists.any(bindings, named(f.name)) == false)) else bindings
-def isText(kind: Form.Kind) -> Bool:
-  match kind:
-    case text(_): true
-    case _: false
-def renamed(bindings: Bindings, action: String, open: Lists.Maybe<Form.Field>) -> Bindings:
-  match open:
-    case none(_): bindings
-    case some(f): Lists.map(bindings, fn(b: Binding) -> Binding: if b.name == action then {name: f.value.name, value: b.value} else b)
-def decide(bindings: Bindings, form: Form.Form, verdict: Verdict) -> Fit:
-  match verdict:
-    case wrong(w): Fit.refused({reason: w.reason})
-    case fine(_): complete(bindings, form, missing(bindings, form.fields))
-def complete(bindings: Bindings, form: Form.Form, needs: Form.Names) -> Fit:
-  match needs:
-    case nil(_): Fit.proposal({card: form.card, action: form.action, bindings: Lists.map(form.fields, entry(bindings))})
-    case cons(_): Fit.unclear({needs: needs})

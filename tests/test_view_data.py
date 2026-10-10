@@ -18,12 +18,13 @@ from tests.test_turn_world import label, nat, record, declared
 READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {note: ""}
 def field(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<Plan, Response, Data>:

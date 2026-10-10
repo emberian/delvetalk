@@ -22,6 +22,7 @@ SENDS_PER_TURN = 32      # Limits.sendsPerTurn
 SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
   lit: Bool
@@ -31,8 +32,8 @@ record Arg:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   lit: Plans.Edit<Bool, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 %(law)sdef initial() -> State:
   {count: 0n, lit: false}
 def keep() -> Edits:
@@ -82,7 +83,7 @@ def fanOut(target: String, left: Nat) -> Activity<Plan, Response, Nat>:
 
 
 def package(law=""):
-    return closure("Plan") + [{"name": "Relay", "source": SOURCE % {"law": law}}]
+    return closure("Variant") + [{"name": "Relay", "source": SOURCE % {"law": law}}]
 
 
 def arg(target="", left=0):

@@ -112,7 +112,7 @@ class Bare(Chain):
     def setUp(self):
         super().setUp()
         from tests.test_turn_world import closure as world_closure, declared
-        plan = world_closure("Plan")
+        plan = world_closure("Variant")
         self.make("bare", plan + [{"name": "Bare", "source": BARE}], record())
         self.make("caller", plan + [{"name": "Caller", "source": declared(BARE, "poke", "post")}], record())
 
@@ -137,7 +137,7 @@ class Bare(Chain):
         from tests.test_turn_world import closure as world_closure
         source = BARE + "def methods() -> Nat:\n  1n\n"
         r = self.host.send(op="world-create", principal="ember", identity="mk-bad", object="bad",
-                           modules=world_closure("Plan") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
+                           modules=world_closure("Variant") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
         self.assertNotEqual(r.get("status"), "created", r)
         self.assertIn("methods()", r.get("message", "") + str(r.get("receipt", "")), r)
 
