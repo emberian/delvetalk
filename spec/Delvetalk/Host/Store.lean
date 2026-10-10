@@ -18,6 +18,10 @@ namespace Limits
 -- Shared kernel bounds (ticks, heap, stack, nodes, bytes, data depth, documents, offers) live in Delvetalk/Limits.lean; this host will read them from there.
 def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
+/-- The one name rule (codex agent 14, docs 5): an object id, and the card a spell names, is
+    1..`maxObjectIdBytes` of these (ASCII, so characters are bytes). `world/lib/Spell.obend`'s
+    `cardAlphabet()` is the same string. -/
+def nameAlphabet : String := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/._"
 /-- Rows a relation holds when its declaration names no limit (`Decl.limit` 0). -/
 def maxRelationRows : Nat := 4096
 def maxPrincipalBytes : Nat := 128

@@ -96,6 +96,17 @@ class UsageVoice(Reflection):
         out = self.say("root", "delvetalk forge make", identity="f1")["receipt"]["outcome"]
         self.assertEqual((out["clause"], out["hint"]), ("otherCard", "no card named forge; reply to the directory for the doors"), out)
 
+    def test_a_card_named_as_any_object_may_be_is_spelled_by_that_name(self):
+        # codex agent 14, docs 5: creation took `My_card`, the spell heading refused `_` and capitals.
+        r = self.host.send(op="world-create", principal="ember", identity="mk-My_card", object="My_card",
+                           modules=[{"name": "Probe", "source": ENV}], entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+        usage = self.say("My_card", "delvetalk My_card ?")
+        self.assertEqual(usage["status"], "usage", usage)
+        self.assertIn("delvetalk My_card tune", usage["text"])
+        tuned = self.say("My_card", "delvetalk My_card tune\nlevel: 3", identity="t1")
+        self.assertEqual((tuned["status"], tuned["result"]["value"]), ("admitted", "1"), tuned)
+
 
 # Anthology-like: `admit` is the owner's by a clause that reads the state; `door` is the owner's by the
 # card's own `actions(state, context)`, as a Bend guard inside it would be (codex agent 11).

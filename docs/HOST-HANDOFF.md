@@ -806,6 +806,16 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    re-recorded); the Workshop shows `r.reading` (objects lane). Test: `tests/test_extend.py`
    `ReprogramReading`.
 
+105. **One name rule for objects and spells (host12; codex agent 14, docs 5).** `Limits.nameAlphabet`
+   (ASCII letters, digits and `- : / . _`) and `maxObjectIdBytes` (128) are both `validObjectId`'s
+   rule and the spell grammar's card name (`Spell.isCardName`, which imports it), and
+   `world/lib/Spell.obend`'s `cardAlphabet()` is the same string: every id a creation takes can be
+   spelled (`delvetalk Coin_box drop`, `delvetalk My_card ?`). A card name is at most 128 bytes (it
+   was 160, longer than any id). Spell fixtures re-recorded where the answer moved (four rows: a
+   capital, an underscore, the old length bound); `tests/fixtures/pins` re-recorded. Tests:
+   `tests/test_usage_voice.py` `test_a_card_named_as_any_object_may_be_is_spelled_by_that_name`,
+   `tests/test_spell.py` `test_the_longest_card_name_is_128_bytes`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
