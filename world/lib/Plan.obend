@@ -67,6 +67,7 @@ record Receipt:
   slot: Slot
   height: Nat
   outcome: Outcome
+  hash: String
 # The empty payload, for a method that takes no input.
 def nothing() -> Data:
   {}
