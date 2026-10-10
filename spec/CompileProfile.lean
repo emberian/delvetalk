@@ -8,8 +8,19 @@ with `lake build compile-profile`.
                                                  elaborate, lower, check), for perf
     compile-profile self-check                   tokenLength vs tokenRe and splitTop vs its
                                                  List definition on 300,000 random strings each
-    compile-profile sha                          SHA-256 throughput on 1 MB -/
+    compile-profile sha                          SHA-256 throughput on 1 MB
+    compile-profile replay LINES DIR FILTER R    host requests (one JSON per line, as the
+                                                 binary reads them) through
+                                                 `PackageSession.stepIO`, with `world-open`
+                                                 moved to DIR/world.journal (emptied first,
+                                                 `sync: none`); each request whose class
+                                                 (`op object method` or `op entry`) starts
+                                                 with FILTER runs R times from the same
+                                                 session. Prints per class: requests, the
+                                                 fastest run's wall summed, `ticksUsed`
+                                                 summed, ticks per second (docs/PERF.md) -/
 import Delvetalk.PackageSession
+import Std.Data.HashMap
 open Lean (Json toJson)
 open Minidregg.Compiler
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -39,7 +50,64 @@ def splitTopRef (text : String) (sep : String) : List String :=
       else go fuel rest (some c) depth (c :: current) parts
   (go (chars.length + 1) chars none 0 [] []).reverse.map Minidregg.Compiler.ObjectiveBendElaborate.trimStr
 
+/-- `ticksUsed` of a reply, a number or a decimal string. -/
+def ticksOf (reply : Json) : Nat :=
+  match reply.getObjVal? "ticksUsed" with
+  | .ok (.num n) => n.mantissa.toNat
+  | .ok (.str s) => s.toNat?.getD 0
+  | _ => 0
+
+def requestClass (request : Json) : String :=
+  let text := fun (k : String) => (request.getObjValAs? String k).toOption.getD ""
+  let entry := ((request.getObjVal? "artifact").toOption.bind fun a => (a.getObjValAs? String "entry").toOption).getD ""
+  let object := text "object"
+  -- one class per kind of object, not per instance (`garden/bell/2`, `env/did:…`)
+  let kind := match object.splitOn "/" with | first :: _ :: _ => first ++ "/*" | _ => object
+  " ".intercalate ([text "op", kind, text "method", entry].filter (· != ""))
+
+def replay (lines : Array String) (dir : String) (filter : String) (repeats : Nat) : IO Unit := do
+  if ← System.FilePath.pathExists dir then IO.FS.removeDirAll dir
+  IO.FS.createDirAll dir
+  let mut session : Delvetalk.PackageSession.Session := {}
+  -- class -> (requests, fastest wall summed in ns, ticks summed)
+  let mut tally : Std.HashMap String (Nat × Nat × Nat) := {}
+  let mut order : Array String := #[]
+  for line in lines do
+    if line.isEmpty then continue
+    let request ← IO.ofExcept (Json.parse line)
+    let request := if (request.getObjValAs? String "op").toOption == some "world-open" then
+      (request.setObjVal! "path" (toJson s!"{dir}/world.journal")).setObjVal! "sync" (toJson "none")
+      else request
+    let cls := requestClass request
+    let runs := if cls.startsWith filter then repeats else 1
+    let mut best := 0
+    let mut next := session
+    let mut ticks := 0
+    for i in [0:runs] do
+      let t0 ← IO.monoNanosNow
+      let (after, result) ← Delvetalk.PackageSession.stepIO session request
+      let t1 ← IO.monoNanosNow
+      if i == 0 || t1 - t0 < best then best := t1 - t0
+      next := after
+      ticks := match result with | .ok reply => ticksOf reply | .error _ => 0
+    session := next
+    if runs > 1 then IO.println s!"  {cls}: {best / 1000} us, {ticks} ticks"
+    if !tally.contains cls then order := order.push cls
+    tally := tally.alter cls fun
+      | some (n, ns, t) => some (n + 1, ns + best, t + ticks)
+      | none => some (1, best, ticks)
+  IO.println "class\trequests\tms\tticks\tticks/s"
+  for cls in order do
+    let (n, ns, t) := tally.getD cls (0, 0, 0)
+    let rate := if ns == 0 then 0 else t * 1000000000 / ns
+    if cls.startsWith filter || ns > 100000000 then
+      IO.println s!"{cls}\t{n}\t{ns / 1000000}\t{t}\t{rate}"
+
 def main (args : List String) : IO Unit := do
+  if args[0]! == "replay" then
+    let lines := (← IO.FS.lines args[1]!)
+    replay lines args[2]! args[3]! args[4]!.toNat!
+    return
   if args[0]! == "self-check" then
     let alphabet := "ab ,:-><(){}w ith\té\n".toList.toArray
     let seps := #["->", ",", " with ", ":"]
