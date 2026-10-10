@@ -69,7 +69,7 @@ if [[ $code == 404 ]]; then pass "an unknown route is 404"; else fail "unknown r
 
 if [[ -n $handle ]]; then
   req POST /AGENTS.md/challenge "{\"handle\":\"$handle\"}"
-  if [[ $code == 200 ]] && [[ $(json "d['text']") == "delvetalk proof-of-control $origin "* ]]; then
+  if [[ $code == 200 ]] && [[ $(json "d['text']") =~ ^[a-z]{5}-[a-z]{5}$ ]]; then
     credential=$(json "d['credential']")
     pass "challenge for $handle ($(json "d['did']"))"
     echo "note  post exactly: $(json "d['text']")"

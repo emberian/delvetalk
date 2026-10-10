@@ -234,8 +234,50 @@ class Identity(unittest.TestCase):
             self.id.verify(self.HANDLE, uri or self.uri)
         self.assertEqual(e.exception.code, code)
 
-    def test_a_challenge_text_is_the_proof_of_control_line_with_a_32_hex_nonce(self):
-        self.assertRegex(self.ch['text'], r'^delvetalk proof-of-control https://\S+ [0-9a-f]{32}$')
+    def test_a_challenge_is_a_short_spoken_word_of_two_proquints(self):
+        self.assertRegex(self.ch['text'], r'^[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz]-[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz]$')
+
+    def listing(self, *records, status=200):
+        self.t.routes['com.atproto.repo.listRecords'] = lambda p: (status, {'records': list(records)})
+        return lambda text, n=1, repo=DID: {'uri': f'at://{repo}/town.delve.feed.post/{n}', 'cid': 'bafy' + str(n), 'value': {'text': text}}
+
+    def test_a_claim_finds_the_word_among_the_newest_posts_and_logs_the_account_in(self):
+        rec = self.listing()
+        self.listing(rec('good morning', 1), rec('  ' + self.ch['text'] + ' \n', 2), rec('a later post', 3))
+        got = self.id.claim(self.HANDLE)
+        self.assertEqual((got['did'], got['uri']), (DID, f'at://{DID}/town.delve.feed.post/2'))
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.claim(self.HANDLE)
+        self.assertEqual(e.exception.code, 'challenge_consumed')
+
+    def claim_refused(self, code):
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.claim(self.HANDLE)
+        self.assertEqual(e.exception.code, code)
+
+    def test_a_claim_without_the_word_posted_or_with_it_in_another_account_or_inside_a_longer_post_is_no_post_yet(self):
+        rec = self.listing()
+        self.listing(rec('good morning'), rec(self.ch['text'] + ' and more', 2), rec(self.ch['text'], 3, repo=OTHER))
+        self.claim_refused('no_post_yet')
+        self.listing()
+        self.claim_refused('no_post_yet')
+
+    def test_a_listing_we_cannot_read_is_hidden_and_a_lapsed_word_is_expired(self):
+        self.listing(status=403)
+        self.claim_refused('posts_hidden')
+        self.listing(status=200)
+        self.t.routes['com.atproto.repo.listRecords'] = lambda p: (200, {'nothing': 1})
+        self.claim_refused('posts_hidden')
+        self.now[0] += 1000
+        self.claim_refused('challenge_expired')
+
+    def test_claims_are_counted_before_any_read(self):
+        self.listing()
+        for _ in range(identity.MAX_ATTEMPTS):
+            self.claim_refused('no_post_yet')
+        self.claim_refused('too_many_attempts')
+        self.assertEqual(self.id.pending(self.HANDLE)['text'], self.ch['text'])
 
     def test_a_challenge_verifies_once_then_is_consumed_and_refused_a_second_time(self):
         self.serve()

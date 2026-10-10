@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Proof-of-control. An agent asks for a challenge, posts its text publicly from its
-own account, and we fetch that exact record from the fixed PDS. Authenticates an
+"""Claiming a handle. Asked for a challenge, a person or agent posts its word publicly from its
+own account, and we read that post from the fixed PDS (by URI when given, else the account's newest posts). Authenticates an
 account; grants nothing. The public challenge nonce is NOT the credential: the
 credential is a separate secret returned only to the requester, stored hashed.
 """
@@ -27,11 +27,19 @@ DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 CREDENTIAL = re.compile(r'dt_agent_[A-Za-z0-9_-]{43}\Z')
 RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
 MAX_ATTEMPTS, TTL, CHALLENGES_PER_HOUR = 8, 900, 8
+NEWEST = 20  # posts listed when a claim looks for its word
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS challenges(nonce TEXT PRIMARY KEY, handle TEXT, did TEXT, text TEXT,
   credential TEXT, created REAL, expires REAL, attempts INTEGER NOT NULL DEFAULT 0,
   state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL);
 '''
+
+
+def proquint(n):
+    """16 bits as five letters, consonant-vowel-consonant-vowel-consonant (`tulun`)."""
+    c, v = 'bdfghjklmnprstvz', 'aiou'
+    return c[n >> 12] + v[(n >> 10) & 3] + c[(n >> 6) & 15] + v[(n >> 4) & 3] + c[n & 15]
 
 
 class IdentityError(Exception):
@@ -71,14 +79,14 @@ class Identity:
             raise IdentityError('handle_unresolved')
         nonce = secrets.token_hex(16)
         credential = 'dt_agent_' + secrets.token_urlsafe(32)
-        text = f'delvetalk proof-of-control {self.origin} {nonce}'
+        text = '-'.join(proquint(secrets.randbits(16)) for _ in range(2))  # a short spoken word, like a receipt's name
         with self.lock:
             self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state) VALUES(?,?,?,?,?,?,?,?)',
                             (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending'))
         return {'handle': handle, 'did': did, 'text': text, 'expires': now + TTL, 'credential': credential}
 
-    def verify(self, handle, at_uri):
-        """Attempts are counted before any network read; the 9th is refused outright."""
+    def _begin(self, handle):
+        """The handle's latest challenge, if it can still be answered. Attempts are counted before any network read; the 9th is refused outright."""
         now = self.clock()
         with self.lock:
             self.db.execute('BEGIN IMMEDIATE')
@@ -95,6 +103,23 @@ class Identity:
                 self.db.execute('UPDATE challenges SET attempts=attempts+1 WHERE nonce=?', (row['nonce'],))
             finally:
                 self.db.execute('COMMIT')
+        return row
+
+    def _finish(self, row, at_uri, cid):
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                cur = self.db.execute("UPDATE challenges SET state='verified',uri=?,cid=?,verified=? WHERE nonce=? AND state='pending'",
+                                      (at_uri, cid, self.clock(), row['nonce']))
+                if cur.rowcount != 1:
+                    raise IdentityError('challenge_consumed')
+            finally:
+                self.db.execute('COMMIT')
+        return {'status': 'verified', 'did': row['did'], 'handle': row['handle'], 'uri': at_uri, 'cid': cid}
+
+    def verify(self, handle, at_uri):
+        """The agent's way: the post's URI is given and its record read."""
+        row = self._begin(handle)
         repo, rkey = self._parse(at_uri)
         if repo != row['did']:
             raise IdentityError('wrong_author')
@@ -107,16 +132,32 @@ class Identity:
             raise IdentityError('proof_mismatch')
         if value.get('text') != row['text']:
             raise IdentityError('proof_text_mismatch')
+        return self._finish(row, at_uri, cid)
+
+    def claim(self, handle):
+        """The person's way: no URI. The account's newest public posts are listed and the one whose whole text is the
+        challenge word is the claim. A listing we cannot read is `posts_hidden`; one without the word, `no_post_yet`."""
+        row = self._begin(handle)
+        try:
+            got = self.client.get('com.atproto.repo.listRecords', repo=row['did'], collection=COLLECTION, limit=NEWEST)
+        except Failure:
+            raise IdentityError('posts_hidden') from None
+        records = got.get('records')
+        if not isinstance(records, list):
+            raise IdentityError('posts_hidden')
+        for rec in records[:NEWEST]:
+            uri, cid, value = (rec.get('uri'), rec.get('cid'), rec.get('value')) if isinstance(rec, dict) else (None, None, None)
+            if isinstance(value, dict) and isinstance(value.get('text'), str) and value['text'].strip() == row['text'] and isinstance(cid, str):
+                repo, _ = self._parse(uri)
+                if repo == row['did']:
+                    return self._finish(row, uri, cid)
+        raise IdentityError('no_post_yet')
+
+    def pending(self, handle):
+        """The word the handle's latest challenge is waiting for, and when it lapses; None once answered or lapsed."""
         with self.lock:
-            self.db.execute('BEGIN IMMEDIATE')
-            try:
-                cur = self.db.execute("UPDATE challenges SET state='verified',uri=?,cid=?,verified=? WHERE nonce=? AND state='pending'",
-                                      (at_uri, cid, now, row['nonce']))
-                if cur.rowcount != 1:
-                    raise IdentityError('challenge_consumed')
-            finally:
-                self.db.execute('COMMIT')
-        return {'status': 'verified', 'did': row['did'], 'handle': handle, 'uri': at_uri, 'cid': cid}
+            row = self.db.execute("SELECT text,expires,state FROM challenges WHERE handle=? ORDER BY created DESC LIMIT 1", (handle,)).fetchone()
+        return {'text': row['text'], 'expires': row['expires']} if row and row['state'] == 'pending' and self.clock() < row['expires'] else None
 
     @staticmethod
     def _parse(uri):
