@@ -165,8 +165,9 @@ def two(n: Nat) -> String:
   Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
 
-DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
-  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Lists.List::<O.Knock>.cons({head: {who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()}), watching: Plans.nobody()}, Card.stranger()))
+DOOR_PROBE = PROBE_HEAD % "Door" + """import ./Relation.obend as Relations
+def shut(n: Nat) -> String:
+  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Relations.Relation.rows({items: Lists.List::<O.Knock>.cons({head: {at: 1n, who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()})}), watching: Plans.nobody()}, Card.stranger()))
 """
 
 LINES_PROBE = """edition ObjectiveBend 1

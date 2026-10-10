@@ -70,7 +70,7 @@ class Principal(Chain):
     def test_a_knock_and_a_light_record_the_turns_principal(self):
         self.make("door", closure("Door"), record())
         self.ignored("door", "knock", "who")
-        self.assertEqual([get(k, "who") for k in items(get(self.state("door"), "knocks"))], [label(ACTOR)])
+        self.assertEqual([get(k, "who") for k in rows(get(self.state("door"), "knocks"))], [label(ACTOR)])
         self.assertEqual(get(self.state("door"), "openedBy"), label(ACTOR))
         self.make("lantern", closure("Lantern"), record())
         self.ignored("lantern", "light", "by")

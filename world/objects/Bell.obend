@@ -50,7 +50,7 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 2048n}, tail: Relations.Decls.nil({})})
+  Lists.append(Relations.Decls.nil(), {field: "rains", key: Text.words("author at n"), limit: 2048n})
 def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
   {author: rain.author, at: rain.at, n: rain.n}
 def keep() -> Edits:
@@ -91,7 +91,7 @@ form undoor:
 def methods() -> Lists.List<String>:
   Text.words("strike")
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: rainForm(), tail: Card.Forms.cons({head: ringForm(), tail: Card.Forms.cons({head: doorForm(), tail: Card.Forms.cons({head: undoorForm(), tail: Card.Forms.nil()})})})})
+  Lists.append(Lists.append(Lists.append(Lists.append(Card.Forms.nil(), rainForm()), ringForm()), doorForm()), undoorForm())
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorAdd(state.doors, state.planter, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")
