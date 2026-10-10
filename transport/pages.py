@@ -49,6 +49,20 @@ def slip(x, did=None):
                             note=T['note'].format(clause=e(f"{out.get('class')}: {clause}" if clause else str(out.get('class')))) if out.get('tag') == 'refused' else '')
 
 
+A_DID = re.compile(r'did:plc:[a-z2-7]{24}')
+
+
+def named(markup, names):
+    """A page as a person reads it: each DID in its text as the handle the host's registry gave its avatar, else `a
+    stranger` and the DID's last four (VOICE: a DID is never shown to a person). Never in a tag, where an href keeps the
+    id, nor in a <pre>: a card, a law and a source are verbatim."""
+    out, verbatim = [], 0
+    for part in re.split(r'(<[^>]*>)', markup):
+        verbatim += part.startswith('<pre') - part.startswith('</pre')
+        out.append(part if part.startswith('<') or verbatim else A_DID.sub(lambda m: e(names.get(m[0]) or f'a stranger …{m[0][-4:]}'), part))
+    return ''.join(out)
+
+
 def framed(text, kind='offer'):
     """A card's text in its frame (T[kind]); the `hob:` lines at its head or tail are hob's own, beside the frame, never in it."""
     lines = text.split('\n')

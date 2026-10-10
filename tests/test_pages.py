@@ -7,10 +7,17 @@ import re
 import urllib.parse
 from html.parser import HTMLParser
 
-from tests.test_turn_world import closure, declared
-from tests.test_http import FORM, HANDLE, FrontCase, browser_login
+from tests.test_turn_world import closure, counter_modules, declared, nat, record
+from tests.test_http import DID, FORM, HANDLE, FrontCase, browser_login
 
 HTML = {'Accept': 'text/html,application/xhtml+xml'}
+A_DID = re.compile(r'did:plc:[a-z2-7]{24}')
+
+
+def read(page):
+    """What a person reads of a page as prose: its text, never a tag's attributes (an href may carry an id that is a DID)
+    nor a <pre> (a card, a law, a source: verbatim, and a law may name the opener's DID)."""
+    return html.unescape(re.sub(r'<[^>]*>', ' ', re.sub(r'<pre\b.*?</pre>', ' ', page, flags=re.S)))
 
 
 class Actions(HTMLParser):
@@ -102,6 +109,21 @@ class Pages(FrontCase):
         return text
 
 
+    def test_a_did_shows_as_its_handle_or_a_stranger_and_stays_in_the_json(self):
+        stranger = 'did:plc:' + 'q' * 20 + 'wxyz'  # a principal the registry knows no avatar for
+        made = self.host.send({'op': 'world-create', 'principal': stranger, 'identity': 'mk-' + stranger, 'object': 'note/' + stranger,
+                               'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
+        self.assertEqual(made['status'], 'created', made)
+        home = read(self.page('/'))
+        self.assertIn('env/talkie.delve.town', home)
+        self.assertIn('note/a stranger …wxyz', home)
+        self.assertIn(f'href="/o/env%2F{DID}"', self.page('/'))  # the link still names the object by its id
+        slips = read(self.page(f'/o/{self.c}'))
+        self.assertIn('talkie.delve.town', slips)
+        tok = self.cookie.split('=', 1)[1]
+        s, h, body = self.request('GET', '/AGENTS.md/world', headers={'Authorization': 'Bearer ' + tok})
+        self.assertIn('env/' + DID, json.loads(body)['ids'])  # an agent's JSON keeps the DID
+
     def test_json_stays_json_for_agents(self):
         tok = self.cookie.split('=', 1)[1]
         for accept in (None, 'application/json', '*/*'):
@@ -131,6 +153,7 @@ class Pages(FrontCase):
                 ('/AGENTS.md/challenge', 'POST', {'handle': HANDLE}, False, 200), ('receipt', 'GET', None, True, 200)):
             path = f'/AGENTS.md/receipt/{slug}' if path == 'receipt' else path
             page = self.page(path, code=code, cookie=cookie, method=method, form=form)
+            self.assertEqual(A_DID.findall(read(page)), [], path)  # a person reads a handle, or `a stranger` and the DID's last four
             self.now[0] += 3
             sep = '&' if '?' in path else '?'
             headers = {**HTML, **({'Cookie': self.cookie} if cookie else {}), **({'Content-Type': FORM} if form else {})}
@@ -139,6 +162,8 @@ class Pages(FrontCase):
             text = body.decode()
             self.assertEqual((s, dict(h)['Content-Type']), (code, 'text/plain; charset=utf-8'), (path, text[:300]))
             self.assertNotIn('<!doctype', text)
+            prose = re.sub(r'^--- [^\n]* ---\n.*?\n---$', '', re.sub(r'(?:<|\] )/\S*', '', text), flags=re.S | re.M)  # hrefs and <pre> fences stay verbatim
+            self.assertEqual(A_DID.findall(prose), [], path)
             seen = Actions(page)
             links, forms = text_actions(text)
             self.assertEqual((sorted(links), sorted(forms)), (sorted(seen.links), sorted(seen.forms)), path)

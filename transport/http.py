@@ -298,7 +298,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         super().__init__(address, Handler)
         self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
         threading.Thread(target=self.reap, daemon=True).start()
-        self.access, self.outbox = access, outbox and Path(outbox)  # outbox: the hand's, where an HTTP turn's draft waits
+        self.access, self.outbox, self.known = access, outbox and Path(outbox), {}  # outbox: the hand's, where an HTTP turn's draft waits
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps and Path(heaps), repl, trust_proxy, sleep, hand  # heaps: serve's heaps/ directory
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
@@ -353,6 +353,16 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             bridge.write_atomic(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                        'object': public[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                        'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+
+    def handles(self, dids):
+        """{did: handle} for the DIDs a page names: the `handle` of each one's avatar (`world-arrive` seeds it from the
+        registry) as the public reader sees it; a handle once found is kept, a DID with no avatar asked again next time."""
+        for did in set(dids) - set(self.known):
+            view = self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': did})
+            handle = (plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
+            if isinstance(handle, str) and handle:
+                self.known[did] = handle
+        return self.known
 
     def heap(self, did, create=True):
         """A principal's private heap over the host's socket; None for one never made, unless `create`."""
@@ -891,6 +901,7 @@ class Handler(BaseHTTPRequestHandler):
             name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')), doors=pages.door_nav(door_rows(view)))))
 
     def html(self, code, body, headers=()):
+        body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
         self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
 
     def home(self):
