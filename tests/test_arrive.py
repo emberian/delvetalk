@@ -52,7 +52,7 @@ class Arrive(HostCase):
         self.assertEqual(r["status"], "arrived", r)
         self.assertEqual([c["object"] for c in r["created"]], [DID, "env/" + DID, "wake/" + DID])
         self.assertEqual(r["principal"]["outcome"]["handle"], "newt.delve.town")
-        self.assertEqual(self.host.send(op="world-status")["height"], before + 4)
+        self.assertEqual(self.host.send(op="world-status")["height"], before + 5)   # the principal, three creates, the Wake's arrived turn
         self.assertEqual(field(self.view(DID), "handle")["value"], "newt.delve.town")
         self.assertEqual(field(self.view("env/" + DID), "owner")["value"], DID)
         wake = self.view("wake/" + DID)
@@ -94,8 +94,8 @@ class Arrive(HostCase):
         mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
         self.assertEqual(mine, (
             "ENV of talkie.delve.town (yours): 2 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
-            "#11 mention from glm.delve.town: status: reply with\n"
-            "#10 mention from glm.delve.town: @talkie.delve.town the cistern is dug\n"))
+            "#13 mention from glm.delve.town: status: reply with\n"
+            "#12 mention from glm.delve.town: @talkie.delve.town the cistern is dug\n"))
         self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
         self.assertIn("mention from glm.delve.town: status: reply with", mine)
 
@@ -112,14 +112,14 @@ class Arrive(HostCase):
         card = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
         self.assertEqual(card, (
             "ENV of mimo.delve.town (yours): 20 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
-            "#29 mention from glm.delve.town: mention 19: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#28 mention from glm.delve.town: mention 18: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#27 mention from glm.delve.town: mention 17: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#26 mention from glm.delve.town: mention 16: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#25 mention from glm.delve.town: mention 15: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#24 mention from glm.delve.town: mention 14: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#23 mention from glm.delve.town: mention 13: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#22 mention from glm.delve.town: mention 12: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#31 mention from glm.delve.town: mention 19: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#30 mention from glm.delve.town: mention 18: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#29 mention from glm.delve.town: mention 17: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#28 mention from glm.delve.town: mention 16: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#27 mention from glm.delve.town: mention 15: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#26 mention from glm.delve.town: mention 14: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#25 mention from glm.delve.town: mention 13: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#24 mention from glm.delve.town: mention 12: a long thought about the town a long thought about the town a long thought about the to…\n"
             "… and 12 more\n"))
         self.assertLessEqual(len(card), 1400)
         self.assertIn("mention 19:", card.split("\n")[1])
@@ -216,6 +216,55 @@ class Arrived(HostCase):
         self.reopen()
         bumped = self.host.send(op="world-turn", principal="ember", object="garden", method="bump", argument=record(), identity="b2")
         self.assertEqual([c["to"] for c in bumped["receipt"].get("changes", [])], ["wake/" + DID], bumped)
+
+
+
+class ToldWithoutPosting(HostCase):
+    """OFFERING §4: the world moves when nobody posts. A newcomer's Wake, in the turn arrival
+    runs as theirs (`Wake.arrived`), subscribes to every planting in the garden; a planting
+    calls the planter's `Wake.watchBell`, so the planter hears when that bell rings. Each
+    reaches the avatar's inbox as a note in the settle pass of the turn that wrote it."""
+
+    arrive, view = Arrive.arrive, Arrive.view
+
+    def setUp(self):
+        super().setUp()
+        self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
+        self.addCleanup(shutil.rmtree, self.lib, True)
+        shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
+        for name in ("Avatar", "Env", "Wake"):
+            shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
+        r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
+        self.assertEqual(r["status"], "opened", r)
+        from tests.test_objects import closure
+        r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden", modules=closure("Garden"),
+                           entry="initial", seed=record(owner={"tag": "label", "value": "ember"}))
+        self.assertEqual(r["status"], "created", r)
+
+    def inbox(self, did=DID):
+        from tests.test_replay import get, rows
+        return [get(n, "text")["value"] for n in rows(get(self.view(did), "inbox"))]
+
+    def plant(self, who, seed, ident):
+        r = self.host.send(op="world-turn", principal=who, object="garden", method="receive", identity=ident,
+                           argument=record(text={"tag": "label", "value": "delvetalk garden plant\nseed: %s\ncolour: silver" % seed}, post={"tag": "label", "value": "at://x/" + ident}))
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
+        return r
+
+    def test_a_newcomer_hears_each_planting_and_its_own_bell_ring(self):
+        arrived = self.arrive()
+        self.assertEqual((arrived["arrivedTurn"]["status"], arrived["arrivedTurn"]["result"]["label"]), ("admitted", "watching"), arrived)
+        self.assertEqual(self.arrive().get("arrivedTurn"), None)
+        self.plant("ember", "a lamp", "p1")
+        self.assertEqual(self.inbox(), ["garden.planted is 1"])
+        self.plant(DID, "a fern", "p2")
+        self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2"])
+        rung = self.host.send(op="world-turn", principal="ember", object="garden/bell/2", method="ring", argument=record(), identity="r1")
+        self.assertEqual(rung["status"], "admitted", rung)
+        self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2", "garden/bell/2.rung turned true"])
+        # Ember has no wake: the planting stands, and nobody hears bell 1 ring.
+        self.assertEqual(self.host.send(op="world-turn", principal="ember", object="garden/bell/1", method="ring", argument=record(), identity="r2")["status"], "admitted")
+        self.assertEqual(len(self.inbox()), 3)
 
 
 if __name__ == "__main__":

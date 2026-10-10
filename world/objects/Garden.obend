@@ -362,11 +362,17 @@ def holding(entry: Pending, card: Document.Document) -> Activity<Reply>:
   Card.tellTo(if Lists.length(entry.needs) == 0n then Reply.confirming({spell: spell("", entry.seed, entry.colour)}) else Reply.unclear({needs: entry.needs}), entry.principal, card)
 def grow(colour: Bell.Colour, seed: String, post: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match world.create({package: "Bell", seed: bellSeed(context, post, colour, seed), law: "", requireAbsent: minted()}):
-    case created(c): counted(c.object, colour, seed, found, context, state)
+    case created(c): watching(c.object, colour, seed, found, context, state)
     case refused(r): refused(Why.world({clause: r.clause}), found)
 # A bell is planted with a door home to its garden.
 def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: String) -> {colour: Bell.Colour, seed: String, planting: String, planter: String, planterHandle: String, doors: Card.Doorways}:
   {colour: colour, seed: seed, planting: post, planter: context.principal, planterHandle: context.handle, doors: Card.Doorways.cons({head: {label: "garden", to: Plans.self(context)}, tail: Card.Doorways.nil()})}
+# The planter's wake is told when the new bell rings: the garden sends its `watchBell`, which
+# runs as the planter's after this turn commits, once the bell exists (whatever it answers,
+# the planting stands).
+def watching(reference: Plans.Reference, hue: Bell.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  match world.send({object: {world: context.world, object: "wake/{context.principal}"}, method: "watchBell", argument: {bell: reference.object}}):
+    case _: counted(reference, hue, seed, found, context, state)
 # Planting counts, keeps the bell among the children, and settles whatever this principal
 # had waiting; the planter gets the card (a Wake subscribed to `planted` hears of it).
 def counted(reference: Plans.Reference, hue: Bell.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
