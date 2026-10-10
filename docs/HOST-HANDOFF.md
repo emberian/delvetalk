@@ -481,6 +481,13 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    fresh process: 300/459/265/313 ms off, 70/135/66/86 ms with a warm cache (2.1 MB on disk). Test:
    `tests/test_compile_cache.py` `DiskCache`.
 
+67. **A Bend law's reading (host10; WORLD-REVIEW finding 8).** `law(old, new, request)` may return
+   `refused {clause, reading}` as well as `refused {clause}` (`Package.lawShape` accepts both; the
+   kernel lane's file, a two-line widening). A non-empty reading becomes the refusal's `reason`,
+   "refused <clause>: <reading>", as a text clause's reading does, and so reaches the public projection.
+   `Abi.Verdict` gaining `reading` is the objects lane's. Test: `tests/test_law.py`
+   `test_a_bend_laws_reading_is_the_refusals_reason`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

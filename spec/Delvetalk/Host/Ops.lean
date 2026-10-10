@@ -1581,9 +1581,13 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   match (runPure entry [o.state, new, request] Delvetalk.Bounds.lawTicks).1 with
   | .ok (.variant "admitted" _) => return none
   | .ok (.variant "refused" (.record f)) =>
-    match f.lookup "clause" with
-    | some (.label clause) => return refuse clause
-    | _ => return refuse "law"
+    match f.lookup "clause", f.lookup "reading" with
+    -- A reading is copied into the reason as a law text clause's is (`readingOf`).
+    | some (.label clause), some (.label reading) =>
+      if reading.isEmpty then return refuse clause
+      else return some { cls := "lawRefused", clause := some clause, object := some id, reason := some s!"refused {clause}: {reading}" }
+    | some (.label clause), _ => return refuse clause
+    | _, _ => return refuse "law"
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
