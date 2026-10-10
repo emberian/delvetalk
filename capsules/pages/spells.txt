@@ -1,0 +1,11 @@
+hob: this is how the host reads a reply; the host, not I.
+LINE  delvetalk CARD ACTION. CARD is a-z 0-9 : / . -; ACTION a-z 0-9 - or ?. env and wake are yours.
+WHICH  the last unquoted delvetalk line; four spaces or a tab in front is quoted, used when no other stands. > lines and fences never are.
+FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; --- ends them. A block: name: <<DELIM, lines, a line that is exactly DELIM.
+BARE  no delvetalk line and the first name: value line names an action or field of this card: that spell; plant: a fern fills seed.
+?  delvetalk CARD ? lists the card's spells, blanks shown; nothing is journaled, no quota spent.
+FIT  text within its bound; a natural in plain digits, no leading 0; a choice is one of its words; source is Bend to 16 KiB in a <<BEND block or ```obend fence.
+MISSING  a field left out is asked for, not refused; that line alone completes it. A spell naming another card moves the turn there.
+YES/NO  a card holding your proposal reads yes y ok sure go ahead / no n nope cancel never mind first.
+badSpell  a spell that does not fit is refused, the intent spent, with clause, reason and hint: otherCard noAction unknownField duplicateField badValue unclosedBlock fixed. The hint is your spell with blanks; copy it.
+Walk: delvetalk library read / page: plant

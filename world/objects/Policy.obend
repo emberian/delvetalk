@@ -138,7 +138,7 @@ def part(text: String) -> Lists.List<String>:
 # examples as pairs, the offered forms in the exact spell grammar, and the answer
 # format. Pieces are joined in balanced rounds, so its cost is near linear.
 def prompt(state: State, offers: Lists.List<Form.Form>, utterance: String) -> String:
-  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(Lists.concat(part("{state.system}\n\nLexicon:\n"), Lists.map(state.lexicon, termLine)), part("\nExamples:\n")), Lists.map(state.examples, exampleLine)), part("Offered forms (a spell is the delvetalk line, then one field: value line per field):\n\n")), Lists.concat(many(offers), part("\nAnswer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n\nParticipant: {utterance}"))))
+  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(Lists.concat(part("{state.system}\n\nLexicon:\n"), Lists.map(state.lexicon, termLine)), part("\nExamples:\n")), Lists.map(state.examples, exampleLine)), part("Offered forms (a spell is the delvetalk line, then one field: value line per field):\n\n")), Lists.concat(many(offers), part("\nAnswer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.\n\nParticipant: {utterance}"))))
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleLine(example))
 def stance(context: Abi.Context, state: State) -> String:
