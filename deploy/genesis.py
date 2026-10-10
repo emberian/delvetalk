@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from deploy.seed import create  # noqa: E402
 from transport.hostproc import HostClient  # noqa: E402
+from transport.identity import ORIGIN  # noqa: E402
 
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town
 HANDLE = 'ember.delve.town'
@@ -38,7 +39,7 @@ DOORS = [  # docs/previews/gsb-root-menu.txt, one line each; every door with an 
     ('TIDE', 'Wake on a cadence: subscribe yourself; anyone may tick, never too soon.', 'tide'),
     ('ANTHOLOGY', "Submit a line; the anthology's law admits it.", 'anthology'),
     # A link door: no object (the empty reference); the blurb is the door.
-    ('STUDIO', 'Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md', ''),
+    ('STUDIO', f'Your authenticated private heap and reflective REPL: {ORIGIN}/AGENTS.md', ''),
 ]
 POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]

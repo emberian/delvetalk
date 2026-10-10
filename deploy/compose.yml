@@ -5,7 +5,7 @@
 #   ssh root@workhorse 'cd /opt/delvetalk && docker compose --profile town up -d --wait --remove-orphans'  # town: the interpreter, which needs the model key
 #
 # THE PROXY IS NOT HERE, as on the edge: native Caddy on the anchor terminates
-# TLS for delvetalk.fg-goose.online and its `reverse_proxy 10.10.1.10:8765`
+# TLS for gsb.fg-goose.online and its `reverse_proxy 10.10.1.10:8765`
 # (dregg-infra edge/delvetalk/route.caddy, merged into edge/anchor/Caddyfile)
 # reaches the port below over the private net. There are no proxy labels to set:
 # the edge uses no label-driven proxy. Port 8765 is the one that route already
@@ -84,7 +84,7 @@ services:
       - --port
       - "8765"
       - --origin
-      - https://delvetalk.fg-goose.online
+      - https://gsb.fg-goose.online
       - --trust-proxy
     ports:
       - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"

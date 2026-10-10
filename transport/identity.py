@@ -6,6 +6,7 @@ credential is a separate secret returned only to the requester, stored hashed.
 """
 import argparse
 import hashlib
+import os
 import re
 import secrets
 import sqlite3
@@ -19,7 +20,7 @@ try:
 except ImportError:
     from delve import Client, Failure, FixtureTransport, canonical, http_transport
 
-ORIGIN = 'https://delvetalk.fg-goose.online'
+ORIGIN = os.environ.get('DELVETALK_ORIGIN') or 'https://gsb.fg-goose.online'  # the one place the portal's origin is named
 COLLECTION = 'town.delve.feed.post'
 HANDLE = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+delve\.town\Z')
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
