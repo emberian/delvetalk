@@ -33,20 +33,14 @@ CREATE TABLE IF NOT EXISTS zulip_cursor(k INTEGER PRIMARY KEY CHECK(k=0), id INT
 '''
 
 
-# The host's `world-posted` accepts only at:// uris (spec/Delvetalk/Host/Ops.lean postedOp), so the uri the bridge and
-# the host share is `at://zulip/<stream>/<topic>/<id>`; the observation also carries the plain `zulip://<stream>/<topic>/<id>`
-# as `source`. If the host learns to take the plain form, this prefix is the one line to change.
-SCHEME = 'at://zulip/'
-
-
-def uri_of(stream, topic, mid, scheme=SCHEME):
+def uri_of(stream, topic, mid):
     q = lambda s: urllib.parse.quote(str(s), safe='')
-    return f'{scheme}{q(stream)}/{q(topic)}/{mid}'
+    return f'zulip://{q(stream)}/{q(topic)}/{mid}'
 
 
 def parse_uri(uri):
     """-> (stream, topic, message id), or None for anything else."""
-    parts = uri[len(SCHEME):].split('/') if isinstance(uri, str) and uri.startswith(SCHEME) else []
+    parts = uri[8:].split('/') if isinstance(uri, str) and uri.startswith('zulip://') else []
     if len(parts) != 3 or not parts[2].isdigit():
         return None
     return urllib.parse.unquote(parts[0]), urllib.parse.unquote(parts[1]), int(parts[2])
@@ -124,7 +118,7 @@ class ZulipObserver(Observer):
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
         kind, wiki, spell = classify(text, parent, mentions, tags, summon=bot)
-        return {'uri': uri, 'source': uri_of(self.stream, m['subject'], m['id'], 'zulip://'), 'cid': str(m['id']), 'author': {'did': 'zulip:' + m['sender_email'], 'handle': m['sender_full_name']},
+        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + m['sender_email'], 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
                 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki, 'spell': spell}
 
@@ -247,7 +241,8 @@ def main(argv=None, out=None, transport=http_transport):
         host = HostClient(a.host_socket) if a.host_socket else None
         if a.object and not host:
             raise Failure('record_needs_journal')
-        result = deliver(a.state, host, client, a.stream, a.topic, Path(a.text_file).read_text(), a.object,
+        text = Path(a.text_file).read_text().replace('<bot name>', client.me()['full_name'])  # a card may name the bot it is posted by
+        result = deliver(a.state, host, client, a.stream, a.topic, text, a.object,
                          slot_record(a.slot) if a.slot else None)
     except (Failure, OSError) as e:
         print(canonical({'error': getattr(e, 'code', type(e).__name__), 'detail': getattr(e, 'detail', '')}), file=sys.stderr)
