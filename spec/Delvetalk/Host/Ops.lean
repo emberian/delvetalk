@@ -2423,6 +2423,63 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
          (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
        ("elided", toJson elided)])
 
+/-- A law text's clauses as written: name, reading (if any), and the expression's text. -/
+def lawClauses (text : String) : List (String × Option String × String) :=
+  ((text.splitOn "\n").map (·.trimAscii.toString)).filterMap fun line => do
+    let rest ← (line.dropPrefix? "law ").map (·.toString)
+    let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
+    let after := (rest.drop name.length).toString.trimAsciiStart.toString
+    let (reading, after) := match lawReading after with
+      | .ok (some (r, more)) => (some r, more.trimAsciiStart.toString)
+      | _ => (none, after)
+    let expr ← after.dropPrefix? ":"
+    return (name, reading, expr.toString.trimAscii.toString)
+
+/-- The pin and law text `id` had at `version`: its current ones, with each later reprogram and
+    amendment undone (newest first), as the admitted entries that made later versions record them. -/
+def pinAndLawAt (w : World) (o : Object) (id : String) (version : Nat) : String × String := Id.run do
+  let mut pin := o.pin
+  let mut law := o.lawText
+  for i in ((w.touched[id]?).getD #[]).reverse do
+    let some entry := w.entries[i]? | continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let named := fun (x : Json) => (x.getObjValAs? String "object").toOption == some id
+    let later := (arr "writes").any fun x => named x && ((x.getObjValAs? Nat "version").toOption.getD 0) > version
+    if !later then continue
+    for r in arr "reprograms" do
+      if named r then pin := (r.getObjValAs? String "oldPin").toOption.getD pin
+    for a in arr "amendments" do
+      if named a then law := (a.getObjValAs? String "old").toOption.getD law
+  return (pin, law)
+
+/-- `world-object {principal, object, version?}`: the object as of `version` (default current): its pin and
+    law in force then, the law's clauses with their readings, the state CID the journal names, and the
+    library pin its code was compiled under. `denied` and `unknown` as `world-state-cid` answers them. -/
+def objectOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let id ← j.getObjValAs? String "object"
+  let unknown := Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  let some o := w.objects[id]? | return unknown
+  if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+  let version := (← optNat j "version").getD o.version
+  if version > o.version then return unknown
+  let some cid := stateCidAt w id version | return unknown
+  let (pin, law) := pinAndLawAt w o id version
+  let clauses := lawClauses law
+  let current := lawClauses o.lawText
+  -- A clause's reading: the one its law text gives, else the package's while the clause is the package's.
+  let readingOf := fun (name : String) (reading : Option String) (expr : String) =>
+    reading.orElse fun _ => if (current.find? (·.1 == name)).map (·.2.2) == some expr then o.readings.lookup name else none
+  let rows := clauses.map fun (name, reading, expr) => (name, readingOf name reading expr, expr)
+  let library := (o.inputs.getObjValAs? String "library").toOption
+  return Json.mkObj [("status", toJson "object"), ("record", Json.mkObj ([("object", toJson id), ("version", toJson version),
+    ("pin", toJson pin), ("pinSlug", toJson ((Slug.ofCid pin).getD "")), ("law", toJson law),
+    ("readings", Json.arr (rows.toArray.filterMap fun (n, r, _) => r.map fun r => Json.mkObj [("name", toJson n), ("reading", toJson r)])),
+    ("laws", Json.arr (rows.toArray.map fun (n, r, e) => Json.mkObj ([("object", toJson id), ("version", toJson version),
+      ("pin", toJson pin), ("name", toJson n), ("clause", toJson e)] ++ (r.map fun r => [("reading", toJson r)]).getD []))),
+    ("stateCid", toJson cid)] ++ (library.map fun l => [("library", toJson l)]).getD []))]
+
 /-- A page of `(height, item)` pairs, ascending by height: after `after` (exclusive), or with
     `reverse: true` descending below `before` (exclusive; from the newest when absent); at most `limit`
     (1..100, default 100). The items and whether more follow. -/

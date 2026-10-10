@@ -679,7 +679,11 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    receipt}` as `projectEntry` shows it to the reader, plus `bytes` (hex of the entry's canonical DAG-CBOR without
    `hash`, whose CID is the hash) only for the identity's own principal; `unknown` otherwise. `world-entries {principal,
    after?, before?, reverse?, limit?}` (`entriesOp`) pages every entry by height (`pageByHeight`: ascending after
-   `after`, or descending below `before` with `reverse`; `limit` 1..100). Test: `tests/test_reads.py`.
+   `after`, or descending below `before` with `reverse`; `limit` 1..100). `world-object {principal, object, version?}` (`objectOp`) answers `{status: "object", record: {object,
+   version, pin, pinSlug, law, readings, laws [{object, version, pin, name, clause, reading?}], stateCid, library?}}` as of
+   the version: `pinAndLawAt` undoes later reprograms (`oldPin`) and amendments (`old`) from the entries that made later
+   versions; clauses as written (`lawClauses`); a reading from the law text, else the package's while the clause is
+   unchanged. Test: `tests/test_reads.py`.
 
 ## 6. Gotchas
 

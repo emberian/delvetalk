@@ -59,6 +59,25 @@ class Reads(Reflection):
         back = self.host.send(op="world-entries", principal="anonymous", reverse=True, before=height, limit=2)
         self.assertEqual(([e["height"] for e in back["entries"]], back["more"]), ([height - 1, height - 2], True))
 
+    def test_an_object_as_of_a_version_with_its_pin_law_and_readings_then(self):
+        self.turn("c", "bump")
+        law = 'law owner "only ember": request.subject == "ember"'
+        a = self.host.send(op="world-amend", principal="ember", identity="a1", object="c", version=1, law=law)
+        self.assertEqual(a["status"], "admitted", a)
+        now = self.host.send(op="world-object", principal="anonymous", object="c")["record"]
+        self.assertEqual((now["version"], now["law"], now["readings"]), (2, law, [{"name": "owner", "reading": "only ember"}]), now)
+        self.assertEqual(now["laws"], [{"object": "c", "version": 2, "pin": now["pin"], "name": "owner",
+                                        "clause": 'request.subject == "ember"', "reading": "only ember"}])
+        self.assertEqual(now["stateCid"], self.host.send(op="world-state-cid", principal="", object="c", version=2)["cid"])
+        then = self.host.send(op="world-object", principal="anonymous", object="c", version=0)["record"]
+        self.assertEqual((then["law"], then["readings"]), (self.made["receipt"]["outcome"].get("law", then["law"]), []))
+        self.assertNotIn("only ember", then["law"])
+        self.assertEqual(then["stateCid"], self.host.send(op="world-state-cid", principal="", object="c", version=0)["cid"])
+        self.assertEqual(then["pinSlug"], now["pinSlug"])
+        self.assertIn("library", then)
+        self.assertEqual(self.host.send(op="world-object", principal="anonymous", object="vault")["status"], "denied")
+        self.assertEqual(self.host.send(op="world-object", principal="anonymous", object="c", version=9)["status"], "unknown")
+
 
 if __name__ == "__main__":
     unittest.main()
