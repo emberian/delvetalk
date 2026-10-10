@@ -49,7 +49,9 @@ def main(path):
     w(f"| journal height | {j['height']} |")
     w(f"| journal bytes | {j['bytes']:,} |")
     for tag, b in sorted((j.get('bytesByOutcome') or {}).items(), key=lambda kv: -kv[1]['bytes']):
-        w(f"| ... `{tag}` entries: count, bytes, largest | {b['count']}, {b['bytes']:,}, {b['max']:,} |")
+        w(f"| ... `{tag}` entries: count, bytes, largest, median | {b['count']}, {b['bytes']:,}, {b['max']:,}, {b.get('median', 0):,} |")
+    for obj, b in sorted((j.get('suspendedByObject') or {}).items(), key=lambda kv: -kv[1]['bytes']):
+        w(f"| ... suspended on `{obj}`: count, bytes, first, largest, median | {b['count']}, {b['bytes']:,}, {b['first']:,}, {b['max']:,}, {b['median']:,} |")
     w(f"| snapshots | {len(r['snapshots'])} {r['snapshots']} |")
     w(f"| objects | {r['status'].get('objects')} |")
     w(f"| clock at the end (unix minutes) | {r['status'].get('clock')} |\n")
@@ -74,7 +76,7 @@ def main(path):
         w('### The section 10 hour, post by post\n')
         w('| Post | Step | Entries (outcome, class, objects written) | First offer |\n| --- | --- | --- | --- |')
         for g in r['gate']:
-            ents = '; '.join(f"{e['tag']}{' ' + e['class'] if e['class'] else ''}{' (' + e['reason'] + ')' if e['reason'] else ''} {','.join(x for x in e['writes'] if x)}".strip() for e in g['entries']) or 'no turn'
+            ents = '; '.join(f"{e['tag']}{' ' + e['class'] if e['class'] else ''}{' (' + e['reason'] + ')' if e['reason'] else ''} at {e.get('to')}{' by reply address' if e.get('replyTo') else ''}{', wrote ' + ','.join(x for x in e['writes'] if x) if any(e['writes']) else ''}".strip() for e in g['entries']) or 'no turn'
             offer = next((o for e in g['entries'] for o in e['offers'] if o), '')
             w(f"| `{g['uri'].rsplit('/', 1)[-1]}` | {g['step']} | {ents} | {offer.strip().replace(chr(10), ' / ')[:160]} |")
         w('')
@@ -108,7 +110,7 @@ def main(path):
     w('### Spell shapes against a copy of the final world\n')
     w('| To | Shape | Status | Reply |\n| --- | --- | --- | --- |')
     for g in r.get('grammar', []):
-        said = ' / '.join(t.strip().split('\n')[0] + ('; ' + t.strip().split('\n')[2] if len(t.strip().split('\n')) > 2 else '') for t in g['offers'] if t) or g['reason'] or json.dumps(g['result'])
+        said = ' / '.join(t.strip().split('\n')[0] + ('; ' + t.strip().split('\n')[2] if len(t.strip().split('\n')) > 2 else '') for t in g['offers'] if t) or g['reason'] or ('public: ' + json.dumps(g['public']) if g.get('public') else json.dumps(g['result']))
         w(f"| {g['object']} | {g['what']} | {g['status']}{' ' + g['class'] if g['class'] else ''} | {said[:160]} |")
     w('')
     b = r.get('burst')

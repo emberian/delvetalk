@@ -10,6 +10,7 @@ import re
 import secrets
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -51,12 +52,14 @@ class Identity:
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self.client, self.origin, self.clock = client, origin.rstrip('/'), clock
+        self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this
 
     def challenge(self, handle):
         if not isinstance(handle, str) or not HANDLE.fullmatch(handle):
             raise IdentityError('invalid_handle')
         now = self.clock()
-        recent = self.db.execute('SELECT COUNT(*) FROM challenges WHERE handle=? AND created>?', (handle, now - 3600)).fetchone()[0]
+        with self.lock:
+            recent = self.db.execute('SELECT COUNT(*) FROM challenges WHERE handle=? AND created>?', (handle, now - 3600)).fetchone()[0]
         if recent >= CHALLENGES_PER_HOUR:
             raise IdentityError('rate_limited')
         try:
@@ -68,27 +71,29 @@ class Identity:
         nonce = secrets.token_hex(16)
         credential = 'dt_agent_' + secrets.token_urlsafe(32)
         text = f'delvetalk proof-of-control {self.origin} {nonce}'
-        self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state) VALUES(?,?,?,?,?,?,?,?)',
-                        (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending'))
+        with self.lock:
+            self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state) VALUES(?,?,?,?,?,?,?,?)',
+                            (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending'))
         return {'handle': handle, 'did': did, 'text': text, 'expires': now + TTL, 'credential': credential}
 
     def verify(self, handle, at_uri):
         """Attempts are counted before any network read; the 9th is refused outright."""
         now = self.clock()
-        self.db.execute('BEGIN IMMEDIATE')
-        try:
-            row = self.db.execute("SELECT * FROM challenges WHERE handle=? ORDER BY created DESC LIMIT 1", (handle,)).fetchone()
-            if row is None:
-                raise IdentityError('no_challenge')
-            if row['state'] != 'pending':
-                raise IdentityError('challenge_consumed' if row['state'] == 'verified' else 'challenge_revoked')
-            if now >= row['expires']:
-                raise IdentityError('challenge_expired')
-            if row['attempts'] >= MAX_ATTEMPTS:
-                raise IdentityError('too_many_attempts')
-            self.db.execute('UPDATE challenges SET attempts=attempts+1 WHERE nonce=?', (row['nonce'],))
-        finally:
-            self.db.execute('COMMIT')
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                row = self.db.execute("SELECT * FROM challenges WHERE handle=? ORDER BY created DESC LIMIT 1", (handle,)).fetchone()
+                if row is None:
+                    raise IdentityError('no_challenge')
+                if row['state'] != 'pending':
+                    raise IdentityError('challenge_consumed' if row['state'] == 'verified' else 'challenge_revoked')
+                if now >= row['expires']:
+                    raise IdentityError('challenge_expired')
+                if row['attempts'] >= MAX_ATTEMPTS:
+                    raise IdentityError('too_many_attempts')
+                self.db.execute('UPDATE challenges SET attempts=attempts+1 WHERE nonce=?', (row['nonce'],))
+            finally:
+                self.db.execute('COMMIT')
         repo, rkey = self._parse(at_uri)
         if repo != row['did']:
             raise IdentityError('wrong_author')
@@ -101,14 +106,15 @@ class Identity:
             raise IdentityError('proof_mismatch')
         if value.get('text') != row['text']:
             raise IdentityError('proof_text_mismatch')
-        self.db.execute('BEGIN IMMEDIATE')
-        try:
-            cur = self.db.execute("UPDATE challenges SET state='verified',uri=?,cid=?,verified=? WHERE nonce=? AND state='pending'",
-                                  (at_uri, cid, now, row['nonce']))
-            if cur.rowcount != 1:
-                raise IdentityError('challenge_consumed')
-        finally:
-            self.db.execute('COMMIT')
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                cur = self.db.execute("UPDATE challenges SET state='verified',uri=?,cid=?,verified=? WHERE nonce=? AND state='pending'",
+                                      (at_uri, cid, now, row['nonce']))
+                if cur.rowcount != 1:
+                    raise IdentityError('challenge_consumed')
+            finally:
+                self.db.execute('COMMIT')
         return {'status': 'verified', 'did': row['did'], 'handle': handle, 'uri': at_uri, 'cid': cid}
 
     @staticmethod
@@ -120,14 +126,16 @@ class Identity:
         return parts[2], parts[4]
 
     def authenticate(self, credential):
-        row = self.db.execute("SELECT did,handle,verified FROM challenges WHERE credential=? AND state='verified'", (digest(credential),)).fetchone()
+        with self.lock:
+            row = self.db.execute("SELECT did,handle,verified FROM challenges WHERE credential=? AND state='verified'", (digest(credential),)).fetchone()
         if row is None:
             raise IdentityError('invalid_credential')
         return {'did': row['did'], 'handle': row['handle'], 'verified': row['verified']}
 
     def revoke(self, credential):
-        cur = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE credential=? AND state IN ('pending','verified')",
-                              (self.clock(), digest(credential)))
+        with self.lock:
+            cur = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE credential=? AND state IN ('pending','verified')",
+                                  (self.clock(), digest(credential)))
         if cur.rowcount != 1:
             raise IdentityError('invalid_credential')
         return {'status': 'revoked'}

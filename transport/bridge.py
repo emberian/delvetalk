@@ -100,13 +100,13 @@ def draft_text(reply, origin=None):
 
 
 def register(state, host, did, handle):
-    """Tell the host who an author is at their first observed post (the clock principal alone may). The host
-    journals a handle once, so the call is idempotent; the local set only saves the round trips."""
+    """Tell the host an author has arrived, at their first observed post (the clock principal alone may). The call
+    is idempotent at the host; the local set is the skip list and only saves the round trips."""
     path = Path(state) / 'principals.txt'
     known = set(path.read_text().split()) if path.exists() else set()
     if did in known:
         return
-    got = host.send({'op': 'world-principal', 'principal': CLOCK, 'did': did, 'handle': handle})
+    got = host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
     if got.get('status') != 'error':
         with open(path, 'a') as f:
             f.write(did + '\n')

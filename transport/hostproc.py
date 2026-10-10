@@ -14,6 +14,9 @@ from pathlib import Path
 
 BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
 LIBRARY = Path(__file__).resolve().parent.parent / 'world' / 'lib'
+# The packages `world-arrive` creates from; the sealed library must hold them or arrival creates nothing.
+ARRIVAL = ('Avatar', 'Env', 'Wake', 'Place')
+OBJECTS = LIBRARY.parent / 'objects'
 HOST_TIMEOUT, POOL = 120, 8
 DID_RE = __import__('re').compile(r'did:plc:[a-z2-7]{24}\Z')
 
@@ -26,7 +29,8 @@ class Host:
     """One host subprocess, one request at a time; respawned and reopened if it dies.
     With journal=None it is a stateless compile/run process."""
 
-    def __init__(self, journal, binary=BINARY, clock=None, opener=None, library=None, librarian=None):
+    def __init__(self, journal, binary=BINARY, clock=None, opener=None, library=None, librarian=None, preload=None):
+        self.preload, self.pin = preload, None  # a stateless process loads this library at each spawn; pin is its answer
         self.journal, self.binary, self.proc, self.clock, self.opener = journal, binary, None, clock, opener
         # A library directory is sealed into the journal at its first open, as `librarian` (who may change it).
         self.library = {'library': str(library), 'principal': librarian} if library and librarian else {}
@@ -39,6 +43,11 @@ class Host:
                                      **({'opener': self.opener} if self.opener else {}), **self.library})
             if reply.get('status') != 'opened':
                 raise HostDied('world-open refused: ' + json.dumps(reply))
+        elif self.preload:
+            reply = self._exchange({'op': 'library-load', 'path': str(self.preload)})
+            if reply.get('status') != 'library':
+                raise HostDied('library-load refused: ' + json.dumps(reply))
+            self.pin = reply['pin']
 
     def _exchange(self, request):
         watchdog = threading.Timer(HOST_TIMEOUT, self.proc.kill)

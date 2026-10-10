@@ -223,6 +223,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
         | .error e => return (session, .error e)
         | .ok lib => durable s (fun w => libraryOp w principal intent lib none)
       | "world-inspect" => return (session, inspectOp s.world request)
+      | "world-check" => return (session, worldCheck s.world request)
       | "world-interpretations" =>
         let (w, r) := interpretationsReply s.world
         return (some { s with world := w }, .ok r)
@@ -242,6 +243,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           ("recompiledDifferently", toJson s.world.recompiledDifferently)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
+      | "world-arrive" => durable s (fun w => arriveOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

@@ -10,18 +10,18 @@ import collections
 import hashlib
 import json
 import os
-import re
 import secrets
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from transport import pages
-from transport.hostproc import LIBRARY, HostClient, RemoteHeaps, add_host_args
+from transport.hostd import CLOCK
+from transport.hostproc import HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
@@ -29,11 +29,11 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
 MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
+WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, and how often it re-asks the host
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
-IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
@@ -80,42 +80,59 @@ def brief(value):
     return [brief(v) for v in value] if isinstance(value, list) else value
 
 
-def library(modules):
-    """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
-    found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
-    have, out = {m.get('name') for m in modules}, []
-
-    def visit(name):
-        if name not in have and name in found:
-            have.add(name)
-            source = found[name].read_text()
-            for dep in IMPORT.findall(source):
-                visit(dep)
-            out.append({'name': name, 'source': source})
-    for m in modules:
-        for dep in IMPORT.findall(str(m.get('source', ''))):
-            visit(dep)
-    return out + modules
+def compact(reply):
+    """A turn reply cut to what an agent reads: the status, the outcome, the offered texts and where the receipt sits."""
+    receipt = reply['receipt']
+    root = (receipt.get('roots') or [{}])[0]
+    return {'status': reply.get('status'), 'outcome': receipt.get('outcome'),
+            'offers': [o['text'] for o in reply.get('offers') or []],
+            'receipt': {'object': root.get('object'), 'version': root.get('version'), 'height': receipt.get('height')}}
 
 
-class Front(HTTPServer):
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False):
+def compact_offers(reply):
+    """An offers reply cut to the texts, and the height of the newest (pass it as `after`)."""
+    offers = reply.get('offers') or []
+    return {'status': reply['status'], 'offers': [o['text'] for o in offers], **({'height': offers[-1]['height']} if offers else {})}
+
+
+class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
+    daemon_threads = True
+    request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
+
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy = heaps, repl, trust_proxy
-        self.hits, self.nonce = {}, secrets.token_hex(4)
+        self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
+        self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
-        self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
-                            else host.send({'op': 'hostd-info'}).get('hostSha256', 'unknown'))
+        info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
+        self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
+        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
+
+    def sync_library(self, force=False):
+        """Re-read hostd-info when hostd's pid changed (it restarted, maybe with a new library), or when forced."""
+        if hasattr(self.host, 'binary'):
+            return
+        info = self.host.send({'op': 'hostd-info'})
+        if force or info.get('pid') != self.hostd_pid:
+            self.library, self.hostd_pid = info.get('library'), info.get('pid')
 
     def used(self, credential):
         now = self.clock()
-        return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
+        with self.hits_lock:
+            return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
 
     def limited(self, key, rate=RATE):
-        hits = self.used(key)
-        self.hits[key] = hits + [self.clock()]
+        with self.hits_lock:  # read, test and append as one step
+            now = self.clock()
+            hits = [t for t in self.hits.get(key, []) if now - t < WINDOW]
+            self.hits[key] = hits + [now]
         return len(hits) >= rate
+
+    def record_handle(self, did, handle):
+        """Tell the host a verified account has arrived (the clock principal alone may), so cards name them by handle.
+        Idempotent at the host; a refusal leaves the verification standing."""
+        return self.host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
 
     def guide(self, path=GUIDE):
         return path.read_text().replace('{{origin}}', self.origin)
@@ -268,7 +285,13 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'receipt':
             return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
         if kind == 'offers':
-            return send({'op': 'world-offers', 'principal': principal, **after})
+            wait = min(int(q['wait']), WAIT_MAX) if q.get('wait', '').isdigit() else 0
+            for waited in range(0, wait + 1, WAIT_STEP):
+                reply = host.send({'op': 'world-offers', 'principal': principal, **after})
+                if reply.get('status') != 'offers' or reply.get('offers') or waited + WAIT_STEP > wait:
+                    break
+                self.server.sleep(WAIT_STEP)
+            return self.answer(compact_offers(reply) if q.get('compact') == '1' and reply.get('status') == 'offers' else reply)
         if kind == 'pending':
             return send({'op': 'world-pending'})
         data = self.body()
@@ -279,8 +302,9 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'create':
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
-        send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
-              'argument': argument(data), 'identity': data.get('intent')})
+        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+                           'argument': argument(data), 'identity': data.get('intent')})
+        self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply)
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
@@ -299,6 +323,7 @@ class Handler(BaseHTTPRequestHandler):
             out = self.server.identity.verify(data.get('handle'), data.get('uri'))
         except IdentityError as err:
             return self.fail(400, err.code)
+        self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
         self.reply(200, canonical(out), headers=self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ())
 
@@ -319,11 +344,16 @@ class Handler(BaseHTTPRequestHandler):
         for m in modules:
             if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
                 return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
-        repl, modules = self.server.repl, library(modules)
-        if kind == 'check':  # the verdict; ?full=1 adds the compiled artifact
-            checked = repl.send({'op': 'check-package', 'modules': modules, 'entry': data.get('entry')})
+        if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
+            checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
-        compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
+        repl = self.server.repl
+        for retry in (False, True):  # once per request: an unknown pin means hostd restarted with another library
+            self.server.sync_library(force=retry)
+            pin = {'library': self.server.library} if self.server.library else {}
+            compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry'), **pin})
+            if retry or 'unknown library pin' not in str(compiled.get('message')):
+                break
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)
         ty = compiled['artifact'].get('type') or {}

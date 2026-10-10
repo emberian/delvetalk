@@ -161,10 +161,12 @@ def body (w : World) (binary : String) : Except String Json := do
         ("bounds", boundsJson o.bounds), ("methods", o.methods), ("predicate", toJson o.predicate),
         ("predicateReads", toJson o.predicateReads)])]
     out := out.push (Json.mkObj ([("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
-      ("version", toJson o.version), ("state", dataJson o.state), ("read", o.read.json),
+      ("version", toJson o.version), ("state", dataJson o.state), ("stateCid", toJson (stateCid o.state)), ("read", o.read.json),
       ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
       (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
-      (if o.packet.isEmpty then [] else [("packet", toJson o.packet)])))
+      (if o.packet.isEmpty then [] else [("packet", toJson o.packet)]) ++
+      (if o.readings.isEmpty then [] else [("readings", Json.arr (o.readings.toArray.map fun (n, r) =>
+        Json.mkObj [("name", toJson n), ("reading", toJson r)]))])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -291,6 +293,8 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
     let inputs ← expandInputs w (← o.getObjVal? "compile")
     let state ← decodeData Limits.dataDepth (← o.getObjVal? "state")
     unless state.conformsUnder bounds stateType do throw s!"the state of {id} does not conform to its type"
+    let some cid := (o.getObjValAs? String "stateCid").toOption | throw s!"object {id} carries no state CID"
+    unless cid == stateCid state do throw s!"the state of {id} is not its CID's"
     let law ← parseLawText lawText
     let version ← natField o "version"
     let read ← parseRead (some (← o.getObjVal? "read"))
@@ -312,7 +316,8 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
         predicateReads := predicateReads
         supervisor := (o.getObjValAs? String "supervisor").toOption.getD ""
         minted := (o.getObjValAs? Nat "minted").toOption.getD 0
-        packet := (o.getObjValAs? String "packet").toOption.getD "" }
+        packet := (o.getObjValAs? String "packet").toOption.getD ""
+        readings := artifactReadings (Json.mkObj [("laws", (o.getObjVal? "readings").toOption.getD (Json.arr #[]))]) }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do
@@ -368,6 +373,31 @@ def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) 
     | _ => pure ()
   return out
 
+/-- The state CIDs the journal itself commits to, by object and version: a created state (its
+    seed is the whole state), a write's `cid` (host7), and every root read at a known version
+    (`roots[].cid`), wherever in the journal (an entry after a snapshot's height that read an object
+    commits to the state the snapshot must hold). -/
+def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String := Id.run do
+  let mut out : Std.HashMap (String × Nat) String := {}
+  for entry in entries do
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
+    for r in arr entry "roots" do
+      if let (.ok v, .ok c) := (r.getObjValAs? Nat "version", r.getObjValAs? String "cid") then
+        out := out.insert (text r "object", v) c
+    match tagOf entry with
+    | "created" =>
+      if let .ok seed := outcome.getObjVal? "seed" then out := out.insert (text outcome "object", 0) (Journal.bodyHash seed)
+    | "admitted" =>
+      for c in arr outcome "creates" do
+        if let .ok seed := c.getObjVal? "seed" then out := out.insert (text c "object", 0) (Journal.bodyHash seed)
+      for x in arr outcome "writes" do
+        if let (.ok v, .ok c) := (x.getObjValAs? Nat "version", x.getObjValAs? String "cid") then
+          out := out.insert (text x "object", v) c
+    | _ => pure ()
+  return out
+
 /-- A world from a snapshot body and the journal's entries: the store installed, the entries up
     to its height recorded, the derived copies compared, the later entries replayed. -/
 def resume (b : Json) (entries : Array Json) : Except String World := do
@@ -385,6 +415,11 @@ def resume (b : Json) (entries : Array Json) : Except String World := do
   unless expected.size == w.objects.size do throw "its objects are not the journal's"
   for (id, o) in w.objects.toList do
     unless expected[id]? == some (o.version, o.pin) do throw s!"object {id} is not at the journal's version and pin"
+  -- Each state against the CID the journal commits to at its version, where it names one.
+  let anchored := anchoredStates entries
+  for (id, o) in w.objects.toList do
+    if let some cid := anchored[(id, o.version)]? then
+      unless cid == stateCid o.state do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
   let mut w := w
   for entry in entries.extract height entries.size do
     match replayEntry w entry with

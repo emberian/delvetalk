@@ -369,13 +369,23 @@ class Principals(BridgeCase):
         b['author'] = {'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}
         self.observe([a, b, spell_post(3, 'garden-1', '2026-10-09T10:00:02Z')])
         bridge.run(self.state, stub)
-        regs = [o for o in stub.ops if o['op'] == 'world-principal']
-        self.assertEqual(regs, [{'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'},
-                                {'op': 'world-principal', 'principal': 'transport', 'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}])
+        regs = [o for o in stub.ops if o['op'] == 'world-arrive']
+        self.assertEqual(regs, [{'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'},
+                                {'op': 'world-arrive', 'principal': 'transport', 'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}])
         first_turn = next(i for i, o in enumerate(stub.ops) if o['op'] == 'world-turn')
-        self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-principal')
+        self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-arrive')
         bridge.run(self.state, stub)
-        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-principal']), 2)
+        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
+
+    def test_end_to_end_arrive_against_the_real_host(self):
+        from transport.hostproc import LIBRARY
+        with tempfile.TemporaryDirectory() as tmp:
+            d = start_hostd(tmp, BINARY, opener=DID, library=LIBRARY)
+            try:
+                got = HostClient(Path(tmp) / 'host.sock').send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'})
+                self.assertEqual(len(got.get('created', [])), 3, got)
+            finally:
+                stop_hostd(d)
 
 
 class RealAwaitPost(test_outbound.ReplyIsAddress):

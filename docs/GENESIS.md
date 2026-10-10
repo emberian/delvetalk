@@ -28,10 +28,15 @@ change the library. `postQuota` is 16 an hour, the town's own cap.
 | `cistern` | Cistern | nothing | default |
 | `commons` | Commons | porch, garden, workshop as places; porch open; workshop gated by `directory` | owner: ember |
 
-Avatars, Envs and Wakes are not seeded. An Avatar is created for a principal at
-its first verified request or its first observed spell (by the bridge, as that
-principal, with id = the DID); its Env (`env/<did>`) and Wake are created by
-the principal's own spells. Nothing exists for a town member until they knock.
+Avatars, Envs and Wakes are not seeded. At a principal's first verified
+request or first observed post, transport sends `world-arrive {principal:
+"transport", did, handle}`: the host records the handle and creates, when
+absent, the Avatar (id = the DID), the Env (`env/<did>`) and the Wake
+(`wake/<did>`, watching that Env) from the library modules Avatar, Env and
+Wake, owned by the DID, as ordinary creates by the opener. A second arrival
+creates nothing. Nothing exists for a town member until they knock. The
+library sealed at `world-open` must hold those three modules (and Place, which
+Avatar imports): hostd's `--library` seals world/lib plus world/objects/{Avatar,Env,Wake,Place}.obend.
 
 ## Posts recorded at genesis
 

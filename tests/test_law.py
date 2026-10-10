@@ -118,5 +118,67 @@ class TwoTier(Reflection):
         self.assertNotIn("lawReads", {m["name"] for m in inspected["methods"]})
 
 
+READ = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  owner: String
+  count: Nat
+record Edits:
+  owner: Plans.Edit<String, {}>
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, {}>
+law owner "only the owner may count": not (request.kind == 0) or request.subject == new.owner
+law small: new.count <= 100
+def initial() -> State:
+  {owner: "", count: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {owner: Plans.Edit::<String, {}>.keep({}), count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case _: 1n
+"""
+
+SAID = "refused owner: only the owner may count"
+
+
+class Readings(Reflection):
+    """A refusal by a law clause the package gave a reading says `refused NAME: reading` in the receipt and
+    in its public projection; refuted if the reading is lost, shown for another clause, or outlives an
+    amendment of its clause."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("r", READ, record())
+
+    def refused(self, identity):
+        r = self.turn("r", "bump", principal="kim", identity=identity)
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["clause"]), ("refused", "owner"), r)
+        return r
+
+    def test_the_receipt_and_the_public_projection_quote_the_reading(self):
+        r = self.refused("k1")
+        self.assertEqual(r["receipt"]["outcome"]["reason"], SAID)
+        self.assertEqual(r["public"]["reason"], SAID)
+        seen = self.host.send(op="world-receipt", principal="ember", identity="k1", of="kim")
+        self.assertEqual((seen["status"], seen["reason"]), ("refused", SAID), seen)
+        self.assertEqual(self.turn("r", "bump")["status"], "admitted")
+
+    def test_a_clause_without_a_reading_says_only_its_name(self):
+        self.host.send(op="world-amend", principal="ember", identity="a1", object="r", version=0,
+                       law='law owner: request.subject == new.owner\nlaw small: new.count <= 100')
+        r = self.refused("k2")
+        self.assertNotIn("reason", r["receipt"]["outcome"])
+
+    def test_an_amendment_that_keeps_the_clause_keeps_its_reading_and_a_snapshot_keeps_it(self):
+        a = self.host.send(op="world-amend", principal="ember", identity="a1", object="r", version=0,
+                           law='law owner: (not (request.kind == 0)) or (request.subject == new.owner)\nlaw small: new.count <= 5')
+        self.assertEqual(a["status"], "admitted", a)
+        self.assertEqual(self.refused("k3")["receipt"]["outcome"]["reason"], SAID)
+        self.assertIn("height", self.host.send(op="world-snapshot"))
+        self.reopen()
+        self.assertEqual(self.refused("k4")["receipt"]["outcome"]["reason"], SAID)
+
+
 if __name__ == "__main__":
     unittest.main()

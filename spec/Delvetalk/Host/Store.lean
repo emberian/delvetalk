@@ -209,6 +209,9 @@ structure Object where
   /-- The `packetSha256` this host compiled the object's sources to: an audit observation
       (journaled as `compiled.packet`), never compared on replay. -/
   packet : String := ""
+  /-- The reading of each law clause the package gave one (`law NAME "reading": EXPR`), kept
+      while the clause is the package's: a refusal by it says `refused NAME: reading`. -/
+  readings : List (String × String) := []
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

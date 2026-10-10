@@ -187,8 +187,8 @@ class Workshop(Chain):
         before = self.counter()
         reply = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
                                                          post=label("at://kim/p/1"), slot=label("")), principal="kimik3")
-        self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], reply["receipt"]["outcome"]["clause"]),
-                         ("refused", "lawRefused", "owner"), reply)
+        # The target's law is asked in the turn: the workshop says it was refused, never "Reprogrammed".
+        self.assertEqual(self.card(reply), "Not done: owner\n")
         self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
 
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):

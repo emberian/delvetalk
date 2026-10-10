@@ -59,7 +59,7 @@ class HttpFront(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.provider = Provider()
         self.now = [1000.0]
-        self.hostd = start_hostd(self.tmp.name, BINARY, library=LIBRARY)
+        self.hostd = start_hostd(self.tmp.name, BINARY, opener=DID, library=LIBRARY)  # a library is sealed only by an opener
         self.hostd.heaps.size = 2
         sock = Path(self.tmp.name) / 'host.sock'
         self.host = HostClient(sock)
@@ -109,6 +109,18 @@ class HttpFront(unittest.TestCase):
     def turn(self, tok, intent):
         return self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': record(), 'intent': intent}, tok)
 
+    def test_verify_announces_the_arrival_to_the_host(self):
+        seen = []
+        send = self.host.send
+        self.host.send = lambda req, *a, **k: (seen.append(req), send(req, *a, **k))[1]
+        self.login()
+        arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
+        self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
+
+    def test_end_to_end_arrive_against_the_real_host(self):
+        got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
+        self.assertNotEqual(got.get('status'), 'error', got)
+
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
@@ -149,6 +161,17 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 1)
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
         self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
+
+    def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
+        tok = self.login()
+        s, full = self.turn(tok, 'k1')
+        s, c = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
+        self.assertEqual(s, 200)
+        self.assertEqual(c, {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
+                             'receipt': {'object': 'c1', 'version': 0, 'height': full['receipt']['height']}})
+        self.assertIn('hash', full['receipt'])
+        s, e = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
+        self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
 
     def test_host_refusal_passes_through_verbatim(self):
         tok = self.login()
@@ -262,6 +285,27 @@ class HttpFront(unittest.TestCase):
                             object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
+    def test_a_turn_start_fills_the_context_so_the_arguments_omit_it(self):
+        tok = self.login()
+        bind = dict(object='c1', intent='repl-3', roots=[{'object': 'c1', 'version': 0}])
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], **bind)
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **bind)
+        self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
+
+    def test_a_stale_library_pin_is_re_read_once_and_the_compile_goes_through(self):
+        tok = self.login()
+        self.front.library = 'bafyreistale'
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object='c1', intent='repl-4',
+                         roots=[{'object': 'c1', 'version': 0}])
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        self.assertNotEqual(self.front.library, 'bafyreistale')
+        self.front.hostd_pid = -1  # a changed pid is re-read before the request
+        self.front.library = 'bafyreistale'
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object='c1', intent='repl-5',
+                         roots=[{'object': 'c1', 'version': 0}])
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+
     def test_check_and_compile_refusals_carry_the_hosts_hint(self):
         tok = self.login()
         habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
@@ -275,13 +319,51 @@ class HttpFront(unittest.TestCase):
         s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
 
+    def test_check_asks_the_world_and_sends_only_the_callers_modules(self):
+        tok = self.login()
+        seen, real = [], self.host.send
+        def send(req, *a, **k):
+            seen.append(req)
+            return {'status': 'checked', 'entry': req['entry']} if req['op'] == 'world-check' else real(req, *a, **k)
+        self.host.send = send
+        s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
+        self.assertEqual((s, ok['status']), (200, 'checked'), ok)
+        self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
+
+    def test_end_to_end_world_check_against_the_real_host(self):
+        got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
+        self.assertEqual(got.get('status'), 'checked', got)
+
+    def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
+        tok = self.login()
+        asks, naps, real = [], [], self.host.send
+        offer = {'height': 9, 'identity': {'principal': DID, 'intent': 'i'}, 'text': 'hello'}
+        def send(req, *a, **k):
+            if req['op'] != 'world-offers':
+                return real(req, *a, **k)
+            asks.append(req)
+            return {'status': 'offers', 'offers': [offer] if len(asks) == 3 else [], 'more': False}
+        self.host.send, self.front.sleep = send, naps.append
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=30&compact=1', token=tok)
+        self.assertEqual((s, r, len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
+        asks.clear(), naps.clear()
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)  # bounded; the host never answers
+        self.assertEqual((s, r['offers'], len(asks)), (200, [offer], 3))
+        asks.clear(), naps.clear()
+        self.host.send = lambda req, *a, **k: (asks.append(req), {'status': 'offers', 'offers': []})[1] if req['op'] == 'world-offers' else real(req, *a, **k)
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)
+        self.assertEqual((len(asks), len(naps)), (31, 30))
+        asks.clear()
+        self.call('GET', '/AGENTS.md/offers', token=tok)
+        self.assertEqual(len(asks), 1)
+
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
         s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
-        self.assertEqual((s, listed['ids']), (200, ['c1', 'garden']), listed)
+        self.assertEqual((s, listed['ids']), (200, ['c1', DID, 'env/' + DID, 'garden', 'wake/' + DID]), listed)  # verify made the caller's avatar, env and wake
         self.assertEqual(self.call('GET', '/AGENTS.md/world?prefix=g', token=tok)[1]['ids'], ['garden'])
         s, card = self.call('GET', '/AGENTS.md/world/garden/card', token=tok)
         self.assertEqual((s, card['status']), (200, 'card'), card)
@@ -434,6 +516,7 @@ class HttpFront(unittest.TestCase):
                 return {'status': 'card', 'text': 'CARD for ' + req['principal']}
             return real(req)
         self.host.send = send
+        newest = real({'op': 'world-status'})['height']  # the last entry touching c1; verifying journals the handle after it
         tok = self.login()
         cookie = 'dt_credential=' + tok
         before = real({'op': 'world-status'})['height']
@@ -444,7 +527,70 @@ class HttpFront(unittest.TestCase):
         heights = [int(x) for x in __import__('re').findall(rb'<tr><td>(\d+)</td>', page)]
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
-        self.assertEqual(heights[0], before)
+        self.assertEqual(heights[0], newest)
+
+
+class StubHost:
+    def __init__(self):
+        self.ops = []
+
+    def send(self, req):
+        self.ops.append(req['op'])
+        return {'status': 'viewed', 'version': 0} if req['op'] == 'world-view' else {'status': 'ok'}
+
+    binary = BINARY
+
+
+class Concurrent(unittest.TestCase):
+    N = 20
+
+    def test_twenty_threads_verify_and_view_without_a_tear(self):
+        did = lambda i: 'did:plc:' + f'{i:024d}'.translate({48: 'a', 49: 'b', 50: 'c', 51: 'd', 52: 'e', 53: 'f', 54: 'g', 55: 'h', 56: 'i', 57: 'j'})
+        texts = {}
+
+        def provider(method, url, headers, body):
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            if 'resolveHandle' in url:
+                return 200, json.dumps({'did': did(int(q['handle'][0].split('.')[0][1:]))}).encode()
+            return 200, json.dumps({'uri': f"at://{q['repo'][0]}/town.delve.feed.post/3abc", 'cid': 'bafyx',
+                                    'value': {'text': texts[q['repo'][0]]}}).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            host = StubHost()
+            ident = identity.Identity(tmp, delve.Client(provider))
+            front = Front(('127.0.0.1', 0), host, ident, trust_proxy=True)
+            port = front.server_address[1]
+            threading.Thread(target=front.serve_forever, daemon=True).start()
+            errors, creds = [], {}
+
+            def call(method, path, i, body=None, token=None):
+                c = http.client.HTTPConnection('127.0.0.1', port, timeout=30)
+                h = {'X-Forwarded-For': f'10.0.0.{i}', **({'Authorization': 'Bearer ' + token} if token else {})}
+                c.request(method, path, json.dumps(body) if body is not None else None, h)
+                r = c.getresponse()
+                return r.status, json.loads(r.read())
+
+            def person(i):
+                try:
+                    handle = f'h{i}.delve.town'
+                    s, ch = call('POST', '/AGENTS.md/challenge', i, {'handle': handle})
+                    texts[did(i)] = ch['text']
+                    s2, v = call('POST', '/AGENTS.md/verify', i, {'handle': handle, 'uri': f'at://{did(i)}/town.delve.feed.post/3abc'})
+                    s3, w = call('GET', '/AGENTS.md/world/x', i, token=ch['credential'])
+                    creds[i] = ch['credential']
+                    assert (s, s2, s3, v['status'], w['status']) == (200, 200, 200, 'verified', 'viewed'), (s, s2, s3, v, w)
+                except BaseException as e:
+                    errors.append(repr(e))
+            threads = [threading.Thread(target=person, args=(i,)) for i in range(self.N)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+            front.shutdown()
+            front.server_close()
+            self.assertEqual(errors, [])
+            self.assertEqual(len(creds), self.N)
+            self.assertEqual([len(front.used(c)) for c in creds.values()], [1] * self.N)
+            self.assertEqual(host.ops.count('world-arrive'), self.N)
+            self.assertEqual(host.ops.count('world-view'), self.N)
+            self.assertEqual(sorted(ident.authenticate(c)['did'] for c in creds.values()), sorted(did(i) for i in range(self.N)))
 
 
 if __name__ == '__main__':
