@@ -263,6 +263,32 @@ theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveB
     (lawTable laws ast).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
 
+/-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order: its own
+`record State`, or the record a `type State = Alias.S` names in the module imported as `Alias`. -/
+def fixedNames (fields : List Minidregg.Compiler.ObjectiveBendSurface.Field) : List String :=
+  (fields.filter (·.fixed)).map (·.name)
+
+def fixedFields (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) (index : Nat) :
+    List String := Id.run do
+  let some ast := asts[index]? | return []
+  for d in ast.decls do
+    match d with
+    | .record "State" _ fields _ => return fixedNames fields
+    | .typeAlias "State" type _ =>
+      let some (module : SourceModule) := modules[index]? | return []
+      let (home, name) := match (Minidregg.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
+        | [alias, n] => ((module.imports.find? (fun (i : LockedImport) => i.importAlias == alias)).map (fun (i : LockedImport) => i.target), n)
+        | [n] => (some index, n)
+        | _ => (none, "")
+      let some home := home | return []
+      let some other := asts[home]? | return []
+      for o in other.decls do
+        if let .record r _ fields _ := o then
+          if r == name then return fixedNames fields
+      return []
+    | _ => pure ()
+  return []
+
 /-- The world method a message plan term names (`{object, method: "X", argument}`). -/
 def worldMethodOf : Minidregg.Theory.ObjectiveBendOpenRecursion.Term → Option String
   | .record fields => match fields.lookup "method" with
@@ -312,6 +338,9 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
     ("methods", methods), ("law", law)]
+  -- A State with fixed fields lists them (no edit names one); absent otherwise.
+  let fixed := fixedFields modules prepared.asts (modules.length - 1)
+  let artifact := if fixed.isEmpty then artifact else artifact.setObjVal! "fixed" (toJson fixed)
   -- Protocols the entry module claims (checked at elaboration): listed, and each method row
   -- names its protocol. Absent for a module that claims none (its artifact is unchanged).
   let claims := match prepared.elaborated.ctx.modules.find? (·.name == entryModule.name) with
