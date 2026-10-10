@@ -944,6 +944,14 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    host's spells for any card" with `become` when the law would admit the speaker's reprogram
    (`kindAdmits`, as `methodAdmits` on the state as it stands). Test: `tests/test_extend.py` `HostSpells`.
 
+114. **`adopt` (host12; docs/CATALOGUE.md §2).** `delvetalk <card> adopt / law: <id>` appends the
+   named clause set to the card's law: the text `law` of a readable object (a kind, or a library page
+   kept as an object with a `law` field) after the card's current text, with its readings; an
+   amendment by the speaker, judged by the metarule and the card's law (kind 2), journaled under the
+   turn's identity. Refusals: `missingField`, `unknownLaw`, `noLaw`, `lawClash` (a clause name the law
+   already has), `law syntax`, or the law's. `?` lists it where the law would admit the speaker's
+   amendment. Test: `tests/test_extend.py` `test_adopt_appends_a_kinds_clauses_under_the_amend_metarule`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

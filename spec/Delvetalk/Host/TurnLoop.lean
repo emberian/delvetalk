@@ -950,7 +950,7 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | _, _ => fields
 
 /-- The host's own spells on every card (docs/CATALOGUE.md §2, higher-order cards). -/
-def hostSpells : List String := ["become"]
+def hostSpells : List String := ["become", "adopt"]
 
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
@@ -960,7 +960,8 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) : Bool
 
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
 def hostUsage (w : World) (o : Object) (principal card : String) : String :=
-  let lines := (if kindAdmits w o principal 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else [])
+  let lines := (if kindAdmits w o principal 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else []) ++
+    (if kindAdmits w o principal 2 then [s!"delvetalk {card} adopt\nlaw: <a kind's or a page's id>\n"] else [])
   if lines.isEmpty then "" else "\nThe host's spells for any card:\n" ++ String.join (lines.map ("\n" ++ ·))
 
 /-- Why `me` names nothing yet. -/
@@ -2036,7 +2037,10 @@ def versionReceipt (w : World) (id : String) : String :=
 
     - `become / kind: <id>` lays the kind's `body` (a layer source; the kind is any object whose state
       has a text `body`) over the card's package: a reprogram in extend mode, `madeFrom {object, pin,
-      receipt}` naming the kind, the pin it runs and the entry that made its current version. -/
+      receipt}` naming the kind, the pin it runs and the entry that made its current version.
+    - `adopt / law: <id>` appends the named clause set (the text `law` of a kind, or of a library page
+      kept as an object) to the card's law: an amendment by the speaker under the metarule, the
+      clauses' readings with them; a clause name the card's law already has is refused `lawClash`. -/
 def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : List Spell.Binding) : Except String (World × Json) := do
   let value := fun (n : String) => ((fields.find? (·.name == n)).map (·.value)).filter (!·.isEmpty)
   let some o := w.objects[id]? | refuseSpell w req id "otherCard" s!"There is no card {id}." ""
@@ -2061,6 +2065,22 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
     let (w', r) := match programFor w o body "" true with
       | .error (clause, message) => commit w p base (some { cls := "programRefused", clause := some clause, object := some id, reason := some message })
       | .ok prog => commit (cacheProgram w o body "" prog true) p base
+    return (w', turnReply w' r)
+  | "adopt" =>
+    let some srcId := value "law" | refuseSpell w req id "missingField" "adopt takes law: the id of a kind or a page." template
+    let some src := (w.objects[srcId]?).filter (·.read.permits req.principal)
+      | refuseSpell w req id "unknownLaw" s!"There is no kind or page {srcId}." template
+    let some clauses := (textField src.state "law").filter (!·.isEmpty)
+      | refuseSpell w req id "noLaw" s!"{srcId} names no law to adopt." template
+    let existing := (lawClauses o.lawText).map (·.1)
+    if let some (n, _, _) := (lawClauses clauses).find? (existing.contains ·.1) then
+      return ← refuseSpell w req id "lawClash" s!"{id}'s law already has a clause {n}; adopt a set whose names are new." template
+    let text := if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
+    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version), (srcId, src.version)],
+                          writes := [], laws := [(id, text)], turn := w.height + 1 }
+    let (w', r) := match parseLawText text with
+      | .error message => commit w p base (some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message })
+      | .ok _ => commit w p base
     return (w', turnReply w' r)
   | _ => refuseSpell w req id "noAction" s!"{id} has no spell {action}." template
 

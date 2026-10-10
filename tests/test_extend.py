@@ -194,6 +194,14 @@ def initial() -> State:
   {name: "", body: ""}
 """)
 
+KIND_LAW = declared("""edition ObjectiveBend 1
+record State:
+  name: String
+  law: String
+def initial() -> State:
+  {name: "", law: ""}
+""")
+
 
 class HostSpells(Reflection):
     """docs/CATALOGUE.md §2: the host's own spells on any card, each a direct turn judged by the card's
@@ -228,6 +236,23 @@ class HostSpells(Reflection):
         self.assertEqual(field(self.state("c"), "count")["value"], "20")
         missing = self.say("delvetalk c become\nkind: kind/none", identity="b2")["receipt"]["outcome"]
         self.assertEqual((missing["class"], missing["clause"]), ("badSpell", "unknownKind"), missing)
+
+    def test_adopt_appends_a_kinds_clauses_under_the_amend_metarule(self):
+        circle = 'law circle "only ember and kim count": request.subject == "ember" or request.subject == "kim"'
+        self.make("kind/circle", KIND_LAW, record(name=label("circle"), law=label(circle)))
+        self.assertIn("delvetalk c adopt\nlaw:", self.say("delvetalk c ?")["text"])
+        stranger = self.say("delvetalk c adopt\nlaw: kind/circle", who="kim", identity="a0")
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), stranger)
+        r = self.say("delvetalk c adopt\nlaw: kind/circle", identity="a1")
+        self.assertEqual(r["status"], "admitted", r)
+        laws = self.host.send(op="world-inspect", principal="ember", object="c", source=False)["laws"]
+        self.assertIn(("circle", "only ember and kim count"), [(l["name"], l.get("reading")) for l in laws])
+        self.assertEqual(self.turn("c", "bump", principal="eve")["receipt"]["outcome"].get("clause"), "circle")
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        clash = self.say("delvetalk c adopt\nlaw: kind/circle", identity="a2")["receipt"]["outcome"]
+        self.assertEqual((clash["class"], clash["clause"]), ("badSpell", "lawClash"), clash)
+        self.reopen()
+        self.assertEqual(self.turn("c", "bump", principal="eve")["receipt"]["outcome"].get("clause"), "circle")
 
 
 class ExtensionPins(Reflection):
