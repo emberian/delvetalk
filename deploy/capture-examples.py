@@ -2,7 +2,7 @@
 """Regenerate docs/AGENTS-EXAMPLES.md from a real stack.
 
 Starts a throwaway hostd (opener named, library sealed), seeds the town's objects as docs/GENESIS.md does, starts
-the HTTP front with a mocked account host, then runs three sessions (a planter, a wake registrar, a forger) as
+the HTTP front with a mocked account host, then runs four sessions (a planter, a wake registrar, a forger, a stranger by the controls) as
 literal requests and writes down the replies. Nothing is edited by hand: the page is whatever this prints.
 
   DELVETALK_OBEND=/path/to/delvetalk-obend python3 deploy/capture-examples.py [--out docs/AGENTS-EXAMPLES.md]
@@ -27,11 +27,12 @@ from transport import delve, identity  # noqa: E402
 from transport.hostd import Hostd  # noqa: E402
 from transport.hostproc import BINARY, LIBRARY, HostClient, RemoteHeaps  # noqa: E402
 from transport.http import Front  # noqa: E402
+from tests.test_hypermedia import walk  # noqa: E402
 
 CUT = 2400
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'
 PEOPLE = {'moth.delve.town': 'did:plc:uwsco4yctpvu5ki7tiob73s6', 'owl.delve.town': 'did:plc:32ecuw7tqlouxhk3uxtftip2',
-          'smith.delve.town': 'did:plc:tindgd5cosetdn7f7hnr6lda'}
+          'smith.delve.town': 'did:plc:tindgd5cosetdn7f7hnr6lda', 'wren.delve.town': 'did:plc:wrenwrenwrenwrenwrenwren'}
 NOW = 1791591368.0
 TALLY = '''edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -54,14 +55,15 @@ def lend(state: State, input: {to: String}, context: Abi.Context) -> Activity<Pl
     case _: ""
 '''
 FLIP = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
-HEAD = '''# DelveTalk: three worked sessions
+HEAD = '''# DelveTalk: four worked sessions
 
 Literal requests and replies, captured on {date} by `deploy/capture-examples.py` from a real stack started as
 docs/DEPLOY.md says: hostd over a fresh journal with the opener named and the library sealed, genesis by the seeds
 of docs/GENESIS.md, `python3 -m transport.http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
 the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
-The guide is `GET /AGENTS.md`; `$T` is the credential from the challenge.
+The guide is `GET /AGENTS.md`, the catalogue `GET /AGENTS.md/api`; `$T` is the credential from the challenge. Each reply
+is shown with its `_links` first and an object's `_actions` last.
 '''
 
 
@@ -74,7 +76,7 @@ def label(text):
 
 
 class Provider:
-    """The mocked account host: resolves the three handles and serves the text a session posted."""
+    """The mocked account host: resolves the handles and serves the text a session posted."""
     def __init__(self):
         self.texts = {}
 
@@ -90,7 +92,7 @@ class Provider:
 class Capture:
     def __init__(self, port, hostd_socket, provider, tmp):
         self.port, self.sock, self.provider, self.tmp = port, hostd_socket, provider, str(tmp)
-        self.out, self.token = [], ''
+        self.out, self.token, self.count = [], '', [0, 0, 0]
 
     def say(self, text=''):
         self.out += [text, '']
@@ -98,27 +100,33 @@ class Capture:
     def shown(self, text):
         return text.replace(self.tmp, '/data')
 
-    def request(self, method, path, body=None, auth=True):
+    def fetch(self, method, href, body=None, token=None):
+        """One request, written down as a curl and its reply: `_links` first, `_actions` last. Counts requests and bytes."""
         c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=60)
-        c.request(method, '/AGENTS.md' + path, json.dumps(body) if body is not None else None, {'Authorization': 'Bearer ' + self.token} if auth and self.token else {})
+        sent = json.dumps(body) if body is not None else None
+        c.request(method, href, sent, {'Authorization': 'Bearer ' + token} if token else {})
         r = c.getresponse()
-        raw = r.read()
+        got = r.read()
         c.close()
-        return r.status, json.loads(raw)
-
-    def step(self, method, path, body=None, auth=True):
-        status, reply = self.request(method, path, body, auth)
-        url = f'{{{{origin}}}}/AGENTS.md{path}'
-        cmd = f'curl -s {"-X POST " if method == "POST" else ""}' + (f'"{url}"' if '?' in path else url)  # zsh globs a bare ?
-        cmd += ' -H "Authorization: Bearer $T"' if auth and self.token else ''
+        self.count = [self.count[0] + 1, self.count[1] + len(sent or ''), self.count[2] + len(got)]
+        status, reply = r.status, json.loads(got)
+        url = '{{origin}}' + href
+        cmd = f'curl -s {"-X " + method + " " if method != "GET" else ""}' + (f'"{url}"' if '?' in href else url)  # zsh globs a bare ?
+        cmd += ' -H "Authorization: Bearer $T"' if token else ''
         if body is not None:
             cmd += " -d '" + json.dumps(body).replace("'", "'\\''") + "'"
-        text = json.dumps(reply, sort_keys=True, ensure_ascii=False)
+        rest = json.dumps({k: v for k, v in reply.items() if k not in ('_links', '_actions')}, sort_keys=True, ensure_ascii=False)
+        parts = [f'"_links": {json.dumps(reply["_links"], sort_keys=True)}' if '_links' in reply else '', rest[1:-1],
+                 f'"_actions": {json.dumps(reply["_actions"], sort_keys=True, ensure_ascii=False)}' if '_actions' in reply else '']
+        text = '{' + ', '.join(p for p in parts if p) + '}'
         raw = text.encode()
         if len(raw) > CUT:
             text = raw[:CUT].decode(errors='ignore') + f' … [{len(raw) - CUT} more bytes cut here; the server sent them]'
         self.out += [f'    $ {self.shown(cmd)}', f'    {status} {self.shown(text)}', '']
-        return reply
+        return status, reply
+
+    def step(self, method, path, body=None, auth=True):
+        return self.fetch(method, '/AGENTS.md' + path, body, self.token if auth and self.token else None)[1]
 
     def login(self, handle):
         did = PEOPLE[handle]
@@ -206,6 +214,21 @@ def forger(cap):
     cap.step('GET', '/world/garden/bell/1/source')
 
 
+def stranger(cap):
+    cap.say('## A stranger, by the controls alone')
+    cap.say('Only `GET /AGENTS.md/api` and the `_links` and `_actions` of each reply, as `tests/test_hypermedia.py` `walk` follows them:\n'
+            'the first object offering `plant`, its card for the colours, the receipt by slug, a counter in the heap, a REPL entry.')
+    did, cap.count = PEOPLE['wren.delve.town'], [0, 0, 0]
+
+    def prove(text):
+        cap.provider.texts[did] = text
+        return f'at://{did}/town.delve.feed.post/3abc'
+    got = walk(cap.fetch, 'wren.delve.town', prove, TALLY)
+    n, sent, received = cap.count
+    cap.say(f'Reached: {json.dumps(got)}. {n} requests, {sent:,} bytes sent, {received:,} bytes received.')
+    print(f'stranger: {got}; {n} requests, {sent} bytes sent, {received} received', file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='capture-examples.py')
     ap.add_argument('--out', default=str(ROOT / 'docs' / 'AGENTS-EXAMPLES.md'))
@@ -224,7 +247,7 @@ def main(argv=None):
         cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
-            for session in (planter, registrar, forger):
+            for session in (planter, registrar, forger, stranger):
                 session(cap)
         finally:
             front.shutdown()

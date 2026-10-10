@@ -275,7 +275,7 @@ def actions(base, obj, inspected, only=None):
     forms = {f['action']: f for f in plain(inspected.get('forms') or {'tag': 'list', 'items': []})}
     out = []
     for m in inspected.get('methods') or []:
-        if not m.get('context') or (only and m['name'] != only):
+        if not m.get('context') or (only and m['name'] != only) or m.get('admits', True) is not True:  # `admits`: host op wanted
             continue
         act = {'name': m['name'], 'method': 'POST', 'href': f"{base}/world/{oid(obj)}/{urllib.parse.quote(m['name'], safe='')}"}
         form = forms.get(m['name'])
@@ -492,13 +492,7 @@ class Handler(BaseHTTPRequestHandler):
         except IdentityError:
             return None
 
-    def do_GET(self):
-        self.dispatch('GET')
-
-    def do_POST(self):
-        self.dispatch('POST')
-
-    do_PUT = do_DELETE = do_PATCH = do_HEAD = lambda self: self.dispatch(self.command)
+    do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = lambda self: self.dispatch(self.command)
 
     def dispatch(self, method):
         """Route, and turn whatever escapes into a named envelope: a client gone is dropped, anything else is `internal`."""
@@ -541,9 +535,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.object_page(p['object'], spell=name == 'spell')
         return self.agents(name, p['heap'], p['object'], p['method'])
 
-    def do_OPTIONS(self):
-        self.dispatch('OPTIONS')
-
     def options(self):
         """The catalogue entries of the routes at this path, one per method."""
         path = urllib.parse.urlsplit(self.path).path
@@ -583,12 +574,13 @@ class Handler(BaseHTTPRequestHandler):
                         'source': link(f'{base}/world/{oid(o)}/source')}
         send = lambda req, links=None: self.answer(host.send(req), links=links)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
-        after = {'after': int(q['after']) if digits(q['after']) else q['after']} if 'after' in q else {}
         if kind == 'world':
             reply = host.send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
             ids = reply.get('ids') or []
             nxt = urllib.parse.urlencode({**({'prefix': q['prefix']} if 'prefix' in q else {}), 'after': ids[-1]}) if ids and reply.get('more') else ''
-            return self.answer(reply, links={'item': [link(f'{base}/world/{oid(i)}', name=i) for i in ids],
+            names = reply.get('methods') or {}  # per id, when the host answers them (host op wanted)
+            return self.answer(reply, links={'item': [link(f'{base}/world/{oid(i)}', name=i, **({'actions': names[i]} if i in names else {}))
+                                                      for i in ids],
                                              **({'next': link(f'{base}/world?{nxt}')} if nxt else {}), 'offers': link(base + '/offers')})
         if kind in ('object', 'card', 'source'):
             op = {'object': 'world-view', 'card': 'world-card', 'source': 'world-inspect'}[kind]
@@ -614,7 +606,8 @@ class Handler(BaseHTTPRequestHandler):
             r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
             return self.answer(r, links=receipt_links(base, r))
         if kind == 'offers':
-            wait = min(int(q['wait']), WAIT_MAX) if digits(q.get('wait', '')) else 0
+            wait, after = min(int(q['wait']), WAIT_MAX) if digits(q.get('wait', '')) else 0, {'after': q['after']} if 'after' in q else {}
+            after = {'after': int(q['after'])} if digits(after.get('after', '')) else after
             for waited in range(0, wait + 1, WAIT_STEP):
                 reply = host.send({'op': 'world-offers', 'principal': principal, **after})
                 if reply.get('status') != 'offers' or reply.get('offers') or waited + WAIT_STEP > wait:

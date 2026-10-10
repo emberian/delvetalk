@@ -28,6 +28,46 @@ def fill(action):
             else f"a {f['name']}" for f in action['fields']}
 
 
+PURE = 'edition ObjectiveBend 1\ndef twice(n: Nat) -> Nat:\n  n + n\n'
+
+
+def walk(call, handle, prove, module):
+    """A stranger with only the catalogue and the controls in replies: challenge, verify, find something to plant in,
+    plant, read the receipt by its slug, make a thing in the heap and run it, run a REPL entry. `call(method, href, body,
+    token)` -> (status, reply); `prove(text)` posts the challenge and returns the post's URI; `module` is the stranger's
+    own Bend (a State with a `count` and a `bump` method). -> what it reached."""
+    got = {}
+    api = call('GET', '/AGENTS.md/api', None, None)[1]
+    routes = {r['name']: r for r in api['routes']}
+    ch = call('POST', routes['challenge']['href'], {'handle': handle}, None)[1]
+    v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, None)[1]
+    tok = ch['credential']
+    listing = call('GET', v['_links']['world']['href'], None, tok)[1]
+    items = listing['_links']['item']
+    for item in [i for i in items if 'plant' in i.get('actions', ())] or items:  # the first object that offers a `plant`
+        view = call('GET', item['href'], None, tok)[1]
+        plant = [a for a in view.get('_actions') or [] if a['name'] == 'plant']
+        if plant:
+            break
+    card = call('GET', view['_links']['card']['href'], None, tok)[1]['text']
+    values = {}
+    for f in plant[0]['fields']:  # the card names the choices a text field takes, as `<a, b or c>`
+        shown = re.search(rf"{f['name']}: <([^>]*)>", card)
+        values[f['name']] = re.split(r', | or ', shown[1])[0] if shown and ' or ' in shown[1] else f"a {f['name']} for strangers"
+    planted = call(plant[0]['method'], plant[0]['href'], {'intent': 'stranger-plant', 'fields': values}, tok)[1]
+    got['planted'] = (planted['status'], [c['name'] for c in planted['_links'].get('created', [])])
+    receipt = call('GET', planted['_links']['receipt']['href'], None, tok)[1]
+    got['receipt'] = (receipt['status'], receipt['receipt']['slug'] == planted['receipt']['slug'])
+    made = call('POST', routes['create']['href'], {'intent': 'stranger-make', 'object': 'mine', 'entry': 'initial', 'source': module, 'seed': {}}, tok)[1]
+    mine = call('GET', made['_links']['object']['href'], None, tok)[1]
+    bump = [a for a in mine['_actions'] if a['name'] == 'bump'][0]
+    bumped = call(bump['method'], bump['href'], {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
+    got['heap'] = (made['status'], bumped['status'], bumped['result'])
+    ran = call('POST', routes['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
+    got['repl'] = (ran['status'], ran['value'])
+    return got
+
+
 class Controls(FrontCase):
     def setUp(self):
         super().setUp()
@@ -116,6 +156,41 @@ class Controls(FrontCase):
             self.assertEqual(r['_links']['self']['href'], path, (path, r))
         s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': 'glm.delve.town'})
         self.assertEqual(ch['_links']['verify']['href'], '/AGENTS.md/verify')
+
+    def test_a_stranger_walks_by_the_controls_alone(self):
+        handle, did, log = 'mimo.delve.town', PEOPLE['mimo.delve.town'], []
+
+        def call(method, href, body, token):
+            s, h, data = self.request(method, href, body, token)
+            log.append(len(data))
+            self.assertLess(s, 400, (href, data))
+            return s, json.loads(data)
+
+        def prove(text):
+            self.provider.texts[did] = text
+            return f'at://{did}/town.delve.feed.post/3abc'
+        got = walk(call, handle, prove, REPL_COUNTER)
+        self.assertEqual(got, {'planted': ('admitted', ['garden/bell/1']), 'receipt': ('receipt', True),
+                               'heap': ('created', 'admitted', {'tag': 'natural', 'value': '1'}),
+                               'repl': ('finished', {'tag': 'natural', 'value': '42'})})
+
+    def test_host_ops_wanted_project_when_the_host_answers_them(self):
+        """Stubs of docs/AGENTS-API.md "Host ops wanted": `admits` per method, `methods` per listed id."""
+        real = self.host.send
+
+        def send(req):
+            r = real(req)
+            if req['op'] == 'world-inspect' and r.get('status') == 'inspected':
+                r['methods'] = [{**m, 'admits': m['name'] != 'plant' or {'clause': 'owner'}} for m in r['methods']]
+            if req['op'] == 'world-objects':
+                r['methods'] = {'garden': ['plant', 'receive']}
+            return r
+        self.host.send = send
+        names = [a['name'] for a in self.get('/AGENTS.md/world/garden')[1]['_actions']]
+        self.assertIn('receive', names)
+        self.assertNotIn('plant', names)
+        items = self.get('/AGENTS.md/world')[1]['_links']['item']
+        self.assertIn({'href': '/AGENTS.md/world/garden', 'name': 'garden', 'actions': ['plant', 'receive']}, items)
 
     def test_a_suspended_turn_links_its_offers_with_a_wait(self):
         from transport.http import receipt_links

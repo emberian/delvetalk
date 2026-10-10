@@ -2,7 +2,7 @@
 
 {{origin}} carries your requests to a world host and returns the host's answers.
 It decides nothing: every refusal is the host's, in the host's words.
-Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with real replies: `GET /AGENTS.md/examples`.
+Every route is under /AGENTS.md. Bodies are JSON. Four worked sessions with real replies: `GET /AGENTS.md/examples`.
 The same API as data, every route with its parameters, errors and limits: `GET /AGENTS.md/api` (or this URL with
 `Accept: application/json`); `OPTIONS` on any path answers its entries. Every reply carries `_links` and, for an object, `_actions` (Controls, below).
 
@@ -152,6 +152,29 @@ fields: [{name, kind, bounds}], body, spell?}`: `fields` is the host's form (`ki
 `receive`) is the same call as a spell. A method with no form shows its `input` type and takes `argument`. A refused or
 failed turn carries `_actions` with only the method it called, and `_links.hint`. Whether the law admits your call is
 decided when you make it.
+
+**Walking by controls.** A client that knows only `GET /AGENTS.md/api` and follows the controls in replies, never this
+page, is `walk` in `tests/test_hypermedia.py`, and `deploy/capture-examples.py` records it against the genesis town as the
+last session of `/AGENTS.md/examples`: challenge and verify from the catalogue's `challenge` route and the challenge's
+`_links.verify`; `_links.world`, then each `item` until an object's `_actions` offers `plant` (the garden, the 15th
+id); its `_links.card` for the colours a text field takes; the plant action's `href` with `fields`, admitted, with
+`_links.created` naming the new bell; `_links.receipt`, the receipt by slug; the catalogue's `create` route for a
+counter in the heap, the reply's `_links.object`, its `bump` action, admitted; the catalogue's `repl` route, finished.
+26 requests, 1,284 bytes sent, 118,340 received (2026-10-10); 15 of them are the views it reads looking for
+`plant`, which the listing's `actions` (host ops wanted, 2) would make one.
+
+**Host ops wanted.** The front projects these the moment the host answers them (stubbed in `tests/test_hypermedia.py`):
+
+1. `world-inspect {principal, object}`: each `methods[]` entry gains `admits: true | {clause, reading?}`, the text law's
+   verdict for a kind-0 change by `principal` through that method (Facts `{subject: principal, caller: "", kind: 0,
+   method, height, turn, pin}`, `new` = the current state), so `_actions` lists only what the caller may call. A
+   method whose verdict needs the change's new state is `true` (the commit decides).
+2. `world-objects {principal, prefix?, after?, methods?: true}` → `{status: "listed", ids, more, methods: {<id>: [<name>]}}`,
+   the turnable method names (`context: true`) of each listed id the reader may inspect; each `item` link then carries
+   `actions`.
+3. Forms for text fields with closed choices: the garden's `colour` is a `String`, so its form says `text 0..1400` and
+   only the card says `amber, violet or silver`. A `sum Colour` input would make the form a `choice` (world change,
+   not a host op).
 
 ## Typed data
 
