@@ -714,7 +714,14 @@ lane/host7 (based on foundation 4068305) did, one commit each: the binding fills
 `world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
 another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31); law readings in refusals (5.32);
 from rehearsal run 6: a `requiredAbsence` names its root (5.33); suspensions journal only what changed (5.34).
-Section 7's queue items 1 to 5 above are unchanged.
+Section 7's queue items 1 to 5 above are unchanged. Asks it leaves for other lanes: transport (hostd) should send
+`library-load {path}` to its stateless process at spawn and the HTTP front `library: <pin>` (the pin `world-open`
+answers) instead of reading world/lib (5.28), and the bridge should call `world-arrive`, not `world-principal`, at a
+principal's first post (5.31); objects/deploy: the sealed library must hold Avatar, Env, Wake and Place for
+`world-arrive` to make anything (world/lib does not); api: AGENTS-API step 12 may drop "pass its Context as the last
+argument" (5.27); kernel: a collector that orders cells so a walked list's materialized prefix does not renumber the
+rest of the heap would shrink a speaker's first reading further (5.34). `tests/test_artifact_pins` fails at base
+4068305 (world/ moved after the fixture was recorded; foundation re-recorded it since); no host change touches it.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
 as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).
