@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.grant",
+  "description": "A delegation an admitted turn installed (the entry's `grants[]`, with its revocation), as world-grants answers it.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: the grant id (a hash of [\"grant\", principal, intent, ordinal], a derived id). The record's cid is the hash of the entry that installed it.",
+      "record": {
+        "type": "object",
+        "required": ["id", "grantor", "holder", "to", "object", "method", "until"],
+        "properties": {
+          "id": {"type": "string"},
+          "grantor": {"type": "string", "description": "The principal whose authority the grant lends."},
+          "holder": {"type": "string", "description": "The object that holds it."},
+          "to": {"type": "string", "description": "The grantee: a principal or an object id."},
+          "object": {"type": "string"},
+          "method": {"type": "string"},
+          "until": {"type": "integer", "minimum": 0, "description": "The last clock height it stands."},
+          "revoked": {"type": "boolean"},
+          "height": {"type": "integer", "minimum": 1},
+          "hash": {"type": "string", "format": "cid"}
+        }
+      }
+    }
+  }
+}

@@ -906,7 +906,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let id ← if named.isEmpty then mintId self package else pure named
     let s ← get
     let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
-    if id.isEmpty || id == "self" || ownCards.contains id || id.utf8ByteSize > Limits.maxObjectIdBytes then
+    if !validObjectId id || id == "self" || ownCards.contains id then
       refusedWith bounds responseType "objectId"
     else if s.world.objects.contains id || s.creates.any (·.1 == id) then
       -- The reply says so now; the turn will be refused at its commit, naming the root.
@@ -1025,7 +1025,7 @@ def offersJson (offers : List (String × String)) : Json :=
 
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`). -/
-def turnReply (w : World) (r : Json) : Json :=
+def turnReply (_w : World) (r : Json) : Json :=
   match r.getObjVal? "receipt" with
   | .error _ => r
   | .ok entry =>
@@ -1633,7 +1633,7 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
     shows a reader its read policy permits. -/
 def inspectOp (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   | some o =>
@@ -1647,7 +1647,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
 def cardOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let id := resolveCard principal (← j.getObjValAs? String "object")
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]

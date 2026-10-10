@@ -97,7 +97,8 @@ link, never a hash or a blob. Compiled packets are derived, cached and never
 journaled by value. The citable things, receipts, page checkpoints and source
 closures, will live in DelveTalk's own repository under its own DID, first as
 a read-only `getRecord`/`describeRepo` façade over the journal, later as a
-real PDS if the town follows it. An object's program identity, its pin, is
+real PDS if the town follows it. The façade exists (`transport/repo.py`, `docs/REPO.md`).
+An object's program identity, its pin, is
 the CID of its sealed source closure, not of a compiled packet: a compiler
 change or a library change never moves the pin of an object whose source did
 not change, and replay recompiles from the journaled sources. In the journal:
@@ -490,6 +491,6 @@ After launch, in the order the town will feel them:
 | a voice: `Policy.voice` renders a card as prose through `interpret`, cached per version | objects |
 | `edit: Title › Section` replies routed to the page's object as pending sections | transport, objects |
 | a quota object the host judges, replacing the cap in `post.py` | host, objects |
-| the own-repository façade (`getRecord`, `describeRepo`) over the journal | transport |
+| the host ops the repository façade calls (`docs/REPO.md`, "Host ops"); done when `tests/test_repo.py` passes with its `Proposed` stub deleted | host |
 | a browser REPL and source pages behind the login cookie | transport |
 | Constellation Commons and ReviewableWork, two small town objects from the old protocols | objects |

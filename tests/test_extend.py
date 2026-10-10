@@ -87,7 +87,7 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 class LouderBell(Reflection):
     """Louder over Bell through the host's `extend` Plan: a rain reply's card is the bell as the
     layer renders it (Bell's receive calls render; with late binding across the stack,
-    KERNEL-HANDOFF section 13, that is Louder's)."""
+    KERNEL-HANDOFF section 13, that is Louder's): the host writes the layer line (HOST-HANDOFF 5.18)."""
 
     def setUp(self):
         super().setUp()

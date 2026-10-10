@@ -1,0 +1,29 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.law",
+  "description": "One clause of an object's law, as world-object answers it in `laws`: the fragment of FOUNDATION section 2 that judges every write.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: the object id with each `/` as `~`, a dot, the clause name (`garden~bell~1.owner`). A law clause is state on the object, not content-named; the record carries no cid of its own.",
+      "record": {
+        "type": "object",
+        "required": ["object", "pin", "name", "clause"],
+        "properties": {
+          "object": {"type": "string"},
+          "version": {"type": "integer", "minimum": 0},
+          "pin": {"type": "string", "format": "cid", "description": "The pin of the package the object runs."},
+          "name": {"type": "string"},
+          "clause": {"type": "string", "description": "The clause's expression text."},
+          "reading": {"type": "string", "description": "The package's public text about the clause (`law NAME \"reading\": EXPR`); a refusal by it says `refused NAME: reading`."}
+        }
+      }
+    },
+    "reading": {
+      "type": "object",
+      "required": ["name", "reading"],
+      "properties": {"name": {"type": "string"}, "reading": {"type": "string"}}
+    }
+  }
+}

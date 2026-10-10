@@ -129,6 +129,35 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
     let (o, note) ← snapshotNow { s with world := w' }
     return (some o, .ok (r.setObjVal! "snapshot" note))
 
+/-- `world-fork {principal, height?, into}`: write a new journal at `into` (a path that does not
+    exist) whose genesis is the open world's store at `height` (default the head; an earlier height
+    is replayed to), carrying only what `principal` may view (`Snapshot.forkGenesis`), with the
+    principal as its opener and clock. The open world is untouched and nothing is journaled here.
+    Answers `{status: "forked", into, forkedFrom {world, height, cid}, carried, omitted}`. -/
+def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
+  let .ok principal := j.getObjValAs? String "principal" | return .error "world-fork needs a principal"
+  if principal.isEmpty || principal.utf8ByteSize > Limits.maxPrincipalBytes then
+    return .error s!"principal must be 1..{Limits.maxPrincipalBytes} bytes"
+  let .ok into := j.getObjValAs? String "into" | return .error "world-fork needs `into`, the new journal's path"
+  let height ← match optNat j "height" with
+    | .ok h => pure (h.getD s.world.height)
+    | .error e => return .error e
+  if height == 0 || height > s.world.height then return .error s!"height must be 1..{s.world.height}"
+  if into == s.path || (← System.FilePath.pathExists into) then return .error s!"{into} already exists"
+  let w ← if height == s.world.height then pure s.world else
+    match Snapshot.replayAll (s.world.entries.extract 0 height) with
+    | .ok w => pure w
+    | .error e => return .error e
+  let cid := ((s.world.entries[height - 1]?).bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
+  match Snapshot.forkGenesis w principal s.path height cid with
+  | .error e => return .error e
+  | .ok (entry, omitted) =>
+    try IO.FS.writeFile into (entry.compress ++ "\n")
+    catch e => return .error s!"fork write failed: {e}"
+    return .ok (Json.mkObj [("status", toJson "forked"), ("into", toJson into),
+      ("forkedFrom", Json.mkObj [("world", toJson s.path), ("height", toJson height), ("cid", toJson cid)]),
+      ("carried", toJson (w.objects.size - omitted.length)), ("omitted", toJson omitted)])
+
 def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
   let op ← match request.getObjValAs? String "op" with
     | .ok op => pure op
@@ -234,14 +263,24 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
       | "world-state-cid" => return (session, stateCidOp s.world request)
+      | "world-fork" => return (session, ← forkWorld s request)
       | "world-resolve" => return (session, resolveOp s.world request)
+      | "world-entry" => return (session, entryOp s.world request)
+      | "world-entries" => return (session, entriesOp s.world request)
+      | "world-object" => return (session, objectOp s.world request)
+      | "world-source" => return (session, sourceOp s.world request)
+      | "world-sources" => return (session, sourcesOp s.world request)
+      | "world-grants" => return (session, grantsOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
           ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name),
-          ("recompiledDifferently", toJson s.world.recompiledDifferently)]))
+          ("recompiledDifferently", toJson s.world.recompiledDifferently)] |>
+          fun r => match s.world.forkedFrom with
+            | some f => r.setObjVal! "forkedFrom" f
+            | none => r))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
       | "world-arrive" => durable s (fun w => arriveOp w request)

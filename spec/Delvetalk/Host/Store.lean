@@ -325,6 +325,8 @@ structure World where
   /-- Memory only: the packet digest a resumed snapshot cached for each compile inputs key; a
       rebuild by this binary that differs is counted in `recompiledDifferently`. -/
   cachedPackets : Std.HashMap String String := {}
+  /-- A forked world's origin, from its genesis entry (`world-fork`): `{world, height, cid}`. -/
+  forkedFrom : Option Json := none
   /-- Memory only: objects this process rebuilt whose packet digest differs from the one a resumed
       snapshot cached for the same inputs (`world-status`; informational). -/
   recompiledDifferently : Nat := 0

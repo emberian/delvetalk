@@ -102,7 +102,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-resolve {principal, slug}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-resolve {principal, slug}`, `world-fork {principal, height?, into}` (5.41), `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
@@ -329,8 +329,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `refused {clause: title}`). The page is the object's: `page` "" means the object id. The admitted entry
    retains `publishes [{id, object, page, section, text}]` with the agentwiki text (`wiki: Title\n\nbody`, or
    `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
-   adds `publications`. `world-publications {principal, after?}` (the publisher only; anyone else `denied`) answers
-   `{status: "publications", publications [{height, ordinal, id, object, page, section, body, replyTo?}], more}`;
+   adds `publications`. `world-publications {principal, after?, before?, reverse?, limit?}` (every reader, host7; paged as
+   `world-entries`) answers `{status: "publications", publications [{height, ordinal, id, object, page, section, body, hash,
+   replyTo?}], more}` (`hash` the retaining entry's);
    `replyTo` is, for a section edit, the newest recorded post of that object's whole page (`pagePosts`). The
    bridge (`publication_drafts`, cursor `<state>/publications.after`) writes each as an outbox draft
    `<height>-pub-<id>.json` `{publication {id, height, object}, page, section, replyTo, text, posted: false}`,
@@ -657,6 +658,43 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `tests/fixtures/pins/artifacts.json` is re-recorded (no entry stopped compiling); objects already created keep the
    library they were compiled under. Tests: `tests/test_view_data.py` (the directory has no `words` field; `words` is a
    def, so the test reads a fixture object's `words` and `greeted` fields).
+
+41. **Fork a world (host7, FOUNDATION 15).** `world-fork {principal, height?, into}` (`Session.forkWorld`; `into` must not
+   exist) writes a new journal whose one entry is a `forked` genesis (`Snapshot.forkGenesis`): the store at `height`
+   (default the head; an earlier height replays the entries up to it) as a snapshot body with whole sources, only the
+   objects `principal` may view (their grants, pending deliveries, and suspended activities with checkpoints and offers
+   written out whole), the handle registry, `omitted [ids]`, and `forkedFrom {world (the journal path), height, cid}`.
+   The fork's opener, clock principal and library-law principal are `principal`. Its `previous` is `cid`, the forked
+   world's entry at that height: `entriesOf` lets height 1 chain there only when the entry is `forked` and names that
+   cid. Every replay (`replayAll`, `verify`, snapshot `resume` through `startOf`/`installFork`) starts from the
+   installed genesis; `expectedObjects` and `anchoredStates` read its objects. `world-status` reports `forkedFrom`.
+   Nothing is journaled in the forked world. Answers `{status: "forked", into, forkedFrom, carried, omitted}`. hostd
+   exposes it as a heap op later (transport). Tests: `tests/test_fork.py` (a planting in the fork leaves the shared
+   world unchanged, replay and a snapshot of the fork, an earlier height, a carried suspended reading settles in the
+   fork only, a private object omitted for a stranger).
+
+42. **The repository façade's reads (host7; docs/REPO.md "Host ops").** One public reader: every read op takes its
+   principal through `readerOf`, which accepts 1..128 bytes, `anonymous` or "", the last two read as "" (public objects
+   only); `world-objects`, `world-view`, `world-inspect`, `world-card`, `world-offers`, `world-check`, `world-state-cid`
+   and `world-resolve` used to refuse "". `world-entry {principal, hash, bytes?}` (`entryOp`) answers `{status: "receipt",
+   receipt}` as `projectEntry` shows it to the reader, plus `bytes` (hex of the entry's canonical DAG-CBOR without
+   `hash`, whose CID is the hash) only for the identity's own principal; `unknown` otherwise. `world-entries {principal,
+   after?, before?, reverse?, limit?}` (`entriesOp`) pages every entry by height (`pageByHeight`: ascending after
+   `after`, or descending below `before` with `reverse`; `limit` 1..100). `world-object {principal, object, version?}` (`objectOp`) answers `{status: "object", record: {object,
+   version, pin, pinSlug, law, readings, laws [{object, version, pin, name, clause, reading?}], stateCid, library?}}` as of
+   the version: `pinAndLawAt` undoes later reprograms (`oldPin`) and amendments (`old`) from the entries that made later
+   versions; clauses as written (`lawClauses`); a reading from the law text, else the package's while the clause is
+   unchanged. `world-source {principal, cid}` / `world-sources {principal, after?, before?, reverse?, limit?}`
+   (`sourceRecords`: each source an entry's `sources` or a library entry carried, named as compile inputs name it, at the
+   height that first carried it) answer `{cid, name, text, height}` records the reader may read (`readableSources`: the
+   modules of objects it may view, and the libraries'); `denied` / `unknown` otherwise. `world-grants {principal, after?,
+   before?, reverse?, limit?}` (`grantsOp`) lists the grants whose object the reader may view, as they stand
+   (`revoked`, `uses` left), with the making entry's `height` and `hash`. Tests: `tests/test_reads.py`,
+   `test_grants.Attenuation`. Object ids at creation (`world-create`, the `create` Plan, `world-arrive`) are 1..128 bytes
+   of letters, digits and `. _ : / - @` (`validObjectId`), refused by name otherwise, so every object has a record key;
+   replay accepts any id a journal holds. `@` is there because the Zulip playtest's principals (`zulip:alice@host`)
+   become `env/<principal>` ids; AT record keys do not allow it, so the façade must escape it (or transport rename those
+   principals).
 
 ## 6. Gotchas
 
