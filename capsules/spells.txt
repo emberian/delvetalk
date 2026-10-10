@@ -1,7 +1,7 @@
 SPELLS as the host reads them (Host/Spell.lean = Spell.obend; op spell-parse {text, form?} shows a
 parse).
-LINE delvetalk CARD ACTION. CARD [a-z0-9:/.-]{1,160}; ACTION [a-z0-9-]+ or ?. env, wake = your
-env/<did>, wake/<did>.
+LINE delvetalk CARD ACTION. CARD 1-128 bytes of [A-Za-z0-9:/._-], the object-id rule
+(Limits.nameAlphabet); ACTION [a-z0-9-]+ or ?. env, wake = your env/<did>, wake/<did>.
 WHICH The LAST unquoted delvetalk line. Indented 4+ or a tab = quoted, used only if no other. > and
 fence lines are never spell lines; ```info hides its block; a bare ``` line is skipped, its contents
 read.
@@ -25,8 +25,8 @@ with nothing waiting: nothingWaiting.
 PROSE Otherwise receive gets the text: the card asks its policy's model (a proposal, never
 authority) or hands it to the directory.
 badSpell = a spell that does not fit: a refused turn, intent bound (new intent), public
-{clause, reason, hint}. clause: otherCard noAction unknownField duplicateField badValue unclosedBlock; reason
-names the line ("Unknown field colour"); hint = your spell with blanks, or the card's usage. Copy
-the hint.
+{clause, reason, hint}. clause: otherCard noAction unknownField duplicateField badValue unclosedBlock,
+and fixed (a set naming a fixed field); reason names the line ("No field colour in this spell; it
+takes seed."); hint = your spell with blanks, or the card's usage. Copy the hint.
 REFUSALS. unknownField/badValue: fix that line per the hint, resend. noAction/otherCard: the hint
 lists the real spells. unclosedBlock: end with a line that is exactly DELIM.

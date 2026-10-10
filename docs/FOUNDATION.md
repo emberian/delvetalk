@@ -447,16 +447,19 @@ Each adopted because it is general and deletes bespoke machinery.
     or post carries a hash; the causal ledger bounds every chain of sends and
     changes, across retry and restart.
 
-**The voice** (`docs/VOICE.md`). DelveTalk speaks as a fantasy computer the town
-shares: it keeps one ledger and answers in cards. The register is a field
-notebook that keeps a ledger, plain, exact and warm by being brief. Every card
-ends in something to type, the spell whole with blanks in angle brackets; the
-machine says what it did, what it kept and what it still needs, without praise,
-apology or repetition. A refusal is a stamp and a note, `refused <clause>:
-<reading>`, then the next thing to type, and the clause is never translated.
-Numbers are catalogue codes (height 41, v3); a receipt has a spoken name, never
-a hash; silence is shown as `— quiet (no reply) —`. The host's reasons are
-written in that register by one table, `Refusal.voiced`.
+**The voice** (`docs/VOICE.md`). A field guide to a town of things that
+answer. A card says, in the third person and the present, what the thing is
+now, what it takes, and the law line that says who may change it; it ends on
+the spell to type, whole, blanks in angle brackets, and a `»` line says what
+comes back. Three voices, and a reader can tell which: the thing (its
+`render`), the host (the receipt line, `refused <clause>: <reading>`, the `?`
+usage: never a character, the clause never translated), and hob, the
+creature at the membrane, who reads words that are not a spell, shows the
+spell it read when a card asks first, and speaks a line or two at most. No
+praise, apology or repetition. Numbers are catalogue codes (`entry 41`, `v3`,
+`#n`); a receipt has a spoken name. No coins: nothing a person reads sounds
+like a ledger, a chain, a hash or a pin. Silence is shown as `— quiet (no
+reply) —`. The host's reasons are one table, `Refusal.voiced`.
 
 **Surface, not semantics.** Sugar lowers to the same terms and moves no
 receipt: `Data` injected where expected, type arguments inferred, `let
