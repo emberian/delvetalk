@@ -115,6 +115,9 @@ structure Field where
   span : Span
   /-- A protocol method's own type parameters (`view<S>(...)`); empty elsewhere. -/
   typeParameters : List String := []
+  /-- A State field declared `fixed` (`colour: fixed Colour`): set by `initial()` or a seed
+  only, so the derived `Edits` omits it and no write names it. -/
+  fixed : Bool := false
   deriving Inhabited, Repr, BEq
 
 structure Spec where
@@ -305,6 +308,7 @@ def Claim.json (c : Claim) : Json :=
 def Field.json (f : Field) : Json :=
   Json.mkObj ([("name", toJson f.name), ("type", toJson f.type)] ++
     (if f.typeParameters.isEmpty then [] else [("typeParameters", toJson f.typeParameters)]) ++
+    (if f.fixed then [("fixed", toJson true)] else []) ++
     [("span", f.span.json)])
 
 def Field.caseJson (f : Field) : Json :=

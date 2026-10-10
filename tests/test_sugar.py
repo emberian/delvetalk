@@ -883,3 +883,51 @@ class DerivedEdits(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("refused (derived-edits): write {...} and keep() derive Edits from State through the Plan library",
                       reply["diagnostic"]["message"])
+
+
+# A `fixed` State field is set by initial() or a seed only: the derived Edits omits it, the
+# artifact lists it, and no write names it.
+FIXED_HEAD = DERIVED_HEAD.replace("  note: String\n", "  note: fixed String\n").replace("  owner: P.Reference\n", "  owner: fixed P.Reference\n")
+FIXED_PAIR = """record Edits:
+  planted: P.Edit<Nat, Nat>
+  children: P.Entries<P.Reference, P.Reference>
+  names: P.Entries<String, String>
+  rows: P.Entries<Row, Row>
+  open: P.Edit<Bool, {}>
+def keep() -> Edits:
+  {planted: P.Edit.keep({}), children: P.Entries.keep({}), names: P.Entries.keep({}), rows: P.Entries.keep({}), open: P.Edit.keep({})}
+"""
+
+
+class FixedFields(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    send = DerivedEdits.send
+    compiled = DerivedEdits.compiled
+
+    def test_fixed_fields_are_the_pair_that_omits_them(self):
+        for entry in ("plant", "keep", "initial"):
+            with self.subTest(entry=entry):
+                derived = self.compiled(FIXED_HEAD + DERIVED_REST, entry)
+                written = self.compiled(FIXED_HEAD + DERIVED_REST + FIXED_PAIR, entry)
+                self.assertEqual(core(derived), core(written))
+                self.assertEqual(derived["fixed"], ["note", "owner"])
+        self.assertNotIn("fixed", self.compiled(DERIVED_HEAD + DERIVED_REST, "plant"))
+
+    def test_a_write_naming_a_fixed_field_is_refused_by_name(self):
+        for source in (FIXED_HEAD + DERIVED_REST.replace("open: set true}", "open: set true, note: set input.name}"),
+                       FIXED_HEAD + DERIVED_REST + FIXED_PAIR.replace("  open: P.Edit<Bool, {}>\n", "  open: P.Edit<Bool, {}>\n  note: P.Edit<String, {}>\n")):
+            reply = self.send("check-package", source, "plant")
+            self.assertEqual(reply["status"], "refused", reply)
+            self.assertIn("refused (fixed): note is fixed; no edit names it", reply["diagnostic"]["message"])
+
+    def test_only_a_state_field_is_fixed(self):
+        source = DERIVED_HEAD.replace("  text: String\n", "  text: fixed String\n") + DERIVED_REST
+        reply = self.send("check-package", source, "plant")
+        self.assertIn("refused (fixed): only a State field is fixed; text is a field of Row", reply["diagnostic"]["message"])

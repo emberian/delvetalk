@@ -1147,6 +1147,66 @@ def stateFields (index : Nat) (ast : ObjectiveBendSurface.Module) :
     | _ => pure ()
   return none
 
+/-! A `fixed` State field is named by no edit: the fields each `world.write(...)` (and so each
+`write {...}`) names, from its argument record or the fields it extends `keep()` with. -/
+
+/-- Whether a callee is `world.write` (or `world.write::<E>`). -/
+def isWorldWrite : Expr → Bool
+  | .member (.var "world" _) "write" _ => true
+  | .specialize (.member (.var "world" _) "write" _) _ _ => true
+  | _ => false
+
+def editFields : List Expr → List String
+  | [.extend _ fields _] | [.record fields _] => fields.map (·.1)
+  | _ => []
+
+mutual
+def writtenFields : Expr → List String
+  | .call c args _ => (if isWorldWrite c then editFields args else []) ++ writtenFields c ++ writtenList args
+  | .record fs _ => writtenFieldList fs
+  | .extend i fs _ => writtenFields i ++ writtenFieldList fs
+  | .member t _ _ | .specialize t _ _ | .dataOf _ t _ | .worldCall _ _ _ t _ => writtenFields t
+  | .compose specs _ => writtenList specs
+  | .fix a b _ | .binary _ a b _ | .letE _ _ a b _ => writtenFields a ++ writtenFields b
+  | .lambda _ _ b _ | .extensionValue _ _ b _ => writtenFields b
+  | .ite c t f _ => writtenFields c ++ writtenFields t ++ writtenFields f
+  | _ => []
+def writtenFieldList : List (String × Expr) → List String
+  | [] => []
+  | (_, v) :: rest => writtenFields v ++ writtenFieldList rest
+def writtenList : List Expr → List String
+  | [] => []
+  | e :: rest => writtenFields e ++ writtenList rest
+end
+
+mutual
+def bodyWritten : Body → List String
+  | .expr e _ => writtenFields e
+  | .cases sc branches _ => writtenFields sc ++ branchesWritten branches
+  | .letB _ _ v b _ => writtenFields v ++ bodyWritten b
+def branchesWritten : List (ObjectiveBendSurface.Pattern × Body × Span) → List String
+  | [] => []
+  | (_, b, _) :: rest => bodyWritten b ++ branchesWritten rest
+end
+
+def declWritten : Decl → List String
+  | .function _ _ b _ | .extension _ _ _ b _ _ => bodyWritten b
+  | .spec sp => sp.methods.flatMap (bodyWritten ·.body)
+  | _ => []
+
+/-- Refuse a write, or a hand-written `Edits`, that names a fixed State field of module `index`. -/
+def checkFixed (index : Nat) : M Unit := do
+  let some source := (← get).sources[index]? | return
+  let some (fields, _, _) ← tryCatch (stateFields index source.ast) (fun _ => pure none) | return
+  let fixed := (fields.filter (·.fixed)).map (·.name)
+  if fixed.isEmpty then return
+  let edits := source.ast.decls.flatMap fun d => match d with
+    | .record "Edits" _ fs _ => fs.map (·.name)
+    | _ => []
+  for name in edits ++ source.ast.decls.flatMap declWritten do
+    if fixed.contains name then
+      throw (derivedRefusal source.module.name (name ++ " is fixed; no edit names it") "fixed")
+
 /-- The derived `Edits` and `keep()` of module `index`, when it gets them. -/
 def deriveEdits (index : Nat) : M (Option (List Decl)) := do
   let some source := (← get).sources[index]? | return none
@@ -1158,6 +1218,7 @@ def deriveEdits (index : Nat) : M (Option (List Decl)) := do
   let mut lines : Array String := #[]
   let mut keeps : Array String := #[]
   for f in fields do
+    if f.fixed then continue
     let some g ← tryCatch (some <$> typeOf maxNesting home [] f.type) (fun _ => pure none) | return none
     let (sum, args) ← if g == .atom "Nat" then pure ("Edit", "Nat, Nat") else
       match ← entriesItem g with
@@ -1302,6 +1363,7 @@ def derivedDecls (sources : Array Source) : Except String (Array (List Decl × D
     preamble
     let mut out := #[]
     for index in [:sources.size] do
+      checkFixed index
       let edits := (← deriveEdits index).getD []
       let forms ← deriveForms index
       out := out.push (edits ++ forms.decls, forms)
