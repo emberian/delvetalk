@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Playtest DelveTalk in the owner's own Zulip, before it goes to delve.town. No Delve credential is read.
 #
-#   deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--port 8765] [--dir DIR]
+#   deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--post-quota N] [--port 8765] [--dir DIR]
 #   deploy/playtest.sh --stop [--dir DIR]
 #
 # Starts hostd on a FRESH journal (DIR/run-<stamp>/, DIR/current points at it; older runs are left in place),
@@ -11,13 +11,14 @@
 # DELVETALK_OBEND names the host binary; the interpreter needs the model credentials docs/DEPLOY.md describes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-stream=delvetalk topic= poll=20 port=8765 dir=${DELVETALK_PLAYTEST_DIR:-$HOME/.delvetalk-playtest} rc= stop=
+stream=delvetalk topic= quota= poll=20 port=8765 dir=${DELVETALK_PLAYTEST_DIR:-$HOME/.delvetalk-playtest} rc= stop=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --zuliprc) rc=$2; shift 2;;
     --stream) stream=$2; shift 2;;
     --topic) topic=$2; shift 2;;
     --poll) poll=$2; shift 2;;
+    --post-quota) quota=$2; shift 2;;
     --port) port=$2; shift 2;;
     --dir) dir=$2; shift 2;;
     --stop) stop=1; shift;;
@@ -48,7 +49,7 @@ ln -sfn "$run" "$dir/current"
 export PYTHONPATH=$PWD
 log() { echo "$run/$1.log"; }
 
-python3 -m transport.hostd --state "$state" --journal "$run/world.journal" --opener "$(python3 -c 'from deploy.genesis import OPENER; print(OPENER)')" >"$(log hostd)" 2>&1 &
+python3 -m transport.hostd --state "$state" --journal "$run/world.journal" ${quota:+--post-quota "$quota"} --opener "$(python3 -c 'from deploy.genesis import OPENER; print(OPENER)')" >"$(log hostd)" 2>&1 &
 for _ in $(seq 100); do [[ -S $state/host.sock ]] && break; sleep 0.2; done
 [[ -S $state/host.sock ]] || { echo "playtest: hostd did not come up; see $(log hostd)" >&2; exit 1; }
 

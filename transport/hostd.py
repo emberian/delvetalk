@@ -71,13 +71,13 @@ class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 refuses connections when a burst arrives faster than accept() runs
 
-    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None, library=None, sync='fsync'):
+    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None, library=None, sync='fsync', post_quota=None):
         self.state = Path(state)
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock_fd = take_lock(lock or self.state / 'journal.lock')  # before anything else is touched
         self.binary, self.order = binary, threading.Lock()
         library = self.library = sealed_library(library, self.state / 'library') if library else None
-        self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener, sync=sync)
+        self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener, sync=sync, post_quota=post_quota)
         self.stateless = Host(None, binary, preload=library)
         self.heaps = Heaps(self.state / 'heaps', binary=binary, library=library)
         self.pidfile = self.state / 'hostd.pid'
@@ -143,9 +143,10 @@ def main(argv=None):
     ap.add_argument('--library', default=LIBRARY, help="the standard library sealed into each journal at its first open (with the packages arrival creates from), as the "
                     "opener's (each heap's as its owner's), so packages import it by name; '' for none")
     ap.add_argument('--sync', default='fsync', choices=('none', 'fsync', 'full'), help='how appends are made durable (default fsync)')
+    ap.add_argument('--post-quota', type=int, metavar='N', help='the hourly post cap named at world-open (host default 16); journaled, so fixed once the journal has named it')
     a = ap.parse_args(argv)
     try:
-        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener, library=a.library or None, sync=a.sync)
+        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener, library=a.library or None, sync=a.sync, post_quota=a.post_quota)
     except Locked as err:
         print(f'hostd: {err}; refusing to start a second writer', file=sys.stderr)
         return EX_TEMPFAIL
