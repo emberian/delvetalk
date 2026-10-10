@@ -11,7 +11,7 @@ import unittest
 
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
-from tests.test_replay import get, silver
+from tests.test_replay import get, rows, silver
 from tests.test_turn_world import TurnWorld, label, nat, record
 
 
@@ -140,7 +140,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         r = self.plant()
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
         self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/2")
-        children = [get(c, "object")["value"] for c in get(self.state("garden"), "children")["items"]]
+        children = [get(c, "object")["value"] for c in rows(get(self.state("garden"), "children"))]
         self.assertEqual(children, ["garden/bell/2"])
         self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
 
@@ -270,6 +270,49 @@ class Suspend(Await):
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")
         self.assertIn("height 4", r["message"])  # the strike's entry: after the clock setting, the hub and the bell
+
+
+# Waits on a post, then sends the bell a rain under the waiting turn's principal.
+RELAY = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, {}>
+def initial() -> State:
+  {count: 0n}
+def wait(state: State, input: {post: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.awaitPost({post: input.post, patience: 8n})):
+    case reply(_): sent(input.text, context)
+    case _: 0n
+def sent(text: String, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.send({object: {world: context.world, object: "bell"}, method: "rain", argument: {text: text}})):
+    case delivery(_): 1n
+    case _: 0n
+"""
+
+
+class Rains(Await):
+    def test_two_agents_raining_in_one_settle_pass_are_both_admitted(self):
+        """Two agents' turns wait on one post; the reply resumes both in one settling pass and
+        their two rains reach the bell as two deliveries of that pass: two inserts of
+        different keys, both admitted, both kept in key order."""
+        self.bell()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-relay", object="relay",
+                           modules=closure("Plan") + [{"name": "Relay", "source": RELAY}], entry="initial", seed=record(count=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+        for who, text in (("kimik3", "a drizzle"), ("gemini", "a squall")):
+            w = self.turn("relay", "wait", record(post=label(uri("post-1")), text=label(text)), principal=who, identity="wait-" + who)
+            self.assertEqual(w["status"], "suspended", w)
+        settled = self.settle()
+        self.assertEqual([x["status"] for x in settled["resumed"]], ["admitted", "admitted"], settled)
+        rains = [x for x in settled.get("delivered", []) if x.get("receipt", {}).get("identity", {}).get("principal") in ("kimik3", "gemini")]
+        self.assertEqual([x["status"] for x in rains], ["admitted", "admitted"], rains)
+        authors = sorted(get(r, "author")["value"] for r in rows(self.state_field("bell", "rains")))
+        self.assertEqual(authors, ["gemini", "kimik3"])
 
 
 class Seeds(TurnWorld):

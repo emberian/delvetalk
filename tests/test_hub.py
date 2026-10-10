@@ -27,7 +27,7 @@ from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, reference
 from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
-from tests.test_replay import get, items
+from tests.test_replay import get, items, rows
 from tests.test_turn_world import label, record
 from transport.identity import ORIGIN
 
@@ -60,7 +60,7 @@ class Hub(test_chain.Chain):
             self.assertEqual(self.say("hello", principal)["result"]["label"], "menu")
 
     def children(self):
-        return [get(c, "object")["value"] for c in items(get(self.state("garden"), "children"))]
+        return [get(c, "object")["value"] for c in rows(get(self.state("garden"), "children"))]
 
     def seed_of(self, bell):
         return get(self.state(bell), "seed")["value"], get(self.state(bell), "colour")["label"]
@@ -121,7 +121,7 @@ class Hub(test_chain.Chain):
         self.assertIn("a violet bell", completed["offers"][0]["text"])
         self.assertEqual(len(self.children()), 2)
         self.assertEqual(self.seed_of(self.children()[1])[1], "violet")
-        self.assertEqual(items(get(self.state("garden"), "pending")), [])
+        self.assertEqual(rows(get(self.state("garden"), "pending")), [])
 
     def test_a_rain_no_door_offers_and_chatter_get_nothing_without_a_policy(self):
         self.directory()
@@ -224,7 +224,7 @@ class CardsReadFieldLines(test_chain.Chain):
                                                   planting=label("at://x/p"), planter=label(GEMINI), planterHandle=label("")))
 
     def rains(self):
-        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in items(get(self.state("bell"), "rains"))]
+        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))]
 
     def test_the_archived_fenced_rains_are_written(self):
         self.bell()
@@ -294,7 +294,7 @@ class BellsAreQuiet(test_chain.Chain):
         for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
-        self.assertEqual(items(get(self.state("bell"), "rains")), [])
+        self.assertEqual(rows(get(self.state("bell"), "rains")), [])
 
 
 class LinkDoors(test_chain.Chain):
@@ -355,7 +355,7 @@ class HandedToTheDirectory(test_chain.Chain):
             [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if lines[who] in o["text"]]
             self.assertNotEqual(offer["identity"]["intent"], asked)
             self.assertEqual(offer["from"], {"post": asked, "principal": who, "intent": asked}, offer)
-        submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in items(get(self.state("anthology"), "proposals"))]
+        submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
 
 
@@ -477,7 +477,7 @@ class AnthologyReachable(test_chain.Chain):
                                  "raw": "delvetalk anthology submit\nline: a splash for every refusal"})
         [resumed] = settled["resumed"]
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
-        lines = [get(p, "line")["value"] for p in items(get(self.state("anthology"), "proposals"))]
+        lines = [get(p, "line")["value"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
         self.assertEqual(refused["result"]["payload"]["fields"][1]["value"], label("Only the anthology's owner admits; that is ember"))

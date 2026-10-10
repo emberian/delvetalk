@@ -1,9 +1,8 @@
 # Structured documents
 
 `Document.obend` is a pure, recursively typed presentation value shared by authored
-encounters, templates and interpretation prompts. It imports the actual Preparation
-and Encounter prelude modules. See the [conversation contract](../../../protocols/conversation/README.md)
-for the capture, attribution, continuation and receiving boundaries.
+encounters, templates and interpretation prompts: what every card's `render` returns
+(docs/FOUNDATION.md section 4). It imports the List and Encounter prelude modules.
 
 `plain` is an authored text projection. Keep the structured original: concatenated
 text cannot manufacture an offer, reference, field or instruction boundary.

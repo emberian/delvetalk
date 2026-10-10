@@ -52,8 +52,6 @@ def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<
   write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.removeItem({item: input.text})})
 def fix(state: State, input: {text: String, to: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.amendItem({item: input.text, change: input.to})})
-def dropAt(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.remove({index: input.index})})
 """
 
 
@@ -127,11 +125,8 @@ class Moved(Reflection):
         self.assertEqual(self.bell()[1], ["z", "a"])
         gone = self.turn("bell", "drop", record(text=label("b")))
         self.assertEqual((gone["status"], gone["receipt"]["outcome"]["class"]), ("refused", "absentItem"), gone)
-        # The index form still works for one release.
-        self.assertEqual(self.turn("bell", "dropAt", record(index=nat(0)))["status"], "admitted")
-        self.assertEqual(self.bell()[1], ["a"])
         self.reopen()
-        self.assertEqual(self.bell()[1], ["a"])
+        self.assertEqual(self.bell()[1], ["z", "a"])
 
 
 class Proposals(WorldCase):

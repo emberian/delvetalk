@@ -704,7 +704,10 @@ class Handler(BaseHTTPRequestHandler):
         if card.get('status') != 'card':
             return self.html(404, pages.missing(name, who['handle'], card))
         state = plain(view.get('state') or {})
-        doors = [d for d in (state.get('doors') if isinstance(state, dict) else None) or [] if (d.get('to') or {}).get('object')]
+        doors = (state.get('doors') if isinstance(state, dict) else None) or []
+        if isinstance(doors, dict):  # a relation (`rows {items}`, the directory's): its menu order is each row's place
+            doors = sorted(doors.get('items') or [], key=lambda d: d.get('place', 0))
+        doors = [d for d in doors if (d.get('to') or {}).get('object')]
         items = ''.join(pages.T['door'].format(href=html.escape(oid(d['to']['object'])), id=html.escape(d['to']['object']), label=html.escape(d.get('label', '')),
                                             description=html.escape(d.get('description', ''))) for d in doors)
         self.html(200, pages.page(name, who['handle'], pages.T['page'].format(

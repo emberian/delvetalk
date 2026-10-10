@@ -142,6 +142,11 @@ def label(s):
     return {"tag": "label", "value": s}
 
 
+def relation(*items):
+    """A relation on the wire (world/lib/Relation.obend `rows {items}`), its rows given in key order."""
+    return {"tag": "variant", "label": "rows", "payload": record(items={"tag": "list", "items": list(items)})}
+
+
 class TurnWorld(HostCase):
     def create(self, obj, modules, count):
         r = self.host.send(op="world-create", principal="ember", identity="create-" + obj,
@@ -327,12 +332,12 @@ def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<P
   match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.append({item: input.text})}})):
     case written(_): 1n
     case _: 0n
-def drop(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.remove({index: input.index})}})):
+def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.removeItem({item: input.text})}})):
     case written(_): 1n
     case _: 0n
-def fix(state: State, input: {index: Nat, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.amend({index: input.index, change: input.text})}})):
+def fix(state: State, input: {item: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.amendItem({item: input.item, change: input.text})}})):
     case written(_): 1n
     case _: 0n
 """
@@ -363,7 +368,7 @@ class ListEdits(TurnWorld):
         for text in ("one", "two", "three"):
             r = self.turn("n", "add", record(text=label(text)))
             self.assertEqual(r["status"], "admitted", r)
-        r = self.turn("n", "fix", record(index=nat(1), text=label("TWO")))
+        r = self.turn("n", "fix", record(item=label("two"), text=label("TWO")))
         self.assertEqual(r["status"], "admitted", r)
         view = lambda: self.host.send(op="world-view", principal="e", object="n")["state"]
         self.assertEqual(list_items(view()), ["one", "TWO", "three"])
@@ -371,7 +376,7 @@ class ListEdits(TurnWorld):
         self.reopen()
         self.assertEqual(view(), before)
 
-    def test_remove_deletes_the_element_at_the_index_refuses_past_the_end_and_replays(self):
+    def test_remove_item_deletes_the_element_refuses_an_absent_one_and_replays(self):
         empty = {"tag": "record", "fields": []}
         self.host.send(op="world-create", principal="ember", identity="mk", object="n",
                        modules=names_modules(), entry="initial",
@@ -379,26 +384,26 @@ class ListEdits(TurnWorld):
         for text in ("one", "two", "three"):
             self.turn("n", "add", record(text=label(text)))
         view = lambda: self.host.send(op="world-view", principal="e", object="n")
-        self.assertEqual(self.turn("n", "drop", record(index=nat(1)))["status"], "admitted")
+        self.assertEqual(self.turn("n", "drop", record(text=label("two")))["status"], "admitted")
         self.assertEqual(list_items(view()["state"]), ["one", "three"])
-        self.assertEqual(self.turn("n", "drop", record(index=nat(0)))["status"], "admitted")
+        self.assertEqual(self.turn("n", "drop", record(text=label("one")))["status"], "admitted")
         self.assertEqual(list_items(view()["state"]), ["three"])
         version = view()["version"]
-        r = self.turn("n", "drop", record(index=nat(1)))
-        self.assertEqual(r["receipt"]["outcome"]["class"], "outOfRange")
+        r = self.turn("n", "drop", record(text=label("one")))
+        self.assertEqual(r["receipt"]["outcome"]["class"], "absentItem")
         self.assertEqual(view()["version"], version)
         before = view()
         self.reopen()
         self.assertEqual(view(), before)
 
-    def test_amend_past_the_end_is_refused_and_changes_nothing(self):
+    def test_amending_an_absent_item_is_refused_and_changes_nothing(self):
         empty = {"tag": "record", "fields": []}
         self.host.send(op="world-create", principal="ember", identity="mk", object="n",
                        modules=names_modules(), entry="initial",
                        seed=record(names={"tag": "list", "items": []}))
         self.turn("n", "add", record(text=label("only")))
-        r = self.turn("n", "fix", record(index=nat(5), text=label("x")))
-        self.assertEqual(r["receipt"]["outcome"]["class"], "outOfRange")
+        r = self.turn("n", "fix", record(item=label("other"), text=label("x")))
+        self.assertEqual(r["receipt"]["outcome"]["class"], "absentItem")
         self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["version"], 1)
 
 
@@ -407,8 +412,9 @@ class BellList(TurnWorld):
         modules = closure("Bell")
         empty = {"tag": "record", "fields": []}
         nil = {"tag": "list", "items": []}
+        rows = {"tag": "variant", "label": "rows", "payload": record(items=nil)}
         seed = record(colour={"tag": "variant", "label": "silver", "payload": empty},
-                      seed=label("s"), rains=nil, rung={"tag": "boolean", "value": False},
+                      seed=label("s"), rains=rows, rung={"tag": "boolean", "value": False},
                       planting=label(""), planter=label("glm"), planterHandle=label(""), observers=nil)
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
                            modules=modules, entry="initial", seed=seed)
@@ -420,7 +426,8 @@ class BellList(TurnWorld):
 
         def authors(state):
             rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
-            return [{x["name"]: x["value"]["value"] for x in item["fields"]}["author"] for item in rains["items"]]
+            rows = rains["payload"]["fields"][0]["value"]
+            return [{x["name"]: x["value"]["value"] for x in item["fields"]}["author"] for item in rows["items"]]
         self.assertEqual(authors(before), ["kimik3", "gemini"])
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)
