@@ -45,14 +45,13 @@ imports Session and `PackageMain.lean` drives it.
 
 **Pins are sources (host6).** An object's pin is the CID of its sealed source closure: the artifact's
 `sourcesSha256`, the Canonical CID of its modules in order (library modules included), so it depends on bytes and
-never on the compiler. The compiled packet's digest is an observation beside it, `compiled {binary, packet}`
-(`binary` = the host binary's pin, `Snapshot.binaryPin`, set into `World.binary` at open), never compared on replay:
-replay recompiles from the journaled sources with the current compiler, requires the compile to succeed, the seed to
-conform and the recomputed source pin to equal the recorded `pin`, and counts each recorded `compiled.packet` that
-differs from its own in `world-status.recompiledDifferently` (memory, per process). Field names: `created {pin,
-compiled, compile, seed, …}` (no `sourcesSha256`), `creates[] {object, pin, compiled, …}`, `reprograms[] {object,
-oldPin, newPin, compiled, …}`, `library {pin, …}` (the seal's pin, unchanged); `Object.pin`, `Object.packet`;
-snapshot objects carry `pin` and `packet`; `inspected.pin`, `request.pin` in laws, receipts and projections are the
+never on the compiler. No packet digest is journaled (host7's hash pass): replay recompiles from the journaled
+sources with the current compiler, requires the compile to succeed, the seed to conform and the recomputed source pin
+to equal the recorded `pin`; `world-status.recompiledDifferently` (memory, per process, informational) counts objects
+rebuilt after a snapshot resume whose packet differs from the one that snapshot cached for the same inputs
+(`World.cachedPackets`, `noteRecompiled`). A `compiled {binary, packet}` field on an entry written before is ignored.
+Field names: `created {pin, compile, seed, …}`, `creates[] {object, pin, …}`, `reprograms[] {object, oldPin, newPin,
+…}`, `library {pin, …}`; `Object.pin`, `Object.packet` (memory); snapshot objects carry `pin` and `packet`; `inspected.pin`, `request.pin` in laws, receipts and projections are the
 source pin. An extension's pin is the CID of `["extend", old pin, source CID]`, sources too. The host builds each
 Context (and a law's Request) as the receiving code's own library declares it (`fitRecord`: the record type's
 fields, in its order, through the packet's bounds), so a field added to the library later never breaks an object

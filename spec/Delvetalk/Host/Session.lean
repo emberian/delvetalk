@@ -150,8 +150,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       match ← openWorld path held verify with
       | .error e => return (session, .error e)
       | .ok o =>
-        -- The binary that compiles from here on is recorded beside each pin it makes.
-        let o := { o with sync, world := { o.world with binary := ← Snapshot.binaryPin } }
+        let o := { o with sync }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with

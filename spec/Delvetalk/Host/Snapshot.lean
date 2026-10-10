@@ -407,6 +407,8 @@ def resume (b : Json) (entries : Array Json) : Except String World := do
   let w ← install b booked.modules
   let w := { booked with library := w.library, libraries := w.libraries, libraryLaw := w.libraryLaw,
                          objects := w.objects, grants := w.grants, posts := w.posts,
+                         cachedPackets := w.objects.fold (fun m _ o =>
+                           if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {},
                          clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, opener := w.opener,
                          settled := w.settled }
   for (k, v) in derived w do

@@ -1170,7 +1170,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("checkpoint", journaledCheckpoint.1),
       ("roots", rootsJson st.roots st.rootCids), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
-      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson w.binary id c)),
+      ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
       ("extends", toJson st.layered),
       ("programs", Json.arr (st.programs.toArray.map fun (id, (src, mig)) => Json.mkObj
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),

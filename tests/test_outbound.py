@@ -741,8 +741,8 @@ def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>
 
 
 class SourcePins(Reflection):
-    """An object's pin is the CID of its sealed source closure; the compiled packet is an
-    observation beside it (`compiled {binary, packet}`), counted but never compared on replay."""
+    """An object's pin is the CID of its sealed source closure; the compiled packet is never journaled.
+    A rebuild whose packet differs from the one a resumed snapshot cached is only counted."""
     def created(self, name):
         r = self.make(name, TELLER, record(note=label("")))
         return r["receipt"]["outcome"]
@@ -762,18 +762,28 @@ class SourcePins(Reflection):
         return self.host.send(op="world-open", path=self.path)
 
     def test_the_pin_is_the_sources_and_a_different_packet_is_only_counted(self):
+        from tests.test_snapshot import read_snapshot, write_snapshot
         self.open_library()
-        a, b = self.created("a"), self.created("b")
+        a = self.created("a")
+        self.assertNotIn("compiled", a)
+        height = self.host.send(op="world-snapshot")["height"]
+        b = self.created("b")
         self.assertEqual(a["pin"], b["pin"])
-        self.assertEqual(set(a["compiled"]), {"binary", "packet"})
-        self.assertNotEqual(a["pin"], a["compiled"]["packet"])
-        self.assertTrue(a["compiled"]["binary"].startswith("b"), a)
         self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["pin"], a["pin"])
-        def other_packet(entry):
-            entry["outcome"]["compiled"]["packet"] = a["pin"]
-        self.assertEqual(self.tamper_last(other_packet)["status"], "opened")
+        path = self.path + f".snapshot.{height}.cbor"
+        body = read_snapshot(path)
+        [obj] = [o for o in body["objects"] if o["id"] == "a"]
+        obj["packet"] = a["pin"]
+        write_snapshot(path, body)
+        self.release()
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual(opened["snapshot"]["resumed"], height, opened)
         self.assertEqual(self.host.send(op="world-status")["recompiledDifferently"], 1)
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="b")["status"], "viewed")
+        def old_field(entry):
+            entry["outcome"]["compiled"] = {"binary": "b", "packet": "p"}
+        self.assertEqual(self.tamper_last(old_field)["status"], "opened")
         def other_pin(entry):
             entry["outcome"]["pin"] = cid_of("another source closure")
         refused = self.tamper_last(other_pin)

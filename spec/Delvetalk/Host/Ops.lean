@@ -1023,23 +1023,22 @@ def expandInputs (w : World) (inputs : Json) : Except String Json := do
     return Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "sourceCid") ++ [("source", toJson (← resolve cid))])
   | _, _ => return inputs
 
-/-- What compiled an object's sources here, recorded beside its pin and never compared on
-    replay: the host binary's pin and the packet digest. -/
-def compiledJson (binary packet : String) : Json :=
-  Json.mkObj [("binary", toJson binary), ("packet", toJson packet)]
-
-/-- A record without its `compiled` observation, for replay's comparisons. -/
+/-- A record without its `compiled` observation (journaled before host7's hash pass, ignored), for
+    replay's comparisons. -/
 def withoutCompiled (j : Json) : Json :=
   match j.getObj? with
   | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "compiled"))
   | .error _ => j
 
-/-- The recorded packet of a record, when it has one. -/
-def recordedPacket (j : Json) : Option String :=
-  (j.getObjVal? "compiled").toOption.bind fun c => (c.getObjValAs? String "packet").toOption
+/-- Count `o` in `world-status.recompiledDifferently` when a snapshot this process resumed from
+    cached another packet digest for the same compile inputs; nothing is journaled to compare with. -/
+def noteRecompiled (w : World) (o : Object) : World :=
+  match w.cachedPackets[o.inputsKey]? with
+  | some p => if p != o.packet then { w with recompiledDifferently := w.recompiledDifferently + 1 } else w
+  | none => w
 
-def createRecJson (binary id : String) (c : CreateRec) : Json :=
-  Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin), ("compiled", compiledJson binary c.object.packet),
+def createRecJson (id : String) (c : CreateRec) : Json :=
+  Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
     if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)
@@ -1398,7 +1397,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
-        ("newPin", toJson prog.pin), ("compiled", compiledJson w.binary prog.packet),
+        ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
         ("result", dataJson state)] |> fun j => if extend then j.setObjVal! "mode" (toJson "extend") else j]
     -- The current law judges the whole write, under the pin the object will run. Every
@@ -1440,7 +1439,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     out := out ++ [(id, { next with version := o.version + 1, state })]
   return { updates := out, reprograms, amendments,
            creations := p.creates.map fun (id, c) => (id, c.object),
-           creates := p.creates.map fun (id, c) => createRecJson w.binary id c }
+           creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/
 
@@ -1748,9 +1747,9 @@ def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (c
   let (o, sources, _) ← buildObjectIn w inputs seed read chain creator height lawText
   return (o, sources)
 
-def createOutcome (binary id : String) (o : Object) (artifact seed : Json) : Json :=
+def createOutcome (id : String) (o : Object) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
-    ("compiled", compiledJson binary o.packet), ("compile", artifact), ("seed", seed)]
+    ("compile", artifact), ("seed", seed)]
 
 /-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
     come from `initial()`), for `world-create` and the `create` Plan alike. -/
@@ -1816,7 +1815,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   discard <| pure sources
-  let outcome := createOutcome w.binary id o (compactInputs inputs) seed
+  let outcome := createOutcome id o (compactInputs inputs) seed
   let outcome := if supervisor.isEmpty then outcome else outcome.setObjVal! "supervisor" (toJson supervisor)
   let outcome := match owner with
     | some o => outcome.setObjVal! "owner" (toJson o)
@@ -2215,7 +2214,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     -- The pin binds the sources; the packet this compiler made of them is only counted if it differs.
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == o.pin do
       throw s!"object {id} is not the source closure its pin names"
-    let w := if (recordedPacket outcome).any (· != o.packet) then { w with recompiledDifferently := w.recompiledDifferently + 1 } else w
+    let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
   | "refused" =>
@@ -2257,9 +2256,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless strip judged.reprograms == strip recordedPrograms.toList && judged.amendments == recordedLaws.toList &&
           strip judged.creates == strip recordedCreates.toList do
         throw "recorded reprograms, amendments or creations do not replay"
-      let differs := ((judged.reprograms ++ judged.creates).zip (recordedPrograms.toList ++ recordedCreates.toList)).filter
-        fun (now, then_) => (recordedPacket then_).isSome && recordedPacket then_ != recordedPacket now
-      let w := { w with recompiledDifferently := w.recompiledDifferently + differs.length }
+      let w := (judged.updates.filter (fun (id, _) => judged.reprograms.any fun r =>
+          (r.getObjValAs? String "object").toOption == some id) ++ judged.creations).foldl (fun w (_, o) => noteRecompiled w o) w
       let updates := judged.updates
       for raw in rawWrites do
         let id ← raw.getObjValAs? String "object"
