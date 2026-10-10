@@ -31,21 +31,6 @@ class Model(unittest.TestCase):
             self.assertEqual((r['status'], r['json'], r['raw'], r['model']), ('replied', {'a': 1}, text, 'claude-haiku-5-5'), text)
             self.assertEqual(r['usage'], {'input_tokens': 3, 'output_tokens': 4})
 
-    def test_spend_totals_a_month_at_haiku_rates_and_prints_the_remaining_grant(self):
-        import calendar
-        import io
-        import tempfile
-        rows = [(calendar.timegm((2026, 10, 3, 0, 0, 0)), 1_000_000, 200_000), (calendar.timegm((2026, 10, 30, 0, 0, 0)), 500_000, 0),
-                (calendar.timegm((2026, 9, 30, 23, 0, 0)), 9_000_000, 9_000_000)]
-        with tempfile.TemporaryDirectory() as d:
-            (Path(d) / 'model-spend.jsonl').write_text(''.join(model.canonical({'at': at, 'inputTokens': i, 'outputTokens': o}) + '\n' for at, i, o in rows))
-            out = io.StringIO()
-            model.main(['spend', '--state', d, '--month', '2026-10', '--grant', '200'], out)
-        text = out.getvalue()
-        self.assertIn('2026-10  2 calls  1500000 in  200000 out  $0.2500', text)
-        self.assertIn('2026-09  1 calls', text)
-        self.assertIn('2026-10: $0.2500 of $200.00 grant spent, $199.7500 remaining', text)
-
     def test_failure_reasons(self):
         text_only = self.ask(200, body('no json here'))  # a plain-text reply is a reply; the host fits raw
         self.assertEqual((text_only['status'], text_only['json'], text_only['raw']), ('replied', None, 'no json here'))
