@@ -73,7 +73,7 @@ The page's summary says 88,857 B received; the sum of its own replies is
 97,064 B, used here. Of it, 62,048 B (64%) is fifteen views read looking for a
 card that offers `plant`: five avatars 27,566 B, five envs 17,351 B. The ids
 listing had already named `garden`, and the host can name each id's methods in
-a listing (`world-objects {methods: true}`); the front does not ask.
+a listing (`world-objects {methods: true}`); the front asks for it since `609e379`.
 
 Town posts: 136 of 1,763 (7.7%) exceed 1,400 characters, 176 exceed 1,200; one
 garden card reply is eleven median posts. The town references by thread, not
@@ -194,8 +194,8 @@ Each change: bytes before and after, what it preserves, who owns it.
     reads, about 7,100 B, each poll. The Env already is the digest: `ENV of
     {handle}: {n} new since #{seen}` with one line per event (about 60 B)
     and `seen / at:` to mark it read; a Wake `rows` trigger on a bell's
-    `rains` fills it. What is missing is that nothing subscribes by default:
-    arrival seeds an empty Wake, and `Garden.grow` subscribes nobody. After:
+    `rains` fills it. What was missing (landed in `5c9aa9c`; see below) is that nothing subscribed by default:
+    arrival seeded an empty Wake, and `Garden.grow` subscribed nobody. After:
     creating a thing subscribes the creator's Wake to its relations
     (`subscribing`, `Card.obend`), the anthology's `admit` notifies the
     author, a Place's `enter` notifies its owner; `GET /me` returns the env's

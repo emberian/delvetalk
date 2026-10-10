@@ -1,15 +1,17 @@
 # Posting drafts
 
-The welcome cards as they will be posted. Posting is ember's, by hand (docs/DEPLOY.md, "The first welcome card").
+The welcome cards as they will be posted, and what came before them. Posting is ember's, by hand (docs/DEPLOY.md, "The first welcome card"). Nothing here is posted yet.
 
 | File | Where | State |
 | --- | --- | --- |
-| [gsb-welcome-v4.txt](gsb-welcome-v4.txt) | `#gsb` on delve.town, recorded against `directory`; v3 in the voice of docs/VOICE.md, same facts and door words | current |
-| [zulip-welcome-v2.txt](zulip-welcome-v2.txt) | the playtest stream's `welcome` topic, in the voice; `deploy/playtest.sh` and `tests/test_zulip.py` still name `zulip-welcome.txt` until they are pointed here | proposed |
-| [zulip-welcome.txt](zulip-welcome.txt) | what `deploy/playtest.sh` posts today (fills `<bot name>`) | current |
-| [gsb-root-menu-v2.txt](gsb-root-menu-v2.txt) | the long root menu in the voice; its door lines are the ones docs/VOICE.md proposes for `deploy/genesis.py` `DOORS` | reference |
-| [gsb-root-menu.txt](gsb-root-menu.txt) | the long root menu as posted during the as-if days | history |
-| [gsb-welcome-v3.txt](gsb-welcome-v3.txt) | superseded by v4 | history |
-| [gsb-welcome-v2.txt](gsb-welcome-v2.txt) | superseded by v3 | history |
+| [gsb-welcome-v6.txt](gsb-welcome-v6.txt) | `#gsb` on delve.town, recorded against `directory`: hob's opening, the first level of the root trie, the field-guide voice (docs/VOICE.md); the site's home page embeds it | current |
+| [zulip-welcome-v3.txt](zulip-welcome-v3.txt) | the playtest stream's `welcome` topic: v6 for Zulip, posted by `deploy/playtest.sh`, which fills the STUDIO port; `transport/zulip.py` fills `<bot name>` | current |
+| [gsb-root-menu-v4.txt](gsb-root-menu-v4.txt) | the directory's card as docs/MENU.md's trie in the voice, the library under STUDIO: the target. `Directory.render` draws the trie from live state today in v3's shape, without the library line (`4cbb588`) | current target |
+| [seed-posts/](seed-posts/) | the hand's sixteen posts for the first three days (docs/SEEDING.md) | current |
+| [offering-post.txt](offering-post.txt) | `wiki: DelveTalk: Ground`, docs/GROUND.md's offering to the town | proposed |
+| [site-theme-brief.md](site-theme-brief.md) | the site's theme as the town answered it | reference |
+| [gsb-welcome-v5.txt](gsb-welcome-v5.txt), [gsb-welcome-v4.txt](gsb-welcome-v4.txt), [gsb-welcome-v3.txt](gsb-welcome-v3.txt), [gsb-welcome-v2.txt](gsb-welcome-v2.txt) | superseded by v6, each by the next | history |
+| [zulip-welcome-v2.txt](zulip-welcome-v2.txt), [zulip-welcome.txt](zulip-welcome.txt) | superseded by v3 | history |
+| [gsb-root-menu-v3.txt](gsb-root-menu-v3.txt), [gsb-root-menu-v2.txt](gsb-root-menu-v2.txt), [gsb-root-menu.txt](gsb-root-menu.txt) | superseded by v4; the first is the long menu posted during the as-if days | history |
 
 Readers clip near 1,400 characters: each card puts its affordances before the clip line.

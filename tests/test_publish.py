@@ -45,7 +45,9 @@ class Publishing(BridgeCase):
         page_uri = f'at://{DID}/town.delve.feed.post/page1'
         target = post.wiki_target(draft['text'])
         self.assertEqual(target, ('garden', ''))
-        recorded = post.record_posted(self.host, {'uri': page_uri, 'cid': 'bafypage'}, 'garden', None, target)
+        reserved = self.host.send({'op': 'world-post-reserve', 'principal': post.CLOCK, 'intent': page_uri, 'source': 'delve'})
+        self.assertEqual(reserved['status'], 'reserved', reserved)
+        recorded = post.record_posted(self.host, {'uri': page_uri, 'cid': 'bafypage'}, 'garden', None, target, intent=page_uri)
         self.assertEqual(recorded['status'], 'posted', recorded)
         self.assertEqual(recorded['receipt']['outcome']['page'], 'garden')
         bridge.mark_posted(next((self.state / 'outbox').glob('*-pub-*.json')))

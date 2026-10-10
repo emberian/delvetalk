@@ -195,7 +195,7 @@ account's credentials file is mounted for that one command only:
       python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt` at the deployed commit, placed in the data directory by hand
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v6.txt` at the deployed commit, placed in the data directory by hand
 (owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
 carries the old data directory's copy forward carries the old text. `--state /data/state` is
 the hand's (its `posting/` ledger keeps each intent's record key). The host reserves every post before it is sent
@@ -275,7 +275,7 @@ in this path reads Delve credentials.
     deploy/playtest.sh --stop
 
 It starts hostd on a fresh journal under `~/.delvetalk-playtest/run-<stamp>/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
-moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome-v2.txt` (its `<bot name>` filled in) to the stream's `welcome`
+moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome-v3.txt` (its `<bot name>` filled in) to the stream's `welcome`
 topic and records it against `directory`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
 credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.
@@ -344,6 +344,20 @@ host key for hbox, and hbox has no `/tank/delvetalk-backups/` (and `/tank` was 9
 
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
+
+**A torn tail.** If the host stopped mid-append (power lost inside the write-back
+window), the next start refuses the journal by name, `journal broken at height N:
+unterminated final line`, and the host stays down: it never cuts its own file.
+Recover through a verified copy; it loses only the entry that was never
+acknowledged, since the host replies after fsync:
+
+    docker compose down
+    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
+    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
+    docker compose --profile town up -d --wait
+
+`backup.sh` prints `cut a torn final line at byte N` for each journal it cut in its mirror, then replays the mirror
+before writing the tarball.
 
 ## Changing the library after launch
 

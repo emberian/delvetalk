@@ -15,6 +15,7 @@ callVia, sendVia: + via  subject = the grant's grantor
 run<R>{.., handler} -> returned  handle() sees them first
 send{object, method, argument} -> delivery{id}  a later turn
 create{package, seed, law, requireAbsent} -> created{object}  "" names <you>/<package>/<n>
+make{.., madeFrom{object, receipt}} -> created  from a resident's source; the lineage journaled
 createUnder: + supervisor  told ended{receipt}
 reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1
 amend{object, law} -> amended{}  kind 2

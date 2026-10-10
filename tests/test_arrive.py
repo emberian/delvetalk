@@ -274,6 +274,20 @@ class ToldWithoutPosting(HostCase):
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
         return r
 
+    def test_a_world_with_an_arrival_a_subscription_and_a_change_reopens_as_written(self):
+        # The playtest (run 17:05, height 39): a planting both creates a bell and owes the Wake a
+        # change; first execution counted the bell in the change's ledger, replay did not.
+        self.arrive()
+        self.plant("ember", "a lamp", "p1")
+        self.plant(DID, "a fern", "p2")
+        def cids():
+            ids = self.host.send(op="world-objects", principal="ember")["ids"]
+            return {i: self.host.send(op="world-state-cid", principal="ember", object=i).get("cid") for i in ids}
+        before = (self.host.send(op="world-status")["height"], cids())
+        self.assertIn("garden/bell/2", before[1])
+        self.reopen()
+        self.assertEqual((self.host.send(op="world-status")["height"], cids()), before)
+
     def test_a_newcomer_hears_each_planting_and_its_own_bell_ring(self):
         arrived = self.arrive()
         self.assertEqual((arrived["arrivedTurn"]["status"], arrived["arrivedTurn"]["result"]["label"]), ("admitted", "watching"), arrived)

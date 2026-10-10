@@ -181,6 +181,102 @@ class ReprogramReading(Reflection):
         self.assertIn("nope", said)
 
 
+# A card of the base (it hears replies), and a kind: any object whose state holds a layer `body`.
+CARD = BASE + """def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Nat>:
+  0n
+"""
+
+KIND = declared("""edition ObjectiveBend 1
+record State:
+  name: String
+  body: String
+def initial() -> State:
+  {name: "", body: ""}
+""")
+
+KIND_LAW = declared("""edition ObjectiveBend 1
+record State:
+  name: String
+  law: String
+def initial() -> State:
+  {name: "", law: ""}
+""")
+
+
+class HostSpells(Reflection):
+    """docs/CATALOGUE.md §2: the host's own spells on any card, each a direct turn judged by the card's
+    own law: `become` lays a kind's body over the card."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("c", CARD, record(count=nat(0)))
+        self.make("kind/louder", KIND, record(name=label("louder"), body=label(LAYER)))
+
+    def say(self, text, who="ember", identity=None):
+        return self.turn("c", "receive", record(text=label(text), post=label("")), principal=who, identity=identity)
+
+    def test_become_lays_the_kinds_body_under_the_cards_own_law(self):
+        self.assertIn("delvetalk c become\nkind:", self.say("delvetalk c ?")["text"])
+        self.assertNotIn("become", self.say("delvetalk c ?", who="kim")["text"])
+        stranger = self.say("delvetalk c become\nkind: kind/louder", who="kim", identity="b0")
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), stranger)
+        r = self.say("delvetalk c become\nkind: kind/louder", identity="b1")
+        self.assertEqual(r["status"], "admitted", r)
+        [prog] = r["receipt"]["outcome"]["reprograms"]
+        kind = self.host.send(op="world-inspect", principal="ember", object="kind/louder")
+        self.assertEqual(prog["mode"], "extend")
+        self.assertEqual((prog["madeFrom"]["object"], prog["madeFrom"]["pin"]), ("kind/louder", kind["pin"]))
+        self.assertTrue(prog["madeFrom"]["receipt"].startswith("bafy"), prog)
+        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "10")
+        self.assertEqual(self.say("delvetalk c become\nkind: kind/louder", identity="b1"), r)   # a retry: the receipt
+        self.reopen()
+        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "20")
+        missing = self.say("delvetalk c become\nkind: kind/none", identity="b2")["receipt"]["outcome"]
+        self.assertEqual((missing["class"], missing["clause"]), ("badSpell", "unknownKind"), missing)
+
+    def test_adopt_appends_a_kinds_clauses_under_the_amend_metarule(self):
+        circle = 'law circle "only ember and kim count": request.subject == "ember" or request.subject == "kim"'
+        self.make("kind/circle", KIND_LAW, record(name=label("circle"), law=label(circle)))
+        self.assertIn("delvetalk c adopt\nlaw:", self.say("delvetalk c ?")["text"])
+        stranger = self.say("delvetalk c adopt\nlaw: kind/circle", who="kim", identity="a0")
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), stranger)
+        r = self.say("delvetalk c adopt\nlaw: kind/circle", identity="a1")
+        self.assertEqual(r["status"], "admitted", r)
+        laws = self.host.send(op="world-inspect", principal="ember", object="c", source=False)["laws"]
+        self.assertIn(("circle", "only ember and kim count"), [(l["name"], l.get("reading")) for l in laws])
+        self.assertEqual(self.turn("c", "bump", principal="eve")["receipt"]["outcome"].get("clause"), "circle")
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        clash = self.say("delvetalk c adopt\nlaw: kind/circle", identity="a2")["receipt"]["outcome"]
+        self.assertEqual((clash["class"], clash["clause"]), ("badSpell", "lawClash"), clash)
+        self.reopen()
+        self.assertEqual(self.turn("c", "bump", principal="eve")["receipt"]["outcome"].get("clause"), "circle")
+
+    def test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender(self):
+        version = self.host.send(op="world-view", principal="ember", object="c")["version"]
+        a = self.host.send(op="world-amend", principal="ember", identity="own", object="c", version=version,
+                           law='law owner "only ember counts": not (request.kind == 0) or request.subject == "ember"')
+        self.assertEqual(a["status"], "admitted", a)
+        self.assertEqual(self.turn("c", "bump", principal="kim")["receipt"]["outcome"].get("clause"), "owner")
+        self.assertNotIn("lend", self.say("delvetalk c ?", who="kim")["text"])
+        self.assertIn("delvetalk c lend\nto:", self.say("delvetalk c ?")["text"])
+        theirs = self.say("delvetalk c lend\nto: me\nmethod: bump\nuntil: +5", who="kim", identity="l0")["receipt"]["outcome"]
+        self.assertEqual((theirs["class"], theirs["clause"]), ("badSpell", "notYours"), theirs)
+        r = self.say("delvetalk c lend\nto: kim\nmethod: bump\nuntil: +5", identity="l1")
+        self.assertEqual(r["status"], "admitted", r)
+        [g] = r["receipt"]["outcome"]["grants"]
+        self.assertEqual((g["to"], g["method"], g["until"], g["holder"]), ("kim", "bump", 5, "c"))
+        self.assertEqual(g["reading"], "lent by ember: bump, until clock 5")
+        lent = self.turn("c", "bump", principal="kim")
+        self.assertEqual(lent["status"], "admitted", lent)
+        self.reopen()
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        self.host.send(op="world-advance", height=6)
+        self.assertEqual(self.turn("c", "bump", principal="kim")["receipt"]["outcome"].get("clause"), "owner")
+
+
 class ExtensionPins(Reflection):
     """An extension's pin is its compiled closure's (docs 2): the same layer over the same base under two
     libraries is two closures and two pins."""

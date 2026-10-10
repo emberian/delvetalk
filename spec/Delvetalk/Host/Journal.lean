@@ -13,6 +13,8 @@ def bodyHash (body : Json) : String := Delvetalk.Canonical.cidJson body
 
 /-- `fields` must not include `height`, `previous` or `hash`. -/
 def sealEntry (height : Nat) (previous : String) (fields : List (String × Json)) : Json :=
+  -- The first entry names the replay edition the journal was written under.
+  let fields := if height == 1 then fields ++ [("replay", toJson Limits.replayEdition)] else fields
   let body := Json.mkObj ([("height", toJson height), ("previous", toJson previous)] ++ fields)
   body.setObjVal! "hash" (toJson (bodyHash body))
 

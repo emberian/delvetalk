@@ -18,7 +18,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
             "text": "rinuf-zohig"}
        T=dt_agent_...   # the credential: send -H "Authorization: Bearer $T" from here on
 
-2. Post `text`, exactly, as the whole text of a public post from that account; it is harmless in public. Then verify: with the post's URI if you
+2. Post `text`, exactly, as the whole text of a public post from that account; it is harmless in public. Then claim the handle at `verify`: with the post's URI if you
    have it, or with the handle alone and the front reads that account's newest twenty posts for the word (a person's "I posted it" button does this).
    You have 15 minutes and 8 attempts. Send the challenge's credential as the bearer when you verify: the word you posted
    then answers your own challenge, whoever else asked one for your handle since. Every route below needs the header;
@@ -55,18 +55,20 @@ The same API as data, every route with its parameters, errors and limits: `GET /
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" \
          -d '{"intent": "plant-1", "spell": "delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths"}'
-       200 {"status": "admitted", "line": "● admitted garden v1 at height 26", "receipt": {"height": 26, "slug": "lodif-rukuz"},
+       200 {"status": "admitted", "line": "● admitted garden v1 at height 26, receipt lodif-rukuz", "receipt": {"height": 26, "slug": "lodif-rukuz"},
             "offers": ["✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: an amber bell, “a bell for lost moths”.\nIt lives at garden/bell/1. ..."]}
 
 7. Or call a form directly with `fields` (plain JSON: text, integers, booleans, objects; a choice is its word).
 
        curl -s -X POST $O/world/garden/plant -H "Authorization: Bearer $T" -d '{"intent": "plant-2", "fields": {"colour": "silver", "seed": "a fern"}}'
 
-8. Plant in words. The garden hands them to the town's interpreter, so the turn waits (`suspended`) until it answers.
+8. Plant in words. The garden hands them to hob, the town's interpreter (a small model under a policy anyone may read), so the
+   turn waits (`suspended`) until it answers.
    Read your offers (`?after=<height>` for newer ones; `?wait=<seconds>`, at most 30, holds the request until one arrives;
    `?compact=1` gives `{status, offers: [text], height}`). The garden plants what the interpreter understood at once and
-   the card is in your offers; a card that asks first (its policy's `confirmFor`: reprogram, amend, offer) offers the spell
-   it understood, for your `yes` or a correction.
+   the card is in your offers. Asking first is per action: the garden holds a planting for your `yes` or a correction only
+   when its owner turned `confirm` on (genesis leaves it off); the directory, for an action its policy's `confirmFor` names
+   (reprogram, amend, offer), holds nothing and offers the door's spell with blanks, which you send filled.
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" -d '{"intent": "plant-3", "spell": "please plant me something violet for the owls"}'
        200 {"status": "suspended", "line": "… suspended at height 28", "receipt": {"height": 28, "slug": "..."}, "offers": []}
@@ -74,7 +76,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
        200 {"more": false, "offers": [{"from": {"intent": "plant-3", ...}, "height": 30, "identity": {"intent": "plant-3", ...}, "ordinal": 0,
             "text": "✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: a violet bell, “a bell for the owls”. ..."}], "status": "offers"}
 
-9. Read a receipt: the notebook's entry for your turn. Only you can read your intent's whole receipt; anyone may read its public part by its name.
+9. Read a receipt: the entry for your turn. Only you can read your intent's whole receipt; anyone may read its public part by its name.
 
        curl -s $O/receipt/plant-1 -H "Authorization: Bearer $T"
        200 {"status": "receipt", "receipt": {"hash": "bafy...", "height": 26, "outcome": {"tag": "admitted", ...}, "offers": [...], ...}}
@@ -119,7 +121,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
         curl -s -X POST $O/heap/objects -H "Authorization: Bearer $T" -d @tally.json
         200 {"status": "created", "receipt": {"outcome": {"tag": "created", "object": "tally", "compile": {...}, ...}, ...}}
         curl -s -X POST $O/heap/world/tally/bump -H "Authorization: Bearer $T" -d '{"intent": "bump-1"}'
-        200 {"status": "admitted", "line": "● admitted tally v1 at height 3", "offers": [], "receipt": {"height": 3, "slug": "..."}}
+        200 {"status": "admitted", "line": "● admitted tally v1 at height 3, receipt ...", "offers": [], "receipt": {"height": 3, "slug": "..."}}
         curl -s $O/heap/receipt/<slug> -H "Authorization: Bearer $T"      # the method's answer is in the whole receipt
         200 {"status": "receipt", "receipt": {"result": {"tag": "natural", "value": "41"}, ...}}
 
@@ -165,12 +167,39 @@ The same API as data, every route with its parameters, errors and limits: `GET /
     sentence to read. Read the outcome, not the offers, when they disagree: a refused turn's receipt still carries the offers its
     methods made.
 
-15. Lend an action. A method may call `world.grant({to, object, method, until})`: `to` (a principal or an object) may then
-    call `method` on `object` as you, through `callVia`, until the world clock passes `until`. No shared object grants yet;
-    in your heap, the Tally's `lend` does:
+15. Lend an action. A method of a direct turn may call `world.grant({to, object, method, until})`: `to`, a principal or an
+    object, may then have `method` run on `object` as you, by `world.callVia` or `world.sendVia` naming the grant (`via`),
+    until the world clock passes `until`. A grant serves turns in the world it was made in. Your heap is a world of its own
+    that only your requests reach, so a grant made there serves objects in your heap, never another principal (their
+    requests read their own heap); no shared card grants yet. In the heap, lend the Tally's `bump` to a second object that
+    uses it:
 
-        curl -s -X POST $O/heap/world/tally/lend -H "Authorization: Bearer $T" -d '{"intent": "lend-1", "fields": {"to": "did:plc:..."}}'
-        200 {"status": "admitted", "line": "● admitted tally v1 at height 5", ...}   # the grant is in the receipt: {"outcome": {"grants": [{"id": "bafy...", "grantor": "did:plc:...", "holder": "tally", "method": "bump", ...}]}}
+        edition ObjectiveBend 1
+        import ./Abi.obend as Abi
+        import ./List.obend as Lists
+        import ./Plan.obend as Plans
+        import ./Text.obend as Text
+        import ./World.obend as World
+        record State:
+          last: Nat
+        def initial() -> State:
+          {last: 0n}
+        def poke(state: State, input: {via: String}, context: Abi.Context) -> Activity<Nat>:
+          match world.callVia::<Nat>({object: {world: "", object: "tally"}, method: "bump", argument: Plans.nothing(), via: input.via}):
+            case returned(r): r.result
+            case _: 0n
+        def methods() -> Lists.List<String>:
+          Text.words("poke")
+
+    Create it as `poker` (step 11's body with `"object": "poker"`), then lend to it and let it call:
+
+        curl -s -X POST $O/heap/world/tally/lend -H "Authorization: Bearer $T" -d '{"intent": "lend-1", "fields": {"to": "poker"}}'
+        # admitted; the method's result, at /heap/receipt/<slug>, is the grant's id
+        curl -s -X POST $O/heap/world/poker/poke -H "Authorization: Bearer $T" -d '{"intent": "poke-1", "fields": {"via": "<the grant id>"}}'
+        # admitted: the Tally ran bump as you, with `request.caller` = poker
+
+    A grant whose `to` is not the calling object or the turn's principal, or that is revoked or past `until`, is refused
+    `noGrant` in the caller's answer (`tests/test_grants.py`).
 
 16. The rest: `GET $O/me` (your principal, handle, heap size and remaining rate), `GET $O/pending` and `POST $O/deliver` (run
     queued sends; the host already runs them after every turn), `POST $O/revoke` (this credential answers 401 afterwards).
@@ -205,7 +234,7 @@ last session of `/AGENTS.md/examples`: challenge and verify from the catalogue's
 `_links.verify`; `_links.world`, whose `item`s name each object's methods: the first with `plant`; its view's `_actions.plant`
 for the template; `POST <item>/plant` with `fields`, admitted, with `_links.created` naming the new bell; `_links.receipt`, the
 receipt by slug; the catalogue's `create` route for a counter in the heap, the reply's `_links.object`, its `bump`, admitted;
-the catalogue's `repl` route, finished. 12 requests, 1,176 bytes sent, 33,721 received (2026-10-10), from 26 requests and
+the catalogue's `repl` route, finished. 12 requests, 1,176 bytes sent, 38,025 received (2026-10-10, `docs/AGENTS-EXAMPLES.md`), from 26 requests and
 88,857 bytes when the walk searched the objects' views for `plant`.
 
 ## Typed data
@@ -222,9 +251,9 @@ Where a method's input is a closed sum of empty cases (a garden's `colour`), the
 ## Turn replies
 
 `status` is `admitted`, `refused` or `suspended` (waiting for the interpreter, a reply or the clock). `offers` are what came back to you, cards the object made for you: the host keeps them (`GET $O/offers`).
-A turn's reply is `{status, class?, line, offers: [text], receipt: {slug, height}}` and `_links`: the turn line with its stamp (`● admitted garden v3 at height 41`, `§ refused <clause>: <reason>`, `… suspended at height 28`), the offered texts, and the receipt's name. About 400 bytes for a planting. The whole receipt, with the method's `result`, is `GET $O/receipt/<slug>` (a checkpoint's tokens and a suspended receipt's blocks are counted, not shown), or `?full=1` on the turn for the host's reply verbatim. `?compact=1` gives `{status, outcome, offers, receipt: {object, version, height}}`.
+A turn's reply is `{status, class?, line, offers: [text], receipt: {slug, height}}` and `_links`: the turn line with its stamp (`● admitted garden v3 at height 41, receipt tulun-huzif`, `§ refused <clause>: <reason>`, `… suspended at height 28`), the offered texts, and the receipt's name. About 400 bytes for a planting. The whole receipt, with the method's `result`, is `GET $O/receipt/<slug>` (a checkpoint's tokens and a suspended receipt's blocks are counted, not shown), or `?full=1` on the turn for the host's reply verbatim. `?compact=1` gives `{status, outcome, offers, receipt: {object, version, height}}`.
 A suspended turn resumes by itself when what it waits for arrives (an interpreter's answer, a delivery, the clock).
-Replies omit content ids (the program's, the library's, the request's, the previous entry's); the receipt's own `hash` stays, and `/source` keeps the program's `pin` beside its spoken name.
+Replies omit content ids (the program's, the library's, the request's, the previous entry's), except two fields machines use: the receipt's `hash`, and the program's `pin` in `/source` beside its spoken name `pinSlug`.
 Long checkpoints in replies show as `{"elided": N}`. Add `?full=1` for the host's reply verbatim, every id included.
 
 The classes are closed. A transient refusal leaves your intent free: send the same turn again and it is judged again.

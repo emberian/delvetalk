@@ -20,6 +20,11 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
+/-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
+    first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
+    with every change to what replay derives (judging, a derived field, an index replay checks).
+    1: before host12 (no field); 2: host12 (evictions and changes owed as facts, lineage, reservations). -/
+def replayEdition : Nat := 2
 /-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
     5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
 def interpretAttempts : Nat := 8
@@ -296,19 +301,22 @@ structure Grant where
   fixed : Option Json := none
   /-- Uses left (each admitted call or send under the grant spends one); none is unlimited. -/
   uses : Option Nat := none
+  /-- What the holder's card says of it ("lent by …: ring, until clock N"); "" for none. -/
+  reading : String := ""
   deriving BEq
 
 def Grant.json (g : Grant) : Json :=
   Json.mkObj ([("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
     ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method), ("until", toJson g.expires)] ++
-    (g.fixed.map fun f => [("fixed", f)]).getD [] ++ (g.uses.map fun n => [("uses", toJson n)]).getD [])
+    (g.fixed.map fun f => [("fixed", f)]).getD [] ++ (g.uses.map fun n => [("uses", toJson n)]).getD [] ++
+    (if g.reading.isEmpty then [] else [("reading", toJson g.reading)]))
 
 def Grant.ofJson (j : Json) : Except String Grant := do
   return { id := ← j.getObjValAs? String "id", grantor := ← j.getObjValAs? String "grantor",
            holder := ← j.getObjValAs? String "holder", to := ← j.getObjValAs? String "to",
            object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
            expires := ← j.getObjValAs? Nat "until", fixed := (j.getObjVal? "fixed").toOption,
-           uses := (j.getObjValAs? Nat "uses").toOption }
+           uses := (j.getObjValAs? Nat "uses").toOption, reading := (j.getObjValAs? String "reading").toOption.getD "" }
 
 /-- A post transport confirmed (a `posted` entry at `height`): the object it speaks for; when it
     was made for an awaited slot, that slot as `{principal, intent}`; when it carried one of the

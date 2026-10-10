@@ -42,7 +42,7 @@ Code goes in a block field, or a ```obend fence:
     …your Objective Bend…
     BEND
 
-Ask any card: "delvetalk <card> ?" for every spell it takes. Ask the workshop what a thing runs. Every reply gets a receipt with a spoken name: admitted, or refused naming its clause. Words go to the interpreter, which shows you the spell before anything runs; reply yes or correct it.
+Ask any card: "delvetalk <card> ?" for every spell it takes. Ask the workshop what a thing runs. Every reply gets a receipt with a spoken name: admitted, or refused naming its clause. Words go to the interpreter, which reads them as a spell; it runs at once unless the card asks first (the garden waits for yes or a correction; the directory shows the spell to send filled).
 
 A post can hold prose, a spell, code and what came back, together. The browser's buttons and the copied words reach the same cards.
 

@@ -60,6 +60,9 @@ class Reservations(Chain):
                                object="hub", intent="a")
         self.assertEqual(again["status"], "error", again)
         self.assertEqual(self.host.send(op="world-post-reserve", principal="mallory", intent="m", source="delve")["status"], "error")
+        # Every post settles a reservation: one without an intent is refused by name.
+        bare = self.host.send(op="world-posted", principal=CLOCK, uri="at://did:plc:t/app.bsky.feed.post/b", cid="c3", object="hub")
+        self.assertEqual((bare["status"], bare["message"]), ("error", "a post settles a reservation; name its intent"), bare)
         before = self.posts()
         self.reopen()
         self.assertEqual(self.posts(), before)

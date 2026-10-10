@@ -570,6 +570,11 @@ def openContent (journal content : String) (verify : Bool := false) (caches : Ca
   let entries ← match entriesOf content with
     | .ok e => pure e
     | .error e => return .error e
+  -- A journal of another replay edition is refused by name before anything is replayed.
+  if let some first := entries[0]? then
+    let edition := (first.getObjValAs? Nat "replay").toOption.getD 1
+    if edition != Limits.replayEdition then
+      return .error s!"journal replay edition {edition}; this host is {Limits.replayEdition}; a world from another host's edition does not reopen: make it again with a new genesis"
   let snaps ← files journal
   let mut report : Report := {}
   if verify then

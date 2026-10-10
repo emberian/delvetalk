@@ -294,7 +294,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world), ("locked", toJson true), ("sync", toJson s.sync.name),
+          ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
           ("recompiledDifferently", toJson s.world.recompiledDifferently),
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
