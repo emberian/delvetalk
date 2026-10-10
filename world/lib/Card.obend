@@ -660,6 +660,12 @@ def needing(form: Lists.Maybe<Form.Form>, fields: Spell.Bindings) -> Replied:
     case some(f): unclearOf(Lists.map(Lists.filter(f.value.fields, fn(x: Form.Field) -> Bool: Lists.any(fields, fn(b: Spell.Binding) -> Bool: b.name == x.name) == false), fn(x: Form.Field) -> String: x.name))
 def unclearOf(needs: Form.Names) -> Replied:
   if Lists.length(needs) == 0n then Replied.usage({}) else Replied.unclear({needs: needs})
+# The action of the reply's spell line, "" when it has none: what a card completes from its
+# own policy (a Deal's countersign cites the reply's post).
+def spellAction(text: String) -> String:
+  match Spell.parse(text):
+    case spell(s): s.action
+    case notASpell(_): ""
 def quietly(replied: Replied) -> Bool:
   match replied:
     case silent(_): true
