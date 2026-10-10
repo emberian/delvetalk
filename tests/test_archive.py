@@ -93,10 +93,9 @@ class Archive(unittest.TestCase):
             self.assertNotIn('did:plc:', t)
             self.assertNotIn('bafy', t)
 
-    @unittest.expectedFailure
     def test_every_page_publication_is_within_the_clip(self):
-        """The workshop's page is the host's default page, its card (755 characters) and every form's usage
-        (663): 1,444. The objects lane's fix is a `publishPage` in Workshop.obend that publishes the card alone
+        """Every published page fits the clip. The workshop's was the host's default page, its card (755
+        characters) and every form's usage (663): 1,444; Workshop.obend's `publishPage` publishes the card alone
         (rehearsal/REPORT.md, run 12 section)."""
         over = [(d['text'].split('\n')[0], d['chars']) for d in self.r['drafts'] if d['outcome'] == 'publication' and d['chars'] > 1400]
         self.assertEqual(over, [])
