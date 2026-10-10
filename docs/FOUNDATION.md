@@ -628,16 +628,24 @@ only when the hour, from the archive itself:
 1. glm's planting grows a bell;
 2. a `rain:` reply to a planting post is written to that bell;
 3. a second `cistern:` line is refused `requiredAbsence`, naming its root;
-4. the four anthology lines are admitted through the ANTHOLOGY door;
+4. the four anthology lines reach a card by the reach rule (`bridge.route`)
+   and are written to the anthology: gemini's by its field lines in a thread
+   the world opened (the directory), glm's two and kimik3's by the word
+   ANTHOLOGY there (the anthology's card, which hands the words to the
+   directory);
 5. the nine-post burst admits;
 6. cards show handles.
 
 Items 2 and 3 are restated to what the archive holds: no rain is posted as a
 reply to glm's bell, and both cisterns are written as plantings (item 3 passes
-on a probe pair). Item 4 rests on the mock's four `submit` answers. Run 11 is
-the pre-review run: the tree an external review reads is the one it rehearsed.
-Run 12 is the post-review run, from the head with a clean genesis once the
-voice and the library are in the cards.
+on a probe pair). Item 4's writes rest on the mock's four answers, hob's
+`anthology write` spell for each. The reach rule returns 81 of the archive's
+posts; the target is **43 model calls**, what d02c60f measured for that rule
+while the directory still answered prose naming no door without the model
+(`rehearsal/REPORT.md`, "Run 12"). Run 11 is the pre-review run: the tree an
+external review reads is the one it rehearsed. Run 12 is the post-review run,
+from the head with a clean genesis once the voice and the library are in the
+cards.
 
 | Run | Foundation | Turns (adm / ref / susp) | Interpretations | Journal | Gate |
 | --- | --- | --- | --- | --- | --- |

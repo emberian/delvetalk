@@ -284,9 +284,11 @@ def grammar_probes(out, binary):
     return results, burst, handle
 
 
-def turn_text(host, who, obj, intent, text):
+def turn_text(host, who, obj, intent, text, reach=None):
+    """A reply's turn as the bridge sends it; `reach` is the rule the bridge states for prose (HOST-HANDOFF 118):
+    without one the host answers prose `unclear: not addressed` at once and nothing is planted."""
     return host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': intent,
-                      'argument': rec(text=lab(text), post=lab(intent))})
+                      'argument': rec(text=lab(text), post=lab(intent)), **({'reach': reach} if reach else {})})
 
 
 def burst_probe(host, n=9):
@@ -298,7 +300,7 @@ def burst_probe(host, n=9):
     said = {f'could you plant me a silver fern that remembers hour {i}?': i for i in range(n)}
     first = []
     for (text, i) in said.items():
-        r = turn_text(host, who[i], 'garden', intent[i], text)
+        r = turn_text(host, who[i], 'garden', intent[i], text, reach='mention')
         first.append({'i': i, 'status': r.get('status'), 'class': ((r.get('receipt') or {}).get('outcome') or {}).get('class'),
                       'reason': ((r.get('receipt') or {}).get('outcome') or {}).get('reason') or r.get('message')})
     settled, retried = [], []
@@ -316,13 +318,14 @@ def burst_probe(host, n=9):
             break
         for f in again:
             retried.append(f['i'])
-            r = turn_text(host, who[f['i']], 'garden', intent[f['i']], next(t for t, j in said.items() if j == f['i']))
+            r = turn_text(host, who[f['i']], 'garden', intent[f['i']], next(t for t, j in said.items() if j == f['i']), reach='mention')
             f['retry'] = r.get('status')
     final = []
     for i in range(n):
         rc = host.send({'op': 'world-receipt', 'principal': who[i], 'identity': intent[i]}).get('receipt') or {}
         offers = host.send({'op': 'world-offers', 'principal': who[i]}).get('offers') or []
         final.append({'i': i, 'outcome': (rc.get('outcome') or {}).get('tag'), 'class': (rc.get('outcome') or {}).get('class'),
+                      'wrote': [w.get('object') for w in (rc.get('outcome') or {}).get('writes') or []],
                       'offer': offers[-1]['text'] if offers else None})
     return {'first': first, 'settled': settled, 'retried': retried, 'final': final}
 

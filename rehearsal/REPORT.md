@@ -46,6 +46,77 @@ directory", and the run fell to 20 turns, all `unknownObject`, with nothing rout
 `deploy/seed.py` passes the partial seed through, and `world-create` overlays it (host6). The
 interim overlay helper in `seed.py` is gone; `--owner` stays.
 
+## The gate as restated (lane rehearsal4, foundation ad785ec)
+
+FOUNDATION §11 now states item 4 and the interpretation target as below. The check runs on ad785ec
+(dt-foundation binary `c577bf90…`, spec identical to ad785ec file for file) use the harness as of
+06e702b. They are not run 12, which waits for the world rewrite. Their journals are byte-identical
+from run to run: SHA-256 `ea972387…`, height 1,358, 4,186,379 bytes. The run takes 70 to 230 s
+at hbox load 27 to 33, with a peak of 219 MB in its 3 GB cgroup.
+
+| Item | On ad785ec |
+| --- | --- |
+| 1. glm's planting grows a bell | **pass.** garden/bell/2 is made by kind/bell, and its post `3mxghe7w33c2f` is recorded for it at 07:31. All three plantings are recorded again (07:27, 07:31, 07:32). |
+| 2. a `rain:` reply to a planting post is written to that bell | **pass.** kimik3's `3mxghh4qis22f` reaches garden/bell/3 by reply address and writes it. |
+| 3. a second `cistern:` line is refused `requiredAbsence` | **fails.** The garden digs through kind/cistern, and each dig makes the next `garden/cistern/<n>`. The probe pair digs garden/cistern/1, then garden/cistern/2. Owner: objects. Either one cistern a garden, with Garden `cistern` refusing by name once kind/cistern has made one under it (or a law clause over the garden's made set), or this item is restated to what kinds make. |
+| 4. the four anthology lines reach a card by the reach rule and are written | **pass, 4 of 4,** each line reaching as the transport lane measured at d02c60f. gemini's `3mxghd6kvo22f` reaches the directory by its field lines (reach `fields`; its thread's card is the directory). glm's `3mxghgacmlc2f` and `3mxghjmm6zc2f` and kimik3's `3mxghjyx4pk2f` reach the anthology's card by the word ANTHOLOGY (reach `door`). That card has no policy, so it hands the words to the directory (reach `delivery`). hob's `delvetalk anthology write / text: …` is fitted against the directory's door forms, and the line is written: #1 gemini, #2 glm, #3 glm (guestbook), #4 kimik3, none admitted yet. |
+| 5. the nine-post burst admits | **pass.** The probe now states reach `mention`. Without a reach the host answers prose `unclear: not addressed` at once (HOST-HANDOFF 118), so the probe had been "admitting" nine turns that planted nothing. Now nine suspend, nine settle, and nine plant through kind/bell. |
+| 6. cards show handles | **pass** (handle probe). |
+| model calls, target 43 | **70, not met.** The next subsection explains the difference. |
+
+### Interpretations: 43, 54, 70 count the same thing
+
+`tests/test_archive.py` runs this `rehearse.py` and sums the journal's `interpreted` verdicts,
+which is the rehearsal's own count. The numbers differ by tree, not by measure. The Zulip fake
+is not the cause: neither the rehearsal nor test_archive feeds or starts one. The hub intents are
+not the cause either: all four hubs are recorded `posted` in every run. The counts are:
+- 43 at d02c60f (transport4's run, `reh-doors3`);
+- 54 as lane tests2 reported, on its later base, with this harness still reading `children`, so
+  no planting was recorded;
+- 47 in dt-tests2-reh's journal on hbox;
+- 70 on ad785ec.
+
+What the reach rule returns has not moved. The archived posts the bridge sent as turns (its
+`turns` and `offered`, plus every post asked of the model) are the same 81 at d02c60f and at
+ad785ec, post for post. What moved is how many of the 81 the world asks about:
+
+| | d02c60f | ad785ec |
+| --- | --- | --- |
+| posts the reach rule returns | 81 | 81, the same posts |
+| asked of the model | 43 | 70 (all 43, plus 27) |
+| not asked | 38 | 11: ten spells or field lines the host reads itself, and ember's leaked draft `3mxgh25xsa227`, refused `evaluation` ("utterance exceeds its byte capacity") |
+
+The 27 are prose replies and mentions under the hubs. They reach the directory by `reply` (12),
+`mention` (4) or `fields` (6, all in the directory's own threads), or by `delivery` from a bell
+or the anthology (5). At d02c60f the directory's mention gate answered them without the model,
+because they name no door. Step 4a (922f32d) deleted the gate, because FLEX §2 sends every reached
+post that is not a spell to hob. The breakdown of the 70 by reach:
+
+| Reach | Asked |
+| --- | --- |
+| `door` (the garden) | 20 |
+| `delivery` (handed to the directory by a bell or the anthology) | 16 |
+| `reply` | 16 |
+| `fields` | 10 |
+| `mention` | 8 |
+
+So 43 can be met again only by asking fewer of the reached posts, and that contradicts FLEX §2
+as written. Two other targets are coherent:
+- 70, FLEX's "every reached non-spell", with the property `tests/test_archive.py` now asserts:
+  81 reached, none asked twice, none asked without reaching;
+- a narrower reach rule.
+
+That is the owner's call. test_archive keeps 43 as an expected failure that names the 27.
+OBJECTS-HANDOFF's open item "a handed-on reply costs a reading whatever its reach" is not the 27:
+each of the 16 `delivery` readings answers a post that did reach a card (a bell by reply address,
+or the anthology by its door word).
+
+Also seen on ad785ec, not gate items:
+- four `budget` refusals (`3mxhg4jxwsc2f`, `3mxhg5rpcfc2f`, `3mxhgjfnpds2f`, `3mxhloapnin2f`),
+  long replies whose turns ran out of ticks;
+- ember's leak refused `evaluation`;
+- ten `staleRoot` refusals, each re-run.
+
 ## Runs
 
 | | 1. First run | 2. Rerun on foundation, rehearsal unchanged | 3. Interleaved, hubs recorded | 4. Partial seeds, opener, owners | 5. Final | 6. Objects and host6 landed | 7. Restated gate | 8. Hand-on, arrival, mentions | 9. Objects5, arrival at observation | 10. Relations, offered-form words | 11. Message dialect, host-read spells, the voice |
