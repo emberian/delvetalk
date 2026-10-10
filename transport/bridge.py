@@ -151,12 +151,17 @@ def offer_drafts(state, host):
     return drafted
 
 
-def pending_observations(state):
+def all_observations(state):
     db = sqlite3.connect(Path(state) / 'observe.sqlite')
     db.executescript(SCHEMA)  # fresh state has no table yet
     rows = [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
     db.close()
-    return sorted((o for o in rows if o['kind'] in KINDS or o['replyTo']), key=lambda o: (o['createdAt'], o['uri']))
+    return rows
+
+
+def pending_observations(state, rows=None):
+    rows = all_observations(state) if rows is None else rows
+    return sorted((o for o in rows if o['kind'] in KINDS or o['replyTo'] or o['mentions']), key=lambda o: (o['createdAt'], o['uri']))
 
 
 def skipped(state):
@@ -165,6 +170,26 @@ def skipped(state):
 
 
 MAX_HOPS = 32
+MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
+
+
+def mention_turns(state, host, obs, authors):
+    """A mention is addressed to the mentioned: one turn per resolved mention (a facet's DID, or an @handle that is a
+    known author) to env/<did>.receive {text, post} under the author. Once per post; the host judges each turn."""
+    path = Path(state) / 'mentioned.txt'
+    done = set(path.read_text().split()) if path.exists() else set()
+    dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:MENTIONS]) if d))
+    if obs['uri'] in done or not dids:
+        return False
+    author = obs['author']
+    register(state, host, author['did'], author['handle'])
+    fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}}, {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
+    replies = [host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'receive',
+                          'argument': {'tag': 'record', 'fields': fields}, 'identity': f"{obs['uri']}#env:{did}"}) for did in dids]
+    if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
+        with open(path, 'a') as f:
+            f.write(obs['uri'] + '\n')
+    return True
 
 
 def route(host, obs, known=None):
@@ -247,8 +272,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         poll(Observer(state, poll.client))
     tick(host, now)
     done, failed, skip = [], [], skipped(state)
-    observed = pending_observations(state)
+    rows = all_observations(state)
+    observed = pending_observations(state, rows)
     known = {o['uri']: o for o in observed}
+    authors = {o['author']['handle'].lower(): o['author']['did'] for o in rows}  # every author seen, so an @handle resolves
+    mentioned = [obs['uri'] for obs in observed if mention_turns(state, host, obs, authors)]
     for obs in observed:
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
@@ -290,7 +318,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     published, problem = publication_drafts(state, host)
     if problem:
         failed.append({'publications': problem})
-    return {'turns': done, 'failed': failed, **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
+    return {'turns': done, 'failed': failed, **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
 def daemon(state, name, interval, step, stop=None, sleep=None):

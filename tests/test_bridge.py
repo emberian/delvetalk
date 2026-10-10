@@ -334,6 +334,41 @@ class Suspended(BridgeCase):
                 stop_hostd(d)
 
 
+class Mentions(BridgeCase):
+    GLM, KIMI = 'did:plc:' + 'b' * 24, 'did:plc:' + 'c' * 24
+
+    def facet(self, text, handle, did):
+        start = text.index('@' + handle)
+        return {'index': {'byteStart': start, 'byteEnd': start + len(handle) + 1}, 'features': [{'$type': 'app.bsky.richtext.facet#mention', 'did': did}]}
+
+    def test_a_post_mentioning_two_handles_is_a_turn_on_each_env_under_the_author(self):
+        stub = Stub()
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        text = 'hello @glm.delve.town and @kimi.delve.town'  # glm by a known author's handle, kimi by facet
+        post = mk(2, text, facets=[self.facet(text, 'kimi.delve.town', self.KIMI)])
+        self.observe([glm, post])
+        r = bridge.run(self.state, stub)
+        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
+        self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
+                         [(f'env/{d}', DID, 'receive', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
+        fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
+        self.assertEqual(fields, {'text': text, 'post': post['uri']})
+        self.assertEqual(r['mentioned'], [post['uri']])
+        before = len(stub.ops)
+        self.assertNotIn('mentioned', bridge.run(self.state, stub))  # once per post
+        self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
+
+    def test_only_the_first_four_mentions_are_addressed(self):
+        stub = Stub()
+        dids = ['did:plc:' + c * 24 for c in 'defgh']
+        text = ' '.join(f'@u{i}.delve.town' for i in range(5))
+        post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
+        self.observe([post])
+        bridge.run(self.state, stub)
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{d}' for d in dids[:4]])
+
+
 class Silence(BridgeCase):
     def test_a_turn_that_offers_nothing_has_no_draft_in_the_outbox_unless_asked(self):
         stub = Stub()
