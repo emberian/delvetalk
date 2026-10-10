@@ -79,9 +79,15 @@ class Arrive(HostCase):
                                                                   {"name": "post", "value": {"tag": "label", "value": "at://glm/post/9"}}]})
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
         self.assertEqual(r.get("offers", []), [])
+        # A post quoting a spell for another card is a mention all the same, and offers nothing.
+        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-2",
+                                argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "status: reply with\ndelvetalk garden plant / colour: silver / seed: a fern"}},
+                                                                       {"name": "post", "value": {"tag": "label", "value": "at://glm/post/10"}}]})
+        self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)
         mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
         print("--- env, read by its owner ---\n" + mine)
         self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
+        self.assertIn("mention from glm.delve.town: status: reply with", mine)
 
     def test_a_second_arrival_creates_nothing_and_a_new_handle_is_one_entry(self):
         self.arrive()

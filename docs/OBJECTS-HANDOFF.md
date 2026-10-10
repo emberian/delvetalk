@@ -120,8 +120,8 @@ the library).
 * **Link doors** (objects5): a Directory door whose `to` is nobody (genesis's STUDIO) answers
   its word with `<label>\n<description>` (the URL is in the description) and is skipped
   when field lines and the model look for forms.
-* **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner, naming
-  no Env form, is taken in as `mention` (`Event` gained `handle`, the author's as the host
+* **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner (any
+  non-empty text, never read as a spell, nothing offered) is taken in as `mention` (`Event` gained `handle`, the author's as the host
   knew it); the law admits that receive (kind 0, method receive, owner/handle/seen/
   subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>".
 * **No hash in a card** (objects5). A card or offer cites an object as `<object> v<n>`
