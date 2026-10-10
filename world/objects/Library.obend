@@ -65,33 +65,16 @@ def names(pages: Lists.List<Page>) -> String:
   textJoin(Lists.map(pages, fn(p: Page) -> String: p.name), " ")
 def missLine(state: State, said: String) -> String:
   "hob: no page called {said}. Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}; walks: {names(Lists.filter(ordered(state), isWalk))}.\n\n"
-# A card's law as the host has it (`laws`: a definition named law is a card's Bend predicate): each clause with its reading, then its expression.
+# A card's law as the host has it (`inspect` without the source): each clause with its reading,
+# then its expression.
 def laws(state: State, input: {card: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  match world.inspect({object: {world: context.world, object: input.card}, source: true}):
-    case inspected(i): Card.tell(Card.Replied.done({action: "laws"}), Document.text("LAW of {input.card}\n{lawLines(i.source, i.law)}{predicate(i.source)}"))
+  match world.inspect({object: {world: context.world, object: input.card}, source: false}):
+    case inspected(i): Card.tell(Card.Replied.done({action: "laws"}), Document.text("LAW of {input.card}\n{lawLines(i.laws)}"))
     case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the directory lists the doors.\n"))
-# The source's law lines carry their readings; a law given at creation has only the host's
-# normal form (`law NAME: EXPR`).
-def lawLines(source: String, law: String) -> String:
-  let written = lawsIn(source)
-  let lines = if Lists.length(written) == 0n then lawsIn(law) else written
-  if Lists.length(lines) == 0n then "  no law text: anyone's write by its spells, the creator's anything\n" else textJoin(Lists.map(lines, clause), "")
-def lawsIn(text: String) -> Lists.List<String>:
-  Lists.filter(splitLines(text), fn(l: String) -> Bool: Text.starts(l, "law "))
-def splitLines(text: String) -> Lists.List<String>:
-  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, "\n")), tail: splitLines(textDrop(text, textBreak(text, "\n") + 1n))})
-# `law NAME "reading": EXPR` as `  NAME: reading` and the expression under it.
-def clause(line: String) -> String:
-  let rest = textDrop(line, 4n)
-  let name = textTake(rest, textBreak(rest, " :"))
-  let after = Text.trim(textDrop(rest, textLength(name)))
-  if Text.starts(after, "\"") then readClause(name, textDrop(after, 1n)) else "  {name}\n    {Text.trim(textDrop(after, 1n))}\n"
-def readClause(name: String, quoted: String) -> String:
-  let reading = textTake(quoted, textBreak(quoted, "\""))
-  let expr = Text.trim(textDrop(quoted, textBreak(quoted, "\"") + 2n))
-  "  {name}: {reading}\n    {expr}\n"
-def predicate(source: String) -> String:
-  if Text.contains(source, "\ndef law(") then "  and a predicate in Bend (def law), after the text admits\n" else ""
+def lawLines(rows: Lists.List<World.LawRow>) -> String:
+  if Lists.length(rows) == 0n then "  no law text: anyone's write by its spells, the creator's anything\n" else textJoin(Lists.map(rows, clause), "")
+def clause(row: World.LawRow) -> String:
+  if row.reading == "" then "  {row.name}\n    {row.clause}\n" else "  {row.name}: {row.reading}\n    {row.clause}\n"
 # Only the owner shelves: a page keeps its place when shelved again.
 def shelve(state: State, input: {name: String, kind: Kind, title: String, body: String}, context: Abi.Context) -> Activity<Card.Replied>:
   if context.principal != state.owner then Card.tell(Card.Replied.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}), Document.text("Not done: Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page\n")) else shelved(extend(input, {place: placeOf(input.name, state)}))

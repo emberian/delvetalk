@@ -67,24 +67,22 @@ class Library(unittest.TestCase):
         miss = self.offer(self.spell('delvetalk library read / page: dragons'))
         self.assertTrue(miss.startswith('hob: no page called dragons. Pages: spells laws object relations protocol world; walks: .\n\nhob: six pages'), miss)
 
-    @unittest.expectedFailure
     def test_a_long_cards_law_is_shown(self):
-        # The inspect Plan hands the card's whole source to Bend, about 70 ticks a character: the
-        # record's 11,605 (and the garden's 31,879) run the turn out of its million. Host lane:
-        # the Plan's `inspected` should carry the laws with readings (HOST-HANDOFF 5.110's `laws`)
-        # instead of, or beside, the source.
+        # The inspect Plan answers the clauses with their readings and no source, so a long card's law costs no
+        # more than a short one's (the garden's source is 31,879 characters).
         law = self.offer(self.spell('delvetalk library laws / card: anthology'))
-        self.assertTrue(law.startswith('LAW of anthology\n  owner'), law)
-        self.assertIn('  kept', law)
+        self.assertTrue(law.startswith('LAW of anthology\n  owner: the owner stays;'), law)
+        self.assertIn('  kept: a line is only added; only the keeper admits\n', law)
+        self.assertTrue(self.offer(self.spell('delvetalk library laws / card: garden')).startswith('LAW of garden\n  owner: '))
 
     def test_a_cards_law_is_shown_with_its_readings(self):
         self.assertIn('no card', self.offer(self.spell('delvetalk library laws / card: nowhere')).lower())
-        # A law given at creation has no readings in the host's form: the clauses and expressions. A cistern dug in
+        # A law given at creation keeps its readings: each clause, its reading, its expression. A cistern dug in
         # the garden is a record (kind/cistern's), under the record's law.
         dug = self.host.send({'op': 'world-turn', 'principal': 'did:plc:digger', 'object': 'garden', 'method': 'cistern', 'identity': 'dig-1',
                               'argument': genesis.rec(name=genesis.lab(''))})
         self.assertEqual(dug['status'], 'admitted', dug)
-        self.assertIn('  kept\n    (((insertOnly(lines)) and (insertOnly(admitted)))', self.offer(self.spell('delvetalk library laws / card: garden/cistern/1')))
+        self.assertIn('  kept: a line is only added; only the keeper admits\n    (((insertOnly(lines)) and (insertOnly(admitted)))', self.offer(self.spell('delvetalk library laws / card: garden/cistern/1')))
 
     def test_only_the_owner_shelves(self):
         got = self.spell('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine')

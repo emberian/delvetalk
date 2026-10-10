@@ -299,14 +299,16 @@ class Wakes(Chain):
             self.deliver_all()
         self.assertIn("level 5. Pour a refusal in:", poured["offers"][0]["text"])
         self.assertEqual(self.inbox(OWNER), [(OWNER, "cistern/1.next is 5")])
-        # 21 is past the pour form's declared 1..20: the host refuses it as the spell path does (codex host 12).
-        big = self.turn("cistern", "pour", record(amount=nat(21)), principal="did:plc:zero", identity="big")
+        # A pour past the form's 280 characters is refused as the spell path refuses it (codex host 12).
+        big = self.turn("cistern/1", "pour", record(text=label("x" * 281)), principal="did:plc:zero", identity="big")
         self.assertEqual((big["status"], big["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), big)
-        self.assertIn("amount takes 1 to 20", big["receipt"]["outcome"]["reason"])
-        version = self.host.send(op="world-view", principal="ember", object="cistern")["version"]
-        drained = self.host.send(op="world-propose", principal="ember", identity="drain", roots=[{"object": "cistern", "version": version}],
-                                 writes=[{"object": "cistern", "edits": [record(entries={"tag": "variant", "label": "keep", "payload": record()},
-                                                                                level={"tag": "variant", "label": "set", "payload": record(value=nat(0))})]}])
+        self.assertIn("text takes 1 to 280", big["receipt"]["outcome"]["reason"])
+        # The level only rises: kind/cistern's law, even for the cistern's owner.
+        version = self.host.send(op="world-view", principal=OWNER, object="cistern/1")["version"]
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        drained = self.host.send(op="world-propose", principal=OWNER, identity="drain", roots=[{"object": "cistern/1", "version": version}],
+                                 writes=[{"object": "cistern/1", "edits": [record(owner=keep, keeper=keep, keeperHandle=keep, lines=keep, admitted=keep, marks=keep,
+                                                                                  next={"tag": "variant", "label": "set", "payload": record(value=nat(1))}, doors=keep)]}])
         self.assertEqual((drained["status"], drained["receipt"]["outcome"].get("clause")), ("refused", "level"), drained)
 
     # --- Tide ------------------------------------------------------------------------

@@ -121,7 +121,7 @@ LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 # cistern, whose bodies are world/bodies/<name>.obend, layers over Record.obend grafted on each instance.
 KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW, 'bell'),
-         ('cistern', 'record', '', '', RECORD_LAW, 'cistern')]
+         ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern')]
 
 
 def body_of(name):
