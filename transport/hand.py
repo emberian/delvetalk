@@ -70,7 +70,7 @@ class Hand:
         month = time.strftime('%Y-%m', time.gmtime(self.clock()))
         spent = spend.totals(self.state, month).get(month, {})
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
-        retrying = [1 for p in (self.state / 'interpretations').glob('*.json') if json.loads(p.read_text()).get('retry')]
+        retrying = [p for p in waiting if p.get('next') is not None]  # the host's backoff
         pid = self.state / 'hostd.pid'
         return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',

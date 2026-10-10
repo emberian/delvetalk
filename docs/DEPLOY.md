@@ -234,7 +234,7 @@ the post they answer, the post beside an editable textarea of the draft, with th
 draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
 (what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
-model failure leaves it pending and retried with backoff up to 8 times. Draft principals are observed, unverified DIDs.
+model failure is submitted to the host, which retries a transient one with backoff up to 8 attempts (`attempted` entries). Draft principals are observed, unverified DIDs.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
 --state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
 flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
