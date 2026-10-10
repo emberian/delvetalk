@@ -14,8 +14,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,7 +55,7 @@ SECTION10 = [(f'at://{d}/town.delve.feed.post/{k}', step) for d, k, step in [
     (_G, '3mxghgacmlc2f', '6. glm: that line belongs in the anthology'),
     (_K, '3mxghjyx4pk2f', '6. kimik3: anthology, fourth entry'),
     (_G, '3mxghjmm6zc2f', '6. glm: the guestbook line in the anthology')]]
-NOT_ADDRESSED = 'unclear: not addressed'
+NOT_ADDRESSED = 'none'  # hob's answer when the words ask nothing of the card (FLEX section 2)
 FIX = ROOT / 'rehearsal' / 'fixtures'
 
 
@@ -103,6 +104,11 @@ class Run:
         return out
 
     def start_hostd(self):
+        # HOST-HANDOFF 125: `delvetalk-obend serve` replaces hostd once the transport lane moves the programs and
+        # the opener's turns to its root socket; until then the rehearsal runs what production runs.
+        if not (ROOT / 'transport' / 'hostd.py').exists():
+            raise SystemExit('transport/hostd.py is gone: start `delvetalk-obend serve --state <state> --opener <ember>` '
+                             'here, genesis and the hubs over its root socket, and read <state>/town.journal (HOST-HANDOFF 125)')
         self.hostd = subprocess.Popen([sys.executable, '-m', 'transport.hostd', '--state', str(self.state),
                                        '--journal', str(self.state / 'world.journal'), '--opener', OWNER],
                                       cwd=ROOT, env=self.env, stderr=open(self.out / 'hostd.stderr', 'w'))
@@ -165,33 +171,50 @@ class Run:
             self.answered[item['id']] = {'uri': uri, 'raw': raw, 'utterance': item['utterance'][:200]}
         return len(listed.get('pending') or [])
 
-    def children(self, obj='garden'):
+    def field(self, obj, name):
+        """One field of an object's state as the owner views it, or None."""
         v = self.host.send({'op': 'world-view', 'principal': OWNER, 'object': obj})
-        f = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'children'), {'items': []})
-        return [next(x['value']['value'] for x in c['fields'] if x['name'] == 'object') for c in rows(f)]
+        return next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == name), None)
+
+    def made(self, kind='kind/bell'):
+        """What a kind has made, in order: its `made` rows {object, n} (Kind.obend). The garden plants through
+        kind/bell and digs through kind/cistern, so this is the planted set whatever the garden itself keeps."""
+        made = sorted(rows(self.field(kind, 'made') or {'items': []}),
+                      key=lambda m: int(next(x['value']['value'] for x in m['fields'] if x['name'] == 'n')))
+        return [next(x['value']['value'] for x in m['fields'] if x['name'] == 'object') for m in made]
 
     def record_plantings(self, posts, before):
-        """Every bell grown since `before` has its planting post (the bell's own `planting` field) recorded for
-        it, so replies to that post reach the bell by reply address. In production ember records the post that
-        answers; the rehearsal records the planting post itself, as the gate asks. Bells take {text, post}: no slot."""
-        for bell in [c for c in self.children() if c not in before]:
-            v = self.host.send({'op': 'world-view', 'principal': OWNER, 'object': bell})
-            uri = next((f['value'].get('value') for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'planting'), None)
+        """Every bell grown since `before` has its planting post recorded for it, so replies to that post reach
+        the bell by reply address. The bell's `post` (Record's made header: the reply the make came in,
+        `inputOrigin.post`) is that post. In production ember records the post that answers; the rehearsal
+        records the planting post itself, as the gate asks."""
+        for bell in [c for c in self.made() if c not in before]:
+            uri = (self.field(bell, 'post') or {}).get('value')
             if not uri:
+                self.plantings.append({'object': bell, 'uri': None, 'status': 'the bell carries no post'})
                 continue
             if uri not in posts:
                 self.plantings.append({'object': bell, 'uri': uri, 'status': 'planting post is not an archived post'})
                 continue
             post_py.reserve(self.host, 'bell:' + uri, 'delve')
             reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell, intent='bell:' + uri)
-            self.plantings.append({'object': bell, 'uri': uri, 'status': reply.get('status'), 'message': reply.get('message')})
+            self.plantings.append({'object': bell, 'uri': uri, 'status': reply.get('status'), 'message': reply.get('message'),
+                                   'createdAt': posts[uri]['record']['createdAt'], 'recordedAt': self.now})
+
+    def anthology(self):
+        """The anthology's lines (Record `lines` {author, handle, text, at, n}) and the numbers the keeper admitted."""
+        def plain(row):
+            return {f['name']: f['value'].get('value') for f in row['fields']}
+        return {'lines': sorted((plain(l) for l in rows(self.field('anthology', 'lines') or {})), key=lambda l: int(l['n'])),
+                'admitted': sorted(int(plain(a)['n']) for a in rows(self.field('anthology', 'admitted') or {}))}
 
     def window(self, window, now, texts, posts):
         """One observer poll, as production runs it: bridge, then the interpretation loop, then deliveries,
         then the clock to the end of the window."""
         self.feed(window)
         self.seen.update(p['uri'] for p in window)
-        before = self.children()
+        self.now = datetime.fromtimestamp(now, timezone.utc).isoformat()
+        before = self.made()
         sock = str(self.state / 'host.sock')
         bridged = self.program('-m', 'transport.bridge', 'run', '--once', '--mock', str(self.mock), '--state', str(self.state),
                                '--host-socket', sock, '--now', str(now), '--since', '1970-01-01T00:00:00Z', what='bridge')
@@ -267,9 +290,11 @@ def grammar_probes(out, binary):
     return results, burst, handle
 
 
-def turn_text(host, who, obj, intent, text):
+def turn_text(host, who, obj, intent, text, reach=None):
+    """A reply's turn as the bridge sends it; `reach` is the rule the bridge states for prose (HOST-HANDOFF 118):
+    without one the host answers prose `unclear: not addressed` at once and nothing is planted."""
     return host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': intent,
-                      'argument': rec(text=lab(text), post=lab(intent))})
+                      'argument': rec(text=lab(text), post=lab(intent)), **({'reach': reach} if reach else {})})
 
 
 def burst_probe(host, n=9):
@@ -281,7 +306,7 @@ def burst_probe(host, n=9):
     said = {f'could you plant me a silver fern that remembers hour {i}?': i for i in range(n)}
     first = []
     for (text, i) in said.items():
-        r = turn_text(host, who[i], 'garden', intent[i], text)
+        r = turn_text(host, who[i], 'garden', intent[i], text, reach='mention')
         first.append({'i': i, 'status': r.get('status'), 'class': ((r.get('receipt') or {}).get('outcome') or {}).get('class'),
                       'reason': ((r.get('receipt') or {}).get('outcome') or {}).get('reason') or r.get('message')})
     settled, retried = [], []
@@ -299,13 +324,14 @@ def burst_probe(host, n=9):
             break
         for f in again:
             retried.append(f['i'])
-            r = turn_text(host, who[f['i']], 'garden', intent[f['i']], next(t for t, j in said.items() if j == f['i']))
+            r = turn_text(host, who[f['i']], 'garden', intent[f['i']], next(t for t, j in said.items() if j == f['i']), reach='mention')
             f['retry'] = r.get('status')
     final = []
     for i in range(n):
         rc = host.send({'op': 'world-receipt', 'principal': who[i], 'identity': intent[i]}).get('receipt') or {}
         offers = host.send({'op': 'world-offers', 'principal': who[i]}).get('offers') or []
         final.append({'i': i, 'outcome': (rc.get('outcome') or {}).get('tag'), 'class': (rc.get('outcome') or {}).get('class'),
+                      'wrote': [w.get('object') for w in (rc.get('outcome') or {}).get('writes') or []],
                       'offer': offers[-1]['text'] if offers else None})
     return {'first': first, 'settled': settled, 'retried': retried, 'final': final}
 
@@ -318,6 +344,125 @@ def handle_probe(host):
     offer = '\n'.join(o.get('text') or '' for o in r.get('offers') or [])
     return {'recorded': recorded.get('status') or recorded.get('message'), 'status': r.get('status'), 'offer': offer,
             'showsHandle': handle in offer, 'showsFragment': did.split(':')[-1] in offer}
+
+
+class Opened:
+    """One host process holding one journal, opened as `world-open` opens it; its reply (with the
+    snapshot report) is kept. Nothing here is the rehearsal's own journal: every path is a copy."""
+
+    def __init__(self, binary, journal, verify=False):
+        self.err = tempfile.TemporaryFile(mode='w+')
+        self.proc = subprocess.Popen([binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err, text=True, bufsize=1)
+        started = time.time()
+        self.opened = self.send({'op': 'world-open', 'path': str(journal), 'clock': 'transport', 'sync': 'none',
+                                 **({'verify': True} if verify else {})})
+        self.seconds = round(time.time() - started, 2)
+
+    def send(self, request):
+        self.proc.stdin.write(json.dumps(request) + '\n')
+        self.proc.stdin.flush()
+        return json.loads(self.proc.stdout.readline() or 'null') or {'status': 'error', 'message': 'the host closed its output'}
+
+    def close(self):
+        """Ends the process; answers what it wrote to stderr (a Lean PANIC is printed there and the op goes on)."""
+        self.proc.stdin.close()
+        self.proc.wait(timeout=120)
+        self.err.seek(0)
+        return self.err.read()
+
+
+def world_state(host):
+    """Everything a reopen must reproduce: height, head, clock, objects, posts, pending deliveries and
+    interpretations, and for every object every version's state CID (the current one computed from the
+    store, the earlier ones from the journal's index the open rebuilt), its pin, law and law readings."""
+    status = host.send({'op': 'world-status'})
+    ids, after = [], ''
+    while True:
+        got = host.send({'op': 'world-objects', 'principal': OWNER, 'after': after})
+        ids += got.get('ids') or []
+        if not got.get('more'):
+            break
+        after = ids[-1]
+    cids = {}
+    for i in ids:
+        v = host.send({'op': 'world-view', 'principal': OWNER, 'object': i})
+        if v.get('version') is None:
+            cids[i] = v.get('status')
+            continue
+        record = host.send({'op': 'world-object', 'principal': OWNER, 'object': i}).get('record') or {}
+        cids[i] = {'cids': [host.send({'op': 'world-state-cid', 'principal': OWNER, 'object': i, 'version': n}).get('cid')
+                            for n in range(v['version'] + 1)],
+                   **{k: record.get(k) for k in ('pin', 'law', 'readings')}}
+    return {'status': {k: status.get(k) for k in ('height', 'head', 'clock', 'objects', 'posts', 'postQuota')},
+            'pending': host.send({'op': 'world-pending'}).get('count'),
+            'interpretations': len(host.send({'op': 'world-interpretations'}).get('pending') or []),
+            'cids': cids}
+
+
+def snapshot_replay(out, binary, cuts=4):
+    """Replay from a snapshot, against the straight replay of the same journal (REPORT run 11 item 7). A copy
+    of the journal is reopened with no snapshot (every entry replayed), then with the run's own snapshots,
+    then once per cut: the journal's first `height` lines are opened, `world-snapshot` writes
+    `<journal>.snapshot.<height>.cbor`, the whole journal is put back beside it, and the reopen resumes
+    from that snapshot and replays the tail. Each reopen must report the snapshot it resumed, refuse none,
+    and hold the straight replay's height, head, clock, posts, pending work and every object's state CID
+    at every version. Last, `world-open {verify: true}` replays everything and checks each snapshot."""
+    src = out / 'state' / 'world.journal'
+    lines = src.read_bytes().splitlines(keepends=True)
+    base = out / 'snapshot'
+    shutil.rmtree(base, ignore_errors=True)
+
+    def reopen(name, prefix=None, snapshots=(), verify=False):
+        d = base / name
+        d.mkdir(parents=True)
+        j = d / 'world.journal'
+        snapped = None
+        stderr = ''
+        if prefix:
+            j.write_bytes(b''.join(lines[:prefix]))
+            h = Opened(binary, j)
+            snapped = dict(h.send({'op': 'world-snapshot'}), openedAt=h.opened.get('height'))
+            stderr += h.close()
+        for f in snapshots:
+            shutil.copy(f, d / f.name)
+        j.write_bytes(b''.join(lines))
+        h = Opened(binary, j, verify=verify)
+        try:
+            got = {'opened': h.opened.get('status'), 'snapshot': h.opened.get('snapshot'), 'seconds': h.seconds,
+                   'written': snapped, 'state': world_state(h) if h.opened.get('status') == 'opened' else h.opened}
+        finally:
+            stderr += h.close()
+        return dict(got, stderr=stderr.strip()[:300])
+
+    straight = reopen('straight')
+    own = sorted((out / 'state').glob('world.journal.snapshot.*.cbor'))
+    cases = {'run': reopen('run', snapshots=own)} if own else {}
+    for k in range(1, cuts + 1):
+        at = len(lines) * k // (cuts + 1)
+        cases[f'cut{at}'] = reopen(f'cut{at}', prefix=at)
+    # And one cut inside a settling: between two deliveries in a row that one post caused, as a crash between
+    # two appends of one durable write leaves it. The open finishes the settling; it must append the entries
+    # the run wrote, and the snapshot it writes then is at the settling's end.
+    entries = [json.loads(l) for l in lines]
+    origin = lambda e: ((e.get('delivery') or {}).get('from') or {}).get('intent')
+    inside = next((i for i in range(2, len(entries)) if origin(entries[i]) and origin(entries[i]) == origin(entries[i - 1])), None)
+    if inside:
+        cases[f'settling{inside}'] = reopen(f'settling{inside}', prefix=inside)
+    cases['verify'] = reopen('verify', snapshots=own + sorted(base.glob('cut*/world.journal.snapshot.*.cbor'))[-2:], verify=True)
+    report = {'height': len(lines), 'straight': {k: straight[k] for k in ('opened', 'snapshot', 'seconds', 'stderr')}, 'cases': {}}
+    for name, c in cases.items():
+        same = c['state'] == straight['state']
+        theirs = (c['state'] or {}).get('cids', {})
+        diff = [] if same else sorted(
+            f"{i}: {', '.join(k for k in ('cids', 'pin', 'law', 'readings') if (straight['state']['cids'].get(i) or {}).get(k) != (theirs.get(i) or {}).get(k))}"
+            for i in set(straight['state']['cids']) | set(theirs) if straight['state']['cids'].get(i) != theirs.get(i))[:40]
+        report['cases'][name] = {'opened': c['opened'], 'snapshot': c['snapshot'], 'seconds': c['seconds'], 'stderr': c['stderr'],
+                                 'written': c['written'], 'same': same, 'differs': diff,
+                                 'status': None if same else {'straight': straight['state']['status'], 'this': (c['state'] or {}).get('status')}}
+    report['objects'] = len(straight['state']['cids'])
+    report['versions'] = sum(len(v['cids']) for v in straight['state']['cids'].values() if isinstance(v, dict))
+    shutil.rmtree(base, ignore_errors=True)
+    return report
 
 
 def journal_stats(path):
@@ -402,13 +547,16 @@ def main(argv=None):
             envs.append((len(rows(buf)), 'env/' + d, h))
         envs.sort(key=lambda e: -e[0])
         results['envs'] = envs
+        bells, cisterns = r.made('kind/bell'), r.made('kind/cistern')
+        results['made'] = {'kind/bell': bells, 'kind/cistern': cisterns}
+        results['anthology'] = r.anthology()
         views = {}
-        for obj in ['garden', 'anthology', 'cistern', 'garden/cistern'] + r.children():
+        for obj in ['garden', 'anthology', 'kinds', 'kind/bell', 'kind/cistern'] + cisterns + bells:
             v = r.host.send({'op': 'world-view', 'principal': OWNER, 'object': obj})
             views[obj] = {'version': v.get('version'), 'state': v.get('state'), 'status': v.get('status')}
         results['views'] = views
         results['cards'] = {}
-        for obj in ('directory', 'garden', 'tide', envs[0][1], 'policy', 'workshop', 'anthology', *r.children()):
+        for obj in ('directory', 'garden', 'kinds', 'kind/bell', 'tide', envs[0][1], 'policy', 'workshop', 'anthology', *cisterns, *bells):
             c = r.host.send({'op': 'world-card', 'principal': OWNER, 'object': obj})
             results['cards'][obj] = {'status': c.get('status'), 'text': c.get('text'), 'clause': c.get('clause'),
                                      'chars': len(c.get('text') or '')}
@@ -418,6 +566,8 @@ def main(argv=None):
         for principal in sorted({e['identity']['principal'] for e in map(json.loads, open(r.state / 'world.journal')) if 'identity' in e}):
             got = r.host.send({'op': 'world-offers', 'principal': principal})
             for o in got.get('offers') or []:
+                if (o.get('identity') or {}).get('intent') not in by_uri:
+                    continue  # genesis's own turns (makes, shelving) answer no post, so nothing is drafted for them
                 held.append({'principal': principal, 'height': o['height'], 'intent': (o.get('identity') or {}).get('intent'),
                              'drafted': o['height'] in drafted, 'text': o.get('text')})
             if got.get('publications'):
@@ -426,6 +576,7 @@ def main(argv=None):
     finally:
         r.stop_hostd()
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
+    results['snapshotReplay'] = snapshot_replay(r.out, str(Path(a.binary).resolve()))
     entries, tags, classes, reasons = journal_stats(r.state / 'world.journal')
     results['journal'] = {'height': len(entries), 'bytes': (r.state / 'world.journal').stat().st_size,
                           'sha256': __import__('hashlib').sha256((r.state / 'world.journal').read_bytes()).hexdigest(),
@@ -457,6 +608,15 @@ def main(argv=None):
             v = o.get('verdict') or {}
             verdicts[v.get('tag', '?') + (': ' + '; '.join(v.get('needs') or []) if v.get('needs') else '')] += 1
     results['verdicts'] = dict(verdicts)
+    # What the reach rule returned (transport/bridge.py `route`): every archived post the bridge sent as a turn,
+    # whatever its outcome, with the card it reached first; and which of them the model was asked about.
+    reached = {}
+    for e in entries:
+        intent = (e.get('identity') or {}).get('intent') or ''
+        if 'delivery' not in e and intent in by_uri and (e.get('outcome') or {}).get('tag') in ('admitted', 'refused', 'suspended'):
+            reached.setdefault(intent, ((e.get('roots') or [{}])[0]).get('object'))
+    results['reached'] = reached
+    results['asked'] = dict(collections.Counter(a['uri'] for a in r.answered.values()))
     gate = []
     for uri, step in SECTION10:
         # The post's own turns, and the turns a card handed it on to (a delivery whose origin is the post).
