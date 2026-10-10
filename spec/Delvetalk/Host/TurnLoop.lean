@@ -792,7 +792,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let writes := if s.writes.any (·.1 == self) then s.writes.map fun (k, ws) => if k == self then (k, ws ++ [staged]) else (k, ws)
       else s.writes ++ [(self, [staged])]
     let w := warmLaws s.world (writes.map (·.1))
-    modify fun s => { s with world := { s.world with compiled := w.compiled } }
+    modify fun s => { s with world := s.world.withCachesOf w }
     let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
                           programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
                           creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
@@ -1130,7 +1130,7 @@ def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
 def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
     Except String (World × Json) := do
-  let w := { w with compiled := st.world.compiled, programs := st.world.programs, builds := st.world.builds }
+  let w := w.withCachesOf st.world
   let used := ctx.usedBefore + (ctx.ticksStart - st.ticks)
   let proposal : Proposal :=
     { principal := ctx.principal
@@ -1645,21 +1645,24 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("forms", dataJson (listData (methodForms id o.methods)))]
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
-def cardOp (w : World) (j : Json) : Except String Json := do
+def cardOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← readerOf j
   let id := resolveCard principal (← j.getObjValAs? String "object")
   match w.objects[id]? with
-  | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  | none => return (w, Json.mkObj [("status", toJson "unknown"), ("object", toJson id)])
   | some o =>
-    if !o.read.permits principal then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+    if !o.read.permits principal then return (w, Json.mkObj [("status", toJson "denied"), ("object", toJson id)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match ((renderCard o (cardContext w id principal "" "" w.height)).run.run init).1 with
+    let (r, st) := (renderCard o (cardContext w id principal "" "" w.height)).run.run init
+    -- The render definition compiled here stays compiled for the next read.
+    let w := w.withCachesOf st.world
+    match r with
     | .ok (.ok document) =>
-      return Json.mkObj [("status", toJson "card"), ("object", toJson id),
-        ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)]
-    | .ok (.error clause) => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)]
-    | .error _ => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")]
+      return (w, Json.mkObj [("status", toJson "card"), ("object", toJson id),
+        ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)])
+    | .ok (.error clause) => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)])
+    | .error _ => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")])
 
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
@@ -1764,7 +1767,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   let (r2, st2) := ((compiledMethod obj suspendedMethod).run.run (scratchState w))
   let suspended ← match r2 with | .ok c => pure c | .error e => throw (abortText e)
   let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
-  let w := { w with compiled := st2.world.compiled }
+  let w := w.withCachesOf st2.world
   let some method := (json.getObjValAs? String "method").toOption
     | match raw with
       | some text =>
@@ -1780,7 +1783,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   if !actions.isEmpty && !actions.contains method then
     return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
-  let w := { w with compiled := st.world.compiled }
+  let w := w.withCachesOf st.world
   let compiledM ← match r with
     | .ok c => pure c
     | .error e => return (w, unclearVerdict [s!"{method} is not a method of the object: {abortText e}"])

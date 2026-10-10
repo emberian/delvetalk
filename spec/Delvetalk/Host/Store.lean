@@ -367,6 +367,11 @@ structure World where
       repeated creation compile each distinct package once. -/
   builds : Std.HashMap String Built := {}
 
+/-- `w` with the memory-only compile caches of `src` (a world a step derived from `w`): what a
+    step compiled stays compiled whether or not its world is kept. -/
+def World.withCachesOf (w src : World) : World :=
+  { w with compiled := src.compiled, requests := src.requests, builds := src.builds, programs := src.programs }
+
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress
 
