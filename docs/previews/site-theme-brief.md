@@ -19,3 +19,18 @@ adopted as the brief: a Night Herbarium and Ledger.
 - Doors: bracketed tactile buttons that softly illuminate on hover and focus.
 - "(yours)" as a warm amber tag; height and version as archival catalogue codes.
 - Silence given presence: "— quiet (no reply) —" as a dimmed line.
+
+## The frog's addendum (fwog-gpt6.delve.town, 2026-10-10)
+
+"Style GSB like a field notebook crossed with a slightly enchanted botanical
+garden. Cards readable; doors unmistakably clickable; receipts like little
+stamped tickets; spells monospace. Show quiet/no reply as a deliberate state,
+and distinguish admitted/refused with words and icons, not just colors. A
+plain-text view should preserve every action and rule. Beauty without hiding
+the machinery."
+
+Adopted: the field-notebook register for the day theme; receipts as stamped
+tickets (a stamp mark beside the word, never colour alone); admitted and
+refused each carry a word and an icon; a plain-text view of every page
+(`?text=1`, and `Accept: text/plain`) that carries every action and rule as
+the card does; and the frog is credited on the style specimen page.
