@@ -30,6 +30,35 @@ class Reads(Reflection):
             self.assertEqual(self.host.send(op="world-view", principal=who, object="vault")["status"], "denied", who)
             self.assertEqual(self.host.send(op="world-history", principal=who, object="c")["status"], "history", who)
 
+    def test_an_entry_by_hash_with_its_bytes_only_for_its_own_principal(self):
+        from tests.wire import cid_of
+        bumped = self.turn("c", "bump", principal="ann", identity="b1")["receipt"]
+        mine = self.host.send(op="world-entry", principal="ann", hash=bumped["hash"], bytes=True)
+        self.assertEqual((mine["status"], mine["receipt"]["hash"], mine["receipt"]["slug"]), ("receipt", bumped["hash"], bumped["slug"]))
+        body = {k: v for k, v in bumped.items() if k not in ("hash", "slug")}
+        canonical = self.host.send(op="canonical-encode", json=body)
+        self.assertEqual(mine["bytes"], canonical["hex"])
+        self.assertEqual(canonical["cid"], bumped["hash"])
+        theirs = self.host.send(op="world-entry", principal="anonymous", hash=bumped["hash"], bytes=True)
+        self.assertNotIn("bytes", theirs)
+        self.assertIn("elided", theirs["receipt"])
+        self.assertEqual(self.host.send(op="world-entry", principal="ann", hash="bafy-nothing")["status"], "unknown")
+
+    def test_entries_page_forward_and_back_without_skipping_or_repeating(self):
+        for i in range(5):
+            self.turn("c", "bump", identity=f"p{i}")
+        height = self.host.send(op="world-status")["height"]
+        seen, after = [], 0
+        while True:
+            page = self.host.send(op="world-entries", principal="anonymous", after=after, limit=3)
+            seen += [e["height"] for e in page["entries"]]
+            if not page["more"]:
+                break
+            after = seen[-1]
+        self.assertEqual(seen, list(range(1, height + 1)))
+        back = self.host.send(op="world-entries", principal="anonymous", reverse=True, before=height, limit=2)
+        self.assertEqual(([e["height"] for e in back["entries"]], back["more"]), ([height - 1, height - 2], True))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2423,6 +2423,48 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
          (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
        ("elided", toJson elided)])
 
+/-- A page of `(height, item)` pairs, ascending by height: after `after` (exclusive), or with
+    `reverse: true` descending below `before` (exclusive; from the newest when absent); at most `limit`
+    (1..100, default 100). The items and whether more follow. -/
+def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array Json × Bool) := do
+  let limit := (← optNat j "limit").getD Limits.maxHistoryLimit
+  if limit == 0 || limit > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
+  let reverse ← match j.getObjVal? "reverse" with
+    | .ok (.bool b) => pure b
+    | .ok _ => throw "reverse must be true or false"
+    | .error _ => pure false
+  let chosen ← if reverse then do
+      let before ← optNat j "before"
+      pure (items.reverse.filter fun (h, _) => before.all (h < ·))
+    else do
+      let after := (← optNat j "after").getD 0
+      pure (items.filter fun (h, _) => h > after)
+  return ((chosen.extract 0 limit).map (·.2), decide (chosen.size > limit))
+
+/-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it
+    (`projectEntry`), and with `bytes: true` the lowercase hex of its canonical DAG-CBOR without `hash`
+    when the reader sees it whole (the identity's own principal); `unknown` otherwise. -/
+def entryOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let hash ← j.getObjValAs? String "hash"
+  let some entry := w.entries.find? fun e => (e.getObjValAs? String "hash").toOption == some hash
+    | return Json.mkObj [("status", toJson "unknown"), ("message", toJson s!"unknown: no entry here is {hash}")]
+  let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+  let whole := owner == reader && !reader.isEmpty
+  let bytes ← if whole && (j.getObjValAs? Bool "bytes").toOption == some true then do
+      let fields := ((entry.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "hash")
+      pure [("bytes", toJson (Delvetalk.Canonical.hex (← Delvetalk.Canonical.encodeJson (Json.mkObj fields))))]
+    else pure []
+  return Json.mkObj ([("status", toJson "receipt"), ("receipt", projectEntry w reader entry)] ++ bytes)
+
+/-- `world-entries {principal, after?, before?, reverse?, limit?}`: every entry, each as the reader may
+    see it, paged by height (`pageByHeight`). -/
+def entriesOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let (shown, more) ← pageByHeight j (w.entries.zipIdx.map fun (e, i) => (i + 1, e))
+  return Json.mkObj [("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader))),
+    ("more", toJson more)]
+
 /-- Everything a slug may name, as `(cid, kind)`: every entry's hash (`receipt`); every pin an
     entry gave an object `reader` may view (`pin`); the state CIDs the journal names for such an
     object: a created seed, a write's `cid` (`state`). -/

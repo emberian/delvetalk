@@ -675,7 +675,11 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 42. **The repository façade's reads (host7; docs/REPO.md "Host ops").** One public reader: every read op takes its
    principal through `readerOf`, which accepts 1..128 bytes, `anonymous` or "", the last two read as "" (public objects
    only); `world-objects`, `world-view`, `world-inspect`, `world-card`, `world-offers`, `world-check`, `world-state-cid`
-   and `world-resolve` used to refuse "". Test: `tests/test_reads.py`.
+   and `world-resolve` used to refuse "". `world-entry {principal, hash, bytes?}` (`entryOp`) answers `{status: "receipt",
+   receipt}` as `projectEntry` shows it to the reader, plus `bytes` (hex of the entry's canonical DAG-CBOR without
+   `hash`, whose CID is the hash) only for the identity's own principal; `unknown` otherwise. `world-entries {principal,
+   after?, before?, reverse?, limit?}` (`entriesOp`) pages every entry by height (`pageByHeight`: ascending after
+   `after`, or descending below `before` with `reverse`; `limit` 1..100). Test: `tests/test_reads.py`.
 
 ## 6. Gotchas
 

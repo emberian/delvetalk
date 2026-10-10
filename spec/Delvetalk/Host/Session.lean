@@ -265,6 +265,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-state-cid" => return (session, stateCidOp s.world request)
       | "world-fork" => return (session, ← forkWorld s request)
       | "world-resolve" => return (session, resolveOp s.world request)
+      | "world-entry" => return (session, entryOp s.world request)
+      | "world-entries" => return (session, entriesOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
