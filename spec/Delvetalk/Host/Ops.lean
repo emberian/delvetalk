@@ -2739,18 +2739,14 @@ def pagePosts (w : World) : Std.HashMap String (Nat × String) :=
     | some (h, _) => if h ≥ p.height then m else m.insert key (p.height, uri)
     | none => m.insert key (p.height, uri)
 
-/-- `world-publications {principal, after?}`: the publications admitted turns retained, for the
-    publisher (the clock principal, else "transport"; anyone else is `denied`), oldest first after
-    journal height `after`, one page: `{height, ordinal, id, object, page, section, body}`, and
+/-- `world-publications {principal, after?, before?, reverse?, limit?}`: the publications admitted turns
+    retained, for every reader (a publication is posted publicly), paged by height (`pageByHeight`):
+    `{height, ordinal, id, object, page, section, body, hash}` (`hash` the retaining entry's), and
     `replyTo` for a section edit when a post of its whole page is recorded (the newest). -/
 def publicationsOp (w : World) (j : Json) : Except String Json := do
-  let principal ← readerOf j
-  let after := (← optNat j "after").getD 0
-  if principal != publisher w then return Json.mkObj [("status", toJson "denied")]
-  let all := w.published.filter fun (index, _) => index + 1 > after
-  let shown := all.extract 0 Limits.maxHistoryLimit
+  discard <| readerOf j
   let posts := pagePosts w
-  let items := shown.filterMap fun (index, i) => do
+  let items := w.published.filterMap fun (index, i) => do
     let entry ← w.entries[index]?
     let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
     let field := fun (k : String) => (p.getObjValAs? String k).toOption
@@ -2764,10 +2760,11 @@ def publicationsOp (w : World) (j : Json) : Except String Json := do
       match posts[identityKey object title]? with
       | some (_, uri) => [("replyTo", toJson uri)]
       | none => []
-    pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
+    pure (index + 1, Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
       ("id", (p.getObjVal? "id").toOption.getD Json.null), ("object", toJson object), ("page", toJson title),
-      ("section", toJson part), ("body", toJson body)] ++ replyTo))
-  return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr items),
-    ("more", toJson (decide (all.size > shown.size)))]
+      ("section", toJson part), ("body", toJson body),
+      ("hash", (entry.getObjVal? "hash").toOption.getD Json.null)] ++ replyTo))
+  let (shown, more) ← pageByHeight j items
+  return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr shown), ("more", toJson more)]
 
 end Delvetalk.Host

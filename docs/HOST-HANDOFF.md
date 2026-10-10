@@ -329,8 +329,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `refused {clause: title}`). The page is the object's: `page` "" means the object id. The admitted entry
    retains `publishes [{id, object, page, section, text}]` with the agentwiki text (`wiki: Title\n\nbody`, or
    `edit: Title › Section\n\nbody`); `world-offers` for the publisher (the clock principal, else "transport")
-   adds `publications`. `world-publications {principal, after?}` (the publisher only; anyone else `denied`) answers
-   `{status: "publications", publications [{height, ordinal, id, object, page, section, body, replyTo?}], more}`;
+   adds `publications`. `world-publications {principal, after?, before?, reverse?, limit?}` (every reader, host7; paged as
+   `world-entries`) answers `{status: "publications", publications [{height, ordinal, id, object, page, section, body, hash,
+   replyTo?}], more}` (`hash` the retaining entry's);
    `replyTo` is, for a section edit, the newest recorded post of that object's whole page (`pagePosts`). The
    bridge (`publication_drafts`, cursor `<state>/publications.after`) writes each as an outbox draft
    `<height>-pub-<id>.json` `{publication {id, height, object}, page, section, replyTo, text, posted: false}`,
