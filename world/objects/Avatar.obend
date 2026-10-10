@@ -321,11 +321,11 @@ def doors(asked: Asked, words: Lists.List<String>, context: Abi.Context, state: 
     case nil(_): answered(asked.input, context, state)
     case cons(c): doorNamed(asked, {world: context.world, object: bare(c.head)}, c.tail, context, state)
 def doorNamed(asked: Asked, door: Plans.Reference, after: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  match world.inspect({object: door}):
+  match world.inspect({object: door, source: false}):
     case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == asked.action) then sending(asked, door, after, i.methods) else doors(asked, after, context, state)
     case _: doors(asked, after, context, state)
 def acting(asked: Asked, object: Plans.Reference, after: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  match world.inspect({object: object}):
+  match world.inspect({object: object, source: false}):
     case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == asked.action) then sending(asked, object, after, i.methods) else Card.tell(Card.Replied.refused({clause: "noAction", reading: "{object.object} does not take {asked.action}"}), Document.text("{object.object} does not take {asked.action}.\n"))
     case _: answered(asked.input, context, state)
 # The form as a spell sent to the object's receive, under the speaker; its card answers.

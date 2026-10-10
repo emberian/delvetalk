@@ -83,10 +83,18 @@ def note(context: Abi.Context, n: Nat, text: String) -> Activity<String>:
   match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n}), seen: Plans.Edit::<String, {}>.set({value: text})})):
     case _: text
 def inspectIt(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
-  match world.inspect({object: {world: "", object: input.target}}):
+  match world.inspect({object: {world: "", object: input.target}, source: true}):
     case inspected(i): note(context, 0n, i.source)
     case denied(_): note(context, 0n, "denied")
     case _: note(context, 0n, "other")
+def glanceIt(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.inspect({object: {world: "", object: input.target}, source: false}):
+    case inspected(i): note(context, 0n, "[{i.source}] {lawsText(i.laws)} offered {commas(i.offered)}")
+    case _: note(context, 0n, "other")
+def lawsText(rows: Lists.List<World.LawRow>) -> String:
+  textJoin(Lists.map(rows, fn(r: World.LawRow) -> String: "{r.name}={r.reading}"), ";")
+def commas(names: Lists.List<String>) -> String:
+  textJoin(names, ",")
 def checkIt(state: State, input: {package: String}, context: Abi.Context) -> Activity<String>:
   match world.check({package: input.package}):
     case checked(c): first(context, c.diagnostics)
@@ -274,7 +282,7 @@ class Inspect(Reflection):
         self.make("probe", PROBE, probe_seed())
 
     def test_the_creator_inspects_pin_law_and_entry_source_and_a_stranger_is_denied(self):
-        mine = self.host.send(op="world-inspect", principal="ember", object="secret")
+        mine = self.host.send(op="world-inspect", principal="ember", object="secret", source=True)
         self.assertEqual(mine["status"], "inspected", mine)
         self.assertEqual(mine["source"], PACKAGE)
         self.assertRegex(mine["pin"], r"^bafyrei[a-z2-7]{52}$")  # CIDv1, dag-cbor, sha2-256
@@ -283,6 +291,20 @@ class Inspect(Reflection):
         self.assertEqual(stranger["status"], "denied")
         self.assertNotIn("source", stranger)
         self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="ghost")["status"], "unknown")
+
+    def test_the_inspect_plan_without_the_source_answers_the_laws_and_what_the_reader_is_offered(self):
+        # The rewrite lane: the library's laws page read the whole source and ran out of ticks; a card's
+        # usage listed every form. `source: false` answers "" for the source, the clauses with their
+        # readings, and the actions offered to the turn's principal (`offeredTo`).
+        mine = self.turn("probe", "glanceIt", record(target=label("secret")))
+        self.assertEqual(mine["status"], "admitted", mine)
+        said = mine["result"]["value"]
+        self.assertTrue(said.startswith("[] owner="), said)
+        self.assertIn(" offered ", said)
+        kim = self.turn("probe", "glanceIt", record(target=label("probe")), principal="kim")
+        offered = kim["result"]["value"].split(" offered ")[1].split(",")
+        forms = self.host.send(op="world-inspect", principal="kim", object="probe")["forms"]
+        self.assertEqual(offered, [next(x["value"]["value"] for x in f["fields"] if x["name"] == "action") for f in forms["items"]] or [""], kim)
 
     def test_the_inspect_plan_answers_under_the_turns_principal(self):
         mine = self.turn("probe", "inspectIt", record(target=label("secret")))

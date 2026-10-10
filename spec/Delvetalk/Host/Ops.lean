@@ -3452,6 +3452,12 @@ def lawClauses (text : String) : List (String × Option String × String) :=
     let expr ← after.dropPrefix? ":"
     return (name, reading, expr.toString.trimAscii.toString)
 
+/-- The law's clauses as `(name, expression, reading)`, the reading the law text gives, else the
+    package's while its clause stands ("" for none): the `inspect` Plan's `laws`. -/
+def lawRowsOf (o : Object) : List (String × String × String) :=
+  (lawClauses o.lawText).map fun (name, reading, expr) =>
+    (name, expr, ((reading.orElse fun _ => o.readings.lookup name)).getD "")
+
 /-- An object's law as clauses with their readings, every kind of law text alike: a reading the
     text gives, else the one the package gave the clause while it stands (`Object.readings`). What
     `world-inspect` answers as `laws` and the library's `law {card}` page reads. -/

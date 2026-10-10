@@ -1527,12 +1527,21 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | some o =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord]
       else
-        let shown := [("pin", Data.label o.pin), ("law", .label o.lawText), ("source", .label (entrySource o))]
+        -- `source: false` answers "" for the source (a long one costs a reader ticks it never needs).
+        let withSource := match f.lookup "source" with
+          | some (.boolean b) => b
+          | _ => true
+        let shown := [("pin", Data.label o.pin), ("law", .label o.lawText), ("source", .label (if withSource then entrySource o else ""))]
         let id := ((f.lookup "object").bind referenceId).getD ""
         -- What the turn learnt (pin, law, source) is the object's now: a root (codex host 11).
         recordRoot id o.version
+        let offered := (← formsOf id o).filter (offeredTo s.world id o s.subject <| formAction ·)
+        let methods := ("methods", listData offered)
+        -- The clauses with their readings, and the actions offered to the asking principal.
+        let laws := ("laws", listData (lawRowsOf o |>.map fun (n, c, r) => .record [("name", .label n), ("clause", .label c), ("reading", .label r)]))
+        let names := ("offered", listData (offered.map (Data.label ∘ formAction)))
         respond bounds responseType "inspected"
-          [.record (shown ++ [("methods", listData ((← formsOf id o).filter (offeredTo s.world id o s.subject <| formAction ·)))]), .record shown]
+          [.record (shown ++ [methods, laws, names]), .record (shown ++ [methods]), .record shown]
   | .variant "objects" (.record f) =>
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
     let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"
@@ -2740,10 +2749,12 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
   | some o =>
     if !o.read.permits principal then
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+    -- The source only when asked for: the library and every reader that wants the laws, forms and
+    -- methods never pay for it.
     let withSource ← match j.getObjVal? "source" with
       | .ok (.bool b) => pure b
       | .ok _ => throw "source must be true or false"
-      | .error _ => pure true
+      | .error _ => pure false
     return Json.mkObj ([("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText),
       -- The law's clauses with their readings, and whether a Bend `law(old, new, request)` judges after it.
@@ -2753,6 +2764,8 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       -- Its size against `Limits.maxStateBytes`, as the host counts it (`stateBytes`).
       ("stateBytes", toJson (stateBytes o.state)),
       ("forms", dataJson (listData ((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)))),
+      -- The actions the reader is offered, by name (what a card's usage lists for them).
+      ("offered", toJson (((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)).map formAction)),
       -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
       ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)])) |> fun r =>
