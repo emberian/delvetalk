@@ -178,6 +178,15 @@ def whispered(state: State, to: String, line: String, context: Abi.Context) -> A
   match Lists.find(Relations.rows(state.present), fn(p: Plans.Reference) -> Bool: p.object == to || Card.handle(p.object) == to):
     case some(p): told(Lists.List.cons({head: p.value, tail: Lists.List.nil()}), "{speaker(context)} whispers: {line}\n", "whisper")
     case none(_): Card.tell(Card.Reply.refused({clause: "notHere", reading: "{to} is not here."}), Document.text("Not done: {to} is not here.\n"))
+# Derived views (FOUNDATION §16, `viewDerived {object, view}`): pure definitions of the state
+# and the reader's context that another object may ask for by name.
+def views() -> Lists.List<String>:
+  Lists.List.cons({head: "affordances", tail: Lists.List.nil({})})
+# What can be done here, as spells: this room's own forms, then for each thing lying here
+# taking it (a thing acquires itself into the taker's hands), then each exit as the reader's
+# avatar's move (an avatar's id is its principal's DID).
+def affordances(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Document.Documents.cons({head: Card.usage(context.object, forms()), tail: Lists.concat(Lists.map(Relations.rows(state.things), fn(t: Plans.Reference) -> Document.Document: Document.text("\n    delvetalk {t.object} acquire\n")), Lists.map(state.exits, fn(e: Exit) -> Document.Document: Document.text("\n    delvetalk {context.principal} move\n    exit: {e.label}\n")))})})
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:

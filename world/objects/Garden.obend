@@ -20,26 +20,30 @@ record Pending:
   needs: Lists.List<String>
 # children: the bells planted here, keyed {object}: a bell's id is garden/bell/<n> with n
 # minted in order, and a text key sorts by length and then by bytes, so key order is the
-# order of planting.
+# order of planting. A child row keeps the bell's colour, which the `byColour` view counts.
 # confirmFor: the actions whose proposals understood from prose wait for "yes" here, beside
 # the policy's own confirmFor (either asking is enough); empty by default, so a planting
 # understood from prose plants and the receipt is the answer.
 # owner: the human who owns the garden's wiki page (its `merge` checkpoints it, and only
 # the owner changes confirmFor). pageCheckpoint: the post the last merge answered.
+record Child:
+  world: String
+  object: String
+  colour: Bell.Colour
 record State:
   owner: String
   planted: Nat
   policy: Plans.Reference
   confirmFor: Lists.List<String>
   pending: Relations.Relation<Pending>
-  children: Relations.Relation<Plans.Reference>
+  children: Relations.Relation<Child>
   pageCheckpoint: String
   observers: Card.Observers
 record Edits:
   planted: Plans.Edit<Nat, Nat>
   confirmFor: Plans.Entries<String, {}>
   pending: Plans.Entries<Pending, Pending>
-  children: Plans.Entries<Plans.Reference, {}>
+  children: Plans.Entries<Child, {}>
   pageCheckpoint: Plans.Edit<String, {}>
   observers: Plans.Entries<Card.Observer, {}>
 # A creator supplies a Seed; the host lays it over initial(). The garden's own creates
@@ -106,8 +110,18 @@ def waiting(state: State, context: Abi.Context) -> String:
   match heldBy(Relations.rows(state.pending), context.principal, 0n):
     case some(s): "{Card.name(context.principal, context)}, this waits for your yes:\n\n{s.spell}\n"
     case none(_): ""
-def childLine(reference: Plans.Reference) -> Document.Document:
-  Document.text("- {reference.object}\n")
+def childLine(child: Child) -> Document.Document:
+  Document.text("- {child.object}\n")
+# Derived views (FOUNDATION §16, `viewDerived {object, view}`): pure definitions of the state
+# and the reader's context that another object may ask for by name.
+def views() -> Lists.List<String>:
+  Lists.List.cons({head: "byColour", tail: Lists.List.nil({})})
+# How many bells of each colour grow here, one row a colour that has any, keyed {colour}.
+record Tally:
+  colour: Bell.Colour
+  count: Nat
+def byColour(state: State, context: Abi.Context) -> Relations.Relation<Tally>:
+  Relations.Relation.rows({items: Lists.map(Relations.group(state.children, fn(c: Child) -> Bell.Colour: c.colour), fn(g: Relations.Group<Child, Bell.Colour>) -> Tally: {colour: Relations.groupKey(g), count: Lists.length(Relations.groupRows(g))})})
 # The garden card: how to plant first (readers clip near 1,400 characters), then the
 # bells, newest first, eight of them and a count of the rest.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
@@ -119,7 +133,7 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 # sixteen of them; the card section counts the rest.
 def page(state: State, context: Abi.Context) -> Card.Page:
   let bells = Lists.reverse(Relations.rows(state.children))
-  let shown = Lists.map(Lists.take(bells, 16n), fn(bell: Plans.Reference) -> Card.Section: {title: bell.object, body: Document.text("A bell planted here: [[{bell.object}]]. Reply on its card to rain on it.\n")})
+  let shown = Lists.map(Lists.take(bells, 16n), fn(bell: Child) -> Card.Section: {title: bell.object, body: Document.text("A bell planted here: [[{bell.object}]]. Reply on its card to rain on it.\n")})
   let more = if Lists.length(bells) > 16n then "… and {natText(Lists.length(bells) - 16n)} more bells\n" else ""
   Lists.concat(Card.defaultPage(Document.concat(render(state, context), Document.text(more)), context, forms()), shown)
 # Publishes the page under the door word (genesis posts one card per door).
@@ -411,7 +425,7 @@ def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colo
   Card.tellTo(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
 def grow(state: State, context: Abi.Context, post: String, found: Held, colour: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
   match perform(Plan.create({package: "Bell", seed: bellSeed(context, post, colour, seed), law: "Bell", requireAbsent: minted()})):
-    case created(c): counted(state, context, found, c.object, Bell.colourName(colour), seed)
+    case created(c): counted(state, context, found, c.object, colour, seed)
     case refused(r): refused(found, context, Why.world({clause: r.clause}))
     case _: refused(found, context, Why.noCreation({what: "plant"}))
 # A bell is planted with a door home to its garden.
@@ -419,8 +433,9 @@ def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: Stri
   {colour: colour, seed: seed, planting: post, planter: context.principal, planterHandle: context.handle, doors: Card.Doorways.cons({head: {label: "garden", to: Plans.self(context)}, tail: Card.Doorways.nil()})}
 # Planting counts, keeps the bell among the children, and settles whatever this
 # principal had waiting.
-def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.insert({row: reference})})}))
+def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, hue: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
+  let colour = Bell.colourName(hue)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.insert({row: {world: reference.world, object: reference.object, colour: hue}})})}))
   notified(Card.ownObservers(state.observers), state.planted + 1n, Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
 # Observers (a Wake watching `planted`) are told the count after each planting, by their
 # method, as `{field: "planted", value}`; then the planter gets the card.

@@ -130,6 +130,17 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   64 reversed rows 57,457. So a card joins at most a few dozen rows per turn, and sorting
   belongs to the host.
 
+* **Derived views** (FOUNDATION §16). `def views() -> Lists.List<String>` names pure
+  definitions `(state, context) -> first-order data` another object asks for with
+  `viewDerived {object, view}` -> `derived {version, value: Data}` (both appended to
+  Plan.obend). Garden `byColour`: a relation of `Tally {colour, count}` keyed {colour}, from
+  its children rows, which now keep the bell's colour (`Child {world, object, colour}`);
+  Place `affordances`: a Document of its forms, `delvetalk <thing> acquire` for each thing
+  lying there and `delvetalk <reader> move / exit: <label>` for each exit (pure, so it cannot
+  read the things' own forms). The host answers "plan not supported: viewDerived" until it
+  lands; `tests/test_derived_views.py` runs both views as pure probes and holds the
+  end-to-end case as an expected failure.
+
 ## 2. Limits found
 
 - An await only proves that some turn with that identity was admitted. A turn suspended on an object resumes refused `staleRoot` if anything wrote that object meanwhile, unless its writes are all keep/add/append (they commute).

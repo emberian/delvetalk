@@ -59,7 +59,8 @@ class Replay(Chain):
         self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
         self.assertEqual(get(bell, "rung"), boolean(False))            # the rest of the bell is its initial()
         self.assertEqual(self.host.send(op="world-view", principal="e", object="garden/bell/1")["version"], 0)
-        self.assertEqual(rows(self.state_field("garden", "children")), [reference("garden/bell/1")])
+        self.assertEqual([(get(c, "object"), get(c, "colour")["label"]) for c in rows(self.state_field("garden", "children"))],
+                         [(label("garden/bell/1"), "silver")])
         self.assertEqual(self.state_field("garden", "planted"), nat(1))
 
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):

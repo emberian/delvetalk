@@ -117,10 +117,11 @@ BIG = {"ticks": "1000000"}
 PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Garden.obend as O\n"
 GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
 import ./Relation.obend as Relations
-def bells(n: Nat) -> Lists.List<Plans.Reference>:
+import ./Bell.obend as Bell
+def bells(n: Nat) -> Lists.List<O.Child>:
   match n:
-    case 0: Lists.List::<Plans.Reference>.nil()
-    case 1+p: Lists.append::<Plans.Reference>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n))})
+    case 0: Lists.List::<O.Child>.nil()
+    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Bell.Colour.amber({})})
 def shown(n: Nat) -> String:
   Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: "", observers: Card.Observers.nil()}, Card.stranger()))
 """
