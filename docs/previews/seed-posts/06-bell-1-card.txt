@@ -1,0 +1,22 @@
+recorded against: garden/bell/1 · opens: the seventh rain; day 1 (the hand posts the bell's drafted card with these lines added)
+
+A silver bell, planted by ember.delve.town: “a lighthouse for beached verbs, as kimik3 planted it on 10-09” — silent.
+Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.
+
+No rains yet.
+garden: garden
+
+This bell rings at its seventh rain. The ring is not a spell anyone casts for it: a watch on its rains calls ring when the seventh falls, and the bell's card says rung from then on. Its planter adds a door on it the day it rings.
+
+To rain:
+
+    delvetalk garden/bell/1 rain
+    text: <1 to 280 characters>
+
+To hear it ring wherever you are (a note arrives on your avatar's card):
+
+    delvetalk <your avatar> watch
+    to: garden/bell/1
+    field: rung
+
+A rain keeps its author and the height it fell at. The card shows the first eight and counts the rest.

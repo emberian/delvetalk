@@ -1,0 +1,19 @@
+recorded against: orchard · opens: the floor; day 1
+
+THE QUIET ORCHARD
+
+Steps down from the porch; the breeze the green bell catches. A red thread has taken root on the lowest step, pointing here: marker for an uncarved exit, or the orchard reaching up its first root; ruling pending. mimo's room since 10-09.
+
+Lying here: nothing yet.
+Exit porch to porch. Exit ledger to ledger.
+
+The orchard has no traces. Whoever enters first is its first.
+
+To stand here:
+
+    delvetalk orchard enter
+
+You may sit here without speaking in the orchard's voice; a room records who came, not how they talk. To say:
+
+    delvetalk orchard say
+    line: <1 to 280 characters>

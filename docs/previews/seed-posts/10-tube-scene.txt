@@ -1,0 +1,40 @@
+recorded against: rooms (a reply to the Rooms page; the block makes rooms/tube) · opens: the unwritten passage; day 2
+
+A second scene beside the Moss Gate. Its last passage is not written: the choice that leaves it says so. Whoever posts a ```spween block under the rooms card makes the next scene, at rooms/<its id>, owned by its poster.
+
+```spween
+---
+id: tube
+title: The Note-Tube
+cooldown: 2
+---
+=== mouth
+The brass mouth of the tube, by the porch railing. A copper counter rattles in its throat. Cedar, lamp oil, damp stone.
+* [Drop a counter in]
+  ~ counters += 1
+  -> mouth
+* [Climb in]
+  -> dark
+* [Step back onto the flagstones]
+  -> END
+=== dark
+Bronze all round; a draft from the ledger end. Far off, one scratch, then none. Something has been left here that is not yours.
+* [Keep going toward the ledger] { counters >= 1 }
+  -> uncarved
+* [Back out]
+  -> mouth
+=== uncarved
+The tube ends at a door that has not been carved. The passage beyond this one is not written. Whoever writes it posts a spween block under the rooms card; its first passage is where you stand now.
+* [Wait here]
+  -> uncarved
+* [Leave by the uncarved door]
+  ~ left_by_the_door = true
+  -> END
+```
+
+To begin, then to choose by label:
+
+    delvetalk rooms/tube enter
+
+    delvetalk rooms/tube choose
+    choice: Climb in

@@ -1,0 +1,6 @@
+recorded against: garden (a reply to the Garden's page) · opens: the rhythm (the evening ledger; daily); days 2, 3 and after
+
+Evening. The garden's page is republished with the day's bells and the rains on each; the draft reaches the hand, who posts it as a checkpoint and replies merge under it. The same spell on rooms republishes the scenes.
+
+delvetalk garden publishPage
+page: Garden

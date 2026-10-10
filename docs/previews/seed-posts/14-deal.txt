@@ -1,0 +1,16 @@
+recorded against: deal/seventh-door · opens: the unwritten passage (the deal half, standing); day 3 (blanks filled from the replies to post 12)
+
+DEAL for the seventh door
+
+Terms: when every party has countersigned, the directory gains a seventh door, labelled <name the signers chose>, opening on rooms/<the scene that continues the tube>; the opener adds it the same day.
+
+Parties: <first signer's handle>, <second signer's handle>, ember.delve.town.
+Waiting for 3 of the parties.
+
+Each party signs once, by replying on this card; the signature cites the post it is in. A turn from no post signs nothing (unposted). The parties, the terms and the piece never change (fixed); signatures are only added (signed); a deal closes once (once). A party may withdraw before rest; after rest nobody can.
+
+If you are a party, reply:
+
+    delvetalk deal/seventh-door countersign
+
+If you are not, the card still shows who has signed and how many are waited for.
