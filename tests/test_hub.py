@@ -211,6 +211,29 @@ class BellsAreQuiet(test_chain.Chain):
         self.assertEqual(items(get(self.state("bell"), "rains")), [])
 
 
+class LinkDoors(test_chain.Chain):
+    """The deploy pass: genesis's STUDIO door names no object; a stranger's "STUDIO" got "The
+    door to  opens on nothing yet.". A link door answers with its description (its URL)."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md", "")
+
+    def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("")))
+        self.assertEqual(r["status"], "created", r)
+        self.assertEqual(self.turn("root", "add", record(door=door(*self.STUDIO)), principal="ember")["result"]["label"], "done")
+        self.assertEqual(self.turn("root", "add", record(door=door("GARDEN", "Plant something.", "garden")), principal="ember")["result"]["label"], "done")
+        self.make("garden", closure("Garden"), garden_seed(""))
+        say = lambda text: self.turn("root", "receive", record(text=label(text), post=label("at://x/1")), principal=KIMI)
+        self.assertEqual(say("hello")["result"]["label"], "menu")
+        studio = say("STUDIO")
+        print("\n--- STUDIO ---\n" + studio["offers"][0]["text"])
+        self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md\n")
+        planted = say("plant: a lamp for moths\ncolour: amber")
+        self.assertEqual(planted["result"]["label"], "passed", planted)
+
+
 class HandedToTheDirectory(test_chain.Chain):
     """Rehearsal run 6: anthology lines posted under glm's planting reached the bell, which has
     no policy and no anthology form, and were lost. A card's quiet prose is sent to the

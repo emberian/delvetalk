@@ -1273,171 +1273,175 @@
  "Directory": {
   "entries": {
    "actionOf": {
-    "packet": "bafyreietx7762im66kcgrfu6gzcrbijkrmg3tgkmy5nahpmz3yuoglajwy",
+    "packet": "bafyreihpkmfijtwquvrxruwc47hix7ukd4ge7cqaaia6vpxufo63c6ywnu",
     "status": "compiled"
    },
    "add": {
-    "packet": "bafyreifz2yzugloesefy4m3bjtlcz7sdziqclwhfklufrj7fpbuemwlr4m",
+    "packet": "bafyreieymavqmi3jwovwccpcxoljfftxgnd5tnegujrv5cmjofbhrrlxeq",
     "status": "compiled"
    },
    "askedFirst": {
-    "packet": "bafyreidd5bckycnupojgmnr2bf5a7dqb3rszhlat6ivvsecycrtmg4qlra",
+    "packet": "bafyreiboko5hwelhfgcsztdwofsadct52to6ptdhvqjnfqukcxndmqy3fe",
     "status": "compiled"
    },
    "byMacro": {
-    "packet": "bafyreie6onttp7hpu52juedpkzmlzn5byyjs7lfjfhfet2xuvwxfunndoa",
+    "packet": "bafyreiffvrrdl4jkky4vrdfjzxc2eslk4vb66evujmjdzt34xgbzlyimza",
     "status": "compiled"
    },
    "consulted": {
-    "packet": "bafyreiecoa4uhjr3ifon3v2z7gurmo33zobbt7ct4nd266u4qrnuvro324",
+    "packet": "bafyreicn4c4a2tccznssovs763jde5t3alhunzemk5i6zczt6k4aaynpni",
     "status": "compiled"
    },
    "defaultSeed": {
-    "packet": "bafyreicxwx72aap3nd3kfq32qj6yvxctkwzh3cufzlfqa7kuedtbwfzu2u",
+    "packet": "bafyreiehusbahwacpw6lgp4hkspubcxoerpuekhukddjgdrdiqdtgivjra",
     "status": "compiled"
    },
    "door": {
-    "packet": "bafyreibxzwohhv2tq4lhzi5lf4jvnzyocsukdp5cv6va5aeo4yqcex3vsu",
+    "packet": "bafyreienozqku2lvzvqyhzcwcqiqdou2rmyo7v46nu5roc4hoe6iwxczyu",
     "status": "compiled"
    },
    "doorCard": {
-    "packet": "bafyreie76ssxx67no3lam66czh4x3cgjdc4iqucauqurh73l4le3cncfti",
+    "packet": "bafyreifrf4jpljv3zviff272yp72ggg33w6bglyg57kjkb27nmfocpadsa",
     "status": "compiled"
    },
    "doorFor": {
-    "packet": "bafyreig4gyvodybg5y2x5al763ro5mtttlgjqk5rvzqhwjcccfutvglelm",
+    "packet": "bafyreihyqqetwiys7jtf6ke5ed54x3lxydfoc5my5nszbysk7vz4iphcdi",
     "status": "compiled"
    },
    "doorLine": {
-    "packet": "bafyreihknw3pbqfq7xkt45mw75ypxrdhttuihz2vgjryu36zzwehn5cet4",
+    "packet": "bafyreibguewqjzwiiopfew73kl3wrkvvsyn2ragmsc2lf6pqe3uo3yrkjy",
     "status": "compiled"
    },
    "doorsFor": {
-    "packet": "bafyreih3jvze5huyuc6iwjrh2njanlumnoeggnjianzc5zwttsl7ww422u",
+    "packet": "bafyreigba4f4m4sgve6haxtwbqj2s5ykuah52vhctolwammj7vlwd3nxf4",
     "status": "compiled"
    },
    "edited": {
-    "packet": "bafyreiaalp3lbeqgpznaglqrixbk6tehapzujm25q5gwpi4glfcrlkxq5e",
+    "packet": "bafyreia4esajsljhbky65vg3loqotbcnt6huegjemp4nddmirmdb7b5kju",
     "status": "compiled"
    },
    "fielded": {
-    "packet": "bafyreice7st3przeuor2nyletbg26govc66zlci5esdhmypb4yehan2o3u",
+    "packet": "bafyreiago3s7xalpdakfvmbowqtkq22lvphc3esf6igpry6m5elds3chqy",
     "status": "compiled"
    },
    "forms": {
-    "packet": "bafyreiecuolxd32vok6ydwgqvr5fzhmgarihx4c7rikheafaou2xxrnni4",
+    "packet": "bafyreicgsnyptlkkivp45nw2h4ezia4ye4b4pahpagszu4l3lstimmxnwy",
     "status": "compiled"
    },
    "gathered": {
-    "packet": "bafyreibkhvb5li5uhcvpaxlk3mu47teumx7gik35mm44infk5gg3fflspi",
+    "packet": "bafyreigo65bgkes7eggtg3t3y3adflp3sh5cmymrklswzra2ygx4oqy5xy",
     "status": "compiled"
    },
    "gathering": {
-    "packet": "bafyreibgwfpssidhqf6bnlod6k42bwjsfmaiwhiyyd3onb4x5o6hdnigkm",
+    "packet": "bafyreieji6chqgy3cmwjbuo5m4pgs5idskcop5zphorzuphgojrttjpd4a",
     "status": "compiled"
    },
    "greeted": {
-    "packet": "bafyreigoy46jrhb3tcws33cee3y47aek3dmndl2vot4vdid6xz5mwkoggu",
+    "packet": "bafyreifdxuxeikmwoh2oyl2pdfju74d4gmkqrmsp4l7x4742qzdggwgqni",
     "status": "compiled"
    },
    "greeting": {
-    "packet": "bafyreig27n4favsogp2fruyljqb6inhykjtc6frjsiicjd3cllzqobrumi",
+    "packet": "bafyreiaeiu4viqbux4cacdmzmu6ns3rvvuejunzx45qzawmh54hszsron4",
     "status": "compiled"
    },
    "handedOn": {
-    "packet": "bafyreieoyglwybi7q5jv5qwc6mihatfeddvwa2orki7c3weel4fush6mbe",
+    "packet": "bafyreih2qu6vu4vakoij2tig5r5xnnltzu2hgv2oub7kd44efenahznbqy",
     "status": "compiled"
    },
    "initial": {
-    "packet": "bafyreibl6ogy7vuucvnsnhcrmgyeylmjfe7fbaylnrz24ej3nqjwmax7za",
+    "packet": "bafyreiem7omxaewqqkvfl6k4xxgkjff4yhavoqlubqmebc6lfn26hih4ci",
     "status": "compiled"
    },
    "inspecting": {
-    "packet": "bafyreibzkkpk5qsadjl7omytivmusxpbbw3xafnoskkrsiqcvgwijfvhme",
+    "packet": "bafyreidkht5u56hmy26ykdg7b5d7jm5wt7zpqwopw7ymby24ykj3472xyy",
     "status": "compiled"
    },
    "interpreting": {
-    "packet": "bafyreidwheoglsptackgwooqlxhjsbemamss225nrrzkxqffud4dqkc2g4",
+    "packet": "bafyreiaedox6elpsnm6jppndeetrshuhvppl3cot5wqhddd75gdalsnm7y",
     "status": "compiled"
    },
    "isField": {
-    "packet": "bafyreifurkzmsl336m3t6j3goneld5is6qbqmeuw5cjtfaoekciy5rmj3i",
+    "packet": "bafyreifafxw2bsmsspsf4qvjts5gy34in6b55yupisw3cgelnxkhrzkhou",
+    "status": "compiled"
+   },
+   "linkDoor": {
+    "packet": "bafyreih6fvudqevhlyapzl2igux7sztaefseyxvbc6t7f443td3dubxta4",
     "status": "compiled"
    },
    "macroOr": {
-    "packet": "bafyreibg53iiiusonmq742enzk3ipp2fjl6z7msxj5tjjspd6avznrlfyq",
+    "packet": "bafyreiavi5fv5kvyplj34b33br7t4w3jdxkg4hfxq644mwi3b4zbhxw7fu",
     "status": "compiled"
    },
    "needsCard": {
-    "packet": "bafyreidxrlrjgifrwydo3gjai56wk6igqogsjebtheyrjpnfw3o6w5bc6q",
+    "packet": "bafyreifbk7np2yxm5fntqsxm3kvoi564snrkqbf76opcmrrhwmwsdioxfm",
     "status": "compiled"
    },
    "offered": {
-    "packet": "bafyreicmt3dashbfxzic6kigjhmjogezh7x7iafykzpsirjcu4tbskweji",
+    "packet": "bafyreibju4jd2bpouclj24ykhugko6p4yrsqr2qk5rksggjxe2q4fs24ee",
     "status": "compiled"
    },
    "offering": {
-    "packet": "bafyreicsneneky5oefeuibqiiq4w66uzscuog7sellvucwk4ztvnsoaqym",
+    "packet": "bafyreibflrxjtxoc6er574iv4d75rtbzp5ncxr3w7xaxbuyxduurbkwdkm",
     "status": "compiled"
    },
    "passOn": {
-    "packet": "bafyreidjtfimr5yrttkuvavgblickpnl22aitkll7v5pt376pys2ozwfu4",
+    "packet": "bafyreia67bq23wk2kwzq2gebsamteb56z7cbnzz3txzzlgtltjv6b4tzpy",
     "status": "compiled"
    },
    "position": {
-    "packet": "bafyreicquifaymxbs6see5mfzwiwvzd4m47pzma6ifswpyu7e3ekkpurta",
+    "packet": "bafyreihkj2wr7xktinalmk2hposxi4jp7fdvtzpzmlnhxs7oxv7egfegha",
     "status": "compiled"
    },
    "readBack": {
-    "packet": "bafyreid6h3j6gyniclytchaswyvs4lavv5okgaocfnmri6jzrgl5rojnk4",
+    "packet": "bafyreidcizcuzt2htcirfpor453jzcbldnhix6i4lalctr5hsaqmlmoili",
     "status": "compiled"
    },
    "receive": {
-    "packet": "bafyreidwtdaw3nq5mbbezlgucxqhnn3d72kcqwo6v4nvbikinfnxvctqju",
+    "packet": "bafyreih6fvv6jwilifaxthmsorbmk6prxujr6knrtiveucgw2ovtlfwr3e",
     "status": "compiled"
    },
    "remove": {
-    "packet": "bafyreiaky5hwmxmauxgry7xyuxl6tr5fr6offkp7qbayhruv4adxskiydq",
+    "packet": "bafyreibt6eaqlmusrijs2rhjpzqzbff5lvnsg5ixos2ctvreme6dvu2gbe",
     "status": "compiled"
    },
    "render": {
-    "packet": "bafyreigba52jb7esjscpnvld2zyvajyn52frr3jwdo3fidvhqszfjykplm",
+    "packet": "bafyreibijbqp2bmj6yw7ieeg4lu73xyldq7l652b62roai2bcdk3zmebsu",
     "status": "compiled"
    },
    "seeded": {
-    "packet": "bafyreihjobafhx24q64f2hg6ovj32bx26cly3i7j3i43oo2bssbp3bgg4e",
+    "packet": "bafyreieaq676yufooidq6kuxawooo572ftvjhhzks2kcl3a5v7mab5qogy",
     "status": "compiled"
    },
    "spellFor": {
-    "packet": "bafyreialrdhrd3ajmhcyoq5axxxczokowmol3ih6w4upk5nifncj26ayuu",
+    "packet": "bafyreih73s5cqucflqm4vqorsuarme3brcutpj4ekuauqoyg2uzgjqmaj4",
     "status": "compiled"
    },
    "summoned": {
-    "packet": "bafyreidvcpdbryyqvpi3naqjczsmpqdzxjrfl7yjgasit65nrorbdnonnu",
+    "packet": "bafyreidf4htgvjtfbk2p6qzuyrqg6fqgcfi6bfyn3xxdomid5qwfepfyxm",
     "status": "compiled"
    },
    "trimTail": {
-    "packet": "bafyreierz4smhedsn63yxtrqzqjcm2afzo3fvvickmolb4kfimb54ywbuy",
+    "packet": "bafyreicszefs2nkqoandigx7ke7pwnlke5dayj3wntzy47iynfa44zekny",
     "status": "compiled"
    },
    "trimmed": {
-    "packet": "bafyreiexz6xi2wrxr3yfrarta6brpteol7bxh6ayibblzob5t2udxwshb4",
+    "packet": "bafyreihlats2ig4y4g7tph7sk2coxgicr6pknpg2eoxrjqzkmlzh4wupgm",
     "status": "compiled"
    },
    "unaddressed": {
-    "packet": "bafyreigaymoewx44jwp33w4pynijs4mtypegzswjoye727c67vzotd6owm",
+    "packet": "bafyreiflwgsbofebl45c2ynseaqzvc67fvxlybjqpzxic2tk2sdt747d4u",
     "status": "compiled"
    },
    "worded": {
-    "packet": "bafyreiebrvcz7iqpznfgzqc55mwt54hhwheimc6j4xj7wrtxk72oxub4aa",
+    "packet": "bafyreibck4dzcmllzfrlb7sw5rzvvrxtp5fy7l44d3gvatnvtvj6c22opm",
     "status": "compiled"
    },
    "words": {
-    "packet": "bafyreig7hjpdrbuqdi7wcvq3qa2g4ycesn33bvt4gfhcaukpwpppfhh56e",
+    "packet": "bafyreidlln3q5ppcyk4oxr6vbjgk3gusnslukuql3mrcpmzljgrqxqelz4",
     "status": "compiled"
    }
   },
-  "pin": "bafyreibuqnbd4zyha3uqg2h4mqbgcs5p7tthk3fsw6hmclaketgcz55m2a"
+  "pin": "bafyreibpdizsinz4dn3a6y4vdjn3zkn5ifmar3zhqzq4k3ssnfvejsvt2e"
  },
  "Document": {
   "entries": {

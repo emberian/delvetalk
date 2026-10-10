@@ -28,7 +28,8 @@ the library).
   render(state, context))`.
 * **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed
   handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
-  never a raw DID, a long fragment is `…` and its last eight. Deadlines (Thing offers,
+  never a raw DID, a long fragment is `…` and its last eight. A handle stored when the
+  host knew it (a bell's planter, a rain's author, a Tide subscriber) shows by `Card.shown`. Deadlines (Thing offers,
   the Tide's gap) compare `context.clock`, which only world-advance moves.
 * **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal,
   context)` (" (yours)"), `Card.stranger()`. A member sees more: an Env's events, a Wake's
@@ -103,6 +104,9 @@ the library).
   (`Bell.rainedCard`) and a submission (`Anthology.submittedCard`) offer the card as the
   write leaves it to the speaker, as Garden does when it plants; the direct `rain` and
   `submit` methods still answer only their count.
+* **Link doors** (objects5): a Directory door whose `to` is nobody (genesis's STUDIO) answers
+  its word with `<label>\n<description>` (the URL is in the description) and is skipped
+  when field lines and the model look for forms.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

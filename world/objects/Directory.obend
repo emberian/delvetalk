@@ -104,7 +104,7 @@ def summoned(state: State, input: Card.Heard, context: Abi.Context) -> Activity<
   if context.principal == state.owner && context.caller == "" then Heard.silent({}) else worded(state, input, doorFor(state.doors, trimmed(input.text)), context)
 def worded(state: State, input: Card.Heard, found: Lists.Maybe<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match found:
-    case some(d): doorCard(d.value.to, context)
+    case some(d): if Plans.isNobody(d.value.to) then linkDoor(d.value) else doorCard(d.value.to, context)
     case none(_): fielded(state, input, Spell.bare(input.text), state.doors, context)
 # Field lines with no delvetalk line (the §10 hour: `plant: … / colour: silver`, `rain: …`):
 # when the first `name: value` line names an action one of the doors offers, the lines
@@ -119,7 +119,7 @@ def fielded(state: State, input: Card.Heard, fields: Spell.Bindings, doors: List
 def doorsFor(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, doors: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match doors:
     case nil(_): unaddressed(state, input, context)
-    case cons(c): inspecting(state, input, first, fields, c.head.to, c.tail, context)
+    case cons(c): if Plans.isNobody(c.head.to) then doorsFor(state, input, first, fields, c.tail, context) else inspecting(state, input, first, fields, c.head.to, c.tail, context)
 def inspecting(state: State, input: Card.Heard, first: Spell.Binding, fields: Spell.Bindings, to: Plans.Reference, rest: Lists.List<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.inspect({object: to})):
     case inspected(i): offering(state, input, first, fields, to, Lists.find(i.methods, fn(f: Form.Form) -> Bool: f.action == first.name || Card.hasField(f, first.name)), rest, context)
@@ -164,7 +164,7 @@ def byMacro(parsed: Spell.Parsed, text: String, input: Card.Heard, context: Abi.
 def gathering(state: State, input: Card.Heard, doors: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match doors:
     case nil(_): interpreting(state, input, forms, policy, 0n, Form.Names.nil(), context)
-    case cons(c): gathered(state, input, c.head.to, c.tail, forms, policy, context)
+    case cons(c): if Plans.isNobody(c.head.to) then gathering(state, input, c.tail, forms, policy, context) else gathered(state, input, c.head.to, c.tail, forms, policy, context)
 def gathered(state: State, input: Card.Heard, to: Plans.Reference, rest: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.inspect({object: to})):
     case inspected(i): gathering(state, input, rest, Lists.concat(forms, Lists.filter(i.methods, offered)), policy, context)
@@ -194,6 +194,10 @@ def needsCard(needs: Form.Names) -> Document.Document:
 # The door words, for a card that lists them.
 def words(state: State) -> String:
   textJoin(Lists.map(state.doors, fn(door: Door) -> String: door.to.object), ", ")
+# A link door (no object; genesis's STUDIO) answers with its description, which carries the
+# URL; it has no card to ask for and no forms to read.
+def linkDoor(door: Door) -> Activity<Plan, Response, Heard>:
+  Card.tell(Heard.door({object: ""}), Document.text("{door.label}\n{door.description}\n"))
 def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.card({object: to})):
     case carded(c): Card.tell(Heard.door({object: to.object}), c.document)
