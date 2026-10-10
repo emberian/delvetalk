@@ -480,12 +480,8 @@ class Writes(unittest.TestCase):
 
 
     def test_relation_edits_are_their_plans(self):
-        # RELATIONAL section 3: insert/upsert/retract, against a Plan library that has them.
-        plan = [m for m in library_modules("Abi", "List", "Plan") if m["name"] == "Plan"][0]["source"]
-        plan = plan.replace("  removeItem: {item: D}\n",
-                            "  removeItem: {item: D}\n  insert: {row: D}\n  upsert: {row: D}\n  retract: {key: Data}\n")
-        modules = [m if m["name"] != "Plan" else {"name": "Plan", "source": plan}
-                   for m in library_modules("Abi", "List", "Plan")]
+        # RELATIONAL section 3: insert/upsert/retract, against world/lib/Plan.obend, which has them.
+        modules = library_modules("Abi", "List", "Plan")
         for op, ctor, payload, value in [("insert", "insert", "row", "input.child"),
                                          ("upsert", "upsert", "row", "input.child"),
                                          ("retract", "retract", "key", "{object: input.note}")]:

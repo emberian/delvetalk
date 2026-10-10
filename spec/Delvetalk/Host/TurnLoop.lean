@@ -10,6 +10,7 @@
 import Delvetalk.Host.Ops
 import Delvetalk.Turn
 import Delvetalk.Document
+import Delvetalk.Host.Spell
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -31,6 +32,10 @@ structure TurnRequest where
   /-- The post this turn's text replies to ("" for none): the bridge names the parent of an
       observed reply, so a reply to a recorded post is the reply that post awaits. -/
   replyTo : String := ""
+  /-- How the method was asked for (`inputOrigin.kind`): `request`, or `spell` when the host parsed
+      the reply's spell (`spellTurn`), and the line that asked (`inputOrigin.command`, "" for the method). -/
+  origin : String := "request"
+  command : String := ""
 
 def parseTurn (j : Json) : Except String TurnRequest := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
@@ -56,7 +61,7 @@ def parseTurn (j : Json) : Except String TurnRequest := do
     | .ok (.bool b) => pure b
     | .ok _ => throw "profile must be true or false"
     | .error _ => pure false
-  return ⟨principal, object, method, argument, intent, limits, digest, profile, replyTo⟩
+  return { principal, object, method, argument, intent, limits, digest, profile, replyTo }
 
 inductive Abort where
   /-- The request is not a well-formed turn; nothing is journaled. -/
@@ -88,6 +93,8 @@ structure TurnState where
   world : World
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
+  /-- Fields read alone (`viewField`): object, field, version (`recordFieldRoot`). -/
+  fieldRoots : List (String × String × Nat) := []
   /-- The turn's identity principal: it names the entry and derives send and grant ids. -/
   principal : String
   intent : String
@@ -100,8 +107,14 @@ structure TurnState where
   argument : Data := .record []
   /-- A turn a principal asked for directly (not a delivery): only such a turn may grant. -/
   direct : Bool := true
+  /-- The top frame's `inputOrigin` kind and command (`TurnRequest.origin`, `command`). -/
+  origin : String := "request"
+  command : String := ""
   grants : List Grant := []
   revokes : List String := []
+  /-- Subscriptions this turn makes and ends (`subscribe`/`unsubscribe`). -/
+  subscribes : List Subscription := []
+  unsubscribes : List Subscription := []
   /-- Uses of limited grants this turn spent, by grant id. -/
   spent : List (String × Nat) := []
   sends : List Send := []
@@ -146,8 +159,16 @@ def liftEval {α : Type} (r : Except String α) : M α :=
 def recordRoot (id : String) (version : Nat) : M Unit := do
   let s ← get
   unless s.roots.any (·.1 == id) do
-    if s.roots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
+    if s.roots.length + s.fieldRoots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
     set { s with roots := s.roots ++ [(id, version)] }
+
+/-- A root on one field of an object (`viewField`, WHOLENESS §3a): none when the whole object is
+    already a root, which covers it. -/
+def recordFieldRoot (id field : String) (version : Nat) : M Unit := do
+  let s ← get
+  unless s.roots.any (·.1 == id) || s.fieldRoots.any (fun (o, f, _) => o == id && f == field) do
+    if s.roots.length + s.fieldRoots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
+    set { s with fieldRoots := s.fieldRoots ++ [(id, field, version)] }
 
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
@@ -348,7 +369,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
   let state := withOwner state seed principal
-  let (relations, state) ← (relationsFor w inputs built state).mapError fun e =>
+  let (relations, state) ← (relationsFor built state).mapError fun e =>
     (if e.startsWith "duplicateKey" then "duplicateKey" else "key", e)
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
@@ -443,6 +464,36 @@ def renderCard (o : Object) (context : String → Data) : M (Except String Data)
   | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "render"
   | .error _ => return .error "render"
 
+/-- The views a package declares: the labels its pure `views()` returns (`def views() ->
+    List<String>`), read as `lawReads()` is; none when it has no such definition. -/
+def declaredViews (o : Object) : M (List String) := do
+  if !((entrySource o).splitOn "\n").any (·.startsWith "def views(") then return []
+  let some c ← tryCatch (some <$> compiledMethod o "views") (fun _ => pure none) | return []
+  let some entry := c.entry | return []
+  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  | .ok d => return (labels [] d).getD []
+  | .error _ => return []
+
+/-- A derived view of an object (`viewDerived {object, view}`): the package's pure definition
+    `view`, which `views()` must name, run on the committed state (with the reader's Context when
+    it takes one) under this turn's remaining ticks, as a card is rendered. Its value must be
+    first-order data. `noView` when the package does not declare `view`, `view` when it fails, runs
+    out, or answers something other than data. -/
+def derivedView (o : Object) (view : String) (context : Data) : M (Except String Data) := do
+  unless (← declaredViews o).contains view do return .error "noView"
+  let some c ← tryCatch (some <$> compiledMethod o view) (fun _ => pure none) | return .error "noView"
+  let (arguments, result) := match c.type with
+    | .arrow _ _ _ (.arrow _ _ ct r) => (#[o.state, fitRecord c.bounds ct context], r)
+    | .arrow _ _ _ r => (#[o.state], r)
+    | r => (#[], r)
+  unless result.isDataUnder c.bounds [] Ty.dataFuel [] do return .error "view"
+  let entry ← entryOf c
+  let st ← get
+  match Package.executeDataEntry entry arguments (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
+  | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
+  | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "view"
+  | .error _ => return .error "view"
+
 /-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
 def argumentRefusal : String := "turn refused: argument does not conform to its type"
 
@@ -522,6 +573,34 @@ def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (pr
   | .ok _ => none
   | .error r => some (r.clause.getD r.cls)
 
+/-- The world's methods (WHOLENESS §1, `protocol world`), which a message activity calls. -/
+def worldMethods : List String :=
+  ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "spell", "send",
+   "sendVia", "create", "createUnder", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
+   "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
+   "objects", "card", "subscribe", "unsubscribe"]
+
+/-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
+    host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
+    answer (`write`'s argument is the edits of the running object, `judge`'s the edits to judge).
+    `none` for a sum Plan (the older dialect, answered by constructor); `.error clause` for a
+    message to another object (`notWorld`: a message to an object is a `call`) or a method the
+    world has not (`noMethod`). -/
+def messagePlan (self : String) : Data → Option (Except String Data)
+  | .record fs =>
+    match fs.lookup "object", (fs.lookup "method").bind labelOf, fs.lookup "argument" with
+    | some target, some method, some argument =>
+      if fs.length != 3 then none else
+      if referenceId target != some worldId then
+        some (.error "notWorld")
+      else if !worldMethods.contains method then some (.error "noMethod")
+      else some (.ok (match method with
+        | "write" => .variant "write" (.record [("object", .record [("world", .label ""), ("object", .label self)]), ("edits", argument)])
+        | "judge" => .variant "judge" (.record [("edits", argument)])
+        | _ => .variant method argument))
+    | _, _, _ => none
+  | _ => none
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -539,7 +618,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
-    (if depth == 0 then "request" else "call") method
+    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method)
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
@@ -579,17 +658,24 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
   | .exhausted resource used =>
     spend used
     throw (.budget resource)
-  | .yielded plan _ responseType checkpoint used =>
+  | .yielded message _ responseType checkpoint used =>
     spend used
     countPlan
+    -- A message activity calls the world by method name; a sum Plan names its constructor.
+    let plan ← match messagePlan self message with
+      | none => pure message
+      | some (.ok p) => pure p
+      | some (.error clause) => pure (.variant "refusedMessage" (.record [("clause", .label clause)]))
     let response ← match plan with
+      | .variant "refusedMessage" (.record f) =>
+        refusedWith compiled.bounds responseType (((f.lookup "clause").bind labelOf).getD "noMethod")
       | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
       | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType checkpoint
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
       | _ => do
         -- A frame run under a handler offers each Plan to it first.
         match (← get).handlers.lookup depth with
-        | some handler => match ← handleWith handler self plan compiled.bounds responseType with
+        | some handler => match ← handleWith handler self message compiled.bounds responseType with
           | some response => pure response
           | none => answer depth self caller compiled.bounds plan responseType
         | none => answer depth self caller compiled.bounds plan responseType
@@ -792,10 +878,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let writes := if s.writes.any (·.1 == self) then s.writes.map fun (k, ws) => if k == self then (k, ws ++ [staged]) else (k, ws)
       else s.writes ++ [(self, [staged])]
     let w := warmLaws s.world (writes.map (·.1))
-    modify fun s => { s with world := { s.world with compiled := w.compiled } }
+    modify fun s => { s with world := s.world.withCachesOf w }
     let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
                           programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
                           creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
+                          subscribes := s.subscribes, unsubscribes := s.unsubscribes, fieldRoots := s.fieldRoots,
                           turn := w.height + 1 }
     let p := withLawReads w p
     let (admitted, clause) := match judge w (w.height + 1) p with
@@ -885,6 +972,82 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       let reader := cardContext s.world id s.subject self s.intent s.world.height
       match ← renderCard o reader with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
+      | .error clause => refusedWith bounds responseType clause
+  | .variant "viewField" (.record f) =>
+    -- One field of another object's state (RELATIONAL §6), answered `viewed {version, state}` when the
+    -- field's value conforms to the reader's type at the call site (any value does at `Data`).
+    let s ← get
+    let some name := (f.lookup "field").bind labelOf | evaluation "malformed viewField plan"
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      -- The turn read this field alone: only a later write of it makes the turn stale.
+      recordFieldRoot id name o.version
+      match o.state with
+      | .record fields => match fields.lookup name with
+        | some value =>
+          let d := Data.variant "viewed" (.record [("version", .natural o.version), ("state", value)])
+          if d.conformsUnder bounds responseType then return d else refusedWith bounds responseType "typeMismatch"
+        | none => refusedWith bounds responseType "field"
+      | _ => refusedWith bounds responseType "field"
+  | .variant "subscribe" (.record f) | .variant "unsubscribe" (.record f) =>
+    -- A standing request for `changed` deliveries (WHOLENESS §3): the subscriber is the running
+    -- object, the principal the frame's subject, who must be permitted to view the object.
+    let s ← get
+    let some name := (f.lookup "field").bind labelOf | evaluation "malformed subscribe plan"
+    let ending := match plan with
+      | .variant "unsubscribe" _ => true
+      | _ => false
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      let has := match o.state with
+        | .record fields => fields.any (·.1 == name)
+        | _ => false
+      if !has then refusedWith bounds responseType "field" else
+      let x : Subscription := ⟨self, s.subject, id, name⟩
+      let standing := (s.world.subscriptions.getD id #[]).toList
+      if ending then
+        let mine := (standing ++ s.subscribes).filter fun y => y.subscriber == self && y.object == id && y.field == name
+        set { s with subscribes := s.subscribes.filter (!mine.contains ·),
+                     unsubscribes := s.unsubscribes ++ (mine.filter (standing.contains ·)) }
+        respond bounds responseType "subscribed" [emptyRecord]
+      else if standing.contains x || s.subscribes.contains x then respond bounds responseType "subscribed" [emptyRecord]
+      else if (standing ++ s.subscribes).filter (·.object == id) |>.length |> (· ≥ Limits.subscribersPerObject) then
+        refusedWith bounds responseType "subscribers"
+      else
+        set { s with subscribes := s.subscribes ++ [x] }
+        respond bounds responseType "subscribed" [emptyRecord]
+  | .variant "viewAt" (.record f) =>
+    -- A past version of an object's state, rebuilt from the journal (`stateAt`), answered as `view`
+    -- answers the present one; the root is the object as it is NOW, so a turn that read history
+    -- still conflicts with what changed since.
+    let s ← get
+    let some version := (f.lookup "version").bind fun | .natural n => some n | _ => none
+      | evaluation "malformed viewAt plan"
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      recordRoot id o.version
+      match stateAt s.world id version with
+      | some state => respond bounds responseType "viewed" [.record [("version", .natural version), ("state", state)]]
+      | none => refusedWith bounds responseType "version"
+  | .variant "viewDerived" (.record f) =>
+    -- A view the target's package derives from its state, as first-order Data, under read
+    -- authority; the root is recorded as for `view`.
+    let s ← get
+    let some view := (f.lookup "view").bind labelOf | evaluation "malformed viewDerived plan"
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      recordRoot id o.version
+      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view
+      match ← derivedView o view context with
+      | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "check" (.record f) =>
     let some (.label source) := f.lookup "package" | evaluation "malformed check plan"
@@ -1071,10 +1234,7 @@ def ledgerJson (l : Ledger) : Json := l.json
 def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)
     (sends : List Send) (updates : List (String × Object)) : List (String × Json) :=
   if sends.isEmpty then [] else
-  let added := updates.foldl (fun n (id, o) =>
-    let before := ((w.objects[id]?).map fun p => (dataJson p.state).compress.utf8ByteSize).getD 0
-    n + ((dataJson o.state).compress.utf8ByteSize - before)) 0
-  let child : Ledger := ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
+  let child := childLedger w ledger used updates
   [("sends", Json.arr (sends.zipIdx.toArray.map fun (x, i) => Json.mkObj
     ([("id", toJson (deliveryId principal intent i)), ("to", toJson x.to), ("method", toJson x.method),
      ("argument", dataJson x.argument), ("sender", toJson x.sender), ("ledger", child.json)] ++
@@ -1130,7 +1290,7 @@ def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
 def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
     Except String (World × Json) := do
-  let w := { w with compiled := st.world.compiled, programs := st.world.programs, builds := st.world.builds }
+  let w := w.withCachesOf st.world
   let used := ctx.usedBefore + (ctx.ticksStart - st.ticks)
   let proposal : Proposal :=
     { principal := ctx.principal
@@ -1146,7 +1306,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       creates := st.creates
       grants := st.grants
       revokes := st.revokes
-      spent := st.spent }
+      spent := st.spent
+      subscribes := st.subscribes
+      unsubscribes := st.unsubscribes
+      fieldRoots := st.fieldRoots }
   let base := entryBase ctx used
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
@@ -1177,7 +1340,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
       ("checkpoint", journaledCheckpoint.1),
-      ("roots", rootsJson st.roots), ("absent", toJson st.absent),
+      ("roots", allRootsJson st.roots st.fieldRoots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
       ("extends", toJson st.layered),
@@ -1187,6 +1350,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
       ("offers", offersJson st.offers), ("publishes", Json.arr st.publishes.toArray), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes),
+      ("subscribes", Json.arr (st.subscribes.toArray.map (·.json))), ("unsubscribes", Json.arr (st.unsubscribes.toArray.map (·.json))),
       ("spent", spentJson st.spent)] ++
       (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else []))
     -- A post await names the post; the slot it settles on is whichever reply answers it.
@@ -1197,7 +1361,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
       (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
-      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots),
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", allRootsJson st.roots st.fieldRoots),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
         newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
@@ -1212,7 +1376,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     -- A send under a grant leaves only if the grant still stands (a suspension may have outlived it).
     match st.sends.find? fun x => !x.via.isEmpty && (grantStands w x.via x.to x.method).isNone with
     | some x =>
-      let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [], spent := [] } base
+      let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [], spent := [], subscribes := [], unsubscribes := [] } base
         (some { cls := "lawRefused", clause := some "noGrant", object := some x.to }) (onEnd := endedIfLate)
       return (w', turnReply w' r)
     | none =>
@@ -1220,7 +1384,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (if st.publishes.isEmpty then [] else [("publishes", Json.arr st.publishes.toArray)]) ++
       (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
-      (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends) endedIfLate
+      (fun updates => sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends updates ++
+        changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
 /-- `receive`'s `slot` is the host's: an object that declares `receive {text, post}` gets the
@@ -1249,7 +1414,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .ok b => pure b.ticks
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
-                            direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile }
+                            direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile,
+                            origin := req.origin, command := req.command }
   -- A reply to a post recorded for this very object answers it (reply-is-address).
   let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
   let answers := match post with
@@ -1275,10 +1441,156 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let (w', r) ← finishTurn w ctx result st
   return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
+/-- A turn state for compiling outside a turn. -/
+def scratchState (w : World) : TurnState :=
+  { world := w, principal := "", intent := "", subject := "", ticks := 0, limits := Json.mkObj [] }
+
+/-! ## Spells (WHOLENESS §2, host day 2)
+
+A direct `receive {text, post}` to an object written in the message dialect is read by the host:
+the reply's spell (`Spell.parse`) names a card and an action; the card resolves as `Card.names` does
+(`resolveCard`) and the turn is retargeted to it; the action is looked up among the card's forms
+(`methodForms`) and the fields fitted (`Spell.fit`); a fitting spell runs the method with the typed
+argument (`inputOrigin.kind = "spell"`, `command` the spell line). A spell that does not fit is a
+refused turn of class `badSpell` with `clause`, `reason` and `hint` (the spell with its blanks). A
+spell missing fields, or a reply with no spell, runs `receive` with the bare `name: value` lines in
+`Heard.fields` (completion is the object's policy, WHOLENESS's root decision). `?` is answered by
+the host with the card's usage and journals nothing. An object of the sum-Plan dialect reads its
+own replies, as before. -/
+
+/-- Does a compiled method yield `World.Message`s (the message dialect)? -/
+def isMessageDialect (c : Compiled) : Bool :=
+  let rec peel : Ty → Option Ty
+    | .arrow _ _ _ r => peel r
+    | .computation p _ _ => some p
+    | _ => none
+  match peel c.type with
+  | some plan =>
+    let plan := match plan with
+      | .variable i => (c.bounds.lookup i).getD plan
+      | p => p
+    match plan with
+    | .field .. | .emptyRow => true
+    | _ => false
+  | none => false
+
+/-- A form's field as the spell a reader copies (`Card.hint`). -/
+def spellHint : Spell.Kind → String
+  | .text a b => s!"<text, {a} to {b} characters>"
+  | .natural a b => s!"<a number from {a} to {b}>"
+  | .choice options => s!"<{", ".intercalate options}>"
+
+/-- One form as the spell to send, the fields `given` filled in and the rest shown as blanks. -/
+def spellTemplate (card : String) (form : Spell.Form) (given : List Spell.Binding := []) : String :=
+  s!"delvetalk {card} {form.action}\n" ++ String.join (form.fields.map fun f =>
+    s!"{f.name}: {((given.find? (·.name == f.name)).map (·.value)).getD (spellHint f.kind)}\n")
+
+/-- A card's usage (`Card.usage`): every form as a template. -/
+def spellUsage (card : String) (forms : List Spell.Form) : String :=
+  if forms.isEmpty then s!"{card} takes no spells." else
+  "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)
+
+/-- The spell line a reply's spell stands on, for `inputOrigin.command`. -/
+def spellLine (card action : String) : String := s!"delvetalk {card} {action}"
+
+/-- A fitted spell's typed argument: the form's fields in order, text as text, a natural as a
+    natural, a choice as the variant of that name with an empty payload. -/
+def spellArgument (entries : List Spell.Entry) : Data :=
+  .record (entries.map fun e => (e.name, match e.value with
+    | .text t => .label t
+    | .natural n => .natural n
+    | .choice c => .variant c (.record [])))
+
+def bindingsData (bs : List Spell.Binding) : Data :=
+  listData (bs.map fun b => .record [("name", .label b.name), ("value", .label b.value)])
+
+/-- Journal a `badSpell` refusal of the turn as asked (its identity binds, so a resend is a new
+    turn). -/
+def refuseSpell (w : World) (req : TurnRequest) (object clause reason hint : String) : Except String (World × Json) := do
+  let ctx : Ctx := { principal := req.principal, intent := req.intent, object := req.object, method := req.method,
+                     argument := req.argument, digest := req.digest, ledger := Ledger.start, delivery := none,
+                     ticksStart := 0 }
+  let p : Proposal := { principal := req.principal, intent := req.intent, roots := [], writes := [], turn := w.height + 1 }
+  let (w', r) := commit w p (entryBase ctx 0)
+    (some { cls := "badSpell", clause := some clause, object := some object, reason := some reason, hint := some hint })
+  return (w', turnReply w' r)
+
+/-- `receive`'s argument with the bare field lines added when the method declares `fields`. -/
+def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.Binding) : Data :=
+  match argument with
+  | .record fs =>
+    let candidate := Data.record (fs.filter (·.1 != "fields") ++ [("fields", bindingsData fields)])
+    match ((compiledMethod o "receive").run.run (scratchState w)).1 with
+    | .ok c => if argumentFits c candidate then candidate else argument
+    | .error _ => argument
+  | other => other
+
+/-- The forms a card offers, as the spell grammar reads them. -/
+def spellForms (id : String) (o : Object) : List Spell.Form := (methodForms id o.methods).filterMap Spell.Form.ofData
+
+/-- Does an object read its replies in the message dialect (the host then parses its spells)? -/
+def speaksMessages (w : World) (o : Object) : Bool :=
+  match ((compiledMethod o "receive").run.run (scratchState w)).1 with
+  | .ok c => isMessageDialect c
+  | .error _ => false
+
+/-- `receive` with the bare field lines (`Heard.fields`): completion is the card's policy. -/
+def receiveHeard (w : World) (req : TurnRequest) (o : Object) (fields : List Spell.Binding) : Except String (World × Json) :=
+  runTurnWith w { req with argument := withFields w o req.argument fields } {}
+
+/-- Run what a spell naming `card` and `action` with `fields` asks of the turn's card `o`. -/
+def castSpell (w : World) (req : TurnRequest) (o : Object) (card action : String) (fields : List Spell.Binding) :
+    Except String (World × Json) := do
+  let id := resolveCard req.principal card
+  let usageHere := spellUsage req.object (spellForms req.object o)
+  let some target := w.objects[id]? | refuseSpell w req req.object "otherCard" s!"There is no card {card}." usageHere
+  unless target.read.permits req.principal do
+    return ← refuseSpell w req req.object "otherCard" s!"There is no card {card}." usageHere
+  let req := { req with object := id }
+  -- A card of the sum-Plan dialect reads its own replies.
+  unless speaksMessages w target do return ← runTurnWith w req {}
+  let forms := spellForms id target
+  if action == "?" then
+    return (w, Json.mkObj [("status", toJson "usage"), ("object", toJson id), ("text", toJson (spellUsage id forms))])
+  let some form := forms.find? (·.action == action)
+    | refuseSpell w req id "noAction" s!"{id} has no action {action}." (spellUsage id forms)
+  match Spell.fit (.spell id action fields) form with
+  | .proposal _ _ entries =>
+    let asked := { req with method := action, argument := spellArgument entries, origin := "spell", command := spellLine card action }
+    runTurnWith w asked {}
+  | .unclear _ => receiveHeard w req target fields
+  | .refused clause reason => refuseSpell w req id clause.name reason (spellTemplate id form fields)
+
+/-- A direct turn's `receive` read as a spell by the host when its object speaks the message
+    dialect; `none` when the host leaves the turn as asked. -/
+def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) := do
+  guard (req.method == "receive")
+  let .record args := req.argument | none
+  let some (.label text) := args.lookup "text" | none
+  let o ← w.objects[req.object]?
+  guard (speaksMessages w o)
+  match Spell.parse text with
+  | .spell card action fields => some (castSpell w req o card action fields)
+  | .notASpell reason fielded =>
+    if reason.startsWith "the block <<" then
+      return refuseSpell w req req.object "unclosedBlock" reason (spellUsage req.object (spellForms req.object o))
+    let bare := Spell.bare text
+    -- A reply with no spell line whose first field line names an action or a field of one of this
+    -- card's forms is that form's spell (`Card.withBare`).
+    let first := if fielded then bare.head? else none
+    let form := first.bind fun b => (spellForms req.object o).find? fun f => f.action == b.name || f.fields.any (·.name == b.name)
+    match form with
+    | some f => some (castSpell w req o req.object f.action (bare.filter fun b => b.name == f.action || f.fields.any (·.name == b.name)))
+    | none => some (receiveHeard w req o bare)
+
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
-    `unknownObject` naming `env/<principal>` when it has none. -/
+    `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message
+    dialect is read as a spell first (`spellTurn`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
-  runTurnWith w { req with object := resolveCard req.principal req.object } {}
+  let req := { req with object := resolveCard req.principal req.object }
+  match spellTurn w req with
+  | some r => r
+  | none => runTurnWith w req {}
 
 /-! ## Resuming suspended turns -/
 
@@ -1324,6 +1636,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let method ← act.getObjValAs? String "method"
   let argument ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
   let roots ← parseRoots (← act.getObjVal? "roots")
+  let fieldRoots ← parseFieldRoots (← act.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
@@ -1350,13 +1663,13 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   -- A moved root whose staged changes so far all commute may still commit (`judge` decides at the
   -- end); one already changed otherwise cannot, and the turn is refused now.
   let staged ← parseRecordedWrites (← act.getObjVal? "writes")
-  let movable := fun (id : String) => match staged.lookup id with
-    | some changes => changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
-    | none => true
   let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
-      | some now => now != v && !(v < now && (movable id || (id == object && rebasable w staged id v)))
+      | some now => now != v && !(v < now && ((staged.lookup id).isNone || movedRootAdmits w staged id v (id == object)))
       | none => true).map (·.1)
-    <|> absent.find? fun id => w.objects.contains id
+    <|> (absent.find? fun id => w.objects.contains id)
+    <|> (fieldRoots.find? fun (id, field, v) => match (w.objects[id]?).map (·.version) with
+      | some now => now != v && !(v < now && ((fieldsChangedSince w id v).map (!·.contains field)).getD false)
+      | none => true).map (·.1)
   if let some id := stale? then
     let stalled : Proposal :=
       { principal := principal
@@ -1385,6 +1698,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let init : TurnState :=
     { world := w
       roots := roots
+      fieldRoots := fieldRoots
       writes := writes
       principal := principal
       intent := intent
@@ -1395,6 +1709,10 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       direct := delivery.isNone
       grants := grants
       revokes := strings (act.getObjVal? "revokes").toOption
+      subscribes := ((act.getObjVal? "subscribes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
+        fun j => (Subscription.ofJson j).toOption
+      unsubscribes := ((act.getObjVal? "unsubscribes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
+        fun j => (Subscription.ofJson j).toOption
       spent := ← parseSpent (act.getObjVal? "spent").toOption
       sends := sends
       programs := programs
@@ -1434,7 +1752,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   finishTurn w ctx result st
 
 /-- Continue a suspended activity. A direct turn whose resumption is refused `staleRoot` (its
-    roots moved past what `rebasable` allows while it waited) is re-run once, at once, from its
+    roots moved past what `movedRootAdmits` allows while it waited) is re-run once, at once, from its
     journaled request on the current state: the refusal is transient, so the identity is free, and
     the re-run carries `rerun: true` so a second stale resumption of it is final. -/
 def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
@@ -1507,6 +1825,13 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   if !via.isEmpty && (grantStands w via to method).isNone then
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
     return commit w p deliveryFields (some { cls := "lawRefused", clause := some "noGrant", object := some to })
+  -- A change is delivered only while its subscription's principal may still view the object; else it
+  -- is consumed, refused, and the subscription drops (`subscriptionsAfter`).
+  if method == "changed" then
+    if let .ok object := d.getObjValAs? String "object" then
+      unless ((w.objects[object]?).map (·.read.permits principal)).getD false do
+        let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
+        return commit w p deliveryFields (some { cls := "lawRefused", clause := some "denied", object := some object })
   match ledger.exhausted with
   | some field =>
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
@@ -1642,24 +1967,32 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")),
       ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (methodForms id o.methods)))]
+      ("forms", dataJson (listData (methodForms id o.methods)))] |> fun r =>
+      -- The views its package declares (`views()`), which `viewDerived` answers.
+      let init : TurnState := { world := w, principal, intent := "", subject := principal,
+                                ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }
+      let views := (((declaredViews o).run.run init).1.toOption).getD []
+      if views.isEmpty then r else r.setObjVal! "views" (toJson views)
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
-def cardOp (w : World) (j : Json) : Except String Json := do
+def cardOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← readerOf j
   let id := resolveCard principal (← j.getObjValAs? String "object")
   match w.objects[id]? with
-  | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  | none => return (w, Json.mkObj [("status", toJson "unknown"), ("object", toJson id)])
   | some o =>
-    if !o.read.permits principal then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+    if !o.read.permits principal then return (w, Json.mkObj [("status", toJson "denied"), ("object", toJson id)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match ((renderCard o (cardContext w id principal "" "" w.height)).run.run init).1 with
+    let (r, st) := (renderCard o (cardContext w id principal "" "" w.height)).run.run init
+    -- The render definition compiled here stays compiled for the next read.
+    let w := w.withCachesOf st.world
+    match r with
     | .ok (.ok document) =>
-      return Json.mkObj [("status", toJson "card"), ("object", toJson id),
-        ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)]
-    | .ok (.error clause) => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)]
-    | .error _ => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")]
+      return (w, Json.mkObj [("status", toJson "card"), ("object", toJson id),
+        ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)])
+    | .ok (.error clause) => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)])
+    | .error _ => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")])
 
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
@@ -1722,9 +2055,6 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       ("utterance", toJson utterance), ("offers", plainJson offers)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
 
-def scratchState (w : World) : TurnState :=
-  { world := w, principal := "", intent := "", subject := "", ticks := 0, limits := Json.mkObj [] }
-
 def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
@@ -1764,7 +2094,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   let (r2, st2) := ((compiledMethod obj suspendedMethod).run.run (scratchState w))
   let suspended ← match r2 with | .ok c => pure c | .error e => throw (abortText e)
   let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
-  let w := { w with compiled := st2.world.compiled }
+  let w := w.withCachesOf st2.world
   let some method := (json.getObjValAs? String "method").toOption
     | match raw with
       | some text =>
@@ -1780,7 +2110,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   if !actions.isEmpty && !actions.contains method then
     return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
-  let w := { w with compiled := st.world.compiled }
+  let w := w.withCachesOf st.world
   let compiledM ← match r with
     | .ok c => pure c
     | .error e => return (w, unclearVerdict [s!"{method} is not a method of the object: {abortText e}"])

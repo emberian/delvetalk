@@ -11,6 +11,7 @@ against the offered form and Garden.plant's input before resuming the garden.
 """
 import unittest
 
+from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_places import listing
@@ -86,7 +87,7 @@ class PolicyObject(Chain):
                            modules=closure("Policy"), entry="initial",
                            seed=record(owner=label("ember"), model=label("claude-haiku"), system=label("S"),
                                        lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to), macros=nil(),
-                                       confirmFor={"tag": "list", "items": [label(a) for a in ("reprogram", "amend", "give", "offer")]}))
+                                       confirmFor={"tag": "list", "items": [label(a) for a in ("reprogram", "amend", "offer")]}))
         self.assertEqual(r["status"], "created", r)
 
     def card(self, name, principal="glm"):
@@ -108,7 +109,7 @@ class PolicyObject(Chain):
             "✾ INTERPRETATION POLICY\n"
             "\n"
             "Model: claude-sonnet\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, give, offer.\n"
+            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
             "When unsure I escalate to claude-opus.\n"
             "What a card cannot fit twice goes to …r4keeper.\n"
             "\n"
@@ -193,7 +194,7 @@ class PolicyObject(Chain):
             "✾ INTERPRETATION POLICY\n"
             "\n"
             "Model: claude-haiku\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, give, offer.\n"
+            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
             "\n"
             "Only its owner, ember, teaches it.\n"
             "\n"
@@ -357,15 +358,32 @@ class PolicyObject(Chain):
         # The confirm card is addressed: to the principal who spoke, and by name.
         self.assertTrue(asked["offers"][0]["text"].startswith("✾ THE NIGHT GARDEN\n\nglm, I understood this:\n"), asked["offers"][0])
         self.assertEqual(asked["offers"][0]["principal"], "glm", asked["offers"][0])
-        self.assertNotEqual(self.pending()["items"], [])
-        # Another principal's yes is not glm's: it is heard afresh (prose, so interpreted).
+        self.assertNotEqual(rows(self.pending()), [])
+        # Another principal's yes is not glm's: nothing of theirs waits, which they are told, and no
+        # model is asked.
         other = self.say("yes", principal="kimik3")
-        self.assertEqual(other["status"], "suspended", other)
+        self.assertEqual((other["status"], other["offers"][0]["text"]),
+                         ("admitted", "Not planted, refused nothingWaiting: Nothing of yours waits for a yes or no here.\n"), other)
+        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 0)
         planted = self.say("  Yes \n")
         self.assertEqual(planted["status"], "admitted", planted["receipt"]["outcome"])
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
-        self.assertEqual(self.pending()["items"], [])
+        self.assertEqual(rows(self.pending()), [])
+
+    def test_the_common_answers_confirm_or_drop_without_a_model(self):
+        """Play mode: a proposal shown, then the speaker's answer in any of its usual words."""
+        self.policy()
+        self.garden("policy", confirm=True)
+        for i, (answer, label_) in enumerate([("ok", "planted"), ("Go ahead.", "planted"), ("do it!", "planted"),
+                                              ("cancel", "cleared"), ("Never mind", "cleared"), ("nope", "cleared")]):
+            self.say("a violet moth please", identity="ask-%d" % i)
+            asked = self.interpret(self.planting("violet", "moth %d" % i))
+            self.assertEqual(asked["result"]["label"], "confirming", asked)
+            answered = self.say(answer, identity="answer-%d" % i)
+            self.assertEqual((answered["status"], answered["result"]["label"]), ("admitted", label_), (answer, answered))
+            self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 0, answer)
+            self.assertEqual(rows(self.pending()), [])
 
     def test_no_drops_the_waiting_proposal(self):
         self.policy()
@@ -374,7 +392,7 @@ class PolicyObject(Chain):
         self.interpret(self.planting("violet", "a moth"))
         dropped = self.say("no")
         self.assertEqual(dropped["result"]["label"], "cleared", dropped)
-        self.assertEqual(self.pending()["items"], [])
+        self.assertEqual(rows(self.pending()), [])
         self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(0))
 
     def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_refused_by_name(self):
@@ -459,10 +477,17 @@ class PolicyObject(Chain):
         self.assertLess(sizes[1], 20000)
         # Both resume from their reassembled checkpoints, after a restart too.
         self.reopen()
-        for item in self.host.send(op="world-interpretations")["pending"]:
-            settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
-            [resumed] = settled["resumed"]
-            self.assertEqual(resumed["status"], "admitted", resumed)
+        # Both are glm's: the first resumed upserts glm's pending row, which moves the garden
+        # under the second (the same key, so no rebase), and the host re-runs the second, which
+        # asks again; that answer resumes it.
+        admitted = []
+        for _ in range(4):
+            pending = self.host.send(op="world-interpretations")["pending"]
+            if not pending:
+                break
+            settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+            admitted += [r for r in settled["resumed"] if r["status"] == "admitted"]
+        self.assertEqual(len(admitted), 2, admitted)
 
     def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting

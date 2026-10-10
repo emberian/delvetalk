@@ -22,7 +22,7 @@ submit being refused; the variants committing once the host runs predicates.
 import unittest
 
 from tests.test_chain import nil, reference
-from tests.test_replay import get, items
+from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -66,34 +66,34 @@ class Laws(LawWorld):
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
 
     def test_only_the_directorys_owner_adds_or_removes_a_door(self):
-        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=nil(), greeted=nil()))
+        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
         self.assertEqual(self.turn("dir", "add", record(door=door("garden")), principal=OWNER)["status"], "admitted")
         self.assertEqual(self.clause(self.turn("dir", "add", record(door=door("bazaar")), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.clause(self.turn("dir", "remove", record(label=label("garden")), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.version("dir"), 1)
         self.assertEqual(self.turn("dir", "remove", record(label=label("garden")), principal=OWNER)["status"], "admitted")
-        self.assertEqual(items(get(self.state("dir"), "doors")), [])
+        self.assertEqual(rows(get(self.state("dir"), "doors")), [])
 
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label(OWNER), doors=nil(), greeted=nil()))
+                           entry="initial", seed=record(owner=label(OWNER), doors=relation(), greeted=relation()))
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
     def test_anyone_submits_and_only_the_owner_admits(self):
-        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=nil()))
+        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
         self.assertEqual(self.turn("anthology", "submit", record(line=label("moths")), principal=OTHER)["status"], "admitted")
         spelled = self.turn("anthology", "receive", heard("delvetalk anthology submit\nline: lamps"), principal="did:plc:glm")
         self.assertEqual((spelled["status"], spelled["result"]["label"]), ("admitted", "done"), spelled)
         self.assertEqual(self.clause(self.turn("anthology", "admit", record(index=nat(0)), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.turn("anthology", "admit", record(index=nat(1)), principal=OWNER)["status"], "admitted")
-        statuses = [get(p, "status")["label"] for p in items(get(self.state("anthology"), "proposals"))]
+        statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(statuses, ["proposed", "admitted"])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
         self.assertTrue(card.startswith("Anthology, admitted by inkling (yours)\n#1 [proposed] kimik3: moths\n"), card)
 
 
-TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=nil())
+TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
 
 
 def tide_variant():
@@ -160,7 +160,7 @@ class NoStrangerAmends(LawWorld):
         self.create("stone", closure("Thing"), record(owner=label(OWNER), name=label("stone"), description=label(""),
                                                       holder=reference(""), location=reference(""),
                                                       offer={"tag": "variant", "label": "none", "payload": record()}))
-        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=nil(), greeted=nil()))
+        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
         for obj in ("garden", "stone", "dir"):
             version = self.version(obj)
             r = self.host.send(op="world-amend", principal=OTHER, identity="am-" + obj, object=obj, version=version,

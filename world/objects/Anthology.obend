@@ -5,20 +5,26 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./Card.obend as Card
+import ./Relation.obend as Relations
 sum Status:
   proposed: {}
   admitted: {}
+# A proposal is keyed {author, at, n} (`at` the height its turn read, `n` the count of
+# proposals then), as a bell's rains are: key order is the order of submission, so a line's
+# number on the card stays its number. Admission upserts the row with its status flipped.
 record Proposal:
   author: String
   handle: String
   line: String
   status: Status
+  at: Nat
+  n: Nat
 # ownerHandle: the owner's handle, from the seed (genesis passes it) and then as the host
 # knew it at their last admission, so the card names them to every reader.
 record State:
   owner: String
   ownerHandle: String
-  proposals: Lists.List<Proposal>
+  proposals: Relations.Relation<Proposal>
 # What a creator may supply; the host lays it over initial().
 record Seed:
   owner: String
@@ -28,21 +34,27 @@ record Edits:
   ownerHandle: Plans.Edit<String, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
-# Anyone submits (submit, or a submit spell through receive, which only appends);
+# Anyone submits (submit, or a submit spell through receive, which only inserts);
 # only the owner admits. The methods named are the package's own, so the law's trust in
 # them is the pin's.
 law owner "only the owner changes it; anyone submits a line": request.subject == new.owner or (request.kind == 0 and (request.method == "submit" or request.method == "receive"))
 def defaultSeed() -> Seed:
   {owner: "", ownerHandle: ""}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, ownerHandle: seed.ownerHandle, proposals: Lists.List.nil()}
+  {owner: seed.owner, ownerHandle: seed.ownerHandle, proposals: Relations.empty()}
 def initial() -> State:
   seeded(defaultSeed())
+def relations() -> Relations.Decls:
+  Relations.Decls.cons({head: {field: "proposals", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 1024n}, tail: Relations.Decls.nil({})})
+def proposalKey(proposal: Proposal) -> {author: String, at: Nat, n: Nat}:
+  {author: proposal.author, at: proposal.at, n: proposal.n}
+def proposed(state: State, line: String, context: Abi.Context) -> Proposal:
+  {author: context.principal, handle: context.handle, line: line, status: Status.proposed({}), at: context.height, n: Relations.count(state.proposals)}
 # Submission only proposes; admission is the receiver's law, not the author's. The
 # author is the turn's principal.
 def submitted<T>(state: State, line: String, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.append({item: {author: context.principal, handle: context.handle, line: line, status: Status.proposed({})}}), ownerHandle: Plans.Edit.keep({})}}))
-  then(Lists.length(state.proposals) + 1n)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.insert({row: proposed(state, line, context)}), ownerHandle: Plans.Edit.keep({})}}))
+  then(Relations.count(state.proposals) + 1n)
 def submit(state: State, input: {line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   submitted(state, input.line, context, fn(count: Nat) -> Nat: count)
 sum Found:
@@ -52,14 +64,14 @@ def at(items: Lists.List<Proposal>, index: Nat) -> Found:
   match items:
     case nil(_): Found.none({})
     case cons(c): if index == 0n then Found.some({proposal: c.head}) else at(c.tail, index - 1n)
-# The admitted proposal is addressed by its bytes, so a submission landing first
-# shifts nothing; admission rewrites it with its status flipped.
+# The admitted proposal is addressed by its key, so a submission landing first shifts
+# nothing; admission upserts it with its status flipped.
 def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
-  match at(state.proposals, input.index):
+  match at(Relations.rows(state.proposals), input.index):
     case none(_): false
     case some(s): admitted(context, input.index, s.proposal)
 def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}}), ownerHandle: Plans.Edit.set({value: context.handle})}}))
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.upsert({row: extend(proposal, {status: Status.admitted({})})}), ownerHandle: Plans.Edit.set({value: context.handle})}}))
   true
 # submit {line} is anyone's; admit {number} (the line's number on the card, from 1) is the
 # owner's, refused by name to anyone else before the law is asked.
@@ -82,17 +94,17 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case _: Card.answer(routed, context, forms(), render(state, context))
 # A submission from a reply is answered with the anthology as it now stands, to its author.
 def submittedCard(state: State, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  let proposal: Proposal = {author: context.principal, handle: context.handle, line: line, status: Status.proposed({})}
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.append({item: proposal}), ownerHandle: Plans.Edit.keep({})}}))
-  Card.tellTo(Card.Reply.done({action: "submit"}), context.principal, render(extend(state, {proposals: Lists.append(state.proposals, proposal)}), context))
+  let proposal = proposed(state, line, context)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.insert({row: proposal}), ownerHandle: Plans.Edit.keep({})}}))
+  Card.tellTo(Card.Reply.done({action: "submit"}), context.principal, render(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context))
 def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if context.principal != state.owner then Card.Reply.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(state.proposals, number - 1n), number, context)
+  if context.principal != state.owner then Card.Reply.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(Relations.rows(state.proposals), number - 1n), number, context)
 def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match found:
     case none(_): Card.Reply.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
     case some(s): admittedReply(context, s.proposal)
 def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Reply>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}}), ownerHandle: Plans.Edit.set({value: context.handle})}}))
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.upsert({row: extend(proposal, {status: Status.admitted({})})}), ownerHandle: Plans.Edit.set({value: context.handle})}}))
   Card.tell(Card.Reply.done({action: "admit"}), Document.text("Admitted: {proposal.line}\n"))
 def statusName(status: Status) -> String:
   match status:
@@ -106,4 +118,4 @@ def entry(context: Abi.Context) -> Proposal -> Document.Document:
   fn(proposal: Proposal) -> Document.Document: Document.text("[{statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology, admitted by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}\n"), tail: Card.clipped(numbered(context, state.proposals, 1n), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology, admitted by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})

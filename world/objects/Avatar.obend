@@ -6,6 +6,7 @@ import ./Plan.obend as Plans
 import ./Place.obend as Place
 import ./Form.obend as Form
 import ./Card.obend as Card
+import ./Relation.obend as Relations
 record Note:
   from: String
   handle: String
@@ -47,6 +48,10 @@ def seeded(seed: Seed) -> State:
   {handle: seed.handle, at: seed.at, holding: seed.holding, inbox: Lists.List.nil(), observers: Card.Observers.nil(), following: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
+# None of its own. It imports Place, which declares relations, and the host then compiles
+# this package's own relations() (host7); it must exist.
+def relations() -> Relations.Decls:
+  Relations.Decls.nil({})
 def keep() -> Edits:
   {handle: Plans.Edit.keep({}), at: Plans.Edit.keep({}), holding: Plans.Entries.keep({}), inbox: Plans.Entries.keep({}), observers: Plans.Entries.keep({}), following: Plans.Entries.keep({})}
 def edited(edits: Edits, context: Abi.Context) -> Activity<Plan, Response, Bool>:
@@ -285,7 +290,7 @@ record Named:
   name: String
 def placing(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match perform(Plan.view({object: state.at})):
-    case viewed(v): naming(state, input, routed, action, rest, v.state.things, Lists.List.nil(), context)
+    case viewed(v): naming(state, input, routed, action, rest, Relations.rows(v.state.things), Lists.List.nil(), context)
     case _: doors(state, input, routed, action, rest, rest, context)
 # Each thing lying here by the first line of its card (its name).
 def naming(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, things: Lists.List<Plans.Reference>, named: Lists.List<Named>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:

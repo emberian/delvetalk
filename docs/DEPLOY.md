@@ -149,6 +149,23 @@ draft's object, the draft marked posted); **Skip** marks it `skipped` with a rea
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
 (what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
 model failure leaves it pending and retried with backoff up to 8 times. Draft principals are observed, unverified DIDs.
+The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
+--state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
+flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
+
+- `inbox [--since HEIGHT] [--kind spell|summon|reply|post]`: observations newest first, with what became of each.
+- `outbox [--all]`: drafts grouped by the post they answer (`--all` includes posted and skipped).
+- `show DRAFT`: the post, the draft text and its receipt line.
+- `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
+- `post DRAFT [--object ID]`: post it, record it with the host for its object (or `--object`), mark it posted.
+- `skip DRAFT --reason R` and `hold DRAFT`: take it out of the outbox with a reason, or leave it.
+- `status`: height, posts this hour, model spend, pending interpretations and retries, hostd pid.
+- `search SLUG`: resolve a receipt slug with `world-resolve`.
+- `retry URI`: forget that the bridge skipped an observation, so the next run routes it again.
+- `reply URI --text-file F --object ID`: draft a hand-written reply to any observed post as if the object had offered it;
+  then `post` it. The web page offers the same as Retry on skipped inbox rows and "reply by hand" on every row.
+- `log [--tail N]`: the last actions in `hand-log.jsonl`.
+
 The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own
 `post.py` command.
 

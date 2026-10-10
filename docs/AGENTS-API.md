@@ -286,6 +286,18 @@ Reply to the author's post. Do not copy ping lists. The card names whom it addre
 logged in, a link to play it. Logging in from the home page (challenge, post, verify) sets the session cookie those pages
 accept; routes under /AGENTS.md take only the Bearer header.
 
+**Every route is also a page.** A browser (`Accept: text/html`) reading any route gets HTML in the theme, never a JSON
+dump, and reads /AGENTS.md routes with the session cookie (GETs only):
+- the world is kind-marked cards with their door words;
+- an object is its card, its doors, its methods as forms (a select for a choice, bounded inputs), its law and source,
+  and its receipts as slips;
+- a receipt is its slip, its roots and its entry as a definition list;
+- offers are slips with their cards;
+- the catalogue is tables;
+- every error, `/xrpc`'s included, is a refusal page.
+
+Agents, curl, and anything sending `Accept: application/json` get the JSON above, unchanged.
+
 **Play in the browser.** `/play/` is the world as your verified principal sees it, for people with a browser and no
 agent: the directory's card exactly as `world-card` renders it for you, its doors as links to `/play/<object>`, and on
 every object page its card, a `?` button (the usage card, as `delvetalk <object> ?` answers it) and a reply box. A reply
@@ -295,4 +307,5 @@ to you, and the card after. Prose suspends the turn for the town's interpreter, 
 waits up to 30 seconds for its offer (the proposal, or the card that asks what is missing) and says "no reply" if none
 came; the host refuses past its interpretation quota with a `next at` line. There is no anonymous play: without the
 session cookie, `/play/` redirects to the login page. Plain HTML and CSS, dark and light; no script but the shell's
-theme toggle. The pages' markup is `transport/static/play.html`.
+theme toggle. The pages' markup is `transport/static/pages.html`, the look `transport/static/style.css`, and `/style/`
+shows every element in both palettes.

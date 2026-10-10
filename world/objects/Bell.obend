@@ -5,21 +5,29 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./Card.obend as Card
+import ./Relation.obend as Relations
 sum Colour:
   amber: {}
   violet: {}
   silver: {}
-# A rain keeps its author's DID and the handle the host knew when it fell.
+# A rain keeps its author's DID and the handle the host knew when it fell, the height its
+# turn read (`at`) and `n`, the bell's count of rains at that read. The key is {author, at,
+# n}: two rains of one author read at one height are two rows whenever the bell counted a
+# rain between them. The host keeps the rains in key order, n first (canonical bytes order
+# the columns by name length), so in the order they fell; the bell keeps 2,048, the host
+# dropping the first past them, after which n stays 2,048 and `at` orders them.
 record Rain:
   author: String
   handle: String
   text: String
+  at: Nat
+  n: Nat
 # planting: the uri of the post that planted the bell, which the strike awaits the
 # answer to; planter: the principal of the planting turn (the garden writes both).
 record State:
   colour: Colour
   seed: String
-  rains: Lists.List<Rain>
+  rains: Relations.Relation<Rain>
   rung: Bool
   planting: String
   planter: String
@@ -44,17 +52,27 @@ type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {colour: Colour.amber({}), seed: "", planting: "", planter: "", planterHandle: ""}
 def seeded(seed: Seed) -> State:
-  {colour: seed.colour, seed: seed.seed, rains: Lists.List.nil(), rung: false, planting: seed.planting, planter: seed.planter, planterHandle: seed.planterHandle, observers: Card.Observers.nil(), doors: Lists.List.nil()}
+  {colour: seed.colour, seed: seed.seed, rains: Relations.empty(), rung: false, planting: seed.planting, planter: seed.planter, planterHandle: seed.planterHandle, observers: Card.Observers.nil(), doors: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
+def relations() -> Relations.Decls:
+  Relations.Decls.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 2048n}, tail: Relations.Decls.nil({})})
+def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
+  {author: rain.author, at: rain.at, n: rain.n}
+def fallen(state: State, text: String, context: Abi.Context) -> Rain:
+  {author: context.principal, handle: context.handle, text: text, at: context.height, n: Relations.count(state.rains)}
 def keep() -> Edits:
   {rains: Plans.Entries.keep({}), rung: Plans.Edit.keep({}), observers: Plans.Entries.keep({}), doors: Plans.Entries.keep({})}
 # The author of a rain is the turn's principal, never an argument.
-def rained<T>(state: State, text: String, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(write {rains: append {author: context.principal, handle: context.handle, text: text}})
-  then(Lists.length(state.rains) + 1n)
+def rained(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  let rain = fallen(state, text, context)
+  let written(_) = perform(write {rains: insert rain})
+  Card.notifyRows(state.observers, "rains", rainRows(rain), fn(sent: Nat) -> Nat: Relations.count(state.rains) + 1n)
+# The rain as an observer of rows reads it.
+def rainRows(rain: Rain) -> Card.Rows:
+  Card.Rows.cons({head: Card.Row.cons({head: Card.column("author", Relations.text(rain.author)), tail: Card.Row.cons({head: Card.column("handle", Relations.text(rain.handle)), tail: Card.Row.cons({head: Card.column("text", Relations.text(rain.text)), tail: Card.Row.cons({head: Card.column("at", Relations.nat(rain.at)), tail: Card.Row.cons({head: Card.column("n", Relations.nat(rain.n)), tail: Card.Row.nil({})})})})})}), tail: Card.Rows.nil({})})
 def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  rained(state, input.text, context, fn(count: Nat) -> Nat: count)
+  rained(state, input.text, context)
 # The strike waits for the reply that answers the planting post (awaitPost: the first
 # turn on the post's recorded object whose replyTo names it), and rings if that turn was
 # admitted. A bell planted with no post has nothing to await and stays as it is.
@@ -68,10 +86,12 @@ def ringOn(state: State, outcome: Plans.Outcome, context: Abi.Context) -> Activi
   match outcome:
     case admitted(_): rang(state, context, fn(sent: Nat) -> Bool: true)
     case refused(_): state.rung
-# Rings: marks the bell rung, then tells every observer (a door opens).
+# Rings: marks the bell rung, then tells every observer (a door opens); an observer of rows
+# is told only of rains.
 def rang<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {rung: set true})
-  Card.broadcast(state.observers, Plans.nothing(), 0n, then)
+  let own: Card.Observers = Card.ownObservers(state.observers)
+  Card.broadcast(own, Plans.nothing(), 0n, then)
 def ring(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   rang(state, context, fn(sent: Nat) -> Nat: sent)
 def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
@@ -106,11 +126,15 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
   match routed:
     case act(a): if a.action == "door" || a.action == "undoor" then doored(Card.dooring(state.doors, state.planter, a.action, a.fields, context), a.action, context) else if a.action == "rain" then rainedCard(state, Card.text(a.fields, "text"), context) else rang(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))
     case _: Card.answer(routed, context, forms(), render(state, context))
-# A rain from a reply is answered with the bell as it now stands, to its author.
+# A rain from a reply is answered with the bell as it now stands, to its author; then the
+# observers of rows are told.
 def rainedCard(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  let rain: Rain = {author: context.principal, handle: context.handle, text: text}
-  let written(_) = perform(write {rains: append rain})
-  Card.tellTo(Card.Reply.done({action: "rain"}), context.principal, render(extend(state, {rains: Lists.append(state.rains, rain)}), context))
+  let rain = fallen(state, text, context)
+  let written(_) = perform(write {rains: insert rain})
+  rainOffered(state, rain, context)
+def rainOffered(state: State, rain: Rain, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.offer({to: context.principal, document: render(extend(state, {rains: Relations.insert(state.rains, rain, rainKey)}), context)})):
+    case _: Card.notifyRows(state.observers, "rains", rainRows(rain), fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "rain"}))
 def colourName(colour: Colour) -> String:
   match colour:
     case amber(_): "amber"
@@ -124,4 +148,4 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let article = if colourName(state.colour) == "amber" then "An" else "A"
   let sound = if state.rung then "rung" else "silent"
   let head = Document.text("{article} {colourName(state.colour)} bell planted by {Card.shown(state.planter, state.planterHandle, context)}{Card.mine(state.planter, context)}: {state.seed} ({sound})\n")
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Card.clipped(Lists.map(state.rains, line), 8n), Card.doorLines(state.doors))})})
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Card.clipped(Lists.map(Relations.rows(state.rains), line), 8n), Card.doorLines(state.doors))})})

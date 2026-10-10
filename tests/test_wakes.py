@@ -14,7 +14,7 @@ import unittest
 from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import closure
 from tests.test_places import avatar_seed
-from tests.test_replay import get, items
+from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import label, nat, record
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -41,7 +41,7 @@ class Wakes(Chain):
         self.assertEqual(r["status"], "created", r)
 
     def env(self):
-        self.create("env/" + OWNER, "Env", record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()), by=OWNER)
+        self.create("env/" + OWNER, "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()), by=OWNER)
         return "env/" + OWNER
 
     def wake(self):
@@ -71,7 +71,7 @@ class Wakes(Chain):
         first = self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
         self.assertEqual(self.label_of(first), "done")
         self.turn(env, "publish", record(event=event(kind="reply", text="two", reply_to="at://x/p/0")), principal=OWNER)
-        buffer = items(get(self.state(env), "buffer"))
+        buffer = rows(get(self.state(env), "buffer"))
         self.assertEqual([get(e, "text")["value"] for e in buffer], ["one", "two"])
         heights = [int(get(e, "at")["value"]) for e in buffer]
         self.assertLess(heights[0], heights[1])          # `at` is the host's height, not the client's 0
@@ -92,13 +92,13 @@ class Wakes(Chain):
     def test_an_env_is_named_by_its_did_in_a_spell_and_lives_at_env_slash_did(self):
         env = self.env()
         self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
-        at = int(get(items(get(self.state(env), "buffer"))[0], "at")["value"])
+        at = int(get(rows(get(self.state(env), "buffer"))[0], "at")["value"])
         r = self.turn(env, "receive", heard("delvetalk env/%s seen\nat: %d" % (OWNER, at)), principal=OWNER)
         self.assertEqual(self.label_of(r), "done")
         self.assertEqual(get(self.state(env), "seen"), nat(at))
         self.assertIn("    delvetalk env/did:plc:inkling seen\n", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
         # An env made at any other id takes nothing in.
-        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()), by=OWNER)
+        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()), by=OWNER)
         r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
         self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("An env lives at env/did:plc:inkling"))
         self.assertEqual(self.version("env/elsewhere"), 0)
@@ -113,7 +113,7 @@ class Wakes(Chain):
     def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
         """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")
-        seed = record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil())
+        seed = record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil())
         create = lambda by, ident: self.host.send(op="world-create", principal=by, identity=ident, object="env/" + OWNER,
                                                   modules=closure("Env"), entry="initial", seed=seed, owner=OWNER)
         stranger = create("mallory", "mk-m")
@@ -157,7 +157,7 @@ class Wakes(Chain):
 
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))
+                           entry="initial", seed=record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()))
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
@@ -246,7 +246,7 @@ class Wakes(Chain):
     # --- Tide ------------------------------------------------------------------------
 
     def tide(self, gap=3):
-        self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=nil()))
+        self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=relation()))
 
     def test_when_garden_planted_passes_10_the_wake_ticks_the_tide(self):
         """A Wake watches another object's writes: the garden tells its observers its count
@@ -269,6 +269,29 @@ class Wakes(Chain):
             self.deliver_all()
             # 10 does not pass 10; 11 does, once; 12 does not fire again.
             self.assertEqual(ticks(), [0, 1, 1][i], i)
+
+    def test_a_rows_rule_on_a_bells_rains_ticks_the_tide_when_its_author_rains(self):
+        """A Wake as a rule: When a row inserted into bell's rains has author OTHER, Wish a tick.
+        The bell tells its observers of rows each rain (Card.notifyRows)."""
+        from tests.test_replay import bell_seed
+        self.tide()
+        self.make("bell", closure("Bell"), bell_seed())
+        wake = self.wake()
+        where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})}]}
+        rule = {"tag": "variant", "label": "rows", "payload": record(object=label("bell"), field=label("rains"), where=where, atLeast=nat(1))}
+        call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
+        self.assertEqual(self.label_of(self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)), "watching")
+        self.deliver_all()
+        observers = items(get(self.state("bell"), "observers"))
+        self.assertEqual([(get(get(o, "object"), "object")["value"], get(o, "method")["value"]) for o in observers], [(wake, "rows")])
+        ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
+        for who, expected in ((OWNER, 0), (OTHER, 1)):
+            r = self.turn("bell", "rain", record(text=label("a drizzle")), principal=who)
+            self.assertEqual(r["status"], "admitted", r)
+            self.deliver_all()
+            self.assertEqual(ticks(), expected, who)
+        card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
+        self.assertIn("on 1 new rows of bell.rains where author = %s: call tide tick" % OTHER, card)
 
     def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
         """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
@@ -301,7 +324,7 @@ class Wakes(Chain):
         self.tide()
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did=OTHER, handle="inkling.delve.town")["status"], "principal")
         self.turn("tide", "receive", heard("delvetalk tide subscribe / every: 1 / note: first light"), principal=OTHER)
-        [sub] = items(get(self.state("tide"), "subs"))
+        [sub] = rows(get(self.state("tide"), "subs"))
         self.assertEqual(get(sub, "handle")["value"], "inkling.delve.town")
         card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(card, (
@@ -324,7 +347,7 @@ class Wakes(Chain):
         sub = self.turn("tide", "subscribe", record(every=nat(1), note=label("WC-01, first light")), principal=OTHER)
         self.assertEqual(self.label_of(sub), "subscribed")
         self.turn("tide", "receive", heard("delvetalk tide subscribe\nevery: 2\nnote: inkling's first tide"), principal=OWNER)
-        subs = items(get(self.state("tide"), "subs"))
+        subs = rows(get(self.state("tide"), "subs"))
         self.assertEqual([get(s, "who")["value"] for s in subs], [OTHER, OWNER])
         first = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((self.label_of(first), get(first["result"]["payload"], "sent")), ("ticked", nat(1)))
@@ -371,6 +394,8 @@ import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Tide.obend as Tide
 import ./Wake.obend as Wake
+import ./Relation.obend as Relations
+import ./Card.obend as Card
 def request(principal: String, clock: Nat) -> Abi.Request:
   {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: 0n, clock: clock, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
@@ -380,7 +405,36 @@ def verdict(v: Abi.Verdict) -> String:
 def subs(who: String) -> Lists.List<Tide.Sub>:
   Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n, handle: ""}, tail: Lists.List::<Tide.Sub>.nil()})
 def tide(ticks: Nat, last: Nat, who: String) -> Tide.State:
-  {ticks: ticks, last: last, gap: 3n, subs: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)}
+  {ticks: ticks, last: last, gap: 3n, subs: Relations.Relation.rows({items: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)})}
+def sub(who: String, every: Nat) -> Tide.Sub:
+  {who: who, every: every, note: "n", since: 0n, handle: ""}
+def tideOf(items: Lists.List<Tide.Sub>) -> Tide.State:
+  {ticks: 0n, last: 0n, gap: 3n, subs: Relations.fromList(items, Tide.subKey)}
+def two(a: Tide.Sub, b: Tide.Sub) -> Lists.List<Tide.Sub>:
+  Lists.List.cons({head: a, tail: Lists.List.cons({head: b, tail: Lists.List.nil({})})})
+def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:
+  Lists.List.cons({head: a, tail: Lists.List.nil({})})
+def cell(text: String) -> Relations.Cell:
+  Relations.text(text)
+def row(author: String, n: Nat, text: String) -> Card.Row:
+  Card.Row.cons({head: Card.column("author", cell(author)), tail: Card.Row.cons({head: Card.column("n", Relations.nat(n)), tail: Card.Row.cons({head: Card.column("text", cell(text)), tail: Card.Row.nil({})})})})
+def by(author: String) -> Wake.Where:
+  Wake.Where.equals({column: "author", equals: cell(author)})
+def only(w: Wake.Where) -> Lists.List<Wake.Where>:
+  Lists.List.cons({head: w, tail: Lists.List.nil({})})
+def rule(field: String, where: Lists.List<Wake.Where>) -> Wake.On:
+  Wake.On.rows({object: "bell", field: field, where: where, atLeast: 1n})
+# Rows (kimik3 0 "a Moth drizzle", glm 1 "dry", kimik3 2 "moths") on bell.rains: how many
+# match each rule.
+def rowsMatched(which: Nat) -> Nat:
+  let rows = Card.Rows.cons({head: row("kimik3", 0n, "a Moth drizzle"), tail: Card.Rows.cons({head: row("glm", 1n, "dry"), tail: Card.Rows.cons({head: row("kimik3", 2n, "moths"), tail: Card.Rows.nil({})})})})
+  if which == 0n then Wake.matched(rule("rains", only(by("kimik3"))), "bell", "rains", rows) else if which == 1n then Wake.matched(rule("rains", only(by("zero"))), "bell", "rains", rows) else if which == 2n then Wake.matched(rule("doors", only(by("kimik3"))), "bell", "rains", rows) else if which == 3n then Wake.matched(rule("rains", only(by("kimik3"))), "garden", "rains", rows) else moreMatched(which, rows)
+def moreMatched(which: Nat, rows: Card.Rows) -> Nat:
+  if which == 4n then Wake.matched(rule("rains", only(Wake.Where.above({column: "n", above: 0n}))), "bell", "rains", rows) else if which == 5n then Wake.matched(rule("rains", only(Wake.Where.below({column: "n", below: 2n}))), "bell", "rains", rows) else if which == 6n then Wake.matched(rule("rains", only(Wake.Where.contains({column: "text", contains: "moth"}))), "bell", "rains", rows) else Wake.matched(rule("rains", Lists.List.cons({head: by("kimik3"), tail: only(Wake.Where.above({column: "n", above: 0n}))})), "bell", "rains", rows)
+# Each case: old subs, new subs, requester glm. "own" adds glm beside an unchanged kimik3;
+# "theirs" changes kimik3's row; "drop" retracts kimik3's; "mine" replaces and drops glm's own.
+def changedBy(which: Nat) -> String:
+  if which == 0n then verdict(Tide.law(tideOf(one(sub("kimik3", 1n))), tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), request("glm", 5n))) else if which == 1n then verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(two(sub("kimik3", 4n), sub("glm", 2n))), request("glm", 5n))) else if which == 2n then verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(one(sub("glm", 2n))), request("glm", 5n))) else verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(one(sub("kimik3", 1n))), request("glm", 5n)))
 def tickAt(height: Nat) -> String:
   verdict(Tide.law(tide(1n, 10n, ""), tide(2n, height, ""), request("zero", height)))
 def subscribeAs(principal: String) -> String:
@@ -418,6 +472,15 @@ class LawPredicates(unittest.TestCase):
     def test_a_subscription_is_only_ever_the_requesters_own(self):
         self.assertEqual(self.run_probe("subscribeAs", label("kimik3")), "admitted")
         self.assertEqual(self.run_probe("subscribeAs", label("glm")), "refused self")
+
+    def test_a_rows_rule_counts_the_rows_matching_its_patterns_on_its_object_and_field(self):
+        # equals, a missing author, another field, another object; above 0, below 2, the whole
+        # word "moth" (case aside; "moths" is another word), and two patterns at once.
+        self.assertEqual([self.run_probe("rowsMatched", nat(n)) for n in range(8)], ["2", "0", "0", "0", "2", "2", "1", "1"])
+
+    def test_the_changed_keys_of_a_subscription_write_are_the_requesters(self):
+        self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],
+                         ["admitted", "refused self", "refused self", "admitted"])
 
     def test_wake_triggers_change_only_by_the_owner(self):
         self.assertEqual(self.run_probe("wakeBy", label("inkling")), "admitted")

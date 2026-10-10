@@ -14,6 +14,7 @@ import json
 import os
 import unittest
 
+from tests.test_replay import rows
 from tests import test_policy
 from tests.test_chain import garden_seed
 from tests.test_objects import closure
@@ -44,7 +45,7 @@ class Fork(Reflection):
 
     def children(self, host):
         state = host.send(op="world-view", principal="ember", object="garden")["state"]
-        return [get(c, "object")["value"] for c in items(get(state, "children"))]
+        return [get(c, "object")["value"] for c in rows(get(state, "children"))]
 
     def plant(self, host):
         return host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="what-if",
