@@ -96,11 +96,7 @@ def seeds(top):
            ('anthology', 'Anthology', OWNER, None, 'genesis-anthology', rec(owner=lab(OWNER))),
            ('cistern', 'Cistern', OWNER, None, 'genesis-cistern', rec()),
            ('commons', 'Commons', OWNER, None, 'genesis-commons', rec(owner=lab(OWNER)))]
-    for handle, did in top:
-        out.append((did, 'Avatar', OWNER, did, 'genesis-avatar-' + did, rec(handle=lab(handle))))
-        out.append(('env/' + did, 'Env', OWNER, did, 'genesis-env-' + did, rec(owner=lab(did))))
-        out.append(('wake/' + did, 'Wake', OWNER, did, 'genesis-wake-' + did, rec(owner=lab(did), env=ref('env/' + did))))
-    return out
+    return out  # docs/GENESIS.md: Avatars, Envs and Wakes are not seeded; a principal's own spells make them
 
 
 def epoch(ts):
