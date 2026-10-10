@@ -309,6 +309,17 @@ class Identity(unittest.TestCase):
         self.assertEqual(self.id.claim(self.HANDLE, self.ch['credential'])['did'], DID)
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
 
+    def test_a_strangers_challenges_do_not_exhaust_the_owners(self):
+        # Challenges are counted per requesting address (the root's queue, from transport4's review):
+        # eight asked from one address for a handle refuse that address's ninth, not the owner's.
+        for _ in range(8):
+            self.id.challenge(self.HANDLE, address='203.0.113.9')
+        with self.assertRaises(identity.IdentityError) as refused:
+            self.id.challenge(self.HANDLE, address='203.0.113.9')
+        self.assertEqual(refused.exception.code, 'rate_limited')
+        mine = self.id.challenge(self.HANDLE, address='198.51.100.4')
+        self.assertTrue(mine['credential'].startswith('dt_agent_'))
+
     def test_ninth_attempt_refused_even_if_correct(self):
         self.serve(text='nope')
         for _ in range(8):
