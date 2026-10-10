@@ -3,8 +3,7 @@
 Mounted by the front (transport/http.py) at /xrpc/<nsid> and /.well-known/did.json. Every record is a host
 reply carried verbatim with `$type` added; the host decides what a reader sees: an unauthenticated request
 reads as PUBLIC, a bearer credential as its principal. docs/REPO.md says what is served, what is not, and
-the host ops this asks for (world-entries, world-entry, world-object, world-source, world-sources,
-world-grants, and world-publications open to every reader).
+the host ops it reads.
 """
 import base64
 import re
@@ -15,7 +14,6 @@ COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication
 PUBLIC = 'anonymous'  # the reader an unauthenticated request is; the front's object page reads as it too
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
-RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}')  # record-key syntax
 NEW_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
 SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]-(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]')
 # Collections a host op pages by journal height: (op, the reply's list, the item's record key, the item's cid).
@@ -58,10 +56,8 @@ def car(cid, block):
 
 
 def object_key(oid, tail):
-    """`<object with / as ~>.<tail>`; None for an id the mapping cannot carry back (one holding `~`, or a
-    character record keys forbid)."""
-    key = f"{oid.replace('/', '~')}.{tail}"
-    return key if '~' not in oid and RKEY.fullmatch(key) else None
+    """`<object with / as ~>.<tail>`: a record key for every id the host creates (`[A-Za-z0-9._:/-]`)."""
+    return f"{oid.replace('/', '~')}.{tail}"
 
 
 class Repo:
@@ -142,17 +138,14 @@ class Repo:
         listed = host.send({'op': 'world-objects', 'principal': who, **({'after': cursor} if cursor else {})})
         if listed.get('status') != 'listed':
             raise refused(listed)
-        records, unkeyable = [], [oid for oid in listed['ids'] if object_key(oid, 0) is None]
+        records = []
         for oid in listed['ids']:
-            if oid in unkeyable:  # no record key names it; the response says so rather than inventing one
-                continue
             item = self.object(host, oid, None, who)
             if collection == 'object':
                 records.append(self.record('object', object_key(oid, item['version']), item.get('stateCid'), item))
             else:
                 records += [self.record('law', object_key(oid, law['name']), None, law) for law in item.get('laws') or []]
-        return {'records': records, **({'unkeyable': unkeyable} if unkeyable else {}),
-                **({'cursor': listed['ids'][-1]} if listed.get('more') and listed['ids'] else {})}
+        return {'records': records, **({'cursor': listed['ids'][-1]} if listed.get('more') and listed['ids'] else {})}
 
     def get_record(self, host, q, who):
         self.repo(q)
@@ -166,7 +159,7 @@ class Repo:
             if not oid or not version.isdigit():
                 raise Refusal(400, 'InvalidRequest', 'an object record key is <object with / as ~>.<version>')
             item = self.object(host, oid, int(version), who)
-            cid, rkey = item.get('stateCid'), object_key(oid, version) or rkey
+            cid, rkey = item.get('stateCid'), object_key(oid, version)
         elif collection == 'source':
             reply = host.send({'op': 'world-source', 'principal': who, 'cid': rkey})
             if reply.get('status') != 'source':

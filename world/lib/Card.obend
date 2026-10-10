@@ -60,9 +60,12 @@ def route(text: String, context: Abi.Context, forms: Forms) -> Routed:
   routeHeard({text: text, post: ""}, context, forms)
 def routeHeard(input: Heard, context: Abi.Context, forms: Forms) -> Routed:
   heardAs(withBare(Spell.parse(input.text), input.text, context, forms), input, context, forms)
+# Whether text is only blanks (without measuring all of it: textLength costs its bytes).
+def blank(text: String) -> Bool:
+  textDrop(text, textSpan(text, " \n\t\r")) == ""
 def heardAs(parsed: Spell.Parsed, input: Heard, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
-    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then Routed.usage({}) else Routed.quiet({text: input.text, post: input.post})
+    case notASpell(_): if blank(input.text) then Routed.usage({}) else Routed.quiet({text: input.text, post: input.post})
     case spell(_): routeParsed(parsed, context, forms)
 # A reply with no delvetalk line whose first `name: value` line names an action or a
 # field of one of this card's forms is that form's spell (a bell reads a fenced `rain:
@@ -70,7 +73,7 @@ def heardAs(parsed: Spell.Parsed, input: Heard, context: Abi.Context, forms: For
 def withBare(parsed: Spell.Parsed, text: String, context: Abi.Context, forms: Forms) -> Spell.Parsed:
   match parsed:
     case spell(_): parsed
-    case notASpell(_): bareSpell(Spell.bare(text), context.object, forms, parsed)
+    case notASpell(n): if n.fielded then bareSpell(Spell.bare(text), context.object, forms, parsed) else parsed
 def bareSpell(bindings: Spell.Bindings, card: String, forms: Forms, otherwise: Spell.Parsed) -> Spell.Parsed:
   match bindings:
     case nil(_): otherwise
@@ -187,16 +190,55 @@ def forwarded<E, S, R, T>(text: String, post: String, context: Abi.Context, resu
 # hand-ons "not addressed"), and a new door needs no edit here.
 def handsOn(text: String, context: Abi.Context) -> Bool:
   context.caller == "" && context.object != directory(context).object
-# Whether prose names one of `words` (door words and form actions, as whole words) or one
-# of `fields` (as a `name:` line); both are space-separated with a space at each end.
-def mentions(text: String, words: String, fields: String) -> Bool:
-  Lists.any(Spell.bare(text), fn(b: Spell.Binding) -> Bool: contains(words, " {b.name} ") || contains(fields, " {b.name} ")) || anyWord(textDrop(text, textSpan(text, gaps())), words)
-def gaps() -> String:
-  " \n\t\r.,;:!?()[]\"'`*_>"
-def anyWord(text: String, words: String) -> Bool:
-  if text == "" then false else wordAt(textTake(text, textBreak(text, gaps())), textDrop(text, textBreak(text, gaps())), words)
-def wordAt(word: String, rest: String, words: String) -> Bool:
-  contains(words, " {word} ") || anyWord(textDrop(rest, textSpan(rest, gaps())), words)
+# Whether prose names one of `words` (door words and form actions, each a whole word) or,
+# as a `name:` line, one of `words` or `fields`. One pass: the text is split at blanks
+# once, and a word of three or more letters (a leading and a trailing mark dropped) is
+# looked up among the words of its own length (a 1,788-character reply costs about
+# 20,000 ticks, where a walk of the text for each word cost a million).
+def mentions(text: String, bindings: Spell.Bindings, words: Lists.List<String>, fields: Lists.List<String>) -> Bool:
+  let v = vocabulary(words)
+  let first = firsts(words)
+  fieldNamed(bindings, v, vocabulary(fields)) || scanned(text, v, first)
+def fieldNamed(bindings: Spell.Bindings, words: Vocabulary, fields: Vocabulary) -> Bool:
+  Lists.any(bindings, fn(b: Spell.Binding) -> Bool: known(words, b.name) || known(fields, b.name))
+# Words by length: the first list holds the one-letter words, and so on to 24.
+type Vocabulary = Lists.List<Lists.List<String>>
+def vocabulary(words: Lists.List<String>) -> Vocabulary:
+  Lists.fold(words, empty(24n), fn(word: String) -> Vocabulary -> Vocabulary: fn(v: Vocabulary) -> Vocabulary: inserted(v, word, textLength(word)))
+def empty(n: Nat) -> Vocabulary:
+  if n == 0n then Lists.List.nil({}) else Lists.List.cons({head: Lists.List.nil({}), tail: empty(n - 1n)})
+def inserted(v: Vocabulary, word: String, n: Nat) -> Vocabulary:
+  match v:
+    case nil(_): v
+    case cons(c): if n <= 1n then Lists.List.cons({head: Lists.List.cons({head: word, tail: c.head}), tail: c.tail}) else Lists.List.cons({head: c.head, tail: inserted(c.tail, word, n - 1n)})
+def known(v: Vocabulary, word: String) -> Bool:
+  Lists.any(bucket(v, textLength(word)), fn(w: String) -> Bool: w == word)
+def bucket(v: Vocabulary, n: Nat) -> Lists.List<String>:
+  match v:
+    case nil(_): Lists.List.nil({})
+    case cons(c): if n <= 1n then c.head else bucket(c.tail, n - 1n)
+def scanned(text: String, v: Vocabulary, first: String) -> Bool:
+  if text == "" then false else cut(text, textBreak(text, " \n"), v, first)
+def cut(text: String, at: Nat, v: Vocabulary, first: String) -> Bool:
+  if at >= 3n && textSpan(textTake(text, 1n), first) == 1n && worded(textTake(text, at), v) then true else scanned(textDrop(text, at + 1n), v, first)
+# The letters the words start with, and the marks a word may open with: a word starting
+# with anything else is not looked up.
+def firsts(words: Lists.List<String>) -> String:
+  Lists.fold(words, marks(), fn(w: String) -> String -> String: fn(acc: String) -> String: if textSpan(textTake(w, 1n), acc) == 1n then acc else textConcat(acc, textTake(w, 1n)))
+def worded(word: String, v: Vocabulary) -> Bool:
+  let n = textLength(word)
+  if n > 24n then false else known(v, stripped(word, n))
+# A word without one run of marks at its end and one at its start ("anthology," "(play").
+def stripped(word: String, n: Nat) -> String:
+  let core = textTake(word, n - textSpan(textDrop(word, n - 1n), marks()))
+  textDrop(core, textSpan(core, marks()))
+def marks() -> String:
+  ".,:;!?\"')(*`"
+# A space-separated list of words as a list ("" between two spaces is skipped).
+def wordList(text: String) -> Lists.List<String>:
+  if text == "" then Lists.List.nil({}) else listed(textTake(text, textBreak(text, " ")), textDrop(text, textBreak(text, " ") + 1n))
+def listed(word: String, rest: String) -> Lists.List<String>:
+  if word == "" then wordList(rest) else Lists.List.cons({head: word, tail: wordList(rest)})
 # Whether `needle` stands in `text`.
 def contains(text: String, needle: String) -> Bool:
   containsFrom(textDrop(text, textBreak(text, textTake(needle, 1n))), needle)
@@ -337,6 +379,31 @@ def shortened(fragment: String) -> String:
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
   let total = Lists.length(lines)
   if total > shown then Lists.concat(Lists.take(lines, shown), Document.Documents.cons({head: Document.text("… and {natText(total - shown)} more\n"), tail: Document.Documents.nil()})) else lines
+# Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
+# its Edits (`Plans.Entries<Doorway, {}>`), offers the `door {label, to}` and `undoor
+# {label}` forms to its owner (refused by name to anyone else, and by its owner law where
+# it has one), and lists them on its card as the directory does (`doorLines`).
+record Doorway:
+  label: String
+  to: Plans.Reference
+type Doorways = Lists.List<Doorway>
+sum DoorEdit:
+  edit: {entries: Plans.Entries<Doorway, {}>}
+  refused: Refusal
+def doorForm() -> Form.Form:
+  {card: "", action: "door", fields: Form.Fields.cons({head: {name: "label", kind: Form.Kind.text({min: 1n, max: 32n})}, tail: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})})}
+def undoorForm() -> Form.Form:
+  {card: "", action: "undoor", fields: Form.Fields.cons({head: {name: "label", kind: Form.Kind.text({min: 1n, max: 32n})}, tail: Form.Fields.nil()})}
+def dooring(doors: Doorways, owner: String, action: String, fields: Fields, context: Abi.Context) -> DoorEdit:
+  if context.principal != owner then DoorEdit.refused({clause: "notOwner", reading: "Only {name(owner, context)} changes this card's doors"}) else if action == "door" then added(doors, {label: text(fields, "label"), to: {world: context.world, object: text(fields, "to")}}) else removed(doors, text(fields, "label"))
+def added(doors: Doorways, door: Doorway) -> DoorEdit:
+  if Lists.any(doors, fn(d: Doorway) -> Bool: d.label == door.label) then DoorEdit.refused({clause: "doorTaken", reading: "There is already a door called {door.label}"}) else if Lists.length(doors) >= 8n then DoorEdit.refused({clause: "doorsFull", reading: "A card holds eight doors"}) else DoorEdit.edit({entries: Plans.Entries.append({item: door})})
+def removed(doors: Doorways, label: String) -> DoorEdit:
+  match Lists.find(doors, fn(d: Doorway) -> Bool: d.label == label):
+    case some(d): DoorEdit.edit({entries: Plans.Entries.removeItem({item: d.value})})
+    case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
+def doorLines(doors: Doorways) -> Document.Documents:
+  Lists.map(doors, fn(d: Doorway) -> Document.Document: Document.text("{d.label}: {d.to.object}\n"))
 # The page's merge (FOUNDATION section 4): its human owner replies `merge` to the
 # posted page or an edit, and the object records that post as its page checkpoint. An
 # object with a page keeps `owner` and `pageCheckpoint` in state and, before routing,
@@ -364,6 +431,16 @@ record Section:
 type Page = Lists.List<Section>
 def defaultPage(card: Document.Document, context: Abi.Context, forms: Forms) -> Page:
   Page.cons({head: {title: "Card", body: card}, tail: Page.cons({head: {title: "How to reply", body: usage(context.object, forms)}, tail: Page.nil()})})
+# The context a public page is rendered for: nobody's, at the publishing object.
+def public(context: Abi.Context) -> Abi.Context:
+  extend(stranger(), {object: context.object, world: context.world})
+# Posts an object's page as its door word's wiki page (genesis posts one card per door):
+# `publish {page: door().word, section: "", body}`; the post, or the refusal's clause.
+def publishPage<E, S, R>(word: String, page: Page) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, String>:
+  match perform(Plans.Plan.publish({page: word, section: "", body: pageText(page)})):
+    case published(p): p.post
+    case refused(r): r.clause
+    case _: ""
 def pageText(page: Page) -> String:
   textJoin(Lists.map(page, fn(section: Section) -> String: "## {section.title}\n\n{Document.plain(section.body)}"), "\n")
 # Interpretation, the card default (FOUNDATION section 5). A card with a policy views it

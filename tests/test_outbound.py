@@ -388,7 +388,10 @@ class Publish(Reflection):
                          {"height": edit["receipt"]["height"], "id": edit["result"]["value"], "object": "teller",
                           "page": "teller", "section": "Notes", "body": "the bell rang"})
         self.assertNotIn("replyTo", p)                                    # no page post is recorded yet
-        self.assertEqual(self.host.send(op="world-publications", principal="ann")["status"], "denied")
+        # A publication is posted publicly: any reader lists it, each item naming its entry.
+        theirs = self.host.send(op="world-publications", principal="anonymous")["publications"]
+        self.assertEqual(theirs, listing()["publications"])
+        self.assertEqual(p["hash"], edit["receipt"]["hash"])
         self.publish(section="", body="all of it\n\nin two paragraphs", identity="pub-2")
         whole = listing()["publications"][1]
         self.assertEqual((whole["section"], whole["body"]), ("", "all of it\n\nin two paragraphs"))

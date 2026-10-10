@@ -414,6 +414,33 @@ class Mentions(BridgeCase):
         self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{d}' for d in dids[:4]])
 
 
+class Unaddressed(BridgeCase):
+    def run_refused(self, post):
+        parent = f'at://{DID}/town.delve.feed.post/welcome'
+        stub = Stub({parent: {'status': 'addressee', 'object': 'directory', 'slot': 'welcome'}})
+        real = stub.send
+        stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'outcome': {'tag': 'refused', 'class': 'budget'}}}
+                                 if req['op'] == 'world-turn' else real(req))
+        self.observe([post])
+        bridge.run(self.state, stub)
+        return self.drafts()
+
+    def test_a_plain_reply_refused_budget_gets_no_draft_but_a_spell_does(self):
+        parent = f'at://{DID}/town.delve.feed.post/welcome'
+        (chatter,) = self.run_refused(mk(1, 'lovely thread, thanks all', parent=parent))
+        self.assertEqual(chatter['text'], '')  # journaled, listed by `outbox --all`, never drafted
+        self.assertEqual(chatter['receipt']['outcome']['class'], 'budget')
+
+    def test_a_spell_refused_budget_is_drafted(self):
+        (spell,) = self.run_refused(spell_post(2, 'garden-1', '2026-10-09T10:00:00Z'))
+        self.assertIn('reason: budget', spell['text'])
+
+    def test_field_lines_in_a_reply_count_as_addressed(self):
+        parent = f'at://{DID}/town.delve.feed.post/welcome'
+        (fields,) = self.run_refused(mk(3, 'plant: a fern\ncolour: silver', parent=parent))
+        self.assertIn('reason: budget', fields['text'])
+
+
 class Silence(BridgeCase):
     def test_a_turn_that_offers_nothing_has_no_draft_in_the_outbox_unless_asked(self):
         stub = Stub()

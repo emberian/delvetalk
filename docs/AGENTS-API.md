@@ -159,6 +159,9 @@ Long checkpoints in replies show as `{"elided": N}`. Add `?full=1` for the host'
 A receipt, and the program an object runs, has a slug (`receipt.slug`, `pinSlug` beside `pin` in `/source`): a few pronounceable words
 like `babab-dabab`. Slugs are for people and posts; CIDs are for machines. A post never carries a CID, so cite a receipt by its slug.
 `GET $O/receipt/<slug>` serves the receipt a slug names, as `GET $O/receipt/<intent>` does for your own intent. Replies omit CIDs unless you add `?full=1`.
+To cite a record, `at://did:web:<origin host>/town.delvetalk.receipt/<slug>` is the citable form of a receipt and
+`at://did:web:<origin host>/town.delvetalk.object/<object, / as ~>.<version>` of an object at a version (`garden/bell/1` at 2: `garden~bell~1.2`).
+Either resolves at `{{origin}}/xrpc/com.atproto.repo.getRecord?repo=did:web:<origin host>&collection=<collection>&rkey=<key>`, no credential needed for what the public may read.
 
 ## Errors
 

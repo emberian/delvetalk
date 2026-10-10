@@ -6,13 +6,26 @@ import ./Plan.obend as Plans
 import ./Spell.obend as Spell
 import ./Form.obend as Form
 import ./Card.obend as Card
+# A proposal the target's law refused, held for the target's owner to adopt (sixteen at
+# most; the oldest goes when a seventeenth comes), or for its proposer to withdraw.
+record Held:
+  n: Nat
+  target: String
+  package: String
+  migration: String
+  proposer: String
+  proposerHandle: String
 record State:
   title: String
+  held: Lists.List<Held>
+  next: Nat
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   title: String
 record Edits:
   title: Plans.Edit<String, {}>
+  held: Plans.Entries<Held, {}>
+  next: Plans.Edit<Nat, Nat>
 type Plan = Plans.Plan<Edits>
 # The workshop views the object it reprograms (any object: its state is Data here) for the
 # version a card cites; a card never shows a hash.
@@ -29,7 +42,9 @@ sum Block:
 def defaultSeed() -> Seed:
   {title: "Workshop"}
 def seeded(seed: Seed) -> State:
-  {title: seed.title}
+  {title: seed.title, held: Lists.List.nil(), next: 1n}
+def keep() -> Edits:
+  {title: Plans.Edit.keep({}), held: Plans.Entries.keep({}), next: Plans.Edit.keep({})}
 def initial() -> State:
   seeded(defaultSeed())
 # The first ```obend fenced block of a reply: from the line after the opening
@@ -73,7 +88,7 @@ def reprogrammedCard(target: String, version: Nat) -> Document.Document:
 def refusedCard(reason: String) -> Document.Document:
   Document.text(cat("Not done: ", cat(reason, "\n")))
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n")
+  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nor a block field:\n\n    delvetalk workshop check\n    source: <<BEND\n    …your Objective Bend…\n    BEND\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n\nTo have a copy of a thing made (unless its owner forbids it):\n\n    delvetalk workshop create\n    like: stone\n")
 def tell(verdict: Verdict, card: Document.Document) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.offer({to: "", document: card})):
     case _: verdict
@@ -94,25 +109,60 @@ def checkTarget(target: String, context: Abi.Context) -> Activity<Plan, Response
     case inspected(i): runCheck(i.source)
     case _: tell(Verdict.refused({reason: cat("No object called ", target)}), refusedCard(cat("No object called ", target)))
 # View the target (for its version), check the new package, and reprogram only if it is clean.
-def runPropose(target: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+def runPropose(state: State, target: String, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.view({object: {world: context.world, object: target}})):
-    case viewed(v): vetted(target, v.version, package, migration, context)
+    case viewed(v): vetted(state, target, v.version, package, migration, context)
     case _: tell(Verdict.refused({reason: cat("No object called ", target)}), refusedCard(cat("No object called ", target)))
-def vetted(target: String, was: Nat, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+def vetted(state: State, target: String, was: Nat, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.check({package: package})):
-    case checked(c): adopted(target, was, package, migration, context, c.diagnostics)
+    case checked(c): adopted(state, target, was, package, migration, context, c.diagnostics)
     case _: tell(Verdict.refused({reason: "The workshop could not check it."}), refusedCard("The workshop could not check it."))
-def adopted(target: String, was: Nat, package: String, migration: String, context: Abi.Context, diagnostics: Form.Names) -> Activity<Plan, Response, Verdict>:
+def adopted(state: State, target: String, was: Nat, package: String, migration: String, context: Abi.Context, diagnostics: Form.Names) -> Activity<Plan, Response, Verdict>:
   match diagnostics:
     case cons(_): tell(Verdict.flawed({diagnostics: diagnostics}), checkedCard(diagnostics))
-    case nil(_): reprogram(target, was, package, migration, context)
-def reprogram(target: String, was: Nat, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+    case nil(_): reprogram(state, target, was, package, migration, context)
+def reprogram(state: State, target: String, was: Nat, package: String, migration: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.reprogram({object: {world: context.world, object: target}, package: package, migration: migration})):
     case reprogrammed(r): tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was))
-    case refused(r): tell(Verdict.refused({reason: r.clause}), refusedCard(r.clause))
+    case refused(r): if r.clause == "compile" || r.clause == "program" || r.clause == "packageBytes" || r.clause == "migration" then tell(Verdict.refused({reason: r.clause}), refusedCard(r.clause)) else holding(state, {n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle}, r.clause, context)
     case _: tell(Verdict.refused({reason: "The reprogram was not answered."}), refusedCard("The reprogram was not answered."))
+# Held: the law refused the proposer's reprogram, so it waits for the target's owner.
+def holding(state: State, held: Held, clause: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match state.held:
+    case cons(c): if Lists.length(state.held) >= 16n then dropping(c.head, held, clause, context) else holdWritten(held, clause, "", context)
+    case nil(_): holdWritten(held, clause, "", context)
+def dropping(oldest: Held, held: Held, clause: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  let written(_) = perform(write {held: removeItem oldest})
+  holdWritten(held, clause, "The oldest held proposal, #{natText(oldest.n)}, was dropped.\n", context)
+def holdWritten(held: Held, clause: String, dropped: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  let written(_) = perform(write {held: append held, next: add 1n})
+  tell(Verdict.refused({reason: clause}), Document.text("Not done: {clause}\nHeld as #{natText(held.n)} for the owner of {held.target} to adopt:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropped}"))
+def heldNumbered(state: State, n: Nat) -> Lists.Maybe<Held>:
+  Lists.find(state.held, fn(h: Held) -> Bool: h.n == n)
+# Adopt: the reprogram runs under the adopter, so the target's law judges it as theirs; the
+# owner's adoption applies it, anyone else's is refused by name.
+def adopting(state: State, n: Nat, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match heldNumbered(state, n):
+    case none(_): tell(Verdict.refused({reason: "noHeld"}), refusedCard("No held proposal #{natText(n)}"))
+    case some(h): adoptRun(h.value, context)
+def adoptRun(held: Held, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.reprogram({object: {world: context.world, object: held.target}, package: held.package, migration: held.migration})):
+    case reprogrammed(r): adoptWritten(held, r.pin, context)
+    case refused(r): tell(Verdict.refused({reason: "notOwner"}), refusedCard("Only the owner of {held.target} adopts #{natText(held.n)} (refused {r.clause})"))
+    case _: tell(Verdict.refused({reason: "The reprogram was not answered."}), refusedCard("The reprogram was not answered."))
+def adoptWritten(held: Held, pin: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  let written(_) = perform(write {held: removeItem held})
+  tell(Verdict.reprogrammed({pin: pin}), Document.text("✾ WORKSHOP\n\nAdopted #{natText(held.n)} from {Card.shown(held.proposer, held.proposerHandle, context)}: {held.target} is reprogrammed.\n"))
+# Withdraw: the proposer's alone.
+def withdrawing(state: State, n: Nat, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match heldNumbered(state, n):
+    case none(_): tell(Verdict.refused({reason: "noHeld"}), refusedCard("No held proposal #{natText(n)}"))
+    case some(h): if h.value.proposer != context.principal then tell(Verdict.refused({reason: "notProposer"}), refusedCard("Only its proposer, {Card.shown(h.value.proposer, h.value.proposerHandle, context)}, withdraws #{natText(n)}")) else withdrawn(h.value, context)
+def withdrawn(held: Held, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  let written(_) = perform(write {held: removeItem held})
+  tell(Verdict.refused({reason: "withdrawn"}), Document.text("✾ WORKSHOP\n\nWithdrew #{natText(held.n)}.\n"))
 def propose(state: State, input: {target: String, package: String, migration: String}, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
-  runPropose(input.target, input.package, input.migration, context)
+  runPropose(state, input.target, input.package, input.migration, context)
 # A reply from the town: a fenced block with `delvetalk workshop check`, a check
 # of a target, or `delvetalk workshop propose` with a target and a block.
 # The spell is read from the text before the first backtick, so a long block after
@@ -126,26 +176,45 @@ def askedFirst(parsed: Spell.Parsed, text: String) -> Spell.Parsed:
     case notASpell(_): Spell.parse(text)
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match spellOf(input.text):
-    case notASpell(_): tell(Verdict.refused({reason: "Reply with a workshop spell."}), usage())
-    case spell(s): routed(input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"))
-def routed(input: Card.Heard, context: Abi.Context, card: String, action: String, target: String, migration: String) -> Activity<Plan, Response, Verdict>:
-  if card != context.object then tell(Verdict.refused({reason: cat("This card is ", context.object)}), refusedCard(cat("This card is ", context.object))) else acted(action, target, migration, fenced(input.text), context)
-def acted(action: String, target: String, migration: String, block: Block, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+    case notASpell(n): if textTake(n.reason, 9n) == "the block" then tell(Verdict.refused({reason: n.reason}), refusedCard(n.reason)) else tell(Verdict.refused({reason: "Reply with a workshop spell."}), render(state, context))
+    case spell(s): if s.card == context.object && s.action == "create" then likeness(Spell.valueOf(s.fields, "like"), context) else if s.card == context.object && (s.action == "adopt" || s.action == "withdraw") then numbered(state, s.action, Spell.number(Spell.valueOf(s.fields, "n")), context) else routed(state, input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"), Spell.valueOf(s.fields, "source"))
+# The code is a `source: <<BEND` field (Spell's block value), else a fenced obend block.
+# `create / like: <thing>` asks the thing for a copy of itself (its `copy`, under the asker):
+# the thing refuses by name when its owner made it not copyable, and offers the result.
+def likeness(like: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  if like == "" then tell(Verdict.refused({reason: "like"}), refusedCard("create takes like: the thing to copy")) else asked(like, context)
+def asked(like: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.send({object: {world: context.world, object: like}, method: "copy", argument: Plans.nothing()})):
+    case delivery(_): Verdict.clean({})
+    case refused(r): tell(Verdict.refused({reason: r.clause}), refusedCard("No copy of {like}: {r.clause}"))
+    case _: tell(Verdict.refused({reason: "noAnswer"}), refusedCard("No copy of {like}"))
+def numbered(state: State, action: String, n: Spell.Number, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match n:
+    case no(_): tell(Verdict.refused({reason: "n"}), refusedCard("{action} takes n: the held proposal's number"))
+    case yes(y): if action == "adopt" then adopting(state, y.value, context) else withdrawing(state, y.value, context)
+def routed(state: State, input: Card.Heard, context: Abi.Context, card: String, action: String, target: String, migration: String, source: String) -> Activity<Plan, Response, Verdict>:
+  if card != context.object then tell(Verdict.refused({reason: cat("This card is ", context.object)}), refusedCard(cat("This card is ", context.object))) else acted(state, action, target, migration, if source != "" then Block.some({source: source}) else fenced(input.text), context)
+def acted(state: State, action: String, target: String, migration: String, block: Block, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match block:
-    case some(b): withBlock(action, target, migration, b.source, context)
-    case none(_): withoutBlock(action, target, context)
-def withBlock(action: String, target: String, migration: String, source: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
-  if action == "check" then runCheck(source) else if action == "propose" && target != "" then runPropose(target, source, migration, context) else tell(Verdict.refused({reason: "Name a target to propose to."}), usage())
+    case some(b): withBlock(state, action, target, migration, b.source, context)
+    case none(_): withoutBlock(state, action, target, context)
+def withBlock(state: State, action: String, target: String, migration: String, source: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  if action == "check" then runCheck(source) else if action == "propose" && target != "" then runPropose(state, target, source, migration, context) else tell(Verdict.refused({reason: "Name a target to propose to."}), usage())
 # The workshop keeps no settings of its own (its title is its creator's), so it has no
 # lenses: `set` says so, and `?` is its usage card.
-def withoutBlock(action: String, target: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+def withoutBlock(state: State, action: String, target: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   if action == "?" then tell(Verdict.refused({reason: "usage"}), usage()) else if action == "set" then tell(Verdict.refused({reason: "Nothing here can be set: the workshop keeps no settings of its own."}), refusedCard("Nothing here can be set: the workshop keeps no settings of its own.")) else if action == "check" && target != "" then checkTarget(target, context) else tell(Verdict.refused({reason: "Include a fenced obend block."}), usage())
 # The workshop's actions carry a fenced block, which a form cannot describe: its
 # card is the usage text, and receive reads the block itself.
 def forms() -> Card.Forms:
   Card.Forms.nil()
+# The card as a public page under the door word (genesis posts one card per door).
+def publishPage(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  Card.publishPage(door().word, Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def door() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  usage()
+  Document.Document.sequence({items: Document.Documents.cons({head: usage(), tail: heldLines(state, context)})})
+def heldLines(state: State, context: Abi.Context) -> Document.Documents:
+  if Lists.length(state.held) == 0n then Document.Documents.nil() else Document.Documents.cons({head: Document.text("\nHeld for their targets' owners (adopt / n, or withdraw / n by the proposer):\n"), tail: Card.clipped(Lists.map(state.held, fn(h: Held) -> Document.Document: Document.text("#{natText(h.n)} for {h.target} from {Card.shown(h.proposer, h.proposerHandle, context)}\n")), 8n)})

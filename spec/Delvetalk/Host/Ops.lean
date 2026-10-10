@@ -44,6 +44,25 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
 
+/-- An object id a creation may take: 1..128 bytes of letters, digits and `. _ : / -`, so every object has an
+    AT record key (`~` stands for `/` there). Journals with other ids still replay; only new creations
+    are held to it. -/
+def validObjectId (id : String) : Bool :=
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes &&
+    id.toList.all fun (c : Char) => c.isAlphanum || ".:_/-".toList.contains c
+
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -"
+
+/-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
+def publicReader : String := "anonymous"
+
+/-- A reader principal: 1..128 bytes, or the public reader (`anonymous` or "", public objects only),
+    returned as "". Every read op takes its reader through this. -/
+def readerOf (j : Json) : Except String String := do
+  let p ← j.getObjValAs? String "principal"
+  if p.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  return if p == publicReader then "" else p
+
 /-- One field's edit, in the wire shape of `world/lib/Plan.obend`:
     `keep {}`, `set {value}`, `add {delta}`, `append {item}`, `amend {index, change}`. -/
 inductive EditKind where
@@ -592,8 +611,7 @@ def requestModules (j : Json) : Except String (List (String × String)) := do
     "" anonymously, since the library is the world's public code. A package that declares laws
     compiles, as it would at `world-create`. The answer is `check-package`'s plus `library`. -/
 def worldCheck (w : World) (j : Json) : Except String Json := do
-  if (← j.getObjValAs? String "principal").utf8ByteSize > Limits.maxPrincipalBytes then
-    throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  discard <| readerOf j
   let entry ← j.getObjValAs? String "entry"
   let own ← requestModules j
   let modules ← match w.library with
@@ -1761,6 +1779,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let digest := Journal.bodyHash (Json.mkObj
     (j.getObj?.toOption.map (·.toList.filter (·.1 != "op")) |>.getD []))
   if let some r := retained w principal intent digest then return (w, r)
+  unless validObjectId id do throw s!"object id {id} is not one: {objectIdRule}"
   if id == "self" then throw "object id self is reserved for the running object"
   if ownCards.contains id then throw s!"object id {id} is reserved: it names each principal's own {id}/<principal>"
   -- The opener of the world may create an object for its owner: the law (the default law
@@ -2294,7 +2313,7 @@ def listIds (w : World) (reader pfx after : String) : List String × Bool :=
 
 /-- `world-objects {principal, prefix?, after?}`. -/
 def objectsOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let text := fun (k : String) => match j.getObjVal? k with
     | .ok (.str s) => pure s
     | .ok _ => throw s!"{k} must be text"
@@ -2304,7 +2323,7 @@ def objectsOp (w : World) (j : Json) : Except String Json := do
 
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   match w.objects[id]? with
   | none => return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   | some o =>
@@ -2344,8 +2363,7 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object, version, or
     a version only a write from before host7 made). -/
 def stateCidOp (w : World) (j : Json) : Except String Json := do
-  let reader ← j.getObjValAs? String "principal"
-  if reader.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
   let version ← natField j "version"
   let answer := fun (status : String) (more : List (String × Json)) =>
@@ -2415,6 +2433,184 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
          (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
        ("elided", toJson elided)])
 
+/-- A law text's clauses as written: name, reading (if any), and the expression's text. -/
+def lawClauses (text : String) : List (String × Option String × String) :=
+  ((text.splitOn "\n").map (·.trimAscii.toString)).filterMap fun line => do
+    let rest ← (line.dropPrefix? "law ").map (·.toString)
+    let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
+    let after := (rest.drop name.length).toString.trimAsciiStart.toString
+    let (reading, after) := match lawReading after with
+      | .ok (some (r, more)) => (some r, more.trimAsciiStart.toString)
+      | _ => (none, after)
+    let expr ← after.dropPrefix? ":"
+    return (name, reading, expr.toString.trimAscii.toString)
+
+/-- The pin and law text `id` had at `version`: its current ones, with each later reprogram and
+    amendment undone (newest first), as the admitted entries that made later versions record them. -/
+def pinAndLawAt (w : World) (o : Object) (id : String) (version : Nat) : String × String := Id.run do
+  let mut pin := o.pin
+  let mut law := o.lawText
+  for i in ((w.touched[id]?).getD #[]).reverse do
+    let some entry := w.entries[i]? | continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let named := fun (x : Json) => (x.getObjValAs? String "object").toOption == some id
+    let later := (arr "writes").any fun x => named x && ((x.getObjValAs? Nat "version").toOption.getD 0) > version
+    if !later then continue
+    for r in arr "reprograms" do
+      if named r then pin := (r.getObjValAs? String "oldPin").toOption.getD pin
+    for a in arr "amendments" do
+      if named a then law := (a.getObjValAs? String "old").toOption.getD law
+  return (pin, law)
+
+/-- `world-object {principal, object, version?}`: the object as of `version` (default current): its pin and
+    law in force then, the law's clauses with their readings, the state CID the journal names, and the
+    library pin its code was compiled under. `denied` and `unknown` as `world-state-cid` answers them. -/
+def objectOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let id ← j.getObjValAs? String "object"
+  let unknown := Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  let some o := w.objects[id]? | return unknown
+  if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+  let version := (← optNat j "version").getD o.version
+  if version > o.version then return unknown
+  let some cid := stateCidAt w id version | return unknown
+  let (pin, law) := pinAndLawAt w o id version
+  let clauses := lawClauses law
+  let current := lawClauses o.lawText
+  -- A clause's reading: the one its law text gives, else the package's while the clause is the package's.
+  let readingOf := fun (name : String) (reading : Option String) (expr : String) =>
+    reading.orElse fun _ => if (current.find? (·.1 == name)).map (·.2.2) == some expr then o.readings.lookup name else none
+  let rows := clauses.map fun (name, reading, expr) => (name, readingOf name reading expr, expr)
+  let library := (o.inputs.getObjValAs? String "library").toOption
+  return Json.mkObj [("status", toJson "object"), ("record", Json.mkObj ([("object", toJson id), ("version", toJson version),
+    ("pin", toJson pin), ("pinSlug", toJson ((Slug.ofCid pin).getD "")), ("law", toJson law),
+    ("readings", Json.arr (rows.toArray.filterMap fun (n, r, _) => r.map fun r => Json.mkObj [("name", toJson n), ("reading", toJson r)])),
+    ("laws", Json.arr (rows.toArray.map fun (n, r, e) => Json.mkObj ([("object", toJson id), ("version", toJson version),
+      ("pin", toJson pin), ("name", toJson n), ("clause", toJson e)] ++ (r.map fun r => [("reading", toJson r)]).getD []))),
+    ("stateCid", toJson cid)] ++ (library.map fun l => [("library", toJson l)]).getD []))]
+
+/-- A page of `(height, item)` pairs, ascending by height: after `after` (exclusive), or with
+    `reverse: true` descending below `before` (exclusive; from the newest when absent); at most `limit`
+    (1..100, default 100). The items and whether more follow. -/
+def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array Json × Bool) := do
+  let limit := (← optNat j "limit").getD Limits.maxHistoryLimit
+  if limit == 0 || limit > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
+  let reverse ← match j.getObjVal? "reverse" with
+    | .ok (.bool b) => pure b
+    | .ok _ => throw "reverse must be true or false"
+    | .error _ => pure false
+  let chosen ← if reverse then do
+      let before ← optNat j "before"
+      pure (items.reverse.filter fun (h, _) => before.all (h < ·))
+    else do
+      let after := (← optNat j "after").getD 0
+      pure (items.filter fun (h, _) => h > after)
+  return ((chosen.extract 0 limit).map (·.2), decide (chosen.size > limit))
+
+/-- Every source the journal carries, as `(height, record {cid, name, text, height})`: an entry's `sources`
+    (named as the compile inputs that introduced it name it) and a library entry's modules, each once,
+    at the first entry that carried it. -/
+def sourceRecords (w : World) : Array (Nat × String × Json) := Id.run do
+  let mut names : Std.HashMap String String := {}
+  for entry in w.entries do
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let compiles := ((outcome.getObjVal? "compile").toOption.toList ++
+      (((outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun c => (c.getObjVal? "compile").toOption)
+    for c in compiles do
+      for m in ((c.getObjVal? "modules").toOption.bind (·.getArr?.toOption)).getD #[] do
+        if let (.ok n, .ok cid) := (m.getObjValAs? String "name", m.getObjValAs? String "cid") then
+          unless names.contains cid do names := names.insert cid n
+  let mut out : Array (Nat × String × Json) := #[]
+  let mut seen : Std.HashSet String := {}
+  for (entry, i) in w.entries.zipIdx do
+    let height := i + 1
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let carried := (((entry.getObjVal? "sources").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun x =>
+      match x.getObjValAs? String "cid", x.getObjValAs? String "source" with
+      | .ok c, .ok t => some (c, (names.get? c).getD "", t)
+      | _, _ => none
+    let library := if tagOf entry != "library" then [] else
+      (((outcome.getObjVal? "modules").toOption.bind (parseModules · |>.toOption)).getD []).map fun (n, t) => (sourceCid t, n, t)
+    for (cid, name, text) in carried ++ library do
+      if seen.contains cid then continue
+      seen := seen.insert cid
+      out := out.push (height, cid, Json.mkObj [("cid", toJson cid), ("name", toJson name), ("text", toJson text),
+        ("height", toJson height)])
+  return out
+
+/-- The source CIDs `reader` may read: the modules of every object it may view, and the libraries'. -/
+def readableSources (w : World) (reader : String) : Std.HashSet String := Id.run do
+  let mut out : Std.HashSet String := {}
+  for (_, l) in w.libraries.toList do
+    for (_, src) in l.modules do out := out.insert (sourceCid src)
+  for (_, o) in w.objects.toList do
+    if o.read.permits reader then
+      for src in inputSources o.inputs do out := out.insert (sourceCid src)
+  return out
+
+/-- `world-source {principal, cid}`: `{status: "source", record: {cid, name, text, height}}`, `denied` unless
+    an object the reader may view has it in its closure (or a library has it), `unknown` when the journal
+    carries no such source. -/
+def sourceOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let cid ← j.getObjValAs? String "cid"
+  match (sourceRecords w).find? (·.2.1 == cid) with
+  | none => return Json.mkObj [("status", toJson "unknown"), ("message", toJson s!"unknown: no source here is {cid}")]
+  | some (_, _, record) =>
+    if !(readableSources w reader).contains cid then return Json.mkObj [("status", toJson "denied"), ("cid", toJson cid)]
+    return Json.mkObj [("status", toJson "source"), ("record", record)]
+
+/-- `world-sources {principal, after?, before?, reverse?, limit?}`: the sources the reader may read, paged by
+    the height of the entry that carried each. -/
+def sourcesOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let readable := readableSources w reader
+  let (shown, more) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
+  return Json.mkObj [("status", toJson "sources"), ("sources", Json.arr shown), ("more", toJson more)]
+
+/-- `world-grants {principal, after?, before?, reverse?, limit?}`: every grant an admitted entry made whose
+    object the reader may view, as it stands now (`revoked`, `uses` left), with the `height` and `hash` of
+    the entry that made it, paged by that height. -/
+def grantsOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let mut items : Array (Nat × Json) := #[]
+  for (entry, i) in w.entries.zipIdx do
+    if tagOf entry != "admitted" then continue
+    let made := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "grants" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
+    for g in made do
+      let some id := (g.getObjValAs? String "id").toOption | continue
+      let some now := w.grants[id]? | continue
+      unless viewable w reader now.object do continue
+      items := items.push (i + 1, (now.json.setObjVal! "revoked" (toJson now.revoked)).setObjVal! "height" (toJson (i + 1))
+        |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
+  let (shown, more) ← pageByHeight j items
+  return Json.mkObj [("status", toJson "grants"), ("grants", Json.arr shown), ("more", toJson more)]
+
+/-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it
+    (`projectEntry`), and with `bytes: true` the lowercase hex of its canonical DAG-CBOR without `hash`
+    when the reader sees it whole (the identity's own principal); `unknown` otherwise. -/
+def entryOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let hash ← j.getObjValAs? String "hash"
+  let some entry := w.entries.find? fun e => (e.getObjValAs? String "hash").toOption == some hash
+    | return Json.mkObj [("status", toJson "unknown"), ("message", toJson s!"unknown: no entry here is {hash}")]
+  let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+  let whole := owner == reader && !reader.isEmpty
+  let bytes ← if whole && (j.getObjValAs? Bool "bytes").toOption == some true then do
+      let fields := ((entry.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "hash")
+      pure [("bytes", toJson (Delvetalk.Canonical.hex (← Delvetalk.Canonical.encodeJson (Json.mkObj fields))))]
+    else pure []
+  return Json.mkObj ([("status", toJson "receipt"), ("receipt", projectEntry w reader entry)] ++ bytes)
+
+/-- `world-entries {principal, after?, before?, reverse?, limit?}`: every entry, each as the reader may
+    see it, paged by height (`pageByHeight`). -/
+def entriesOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let (shown, more) ← pageByHeight j (w.entries.zipIdx.map fun (e, i) => (i + 1, e))
+  return Json.mkObj [("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader))),
+    ("more", toJson more)]
+
 /-- Everything a slug may name, as `(cid, kind)`: every entry's hash (`receipt`); every pin an
     entry gave an object `reader` may view (`pin`); the state CIDs the journal names for such an
     object: a created seed, a write's `cid` (`state`). -/
@@ -2450,7 +2646,7 @@ def slugTargets (w : World) (reader : String) : Array (String × String) := Id.r
     receipt as `world-receipt` renders it to that reader when it names one; `{status: "ambiguous",
     matches}` when it names two or more CIDs; `{status: "unknown"}` when none. -/
 def resolveOp (w : World) (j : Json) : Except String Json := do
-  let reader ← j.getObjValAs? String "principal"
+  let reader ← readerOf j
   let slug ← j.getObjValAs? String "slug"
   if (Slug.decode slug).isNone then throw s!"{slug} is not a slug: two proquint words, like lusab-babad"
   let hits := (slugTargets w reader).foldl (fun (acc : Array (String × String)) (cid, kind) =>
@@ -2466,11 +2662,6 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
   | many => return Json.mkObj [("status", toJson "ambiguous"), ("slug", toJson slug), ("matches", toJson many.length),
       ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
-/-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
-def readerOf (j : Json) : Except String String := do
-  let p ← j.getObjValAs? String "principal"
-  if p.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
-  return p
 
 /-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
     reader, `identity`), projected under the reader's authority. -/
@@ -2524,7 +2715,7 @@ def originOf (w : World) (entry : Json) : Json := Id.run do
     after journal height `after`; one page. Each offer carries `from`, the turn it answers (`originOf`). The publisher also gets the `publications`
     (`{height, ordinal, id, object, page, section, text}`) to post. -/
 def offersOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let principal ← readerOf j
   let after := (← optNat j "after").getD 0
   let all := (w.outbox.getD principal #[]).filter fun (index, _) => index + 1 > after
   let page := all.extract 0 Limits.maxHistoryLimit
@@ -2558,18 +2749,14 @@ def pagePosts (w : World) : Std.HashMap String (Nat × String) :=
     | some (h, _) => if h ≥ p.height then m else m.insert key (p.height, uri)
     | none => m.insert key (p.height, uri)
 
-/-- `world-publications {principal, after?}`: the publications admitted turns retained, for the
-    publisher (the clock principal, else "transport"; anyone else is `denied`), oldest first after
-    journal height `after`, one page: `{height, ordinal, id, object, page, section, body}`, and
+/-- `world-publications {principal, after?, before?, reverse?, limit?}`: the publications admitted turns
+    retained, for every reader (a publication is posted publicly), paged by height (`pageByHeight`):
+    `{height, ordinal, id, object, page, section, body, hash}` (`hash` the retaining entry's), and
     `replyTo` for a section edit when a post of its whole page is recorded (the newest). -/
 def publicationsOp (w : World) (j : Json) : Except String Json := do
-  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
-  let after := (← optNat j "after").getD 0
-  if principal != publisher w then return Json.mkObj [("status", toJson "denied")]
-  let all := w.published.filter fun (index, _) => index + 1 > after
-  let shown := all.extract 0 Limits.maxHistoryLimit
+  discard <| readerOf j
   let posts := pagePosts w
-  let items := shown.filterMap fun (index, i) => do
+  let items := w.published.filterMap fun (index, i) => do
     let entry ← w.entries[index]?
     let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
     let field := fun (k : String) => (p.getObjValAs? String k).toOption
@@ -2583,10 +2770,11 @@ def publicationsOp (w : World) (j : Json) : Except String Json := do
       match posts[identityKey object title]? with
       | some (_, uri) => [("replyTo", toJson uri)]
       | none => []
-    pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
+    pure (index + 1, Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
       ("id", (p.getObjVal? "id").toOption.getD Json.null), ("object", toJson object), ("page", toJson title),
-      ("section", toJson part), ("body", toJson body)] ++ replyTo))
-  return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr items),
-    ("more", toJson (decide (all.size > shown.size)))]
+      ("section", toJson part), ("body", toJson body),
+      ("hash", (entry.getObjVal? "hash").toOption.getD Json.null)] ++ replyTo))
+  let (shown, more) ← pageByHeight j items
+  return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr shown), ("more", toJson more)]
 
 end Delvetalk.Host

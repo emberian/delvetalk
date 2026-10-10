@@ -4,16 +4,11 @@ planting, a refusal, a publication and a private counter.
 Refuted by: a receipt read by slug, by CID and by world-receipt differing; a sync CAR whose block does not
 hash to the entry's CID (checked with this file's own DAG-CBOR decoder); a private object's record served to
 the public reader or refused to its owner; a cursor that skips or repeats an entry; did.json naming another DID.
-
-`Proposed` STUBS the host ops docs/REPO.md asks the host lane for, from the real host's own replies and the
-journal it wrote. Each stub answers only while the real host refuses the op by name, so it retires itself when
-the op lands; then delete it.
 """
 import base64
 import hashlib
 import http.client
 import json
-import re
 import tempfile
 import threading
 import unittest
@@ -29,108 +24,6 @@ from transport.http import Front, RemoteHeaps
 
 REPO = 'did:web:delvetalk.fg-goose.online'
 NS = 'town.delvetalk.'
-LAW = re.compile(r'law (\S+?)(?: "((?:[^"\\]|\\.)*)")?: (.*)')
-
-
-class Proposed:
-    """STUB: world-entries, world-entry, world-object, world-source, world-sources, world-grants, and
-    world-publications for every reader, as docs/REPO.md specifies them."""
-
-    def __init__(self, host, repl, journal):
-        self.host, self.repl, self.journal = host, repl, journal
-
-    def send(self, req):
-        real = self.host.send(req)
-        stub = getattr(self, req['op'].replace('-', '_'), None)
-        missing = 'unknown world operation' in str(real.get('message')) or \
-            (req['op'] == 'world-publications' and (real.get('status') == 'denied' or any('hash' not in p for p in real.get('publications', []))))
-        return stub(req) if stub and missing else real
-
-    def lines(self):
-        return [json.loads(line) for line in Path(self.journal).read_text().splitlines() if line.strip()]
-
-    def project(self, reader, entry):
-        """The host's own projection of one entry: world-receipt of its identity (which adds no height or hash to a
-        public refusal; projectEntry does). None when the identity has come to name another entry."""
-        ident = entry['identity']
-        r = self.host.send({'op': 'world-receipt', 'principal': reader, 'identity': ident['intent'], 'of': ident['principal']})
-        if r.get('status') == 'receipt' and r['receipt'].get('hash') == entry['hash']:
-            return r['receipt']
-        if r.get('status') == 'refused' and entry['outcome']['tag'] == 'refused':
-            return {**r, 'height': entry['height'], 'hash': entry['hash']}
-        return None
-
-    def page(self, req, items):
-        if req.get('reverse'):
-            items = [i for i in reversed(items) if 'before' not in req or i['height'] < req['before']]
-        else:
-            items = [i for i in items if i['height'] > req.get('after', 0)]
-        limit = req.get('limit', 100)
-        return items[:limit], len(items) > limit
-
-    def world_entries(self, req):
-        shown, more = self.page(req, [p for p in (self.project(req['principal'], e) for e in self.lines()) if p])
-        return {'status': 'entries', 'entries': shown, 'more': more}
-
-    def world_entry(self, req):
-        entry = next((e for e in self.lines() if e['hash'] == req['hash']), None)
-        shown = entry and self.project(req['principal'], entry)
-        if not shown:
-            return {'status': 'unknown', 'message': f"no entry here is {req['hash']}"}
-        out = {'status': 'receipt', 'receipt': shown}
-        if req.get('bytes') and {k: v for k, v in shown.items() if k != 'slug'} == entry:  # the reader sees it whole
-            out['bytes'] = self.repl.send({'op': 'canonical-encode', 'json': {k: v for k, v in entry.items() if k != 'hash'}})['hex']
-        return out
-
-    def world_object(self, req):
-        who, oid = req['principal'], req['object']
-        seen = self.host.send({'op': 'world-inspect', 'principal': who, 'object': oid})
-        if seen.get('status') != 'inspected':
-            return seen
-        current = self.host.send({'op': 'world-view', 'principal': who, 'object': oid})['version']
-        version = req.get('version', current)
-        if version != current:
-            return {'status': 'unknown', 'message': 'the stub reads only the current version'}
-        cid = self.host.send({'op': 'world-state-cid', 'principal': who, 'object': oid, 'version': version})
-        if cid.get('status') != 'stateCid':
-            return cid
-        created = [o for e in self.lines() for o in [e['outcome']] + e['outcome'].get('creates', []) if o.get('object') == oid and 'compile' in o]
-        laws = [LAW.fullmatch(line).groups() for line in seen['law'].splitlines()]
-        return {'status': 'object', 'record': {
-            'object': oid, 'version': version, 'pin': seen['pin'], 'pinSlug': seen['pinSlug'], 'law': seen['law'],
-            'readings': [{'name': n, 'reading': r} for n, r, _ in laws if r], 'stateCid': cid['cid'],
-            'laws': [{'object': oid, 'version': version, 'pin': seen['pin'], 'name': n, 'clause': c, **({'reading': r} if r else {})}
-                     for n, r, c in laws],
-            **({'library': created[-1]['compile']['library']} if created and 'library' in created[-1]['compile'] else {})}}
-
-    def sources(self):
-        lines = self.lines()
-        names = {m['cid']: m['name'] for e in lines for o in [e['outcome']] + e['outcome'].get('creates', [])
-                 for m in (o.get('compile') or {}).get('modules', [])}
-        return [{'cid': s['cid'], 'name': names.get(s['cid'], ''), 'text': s['source'], 'height': e['height']}
-                for e in lines for s in e.get('sources', [])]
-
-    def world_source(self, req):
-        found = [s for s in self.sources() if s['cid'] == req['cid']]
-        return {'status': 'source', 'record': found[0]} if found else {'status': 'unknown', 'message': f"no source here is {req['cid']}"}
-
-    def world_sources(self, req):
-        shown, more = self.page(req, self.sources())
-        return {'status': 'sources', 'sources': shown, 'more': more}
-
-    def world_grants(self, req):
-        lines = self.lines()
-        revoked = {r for e in lines for r in e['outcome'].get('revokes', [])}
-        grants = [{**g, 'revoked': g['id'] in revoked, 'height': e['height'], 'hash': e['hash']}
-                  for e in lines for g in e['outcome'].get('grants', [])]
-        shown, more = self.page(req, grants)
-        return {'status': 'grants', 'grants': shown, 'more': more}
-
-    def world_publications(self, req):
-        hashes = {e['height']: e['hash'] for e in self.lines()}
-        real = self.host.send({**req, 'principal': 'transport'})
-        shown, more = self.page(req, [{**p, 'hash': hashes[p['height']]} for p in real['publications']])
-        return {'status': 'publications', 'publications': shown, 'more': more}
 
 
 def cbor(data, i=0):
@@ -199,7 +92,6 @@ class Repository(unittest.TestCase):
         ident = identity.Identity(cls.tmp.name, delve.Client(cls.provider), clock=lambda: cls.now[0])
         cls.front = Front(('127.0.0.1', 0), cls.host, ident, clock=lambda: cls.now[0],
                           heaps=RemoteHeaps(sock, Path(cls.tmp.name) / 'heaps'), repl=HostClient(sock, stateless=True))
-        cls.front.host = Proposed(cls.host, HostClient(sock, stateless=True), Path(cls.tmp.name) / 'world.journal')
         cls.port = cls.front.server_address[1]
         threading.Thread(target=cls.front.serve_forever, daemon=True).start()
         send = cls.host.send
@@ -211,10 +103,8 @@ class Repository(unittest.TestCase):
             send({'op': 'world-turn', 'principal': DID, 'object': 'nope', 'method': 'receive', 'argument': record(), 'identity': 'miss'}),
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publish', 'argument': record(), 'identity': 'pub-1'}),
             send({'op': 'world-create', 'principal': DID, 'identity': 'mk-d', 'object': 'diary', 'modules': counter_modules(),
-                  'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}}),
-            send({'op': 'world-create', 'principal': DID, 'identity': 'mk-t', 'object': 'odd~one', 'modules': counter_modules(),
-                  'entry': 'initial', 'seed': record(count=nat(0))})]
-        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created', 'created'], seeded
+                  'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})]
+        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created'], seeded
         cls.receipts = {r['receipt']['identity']['intent']: r['receipt'] for r in seeded}
 
     @classmethod
@@ -363,8 +253,6 @@ class Repository(unittest.TestCase):
         s, bell = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden~bell~1.0')
         self.assertEqual((s, bell['uri'], bell['value']['object']), (200, f'at://{REPO}/{NS}object/garden~bell~1.0', 'garden/bell/1'), bell)
         self.assertEqual(self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/bell/1/0'), (s, bell))
-        listing = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'object')[1]
-        self.assertEqual(listing['unkeyable'], ['odd~one'])  # `~` in an id cannot be carried back
         laws = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'law')[1]['records']
         self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
         self.assertNotIn('diary', [x['value']['object'] for x in laws])

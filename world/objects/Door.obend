@@ -5,31 +5,37 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./Card.obend as Card
+# Who knocked, with their handle as the host knew it then.
+record Knock:
+  who: String
+  handle: String
 record State:
   open: Bool
   openedBy: String
-  knocks: Lists.List<String>
+  openedHandle: String
+  knocks: Lists.List<Knock>
   observers: Card.Observers
 # What a creator may supply; the host lays it over initial().
 type Seed = {}
 record Edits:
   open: Plans.Edit<Bool, {}>
   openedBy: Plans.Edit<String, {}>
-  knocks: Plans.Entries<String, {}>
+  openedHandle: Plans.Edit<String, {}>
+  knocks: Plans.Entries<Knock, {}>
   observers: Plans.Entries<Card.Observer, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
-  {open: false, openedBy: "", knocks: Lists.List.nil(), observers: Card.Observers.nil()}
+  {open: false, openedBy: "", openedHandle: "", knocks: Lists.List.nil(), observers: Card.Observers.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {open: Plans.Edit.keep({}), openedBy: Plans.Edit.keep({}), knocks: Plans.Entries.keep({}), observers: Plans.Entries.keep({})}
+  {open: Plans.Edit.keep({}), openedBy: Plans.Edit.keep({}), openedHandle: Plans.Edit.keep({}), knocks: Plans.Entries.keep({}), observers: Plans.Entries.keep({})}
 # Who opened it is the turn's principal (for a bell's send, the bell ringer's).
 def unlatched(context: Abi.Context) -> Edits:
-  extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: context.principal})})
+  extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: context.principal}), openedHandle: Plans.Edit.set({value: context.handle})})
 def latch(state: State, context: Abi.Context) -> Edits:
   if state.open then keep() else unlatched(context)
 # The method a bell's observer entry names: open the door and tell its observers.
@@ -38,7 +44,7 @@ def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   Card.broadcast(state.observers, Plans.nothing(), 0n, fn(sent: Nat) -> Bool: true)
 # A knock is retained; a knock on a closed door opens it.
 def knocked<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context), {knocks: Plans.Entries.append({item: context.principal})})}))
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(latch(state, context), {knocks: Plans.Entries.append({item: {who: context.principal, handle: context.handle}})})}))
   if state.open then then(true) else Card.broadcast(state.observers, Plans.nothing(), 0n, fn(sent: Nat) -> T: then(true))
 def knock(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   knocked(state, context, fn(opened: Bool) -> Bool: opened)
@@ -64,8 +70,8 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
   match routed:
     case act(a): knocked(state, context, fn(opened: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
     case _: Card.answer(routed, context, forms(), render(state, context))
-def knockLine(who: String) -> Document.Document:
-  Document.text("knock: {Card.handle(who)}\n")
+def knockLine(knock: Knock) -> Document.Document:
+  Document.text("knock: {Card.shown(knock.who, knock.handle, Card.stranger())}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then "The door is open, opened by {Card.name(state.openedBy, context)}.\n" else "The door is shut.\n"), tail: Card.clipped(Lists.map(state.knocks, knockLine), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then "The door is open, opened by {Card.shown(state.openedBy, state.openedHandle, context)}.\n" else "The door is shut.\n"), tail: Card.clipped(Lists.map(state.knocks, knockLine), 8n)})})

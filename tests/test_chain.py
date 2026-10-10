@@ -44,7 +44,7 @@ def garden_seed(policy="", pending=(), confirm=True, owner="ember"):
 def garden_state(planted=0, owner="ember"):
     """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
     return record(owner=label(owner), planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirmFor=asking(True),
-                  pending=nil(), children=nil(), pageCheckpoint=label(""))
+                  pending=nil(), children=nil(), pageCheckpoint=label(""), observers=nil())
 
 
 # A package that declares a law cannot be imported by a creator ("a law belongs to the
@@ -54,7 +54,7 @@ def garden_state(planted=0, owner="ember"):
 def lawful_defaults():
     return {
         "Garden": [("owner", label("ember")), ("planted", {"tag": "natural", "value": "0"}), ("policy", reference("")),
-                   ("confirmFor", asking(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label(""))],
+                   ("confirmFor", asking(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label("")), ("observers", nil())],
         "Thing": [("owner", label("ember")), ("name", label("")), ("description", label("")), ("holder", reference("")),
                   ("location", reference("")), ("offer", {"tag": "variant", "label": "none", "payload": record()})],
     }

@@ -87,7 +87,7 @@ class Layers(unittest.TestCase):
         state = {"tag": "record", "fields": [{"name": k, "value": v} for k, v in [
             ("colour", variant("amber")), ("seed", label("a fern")), ("rains", empty),
             ("rung", {"tag": "boolean", "value": False}), ("planting", label("")), ("planter", label("glm")),
-            ("planterHandle", label("")), ("observers", empty)]]}
+            ("planterHandle", label("")), ("observers", empty), ("doors", empty)]]}
         ctx = context("bell")
         self.assertTrue(self.run_(louder, "loud", [ctx])["value"].startswith("LOUDER\n"))
         # Bell's rainedCard calls render; under the layer it renders Louder's card.

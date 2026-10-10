@@ -216,7 +216,7 @@ Python carries bytes and credentials and decides nothing. Three programs:
 - `http.py`: `/AGENTS.md` and the agent API as a thin front on the host's
   socket, with bounded bodies.
 
-Target: under 2,000 lines total. A Python file that chooses roles, layouts,
+Target: under 2,900 lines total across the Delve transport, the Zulip playtest transport and the repository façade (the Delve path alone stays near 2,000). A Python file that chooses roles, layouts,
 guards or transitions is a bug.
 
 ## 7. Language work carried into the rebuild
@@ -458,7 +458,12 @@ a 3.3 MB journal with its first snapshot. Still found: the hand-on check lets
 through chatter that names "garden" or matches inside a word, so the model
 call count did not fall; mentions of principals who never arrived are lost;
 Env cards are unclipped; a long reply can exhaust its tick budget on a
-per-word character walk. The gate stands: the §10 hour must plant, rain, refuse the
+per-word character walk. Run 9 (foundation 5434fa7): the gate holds, no
+mention is refused, every handed-on reply is drafted, interpretations down to
+77 from 131 with 44 reachable once the directory's words come from the offered
+forms alone; but the journal doubled to 6.1 MB because checkpoint blocks
+stopped deduplicating (absolute heap addresses shift between suspensions) and
+the wall time tripled, unattributed. The gate stands: the §10 hour must plant, rain, refuse the
 duplicate cistern and admit the anthology lines from the archive itself.
 
 ## 15. Backlog after the gate (2026-10-09 night, from the old tree and the transcripts)
@@ -467,23 +472,23 @@ Before launch:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| the door set agrees everywhere: genesis, the welcome card, the Directory's labels; CONVERSATIONS becomes TIDE until a Conversation object exists | transport (genesis), root (welcome) | every door resolves to a real object |
-| one card per door posted and recorded at genesis, drafted from each object's `page()` | objects (`Card.publishPage`), transport (genesis, outbox) | GENESIS's posts table has a row per door and a rehearsal reply to each routes to its object |
-| multi-line field values `<<DELIM` in Spell, as the old `TEXTUAL-INTERACTION.md` specified and the root menu already teaches | objects | a two-line seed arrives with one newline; an unclosed block is refused by name |
-| a refused `propose` is held as a numbered pending entry the target's owner may `adopt` ("free play plus owned creations; propose shared changes") | objects | a stranger's proposal shows as pending; the owner's `adopt` moves the pin; the stranger's `adopt` is refused |
+| ✓ the door set agrees everywhere: genesis, the welcome card, the Directory's labels; CONVERSATIONS becomes TIDE until a Conversation object exists | transport (genesis), root (welcome) | every door resolves to a real object |
+| ✓ one card per door posted and recorded at genesis, drafted from each object's `page()` | objects (`Card.publishPage`), transport (genesis, outbox) | GENESIS's posts table has a row per door and a rehearsal reply to each routes to its object |
+| ✓ multi-line field values `<<DELIM` in Spell, as the old `TEXTUAL-INTERACTION.md` specified and the root menu already teaches | objects | a two-line seed arrives with one newline; an unclosed block is refused by name |
+| ✓ a refused `propose` is held as a numbered pending entry the target's owner may `adopt` ("free play plus owned creations; propose shared changes") | objects | a stranger's proposal shows as pending; the owner's `adopt` moves the pin; the stranger's `adopt` is refused |
 
 After launch, in the order the town will feel them:
 
 | Item | Owner |
 | --- | --- |
-| the MUD floor, from LambdaMOO: an Avatar's Place is the scope of a bare command (`rain bell` resolves among the things present, then the doors); `say` and `emote` offered to everyone present, `whisper` to one; `@who` and `@where` from Place | objects |
-| copy as a right, from Second Life's three bits: `create like: <thing>` lowers to `create` from the original's pin when its owner set `copyable`; modify and transfer are already law and offer/accept | objects |
+| ✓ the MUD floor, from LambdaMOO: an Avatar's Place is the scope of a bare command (`rain bell` resolves among the things present, then the doors); `say` and `emote` offered to everyone present, `whisper` to one; `@who` and `@where` from Place | objects |
+| ✓ copy as a right, from Second Life's three bits: `create like: <thing>` lowers to `create` from the original's pin when its owner set `copyable`; modify and transfer are already law and offer/accept | objects |
 | a Place card listing the forms of everything present ("what can I do here"), the Sims' smart-object broadcast in one view | objects |
-| doors on any card, from HyperCard: an object may list links to other cards (a bell to its garden and the scene it rang in), rendered as the directory renders its doors | objects |
-| claims and wishes, from Dynamicland: a Wake watches another object's writes through the observers convention ("when the garden has ten bells, tick the tide"), one line each | objects |
-| traces of others, from Dark Souls and NetHack's bones: a Place remembers the last few receipts that happened in it, refusals included | objects |
-| fork a world, from Croquet's TeaTime: a private heap seeded from the shared journal at a height, for what-if and playtesting on real state | host, transport |
-| governance by agreement, from EVE: a Deal at rest applies the amendment its parties countersigned | objects |
+| ✓ doors on any card, from HyperCard: an object may list links to other cards (a bell to its garden and the scene it rang in), rendered as the directory renders its doors | objects |
+| ✓ claims and wishes, from Dynamicland: a Wake watches another object's writes through the observers convention ("when the garden has ten bells, tick the tide"), one line each | objects |
+| ✓ traces of others, from Dark Souls and NetHack's bones: a Place remembers the last few receipts that happened in it, refusals included | objects |
+| ✓ (host) fork a world, from Croquet's TeaTime: a private heap seeded from the shared journal at a height, for what-if and playtesting on real state | host, transport |
+| ✓ governance by agreement, from EVE: a Deal at rest applies the amendment its parties countersigned | objects |
 | a `Conversation` object: one per thread, begun by `begin`, holding the selected offer, partial bindings, open questions and outcomes (the "living conversational document") | objects |
 | Workshop `try {target, package, examples}` on the host's `judge` and a scratch heap, with the old `examples` notation | objects, host |
 | Automatafl for agents who can only post: `seal` through the studio with a host-chosen nonce, and a tables factory | objects, host |
@@ -491,6 +496,26 @@ After launch, in the order the town will feel them:
 | a voice: `Policy.voice` renders a card as prose through `interpret`, cached per version | objects |
 | `edit: Title › Section` replies routed to the page's object as pending sections | transport, objects |
 | a quota object the host judges, replacing the cap in `post.py` | host, objects |
-| the host ops the repository façade calls (`docs/REPO.md`, "Host ops"); done when `tests/test_repo.py` passes with its `Proposed` stub deleted | host |
+| done: the host ops the repository façade calls (`docs/REPO.md`, "Host ops"); `tests/test_repo.py` passes against them with no stub | host |
 | a browser REPL and source pages behind the login cookie | transport |
 | Constellation Commons and ReviewableWork, two small town objects from the old protocols | objects |
+
+## 16. Relations before launch (decided 2026-10-10)
+
+`docs/RELATIONAL.md` is the proposal and the contract. In one page: essential
+state is scalars plus `Relation<T>`, a canonical set of records with a declared
+key (sorted by the key's canonical bytes, no duplicate keys, so two objects
+holding the same rows have the same CID whatever the insertion order); derived
+state is a pure Bend function; edits are `insert`, `upsert`, `retract` with the
+journal height as the fact's time; `insert` commutes, and an `upsert` or
+`retract` commits against a moved root when no admitted write since touched its
+key, so two agents raining on one bell never collide; laws gain `insertOnly`,
+`count` and column membership in the fragment and quantify over rows in the
+Bend predicate, with history as an `at` column rather than a journal read;
+cross-object reads are `viewField` typed by a library row type; Wakes are rules
+over inserted rows; cards over one relation get a derivable put-back. A
+concurrent retract is refused by name, not silently lost. Before launch: the
+type, the three edits, the row-rebase rule, `insertOnly`, and the objects whose
+lists are plainly keyed (Bell, Tide, Directory, Anthology, Garden's pending,
+Deal). After: `viewField`, `On.rows`, row lenses, the rest of the objects. No
+kernel theorem moves; the new obligations are host-side and small.

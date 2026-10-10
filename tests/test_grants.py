@@ -364,6 +364,18 @@ class Attenuation(Reflection):
         self.assertIn(r["status"], ("admitted", "refused"), r)
         return r
 
+    def test_world_grants_lists_each_grant_as_it_stands_with_its_entry(self):
+        g = self.grant()
+        self.use("dim", g, level=nat(3))
+        [listed] = self.host.send(op="world-grants", principal="anonymous")["grants"]
+        self.assertEqual((listed["id"], listed["object"], listed["uses"], listed["revoked"]), (g, "lamp", 1, False), listed)
+        with open(self.path) as f:
+            made = [json.loads(line) for line in f if g in line and '"grants"' in line][0]
+        self.assertEqual((listed["height"], listed["hash"]), (made["height"], made["hash"]))
+        self.host.send(op="world-revoke", principal="owner", identity="rv", grant=g)
+        [after] = self.host.send(op="world-grants", principal="", reverse=True)["grants"]
+        self.assertTrue(after["revoked"], after)
+
     def test_the_fixed_part_is_merged_into_the_callers_argument(self):
         g = self.grant()
         r = self.use("dim", g, level=nat(3))
