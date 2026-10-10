@@ -118,7 +118,7 @@ On hbox (or any machine with Docker; the images are linux/amd64):
 
     deploy/build.sh            # last line: sha256:  <64 hex>  delvetalk-obend (linux/amd64)
     docker save delvetalk:<sha12> delvetalk-host:<sha12> | gzip -1 | ssh root@workhorse 'gunzip | docker load'
-    scp deploy/compose.yml deploy/compose.hand.yml root@workhorse:/opt/delvetalk/
+    scp deploy/compose.yml deploy/compose.hand.yml deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer root@workhorse:/opt/delvetalk/
     scp deploy/backup.sh deploy/verify.sh deploy/restore.sh root@workhorse:/opt/delvetalk/deploy/
 
 (From hbox, which has no key for the workhorse, pipe through the laptop: `ssh hbox 'docker save ... | gzip -1' | ssh
@@ -146,6 +146,7 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     COMPOSE_FILE=compose.yml:compose.hand.yml       # once the hand is opened (below)
     DELVETALK_ORIGIN=https://gsb.fg-goose.online     # the portal, and the repository's did:web host
     DELVETALK_REPO_KEY_PATH=/etc/delvetalk/repo/town.key
+    DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc   # the watch bot's rc (owner 10425, mode 0400); "Watching"
 
 The repository key, once (`deploy.repokey` refuses an existing file; it prints the `did:key`, which
 `/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
@@ -222,6 +223,24 @@ the laptop:
 Post the challenge text it prints from that account, then rerun with
 `--verify at://<did>/town.delve.feed.post/<rkey>` to view as the verified DID
 and revoke the throwaway credential.
+
+Then custody and the watch, before the welcome is posted, so a fresh deploy has them from its first hour (each is
+explained in its own section below; run as root in `/opt/delvetalk`):
+
+    # 1. the backup timer ("Durability and backups"): write the two units shown there, then
+    systemctl daemon-reload && systemctl enable --now delvetalk-v2-backup.timer
+    systemctl start delvetalk-v2-backup.service && cat /var/backups/delvetalk/last-verify     # ok <stamp>
+    # 2. the pull key, one line in /root/.ssh/authorized_keys (the public half of hbox's ~/.ssh/delvetalk-backups):
+    restrict,command="/usr/bin/rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull@hbox
+    #    and on hbox, pull.env naming this deploy's DELVETALK_HOST_IMAGE; its timer's next run pulls and verifies
+    # 3. the watch ("Watching"): the rc at $DELVETALK_WATCH_ZULIPRC, the stream delvetalk-ops with the bot subscribed
+    install -o 10425 -g 10425 -m 0400 <the bot's .zuliprc> /etc/delvetalk/watch.zuliprc
+    cp delvetalk-watch.service delvetalk-watch.timer /etc/systemd/system/ && systemctl daemon-reload
+    systemctl start delvetalk-watch.service && journalctl -u delvetalk-watch -n 20     # one run by hand, no error
+    systemctl enable --now delvetalk-watch.timer
+    # 4. one restore drill on hbox from the newest pulled tarball ("The restore drill"), and its result recorded
+
+A step skipped here is a deploy without custody or without a watch: say which in the deploy's record.
 
 ## The first welcome card
 
