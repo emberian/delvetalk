@@ -87,7 +87,8 @@ class Handler(BaseHTTPRequestHandler):
         if n > MAX_BODY:
             return self.fail(413, f'body exceeds {MAX_BODY} bytes')
         raw = self.rfile.read(n)
-        if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded'):
+        # curl -d labels JSON as a form; a browser's form body never starts with '{'
+        if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
             return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace')).items()}
         try:
             data = json.loads(raw or b'{}')

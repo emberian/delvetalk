@@ -120,6 +120,12 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(s, 200)
         self.assertEqual(dict(headers)['X-DelveTalk-Host-Sha256'], hashlib.sha256(Path(BINARY).read_bytes()).hexdigest())
 
+    def test_json_sent_as_curl_sends_it_is_json(self):
+        s, _, data = self.request('POST', '/AGENTS.md/challenge', raw=json.dumps({'handle': HANDLE}),
+                                  headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        self.assertEqual(s, 200, data)
+        self.assertEqual(json.loads(data)['did'], DID)
+
     def test_unknown_route_points_at_guide(self):
         s, body = self.call('GET', '/nope')
         self.assertEqual(s, 404)
