@@ -122,6 +122,7 @@ Every machine transition costs 1 tick. Before a text primitive runs, `forceHoste
 - `textConcat a b`: `1 + 2(|a|+|b|)`, reserves `|a|+|b|`.
 - `textTake t n`: 1 if n=0 or n>=B; else `1 + 2p`, reserves `p`.
 - `textDrop t n`: 1 if n=0 or n>=B; else `1 + 2p`, reserves `B - p` (the suffix copy is bounded in bytes, not charged in ticks, so a drop-by-one walk stays linear).
+- A take or drop whose prefix scan cannot be paid spends the whole allowance, as a failed span/break does (`preflightRemaining`; kernel10, `test_tariff.FailedPreflight`): the scan ran.
 - `textJoin list sep` (each element): `1 + 2*(bytes appended)`, reserves the new accumulator (appended in place when unique).
 - `textSpan/textBreak`: `1 + perScalar*visited`, perScalar = `2*(|alphabet|+2)`; refused up front if the cap cannot cover the scan.
 - `textHasAny text words`: `1 + 3(|text|+|words|)`, reserves twice those bytes: a pass over each, then a hash set of the wanted words (`textHasAnyWordFast`, `@[csimp]` equal to the list-membership reference `textHasAnyWord`) probed once per word of the text. Before kernel10 the search was list membership, 30,000 words against 30,000 took 6.8 s under a 160,001-tick charge (`test_text_words.ManyWords`).

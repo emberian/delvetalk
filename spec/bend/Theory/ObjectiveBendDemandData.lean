@@ -212,13 +212,16 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   | _,_ => (1,0)
 
 /-- The ticks left after a step `forceHostedFrom` could not afford: a failed prefix
-preflight (`textSpan`/`textBreak`) already spent its bounded allowance and may not
-return that work to a caller as unused execution credit; any other refusal spends
-nothing. -/
+preflight (`textSpan`/`textBreak`, and `textTake`/`textDrop` past the trivial cases) already
+spent its bounded allowance scanning and may not return that work to a caller as unused
+execution credit; any other refusal spends nothing. -/
 def preflightRemaining (control : Control) (stack : List Frame) (ticks : Nat) : Nat :=
   match control, stack with
   | .returned (.label _), .binaryRight .textSpan (.label _) :: _
   | .returned (.label _), .binaryRight .textBreak (.label _) :: _ => 0
+  | .returned (.natural n), .binaryRight .textTake (.label text) :: _
+  | .returned (.natural n), .binaryRight .textDrop (.label text) :: _ =>
+      if n == 0 || n >= text.utf8ByteSize then ticks else 0
   | _, _ => ticks
 
 /-- Explicit hosted extension of forcing. No primitive is entered before its

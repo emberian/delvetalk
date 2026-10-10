@@ -237,5 +237,33 @@ class LabelEqual(unittest.TestCase):
         self.assertEqual(ran(long_a, long_a)[0], True)
 
 
+PREFIX = """edition ObjectiveBend 1
+def taken(s: String) -> String:
+  textTake(s, 100n)
+def dropped(s: String) -> String:
+  textDrop(s, 100n)
+def spanned(s: String) -> Nat:
+  textSpan(s, "x")
+"""
+
+
+class FailedPreflight(unittest.TestCase):
+    def test_a_failed_prefix_preflight_spends_the_allowance_it_scanned(self):
+        # Refuted when a take or drop whose prefix scan cannot be paid reports less than its
+        # whole allowance as used (review kernel 10): the scan ran, as span's does.
+        from tests.test_objects import compile_job, check
+        text = {"tag": "label", "value": "x" * 1000}
+        for entry in ("taken", "dropped", "spanned"):
+            with self.subTest(entry=entry):
+                art = compile_job([{"name": "Package", "source": PREFIX}], entry)["artifact"]
+                whole = check({"op": "run", "artifact": art, "arguments": [text], "limits": BIG})
+                self.assertEqual(whole["status"], "finished", whole)
+                budget = whole["ticksUsed"] - 150
+                short = check({"op": "run", "artifact": art, "arguments": [text],
+                               "limits": {"ticks": str(budget)}})
+                self.assertEqual(short["status"], "refused", short)
+                self.assertEqual(short["ticksUsed"], budget, short)
+
+
 if __name__ == "__main__":
     unittest.main()
