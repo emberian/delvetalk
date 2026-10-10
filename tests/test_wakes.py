@@ -472,11 +472,11 @@ def verdict(v: Abi.Verdict) -> String:
 def subs(who: String) -> Lists.List<Tide.Sub>:
   Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n, handle: ""}, tail: Lists.List::<Tide.Sub>.nil()})
 def tide(ticks: Nat, last: Nat, who: String) -> Tide.State:
-  {ticks: ticks, last: last, gap: 3n, subs: Relations.Relation.rows({items: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)})}
+  {owner: "", ticks: ticks, last: last, gap: 3n, subs: Relations.Relation.rows({items: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)})}
 def sub(who: String, every: Nat) -> Tide.Sub:
   {who: who, every: every, note: "n", since: 0n, handle: ""}
 def tideOf(items: Lists.List<Tide.Sub>) -> Tide.State:
-  {ticks: 0n, last: 0n, gap: 3n, subs: Relations.fromList(items, Tide.subKey)}
+  {owner: "", ticks: 0n, last: 0n, gap: 3n, subs: Relations.fromList(items, Tide.subKey)}
 def two(a: Tide.Sub, b: Tide.Sub) -> Lists.List<Tide.Sub>:
   Lists.List.cons({head: a, tail: Lists.List.cons({head: b, tail: Lists.List.nil({})})})
 def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:

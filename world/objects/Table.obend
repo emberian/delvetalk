@@ -25,6 +25,9 @@ record State:
 law rounds "rounds only go forward": monotone(round)
 law owner "only the owner reprograms or amends it; anyone plays": request.kind == 0 or request.subject == new.owner
 law fixed "the owner, the seats and the board's size never change": unchanged(owner) and unchanged(north) and unchanged(south) and unchanged(width) and unchanged(height)
+# Only its own methods write it: a write no method made is refused (`methods`).
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
 def opening() -> Game.Result:
   {board: 3544482323287199997214430076569557050131592232587036428018782212697626882n, automaton: 60n, marks: 0n, status: 0n, winner: 0n}
 def initial() -> State:

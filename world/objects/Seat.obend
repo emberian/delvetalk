@@ -12,6 +12,9 @@ import ./Text.obend as Text
 # await exactly that slot: the reveal opens the move only once the opponent's
 # commitment is admitted, and suspends until it is.
 type State = Seats.State
+# Only its own methods write it: a write no method made is refused (`methods`).
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
 def initial() -> State:
   {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody(), round: 0n, digest: "", opened: false, source: 0n, target: 0n}
 type Done = Seats.Done

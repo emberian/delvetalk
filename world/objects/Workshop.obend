@@ -34,6 +34,9 @@ sum Verdict:
   usage: {}
   refused: Card.Refusal
   silent: {}
+# Only its own methods write it: a write no method made is refused (`methods`).
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
 def initial() -> State:
   {title: "Workshop", held: Relations.empty(), next: 1n}
 def relations() -> Relations.Decls:

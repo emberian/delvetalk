@@ -53,7 +53,7 @@ record Planting:
 # Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
 # first, by name; this law refuses the same write proposed any other way).
-law owner "only the owner changes the owner, what asks first, the policy or the page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(ownerHandle) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
+law owner "the owner never changes; only the owner changes what asks first, the policy or the page, and anyone else only by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and not (request.method == "") and unchanged(ownerHandle) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint)))
 def initial() -> State:
   {owner: "", ownerHandle: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
 def relations() -> Relations.Decls:

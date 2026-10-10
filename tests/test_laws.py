@@ -5,7 +5,7 @@ Evidence for FOUNDATION §4 (layer: objects).
 
 Laws in source on the objects.
 
-Policy: `owner: request.subject == new.owner` (it has no `describe`, which an older law admitted).
+Policy: `owner: unchanged(owner) and request.subject == new.owner` (it has no `describe`, which an older law admitted).
 Directory: only its owner adds or removes a door. Anthology: anyone submits, only its owner admits.
 Each is made with world-create (a lawful module cannot be imported by a creator) by its owner (a law
 must admit an amendment by its installer).
@@ -60,7 +60,7 @@ class Laws(LawWorld):
         self.create("policy", closure("Policy"), record(owner=label(OWNER), model=label("m"), system=label("s"),
                                                         lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
         law = self.host.send(op="world-inspect", principal=OWNER, object="policy")["law"]
-        self.assertIn('law owner: request.subject == new.owner', law)
+        self.assertIn('law owner: (unchanged(owner)) and (request.subject == new.owner)', law)
         self.assertNotIn("describe", law)
         r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)

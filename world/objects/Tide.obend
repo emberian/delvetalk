@@ -16,8 +16,10 @@ import ./Text.obend as Text
 # handle: the subscriber's handle as the host knew it at subscribe, shown as a bell
 # shows its planter's. The subscriptions are a relation keyed {who}: one per principal,
 # subscribing again is an upsert of the row, and the card lists them in key order.
+# owner: who alone reprograms or amends it (the host fills it with the creating principal).
 type Sub = Rows.Subscription
 record State:
+  owner: String
   ticks: Nat
   last: Nat
   gap: Nat
@@ -27,10 +29,12 @@ record State:
 law clock "ticks only count up": monotone(ticks)
 law last "the last tick only moves forward": monotone(last)
 law gap "the gap never changes": unchanged(gap)
+law owner "the owner never changes; only the owner reprograms or amends it; anyone ticks and subscribes": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
 # The two-tier law, in Bend: a tick sooner than gap after the last is tooSoon; every key
-# the write changed (a row added, replaced or retracted) is the requesting principal's.
+# the write changed (a row added, replaced or retracted) is the requesting principal's; a
+# write no method made (a proposed `last` far ahead would stop every tick) is refused.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon", reading: "A tick may not come sooner than the gap after the last."}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self", reading: "Only you change your own subscription."})
+  if Plans.unnamed(request) then Plans.proposedRefused() else if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon", reading: "A tick may not come sooner than the gap after the last."}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self", reading: "Only you change your own subscription."})
 def ownSubs(old: Relations.Relation<Sub>, new: Relations.Relation<Sub>, principal: String) -> Bool:
   ownRows(Relations.rows(old), Relations.rows(new), principal)
 # One merge of the old and new rows in key order: a key on one side only, or a row that
@@ -56,7 +60,7 @@ def relations() -> Relations.Decls:
 def subsMax() -> Nat:
   64n
 def initial() -> State:
-  {ticks: 0n, last: 0n, gap: 1n, subs: Relations.empty()}
+  {owner: "", ticks: 0n, last: 0n, gap: 1n, subs: Relations.empty()}
 sum Done:
   subscribed: {since: Nat}
   ticked: {tick: Nat, sent: Nat}

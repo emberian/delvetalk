@@ -21,7 +21,7 @@ record State:
   proposals: Relations.Relation<Proposal>
 # Anyone submits (submit only inserts); only the owner admits. The method named is the
 # package's own, so the law's trust in it is the pin's.
-law owner "only the owner changes it; anyone submits a line": request.subject == new.owner or (request.kind == 0 and request.method == "submit")
+law owner "the owner never changes; only the owner changes the rest; anyone submits a line": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and request.method == "submit"))
 def initial() -> State:
   {owner: "", ownerHandle: "", proposals: Relations.empty()}
 def relations() -> Relations.Decls:

@@ -41,7 +41,7 @@ record State:
   presence: Relations.Relation<Presence>
 # Anyone enters, moves and leaves (the code moves only the turn's own principal and
 # checks every gate); only the owner changes who a gate admits.
-law owner "only the owner changes it; anyone enters, moves and leaves": request.subject == new.owner or (request.kind == 0 and (request.method == "enter" or request.method == "move" or request.method == "leave" or request.method == "receive"))
+law owner "the owner never changes; only the owner changes the rest; anyone enters, moves and leaves": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and (request.method == "enter" or request.method == "move" or request.method == "leave" or request.method == "receive")))
 def initial() -> State:
   {owner: "", places: Lists.List.nil(), paths: Lists.List.nil(), entries: Lists.List.nil(), gates: Lists.List.nil(), presence: Relations.empty()}
 def relations() -> Relations.Decls:

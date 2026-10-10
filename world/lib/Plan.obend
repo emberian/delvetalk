@@ -80,3 +80,11 @@ def isNobody(reference: Reference) -> Bool:
 # The index of a reference in a list, by world and object; none when absent.
 def indexOf(items: Lists.List<Reference>, target: Reference) -> Lists.Maybe<Nat>:
   Lists.indexWhere(items, fn(item: Reference) -> Bool: same(item, target))
+# A write no method of the object made: a `world-propose`, which reaches a Bend law as kind 0
+# with no method, as the object's own method writes do (codex objects review 3 to 8). An object
+# whose state only its methods move refuses it in its law (`proposedRefused`), until the host
+# judges a proposal as its own kind.
+def unnamed(request: Abi.Request) -> Bool:
+  request.kind == 0n && request.method == ""
+def proposedRefused() -> Abi.Verdict:
+  Abi.Verdict.refused({clause: "methods", reading: "Only its own methods write it; a proposed write is refused."})

@@ -26,13 +26,13 @@ record State:
 def initial() -> State:
   {owner: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true}
 # Anyone moves a thing (its own code checks who holds it); only its owner renames it.
-law owner "only the owner renames, redescribes or makes it uncopyable; anyone moves it": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description) and unchanged(copyable))
+law owner "the owner never changes; only the owner renames, redescribes or makes it uncopyable; anyone moves it": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(name) and unchanged(description) and unchanged(copyable)))
 # The second tier: custody moves from one holder to another only by an accepted offer:
 # the new holder is the offer's `to`, the turn is that avatar's own call (context.caller),
 # and the clock (context.clock) is before `until`. Picking up (from nobody) and putting down (to
-# nobody) are the code's own paths and pass.
+# nobody) are the code's own paths and pass. A write no method made is refused (`methods`).
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Plans.same(old.holder, new.holder) || Plans.isNobody(old.holder) || Plans.isNobody(new.holder) then Abi.Verdict.admitted({}) else transferable(old.offer, new.holder, request.context)
+  if Plans.unnamed(request) then Plans.proposedRefused() else if Plans.same(old.holder, new.holder) || Plans.isNobody(old.holder) || Plans.isNobody(new.holder) then Abi.Verdict.admitted({}) else transferable(old.offer, new.holder, request.context)
 def transferable(offer: Offer, holder: Plans.Reference, context: Abi.Context) -> Abi.Verdict:
   match offer:
     case none(_): Abi.Verdict.refused({clause: "noOffer", reading: "The thing is not offered to anyone."})

@@ -54,9 +54,10 @@ def relations() -> Relations.Decls:
 law owner "only the owner reprograms or amends it; anyone enters, chooses and leaves": request.kind == 0 or request.subject == new.owner
 law fixed "the owner, title, passages, start, cooldown and requirements never change": unchanged(owner) and unchanged(title) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)
 # The cooldown, as the second tier of the law: a reader who appears in presence must have
-# left at least `cooldown` clock units before the turn's clock.
+# left at least `cooldown` clock units before the turn's clock. A write no method made (a
+# proposal of presence at any passage) is refused (`methods`).
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(Relations.rows(new.presence), request.context.clock, old)
+  if Plans.unnamed(request) then Plans.proposedRefused() else if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(Relations.rows(new.presence), request.context.clock, old)
 def arrivals(presence: Lists.List<Presence>, clock: Nat, old: State) -> Abi.Verdict:
   if Lists.any(presence, fn(p: Presence) -> Bool: Rows.isPresent(old.presence, p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown", reading: "One who left enters again only after the cooldown."}) else Abi.Verdict.admitted({})
 def lastLeft(who: String, state: State) -> Lists.Maybe<Left>:

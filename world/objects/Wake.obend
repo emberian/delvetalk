@@ -54,7 +54,7 @@ record State:
   nextId: Nat
 # Only the owner changes its triggers, reprograms or amends it; as with Env, the creator
 # must be the owner, so each principal creates their own Wake (docs/GENESIS.md).
-law owner "only its owner writes it": request.subject == new.owner
+law owner "the owner never changes, and only its owner writes it": unchanged(owner) and request.subject == new.owner
 law ids "trigger numbers only count up": monotone(nextId)
 def initial() -> State:
   {owner: "", handle: "", env: Plans.nobody(), triggers: Lists.List.nil(), nextId: 1n}

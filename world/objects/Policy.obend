@@ -23,7 +23,7 @@ def initial() -> State:
   {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: "", escalateTo: "", macros: Lists.List.nil({}), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
 # stranger by name before writing.
-law owner "only the owner teaches it": request.subject == new.owner
+law owner "the owner never changes, and only the owner teaches it": unchanged(owner) and request.subject == new.owner
 sum Taught:
   taught: {count: Nat}
   refused: Card.Refusal

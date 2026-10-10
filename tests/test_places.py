@@ -209,10 +209,10 @@ class Floor(Chain):
         stale = self.host.send(op="world-propose", principal="kimik3", identity="stale", roots=[{"object": "stone", "version": before}],
                                writes=[{"object": "stone", "edits": [edits]}])
         self.assertEqual((stale["status"], stale["receipt"]["outcome"]["class"]), ("refused", "staleRoot"), stale)
-        # At the current version the same move, not made by the offered avatar's call, is the law's to refuse.
+        # At the current version the same move, made by no method of the thing, is the law's to refuse.
         forged = self.host.send(op="world-propose", principal="kimik3", identity="forged", roots=[{"object": "stone", "version": self.version("stone")}],
                                 writes=[{"object": "stone", "edits": [edits]}])
-        self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "notOffered"), forged)
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "methods"), forged)
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("glm", "open"))
         by_spell = self.turn("kimik3", "receive", record(text=label("delvetalk kimik3 accept / thing: stone"), post=label("")), principal="kimik3")
         self.assertEqual(self.result_label(by_spell), "done", by_spell)
