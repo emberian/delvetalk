@@ -58,6 +58,7 @@ sum Why:
   noExit: {label: String}
   placeHidden: {}
   placeSilent: {}
+  nowhere: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case notMine(n): {clause: "notMine", reading: "Only {n.who} {n.doing}."}
@@ -70,6 +71,7 @@ def refusal(w: Why) -> Card.Refusal:
     case noExit(n): {clause: "noExit", reading: "There is no exit named {n.label}"}
     case placeHidden(_): {clause: "placeHidden", reading: "The place is not visible."}
     case placeSilent(_): {clause: "placeSilent", reading: "The place did not answer."}
+    case nowhere(_): {clause: "nowhere", reading: "You are in no place yet; go to one by its id first."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 # A refusal the speaker reads: its line, offered, and nothing written.
@@ -189,7 +191,7 @@ def moveRefused(w: Why) -> Moved:
 # record where we are. A refusal before any write leaves nothing changed; the calls into
 # places are the only things staged, and a place's refusal is answered as it gave it.
 def move(state: State, input: {exit: String}, context: Abi.Context) -> Activity<Moved>:
-  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else looked(input.exit, state)
+  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then moveRefused(Why.nowhere({})) else looked(input.exit, state)
 def looked(label: String, state: State) -> Activity<Moved>:
   match world.view::<Places.State>({object: state.at}):
     case viewed(v): through(label, Lists.find(v.state.exits, fn(e: Places.Exit) -> Bool: e.label == label), state)
@@ -215,12 +217,19 @@ def entered(result: Done, to: Plans.Reference) -> Activity<Moved>:
   match result:
     case done(_): arrived(to)
     case refused(r): Moved.refused(r)
+# Go to a place by its id, from anywhere: leave the current place if there is one, enter the
+# named one (the place admits the principal) and record where we are. An avatar from
+# nowhere arrives this way; `move` then walks the exits.
+def go(state: State, input: {place: String}, context: Abi.Context) -> Activity<Moved>:
+  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then entering({world: context.world, object: input.place}) else leaving(state.at, {world: context.world, object: input.place})
 def arrived(to: Plans.Reference) -> Activity<Moved>:
   let written(_) = write {at: set to}
   Moved.moved({to: to})
 # --- The card ------------------------------------------------------------------------
 form move:
   exit: text 1..64
+form go:
+  place: text 1..160
 form note:
   text: text 1..280
 form accept:
