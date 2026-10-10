@@ -366,6 +366,22 @@ generation already is the affine resource), relational laws (a solver is a
 second kernel), Datalog over the journal (the Bend predicate with declared
 reads says the same under the same budget).
 
+## 13a. Surface, not semantics (landed 2026-10-09 night)
+
+The kernel lowers sugar to the same terms, so none of this moves a receipt:
+`Data` is injected where expected; type arguments are inferred; `let written(_)
+= perform(…)` binds the one expected arm and refuses the rest by name through a
+new core term `refuse` (typed at any activity type, no reduction: the machine
+stops with a named refusal, which is the `halt` the town kept writing, made
+honest); `write {planted: add 1n}` derives the edit record; `form plant as
+planting:` declares a form once for the checker, the card and the usage text;
+`"{expr}"` interpolates; `law owner "reading": expr` carries the reading into
+the artifact so a refusal can quote it. The agent-facing surface gets the same
+treatment: the guide walks a stranger from zero to an admitted planting in six
+requests, `receive` is `{text, post}` with the host owning the slot, `await`
+takes a post, `create` mints child ids, and refusals name the id and point to
+the directory.
+
 ## 14. The rehearsal, 2026-10-09 night
 
 Before anything goes live, the whole stack replayed the town's 1,763 real
