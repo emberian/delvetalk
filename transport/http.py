@@ -10,6 +10,7 @@ import collections
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
-from transport.hostproc import HostClient, RemoteHeaps, add_host_args
+from transport.hostproc import LIBRARY, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
@@ -31,12 +32,13 @@ MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
+IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
-          ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
-TOP_ONLY = ('repl', 'me', 'revoke')
+          ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
+TOP_ONLY = ('repl', 'check', 'me', 'revoke')
 ROUTE_HINT = ('GET world, world/<object>, world/<object>/card, world/<object>/source, receipt/<intent>, offers, pending, me; '
-              'POST world/<object>/<method>, repl, deliver, revoke, heap/objects; heap/ before world, receipt, offers, pending, deliver')
+              'POST world/<object>/<method>, repl, check, deliver, revoke, heap/objects; heap/ before world, receipt, offers, pending, deliver')
 
 
 def plain(data):
@@ -68,6 +70,24 @@ def argument(data):
     if 'spell' in data:
         return typed({'text': data['spell'], 'post': '', 'slot': ''})
     return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
+
+
+def library(modules):
+    """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
+    found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
+    have, out = {m.get('name') for m in modules}, []
+
+    def visit(name):
+        if name not in have and name in found:
+            have.add(name)
+            source = found[name].read_text()
+            for dep in IMPORT.findall(source):
+                visit(dep)
+            out.append({'name': name, 'source': source})
+    for m in modules:
+        for dep in IMPORT.findall(str(m.get('source', ''))):
+            visit(dep)
+    return out + modules
 
 
 class Front(HTTPServer):
@@ -209,8 +229,8 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'revoke':
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked'}), headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
-        if kind == 'repl':
-            return self.run_repl(who['did'])
+        if kind in ('repl', 'check'):
+            return self.run_repl(who['did'], kind)
         host = self.server.heaps.get(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
         send = lambda req: self.answer(host.send(req))
@@ -269,28 +289,36 @@ class Handler(BaseHTTPRequestHandler):
                                    'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))},
                                    'heapObjects': count}))
 
-    def run_repl(self, principal):
+    def run_repl(self, principal, kind='repl'):
         data = self.body()
         if data is None:
             return
-        modules = data.get('modules')
+        modules = data['modules'] if 'modules' in data else [{'name': 'Package', 'source': data.get('source', '')}]
         if not isinstance(modules, list) or len(modules) > MAX_MODULES:
             return self.fail(400, f'modules must be a list of at most {MAX_MODULES}')
         for m in modules:
             if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
-                return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes')
-        repl = self.server.repl
+                return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
+        repl, modules = self.server.repl, library(modules)
+        if kind == 'check':  # the verdict; ?full=1 adds the compiled artifact
+            checked = repl.send({'op': 'check-package', 'modules': modules, 'entry': data.get('entry')})
+            return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
         compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)
+        ty = compiled['artifact'].get('type') or {}
+        while ty.get('tag') == 'arrow':
+            ty = ty.get('codomain') or {}
+        activity = ty.get('tag') == 'computation'  # an Activity entry starts a turn; anything else runs
         extra = {k: data[k] for k in ('limits', 'object', 'intent', 'roots') if k in data}
-        if data.get('turn') or 'checkpoint' in data:
+        if activity or 'checkpoint' in data:
             extra['principal'] = principal  # a checkpoint is bound to the credential's principal, never the body's
         if 'checkpoint' in data:
             req = {'op': 'turn-resume', 'checkpoint': data['checkpoint'], 'response': data.get('response'), **extra}
         else:
-            req = {'op': 'turn-start' if data.get('turn') else 'run', 'arguments': data.get('arguments', []), **extra}
-        self.answer(repl.send({**req, 'artifact': compiled['artifact']}))
+            req = {'op': 'turn-start' if activity else 'run', 'arguments': data.get('arguments', []), **extra}
+        reply = repl.send({**req, 'artifact': compiled['artifact']})
+        return self.answer(reply) if reply.get('status') == 'error' else self.reply(200, canonical(reply))  # a checkpoint goes back whole
 
     # ---- humans
 

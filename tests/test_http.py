@@ -244,6 +244,20 @@ class HttpFront(unittest.TestCase):
         s, done = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(4)), done)
 
+    def test_repl_imports_the_library_by_name_and_starts_an_activity_from_its_type(self):
+        tok = self.login()
+        context = record(world=label(''), object=label('c1'), principal=label(DID), handle=label(''), caller=label(''),
+                         intent=label('repl-2'), height=nat(0), clock=nat(0),
+                         inputOrigin=record(kind=label('request'), object=label(''), command=label(''), program=label(''),
+                                            immediatelyPrevious={'tag': 'boolean', 'value': False}))
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2)), context],
+                         object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        self.assertIsInstance(y['checkpoint']['tokens'], list)  # the REPL's checkpoint goes back whole, to resume
+        s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'),
+                            object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
+        self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
+
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
