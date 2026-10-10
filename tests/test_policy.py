@@ -13,7 +13,7 @@ import unittest
 
 from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
-from tests.test_objects import check, closure, compile_job, computation, row_names
+from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record, declared
 
@@ -63,17 +63,6 @@ def run(entry, *arguments, limits=None):
     if limits:
         request["limits"] = limits
     return check(request)
-
-
-class Types(unittest.TestCase):
-
-    def test_the_plan_gained_inspect_check_and_the_new_interpret_and_offer(self):
-        plan_row = row_names(computation(compile_job(closure("Thing"), "acquire")["artifact"]["type"])["plan"]["row"])
-        for name in ("interpret", "offer", "reprogram", "inspect", "check"):
-            self.assertIn(name, plan_row)
-        response_row = row_names(computation(compile_job(closure("Thing"), "acquire")["artifact"]["type"])["response"]["row"])
-        for name in ("inspected", "checked", "proposal", "unclear"):
-            self.assertIn(name, response_row)
 
 
 SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"

@@ -4,64 +4,19 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Form.obend as Form
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
-record Exit:
-  label: String
-  to: Plans.Reference
-# owner: who may rename and redescribe the room (by its name and description lenses).
-# A Place is imported by Thing and Avatar for its State and Done, so it cannot declare a
-# law ("a law belongs to the package's entry module"): the guard is the code's.
+import ./Rows.obend as Rows
+import ./Places.obend as Places
+type Exit = Places.Exit
+type State = Places.State
+type Done = Places.Done
 # What happened here: who acted (an avatar or a principal), their handle as the host knew
 # it, the action, the refusal's clause ("" when admitted), the height its turn read and `n`,
-# the count of traces then. Keyed {at, who, action, n}, so key order (n first) is the order
-# they happened; the place keeps 64 (the host drops the oldest past them).
-record Trace:
-  who: String
-  handle: String
-  action: String
-  clause: String
-  at: Nat
-  n: Nat
-record State:
-  owner: String
-  name: String
-  description: String
-  exits: Lists.List<Exit>
-  present: Relations.Relation<Plans.Reference>
-  things: Relations.Relation<Plans.Reference>
-  traces: Relations.Relation<Trace>
-# Every method that can refuse answers with this sum; a refusal names its clause (a Why
-# arm here, Thing's for a thing) and its reading.
-sum Done:
-  done: {}
-  refused: Card.Refusal
-sum Why:
-  alreadyHere: {}
-  notHere: {}
-  notAThing: {doing: String}
-  notPresent: {doing: String}
-  notLying: {}
-  alreadyLying: {}
-def why(w: Why) -> String:
-  match w:
-    case alreadyHere(_): "Already here."
-    case notHere(_): "Not here."
-    case notAThing(n): "Only a thing can {n.doing}."
-    case notPresent(n): "Only someone here can {n.doing}."
-    case notLying(_): "That is not lying here."
-    case alreadyLying(_): "That is already lying here."
-def clause(w: Why) -> String:
-  match w:
-    case alreadyHere(_): "alreadyHere"
-    case notHere(_): "notHere"
-    case notAThing(_): "notAThing"
-    case notPresent(_): "notPresent"
-    case notLying(_): "notLying"
-    case alreadyLying(_): "alreadyLying"
-def refused(w: Why) -> Done:
-  Done.refused({clause: clause(w), reading: why(w)})
-# A creator supplies a Seed; seeded makes the child's State from it.
+# the count of traces then. Key order (n first) is the order they happened; the place keeps
+# 64 (the host drops the oldest past them).
+type Trace = Rows.Trace
 record Seed:
   owner: String
   name: String
@@ -75,83 +30,77 @@ record Edits:
   present: Plans.Entries<Plans.Reference, {}>
   things: Plans.Entries<Plans.Reference, {}>
   traces: Plans.Entries<Trace, {}>
-# No call carries an argument: who is acting is the context's business.
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {owner: "", name: "", description: "", exits: Lists.List.nil(), present: Relations.empty(), things: Relations.empty()}
 def seeded(seed: Seed) -> State:
   {owner: seed.owner, name: seed.name, description: seed.description, exits: seed.exits, present: seed.present, things: seed.things, traces: Relations.empty()}
 def initial() -> State:
   seeded(defaultSeed())
-# Who is here and what lies here are keyed by the object's id; traces as above.
+# Anyone comes and goes, takes and puts (the methods check who); only the owner renames or
+# redescribes the room, reprograms it or amends its law.
+law owner "only the owner renames, redescribes or reprograms it; anyone comes and goes": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description) and unchanged(exits))
 def relations() -> Relations.Decls:
   Relations.Decls.cons({head: {field: "present", key: Lists.List.cons({head: "object", tail: Lists.List.nil({})}), limit: 256n}, tail: Relations.Decls.cons({head: {field: "things", key: Lists.List.cons({head: "object", tail: Lists.List.nil({})}), limit: 256n}, tail: Relations.Decls.cons({head: {field: "traces", key: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "who", tail: Lists.List.cons({head: "action", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})})}), limit: 64n}, tail: Relations.Decls.nil({})})})})
-def objectKey(reference: Plans.Reference) -> {object: String}:
-  {object: reference.object}
-def holds(relation: Relations.Relation<Plans.Reference>, reference: Plans.Reference) -> Bool:
-  match Relations.lookup(relation, objectKey(reference), objectKey):
-    case some(_): true
-    case none(_): false
+sum Why:
+  alreadyHere: {}
+  notHere: {}
+  notAThing: {doing: String}
+  notPresent: {doing: String}
+  notLying: {}
+  alreadyLying: {}
+  absent: {who: String}
+  notOwner: {owner: String}
+def refusal(w: Why) -> Card.Refusal:
+  match w:
+    case alreadyHere(_): {clause: "alreadyHere", reading: "Already here."}
+    case notHere(_): {clause: "notHere", reading: "Not here."}
+    case notAThing(n): {clause: "notAThing", reading: "Only a thing can {n.doing}."}
+    case notPresent(n): {clause: "notPresent", reading: "Only someone here can {n.doing}."}
+    case notLying(_): {clause: "notLying", reading: "That is not lying here."}
+    case alreadyLying(_): {clause: "alreadyLying", reading: "That is already lying here."}
+    case absent(a): {clause: "notHere", reading: "{a.who} is not here."}
+    case notOwner(n): {clause: "notOwner", reading: "Only the room's owner changes it; that is {n.owner}"}
+def refused(w: Why) -> Done:
+  Done.refused(refusal(w))
+# A refusal the speaker reads: its line, offered, and nothing written.
+def told(w: Why) -> Activity<Done>:
+  Card.tell(refused(w), Document.text("Not done: {refusal(w).reading}\n"))
 def keep() -> Edits:
   {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), present: Plans.Entries.keep({}), things: Plans.Entries.keep({}), traces: Plans.Entries.keep({})}
-def written(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: edits}))
-  Done.done({})
 # Every enter, leave, take, put and talk leaves a trace, admitted or refused (the card shows
 # the newest eight; the host keeps 64).
-def trace(state: State, action: String, clause: String, context: Abi.Context) -> Trace:
+def trace(action: String, clause: String, context: Abi.Context, state: State) -> Trace:
   {who: context.principal, handle: context.handle, action: action, clause: clause, at: context.height, n: Relations.count(state.traces)}
-def traced(state: State, edits: Edits, action: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  written(context, extend(edits, {traces: Plans.Entries.insert({row: trace(state, action, "", context)})}))
-def refusedTraced(state: State, w: Why, action: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(write {traces: insert trace(state, action, clause(w), context)})
+def traced(edits: Edits, action: String, context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = world.write(extend(edits, {traces: Plans.Entries.insert({row: trace(action, "", context, state)})}))
+  Done.done({})
+def refusedTraced(w: Why, action: String, context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = write {traces: insert trace(action, refusal(w).clause, context, state)}
   refused(w)
-# Whoever enters or leaves is the calling object, or, in a direct turn, the avatar
-# of the principal (an avatar's id is its principal's DID).
+# Whoever enters or leaves is the calling object, or, in a direct turn, the avatar of the
+# principal (an avatar's id is its principal's DID).
 def actor(context: Abi.Context) -> Plans.Reference:
-  if context.caller == "" then {world: context.world, object: context.principal} else {world: context.world, object: context.caller}
+  if context.caller == "" then person(context) else caller(context)
 def caller(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.caller}
-# Join the people here. Law decides whether the subject may enter.
-def enter(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if holds(state.present, actor(context)) then refusedTraced(state, Why.alreadyHere({}), "enter", context) else traced(state, extend(keep(), {present: Plans.Entries.insert({row: actor(context)})}), "enter", context)
-def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if holds(state.present, actor(context)) == false then refusedTraced(state, Why.notHere({}), "leave", context) else traced(state, extend(keep(), {present: Plans.Entries.retract({key: objectKey(actor(context))})}), "leave", context)
-# A thing leaves the floor into the hands of the principal, who must be here. Only
-# the thing itself (the calling object) takes itself off the floor.
 def person(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.principal}
-def take(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller == "" then refused(Why.notAThing({doing: "take itself"})) else takeFrom(state, context)
-def takeFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if holds(state.present, person(context)) == false then refusedTraced(state, Why.notPresent({doing: "take things"}), "take", context) else takeThing(state, context)
-def takeThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if holds(state.things, caller(context)) == false then refusedTraced(state, Why.notLying({}), "take", context) else traced(state, extend(keep(), {things: Plans.Entries.retract({key: objectKey(caller(context))})}), "take", context)
-def put(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller == "" then refused(Why.notAThing({doing: "put itself down"})) else putFrom(state, context)
-def putFrom(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if holds(state.present, person(context)) == false then refusedTraced(state, Why.notPresent({doing: "put things down"}), "put", context) else putThing(state, context)
-def putThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if holds(state.things, caller(context)) then refusedTraced(state, Why.alreadyLying({}), "put", context) else traced(state, extend(keep(), {things: Plans.Entries.insert({row: caller(context)})}), "put", context)
-def line(prefix: String, suffix: String) -> Document.Document:
-  Document.text("{prefix}{suffix}\n")
-def reference(prefix: String) -> Plans.Reference -> Document.Document:
-  fn(item: Plans.Reference) -> Document.Document: line(prefix, Card.handle(item.object))
-def exit(item: Exit) -> Document.Document:
-  line("Exit ", "{item.label} to {item.to.object}")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
-def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat(Lists.concat(Lists.concat(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map(Relations.rows(state.present), reference("Here: ")), 8n)), Card.clipped(Lists.map(Relations.rows(state.things), reference("Lying here: ")), 8n)), Lists.concat(Lists.concat(Lists.map(state.exits, exit), hereLine(state, context)), traceLines(state)))})
-def traceLines(state: State) -> Document.Documents:
-  if Relations.count(state.traces) == 0n then Document.Documents.nil() else Document.Documents.cons({head: line("Traces:", ""), tail: Lists.map(Lists.take(Lists.reverse(Relations.rows(state.traces)), 8n), fn(t: Trace) -> Document.Document: line("  {Card.shown(t.who, t.handle, Card.stranger())} {t.action}", if t.clause == "" then "" else ": refused {t.clause}"))})
-# A reader whose avatar is here is told so.
-def hereLine(state: State, context: Abi.Context) -> Document.Documents:
-  if holds(state.present, person(context)) then Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()}) else Document.Documents.nil()
-# A room is entered and left by an avatar's move, and things take and put themselves; its
-# own spells are talk: `say` and `emote` offer a line, under the speaker's handle, to every
-# avatar present (in key order, at most as many as one turn may send to), and
-# `whisper` to one of them. Only someone here talks.
+def here(context: Abi.Context, state: State) -> Bool:
+  Places.holds(state.present, person(context))
+# Join the people here; leave them.
+def enter(state: State, context: Abi.Context) -> Activity<Done>:
+  if Places.holds(state.present, actor(context)) then refusedTraced(Why.alreadyHere({}), "enter", context, state) else traced(extend(keep(), {present: Plans.Entries.insert({row: actor(context)})}), "enter", context, state)
+def leave(state: State, context: Abi.Context) -> Activity<Done>:
+  if Places.holds(state.present, actor(context)) == false then refusedTraced(Why.notHere({}), "leave", context, state) else traced(extend(keep(), {present: Plans.Entries.retract({key: Places.objectKey(actor(context))})}), "leave", context, state)
+# A thing leaves the floor into the hands of the principal, who must be here. Only the thing
+# itself (the calling object) takes itself off the floor or puts itself down.
+def take(state: State, context: Abi.Context) -> Activity<Done>:
+  if context.caller == "" then refused(Why.notAThing({doing: "take itself"})) else if here(context, state) == false then refusedTraced(Why.notPresent({doing: "take things"}), "take", context, state) else if Places.holds(state.things, caller(context)) == false then refusedTraced(Why.notLying({}), "take", context, state) else traced(extend(keep(), {things: Plans.Entries.retract({key: Places.objectKey(caller(context))})}), "take", context, state)
+def put(state: State, context: Abi.Context) -> Activity<Done>:
+  if context.caller == "" then refused(Why.notAThing({doing: "put itself down"})) else if here(context, state) == false then refusedTraced(Why.notPresent({doing: "put things down"}), "put", context, state) else if Places.holds(state.things, caller(context)) then refusedTraced(Why.alreadyLying({}), "put", context, state) else traced(extend(keep(), {things: Plans.Entries.insert({row: caller(context)})}), "put", context, state)
+# Talk: `say` and `emote` offer a line, under the speaker's handle, to every avatar present
+# (in key order, at most as many as one turn may send to), `whisper` to one of them. Only
+# someone here talks.
 form say:
   line: text 1..280
 form emote:
@@ -159,29 +108,54 @@ form emote:
 form whisper:
   to: text 1..160
   line: text 1..280
+def say(state: State, input: {line: String}, context: Abi.Context) -> Activity<Done>:
+  if here(context, state) then offered(Lists.take(Relations.rows(state.present), 32n), "{speaker(context)}: {input.line}\n") else told(Why.notPresent({doing: "say"}))
+def emote(state: State, input: {line: String}, context: Abi.Context) -> Activity<Done>:
+  if here(context, state) then offered(Lists.take(Relations.rows(state.present), 32n), "* {speaker(context)} {input.line}\n") else told(Why.notPresent({doing: "emote"}))
+def whisper(state: State, input: {to: String, line: String}, context: Abi.Context) -> Activity<Done>:
+  if here(context, state) == false then told(Why.notPresent({doing: "whisper"})) else whispered(Lists.find(Relations.rows(state.present), fn(p: Plans.Reference) -> Bool: p.object == input.to || Card.handle(p.object) == input.to), input.to, "{speaker(context)} whispers: {input.line}\n")
+def whispered(found: Lists.Maybe<Plans.Reference>, to: String, line: String) -> Activity<Done>:
+  match found:
+    case some(p): offered(Lists.List.cons({head: p.value, tail: Lists.List.nil()}), line)
+    case none(_): told(Why.absent({who: to}))
+def speaker(context: Abi.Context) -> String:
+  Card.name(context.principal, context)
+def offered(present: Lists.List<Plans.Reference>, line: String) -> Activity<Done>:
+  match present:
+    case nil(_): Done.done({})
+    case cons(c): offeredOne(c.head, c.tail, line)
+def offeredOne(to: Plans.Reference, rest: Lists.List<Plans.Reference>, line: String) -> Activity<Done>:
+  match world.offer({to: to.object, document: Document.text(line)}):
+    case _: offered(rest, line)
+# The room's name and description are lenses: `delvetalk <room> set` and `name: ...`, the
+# owner's (the law refuses the same write from anyone else).
+def lenses() -> Lists.List<Form.Field>:
+  Lists.List.cons({head: {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.cons({head: {name: "description", kind: Form.Kind.text({min: 0n, max: 280n})}, tail: Lists.List.nil()})})
+# The host judged the value against the lens's kind; an unlensed field never reaches here.
+def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then told(Why.notOwner({owner: Card.name(state.owner, context)})) else setting(input.field, Card.valueText(input.value))
+def setting(field: String, value: String) -> Activity<Done>:
+  let written(_) = world.write(if field == "name" then extend(keep(), {name: Plans.Edit.set({value: value})}) else extend(keep(), {description: Plans.Edit.set({value: value})}))
+  Card.tell(Done.done({}), Document.text("Set {field} to {value}.\n"))
+# A room is entered and left by an avatar's move, and things take and put themselves.
 def methods() -> Lists.List<String>:
   Card.wordList("enter leave take put")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
-def talking(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  if holds(state.present, person(context)) == false then Card.tellPlan(Card.Replied.refused({clause: "notPresent", reading: "Only someone here can {action}."}), Document.text("Not done: only someone here can {action}.\n")) else if action == "whisper" then whispered(state, Card.text(fields, "to"), Card.text(fields, "line"), context) else told(Lists.take(Relations.rows(state.present), 32n), spoken(action, speaker(context), Card.text(fields, "line")), action)
-def spoken(action: String, who: String, line: String) -> String:
-  if action == "emote" then "* {who} {line}\n" else "{who}: {line}\n"
-def speaker(context: Abi.Context) -> String:
-  Card.name(context.principal, context)
-def told(present: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Replied>:
-  match present:
-    case nil(_): Card.Replied.done({action: action})
-    case cons(c): toldOne(c.head, c.tail, line, action)
-def toldOne(to: Plans.Reference, rest: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Replied>:
-  match perform(Plan.offer({to: to.object, document: Document.text(line)})):
-    case _: told(rest, line, action)
-def whispered(state: State, to: String, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match Lists.find(Relations.rows(state.present), fn(p: Plans.Reference) -> Bool: p.object == to || Card.handle(p.object) == to):
-    case some(p): told(Lists.List.cons({head: p.value, tail: Lists.List.nil()}), "{speaker(context)} whispers: {line}\n", "whisper")
-    case none(_): Card.tellPlan(Card.Replied.refused({clause: "notHere", reading: "{to} is not here."}), Document.text("Not done: {to} is not here.\n"))
-# Derived views (FOUNDATION §16, `viewDerived {object, view}`): pure definitions of the state
-# and the reader's context that another object may ask for by name.
+def line(prefix: String, suffix: String) -> Document.Document:
+  Document.text("{prefix}{suffix}\n")
+def reference(prefix: String) -> Plans.Reference -> Document.Document:
+  fn(item: Plans.Reference) -> Document.Document: line(prefix, Card.handle(item.object))
+def exit(item: Exit) -> Document.Document:
+  line("Exit ", "{item.label} to {item.to.object}")
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.Document.sequence({items: Lists.concat(Lists.concat(Lists.concat(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map(Relations.rows(state.present), reference("Here: ")), 8n)), Card.clipped(Lists.map(Relations.rows(state.things), reference("Lying here: ")), 8n)), Lists.concat(Lists.concat(Lists.map(state.exits, exit), hereLine(state, context)), traceLines(state)))})
+def traceLines(state: State) -> Document.Documents:
+  if Relations.count(state.traces) == 0n then Document.Documents.nil() else Document.Documents.cons({head: line("Traces:", ""), tail: Lists.map(Lists.take(Lists.reverse(Relations.rows(state.traces)), 8n), fn(t: Trace) -> Document.Document: line("  {Card.shown(t.who, t.handle, Card.stranger())} {t.action}", if t.clause == "" then "" else ": refused {t.clause}"))})
+# A reader whose avatar is here is told so.
+def hereLine(state: State, context: Abi.Context) -> Document.Documents:
+  if here(context, state) then Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()}) else Document.Documents.nil()
+# Derived views (FOUNDATION §16, `viewDerived {object, view}`).
 def views() -> Lists.List<String>:
   Lists.List.cons({head: "affordances", tail: Lists.List.nil({})})
 # What can be done here, as spells: this room's own forms, then for each thing lying here
@@ -191,11 +165,5 @@ def affordances(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Card.usage(context.object, forms()), tail: Lists.concat(Lists.map(Relations.rows(state.things), fn(t: Plans.Reference) -> Document.Document: Document.text("\n    delvetalk {t.object} acquire\n")), Lists.map(state.exits, fn(e: Exit) -> Document.Document: Document.text("\n    delvetalk {context.principal} move\n    exit: {e.label}\n")))})})
 def blurb() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match routed:
-    case act(a): talking(state, a.action, a.fields, context)
-    case _: Card.answerLensed(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))
-def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
