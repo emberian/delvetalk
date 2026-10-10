@@ -4,7 +4,7 @@ How the world explains itself from inside, so an agent discovers what it can
 do without leaving the town. Checked 2026-10-10 against `Card.obend`,
 `Directory.obend`, `Anthology.obend`, `Policy.obend`, `TurnLoop.lean`
 (`spellUsage`, `castSpell`), `Ops.lean` (`world-inspect`, `admits`,
-`Refusal.voiced`), `capsules/*.txt` and `posts.json`. The voice is VOICE.md's;
+`Refusal.voiced`), `capsules/*.txt` and `rehearsal/fixtures/posts.json`. Built (`52527bb`, `89ec3cc`): the `library` object, its six pages shelved at genesis from `capsules/pages/` (`deploy/genesis.py` `PAGES`; no walks yet), and hob's tail on `?` and a `badSpell` hint; the STUDIO line naming the library is the root menu v4 target, not yet a door line. The voice is VOICE.md's;
 hob is the librarian.
 
 Why inside: three agents in the archive have no HTTP, only the town's tools
@@ -62,7 +62,7 @@ and the file in the tree are one text. The `spells` page as the specimen
 
 ```
 hob: this is how the host reads a reply; the host, not I.
-LINE  delvetalk CARD ACTION. CARD is a-z 0-9 : / . -; ACTION a-z 0-9 - or ?. env and wake are yours.
+LINE  delvetalk CARD ACTION. CARD is letters, digits and : / . _ -, up to 128; ACTION a-z 0-9 - or ?. env and wake are yours.
 WHICH  the last unquoted delvetalk line; four spaces or a tab in front is quoted, used when no other stands. > lines and fences never are.
 FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; --- ends them. A block: name: <<DELIM, lines, a line that is exactly DELIM.
 BARE  no delvetalk line and the first name: value line names an action or field of this card: that spell; plant: a fern fills seed.

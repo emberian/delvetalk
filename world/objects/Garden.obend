@@ -12,6 +12,7 @@ import ./Card.obend as Card
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
 import ./Text.obend as Text
+import ./Rows.obend as Rows
 # What the garden holds for a principal: a planting understood from prose waiting for "yes"
 # (needs empty), or a planting spell missing fields (needs names them) that a reply of only
 # the missing `name: value` lines completes (the host hands such a reply to receive with its
@@ -32,10 +33,7 @@ record Pending:
 # the owner changes confirmFor). ownerHandle: the owner's handle, from the seed (genesis passes it),
 # so a refusal names the owner as the town does. pageCheckpoint: the post the last merge answered.
 # Whoever wants to know how many grow (a Wake) subscribes to `planted`.
-record Child:
-  world: String
-  object: String
-  colour: Bell.Colour
+type Child = Rows.Child
 record State:
   owner: String
   ownerHandle: String
@@ -57,7 +55,7 @@ law owner "the owner never changes; only the owner changes what asks first, the 
 def initial() -> State:
   {owner: "", ownerHandle: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 4096n})
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 2048n})
 # Principals with a planting held at once: the Bend check refuses one more by name, since past
 # the limit the host would drop someone else's.
 def pendingMax() -> Nat:
@@ -151,7 +149,7 @@ def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String
   let what = "Planted for {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”."
   let where = "It lives at {reference.object}. The garden now holds {natText(count)} planted."
   let another = spell(context.object, "a fern that remembers yesterday", "silver")
-  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 280 characters>\n\nTo plant another:\n\n{another}")
+  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 120 characters>\n\nTo plant another:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
@@ -325,11 +323,21 @@ def offers(context: Abi.Context) -> Card.Forms:
 def interpreted(input: Card.Reply, policy: Policies.State, attempt: Nat, needs: Form.Names, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match world.interpret::<Planting>(Card.interpretation(input.text, offers(context), state.policy, policy, attempt, needs)):
     case proposal(p): settled(p.argument.colour, p.argument.seed, input.post, confirmsPlant(policy, state), found, context, state)
+    case proposals(p): firstPlanting(Lists.at(p.items, 0n), input, policy, attempt, found, context, state)
     case unclear(u): if Card.silentNeeds(u.needs) then silent(found) else if failed(u.needs) then told(Reply.unclear({needs: u.needs}), needsCard(u.needs), found) else readBack(input, policy, attempt, Card.Fitted.miss({needs: u.needs}), found, context, state)
     case replied(r): readBack(input, policy, attempt, Card.prose(r.text), found, context, state)
     case timedOut(_): refused(Why.senseless({}), found)
     case denied(_): refused(Why.policy({}), found)
     case refused(_): refused(Why.senseless({}), found)
+# Several spells: the garden takes the first (the directory runs each on its door).
+def firstPlanting(item: Lists.Maybe<World.Proposed<Planting>>, input: Card.Reply, policy: Policies.State, attempt: Nat, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  match item:
+    case some(i): plantingItem(i.value, input, policy, attempt, found, context, state)
+    case none(_): silent(found)
+def plantingItem(item: World.Proposed<Planting>, input: Card.Reply, policy: Policies.State, attempt: Nat, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  match item:
+    case proposal(p): settled(p.argument.colour, p.argument.seed, input.post, confirmsPlant(policy, state), found, context, state)
+    case unclear(u): readBack(input, policy, attempt, Card.Fitted.miss({needs: u.reasons}), found, context, state)
 # The model could not be asked (`model: <reason>`): answered at once, never asked again.
 def failed(needs: Form.Names) -> Bool:
   Lists.any(needs, fn(n: String) -> Bool: textTake(n, 6n) == "model:")

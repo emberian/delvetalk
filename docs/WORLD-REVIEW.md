@@ -6,7 +6,8 @@
 
 The findings below are as written at 8a4b141; this section says what became of each. `world/` was
 5,987 lines at foundation 79e91f0 and is 5,505 after the lane (objects 3,941 to 3,554, libraries
-2,046 to 1,951). Commits are named by group (A to P) on lane/review.
+2,046 to 1,951); after the external review's belt and card budgets it is 6,070 with the library and the menu (objects 3,837,
+libraries 2,233, foundation b0f3618). Commits are named by group (A to P) on lane/review.
 
 **Landed in world/.**
 - 2 Cards by characters: `Card.clipped` keeps at most 1,200 characters (`Card.budget`; A), and

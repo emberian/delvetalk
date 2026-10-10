@@ -137,6 +137,28 @@ class Cursor(BridgeCase):
         self.assertEqual(self.observed(), n)
 
 
+class DirectReplies(BridgeCase):
+    """A reply in a card's own thread is addressed to it: the directory answers prose naming
+    nothing with its menu once an hour per speaker, never with a model call, and then is quiet."""
+
+    def test_replies_in_the_directorys_thread_get_one_card_an_hour(self):
+        made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-directory', 'object': 'directory',
+                               'modules': closure('Directory'), 'entry': 'initial', 'seed': record(owner=label('ember'))})
+        self.assertEqual(made['status'], 'created', made)
+        hub = 'at://did:plc:ember/town.delve.feed.post/hub'
+        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'directory'})
+        self.assertNotEqual(recorded.get('status'), 'error', recorded)
+        posts = [mk(n, text, parent=hub) for n, text in enumerate(('hello, what is this?', 'lovely evening', 'thanks all'), 1)]
+        for n, p in enumerate(posts):
+            p['record']['createdAt'] = '2026-10-09T10:00:0%dZ' % n
+        self.observe(posts)
+        self.run_bridge()
+        texts = [d['text'] for d in self.drafts()]
+        self.assertEqual(len(texts), 3, texts)
+        self.assertIn('DELVETALK · ROOT', texts[0])
+        self.assertEqual([t for t in texts[1:] if 'DELVETALK · ROOT' in t], [])
+
+
 class Bridging(BridgeCase):
     def test_a_bell_spell_in_a_fresh_post_routes_to_the_bell(self):
         self.make('garden/bell/1')

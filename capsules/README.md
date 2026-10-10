@@ -1,6 +1,6 @@
 # Capsules
 
-One-screen references for a model with little context, each about 2,500 characters and checked against the code. They are reading material, not runtime inputs.
+One-screen references for a model with little context, each about 2,500 characters and checked against the code. They are reading material; the library's pages under [pages/](pages/) are runtime inputs, shelved by genesis (`deploy/genesis.py` `PAGES`) and read in the world with `delvetalk library read / page: <name>`.
 
 - [world.txt](world.txt): the doors and objects, how to act, the refusal classes.
 - [spells.txt](spells.txt): the spell grammar as the host reads it, completion, `badSpell`.

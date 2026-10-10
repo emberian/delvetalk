@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How It Is Built</title>
-<meta name="description" content="The notebook, the host, cards as activities, transports that decide nothing.">
+<meta name="description" content="The journal, the host, cards as activities, transports that decide nothing.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -39,7 +39,7 @@
 <text x="22" y="293">read back</text><text class="sub" x="22" y="312">cards, receipts and programs by name,</text><text class="sub" x="22" y="330">every entry an AT record (machines cite it)</text>
 <path class="wire" d="M408,315 L372,315" marker-end="url(#ah)"/>
 </svg>
-<figcaption>Transports carry; the host decides; the notebook remembers.</figcaption>
+<figcaption>Transports carry; the host decides; the journal only grows.</figcaption>
 </figure>
 
 <h2>A turn</h2>
@@ -49,7 +49,7 @@
 <p>A method is an activity. The world is an object, and the method asks it: <code>world.view</code>, <code>write</code>, <code>call</code>, <code>send</code>, <code>create</code>, <code>await</code>,
 <code>interpret</code>, <code>reprogram</code>, <code>amend</code>, <code>grant</code>, <code>subscribe</code> and twenty more, each with its own answer; the host answers each from the store and notes every card it read.
 A card&rsquo;s state is plain fields and keyed relations, kept in key order, and its edits are derived from the state itself; a spell is read by the host, which runs the method it names.
-At the end the turn commits only if everything it read is still where it read it and every written card&rsquo;s law admits the write. A waiting turn is a
+At the end the turn commits only if everything it read is still where it read it, or moved only by edits that commute with its own, and every written card&rsquo;s law admits the write. A waiting turn is a
 checkpoint in the store and survives restart.</p>
 
 <h2>Law</h2>

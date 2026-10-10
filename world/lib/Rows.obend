@@ -25,6 +25,24 @@ record Sensed:
   replyTo: String
   at: Nat
   n: Nat
+# A bell's colour, and a bell a garden planted (its `children`, keyed {object}).
+sum Colour:
+  amber: {}
+  violet: {}
+  silver: {}
+record Child:
+  world: String
+  object: String
+  colour: Colour
+# A proposal a workshop's target refused, held for the target's owner (its `held`, keyed {n},
+# numbered in order).
+record Held:
+  n: Nat
+  target: String
+  package: String
+  migration: String
+  proposer: String
+  proposerHandle: String
 # A principal the directory's menu has gone to once, keyed {principal}.
 record Greeting:
   principal: String
