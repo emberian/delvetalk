@@ -12,6 +12,7 @@ impl/c/evaluator
 *.sqlite
 *.db
 /tests/.timings.json
+/tests/.profile.json
 # deploy: build outputs and anything that could hold a secret
 /deploy/out/
 /deploy/.env

@@ -154,6 +154,9 @@ def start_hostd(state, binary_path=None, opener=None, library=None):
     """A hostd serving <state>/host.sock from a thread, over <state>/world.journal. Stop with stop_hostd."""
     import threading
     from transport.hostd import Hostd
+    if os.environ.get("DELVETALK_SPAWN_LOG"):
+        with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
+            f.write("hostd\n")
     d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library)
     threading.Thread(target=d.serve_forever, daemon=True).start()
     return d
