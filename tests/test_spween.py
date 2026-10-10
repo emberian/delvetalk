@@ -184,6 +184,8 @@ class Made(test_chain.Chain):
                                                  "Reply delvetalk scene/wishing-well enter to begin.\n")
         _, state = self.view(self.WELL_ID)
         self.assertEqual((state["title"], state["start"], state["cooldown"], len(state["passages"])), ("The Wishing Well", "intro", "3", 2))
+        # The poster owns the scene they made.
+        self.assertEqual(state["owner"], GLM)
         again = self.say("scene", "```spween\n" + WELL + "```\n", identity="post-well-2")
         out = again["receipt"]["outcome"]
         self.assertEqual((again["status"], out["class"]), ("refused", "requiredAbsence"), again)

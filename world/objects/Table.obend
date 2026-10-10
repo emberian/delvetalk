@@ -11,7 +11,9 @@ import ./Validated.obend as Checked
 # seats seal, both open (each opening waits for the other's seal), and then anyone
 # resolves: the table views both seats, plays the qualified game, and moves both seats
 # to the next round.
+# owner: who may reprogram or amend the table (the host fills it with the creating principal).
 record State:
+  owner: String
   north: Plans.Reference
   south: Plans.Reference
   round: Nat
@@ -27,12 +29,13 @@ record Edits:
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<Seats.State, Seats.Done>
 law rounds "rounds only go forward": monotone(round)
+law owner "only the owner reprograms or amends it; anyone plays": request.kind == 0 or request.subject == new.owner
 def defaultSeed() -> Seed:
   {north: Plans.nobody(), south: Plans.nobody()}
 def opening() -> Game.Result:
   {board: 3544482323287199997214430076569557050131592232587036428018782212697626882n, automaton: 60n, marks: 0n, status: 0n, winner: 0n}
 def seeded(seed: Seed) -> State:
-  {north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
+  {owner: "", north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
 def initial() -> State:
   seeded(defaultSeed())
 sum Done:

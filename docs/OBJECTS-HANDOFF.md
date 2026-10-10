@@ -146,6 +146,10 @@ the library).
 * **Observers / mailbox.** `Card.observing` (16) and `Card.observingUpTo(…, cap)`;
   `Card.broadcast`. An Avatar's mailing list holds 32, the host's `sendsPerTurn` (a turn
   past it is refused whole, "turn exceeds the send capacity"); its inbox keeps 64.
+* **Owners.** Scene and Table keep `owner` (the host fills a text `owner` from the creating
+  principal when the seed names none) and `law owner "...": request.kind == 0 or
+  request.subject == new.owner`. `world-amend` does not parse a law text with a reading
+  ("law syntax"): amend with `law NAME: EXPR`.
 * **Laws in source** are kept by the host; a lawful module cannot be imported by a
   creator, so lawful objects (Policy, Env, Wake, Tide, Deal, Table, Directory, Anthology,
   Commons) are made with world-create by their owner. The host prints a law fully

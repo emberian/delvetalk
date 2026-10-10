@@ -45,7 +45,7 @@ class Table(Chain):
         self.make("south", closure("Seat"), record(table=reference("table"), seat=nat(1), owner=label(SOUTH), opponent=label(NORTH), rival=reference("north")))
         game = record(board=nat(int(OPENING["board"])), automaton=nat(OPENING["automaton"]), marks=nat(0), status=nat(0), winner=nat(0))
         r = self.host.send(op="world-create", principal="ember", identity="mk-table", object="table", modules=closure("Table"),
-                           entry="initial", seed=record(north=reference("north"), south=reference("south"), round=nat(0),
+                           entry="initial", seed=record(owner=label("ember"), north=reference("north"), south=reference("south"), round=nat(0),
                                                         width=nat(11), height=nat(11), game=game))
         self.assertEqual(r["status"], "created", r)
 
@@ -60,6 +60,14 @@ class Table(Chain):
     def reason(self, reply):
         self.assertIn("result", reply, reply)
         return reply["result"]["payload"]["fields"][0]["value"]["value"]
+
+    def test_the_owner_amends_the_table_and_a_stranger_may_not(self):
+        version = self.host.send(op="world-view", principal="ember", object="table")["version"]
+        law = 'law owner: request.kind == 0 or request.subject == "ember"'
+        theirs = self.host.send(op="world-amend", principal=NORTH, identity="am-north", object="table", version=version, law=law)
+        self.assertEqual((theirs["status"], theirs["receipt"]["outcome"].get("clause")), ("refused", "owner"), theirs)
+        mine = self.host.send(op="world-amend", principal="ember", identity="am-ember", object="table", version=version, law=law)
+        self.assertEqual(mine["status"], "admitted", mine)
 
     def test_one_opening_round(self):
         s0, t0, s1, t1 = self.MOVES

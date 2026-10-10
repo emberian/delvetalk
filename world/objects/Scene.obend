@@ -28,7 +28,10 @@ record Presence:
 record Left:
   who: String
   at: Nat
+# owner: who may reprogram or amend the scene (the host fills it with the creating
+# principal: ember for genesis's rooms, the poster for a scene made from spween).
 record State:
+  owner: String
   title: String
   start: String
   passages: Lists.List<Passage>
@@ -47,11 +50,12 @@ type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {title: "", start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil()}
 def seeded(seed: Seed) -> State:
-  {title: seed.title, start: seed.start, passages: seed.passages, presence: Lists.List.nil(), vars: Lists.List.nil(), cooldown: seed.cooldown, requires: seed.requires, left: Lists.List.nil()}
+  {owner: "", title: seed.title, start: seed.start, passages: seed.passages, presence: Lists.List.nil(), vars: Lists.List.nil(), cooldown: seed.cooldown, requires: seed.requires, left: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
   {presence: Plans.Entries.keep({}), vars: Plans.Entries.keep({}), left: Plans.Entries.keep({})}
+law owner "only the owner reprograms or amends it; anyone enters, chooses and leaves": request.kind == 0 or request.subject == new.owner
 # The cooldown, as the second tier of the law: a reader who appears in presence must have
 # left at least `cooldown` clock units before the turn's clock.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
