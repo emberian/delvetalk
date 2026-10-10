@@ -89,7 +89,7 @@ def seeds(top):
                examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
            ('directory', 'Directory', OWNER, None, 'genesis-directory', rec(
                owner=lab(OWNER), policy=ref('policy'), doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
-           ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'), confirm=boo(True))),
+           ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'))),
            ('tide', 'Tide', OWNER, None, 'genesis-tide', rec(gap=nat(1))),
            ('workshop', 'Workshop', OWNER, None, 'genesis-workshop', rec(title=lab('Workshop'))),
            ('anthology', 'Anthology', OWNER, None, 'genesis-anthology', rec(owner=lab(OWNER))),

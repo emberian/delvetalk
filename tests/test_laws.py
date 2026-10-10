@@ -53,7 +53,7 @@ class LawWorld(TurnWorld):
 class Laws(LawWorld):
     def test_the_policy_law_is_the_one_the_handoff_named(self):
         self.create("policy", closure("Policy"), record(owner=label(OWNER), model=label("m"), system=label("s"),
-                                                        lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil()))
+                                                        lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
         law = self.host.send(op="world-inspect", principal=OWNER, object="policy")["law"]
         self.assertIn('law owner: ((request.kind == 0) and (request.method == "describe")) or (request.subject == new.owner)', law)
         r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)

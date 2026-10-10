@@ -56,7 +56,7 @@ class Merge(test_chain.Chain):
     def test_the_law_refuses_a_forged_checkpoint(self):
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         r = self.host.send(op="world-propose", principal="glm", identity="forged", roots=[{"object": "garden", "version": 0}],
-                           writes=[{"object": "garden", "edits": [record(planted=keep, confirm=keep, pending=keep, children=keep,
+                           writes=[{"object": "garden", "edits": [record(planted=keep, confirmFor=keep, pending=keep, children=keep,
                                     pageCheckpoint={"tag": "variant", "label": "set", "payload": record(value=label("at://forged"))})]}])
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")),
                          ("refused", "lawRefused", "owner"), r)

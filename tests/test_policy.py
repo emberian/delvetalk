@@ -17,7 +17,7 @@ import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Policy.obend as Policy
 def sample() -> Policy.State:
-  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil()}
+  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}
 # Garden's plant form (Garden.planting), written out: Garden and Policy together exceed
 # one closure's declaration capacity.
 def plantForm(context: Abi.Context) -> Form.Form:
@@ -31,7 +31,7 @@ def examples(n: Nat) -> Lists.List<Policy.Example>:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil()}, forms(context), "plant me a moth"))
+  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}, forms(context), "plant me a moth"))
 """
 
 
@@ -86,7 +86,8 @@ class PolicyObject(Chain):
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
                            modules=closure("Policy"), entry="initial",
                            seed=record(owner=label("ember"), model=label("claude-haiku"), system=label("S"),
-                                       lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to), macros=nil()))
+                                       lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to), macros=nil(),
+                                       confirmFor={"tag": "list", "items": [label(a) for a in ("reprogram", "amend", "give", "offer")]}))
         self.assertEqual(r["status"], "created", r)
 
     def card(self, name, principal="glm"):
@@ -127,6 +128,7 @@ class PolicyObject(Chain):
                                       escalate={"tag": "variant", "label": "keep", "payload": record()},
                                       escalateTo={"tag": "variant", "label": "keep", "payload": record()},
                                       macros={"tag": "variant", "label": "keep", "payload": record()},
+                                      confirmFor={"tag": "variant", "label": "keep", "payload": record()},
                                       system={"tag": "variant", "label": "keep", "payload": record()},
                                       lexicon={"tag": "variant", "label": "keep", "payload": record()},
                                       examples={"tag": "variant", "label": "keep", "payload": record()})]}])

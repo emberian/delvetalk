@@ -14,21 +14,22 @@ record Pending:
   principal: String
   spell: String
 # children: the bells planted here, oldest first, written on each create.
-# confirm: whether a proposal understood from prose waits for "yes" (the garden's
-# stance; the policy only interprets).
+# confirmFor: the actions whose proposals understood from prose wait for "yes" here, beside
+# the policy's own confirmFor (either asking is enough); empty by default, so a planting
+# understood from prose plants and the receipt is the answer.
 # owner: the human who owns the garden's wiki page (its `merge` checkpoints it, and only
-# the owner changes confirm). pageCheckpoint: the post the last merge answered.
+# the owner changes confirmFor). pageCheckpoint: the post the last merge answered.
 record State:
   owner: String
   planted: Nat
   policy: Plans.Reference
-  confirm: Bool
+  confirmFor: Lists.List<String>
   pending: Lists.List<Pending>
   children: Lists.List<Plans.Reference>
   pageCheckpoint: String
 record Edits:
   planted: Plans.Edit<Nat, Nat>
-  confirm: Plans.Edit<Bool, {}>
+  confirmFor: Plans.Entries<String, {}>
   pending: Plans.Entries<Pending, Pending>
   children: Plans.Entries<Plans.Reference, {}>
   pageCheckpoint: Plans.Edit<String, {}>
@@ -37,7 +38,7 @@ record Edits:
 record Seed:
   owner: String
   policy: Plans.Reference
-  confirm: Bool
+  confirmFor: Lists.List<String>
   pending: Lists.List<Pending>
 type Plan = Plans.Plan<Edits>
 # What plant takes, and so what an interpretation proposes: the host checks the
@@ -51,15 +52,15 @@ type Response = Plans.Response<Policies.State, Planting>
 # Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
 # first, by name; this law refuses the same write proposed any other way).
-law owner "only the owner changes who owns it, its stance, its policy or its page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirm) and unchanged(policy) and unchanged(pageCheckpoint))
+law owner "only the owner changes who owns it, its stance, its policy or its page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
 def defaultSeed() -> Seed:
-  {owner: "", policy: Plans.nobody(), confirm: true, pending: Lists.List.nil()}
+  {owner: "", policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Lists.List.nil()}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, planted: 0n, policy: seed.policy, confirm: seed.confirm, pending: seed.pending, children: Lists.List.nil(), pageCheckpoint: ""}
+  {owner: seed.owner, planted: 0n, policy: seed.policy, confirmFor: seed.confirmFor, pending: seed.pending, children: Lists.List.nil(), pageCheckpoint: ""}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {planted: Plans.Edit.keep({}), confirm: Plans.Edit.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({})}
+  {planted: Plans.Edit.keep({}), confirmFor: Plans.Entries.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({})}
 sum Made:
   made: {object: Plans.Reference}
   refused: {clause: String}
@@ -254,16 +255,23 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
     case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else bared(state, input, context, Card.withBare(parsed, input.text, context, forms()), found)
-    case spell(s): if s.action == "?" && Plans.isNobody(state.policy) == false && s.card == context.object then helped(state, context) else if s.action == "set" || s.action == "?" then Card.answerLensedAs(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else spelled(state, context, input.post, s.action, parsed, found)
+    case spell(s): if s.action == "?" && Plans.isNobody(state.policy) == false && s.card == context.object then helped(state, context) else if s.action == "set" || s.action == "?" then Card.answerLensedAs(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(state), guard(state, context), render(state, context), fromCard) else spelled(state, context, input.post, s.action, parsed, found)
 # The usage card, with the shortcuts the garden's policy knows.
 def helped(state: State, context: Abi.Context) -> Activity<Plan, Response, Reply>:
   match perform(Plan.view({object: state.policy})):
-    case viewed(v): tell(Reply.shown({}), Document.concat(Card.help(context.object, forms(), lenses()), Card.macroUsage(v.state)))
-    case _: tell(Reply.shown({}), Card.help(context.object, forms(), lenses()))
-# Whether understood prose waits for "yes" is the owner's to set: `delvetalk garden set`
-# with `confirm: yes` or `confirm: no`.
-def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List.cons({head: Form.Lens.lens({field: "confirm", form: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")}), put: fn(v: Form.Value) -> Edits: extend(keep(), {confirm: Plans.Edit.set({value: Card.valueText(v) == "yes"})})}), tail: Lists.List.nil()})
+    case viewed(v): tell(Reply.shown({}), Document.concat(Card.help(context.object, forms(), lenses(state)), Card.macroUsage(v.state)))
+    case _: tell(Reply.shown({}), Card.help(context.object, forms(), lenses(state)))
+# Whether an understood planting waits for "yes" here is the owner's to set: `delvetalk
+# garden set` with `confirm: yes` or `confirm: no` adds or drops plant in confirmFor.
+def lenses(state: State) -> Lists.List<Form.Lens<Edits>>:
+  Lists.List.cons({head: Form.Lens.lens({field: "confirm", form: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")}), put: fn(v: Form.Value) -> Edits: extend(keep(), {confirmFor: asking(state, Card.valueText(v) == "yes")})}), tail: Lists.List.nil()})
+def asking(state: State, ask: Bool) -> Plans.Entries<String, {}>:
+  if ask == asks(state.confirmFor, "plant") then Plans.Entries.keep({}) else if ask then Plans.Entries.append({item: "plant"}) else Plans.Entries.removeItem({item: "plant"})
+def asks(actions: Lists.List<String>, action: String) -> Bool:
+  Lists.any(actions, fn(a: String) -> Bool: a == action)
+# Whether an understood planting waits for "yes": the garden's confirmFor or the policy's.
+def confirmsPlant(state: State, policy: Policies.State) -> Bool:
+  asks(state.confirmFor, "plant") || Card.confirms(policy, "plant")
 def guard(state: State, context: Abi.Context) -> String:
   if context.principal == state.owner then "" else "Only the garden's owner sets it; that is {Card.name(state.owner, context)}"
 def fromCard(reply: Card.Reply) -> Reply:
@@ -302,7 +310,7 @@ def offers(context: Abi.Context) -> Card.Forms:
   Card.Forms.cons({head: plantForm(context), tail: Card.Forms.nil()})
 def interpreted(state: State, input: Card.Heard, context: Abi.Context, found: Held, policy: Policies.State, attempt: Nat, needs: Form.Names) -> Activity<Plan, Response, Reply>:
   match perform(Card.asking(input.text, offers(context), state.policy, policy, attempt, needs)):
-    case proposal(p): named(state, context, input.post, found, state.confirm, p.argument.colour, p.argument.seed)
+    case proposal(p): named(state, context, input.post, found, confirmsPlant(state, policy), p.argument.colour, p.argument.seed)
     case unclear(u): if Card.notAddressed(u.needs) then silent(found, context) else told(found, context, Reply.unclear({needs: u.needs}), needsCard(u.needs))
     case replied(r): readBack(state, input, context, found, policy, attempt, Card.fitting(r.text, offers(context)))
     case denied(_): refused(found, context, Why.policyHidden({}))
@@ -312,7 +320,7 @@ def interpreted(state: State, input: Card.Heard, context: Abi.Context, found: He
 # offers the needs card (none when nothing is named) and the policy's escalation copy.
 def readBack(state: State, input: Card.Heard, context: Abi.Context, found: Held, policy: Policies.State, attempt: Nat, fitted: Card.Fitted) -> Activity<Plan, Response, Reply>:
   match fitted:
-    case hit(h): judged(state, context, input.post, h.parsed, state.confirm, found)
+    case hit(h): judged(state, context, input.post, h.parsed, confirmsPlant(state, policy), found)
     case miss(m): if attempt == 0n then interpreted(state, input, context, found, policy, 1n, m.needs) else unfit(input, context, found, policy, m.needs)
     case silent(_): silent(found, context)
 def unfit(input: Card.Heard, context: Abi.Context, found: Held, policy: Policies.State, needs: Form.Names) -> Activity<Plan, Response, Reply>:

@@ -361,6 +361,9 @@ def needOf(need: String) -> Fitted:
   if need == "" || need == "not addressed" then Fitted.silent({}) else Fitted.miss({needs: one(need)})
 def one(need: String) -> Form.Names:
   Form.Names.cons({head: need, tail: Form.Names.nil()})
+# Whether an interpreted proposal of this action waits for the speaker's yes.
+def confirms(policy: Policies.State, action: String) -> Bool:
+  Lists.any(policy.confirmFor, fn(a: String) -> Bool: a == action)
 # Whether a host verdict `unclear {needs}` says the prose was addressed to nobody.
 def notAddressed(needs: Form.Names) -> Bool:
   Lists.any(needs, fn(need: String) -> Bool: need == "not addressed")

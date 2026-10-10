@@ -68,6 +68,14 @@ the library).
   Garden, `interpreting`/`readBack` in Directory) and Card gives the Plans, the pure
   reading and `Card.unfit` for a card with no writes of its own. A read-only root that moves
   while the interpretation waits does not make the resumption stale.
+* **Confirmation is per action** (objects5). `Policies.State.confirmFor` (default
+  reprogram, amend, give, offer; the owner's `delvetalk policy confirm / action: plant /
+  ask: yes|no`) names what an interpreted proposal waits for a yes before; `Card.confirms`.
+  Garden keeps its own `confirmFor` (its `confirm` lens adds or drops plant) and asks when
+  either names plant; Directory shows a confirmed action's spell back to the speaker
+  instead of passing it on (sending it is the yes). Everything else runs at once and the
+  receipt is the answer. Thing's give and offer take a Reference, so no door offers them
+  to a model yet.
 * **Macros** (Policy `macros`, taught by the owner with `delvetalk policy macro / name: … /
   pattern: moth for {who} / expansion: garden plant / colour: violet / seed: a bell for
   {who}`; every field after the expansion joins it as ` / field: value`; a same-named macro

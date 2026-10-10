@@ -76,6 +76,7 @@ sum Heard:
   silent: {}
   refused: {reason: String}
   unclear: {needs: Form.Names}
+  asked: {card: String}
 # The hub's reply. A spell naming another card goes on to that card's receive, by call,
 # as this turn (a reply to the hub post reaches the object it names). Otherwise its owner
 # is answered with silence; a door word gets that door's card; the menu goes to each
@@ -171,9 +172,17 @@ def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, 
     case _: Heard.silent({})
 def readBack(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, text: String, fitted: Card.Fitted, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match fitted:
-    case hit(h): passOn(h.card, {text: text, post: input.post}, context)
+    case hit(h): if Card.confirms(policy, actionOf(h.parsed)) then askedFirst(h.card, text) else passOn(h.card, {text: text, post: input.post}, context)
     case miss(m): if attempt == 0n then interpreting(state, input, forms, policy, 1n, m.needs, context) else Card.unfit(policy, input.text, m.needs, context, needsCard(m.needs), Heard.unclear({needs: m.needs}))
     case silent(_): Heard.silent({})
+# An action the policy confirms (a give, an offer, a reprogram) is not passed on from prose:
+# the speaker is shown the spell, and sending it is the yes.
+def actionOf(parsed: Spell.Parsed) -> String:
+  match parsed:
+    case spell(s): s.action
+    case notASpell(_): ""
+def askedFirst(card: String, text: String) -> Activity<Plan, Response, Heard>:
+  Card.tell(Heard.asked({card: card}), Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it:\n\n{text}\n"))
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text("✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Spell.joined(needs)}.\n")
 # The door words, for a card that lists them.

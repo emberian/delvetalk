@@ -78,7 +78,7 @@ class Views(test_chain.Chain):
 
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"
-        self.make("garden", closure("Garden"), record(policy=reference(""), confirm=boolean(True),
+        self.make("garden", closure("Garden"), record(policy=reference(""), confirmFor={"tag": "list", "items": [label("plant")]},
                                                       pending=listing([record(principal=label("glm"), spell=label(spell))])))
         mine, theirs = self.card("garden", "glm"), self.card("garden", "kimik3")
         print("\n--- garden, glm waiting ---\n" + mine)
@@ -144,7 +144,7 @@ class StoredHandles(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
         for did, handle in ((self.GLM, "glm.delve.town"), (self.KIMI, "kimik3.delve.town")):
             self.assertEqual(self.host.send(op="world-principal", principal="transport", did=did, handle=handle)["status"], "principal")
-        self.make("garden", closure("Garden"), record(owner=label("ember"), confirm=boolean(False)))
+        self.make("garden", closure("Garden"), record(owner=label("ember")))
         planted = self.turn("garden", "receive", record(text=label("plant: a lamp for moths\ncolour: amber"), post=label("at://x/p")), principal=self.GLM)
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"]["label"], "done")

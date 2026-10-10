@@ -135,6 +135,20 @@ class Hub(test_chain.Chain):
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
+    def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
+        """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
+        at the hub: it is shown to the speaker to send, never passed on from prose."""
+        self.policy()
+        taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
+        self.assertEqual(taught["result"]["label"], "done", taught)
+        self.directory("policy")
+        self.greet(GLM)
+        self.assertEqual(self.say("Could we plant a silver fern that remembers yesterday?", GLM)["status"], "suspended")
+        spell = "delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver"
+        asked = self.interpret(spell)
+        self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "asked"), asked)
+        self.assertEqual(asked["receipt"]["offers"][0]["text"], "✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it:\n\n" + spell + "\n")
+        self.assertEqual(self.children(), [])
 
 if __name__ == "__main__":
     unittest.main()

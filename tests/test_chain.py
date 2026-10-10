@@ -28,16 +28,22 @@ def reference(name):
     return record(world=label(""), object=label(name))
 
 
+def asking(confirm):
+    """A garden's confirmFor: plant when an understood planting waits for "yes"."""
+    return {"tag": "list", "items": [label("plant")] if confirm else []}
+
+
 def garden_seed(policy="", pending=(), confirm=True, owner="ember"):
-    """A Garden Seed: its owner, its policy object, whether prose waits for "yes", and the proposals already waiting."""
+    """A Garden Seed: its owner, its policy object, whether prose waits for "yes" (plant in
+    its confirmFor), and the proposals already waiting."""
     wire = {"tag": "list", "items": [record(principal=label(principal), spell=label(spell))
                                      for principal, spell in pending]}
-    return record(owner=label(owner), policy=reference(policy), confirm=boolean(confirm), pending=wire)
+    return record(owner=label(owner), policy=reference(policy), confirmFor=asking(confirm), pending=wire)
 
 
 def garden_state(planted=0, owner="ember"):
     """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
-    return record(owner=label(owner), planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirm=boolean(True),
+    return record(owner=label(owner), planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirmFor=asking(True),
                   pending=nil(), children=nil(), pageCheckpoint=label(""))
 
 
@@ -48,7 +54,7 @@ def garden_state(planted=0, owner="ember"):
 def lawful_defaults():
     return {
         "Garden": [("owner", label("ember")), ("planted", {"tag": "natural", "value": "0"}), ("policy", reference("")),
-                   ("confirm", boolean(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label(""))],
+                   ("confirmFor", asking(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label(""))],
         "Thing": [("owner", label("ember")), ("name", label("")), ("description", label("")), ("holder", reference("")),
                   ("location", reference("")), ("offer", {"tag": "variant", "label": "none", "payload": record()})],
     }

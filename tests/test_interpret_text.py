@@ -15,7 +15,7 @@ import unittest
 
 from tests import test_chain, test_policy
 from tests.test_objects import PROBE_HEAD_G, run_pure
-from tests.test_turn_world import label
+from tests.test_turn_world import label, record
 
 SPELL = "delvetalk garden plant / colour: silver / seed: a fern that remembers"
 
@@ -113,6 +113,27 @@ class Resumed(test_chain.Chain):
         _, missed = self.settle("unclear: colour")
         self.assertEqual([o["to"] for o in missed["receipt"]["offers"]], ["glm"], missed)
         self.assertIn("I still need: colour.", missed["receipt"]["offers"][0]["text"])
+
+    def test_with_the_default_policy_an_understood_planting_plants_and_the_receipt_answers(self):
+        """Confirmation is per action: the policy's confirmFor (reprogram, amend, give, offer by
+        default) does not name plant, and a garden with an empty confirmFor asks nobody."""
+        self.policy()
+        self.garden("policy", confirm=False)
+        self.say("Could we plant a silver fern that remembers?")
+        _, planted = self.settle(SPELL)
+        self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
+        self.assertNotIn("Reply yes", planted["receipt"]["offers"][0]["text"])
+
+    def test_the_policys_owner_makes_plant_ask_first(self):
+        self.policy()
+        taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
+        self.assertEqual(taught["result"]["label"], "done", taught)
+        self.garden("policy", confirm=False)
+        self.say("Could we plant a silver fern that remembers?")
+        _, asked = self.settle(SPELL)
+        self.assertEqual(asked["result"]["label"], "confirming", asked)
+        card = self.turn("policy", "receive", record(text=label(""), post=label("")), principal="glm")["offers"][0]["text"]
+        self.assertIn("A card asks the speaker first before: reprogram, amend, give, offer, plant.\n", card)
 
     def test_words_that_are_no_spell_twice_end_with_no_card(self):
         self.policy()

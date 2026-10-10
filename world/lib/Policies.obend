@@ -18,7 +18,9 @@ record Macro:
   expansion: String
 # model: the model the host asks first. escalate: the stronger model a second attempt names
 # ("" for the same). escalateTo: the principal (a DID) a card tells, in a short copy, what it
-# could not fit after two attempts ("" for nobody).
+# could not fit after two attempts ("" for nobody). confirmFor: the actions an
+# interpreted proposal waits for the speaker's yes before (Card.confirms); every other
+# action runs at once and its receipt is the answer.
 record State:
   owner: String
   model: String
@@ -28,3 +30,4 @@ record State:
   escalate: String
   escalateTo: String
   macros: Lists.List<Macro>
+  confirmFor: Lists.List<String>
