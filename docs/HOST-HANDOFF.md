@@ -579,8 +579,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    journals every refusal through `Refusal.voiced` (Ops), which writes `reason` from what the refusal
    names, by class: staleRoot, budget, capacity (a limit's name; a sentence a site wrote stays),
    typeMismatch (the method from `expected`; a word naming no case keeps its "… is one of: …"),
-   unknownObject, programRefused (the clause only: a compile diagnostic is no longer in the receipt;
-   the workshop's check shows it), absentItem, requiredAbsence, keyTaken, duplicateKey,
+   unknownObject, programRefused (the voiced sentence, then the compiler's or migration's diagnostic after a
+   colon), absentItem, requiredAbsence, keyTaken, duplicateKey,
    budgetExhausted; evaluation drops the kernel's `turn refused: ` prefix; lawRefused, quota, noMethod
    and badSpell keep the reason their site writes, now VOICE's text. `duplicateIdentity`'s reply
    carries `reason`. The badSpell reasons (Spell.lean, `castSpell`, `lensSpell`) and the two usage
