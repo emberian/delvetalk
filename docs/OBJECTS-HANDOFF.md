@@ -146,6 +146,11 @@ the library).
   owner, and answers a door word with that door's card. Garden ends with no offer for
   prose the model calls `not addressed`; it reads the model's text (`replied {text}`)
   with Spell. Tide answers subscribe and tick with its card.
+* **publishPage** (objects5): `Card.publishPage(door().word, page)` performs `publish {page:
+  <door word>, section: "", body}`; Garden (its own page), Scene, Table, Workshop and
+  Anthology (the default page, rendered for nobody at the object) expose `publishPage`,
+  and the host lists the publication (`world-publications`). The card and its usage name
+  the object's id; the page is titled by the door word.
 * **Pages.** An object with a page keeps `owner` and `pageCheckpoint`; `Card.isMerge`
   and `Card.merge` record the owner's `merge` reply (Garden does).
 * **Laws that guard fields** read `owner: request.subject == new.owner or (request.kind

@@ -144,6 +144,9 @@ def withoutBlock(action: String, target: String, context: Abi.Context) -> Activi
 # card is the usage text, and receive reads the block itself.
 def forms() -> Card.Forms:
   Card.Forms.nil()
+# The card as a public page under the door word (genesis posts one card per door).
+def publishPage(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+  Card.publishPage(door().word, Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def door() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

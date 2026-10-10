@@ -406,6 +406,16 @@ record Section:
 type Page = Lists.List<Section>
 def defaultPage(card: Document.Document, context: Abi.Context, forms: Forms) -> Page:
   Page.cons({head: {title: "Card", body: card}, tail: Page.cons({head: {title: "How to reply", body: usage(context.object, forms)}, tail: Page.nil()})})
+# The context a public page is rendered for: nobody's, at the publishing object.
+def public(context: Abi.Context) -> Abi.Context:
+  extend(stranger(), {object: context.object, world: context.world})
+# Posts an object's page as its door word's wiki page (genesis posts one card per door):
+# `publish {page: door().word, section: "", body}`; the post, or the refusal's clause.
+def publishPage<E, S, R>(word: String, page: Page) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, String>:
+  match perform(Plans.Plan.publish({page: word, section: "", body: pageText(page)})):
+    case published(p): p.post
+    case refused(r): r.clause
+    case _: ""
 def pageText(page: Page) -> String:
   textJoin(Lists.map(page, fn(section: Section) -> String: "## {section.title}\n\n{Document.plain(section.body)}"), "\n")
 # Interpretation, the card default (FOUNDATION section 5). A card with a policy views it
